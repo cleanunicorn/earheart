@@ -53,6 +53,10 @@ function createOverlay() {
   overlayWindow.setAlwaysOnTop(true, "screen-saver");
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlayWindow.loadFile(path.join(RENDERER, "overlay.html"));
+  overlayWindow.webContents.on("render-process-gone", () => {
+    // A dead overlay renderer means no more dictation; bring it back.
+    overlayWindow?.webContents.reload();
+  });
   overlayWindow.on("closed", () => {
     overlayWindow = null;
   });

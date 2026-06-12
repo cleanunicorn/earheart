@@ -14,9 +14,7 @@ const SEND = new Set([
   "audio:captured",
   "record:cancelled",
   "record:error",
-  "pipeline:toggle",
   "pipeline:cancel",
-  "open-external",
 ]);
 
 const INVOKE = new Set([

@@ -7,6 +7,10 @@
 //
 // Recording happens in the overlay renderer (it owns the microphone); the
 // captured WAV arrives here over IPC and the rest runs in the main process.
+//
+// Every dictation gets a session id that is echoed back in overlay IPC
+// messages. Events from a torn-down session (late cancels, slow renderers)
+// are ignored instead of corrupting the current one.
 
 const { ipcMain, Notification } = require("electron");
 const windows = require("./windows");
@@ -17,6 +21,7 @@ const { deliver } = require("./output/deliver");
 const history = require("./history");
 
 let state = "idle"; // idle | recording | processing
+let session = 0; // current dictation session id
 let abortController = null;
 const stateListeners = new Set();
 
@@ -37,10 +42,10 @@ function overlayStatus(status, detail) {
   windows.sendToOverlay("pipeline:status", { status, detail });
 }
 
-function hideOverlaySoon(ms) {
+function hideOverlaySoon(sid, ms) {
   setTimeout(() => {
-    // Only hide if nothing new started in the meantime.
-    if (state === "idle") windows.hideOverlay();
+    // Only hide if no new session started in the meantime.
+    if (session === sid && state === "idle") windows.hideOverlay();
   }, ms);
 }
 
@@ -56,12 +61,25 @@ function toggle() {
 
 function startRecording() {
   const cfg = settings.get();
+  const sid = ++session;
   setState("recording");
-  windows.showOverlay();
-  windows.sendToOverlay("record:start", {
-    deviceId: cfg.audio.deviceId,
-    maxSeconds: cfg.audio.maxRecordingSeconds,
-  });
+  const win = windows.createOverlay();
+  const begin = () => {
+    if (session !== sid) return; // cancelled before the overlay was ready
+    windows.showOverlay();
+    windows.sendToOverlay("record:start", {
+      sid,
+      deviceId: cfg.audio.deviceId,
+      maxSeconds: cfg.audio.maxRecordingSeconds,
+    });
+  };
+  // The overlay may still be loading right after launch (or after a renderer
+  // crash); sending into a loading page would silently drop the message.
+  if (win.webContents.isLoading()) {
+    win.webContents.once("did-finish-load", begin);
+  } else {
+    begin();
+  }
 }
 
 function stopRecording() {
@@ -70,6 +88,7 @@ function stopRecording() {
 }
 
 function cancel() {
+  session++; // invalidate in-flight session events
   if (state === "recording") {
     windows.sendToOverlay("record:cancel");
   } else if (state === "processing" && abortController) {
@@ -79,20 +98,23 @@ function cancel() {
   windows.hideOverlay();
 }
 
-async function process(wavArrayBuffer) {
+async function process(sid, wavArrayBuffer) {
   const cfg = settings.get();
   setState("processing");
-  abortController = new AbortController();
-  const { signal } = abortController;
+  const controller = new AbortController();
+  abortController = controller;
+  const { signal } = controller;
   const wav = Buffer.from(wavArrayBuffer);
+  const stale = () => session !== sid || signal.aborted;
 
   try {
     overlayStatus("transcribing");
     const raw = await stt.transcribe(wav, cfg.stt, signal);
+    if (stale()) return;
 
     if (!raw) {
       overlayStatus("empty");
-      hideOverlaySoon(1800);
+      hideOverlaySoon(sid, 1800);
       return;
     }
 
@@ -104,7 +126,7 @@ async function process(wavArrayBuffer) {
         text = await cleanup.clean(raw, cfg.cleanup, signal);
         cleaned = true;
       } catch (err) {
-        if (signal.aborted) throw err;
+        if (stale()) return;
         // Cleanup is an enhancement: fall back to the raw transcript and
         // surface what happened instead of dropping the dictation.
         console.error("[earheart] cleanup failed:", err.message);
@@ -113,51 +135,53 @@ async function process(wavArrayBuffer) {
           body: String(err.message).slice(0, 180),
         }).show();
       }
+      if (stale()) return;
     }
 
     overlayStatus("delivering");
-    const result = await deliver(text, cfg.output);
-    history.add({ raw, text, cleaned, delivered: result.method }, cfg.history);
-    windows.sendToSettings("history:changed");
+    const result = await deliver(text, cfg.output, signal);
+    if (stale()) return;
+    if (cfg.history.enabled) {
+      history.add({ raw, text, cleaned, delivered: result.method }, cfg.history);
+      windows.sendToSettings("history:changed");
+    }
 
     overlayStatus("done", {
       preview: text.length > 120 ? `${text.slice(0, 120)}…` : text,
       method: result.method,
       note: result.note,
     });
-    hideOverlaySoon(result.note ? 4000 : 1600);
+    hideOverlaySoon(sid, result.note ? 4000 : 1600);
   } catch (err) {
-    if (signal.aborted) {
-      windows.hideOverlay();
-      return;
-    }
+    if (stale()) return;
     console.error("[earheart] pipeline failed:", err);
     overlayStatus("error", { message: String(err.message).slice(0, 200) });
-    hideOverlaySoon(5000);
+    hideOverlaySoon(sid, 5000);
   } finally {
-    abortController = null;
-    setState("idle");
+    if (abortController === controller) abortController = null;
+    if (session === sid) setState("idle");
   }
 }
 
 function init() {
-  ipcMain.on("audio:captured", (event, wavArrayBuffer) => {
-    if (state !== "recording") return;
-    process(wavArrayBuffer);
+  ipcMain.on("audio:captured", (event, { sid, wav }) => {
+    if (sid !== session || state !== "recording") return;
+    process(sid, wav);
   });
 
-  ipcMain.on("record:cancelled", () => {
+  ipcMain.on("record:cancelled", (event, { sid } = {}) => {
+    if (sid !== session) return;
     if (state === "recording") setState("idle");
     windows.hideOverlay();
   });
 
-  ipcMain.on("record:error", (event, message) => {
+  ipcMain.on("record:error", (event, { sid, message } = {}) => {
+    if (sid !== session) return;
     if (state === "recording") setState("idle");
     overlayStatus("error", { message });
-    hideOverlaySoon(5000);
+    hideOverlaySoon(sid, 5000);
   });
 
-  ipcMain.on("pipeline:toggle", () => toggle());
   ipcMain.on("pipeline:cancel", () => cancel());
 }
 

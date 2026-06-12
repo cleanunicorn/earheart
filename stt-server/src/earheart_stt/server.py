@@ -131,6 +131,12 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
         asr = state["model"]
         if asr is None:
             raise HTTPException(status_code=503, detail="Model still loading")
+        if response_format not in ("json", "text", "verbose_json"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported response_format {response_format!r} "
+                "(supported: json, text, verbose_json)",
+            )
 
         waveform, sample_rate = decode_audio(file.file.read())
         if waveform.shape[0] == 0:
@@ -151,6 +157,9 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
             except TypeError:
                 # Model doesn't take a language hint (e.g. English-only v2).
                 text = asr.recognize(waveform, sample_rate=TARGET_SAMPLE_RATE)
+            except ValueError as exc:
+                # e.g. a language code the model doesn't support.
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         elapsed = time.monotonic() - started
         audio_seconds = waveform.shape[0] / TARGET_SAMPLE_RATE
         logger.info(

@@ -25,7 +25,8 @@ const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
 function acceleratorFromEvent(event) {
   if (MODIFIER_KEYS.has(event.key)) return null;
   const parts = [];
-  if (event.ctrlKey) parts.push("CommandOrControl");
+  // On macOS, physical Ctrl must stay Ctrl — CommandOrControl would register Cmd.
+  if (event.ctrlKey) parts.push(platform === "darwin" ? "Control" : "CommandOrControl");
   if (event.metaKey) parts.push(platform === "darwin" ? "Command" : "Super");
   if (event.altKey) parts.push("Alt");
   if (event.shiftKey) parts.push("Shift");
@@ -68,6 +69,15 @@ $("hotkey-clear").addEventListener("click", () => {
 
 async function loadMicrophones() {
   const select = $("mic-device");
+  // Show the saved device immediately so saving before (or without)
+  // enumeration never silently resets the microphone choice.
+  if (current.audio.deviceId) {
+    const saved = document.createElement("option");
+    saved.value = current.audio.deviceId;
+    saved.textContent = "Configured microphone";
+    select.appendChild(saved);
+    select.value = current.audio.deviceId;
+  }
   try {
     // Ask for permission once so device labels are populated.
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -76,13 +86,17 @@ async function loadMicrophones() {
     devices
       .filter((d) => d.kind === "audioinput" && d.deviceId !== "default")
       .forEach((d) => {
+        const existing = select.querySelector(`option[value="${CSS.escape(d.deviceId)}"]`);
+        if (existing) {
+          existing.textContent = d.label || existing.textContent;
+          return;
+        }
         const option = document.createElement("option");
         option.value = d.deviceId;
         option.textContent = d.label || `Microphone ${select.length}`;
         select.appendChild(option);
       });
     select.value = current.audio.deviceId || "";
-    if (select.value !== (current.audio.deviceId || "")) select.value = "";
   } catch {
     // No microphone permission/device; leave "System default".
   }
@@ -171,11 +185,18 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
 /* ---------- save ---------- */
 
 $("save").addEventListener("click", async () => {
-  current = collect();
-  const result = await earheart.invoke("settings:save", current);
-  current = result.settings;
   const save = $("save-status");
   const hotkeyStatus = $("hotkey-status");
+  let result;
+  try {
+    current = collect();
+    result = await earheart.invoke("settings:save", current);
+  } catch (err) {
+    save.textContent = `Could not save: ${err.message}`;
+    save.className = "status err";
+    return;
+  }
+  current = result.settings;
   if (result.hotkey.ok) {
     save.textContent = "Saved";
     save.className = "status ok";

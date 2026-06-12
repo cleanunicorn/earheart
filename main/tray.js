@@ -79,7 +79,11 @@ function init(app, pipelineModule) {
   appRef = app;
   pipeline = pipelineModule;
   tray = new Tray(icon("tray.png"));
-  tray.on("click", () => pipeline.toggle());
+  // Click-to-toggle only works on Windows; Linux trays are menu-only and
+  // macOS opens the context menu on click once one is set.
+  if (process.platform === "win32") {
+    tray.on("click", () => pipeline.toggle());
+  }
   pipeline.onStateChange(() => refresh(app));
   refresh(app);
   return tray;

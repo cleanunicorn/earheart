@@ -39,11 +39,13 @@ function main() {
   app.whenReady().then(() => {
     const cfg = settings.get();
 
-    // The renderer asks for microphone access; grant it. Everything the
-    // renderer can reach is our own local files (no remote content).
+    // The renderer asks for microphone and clipboard access; grant those.
+    // Everything the renderer can reach is our own local files (no remote
+    // content), so nothing else needs permissions.
+    const GRANTED = new Set(["media", "clipboard-sanitized-write"]);
     session.defaultSession.setPermissionRequestHandler(
       (webContents, permission, callback) => {
-        callback(permission === "media");
+        callback(GRANTED.has(permission));
       }
     );
 

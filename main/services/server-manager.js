@@ -9,11 +9,13 @@ let child = null;
 function start(cfg) {
   if (!cfg.autoStart || !cfg.command || child) return;
   // The command is user-provided configuration (like a shell alias), so run
-  // it through the shell to support arguments and PATH lookup.
+  // it through the shell to support arguments and PATH lookup. On POSIX the
+  // child gets its own process group so stop() can kill the whole tree (the
+  // shell wrapper plus whatever it spawned, e.g. uvx -> python).
   child = spawn(cfg.command, {
     shell: true,
     stdio: "ignore",
-    detached: false,
+    detached: process.platform !== "win32",
   });
   child.on("exit", (code) => {
     console.log(`[earheart] STT server process exited (code ${code})`);
@@ -28,7 +30,15 @@ function start(cfg) {
 function stop() {
   if (!child) return;
   try {
-    child.kill();
+    if (process.platform === "win32") {
+      // Kill the cmd.exe wrapper and everything below it.
+      const { execFileSync } = require("node:child_process");
+      execFileSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+        stdio: "ignore",
+      });
+    } else {
+      process.kill(-child.pid, "SIGTERM"); // whole process group
+    }
   } catch {
     // Process already gone.
   }

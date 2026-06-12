@@ -96,13 +96,22 @@ async function simulatePaste() {
   }
 }
 
+let pendingRestore = null;
+
 /**
  * Deliver text to the user.
  * @param {string} text
  * @param {object} cfg - settings.output slice
- * @returns {Promise<{method: "paste"|"clipboard", note?: string}>}
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<{method: "paste"|"clipboard"|"cancelled", note?: string}>}
  */
-async function deliver(text, cfg) {
+async function deliver(text, cfg, signal) {
+  if (signal?.aborted) return { method: "cancelled" };
+  // A restore scheduled by a previous dictation must not clobber this one.
+  if (pendingRestore) {
+    clearTimeout(pendingRestore);
+    pendingRestore = null;
+  }
   const previous = cfg.restoreClipboard ? clipboard.readText() : null;
   clipboard.writeText(text);
 
@@ -113,6 +122,7 @@ async function deliver(text, cfg) {
   // Give the target app a moment to be focused (the overlay never takes
   // focus, but the clipboard write itself can need a beat on some systems).
   await sleep(cfg.pasteDelayMs ?? 150);
+  if (signal?.aborted) return { method: "cancelled" };
   try {
     await simulatePaste();
   } catch (err) {
@@ -121,8 +131,12 @@ async function deliver(text, cfg) {
   }
 
   if (previous !== null) {
-    // Wait for the target app to consume the clipboard before restoring it.
-    setTimeout(() => clipboard.writeText(previous), 1000);
+    // Wait for the target app to consume the clipboard before restoring it,
+    // and only restore if nothing else has written to it since.
+    pendingRestore = setTimeout(() => {
+      pendingRestore = null;
+      if (clipboard.readText() === text) clipboard.writeText(previous);
+    }, 1000);
   }
   return { method: "paste" };
 }

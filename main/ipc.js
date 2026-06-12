@@ -1,6 +1,6 @@
 // IPC handlers backing the settings window.
 
-const { ipcMain, shell, app } = require("electron");
+const { ipcMain, app } = require("electron");
 const settings = require("./settings");
 const history = require("./history");
 const stt = require("./services/stt");
@@ -50,10 +50,6 @@ function init({ applyHotkey, onSettingsChanged }) {
   ipcMain.handle("history:clear", () => {
     history.clear();
     return [];
-  });
-
-  ipcMain.on("open-external", (event, url) => {
-    if (/^https?:\/\//.test(url)) shell.openExternal(url);
   });
 }
 

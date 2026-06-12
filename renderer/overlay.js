@@ -11,6 +11,9 @@ const meter = document.getElementById("meter");
 const meterCtx = meter.getContext("2d");
 
 let recording = null; // { stream, context, chunks, startedAt, timerId, maxTimerId }
+let generation = 0; // bumped on every start/teardown to invalidate stale awaits
+let currentSid = null; // session id from the main process
+let stopWhenReady = false; // stop arrived while getUserMedia was still pending
 let levels = new Array(24).fill(0);
 
 function setStatus(status, title, detail) {
@@ -72,15 +75,21 @@ function encodeWav(chunks) {
   return buffer;
 }
 
-async function startRecording({ deviceId, maxSeconds }) {
-  if (recording) return;
+async function startRecording({ sid, deviceId, maxSeconds }) {
+  // A new session always supersedes whatever was running.
+  await teardown();
+  const myGeneration = ++generation;
+  currentSid = sid;
+  stopWhenReady = false;
   setStatus("recording", "Listening…");
   levels.fill(0);
   drawMeter();
   timerEl.textContent = "0:00";
 
+  let stream = null;
+  let context = null;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         deviceId: deviceId ? { exact: deviceId } : undefined,
         channelCount: 1,
@@ -89,8 +98,14 @@ async function startRecording({ deviceId, maxSeconds }) {
         autoGainControl: true,
       },
     });
-    const context = new AudioContext({ sampleRate: SAMPLE_RATE });
+    context = new AudioContext({ sampleRate: SAMPLE_RATE });
     await context.audioWorklet.addModule("recorder-worklet.js");
+    if (myGeneration !== generation) {
+      // Cancelled while the microphone was being opened: shut it down.
+      stream.getTracks().forEach((track) => track.stop());
+      await context.close().catch(() => {});
+      return;
+    }
     const source = context.createMediaStreamSource(stream);
     const recorder = new AudioWorkletNode(context, "recorder");
     const chunks = [];
@@ -103,6 +118,7 @@ async function startRecording({ deviceId, maxSeconds }) {
     source.connect(recorder);
 
     recording = {
+      sid,
       stream,
       context,
       chunks,
@@ -113,12 +129,25 @@ async function startRecording({ deviceId, maxSeconds }) {
         (maxSeconds || 300) * 1000
       ),
     };
+    if (stopWhenReady) {
+      stopWhenReady = false;
+      stopRecording();
+    }
   } catch (err) {
-    earheart.send("record:error", `Microphone unavailable: ${err.message}`);
+    stream?.getTracks().forEach((track) => track.stop());
+    await context?.close().catch(() => {});
+    if (myGeneration === generation) {
+      earheart.send("record:error", {
+        sid,
+        message: `Microphone unavailable: ${err.message}`,
+      });
+    }
   }
 }
 
 async function teardown() {
+  generation++; // invalidates any startRecording still awaiting the mic
+  stopWhenReady = false;
   if (!recording) return null;
   const rec = recording;
   recording = null;
@@ -130,16 +159,22 @@ async function teardown() {
 }
 
 async function stopRecording() {
+  if (!recording) {
+    // Stop raced ahead of microphone setup; finish once the mic is live.
+    stopWhenReady = true;
+    return;
+  }
   const rec = await teardown();
   if (!rec) return;
   const wav = encodeWav(rec.chunks);
-  earheart.send("audio:captured", wav);
+  earheart.send("audio:captured", { sid: rec.sid, wav });
 }
 
 async function cancelRecording() {
+  const sid = currentSid;
   const wasRecording = await teardown();
   if (wasRecording) {
-    earheart.send("record:cancelled");
+    earheart.send("record:cancelled", { sid });
   } else {
     earheart.send("pipeline:cancel");
   }

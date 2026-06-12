@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:"
+    />
+    <title>Earheart</title>
+    <link rel="stylesheet" href="settings.css" />
+  </head>
+  <body>
+    <header>
+      <img src="../assets/icon.png" alt="" width="36" height="36" />
+      <div>
+        <h1>Earheart</h1>
+        <p>Press the hotkey, speak, press it again. Your words appear where you type.</p>
+      </div>
+    </header>
+
+    <nav id="tabs">
+      <button class="tab active" data-tab="general">General</button>
+      <button class="tab" data-tab="stt">Speech-to-text</button>
+      <button class="tab" data-tab="cleanup">Cleanup</button>
+      <button class="tab" data-tab="history">History</button>
+      <button class="tab" data-tab="advanced">Advanced</button>
+    </nav>
+
+    <main>
+      <!-- General -->
+      <section id="tab-general" class="panel active">
+        <div class="field">
+          <label for="hotkey">Global hotkey</label>
+          <div class="row">
+            <input id="hotkey" readonly placeholder="Click, then press a key combination" />
+            <button id="hotkey-clear" class="ghost">Reset</button>
+          </div>
+          <p class="hint">
+            Press once to start recording, again to stop and transcribe.
+            <span id="wayland-note">On GNOME/KDE Wayland, apps may not be able to grab global
+            keys — instead, bind a system keyboard shortcut to
+            <code>earheart --toggle</code>.</span>
+          </p>
+          <p id="hotkey-status" class="status"></p>
+        </div>
+
+        <div class="field">
+          <label>Output</label>
+          <label class="choice">
+            <input type="radio" name="output-mode" value="paste" />
+            Paste into the active app (keeps your clipboard)
+          </label>
+          <label class="choice">
+            <input type="radio" name="output-mode" value="clipboard" />
+            Copy to clipboard only — I'll paste myself
+          </label>
+          <label class="choice">
+            <input type="checkbox" id="restore-clipboard" />
+            Restore previous clipboard contents after pasting
+          </label>
+        </div>
+
+        <div class="field">
+          <label for="mic-device">Microphone</label>
+          <select id="mic-device">
+            <option value="">System default</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- STT -->
+      <section id="tab-stt" class="panel">
+        <p class="lead">
+          Any service that speaks the OpenAI audio transcription API works here:
+          the bundled local Parakeet server, OpenAI, Groq, speaches, …
+        </p>
+        <div class="field">
+          <label for="stt-url">Base URL</label>
+          <input id="stt-url" placeholder="http://127.0.0.1:8484/v1" />
+          <p class="hint">The app calls <code>{base URL}/audio/transcriptions</code>.</p>
+        </div>
+        <div class="field">
+          <label for="stt-key">API key <span class="muted">(optional for local servers)</span></label>
+          <input id="stt-key" type="password" autocomplete="off" />
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="stt-model">Model</label>
+            <input id="stt-model" placeholder="parakeet" />
+          </div>
+          <div class="field">
+            <label for="stt-language">Language <span class="muted">(optional, e.g. en)</span></label>
+            <input id="stt-language" placeholder="auto" />
+          </div>
+        </div>
+        <div class="row">
+          <button id="stt-test">Test connection</button>
+          <span id="stt-test-result" class="status"></span>
+        </div>
+      </section>
+
+      <!-- Cleanup -->
+      <section id="tab-cleanup" class="panel">
+        <p class="lead">
+          After transcription, a language model can fix punctuation and remove
+          filler words. Works with any OpenAI-compatible chat API: Ollama,
+          llama.cpp, LM Studio, OpenRouter, OpenAI, …
+        </p>
+        <div class="field">
+          <label class="choice">
+            <input type="checkbox" id="cleanup-enabled" />
+            Clean up transcripts with a language model
+          </label>
+        </div>
+        <div id="cleanup-fields">
+          <div class="field">
+            <label for="cleanup-url">Base URL</label>
+            <input id="cleanup-url" placeholder="http://127.0.0.1:11434/v1" />
+            <p class="hint">The app calls <code>{base URL}/chat/completions</code>.</p>
+          </div>
+          <div class="field">
+            <label for="cleanup-key">API key <span class="muted">(optional for local servers)</span></label>
+            <input id="cleanup-key" type="password" autocomplete="off" />
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="cleanup-model">Model</label>
+              <input id="cleanup-model" placeholder="llama3.2" />
+            </div>
+            <div class="field">
+              <label for="cleanup-temperature">Temperature</label>
+              <input id="cleanup-temperature" type="number" min="0" max="2" step="0.1" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="cleanup-prompt">System prompt</label>
+            <textarea id="cleanup-prompt" rows="9" spellcheck="false"></textarea>
+            <button id="cleanup-prompt-reset" class="ghost">Reset to default</button>
+          </div>
+          <div class="row">
+            <button id="cleanup-test">Test connection</button>
+            <span id="cleanup-test-result" class="status"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- History -->
+      <section id="tab-history" class="panel">
+        <div class="row space-between">
+          <label class="choice">
+            <input type="checkbox" id="history-enabled" />
+            Keep a local history of transcriptions
+          </label>
+          <button id="history-clear" class="ghost danger">Clear history</button>
+        </div>
+        <ul id="history-list"></ul>
+      </section>
+
+      <!-- Advanced -->
+      <section id="tab-advanced" class="panel">
+        <div class="field">
+          <label class="choice">
+            <input type="checkbox" id="server-autostart" />
+            Start a local STT server with the app
+          </label>
+          <div class="field indent">
+            <label for="server-command">Command</label>
+            <input id="server-command" placeholder="uvx earheart-stt" />
+            <p class="hint">
+              Runs when Earheart starts, stops when it quits. See the
+              <code>stt-server</code> README for installing the Parakeet server.
+            </p>
+          </div>
+        </div>
+        <div class="field">
+          <label for="max-seconds">Maximum recording length (seconds)</label>
+          <input id="max-seconds" type="number" min="10" max="3600" step="10" />
+        </div>
+        <div class="field">
+          <label>About</label>
+          <p class="hint">
+            Earheart <span id="version"></span> — private, hotkey-driven voice
+            dictation. Free and open source (MIT).
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span id="save-status" class="status"></span>
+      <button id="save" class="primary">Save</button>
+    </footer>
+
+    <script src="settings.js"></script>
+  </body>
+</html>

@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm test
+      - name: Smoke test (headless)
+        run: xvfb-run -a npx electron . --smoke-test --no-sandbox
+
+  stt-server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: stt-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install
+        run: uv venv && uv pip install -e .
+      - name: Import check
+        run: uv run python -c "from earheart_stt.server import create_app; create_app()"

@@ -1,0 +1,26 @@
+{
+  "name": "earheart",
+  "version": "0.1.0",
+  "description": "Private, hotkey-driven voice dictation for your desktop. Speech-to-text with NVIDIA Parakeet, cleanup with any OpenAI-compatible LLM.",
+  "main": "main/main.js",
+  "license": "MIT",
+  "author": "Earheart contributors",
+  "homepage": "https://github.com/cleanunicorn/earheart",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cleanunicorn/earheart.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "icons": "node scripts/gen-icons.js",
+    "test": "node --test",
+    "dist": "electron-builder",
+    "dist:linux": "electron-builder --linux",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^41.2.0",
+    "electron-builder": "^26.4.0"
+  }
+}

@@ -1,0 +1,48 @@
+appId: dev.cleanunicorn.earheart
+productName: Earheart
+copyright: Copyright © 2026 Earheart contributors
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - main/**/*
+  - renderer/**/*
+  - preload.js
+  - assets/**/*
+  - package.json
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Utility
+  icon: assets/icon.png
+  synopsis: Private, hotkey-driven voice dictation
+  desktop:
+    entry:
+      StartupWMClass: earheart
+
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.productivity
+  icon: assets/icon.png
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: >-
+      Earheart records your voice while dictating so it can be transcribed.
+
+win:
+  target:
+    - nsis
+    - portable
+  icon: assets/icon.png
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

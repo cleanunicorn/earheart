@@ -1,0 +1,148 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background: transparent;
+  overflow: hidden;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+#pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  margin: 12px;
+  padding: 0 14px 0 16px;
+  border-radius: 28px;
+  background: rgba(22, 20, 28, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  color: #f3f1f7;
+}
+
+#indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #ff5470;
+}
+
+[data-status="recording"] #indicator {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+[data-status="transcribing"] #indicator,
+[data-status="cleaning"] #indicator,
+[data-status="delivering"] #indicator {
+  background: #ffb347;
+  animation: pulse 0.8s ease-in-out infinite;
+}
+
+[data-status="done"] #indicator {
+  background: #4ade80;
+}
+
+[data-status="error"] #indicator,
+[data-status="empty"] #indicator {
+  background: #94a3b8;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.78);
+  }
+}
+
+#meter {
+  width: 120px;
+  height: 36px;
+  flex-shrink: 0;
+}
+
+#pill:not([data-status="recording"]) #meter,
+#pill:not([data-status="recording"]) #timer,
+#pill:not([data-status="recording"]) #stop {
+  display: none;
+}
+
+#message {
+  display: none;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+#pill:not([data-status="recording"]) #message {
+  display: flex;
+}
+
+#status-text {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#detail-text {
+  font-size: 11px;
+  color: #b8b3c4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#timer {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: #b8b3c4;
+  flex: 1;
+  text-align: right;
+}
+
+button {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  flex-shrink: 0;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#stop {
+  background: #ff5470;
+  color: #fff;
+}
+
+#stop:hover {
+  background: #ff7088;
+}
+
+#cancel {
+  background: rgba(255, 255, 255, 0.1);
+  color: #d6d2e0;
+}
+
+#cancel:hover {
+  background: rgba(255, 255, 255, 0.22);
+}

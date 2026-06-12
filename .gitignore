@@ -1,0 +1,17 @@
+# Node
+node_modules/
+dist/
+npm-debug.log*
+
+# Python (stt-server)
+stt-server/.venv/
+stt-server/dist/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# Editors / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/

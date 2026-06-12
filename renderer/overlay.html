@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self'; script-src 'self'"
+    />
+    <link rel="stylesheet" href="overlay.css" />
+  </head>
+  <body>
+    <div id="pill" data-status="recording">
+      <div id="indicator"></div>
+      <canvas id="meter" width="120" height="36"></canvas>
+      <div id="message">
+        <span id="status-text">Listening…</span>
+        <span id="detail-text"></span>
+      </div>
+      <span id="timer">0:00</span>
+      <button id="stop" title="Stop and transcribe">■</button>
+      <button id="cancel" title="Cancel">✕</button>
+    </div>
+    <script src="overlay.js"></script>
+  </body>
+</html>

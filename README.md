@@ -52,6 +52,10 @@ choose where your voice goes:
 
 ## Getting started
 
+Common tasks are wrapped in a Makefile — run `make help` to list them
+(`make install`, `make run`, `make test`, `make run-stt`,
+`make dist-win-docker`, …). The underlying commands are shown below.
+
 ### 1. Run the app (development)
 
 ```bash

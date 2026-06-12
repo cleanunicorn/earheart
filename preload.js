@@ -8,6 +8,8 @@ const LISTEN = new Set([
   "record:cancel",
   "pipeline:status",
   "history:changed",
+  "overlay:show",
+  "overlay:hide",
 ]);
 
 const SEND = new Set([
@@ -15,6 +17,8 @@ const SEND = new Set([
   "record:cancelled",
   "record:error",
   "pipeline:cancel",
+  "overlay:drag-start",
+  "overlay:drag",
 ]);
 
 const INVOKE = new Set([

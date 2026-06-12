@@ -217,5 +217,34 @@ earheart.on("pipeline:status", ({ status, detail }) => {
   }
 });
 
+earheart.on("overlay:show", () => pill.classList.add("visible"));
+earheart.on("overlay:hide", () => pill.classList.remove("visible"));
+
 document.getElementById("stop").addEventListener("click", stopRecording);
 document.getElementById("cancel").addEventListener("click", cancelRecording);
+
+// Click-and-drag anywhere on the pill (except the buttons) moves the overlay.
+// The window itself is moved by the main process from the streamed screen
+// coordinates, since a focusable:false frameless window can't be dragged
+// natively.
+let dragging = false;
+pill.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0 || event.target.closest("button")) return;
+  dragging = true;
+  pill.classList.add("dragging");
+  pill.setPointerCapture(event.pointerId);
+  earheart.send("overlay:drag-start", { x: event.screenX, y: event.screenY });
+});
+
+pill.addEventListener("pointermove", (event) => {
+  if (!dragging) return;
+  earheart.send("overlay:drag", { x: event.screenX, y: event.screenY });
+});
+
+function endDrag() {
+  dragging = false;
+  pill.classList.remove("dragging");
+}
+
+pill.addEventListener("pointerup", endDrag);
+pill.addEventListener("pointercancel", endDrag);

@@ -1,7 +1,7 @@
 // Window management: the recording overlay (a small always-on-top pill that
 // also owns the microphone) and the settings window.
 
-const { BrowserWindow, screen } = require("electron");
+const { BrowserWindow, ipcMain, screen } = require("electron");
 const path = require("node:path");
 
 const PRELOAD = path.join(__dirname, "..", "preload.js");
@@ -9,18 +9,57 @@ const RENDERER = path.join(__dirname, "..", "renderer");
 
 const OVERLAY_WIDTH = 360;
 const OVERLAY_HEIGHT = 80;
+// Matches the pill's fade-out transition in overlay.css.
+const OVERLAY_FADE_MS = 200;
 
 let overlayWindow = null;
 let settingsWindow = null;
 let wizardWindow = null;
+let overlayCustomPosition = null; // set when the user drags the pill
+let overlayDragOrigin = null; // { winX, winY, pointerX, pointerY }
+let overlayHideTimer = null;
+
+function clampToWorkArea(x, y) {
+  const { workArea } = screen.getDisplayNearestPoint({ x, y });
+  return {
+    x: Math.min(Math.max(x, workArea.x), workArea.x + workArea.width - OVERLAY_WIDTH),
+    y: Math.min(Math.max(y, workArea.y), workArea.y + workArea.height - OVERLAY_HEIGHT),
+  };
+}
 
 function overlayPosition() {
+  if (overlayCustomPosition) {
+    // Re-clamp in case displays changed since the user dragged it there.
+    return clampToWorkArea(overlayCustomPosition.x, overlayCustomPosition.y);
+  }
   const { workArea } = screen.getPrimaryDisplay();
   return {
     x: Math.round(workArea.x + (workArea.width - OVERLAY_WIDTH) / 2),
     y: Math.round(workArea.y + workArea.height - OVERLAY_HEIGHT - 24),
   };
 }
+
+// Click-and-drag for the overlay pill. The renderer streams absolute screen
+// coordinates; positioning from a recorded origin (instead of incremental
+// deltas) keeps the pill glued to the cursor even if events are dropped.
+ipcMain.on("overlay:drag-start", (event, { x, y } = {}) => {
+  const win = getOverlay();
+  if (!win || typeof x !== "number" || typeof y !== "number") return;
+  const [winX, winY] = win.getPosition();
+  overlayDragOrigin = { winX, winY, pointerX: x, pointerY: y };
+});
+
+ipcMain.on("overlay:drag", (event, { x, y } = {}) => {
+  const win = getOverlay();
+  if (!win || !overlayDragOrigin) return;
+  if (typeof x !== "number" || typeof y !== "number") return;
+  const next = clampToWorkArea(
+    Math.round(overlayDragOrigin.winX + x - overlayDragOrigin.pointerX),
+    Math.round(overlayDragOrigin.winY + y - overlayDragOrigin.pointerY)
+  );
+  win.setPosition(next.x, next.y);
+  overlayCustomPosition = next;
+});
 
 function createOverlay() {
   if (overlayWindow && !overlayWindow.isDestroyed()) return overlayWindow;
@@ -71,14 +110,27 @@ function getOverlay() {
 function showOverlay() {
   const win = getOverlay();
   if (!win) return;
+  if (overlayHideTimer) {
+    // A fade-out is in flight; this show supersedes it.
+    clearTimeout(overlayHideTimer);
+    overlayHideTimer = null;
+  }
   const { x, y } = overlayPosition();
   win.setPosition(x, y);
   win.showInactive();
+  win.webContents.send("overlay:show");
 }
 
 function hideOverlay() {
   const win = getOverlay();
-  if (win && win.isVisible()) win.hide();
+  if (!win || !win.isVisible() || overlayHideTimer) return;
+  // Let the pill fade out before the window actually disappears.
+  win.webContents.send("overlay:hide");
+  overlayHideTimer = setTimeout(() => {
+    overlayHideTimer = null;
+    const w = getOverlay();
+    if (w && w.isVisible()) w.hide();
+  }, OVERLAY_FADE_MS);
 }
 
 function sendToOverlay(channel, payload) {

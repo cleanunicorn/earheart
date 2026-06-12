@@ -107,6 +107,18 @@ function getOverlay() {
   return overlayWindow && !overlayWindow.isDestroyed() ? overlayWindow : null;
 }
 
+// The overlay is closable: false, which makes app.quit() silently abort on
+// Windows (electron#5891): quit tries to close every window and the overlay
+// refuses. destroy() bypasses the closable check; call this from before-quit.
+function destroyOverlay() {
+  if (overlayHideTimer) {
+    clearTimeout(overlayHideTimer);
+    overlayHideTimer = null;
+  }
+  if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.destroy();
+  overlayWindow = null;
+}
+
 function showOverlay() {
   const win = getOverlay();
   if (!win) return;
@@ -210,6 +222,7 @@ function sendToSettings(channel, payload) {
 module.exports = {
   createOverlay,
   getOverlay,
+  destroyOverlay,
   showOverlay,
   hideOverlay,
   sendToOverlay,

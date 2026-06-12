@@ -83,6 +83,13 @@ function main() {
   // Tray app: stay alive when all windows are closed.
   app.on("window-all-closed", () => {});
 
+  // The overlay is closable: false, which blocks app.quit() (it waits for
+  // every window to close and the overlay refuses; electron#5891). Destroy
+  // it first so quitting from the tray actually exits.
+  app.on("before-quit", () => {
+    windows.destroyOverlay();
+  });
+
   app.on("will-quit", () => {
     hotkeys.unregisterAll();
     serverManager.stop();

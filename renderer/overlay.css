@@ -25,10 +25,36 @@ body {
   margin: 12px;
   padding: 0 14px 0 16px;
   border-radius: 28px;
-  background: rgba(22, 20, 28, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  background: rgba(22, 20, 28, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  /* Tight shadow: large soft shadows band badly on transparent windows. */
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35);
   color: #f3f1f7;
+  cursor: grab;
+  /* Hidden until the main process sends overlay:show, so the window can
+     fade in instead of popping. */
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+#pill.visible {
+  opacity: 1;
+  transform: none;
+}
+
+#pill.dragging {
+  cursor: grabbing;
+  transition: opacity 0.2s ease; /* no transform easing while dragging */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #pill {
+    transition: opacity 0.2s ease;
+    transform: none;
+  }
 }
 
 #indicator {
@@ -117,32 +143,47 @@ body {
 }
 
 button {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: none;
   flex-shrink: 0;
   cursor: pointer;
-  font-size: 12px;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: transparent;
+  transition:
+    background 0.12s ease,
+    transform 0.12s ease;
+}
+
+button svg {
+  display: block;
+}
+
+button:active {
+  transform: scale(0.92);
 }
 
 #stop {
   background: #ff5470;
   color: #fff;
+  box-shadow: 0 0 0 3px rgba(255, 84, 112, 0.25);
 }
 
 #stop:hover {
   background: #ff7088;
+  box-shadow: 0 0 0 3px rgba(255, 84, 112, 0.4);
 }
 
 #cancel {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   color: #d6d2e0;
 }
 
 #cancel:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
 }

@@ -17,8 +17,21 @@
         <span id="detail-text"></span>
       </div>
       <span id="timer">0:00</span>
-      <button id="stop" title="Stop and transcribe">■</button>
-      <button id="cancel" title="Cancel">✕</button>
+      <button id="stop" title="Stop and transcribe" aria-label="Stop and transcribe">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+          <rect x="3" y="3" width="10" height="10" rx="2.5" fill="currentColor" />
+        </svg>
+      </button>
+      <button id="cancel" title="Cancel" aria-label="Cancel">
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+          <path
+            d="M4 4l8 8M12 4l-8 8"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          />
+        </svg>
+      </button>
     </div>
     <script src="overlay.js"></script>
   </body>

@@ -152,6 +152,13 @@ function sendToOverlay(channel, payload) {
 
 function openSettings({ fromWizard = false } = {}) {
   if (settingsWindow && !settingsWindow.isDestroyed()) {
+    if (fromWizard) {
+      // The wizard was re-run while Settings was already open: reload so
+      // the form picks up the choices the wizard just saved.
+      settingsWindow.loadFile(path.join(RENDERER, "settings.html"), {
+        query: { wizard: "1" },
+      });
+    }
     settingsWindow.show();
     settingsWindow.focus();
     return settingsWindow;

@@ -26,6 +26,7 @@ const INVOKE = new Set([
   "settings:save",
   "wizard:complete",
   "wizard:skip",
+  "wizard:open",
   "stt:test",
   "cleanup:test",
   "history:list",

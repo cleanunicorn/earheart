@@ -289,7 +289,11 @@ earheart.on("history:changed", () => {
   if ($("tab-history").classList.contains("active")) renderHistory();
 });
 
-/* ---------- setup wizard hand-off ---------- */
+/* ---------- setup wizard ---------- */
+
+$("open-wizard").addEventListener("click", () => {
+  earheart.invoke("wizard:open");
+});
 
 // Opened right after the setup wizard: tell the user their choices are
 // already filled in and saving as-is is fine.

@@ -39,6 +39,12 @@ function init({ applyHotkey, onSettingsChanged }) {
     return { settings: saved, hotkey: hotkeyResult };
   });
 
+  // Settings → Advanced: re-run the setup wizard on demand. The wizard
+  // itself doesn't change anything until it is completed.
+  ipcMain.handle("wizard:open", () => {
+    windows.openWizard();
+  });
+
   // Skipping still persists the defaults so the wizard only ever runs once.
   ipcMain.handle("wizard:skip", () => {
     const saved = settings.save(settings.get());

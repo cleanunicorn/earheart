@@ -26,9 +26,9 @@ body {
   padding: 0 14px 0 16px;
   border-radius: 28px;
   background: rgba(22, 20, 28, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  /* Tight shadow: large soft shadows band badly on transparent windows. */
-  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35);
+  /* No drop shadow: soft shadows band/halo badly on transparent windows.
+     The border alone separates the pill from whatever is behind it. */
+  border: 1px solid rgba(255, 255, 255, 0.18);
   color: #f3f1f7;
   cursor: grab;
   /* Hidden until the main process sends overlay:show, so the window can

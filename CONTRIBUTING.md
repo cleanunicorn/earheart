@@ -26,6 +26,7 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | `make dist` | Build installers for the current platform |
 | `make dist-linux` / `dist-mac` / `dist-win` | Per-platform packages |
 | `make dist-win-docker` | Cross-build Windows packages from Linux via Docker+Wine |
+| `make release` | Cut a release manually (`BUMP=patch\|minor\|major`) |
 | `make install-stt` | Create the stt-server virtualenv and install it (uv) |
 | `make run-stt` | Run the local Parakeet STT server |
 | `make clean` | Remove build output |
@@ -63,6 +64,29 @@ npm run dist:win               # run on Windows, or: make dist-win-docker
 
 Output lands in `dist/`. Release builds for all three platforms run in CI on
 tag pushes (`v*`) — see [.github/workflows/release.yml](.github/workflows/release.yml).
+
+## Releasing
+
+Releases are cut **automatically when a PR merges to master**, sized by the
+conventional-commit prefix of the PR title
+([.github/workflows/auto-release.yml](.github/workflows/auto-release.yml)):
+
+| PR title | Release |
+| --- | --- |
+| `feat!: …` (any `type!:`) | major |
+| `feat: …` | minor |
+| `fix: …`, `perf: …`, `refactor: …` | patch |
+| anything else (`chore:`, `docs:`, free-form, `[skip release]`) | none |
+
+The workflow bumps `package.json`, commits `release: vX.Y.Z` to master, tags
+it, and dispatches the release builds, which publish the installers to a
+GitHub release.
+
+To cut a release manually instead:
+
+```bash
+make release BUMP=minor    # patch | minor | major (default patch)
+```
 
 ## Architecture
 

@@ -1,0 +1,73 @@
+name: Auto release
+
+# Cuts a release automatically when a PR merges to master, sized by the
+# conventional-commit prefix of the PR title:
+#
+#   feat!: / fix!: / any `type!:`  → major
+#   feat:                          → minor
+#   fix: / perf: / refactor:       → patch
+#   anything else (chore:, docs:, ci:, free-form, "[skip release]") → no release
+#
+# The version bump lands as a commit on master plus a `v<version>` tag, and
+# the Release builds workflow is dispatched on that tag to build and publish
+# the installers.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [master]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Decide version bump from the PR title
+        id: bump
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # The regexes live in variables: bash cannot parse `[^)]` inside
+          # an inline [[ =~ ]] expression.
+          major_re='^[a-z]+(\([^)]*\))?!:'
+          minor_re='^feat(\([^)]*\))?:'
+          patch_re='^(fix|perf|refactor)(\([^)]*\))?:'
+          bump=""
+          if [[ "$TITLE" == *"[skip release]"* ]]; then
+            bump=""
+          elif [[ "$TITLE" =~ $major_re ]]; then
+            bump=major
+          elif [[ "$TITLE" =~ $minor_re ]]; then
+            bump=minor
+          elif [[ "$TITLE" =~ $patch_re ]]; then
+            bump=patch
+          fi
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+          echo "PR title: $TITLE → bump: ${bump:-none}"
+
+      - name: Bump version, commit and tag
+        if: steps.bump.outputs.bump != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          npm version "${{ steps.bump.outputs.bump }}" -m "release: v%s"
+          git push origin master --follow-tags
+
+      - name: Trigger release builds
+        if: steps.bump.outputs.bump != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Tags pushed with the workflow's GITHUB_TOKEN do not fire on:push
+          # workflows (GitHub recursion guard), so dispatch the build
+          # workflow on the new tag explicitly.
+          gh workflow run release.yml \
+            --ref "v$(node -p 'require("./package.json").version')"

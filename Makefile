@@ -54,6 +54,16 @@ dist-win-docker: ## Cross-build Windows packages from Linux via Docker+Wine
 		electronuserland/builder:wine \
 		/bin/bash -c "npm install && npm run dist:win"
 
+# ----- releasing -------------------------------------------------------------
+
+# Releases also happen automatically when a PR merges to master, sized by the
+# PR title (see .github/workflows/auto-release.yml). This target is the manual
+# path: bump version, commit, tag, push — CI builds and publishes installers.
+.PHONY: release
+release: ## Cut a release: bump, tag, push (BUMP=patch|minor|major, default patch)
+	npm version $(or $(BUMP),patch)
+	git push origin master --follow-tags
+
 # ----- speech-to-text server (Python) ---------------------------------------
 
 .PHONY: install-stt

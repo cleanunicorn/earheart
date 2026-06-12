@@ -6,6 +6,12 @@ directories:
   output: dist
   buildResources: build
 
+# Where `electron-builder --publish` uploads installers. releaseType: release
+# publishes immediately (not a draft) so tag builds are fully automatic.
+publish:
+  provider: github
+  releaseType: release
+
 files:
   - main/**/*
   - renderer/**/*

@@ -4,7 +4,10 @@
   "description": "Private, hotkey-driven voice dictation for your desktop. Speech-to-text with NVIDIA Parakeet, cleanup with any OpenAI-compatible LLM.",
   "main": "main/main.js",
   "license": "MIT",
-  "author": "Earheart contributors",
+  "author": {
+    "name": "Earheart contributors",
+    "email": "lucadanielcostin@gmail.com"
+  },
   "homepage": "https://github.com/cleanunicorn/earheart",
   "repository": {
     "type": "git",

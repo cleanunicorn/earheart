@@ -11,6 +11,8 @@ permissions:
 jobs:
   build:
     strategy:
+      # One platform failing must not cancel the other platforms' uploads.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}

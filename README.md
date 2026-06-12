@@ -9,6 +9,11 @@
   Press a key, speak, press again — your words appear where you type.
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/overlay-recording.png" width="340" alt="Earheart recording overlay" /><br/>
+  <img src="docs/screenshots/overlay-done.png" width="340" alt="Earheart after pasting the transcript" />
+</p>
+
 ---
 
 Earheart records your voice when you press a global hotkey, transcribes it
@@ -24,12 +29,6 @@ choose where your voice goes:
   your machine.
 - **Mix and match**: local STT with a hosted LLM for cleanup, or any other
   combination. Switching is just a base URL in Settings.
-
-```
- hotkey ──▶ record mic ──▶ POST /v1/audio/transcriptions ──▶ POST /v1/chat/completions ──▶ paste / clipboard
-            (16 kHz WAV)    (Parakeet local, OpenAI,          (optional cleanup: Ollama,
-                             Groq, speaches, …)                LM Studio, OpenAI, …)
-```
 
 ## Features
 
@@ -47,54 +46,102 @@ choose where your voice goes:
   clipboard restore), or clipboard-only if you prefer to paste yourself.
 - **Local history** — recent transcriptions are kept in a local JSON file so a
   mis-aimed paste never loses a dictation. Can be disabled.
-- **Small and hackable** — plain JavaScript, zero runtime npm dependencies, no
-  bundler. The Python STT server is ~200 lines.
+- **No telemetry, no accounts, no cloud requirement.**
 
-## Getting started
+## Install
 
-Common tasks are wrapped in a Makefile — run `make help` to list them
-(`make install`, `make run`, `make test`, `make run-stt`,
-`make dist-win-docker`, …). The underlying commands are shown below.
+### Download a release
 
-### 1. Run the app (development)
+Grab the latest installer for your platform from the
+[releases page](https://github.com/cleanunicorn/earheart/releases/latest):
+
+| Platform | File | Install |
+| --- | --- | --- |
+| Windows | `Earheart Setup <version>.exe` | Run the installer (a portable `Earheart <version>.exe` is also available) |
+| macOS | `Earheart-<version>.dmg` | Open and drag Earheart to Applications |
+| Linux (any distro) | `Earheart-<version>.AppImage` | `chmod +x` the file, then run it |
+| Debian / Ubuntu | `earheart_<version>_amd64.deb` | `sudo apt install ./earheart_<version>_amd64.deb` |
+
+> **macOS note:** builds are not yet notarized, so the first launch may be
+> blocked by Gatekeeper. Right-click the app → **Open**, or allow it under
+> **System Settings → Privacy & Security → Open Anyway**.
+
+### For fully local dictation: install `uv`
+
+Out of the box Earheart transcribes with its bundled local
+[Parakeet STT server](stt-server/), which it launches as `uvx earheart-stt`.
+That needs [uv](https://docs.astral.sh/uv/getting-started/installation/)
+installed — one command:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh   # Linux / macOS
+winget install astral-sh.uv                       # Windows
+```
+
+If you'd rather use a hosted transcription service (OpenAI, Groq, …) you can
+skip this — the setup wizard lets you enter its URL and API key instead.
+
+### Build from source
+
+If there's no release for your platform:
 
 ```bash
 git clone https://github.com/cleanunicorn/earheart
 cd earheart
 npm install
-npm start
+npm run dist     # installers for the current platform land in dist/
 ```
 
-Packaged installers (AppImage/deb, dmg, NSIS) are built with
-`npm run dist:linux|mac|win`.
+(Or run it unpackaged with `npm start`.)
 
-### 2. Start the speech-to-text server
+## First run
 
-```bash
-cd stt-server
-uv run earheart-stt            # or: pip install . && earheart-stt
-```
+<p align="center">
+  <img src="docs/screenshots/wizard.png" width="560" alt="Earheart setup wizard" />
+</p>
 
-The first run downloads the Parakeet model (≈ 2.4 GB; pass
-`--quantization int8` for a ≈ 660 MB CPU-friendly variant). It serves on
-`http://127.0.0.1:8484/v1`, which is Earheart's default STT endpoint — so
-dictation works immediately. See [stt-server/README.md](stt-server/README.md)
-for GPU use and other models.
+On first launch a short setup wizard asks where speech should become text and
+where the text should go — hotkey, microphone, speech-to-text, optional
+cleanup, output. The defaults give you fully local, private dictation: keep
+"On this computer" and Earheart starts the Parakeet server alongside the app.
 
-You can also let Earheart launch it for you: Settings → Advanced → "Start a
-local STT server with the app".
+The first transcription downloads the Parakeet model (≈ 2.4 GB, or ≈ 660 MB
+with the `int8` variant), so it takes a few minutes — everything after that is
+faster than realtime, even on CPU.
 
-### 3. (Optional) enable cleanup
+### Optional: transcript cleanup
 
-Any OpenAI-compatible chat endpoint works. Local example with Ollama:
+If you enable cleanup, a language model fixes punctuation and removes filler
+words and false starts. Any OpenAI-compatible chat endpoint works. A fully
+local example with [Ollama](https://ollama.com):
 
 ```bash
 ollama pull llama3.1:8b
 ```
 
-Then in Settings → Cleanup: base URL `http://127.0.0.1:11434/v1`, model
-`llama3.1:8b`. For a hosted service instead, use its base URL, API key and
-model name (e.g. OpenRouter, Groq, OpenAI).
+Then in the wizard (or Settings → Cleanup): base URL
+`http://127.0.0.1:11434/v1`, model `llama3.1:8b`. For a hosted service
+instead, use its base URL, API key and model name (e.g. OpenRouter, Groq,
+OpenAI).
+
+## Using Earheart
+
+1. Put your cursor wherever you want text — an email, an editor, a chat box.
+2. Press the hotkey (default `Ctrl/Cmd+Shift+Space`). A small pill appears at
+   the bottom of the screen showing your mic level; it never steals focus.
+3. Speak, then press the hotkey again. Earheart transcribes, optionally cleans
+   up, and pastes the result right where you were typing.
+
+Earheart lives in your system tray. From the tray menu you can start a
+dictation, open the transcription history, or change any choice you made in
+the wizard:
+
+<p align="center">
+  <img src="docs/screenshots/settings.png" width="640" alt="Earheart settings window" />
+</p>
+
+A mis-aimed paste never loses your words: the History tab keeps recent
+transcriptions in a local file (you can turn this off).
 
 ## Using other services
 
@@ -107,7 +154,8 @@ Anything that implements the OpenAI API shapes works out of the box:
 
 The reverse is also true: `earheart-stt` is a standalone OpenAI-compatible
 transcription server, usable from any other dictation app that supports custom
-endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK.
+endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
+[stt-server/README.md](stt-server/README.md) for GPU use and other models.
 
 ## Platform notes
 
@@ -154,24 +202,12 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK.
   prefer local services or OS-level disk encryption.
 - No telemetry, no accounts, no cloud.
 
-## Architecture
+## Contributing
 
-```
-main/                    Electron main process
-  main.js                lifecycle, single-instance, --toggle forwarding
-  pipeline.js            record → transcribe → clean → deliver state machine
-  hotkeys.js             global shortcut registration
-  settings.js            JSON settings with deep-merged defaults
-  history.js             local transcription history
-  tray.js                tray icon + menu
-  windows.js             overlay + settings windows
-  services/stt.js        OpenAI-compatible transcription client
-  services/cleanup.js    OpenAI-compatible chat client
-  services/server-manager.js  optional local STT server autostart
-  output/deliver.js      clipboard + per-OS paste keystroke injection
-renderer/                overlay (mic capture → 16 kHz WAV) + settings UI
-stt-server/              Python: FastAPI + onnx-asr Parakeet server
-```
+Want to hack on Earheart? It's plain JavaScript with zero runtime npm
+dependencies and no bundler, and the Python STT server is ~200 lines. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, architecture
+overview, and how to build installers.
 
 ## License
 

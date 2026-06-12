@@ -37,6 +37,9 @@ function applyHotkey(accelerator) {
 
 function main() {
   app.whenReady().then(() => {
+    // Check before anything can write the settings file: no file yet means
+    // this is a fresh install and the user gets the setup wizard.
+    const firstRun = settings.isFirstRun();
     const cfg = settings.get();
 
     // The renderer asks for microphone and clipboard access; grant those.
@@ -61,7 +64,11 @@ function main() {
     }
 
     if (!startHidden && !isSmokeTest) {
-      windows.openSettings();
+      if (firstRun) {
+        windows.openWizard();
+      } else {
+        windows.openSettings();
+      }
     }
 
     if (isSmokeTest) {

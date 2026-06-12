@@ -1,0 +1,106 @@
+# Contributing to Earheart
+
+Earheart is intentionally small and hackable: plain JavaScript, zero runtime
+npm dependencies, no bundler. The Python STT server is ~200 lines. If you can
+read Electron docs, you can read this whole codebase in an afternoon.
+
+## Development setup
+
+```bash
+git clone https://github.com/cleanunicorn/earheart
+cd earheart
+npm install
+npm start
+```
+
+Common tasks are wrapped in a Makefile — run `make help` to list them:
+
+| Task | What it does |
+| --- | --- |
+| `make install` | Install app dependencies (npm) |
+| `make run` | Run the app in development |
+| `make test` | Run unit tests (`node --test`) |
+| `make smoke` | Boot the app headlessly and exit (CI-style sanity check) |
+| `make icons` | Regenerate app/tray icons into `assets/` |
+| `make screenshots` | Regenerate README screenshots into `docs/screenshots/` |
+| `make dist` | Build installers for the current platform |
+| `make dist-linux` / `dist-mac` / `dist-win` | Per-platform packages |
+| `make dist-win-docker` | Cross-build Windows packages from Linux via Docker+Wine |
+| `make install-stt` | Create the stt-server virtualenv and install it (uv) |
+| `make run-stt` | Run the local Parakeet STT server |
+| `make clean` | Remove build output |
+
+## Running the STT server from a checkout
+
+```bash
+cd stt-server
+uv run earheart-stt            # or: pip install . && earheart-stt
+```
+
+The first run downloads the Parakeet model (≈ 2.4 GB; pass
+`--quantization int8` for a ≈ 660 MB CPU-friendly variant). It serves on
+`http://127.0.0.1:8484/v1`, Earheart's default STT endpoint. See
+[stt-server/README.md](stt-server/README.md) for options, GPU providers and
+other models.
+
+## Tests
+
+```bash
+npm test                       # unit tests (node --test, no test framework)
+make smoke                     # boots the full app with --smoke-test and exits
+```
+
+## Building installers
+
+Packaged installers (AppImage/deb, dmg, NSIS + portable) are built with
+electron-builder:
+
+```bash
+npm run dist:linux
+npm run dist:mac               # run on macOS
+npm run dist:win               # run on Windows, or: make dist-win-docker
+```
+
+Output lands in `dist/`. Release builds for all three platforms run in CI on
+tag pushes (`v*`) — see [.github/workflows/release.yml](.github/workflows/release.yml).
+
+## Architecture
+
+```
+main/                    Electron main process
+  main.js                lifecycle, single-instance, --toggle forwarding
+  pipeline.js            record → transcribe → clean → deliver state machine
+  hotkeys.js             global shortcut registration
+  settings.js            JSON settings with deep-merged defaults
+  history.js             local transcription history
+  tray.js                tray icon + menu
+  windows.js             overlay + settings + setup wizard windows
+  services/stt.js        OpenAI-compatible transcription client
+  services/cleanup.js    OpenAI-compatible chat client
+  services/server-manager.js  optional local STT server autostart
+  output/deliver.js      clipboard + per-OS paste keystroke injection
+renderer/                overlay (mic capture → 16 kHz WAV), settings UI,
+                         first-run wizard
+stt-server/              Python: FastAPI + onnx-asr Parakeet server
+```
+
+Design constraints worth keeping:
+
+- **Zero runtime npm dependencies** in the app — Electron's built-ins and the
+  platform's own tools (PowerShell, AppleScript, xdotool/wtype) cover
+  everything.
+- **The overlay window owns the microphone.** The main process never touches
+  audio; it receives a finished WAV from the renderer.
+- **Never lose the user's words.** If cleanup fails, deliver the raw
+  transcript; if paste fails, fall back to the clipboard; history keeps the
+  text either way.
+
+## README screenshots
+
+The screenshots in [docs/screenshots/](docs/screenshots/) are captured
+headlessly from the real windows (wizard, settings, overlay in staged
+recording/done states). If the UI changes, re-capture them:
+
+```bash
+make screenshots       # runs scripts/screenshots.js under xvfb
+```

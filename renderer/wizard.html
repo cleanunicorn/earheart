@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:"
+    />
+    <title>Welcome to Earheart</title>
+    <link rel="stylesheet" href="settings.css" />
+    <link rel="stylesheet" href="wizard.css" />
+  </head>
+  <body>
+    <header>
+      <img src="../assets/icon.png" alt="" width="36" height="36" />
+      <div>
+        <h1>Welcome to Earheart</h1>
+        <p>A couple of quick questions and you're dictating.</p>
+      </div>
+    </header>
+
+    <main>
+      <!-- 1. Welcome -->
+      <section class="step active" id="step-welcome">
+        <p class="lead">
+          Earheart is private, hotkey-driven voice dictation. There is no
+          account, no cloud requirement and nothing to learn — using it looks
+          like this:
+        </p>
+
+        <div class="demo">
+          <div class="demo-card">
+            <div class="demo-visual">
+              <span class="keys" id="demo-keys"
+                ><kbd id="demo-mod">Ctrl</kbd><kbd>Shift</kbd><kbd>Space</kbd></span
+              >
+            </div>
+            <p class="demo-caption"><strong>1.</strong> Press the hotkey anywhere</p>
+          </div>
+          <div class="demo-arrow">→</div>
+          <div class="demo-card">
+            <div class="demo-visual">
+              <span class="mini-pill">
+                <span class="mini-dot"></span>
+                <span class="mini-bars"><i></i><i></i><i></i><i></i><i></i></span>
+                <span class="mini-timer">0:03</span>
+                <span class="mini-stop">■</span>
+              </span>
+            </div>
+            <p class="demo-caption"><strong>2.</strong> Speak, press it again</p>
+          </div>
+          <div class="demo-arrow">→</div>
+          <div class="demo-card">
+            <div class="demo-visual">
+              <span class="typed"><span class="typed-text">Your words appear.</span></span>
+            </div>
+            <p class="demo-caption"><strong>3.</strong> Text lands where you type</p>
+          </div>
+        </div>
+
+        <p class="lead">
+          This wizard pre-configures everything; you can review and change all
+          of it on the settings screen afterwards.
+        </p>
+      </section>
+
+      <!-- 2. Hotkey -->
+      <section class="step" id="step-hotkey">
+        <h2>Pick your dictation hotkey</h2>
+        <p class="lead">
+          One key combination toggles everything: press to start recording,
+          press again to stop and transcribe.
+        </p>
+        <div class="field">
+          <label for="hotkey">Global hotkey</label>
+          <div class="row">
+            <input id="hotkey" readonly placeholder="Click, then press a key combination" />
+            <button id="hotkey-clear" class="ghost">Reset</button>
+          </div>
+          <p class="hint">
+            The default works fine for most people — click the box to choose
+            your own.
+            <span id="wayland-note">On GNOME/KDE Wayland, apps may not be able
+            to grab global keys — instead, bind a system keyboard shortcut to
+            <code>earheart --toggle</code>.</span>
+          </p>
+          <p id="hotkey-status" class="status"></p>
+        </div>
+      </section>
+
+      <!-- 3. Microphone -->
+      <section class="step" id="step-mic">
+        <h2>Choose a microphone</h2>
+        <p class="lead">
+          The system default is usually right. Pick a specific device if you
+          have more than one.
+        </p>
+        <div class="field">
+          <label for="mic-device">Microphone</label>
+          <select id="mic-device">
+            <option value="">System default</option>
+          </select>
+          <p class="hint" id="mic-hint"></p>
+        </div>
+      </section>
+
+      <!-- 4. Speech-to-text -->
+      <section class="step" id="step-stt">
+        <h2>Where should speech become text?</h2>
+        <div class="field">
+          <label class="choice">
+            <input type="radio" name="stt-mode" value="local" checked />
+            On this computer <span class="muted">(recommended — private and free)</span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="stt-mode" value="remote" />
+            A remote service <span class="muted">(OpenAI, Groq, your own server, …)</span>
+          </label>
+        </div>
+
+        <div id="stt-local-fields">
+          <p class="lead">
+            Earheart ships a local server using NVIDIA's Parakeet model. Audio
+            never leaves your machine.
+          </p>
+          <div class="field">
+            <label class="choice">
+              <input type="checkbox" id="server-autostart" checked />
+              Start the local STT server together with Earheart
+            </label>
+            <div class="field indent">
+              <label for="server-command">Command</label>
+              <input id="server-command" placeholder="uvx earheart-stt" />
+              <p class="hint">
+                Needs <code>uv</code> installed. The first start downloads the
+                Parakeet model (~2.4&nbsp;GB), so the very first transcription
+                takes a while. See the <code>stt-server</code> README for
+                details.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div id="stt-remote-fields" hidden>
+          <p class="lead">
+            Any service that speaks the OpenAI audio transcription API works.
+          </p>
+          <div class="field">
+            <label for="stt-url">Base URL</label>
+            <input id="stt-url" placeholder="https://api.openai.com/v1" />
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="stt-key">API key</label>
+              <input id="stt-key" type="password" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="stt-model">Model</label>
+              <input id="stt-model" placeholder="whisper-1" />
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <button id="stt-test">Test connection</button>
+          <span id="stt-test-result" class="status"></span>
+        </div>
+        <p class="hint">
+          Optional — if the local server isn't installed yet, the test will
+          fail and that's okay. You can test again from Settings later.
+        </p>
+      </section>
+
+      <!-- 5. Cleanup -->
+      <section class="step" id="step-cleanup">
+        <h2>Tidy up transcripts? <span class="muted">(optional)</span></h2>
+        <p class="lead">
+          A language model can fix punctuation and strip filler words ("um",
+          "uh") after transcription. Works with any OpenAI-compatible chat API:
+          Ollama, LM Studio, OpenAI, … Most people start without it.
+        </p>
+        <div class="field">
+          <label class="choice">
+            <input type="checkbox" id="cleanup-enabled" />
+            Clean up transcripts with a language model
+          </label>
+        </div>
+        <div id="cleanup-fields">
+          <div class="field">
+            <label for="cleanup-url">Base URL</label>
+            <input id="cleanup-url" placeholder="http://127.0.0.1:11434/v1" />
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="cleanup-key">API key <span class="muted">(optional for local servers)</span></label>
+              <input id="cleanup-key" type="password" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="cleanup-model">Model</label>
+              <input id="cleanup-model" placeholder="llama3.2" />
+            </div>
+          </div>
+          <div class="row">
+            <button id="cleanup-test">Test connection</button>
+            <span id="cleanup-test-result" class="status"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. Output + summary -->
+      <section class="step" id="step-finish">
+        <h2>Where should the text go?</h2>
+        <div class="field">
+          <label class="choice">
+            <input type="radio" name="output-mode" value="paste" checked />
+            Paste into the active app (keeps your clipboard)
+          </label>
+          <label class="choice">
+            <input type="radio" name="output-mode" value="clipboard" />
+            Copy to clipboard only — I'll paste myself
+          </label>
+        </div>
+
+        <div class="field">
+          <label>Your setup</label>
+          <dl id="summary"></dl>
+          <p class="hint">
+            Finishing opens the settings screen with these choices pre-filled —
+            review them there, or just save them as they are.
+          </p>
+          <p id="finish-status" class="status"></p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <button id="skip" class="ghost">Skip setup</button>
+      <div class="dots" id="dots"></div>
+      <div class="nav row">
+        <button id="back" class="ghost">Back</button>
+        <button id="next" class="primary">Get started</button>
+      </div>
+    </footer>
+
+    <script src="wizard.js"></script>
+  </body>
+</html>

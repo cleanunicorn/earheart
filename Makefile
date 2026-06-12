@@ -25,6 +25,10 @@ smoke: ## Boot the app headlessly and exit (CI-style sanity check)
 icons: ## Regenerate app/tray icons into assets/
 	node scripts/gen-icons.js
 
+.PHONY: screenshots
+screenshots: ## Regenerate README screenshots into docs/screenshots/
+	xvfb-run -a npx electron scripts/screenshots.js --no-sandbox
+
 # ----- packaging ------------------------------------------------------------
 
 .PHONY: dist

@@ -97,6 +97,25 @@ main {
   line-height: 1.5;
 }
 
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  max-width: 640px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.banner[hidden] {
+  display: none;
+}
+
 .field {
   margin-bottom: 18px;
 }

@@ -95,4 +95,18 @@ function get() {
   return load();
 }
 
-module.exports = { get, save, DEFAULTS, DEFAULT_CLEANUP_PROMPT, deepMerge };
+// True until settings are saved for the first time. Used to show the setup
+// wizard exactly once: both finishing and skipping the wizard persist the
+// settings file.
+function isFirstRun() {
+  return !fs.existsSync(settingsPath());
+}
+
+module.exports = {
+  get,
+  save,
+  isFirstRun,
+  DEFAULTS,
+  DEFAULT_CLEANUP_PROMPT,
+  deepMerge,
+};

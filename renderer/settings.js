@@ -280,6 +280,17 @@ earheart.on("history:changed", () => {
   if ($("tab-history").classList.contains("active")) renderHistory();
 });
 
+/* ---------- setup wizard hand-off ---------- */
+
+// Opened right after the setup wizard: tell the user their choices are
+// already filled in and saving as-is is fine.
+if (new URLSearchParams(location.search).has("wizard")) {
+  $("wizard-banner").hidden = false;
+}
+$("wizard-banner-dismiss").addEventListener("click", () => {
+  $("wizard-banner").hidden = true;
+});
+
 /* ---------- init ---------- */
 
 (async () => {

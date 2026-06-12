@@ -12,6 +12,7 @@ const OVERLAY_HEIGHT = 80;
 
 let overlayWindow = null;
 let settingsWindow = null;
+let wizardWindow = null;
 
 function overlayPosition() {
   const { workArea } = screen.getPrimaryDisplay();
@@ -85,7 +86,7 @@ function sendToOverlay(channel, payload) {
   if (win) win.webContents.send(channel, payload);
 }
 
-function openSettings() {
+function openSettings({ fromWizard = false } = {}) {
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     settingsWindow.show();
     settingsWindow.focus();
@@ -105,11 +106,47 @@ function openSettings() {
       nodeIntegration: false,
     },
   });
-  settingsWindow.loadFile(path.join(RENDERER, "settings.html"));
+  settingsWindow.loadFile(
+    path.join(RENDERER, "settings.html"),
+    // The query lets the settings page show a "pre-configured by the setup
+    // wizard" banner when it opens right after the wizard finishes.
+    fromWizard ? { query: { wizard: "1" } } : undefined
+  );
   settingsWindow.on("closed", () => {
     settingsWindow = null;
   });
   return settingsWindow;
+}
+
+function openWizard() {
+  if (wizardWindow && !wizardWindow.isDestroyed()) {
+    wizardWindow.show();
+    wizardWindow.focus();
+    return wizardWindow;
+  }
+  wizardWindow = new BrowserWindow({
+    width: 620,
+    height: 680,
+    minWidth: 560,
+    minHeight: 560,
+    title: "Welcome to Earheart",
+    autoHideMenuBar: true,
+    icon: path.join(__dirname, "..", "assets", "icon.png"),
+    webPreferences: {
+      preload: PRELOAD,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  wizardWindow.loadFile(path.join(RENDERER, "wizard.html"));
+  wizardWindow.on("closed", () => {
+    wizardWindow = null;
+  });
+  return wizardWindow;
+}
+
+function closeWizard() {
+  if (wizardWindow && !wizardWindow.isDestroyed()) wizardWindow.close();
 }
 
 function sendToSettings(channel, payload) {
@@ -126,4 +163,6 @@ module.exports = {
   sendToOverlay,
   openSettings,
   sendToSettings,
+  openWizard,
+  closeWizard,
 };

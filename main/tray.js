@@ -46,6 +46,15 @@ function buildMenu(app) {
       },
     },
     {
+      label: "Paste and keep on clipboard",
+      type: "radio",
+      checked: cfg.output.mode === "paste-copy",
+      click: () => {
+        cfg.output.mode = "paste-copy";
+        settings.save(cfg);
+      },
+    },
+    {
       label: "Copy to clipboard only",
       type: "radio",
       checked: cfg.output.mode === "clipboard",

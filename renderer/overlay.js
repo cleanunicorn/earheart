@@ -202,7 +202,9 @@ earheart.on("pipeline:status", ({ status, detail }) => {
           ? "Copied to clipboard"
           : detail?.method === "clipboard"
             ? "Copied to clipboard"
-            : "Pasted",
+            : detail?.method === "paste-copy"
+              ? "Pasted & copied"
+              : "Pasted",
         detail?.note || detail?.preview
       );
       break;

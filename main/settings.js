@@ -19,8 +19,11 @@ const DEFAULTS = {
   // recording, press again to stop and transcribe.
   hotkey: "CommandOrControl+Shift+Space",
   output: {
-    mode: "paste", // "paste" = type into focused app, "clipboard" = copy only
-    restoreClipboard: true, // after pasting, restore previous clipboard text
+    // "paste" = type into focused app (restores clipboard afterwards),
+    // "paste-copy" = paste AND keep the transcript on the clipboard,
+    // "clipboard" = copy only
+    mode: "paste",
+    restoreClipboard: true, // after pasting in "paste" mode, restore clipboard
     pasteDelayMs: 150, // wait before simulating the paste keystroke
   },
   stt: {

@@ -3,6 +3,8 @@
 // "paste" mode writes the text to the clipboard and simulates the platform
 // paste keystroke (Cmd+V / Ctrl+V) in the focused application, optionally
 // restoring the previous clipboard contents afterwards.
+// "paste-copy" mode pastes the same way but always leaves the transcript on
+// the clipboard (never restores the previous contents).
 // "clipboard" mode only copies, leaving pasting to the user.
 //
 // Keystroke simulation per platform:
@@ -103,7 +105,7 @@ let pendingRestore = null;
  * @param {string} text
  * @param {object} cfg - settings.output slice
  * @param {AbortSignal} [signal]
- * @returns {Promise<{method: "paste"|"clipboard"|"cancelled", note?: string}>}
+ * @returns {Promise<{method: "paste"|"paste-copy"|"clipboard"|"cancelled", note?: string}>}
  */
 async function deliver(text, cfg, signal) {
   if (signal?.aborted) return { method: "cancelled" };
@@ -112,10 +114,14 @@ async function deliver(text, cfg, signal) {
     clearTimeout(pendingRestore);
     pendingRestore = null;
   }
-  const previous = cfg.restoreClipboard ? clipboard.readText() : null;
+  const pasting = cfg.mode === "paste" || cfg.mode === "paste-copy";
+  // Only plain "paste" mode restores; "paste-copy" exists precisely to keep
+  // the transcript on the clipboard after pasting.
+  const previous =
+    cfg.mode === "paste" && cfg.restoreClipboard ? clipboard.readText() : null;
   clipboard.writeText(text);
 
-  if (cfg.mode !== "paste") {
+  if (!pasting) {
     return { method: "clipboard" };
   }
 
@@ -138,7 +144,7 @@ async function deliver(text, cfg, signal) {
       if (clipboard.readText() === text) clipboard.writeText(previous);
     }, 1000);
   }
-  return { method: "paste" };
+  return { method: cfg.mode };
 }
 
 module.exports = { deliver };

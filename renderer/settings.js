@@ -106,10 +106,16 @@ async function loadMicrophones() {
 
 function populate() {
   hotkeyInput.value = current.hotkey;
-  document.querySelector(
-    `input[name="output-mode"][value="${current.output.mode}"]`
+  // Legacy settings expressed "paste & keep on clipboard" as paste mode with
+  // clipboard restore turned off; show those as the explicit paste-copy mode.
+  const mode =
+    current.output.mode === "paste" && !current.output.restoreClipboard
+      ? "paste-copy"
+      : current.output.mode;
+  (
+    document.querySelector(`input[name="output-mode"][value="${mode}"]`) ||
+    document.querySelector('input[name="output-mode"][value="paste"]')
   ).checked = true;
-  $("restore-clipboard").checked = current.output.restoreClipboard;
 
   $("stt-url").value = current.stt.baseUrl;
   $("stt-key").value = current.stt.apiKey;
@@ -139,7 +145,10 @@ function collect() {
     output: {
       ...current.output,
       mode: document.querySelector('input[name="output-mode"]:checked').value,
-      restoreClipboard: $("restore-clipboard").checked,
+      // Legacy files could hold restoreClipboard: false from the era when
+      // that was the only way to keep the transcript on the clipboard; the
+      // explicit paste-copy mode replaces it, so plain paste always restores.
+      restoreClipboard: true,
     },
     stt: {
       ...current.stt,

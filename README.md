@@ -42,8 +42,9 @@ choose where your voice goes:
 - **LLM cleanup (optional)** — punctuation, filler-word removal, false starts,
   via any OpenAI-compatible chat API. The prompt is fully editable. If cleanup
   fails, the raw transcript is delivered instead — your words are never lost.
-- **Auto-paste or clipboard** — paste straight into the focused app (with
-  clipboard restore), or clipboard-only if you prefer to paste yourself.
+- **Auto-paste, clipboard, or both** — paste straight into the focused app
+  (with clipboard restore), paste *and* keep the transcript on the clipboard,
+  or clipboard-only if you prefer to paste yourself.
 - **Local history** — recent transcriptions are kept in a local JSON file so a
   mis-aimed paste never loses a dictation. Can be disabled.
 - **No telemetry, no accounts, no cloud requirement.**

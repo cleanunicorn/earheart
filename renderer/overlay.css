@@ -58,6 +58,22 @@ body {
   }
 }
 
+/* Visible drag affordance: the OS often ignores the CSS cursor on a
+   focusable:false overlay, so the grip dots make it clear the pill can be
+   dragged. It's part of the pill body, which is the drag surface. */
+#grip {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: -4px;
+  color: rgba(255, 255, 255, 0.35);
+  transition: color 0.15s ease;
+}
+
+#pill:hover #grip {
+  color: rgba(255, 255, 255, 0.6);
+}
+
 #indicator {
   width: 10px;
   height: 10px;

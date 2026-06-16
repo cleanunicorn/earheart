@@ -143,9 +143,12 @@ async function download(baseDir, model, { onProgress, signal } = {}) {
 
   for (const file of model.files) {
     const dest = filePath(baseDir, model, file);
-    // Skip files already pulled in by an earlier (interrupted) run.
+    // Skip files already pulled in by an earlier (interrupted) run. Count the
+    // real on-disk size, not the registry's approximate `bytes`, so the
+    // aggregate progress stays monotonic when a resumed download mixes
+    // already-present files with freshly streamed ones.
     if (fs.existsSync(dest)) {
-      received += file.bytes || 0;
+      received += fs.statSync(dest).size;
       report(file.name);
       continue;
     }

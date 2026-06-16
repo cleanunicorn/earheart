@@ -285,3 +285,81 @@ test("download surfaces HTTP errors", async () => {
     server.close();
   }
 });
+
+test("isInstalled accepts a legacy or malformed marker as presence-only", async () => {
+  const a = Buffer.from("legacy-bytes-".repeat(10));
+  const { server, base } = await serveFiles({ "/a.bin": a });
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "stt", id: "legacy",
+        files: [{ name: "a.bin", bytes: a.length, url: `${base}/a.bin` }],
+      };
+      await manager.download(dir, model);
+      assert.strictEqual(manager.isInstalled(dir, model), true);
+
+      const markerPath = path.join(manager.modelDir(dir, model), manager.MARKER);
+      const file = manager.filePath(dir, model, model.files[0]);
+
+      // A marker written by an older build that didn't record sizes (empty or
+      // not size-shaped JSON) must still count an installed model as installed,
+      // so an upgrade never silently forces a multi-GB re-download.
+      for (const legacyMarker of ["", "{not json", "{}"]) {
+        await fsp.writeFile(markerPath, legacyMarker);
+        assert.strictEqual(
+          manager.isInstalled(dir, model),
+          true,
+          `marker ${JSON.stringify(legacyMarker)} should read as installed`
+        );
+      }
+
+      // With a presence-only marker, a missing file flips it back to false.
+      await fsp.rm(file);
+      assert.strictEqual(manager.isInstalled(dir, model), false);
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("an aborted download leaves no .part and a retry succeeds", async () => {
+  const full = Buffer.from("the-full-payload-".repeat(64));
+  // First request: send a few bytes then destroy the socket mid-stream so the
+  // transfer fails. Later requests: serve the whole file.
+  let attempt = 0;
+  const server = http.createServer((req, res) => {
+    attempt++;
+    if (attempt === 1) {
+      res.setHeader("content-length", full.length);
+      res.write(full.subarray(0, 8));
+      res.socket.destroy(); // abrupt failure, like a dropped connection
+      return;
+    }
+    res.setHeader("content-length", full.length);
+    res.end(full);
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "cleanup", id: "resume",
+        files: [{ name: "m.gguf", bytes: full.length, url: `${base}/m.gguf` }],
+      };
+      const dest = manager.filePath(dir, model, model.files[0]);
+
+      await assert.rejects(() => manager.download(dir, model));
+      // No half-written .part is left behind to masquerade as a real file, and
+      // the model is not considered installed.
+      assert.ok(!fs.existsSync(`${dest}.part`), "stray .part should be discarded");
+      assert.strictEqual(manager.isInstalled(dir, model), false);
+
+      // A second attempt re-fetches the whole file and completes.
+      await manager.download(dir, model);
+      assert.strictEqual(manager.isInstalled(dir, model), true);
+      assert.deepStrictEqual(fs.readFileSync(dest), full);
+    });
+  } finally {
+    server.close();
+  }
+});

@@ -270,12 +270,12 @@ function renderManage(kind) {
     status.className = "status ok";
     btn.textContent = "Remove";
     btn.className = "ghost danger";
-    btn.addEventListener("click", () => removeModel(kind, modelId));
+    btn.onclick = () => removeModel(kind, modelId);
   } else {
     status.textContent = "Not downloaded";
     btn.textContent = "Download";
     btn.className = "ghost";
-    btn.addEventListener("click", () => downloadModel(kind, modelId, ui));
+    btn.onclick = () => downloadModel(kind, modelId, ui);
   }
   row.append(btn, status);
   container.append(note, bar, row);
@@ -283,22 +283,38 @@ function renderManage(kind) {
 }
 
 async function downloadModel(kind, modelId, ui) {
-  ui.btn.disabled = true;
+  // While the download runs, the same button cancels it (the wizard offers the
+  // same escape; without it a multi-minute download in Settings is a one-way
+  // trip). models:cancel aborts the in-flight transfer in the main process.
   ui.bar.hidden = false;
   ui.status.textContent = "Downloading…";
   ui.status.className = "status";
+  const onCancel = () => earheart.invoke("models:cancel", { kind, modelId });
+  ui.btn.textContent = "Cancel";
+  ui.btn.className = "ghost";
+  ui.btn.onclick = onCancel;
+
   const res = await earheart.invoke("models:download", { kind, modelId });
+  ui.btn.onclick = null;
   if (res.ok) {
     await refreshModels();
-  } else {
-    ui.btn.disabled = false;
-    ui.bar.hidden = true;
-    ui.status.textContent = res.cancelled ? "Cancelled" : res.error || "Download failed";
-    ui.status.className = res.cancelled ? "status" : "status err";
+    return;
   }
+  // Failed or cancelled: revert to a download affordance the user can retry.
+  ui.bar.hidden = true;
+  ui.btn.textContent = res.cancelled ? "Download" : "Retry download";
+  ui.btn.className = "ghost";
+  ui.btn.onclick = () => downloadModel(kind, modelId, ui);
+  ui.status.textContent = res.cancelled ? "Cancelled" : res.error || "Download failed";
+  ui.status.className = res.cancelled ? "status" : "status err";
 }
 
 async function removeModel(kind, modelId) {
+  const info = modelStatus[kind].find((m) => m.id === modelId);
+  const label = info ? info.label : modelId;
+  if (!confirm(`Remove ${label}? You'll need to download it again to use it.`)) {
+    return;
+  }
   await earheart.invoke("models:remove", { kind, modelId });
   await refreshModels();
 }
@@ -309,10 +325,23 @@ async function refreshModels() {
   renderManage("cleanup");
 }
 
-earheart.on("models:progress", ({ kind, modelId, fraction }) => {
-  const m = manage[kind];
-  if (m && m.modelId === modelId && m.fill) {
-    m.fill.style.width = `${Math.round(fraction * 100)}%`;
+// "42% · 280 MB / 660 MB" — concrete progress so a slow download reads as
+// working, not stalled.
+function progressLabel({ received, total, fraction }) {
+  const pct = Math.round((fraction ?? (total ? received / total : 0)) * 100);
+  if (!total) return `${pct}%`;
+  const mb = (b) => `${(b / 1e6).toFixed(0)} MB`;
+  return `${pct}% · ${mb(received)} / ${mb(total)}`;
+}
+
+earheart.on("models:progress", (p) => {
+  const m = manage[p.kind];
+  if (m && m.modelId === p.modelId && m.fill) {
+    m.fill.style.width = `${Math.round(p.fraction * 100)}%`;
+    if (m.status) {
+      m.status.textContent = progressLabel(p);
+      m.status.className = "status";
+    }
   }
 });
 
@@ -387,28 +416,36 @@ bindTest("cleanup-test", "cleanup-test-result", "cleanup:test", () => ({
 // as autocomplete on the model input (a <datalist>). The input stays editable
 // so a user can still type a model the server doesn't advertise.
 function bindFetchModels(buttonId, resultId, datalistId, getCfg) {
-  $(buttonId).addEventListener("click", async () => {
+  const btn = $(buttonId);
+  btn.addEventListener("click", async () => {
     const el = $(resultId);
+    // Guard against a second click firing a concurrent fetch while one is
+    // in flight.
+    btn.disabled = true;
     el.textContent = "Fetching…";
     el.className = "status";
-    const result = await earheart.invoke("models:list-remote", getCfg());
-    if (!result.ok) {
-      el.textContent = result.error;
-      el.className = "status err";
-      return;
+    try {
+      const result = await earheart.invoke("models:list-remote", getCfg());
+      if (!result.ok) {
+        el.textContent = result.error;
+        el.className = "status err";
+        return;
+      }
+      const list = $(datalistId);
+      list.replaceChildren(
+        ...result.models.map((id) => {
+          const opt = document.createElement("option");
+          opt.value = id;
+          return opt;
+        })
+      );
+      el.textContent = result.models.length
+        ? `${result.models.length} model${result.models.length === 1 ? "" : "s"} — click the field to choose`
+        : "No models reported by this service";
+      el.className = result.models.length ? "status ok" : "status";
+    } finally {
+      btn.disabled = false;
     }
-    const list = $(datalistId);
-    list.replaceChildren(
-      ...result.models.map((id) => {
-        const opt = document.createElement("option");
-        opt.value = id;
-        return opt;
-      })
-    );
-    el.textContent = result.models.length
-      ? `${result.models.length} model${result.models.length === 1 ? "" : "s"} — click the field to choose`
-      : "No models reported by this service";
-    el.className = result.models.length ? "status ok" : "status";
   });
 }
 

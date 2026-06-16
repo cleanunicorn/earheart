@@ -334,6 +334,18 @@ function setFill(row, fraction) {
   row.fill.style.width = `${Math.round(fraction * 100)}%`;
 }
 
+function formatMB(bytes) {
+  return `${(bytes / 1e6).toFixed(0)} MB`;
+}
+
+// "42% · 280 MB / 660 MB" — concrete progress so a slow download reads as
+// working, not stalled.
+function progressLabel({ received, total, fraction }) {
+  const pct = Math.round((fraction ?? (total ? received / total : 0)) * 100);
+  if (!total) return `${pct}%`;
+  return `${pct}% · ${formatMB(received)} / ${formatMB(total)}`;
+}
+
 function checkAllDone() {
   const allDone = [...dlRows.values()].every((r) => r.done);
   $("next").disabled = !allDone;
@@ -453,9 +465,13 @@ async function enterDownloadStep() {
   for (const n of toDownload) runDownload(n.kind, n.modelId);
 }
 
-earheart.on("models:progress", ({ kind, modelId, fraction }) => {
-  const row = dlRows.get(`${kind}:${modelId}`);
-  if (row && !row.done) setFill(row, fraction);
+earheart.on("models:progress", (p) => {
+  const row = dlRows.get(`${p.kind}:${p.modelId}`);
+  if (row && !row.done) {
+    setFill(row, p.fraction);
+    row.status.textContent = progressLabel(p);
+    row.status.className = "status";
+  }
 });
 
 $("download-later").addEventListener("click", () => {

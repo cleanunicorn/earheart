@@ -4,9 +4,12 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 
+const http = require("node:http");
+
 const { encodeWav, encodeSilenceWav, wavToFloat32 } = require("../main/util/wav");
 const { stripThinking } = require("../main/services/cleanup");
 const { deepMerge, migrateLegacy, DEFAULTS } = require("../main/settings");
+const { listRemoteModels } = require("../main/services/models-remote");
 
 test("encodeWav produces a valid RIFF header", () => {
   const samples = new Int16Array([0, 1000, -1000, 32767, -32768]);
@@ -102,6 +105,65 @@ test("new installs default to in-process engines", () => {
   assert.strictEqual(DEFAULTS.cleanup.enabled, true);
   assert.ok(DEFAULTS.stt.builtin.model);
   assert.ok(DEFAULTS.cleanup.builtin.model);
+});
+
+/* ---------------- remote model listing ---------------- */
+
+function serveJson(handler) {
+  const server = http.createServer((req, res) => {
+    const { status, body } = handler(req);
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(typeof body === "string" ? body : JSON.stringify(body));
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      resolve({ server, base: `http://127.0.0.1:${server.address().port}/v1` });
+    });
+  });
+}
+
+test("listRemoteModels parses OpenAI shape, sorts and de-dupes", async () => {
+  const { server, base } = await serveJson((req) => {
+    assert.strictEqual(req.url, "/v1/models");
+    assert.strictEqual(req.headers.authorization, "Bearer secret");
+    return {
+      status: 200,
+      body: { data: [{ id: "gpt-z" }, { id: "gpt-a" }, { id: "gpt-a" }] },
+    };
+  });
+  try {
+    const models = await listRemoteModels({ baseUrl: base, apiKey: "secret" });
+    assert.deepStrictEqual(models, ["gpt-a", "gpt-z"]);
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels accepts a bare array and omits the auth header without a key", async () => {
+  const { server, base } = await serveJson((req) => {
+    assert.strictEqual(req.headers.authorization, undefined);
+    return { status: 200, body: ["b", "a"] };
+  });
+  try {
+    const models = await listRemoteModels({ baseUrl: base });
+    assert.deepStrictEqual(models, ["a", "b"]);
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels surfaces HTTP errors", async () => {
+  const { server, base } = await serveJson(() => ({ status: 401, body: { error: "nope" } }));
+  try {
+    await assert.rejects(() => listRemoteModels({ baseUrl: base }), /HTTP 401/);
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels requires a base URL", async () => {
+  await assert.rejects(() => listRemoteModels({}), /Base URL is required/);
 });
 
 test("idle model unload defaults to a finite window and is overridable", () => {

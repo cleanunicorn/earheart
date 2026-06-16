@@ -383,6 +383,44 @@ bindTest("cleanup-test", "cleanup-test-result", "cleanup:test", () => ({
   enabled: true,
 }));
 
+// Fetch the model list from an external OpenAI-compatible service and offer it
+// as autocomplete on the model input (a <datalist>). The input stays editable
+// so a user can still type a model the server doesn't advertise.
+function bindFetchModels(buttonId, resultId, datalistId, getCfg) {
+  $(buttonId).addEventListener("click", async () => {
+    const el = $(resultId);
+    el.textContent = "Fetching…";
+    el.className = "status";
+    const result = await earheart.invoke("models:list-remote", getCfg());
+    if (!result.ok) {
+      el.textContent = result.error;
+      el.className = "status err";
+      return;
+    }
+    const list = $(datalistId);
+    list.replaceChildren(
+      ...result.models.map((id) => {
+        const opt = document.createElement("option");
+        opt.value = id;
+        return opt;
+      })
+    );
+    el.textContent = result.models.length
+      ? `${result.models.length} model${result.models.length === 1 ? "" : "s"} — click the field to choose`
+      : "No models reported by this service";
+    el.className = result.models.length ? "status ok" : "status";
+  });
+}
+
+bindFetchModels("stt-fetch-models", "stt-fetch-result", "stt-model-list", () => {
+  const c = collect().stt;
+  return { baseUrl: c.baseUrl, apiKey: c.apiKey };
+});
+bindFetchModels("cleanup-fetch-models", "cleanup-fetch-result", "cleanup-model-list", () => {
+  const c = collect().cleanup;
+  return { baseUrl: c.baseUrl, apiKey: c.apiKey };
+});
+
 /* ---------- history ---------- */
 
 async function renderHistory() {

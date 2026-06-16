@@ -7,6 +7,7 @@ const windows = require("./windows");
 const stt = require("./services/stt");
 const cleanup = require("./services/cleanup");
 const engines = require("./engines");
+const { listRemoteModels } = require("./services/models-remote");
 const { encodeSilenceWav } = require("./util/wav");
 
 // In-flight model downloads, so the UI can cancel them. Keyed by kind:modelId.
@@ -63,6 +64,17 @@ function init({ applyHotkey, onSettingsChanged }) {
       if (cfg.engine === "builtin") await engines.transcribe(wav, cfg);
       else await stt.transcribe(wav, cfg);
       return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  // List the models an external OpenAI-compatible service offers, so the
+  // settings UI can present them as a pick-list instead of a free-text field.
+  ipcMain.handle("models:list-remote", async (event, cfg) => {
+    try {
+      const models = await listRemoteModels(cfg || {});
+      return { ok: true, models };
     } catch (err) {
       return { ok: false, error: err.message };
     }

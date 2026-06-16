@@ -112,7 +112,12 @@
           <div class="grid-2">
             <div class="field">
               <label for="stt-model">Model</label>
-              <input id="stt-model" placeholder="parakeet" />
+              <input id="stt-model" placeholder="parakeet" list="stt-model-list" />
+              <datalist id="stt-model-list"></datalist>
+              <div class="row">
+                <button id="stt-fetch-models" class="ghost" type="button">Fetch models</button>
+                <span id="stt-fetch-result" class="status"></span>
+              </div>
             </div>
             <div class="field">
               <label for="stt-language">Language <span class="muted">(optional, e.g. en)</span></label>
@@ -172,7 +177,12 @@
             <div class="grid-2">
               <div class="field">
                 <label for="cleanup-model">Model</label>
-                <input id="cleanup-model" placeholder="llama3.2" />
+                <input id="cleanup-model" placeholder="llama3.2" list="cleanup-model-list" />
+                <datalist id="cleanup-model-list"></datalist>
+                <div class="row">
+                  <button id="cleanup-fetch-models" class="ghost" type="button">Fetch models</button>
+                  <span id="cleanup-fetch-result" class="status"></span>
+                </div>
               </div>
               <div class="field">
                 <label for="cleanup-temperature">Temperature</label>

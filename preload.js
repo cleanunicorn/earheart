@@ -30,6 +30,7 @@ const INVOKE = new Set([
   "wizard:open",
   "stt:test",
   "cleanup:test",
+  "models:list-remote",
   "history:list",
   "history:clear",
   "models:status",

@@ -139,6 +139,7 @@ function populate() {
 
   $("history-enabled").checked = current.history.enabled;
   $("max-seconds").value = current.audio.maxRecordingSeconds;
+  $("idle-unload").value = current.engines?.idleUnloadMinutes ?? 2;
 
   if (platform !== "linux") $("wayland-note").style.display = "none";
 }
@@ -179,6 +180,11 @@ function collect() {
       ...current.audio,
       deviceId: $("mic-device").value,
       maxRecordingSeconds: parseInt($("max-seconds").value, 10) || 300,
+    },
+    engines: {
+      ...current.engines,
+      // 0 (or blank) = never unload; otherwise the idle window in minutes.
+      idleUnloadMinutes: Math.max(0, parseInt($("idle-unload").value, 10) || 0),
     },
     history: {
       ...current.history,

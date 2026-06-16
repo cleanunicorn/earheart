@@ -64,6 +64,12 @@ const DEFAULTS = {
     deviceId: "", // empty = system default microphone
     maxRecordingSeconds: 300,
   },
+  engines: {
+    // Built-in STT/cleanup models stay resident for fast repeat dictations,
+    // then unload after this many idle minutes to reclaim memory (~1.5 GB+).
+    // 0 = never unload (keep the models resident for the whole session).
+    idleUnloadMinutes: 2,
+  },
   history: {
     enabled: true,
     limit: 100,

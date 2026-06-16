@@ -53,7 +53,13 @@ function main() {
     );
 
     pipeline.init();
-    ipc.init({ applyHotkey, onSettingsChanged: () => tray.refresh() });
+    ipc.init({
+      applyHotkey,
+      onSettingsChanged: () => {
+        tray.refresh();
+        pipeline.onSettingsChanged();
+      },
+    });
     windows.createOverlay();
     tray.init(app, pipeline);
 

@@ -103,3 +103,14 @@ test("new installs default to in-process engines", () => {
   assert.ok(DEFAULTS.stt.builtin.model);
   assert.ok(DEFAULTS.cleanup.builtin.model);
 });
+
+test("idle model unload defaults to a finite window and is overridable", () => {
+  // Sensible default: unload after a couple of idle minutes.
+  assert.strictEqual(DEFAULTS.engines.idleUnloadMinutes, 2);
+  // A stored 0 (never unload) must survive the merge, not be reset to default.
+  const never = deepMerge(DEFAULTS, { engines: { idleUnloadMinutes: 0 } });
+  assert.strictEqual(never.engines.idleUnloadMinutes, 0);
+  // A stored custom window survives too.
+  const custom = deepMerge(DEFAULTS, { engines: { idleUnloadMinutes: 10 } });
+  assert.strictEqual(custom.engines.idleUnloadMinutes, 10);
+});

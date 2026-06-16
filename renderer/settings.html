@@ -212,6 +212,16 @@
           <input id="max-seconds" type="number" min="10" max="3600" step="10" />
         </div>
         <div class="field">
+          <label for="idle-unload">Unload models after idle (minutes)</label>
+          <input id="idle-unload" type="number" min="0" max="240" step="1" />
+          <p class="hint">
+            Built-in speech-to-text and cleanup models stay in memory for fast
+            repeat dictations, then unload after this many idle minutes to free
+            memory (~1.5 GB or more). Set to 0 to keep them loaded for the whole
+            session. Only affects the in-app models, not external services.
+          </p>
+        </div>
+        <div class="field">
           <label>Setup wizard</label>
           <div class="row">
             <button id="open-wizard" class="ghost">Run the setup wizard again…</button>

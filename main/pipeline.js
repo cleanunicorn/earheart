@@ -39,8 +39,37 @@ let session = 0; // current dictation session id
 let abortController = null;
 const stateListeners = new Set();
 
+// Idle eviction: after a dictation finishes, wait the configured idle window
+// and then unload the built-in models to reclaim memory. Any new dictation
+// cancels the pending timer (and re-arms it when done), so the models stay
+// resident during active use. 0 minutes means never unload.
+let idleUnloadTimer = null;
+
+function cancelIdleUnload() {
+  if (idleUnloadTimer) {
+    clearTimeout(idleUnloadTimer);
+    idleUnloadTimer = null;
+  }
+}
+
+function armIdleUnload() {
+  cancelIdleUnload();
+  const minutes = settings.get().engines?.idleUnloadMinutes ?? 0;
+  if (!minutes || minutes <= 0) return; // 0 = keep models resident
+  idleUnloadTimer = setTimeout(() => {
+    idleUnloadTimer = null;
+    // Only unload if still idle — a dictation in flight will re-arm on finish.
+    if (state === "idle") engines.unloadIdle();
+  }, minutes * 60 * 1000);
+}
+
 function setState(next) {
   state = next;
+  // Models should stay resident while a dictation is active; only count idle
+  // time once we're back to idle. Re-arming on each return to idle resets the
+  // window after every dictation.
+  if (next === "idle") armIdleUnload();
+  else cancelIdleUnload();
   for (const listener of stateListeners) listener(state);
 }
 
@@ -199,4 +228,11 @@ function init() {
   ipcMain.on("pipeline:cancel", () => cancel());
 }
 
-module.exports = { init, toggle, cancel, getState, onStateChange };
+// Re-arm the idle-unload timer with the latest setting (e.g. the user changed
+// the idle window in Settings). Only matters while idle; an active dictation
+// re-arms from the new value when it finishes.
+function onSettingsChanged() {
+  if (state === "idle") armIdleUnload();
+}
+
+module.exports = { init, toggle, cancel, getState, onStateChange, onSettingsChanged };

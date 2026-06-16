@@ -153,12 +153,25 @@ async function disposeCleanup() {
   cleanupSystemPrompt = null;
 }
 
+async function disposeStt() {
+  if (recognizer && typeof recognizer.free === "function") {
+    try {
+      recognizer.free();
+    } catch {
+      // best effort
+    }
+  }
+  recognizer = null;
+  sttModelId = null;
+}
+
 /* ---------------- dispatch ---------------- */
 
 const HANDLERS = {
   ping: async () => ({ pong: true }),
   "load-stt": loadStt,
   transcribe,
+  "unload-stt": disposeStt,
   "load-cleanup": loadCleanup,
   clean,
   "unload-cleanup": disposeCleanup,

@@ -103,6 +103,24 @@ function stop() {
   host.stop();
 }
 
+// Free the native model memory without killing the worker, so an idle session
+// reclaims ~1.5 GB+ while leaving the worker ready for a fast re-load. The next
+// transcribe/clean call re-runs ensureStt/ensureCleanup. No-op if the worker
+// has already exited (nothing is loaded).
+async function unloadIdle() {
+  if (loadedStt === null && loadedCleanup === null) return;
+  loadedStt = null;
+  loadedCleanup = null;
+  try {
+    await Promise.all([
+      host.request("unload-stt"),
+      host.request("unload-cleanup"),
+    ]);
+  } catch {
+    // Worker may have exited; the flags are already cleared either way.
+  }
+}
+
 // If the worker dies (native crash, or our own stop()), it comes back empty.
 // Forget what we thought it had loaded so the next call re-loads the model
 // instead of sending inference to a worker that has no model resident.
@@ -121,5 +139,6 @@ module.exports = {
   ensureCleanup,
   clean,
   stop,
+  unloadIdle,
   registry,
 };

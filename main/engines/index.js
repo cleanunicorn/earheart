@@ -54,7 +54,12 @@ async function ensureStt(modelId) {
   }
 }
 
-async function transcribe(wav, cfg) {
+// Accepts a `signal` for parity with the HTTP transcribe client, so the
+// pipeline can route to either backend identically. The worker request itself
+// isn't abortable mid-flight, but an already-cancelled call returns early
+// rather than spending a model load / inference.
+async function transcribe(wav, cfg, signal) {
+  if (signal?.aborted) throw new Error("aborted");
   await ensureStt(cfg.builtin.model);
   const bytes = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
   // Copy out an exact-length ArrayBuffer for the worker. Electron's
@@ -90,7 +95,9 @@ async function ensureCleanup(modelId) {
   }
 }
 
-async function clean(transcript, cfg) {
+// Accepts a `signal` for parity with the HTTP cleanup client (see transcribe).
+async function clean(transcript, cfg, signal) {
+  if (signal?.aborted) throw new Error("aborted");
   await ensureCleanup(cfg.builtin.model);
   const cleaned = await host.request("clean", {
     transcript,

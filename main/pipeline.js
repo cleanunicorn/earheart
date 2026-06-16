@@ -22,16 +22,16 @@ const { deliver } = require("./output/deliver");
 const history = require("./history");
 
 // Route a stage to the in-process engine or the HTTP client based on settings.
+// Both backends take the same (payload, cfg, signal) shape, so the only
+// difference here is which implementation runs.
 function runTranscribe(wav, cfg, signal) {
-  return cfg.engine === "builtin"
-    ? engines.transcribe(wav, cfg)
-    : stt.transcribe(wav, cfg, signal);
+  const impl = cfg.engine === "builtin" ? engines.transcribe : stt.transcribe;
+  return impl(wav, cfg, signal);
 }
 
 function runCleanup(raw, cfg, signal) {
-  return cfg.engine === "builtin"
-    ? engines.clean(raw, cfg)
-    : cleanup.clean(raw, cfg, signal);
+  const impl = cfg.engine === "builtin" ? engines.clean : cleanup.clean;
+  return impl(raw, cfg, signal);
 }
 
 let state = "idle"; // idle | recording | processing

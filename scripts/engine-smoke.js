@@ -12,7 +12,7 @@ const host = require("../main/engines/host");
 
 app.whenReady().then(async () => {
   try {
-    const res = await host.request("ping", {}, [], 30000);
+    const res = await host.request("ping", {}, 30000);
     if (!res || res.pong !== true) {
       throw new Error(`unexpected ping reply: ${JSON.stringify(res)}`);
     }

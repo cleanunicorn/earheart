@@ -50,7 +50,14 @@ other models.
 ```bash
 npm test                       # unit tests (node --test, no test framework)
 make smoke                     # boots the full app with --smoke-test and exits
+npx electron scripts/engine-smoke.js --no-sandbox   # boot the engine worker, round-trip a ping
 ```
+
+The engine-smoke step forks the in-process engine `utilityProcess` worker and
+round-trips a request, so a broken worker or a native-addon load failure
+surfaces here rather than at runtime. CI runs all three on every platform.
+Built-in models download to Electron's `userData/models` on first use; the
+smoke checks don't need them present.
 
 ## Building installers
 

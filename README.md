@@ -42,12 +42,14 @@ OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
 - **Global hotkey** (default `Ctrl/Cmd+Shift+Space`): press to start, press to
   stop. A small overlay shows recording level and progress without stealing
   focus from the app you're dictating into.
-- **Speech-to-text with NVIDIA Parakeet** — the included
-  [`earheart-stt`](stt-server/) server runs Parakeet TDT 0.6B v3 (multilingual,
-  25 languages) locally via ONNX Runtime, faster than realtime on CPU. Or
-  point Earheart at any OpenAI-compatible transcription API.
-- **LLM cleanup (optional)** — punctuation, filler-word removal, false starts,
-  via any OpenAI-compatible chat API. The prompt is fully editable. If cleanup
+- **Speech-to-text with NVIDIA Parakeet** — by default Parakeet TDT 0.6B v3
+  (multilingual, 25 languages) runs **in-process** via sherpa-onnx / ONNX
+  Runtime, faster than realtime on CPU and with no network hop. Or point
+  Earheart at any OpenAI-compatible transcription API, or run the optional
+  [`earheart-stt`](stt-server/) server yourself.
+- **LLM cleanup (on by default)** — punctuation, filler-word removal, false
+  starts. By default a small Gemma model runs **in-process**; or point cleanup
+  at any OpenAI-compatible chat API. The prompt is fully editable. If cleanup
   fails, the raw transcript is delivered instead — your words are never lost.
 - **Auto-paste, clipboard, or both** — paste straight into the focused app
   (with clipboard restore), paste *and* keep the transcript on the clipboard,
@@ -80,17 +82,24 @@ wizard downloads the speech and cleanup models for you.
 ### Advanced: a local STT server with `uv`
 
 If you'd rather run the [Parakeet STT server](stt-server/) as a separate
-process (e.g. to share it with other tools or use a GPU), Earheart can launch
-it as `uvx earheart-stt`. That needs
+process (e.g. to share it with other tools or use a GPU), start it yourself and
+point Earheart's speech-to-text at its URL (default `http://127.0.0.1:8484/v1`)
+in the setup wizard or Settings. Running it needs
 [uv](https://docs.astral.sh/uv/getting-started/installation/) installed:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh   # Linux / macOS
 winget install astral-sh.uv                       # Windows
+cd stt-server && uv run earheart-stt              # start the server
 ```
 
 Or point Earheart at a hosted transcription service (OpenAI, Groq, …) — the
 setup wizard and Settings let you enter its URL and API key instead.
+
+> **Upgrading from 0.4.x?** The in-process engines are new defaults; your
+> existing configured STT/cleanup endpoints are preserved and keep working
+> (migrated to the "remote" engine). The old "start a local STT server
+> automatically" option has been removed — run the server yourself as above.
 
 ### Build from source
 
@@ -122,11 +131,15 @@ showing a progress bar as it goes. It's a one-time download; everything after
 that is faster than realtime, even on CPU. You can pick a larger, higher-
 quality cleanup model in the wizard or later in Settings → Cleanup.
 
-### Optional: transcript cleanup
+### Transcript cleanup
 
-If you enable cleanup, a language model fixes punctuation and removes filler
-words and false starts. Any OpenAI-compatible chat endpoint works. A fully
-local example with [Ollama](https://ollama.com):
+Cleanup is **on by default** and runs the built-in Gemma model in-process: a
+language model fixes punctuation and removes filler words and false starts,
+with no network hop. You can disable it, pick a larger built-in model, or edit
+the prompt in Settings → Cleanup.
+
+Prefer to run cleanup elsewhere? Any OpenAI-compatible chat endpoint works. A
+fully local example with [Ollama](https://ollama.com):
 
 ```bash
 ollama pull llama3.1:8b
@@ -206,10 +219,13 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
 
 ## Privacy
 
-- Audio is held in memory and sent only to the STT endpoint **you** configure;
-  with the local Parakeet server, that's `127.0.0.1`.
-- Transcripts go only to the cleanup endpoint you configure, and only if
-  cleanup is enabled.
+- With the built-in engines (the default), audio and transcripts never leave
+  the app process — there is no network hop and no localhost socket.
+- If you point speech-to-text at an HTTP service instead, audio is held in
+  memory and sent only to the STT endpoint **you** configure (e.g. `127.0.0.1`
+  for the optional local Parakeet server).
+- Transcripts go to an external cleanup endpoint only if you switch cleanup to
+  a remote service; the default Gemma cleanup stays on your machine.
 - History and settings live in plain local files (Electron's user data
   directory). API keys are stored in that settings file — on shared machines,
   prefer local services or OS-level disk encryption.

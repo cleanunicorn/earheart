@@ -37,6 +37,8 @@ function remove(kind, modelId) {
 
 let loadedStt = null;
 
+// Load the STT model into the worker if it isn't already. Throws if the model
+// isn't downloaded yet — callers surface that (or fall back to the HTTP path).
 async function ensureStt(modelId) {
   const model = resolve("stt", modelId);
   if (!manager.isInstalled(modelsDir(), model)) {
@@ -73,6 +75,8 @@ async function transcribe(wav, cfg) {
 
 let loadedCleanup = null;
 
+// Load the cleanup model into the worker if it isn't already. Throws if the
+// model isn't downloaded yet — callers surface that (or fall back to HTTP).
 async function ensureCleanup(modelId) {
   const model = resolve("cleanup", modelId);
   if (!manager.isInstalled(modelsDir(), model)) {

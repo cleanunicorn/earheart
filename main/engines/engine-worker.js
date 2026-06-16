@@ -115,18 +115,24 @@ async function loadCleanup({ modelPath, contextSize }) {
 async function clean({ transcript, systemPrompt, temperature }) {
   if (!llamaContext) throw new Error("Cleanup model not loaded");
   const mod = await import("node-llama-cpp");
-  // The system prompt is fixed for a session; rebuild when the user edits it.
-  if (!llamaSession || cleanupSystemPrompt !== systemPrompt) {
-    if (llamaSession && llamaSession.dispose) llamaSession.dispose();
+  // No systemPrompt: tested against Gemma 1B, putting the cleanup rules in the
+  // chat system prompt makes the small model behave like an assistant and
+  // answer/expand the dictation instead of cleaning it. Inlining the rules and
+  // the transcript into a single user turn keeps it in "transform this text"
+  // mode and returns just the cleaned text. (See scripts/try-cleanup-prompts.)
+  if (!llamaSession) {
     llamaSession = new mod.LlamaChatSession({
       contextSequence: llamaContext.getSequence(),
-      systemPrompt,
     });
-    cleanupSystemPrompt = systemPrompt;
   } else {
     llamaSession.resetChatHistory();
   }
-  const out = await llamaSession.prompt(transcript, {
+  cleanupSystemPrompt = systemPrompt;
+  // The transcript is labelled as data and followed by a cue, so the model
+  // continues with the cleaned text rather than a reply to its content.
+  const userTurn =
+    `${systemPrompt}\n\nTranscript:\n${transcript}\n\nCleaned transcript:`;
+  const out = await llamaSession.prompt(userTurn, {
     temperature: temperature ?? 0.2,
   });
   return (out || "").trim();

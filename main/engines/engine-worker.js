@@ -8,6 +8,12 @@
 //
 // Protocol: the parent posts { id, type, ...args }; we reply with
 // { id, ok: true, result } or { id, ok: false, error }.
+//
+// Engine state (the recognizer, the llama context/session) is single-instance,
+// so requests are assumed to arrive one at a time. The dictation pipeline is a
+// state machine that runs a single transcribe/clean at once; Settings "test"
+// actions are the only other callers and are not expected to overlap a live
+// dictation.
 
 const path = require("node:path");
 const { wavToFloat32 } = require("../util/wav");
@@ -40,6 +46,17 @@ async function loadStt({ dir, sherpa, modelId }) {
   } catch (err) {
     throw new Error(`sherpa-onnx-node not available: ${err.message}`);
   }
+  // Free the previous recognizer before swapping models so we don't leak its
+  // native memory (the cleanup engine does the same via disposeCleanup).
+  if (recognizer && typeof recognizer.free === "function") {
+    try {
+      recognizer.free();
+    } catch {
+      // best effort
+    }
+  }
+  recognizer = null;
+  sttModelId = null;
   recognizer = new sherpaOnnx.OfflineRecognizer({
     featConfig: { sampleRate: 16000, featureDim: 80 },
     modelConfig: {

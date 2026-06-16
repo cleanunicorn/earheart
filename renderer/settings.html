@@ -79,74 +79,114 @@
 
       <!-- STT -->
       <section id="tab-stt" class="panel">
-        <p class="lead">
-          Any service that speaks the OpenAI audio transcription API works here:
-          the bundled local Parakeet server, OpenAI, Groq, speaches, …
-        </p>
         <div class="field">
-          <label for="stt-url">Base URL</label>
-          <input id="stt-url" placeholder="http://127.0.0.1:8484/v1" />
-          <p class="hint">The app calls <code>{base URL}/audio/transcriptions</code>.</p>
+          <label>Speech-to-text engine</label>
+          <label class="choice">
+            <input type="radio" name="stt-engine" value="builtin" />
+            On this computer, built in <span class="muted">(Parakeet — private, no setup)</span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="stt-engine" value="external" />
+            An OpenAI-compatible service <span class="muted">(local server, OpenAI, Groq, …)</span>
+          </label>
         </div>
-        <div class="field">
-          <label for="stt-key">API key <span class="muted">(optional for local servers)</span></label>
-          <input id="stt-key" type="password" autocomplete="off" />
-        </div>
-        <div class="grid-2">
+
+        <div id="stt-builtin-fields">
           <div class="field">
-            <label for="stt-model">Model</label>
-            <input id="stt-model" placeholder="parakeet" />
+            <label for="stt-builtin-model">Model</label>
+            <select id="stt-builtin-model"></select>
+          </div>
+          <div id="stt-model-manage" class="model-manage"></div>
+        </div>
+
+        <div id="stt-external-fields">
+          <div class="field">
+            <label for="stt-url">Base URL</label>
+            <input id="stt-url" placeholder="http://127.0.0.1:8484/v1" />
+            <p class="hint">The app calls <code>{base URL}/audio/transcriptions</code>.</p>
           </div>
           <div class="field">
-            <label for="stt-language">Language <span class="muted">(optional, e.g. en)</span></label>
-            <input id="stt-language" placeholder="auto" />
+            <label for="stt-key">API key <span class="muted">(optional for local servers)</span></label>
+            <input id="stt-key" type="password" autocomplete="off" />
           </div>
-        </div>
-        <div class="row">
-          <button id="stt-test">Test connection</button>
-          <span id="stt-test-result" class="status"></span>
+          <div class="grid-2">
+            <div class="field">
+              <label for="stt-model">Model</label>
+              <input id="stt-model" placeholder="parakeet" />
+            </div>
+            <div class="field">
+              <label for="stt-language">Language <span class="muted">(optional, e.g. en)</span></label>
+              <input id="stt-language" placeholder="auto" />
+            </div>
+          </div>
+          <div class="row">
+            <button id="stt-test">Test connection</button>
+            <span id="stt-test-result" class="status"></span>
+          </div>
         </div>
       </section>
 
       <!-- Cleanup -->
       <section id="tab-cleanup" class="panel">
         <p class="lead">
-          After transcription, a language model can fix punctuation and remove
-          filler words. Works with any OpenAI-compatible chat API: Ollama,
-          llama.cpp, LM Studio, OpenRouter, OpenAI, …
+          After transcription, a language model fixes punctuation and removes
+          filler words and false starts.
         </p>
         <div class="field">
           <label class="choice">
             <input type="checkbox" id="cleanup-enabled" />
-            Clean up transcripts with a language model
+            Clean up transcripts automatically
           </label>
         </div>
         <div id="cleanup-fields">
           <div class="field">
-            <label for="cleanup-url">Base URL</label>
-            <input id="cleanup-url" placeholder="http://127.0.0.1:11434/v1" />
-            <p class="hint">The app calls <code>{base URL}/chat/completions</code>.</p>
+            <label>Cleanup engine</label>
+            <label class="choice">
+              <input type="radio" name="cleanup-engine" value="builtin" />
+              On this computer, built in <span class="muted">(Gemma — no setup)</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="cleanup-engine" value="external" />
+              An OpenAI-compatible service <span class="muted">(Ollama, LM Studio, OpenAI, …)</span>
+            </label>
           </div>
-          <div class="field">
-            <label for="cleanup-key">API key <span class="muted">(optional for local servers)</span></label>
-            <input id="cleanup-key" type="password" autocomplete="off" />
-          </div>
-          <div class="grid-2">
+
+          <div id="cleanup-builtin-fields">
             <div class="field">
-              <label for="cleanup-model">Model</label>
-              <input id="cleanup-model" placeholder="llama3.2" />
+              <label for="cleanup-builtin-model">Model</label>
+              <select id="cleanup-builtin-model"></select>
+            </div>
+            <div id="cleanup-model-manage" class="model-manage"></div>
+          </div>
+
+          <div id="cleanup-external-fields">
+            <div class="field">
+              <label for="cleanup-url">Base URL</label>
+              <input id="cleanup-url" placeholder="http://127.0.0.1:11434/v1" />
+              <p class="hint">The app calls <code>{base URL}/chat/completions</code>.</p>
             </div>
             <div class="field">
-              <label for="cleanup-temperature">Temperature</label>
-              <input id="cleanup-temperature" type="number" min="0" max="2" step="0.1" />
+              <label for="cleanup-key">API key <span class="muted">(optional for local servers)</span></label>
+              <input id="cleanup-key" type="password" autocomplete="off" />
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="cleanup-model">Model</label>
+                <input id="cleanup-model" placeholder="llama3.2" />
+              </div>
+              <div class="field">
+                <label for="cleanup-temperature">Temperature</label>
+                <input id="cleanup-temperature" type="number" min="0" max="2" step="0.1" />
+              </div>
             </div>
           </div>
+
           <div class="field">
             <label for="cleanup-prompt">System prompt</label>
             <textarea id="cleanup-prompt" rows="9" spellcheck="false"></textarea>
             <button id="cleanup-prompt-reset" class="ghost">Reset to default</button>
           </div>
-          <div class="row">
+          <div class="row" id="cleanup-test-row">
             <button id="cleanup-test">Test connection</button>
             <span id="cleanup-test-result" class="status"></span>
           </div>

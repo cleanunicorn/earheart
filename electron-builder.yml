@@ -19,6 +19,18 @@ files:
   - assets/**/*
   - package.json
 
+# The in-process engines ship native addons (.node) and shared libraries
+# (.so/.dylib/.dll) that the OS loader must read from real files on disk, not
+# from inside the asar archive. Unpack them so sherpa-onnx (STT) and
+# node-llama-cpp (cleanup) load at runtime. Production deps are bundled
+# automatically; models are downloaded at first run, not packaged.
+asarUnpack:
+  - "**/*.node"
+  - "node_modules/sherpa-onnx-node/**"
+  - "node_modules/sherpa-onnx-*/**"
+  - "node_modules/node-llama-cpp/**"
+  - "node_modules/@node-llama-cpp/**"
+
 linux:
   target:
     - AppImage

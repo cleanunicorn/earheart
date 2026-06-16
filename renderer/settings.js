@@ -3,6 +3,7 @@
 let current = null; // settings object being edited
 let defaults = null;
 let platform = "linux";
+let modelStatus = null; // { stt: [...], cleanup: [...] } from the main process
 
 const $ = (id) => document.getElementById(id);
 
@@ -121,6 +122,8 @@ function populate() {
   $("stt-key").value = current.stt.apiKey;
   $("stt-model").value = current.stt.model;
   $("stt-language").value = current.stt.language;
+  selectEngine("stt", current.stt.engine);
+  $("stt-builtin-model").value = current.stt.builtin.model;
 
   $("cleanup-enabled").checked = current.cleanup.enabled;
   $("cleanup-url").value = current.cleanup.baseUrl;
@@ -128,7 +131,11 @@ function populate() {
   $("cleanup-model").value = current.cleanup.model;
   $("cleanup-temperature").value = current.cleanup.temperature;
   $("cleanup-prompt").value = current.cleanup.systemPrompt;
+  selectEngine("cleanup", current.cleanup.engine);
+  $("cleanup-builtin-model").value = current.cleanup.builtin.model;
   syncCleanupEnabled();
+  syncEngine("stt");
+  syncEngine("cleanup");
 
   $("history-enabled").checked = current.history.enabled;
   $("server-autostart").checked = current.sttServer.autoStart;
@@ -152,6 +159,8 @@ function collect() {
     },
     stt: {
       ...current.stt,
+      engine: engineValue("stt"),
+      builtin: { ...current.stt.builtin, model: $("stt-builtin-model").value },
       baseUrl: $("stt-url").value.trim(),
       apiKey: $("stt-key").value.trim(),
       model: $("stt-model").value.trim(),
@@ -160,6 +169,8 @@ function collect() {
     cleanup: {
       ...current.cleanup,
       enabled: $("cleanup-enabled").checked,
+      engine: engineValue("cleanup"),
+      builtin: { ...current.cleanup.builtin, model: $("cleanup-builtin-model").value },
       baseUrl: $("cleanup-url").value.trim(),
       apiKey: $("cleanup-key").value.trim(),
       model: $("cleanup-model").value.trim(),
@@ -186,6 +197,133 @@ function syncCleanupEnabled() {
   $("cleanup-fields").classList.toggle("disabled", !$("cleanup-enabled").checked);
 }
 $("cleanup-enabled").addEventListener("change", syncCleanupEnabled);
+
+/* ---------- built-in engines + model management ---------- */
+
+// The settings UI offers a simple Built-in / External choice; the "server"
+// engine (a local OpenAI-compatible server, configured under Advanced) is
+// equivalent to "remote" for routing, so both map to the external option.
+function engineValue(kind) {
+  const v = document.querySelector(`input[name="${kind}-engine"]:checked`).value;
+  return v === "builtin" ? "builtin" : "remote";
+}
+
+function selectEngine(kind, engine) {
+  const v = engine === "builtin" ? "builtin" : "external";
+  const radio = document.querySelector(`input[name="${kind}-engine"][value="${v}"]`);
+  if (radio) radio.checked = true;
+}
+
+function syncEngine(kind) {
+  const builtin =
+    document.querySelector(`input[name="${kind}-engine"]:checked`).value === "builtin";
+  $(`${kind}-builtin-fields`).hidden = !builtin;
+  $(`${kind}-external-fields`).hidden = builtin;
+  if (kind === "cleanup") $("cleanup-test-row").hidden = builtin;
+  renderManage(kind);
+}
+
+function populateModelSelect(kind) {
+  const select = $(`${kind}-builtin-model`);
+  select.replaceChildren();
+  for (const m of modelStatus[kind]) {
+    const option = document.createElement("option");
+    option.value = m.id;
+    option.textContent = m.label;
+    select.appendChild(option);
+  }
+}
+
+// Per-kind handles to the live progress bar / status so download progress
+// events can find their row.
+const manage = { stt: {}, cleanup: {} };
+
+function renderManage(kind) {
+  const container = $(`${kind}-model-manage`);
+  if (!container || !modelStatus) return;
+  const modelId = $(`${kind}-builtin-model`).value;
+  const info = modelStatus[kind].find((m) => m.id === modelId);
+  container.replaceChildren();
+  manage[kind] = { modelId };
+  if (!info) return;
+
+  const note = document.createElement("p");
+  note.className = "hint";
+  note.textContent = info.note;
+
+  const bar = document.createElement("div");
+  bar.className = "dl-bar";
+  bar.hidden = true;
+  const fill = document.createElement("div");
+  fill.className = "dl-fill";
+  bar.appendChild(fill);
+
+  const row = document.createElement("div");
+  row.className = "row";
+  const status = document.createElement("span");
+  status.className = "status";
+  const btn = document.createElement("button");
+  const ui = { modelId, bar, fill, status, btn };
+
+  if (info.installed) {
+    status.textContent = "Downloaded ✓";
+    status.className = "status ok";
+    btn.textContent = "Remove";
+    btn.className = "ghost danger";
+    btn.addEventListener("click", () => removeModel(kind, modelId));
+  } else {
+    status.textContent = "Not downloaded";
+    btn.textContent = "Download";
+    btn.className = "ghost";
+    btn.addEventListener("click", () => downloadModel(kind, modelId, ui));
+  }
+  row.append(btn, status);
+  container.append(note, bar, row);
+  manage[kind] = ui;
+}
+
+async function downloadModel(kind, modelId, ui) {
+  ui.btn.disabled = true;
+  ui.bar.hidden = false;
+  ui.status.textContent = "Downloading…";
+  ui.status.className = "status";
+  const res = await earheart.invoke("models:download", { kind, modelId });
+  if (res.ok) {
+    await refreshModels();
+  } else {
+    ui.btn.disabled = false;
+    ui.bar.hidden = true;
+    ui.status.textContent = res.cancelled ? "Cancelled" : res.error || "Download failed";
+    ui.status.className = res.cancelled ? "status" : "status err";
+  }
+}
+
+async function removeModel(kind, modelId) {
+  await earheart.invoke("models:remove", { kind, modelId });
+  await refreshModels();
+}
+
+async function refreshModels() {
+  modelStatus = await earheart.invoke("models:status");
+  renderManage("stt");
+  renderManage("cleanup");
+}
+
+earheart.on("models:progress", ({ kind, modelId, fraction }) => {
+  const m = manage[kind];
+  if (m && m.modelId === modelId && m.fill) {
+    m.fill.style.width = `${Math.round(fraction * 100)}%`;
+  }
+});
+
+document
+  .querySelectorAll('input[name="stt-engine"]')
+  .forEach((r) => r.addEventListener("change", () => syncEngine("stt")));
+document
+  .querySelectorAll('input[name="cleanup-engine"]')
+  .forEach((r) => r.addEventListener("change", () => syncEngine("cleanup")));
+$("stt-builtin-model").addEventListener("change", () => renderManage("stt"));
+$("cleanup-builtin-model").addEventListener("change", () => renderManage("cleanup"));
 
 $("cleanup-prompt-reset").addEventListener("click", () => {
   $("cleanup-prompt").value = defaults.cleanup.systemPrompt;
@@ -312,6 +450,9 @@ $("wizard-banner-dismiss").addEventListener("click", () => {
   defaults = data.defaults;
   platform = data.platform;
   $("version").textContent = `v${data.version}`;
+  modelStatus = await earheart.invoke("models:status");
+  populateModelSelect("stt");
+  populateModelSelect("cleanup");
   populate();
   loadMicrophones();
 })();

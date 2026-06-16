@@ -102,17 +102,30 @@ main/                    Electron main process
   services/stt.js        OpenAI-compatible transcription client
   services/cleanup.js    OpenAI-compatible chat client
   services/server-manager.js  optional local STT server autostart
+  engines/               in-process STT + cleanup (no separate executable)
+    registry.js          downloadable model catalogue
+    model-manager.js     streaming, atomic, checksum-verified downloads
+    engine-worker.js     utilityProcess: sherpa-onnx (STT) + node-llama-cpp
+    host.js / index.js   parent-side worker lifecycle + facade
   output/deliver.js      clipboard + per-OS paste keystroke injection
 renderer/                overlay (mic capture → 16 kHz WAV), settings UI,
-                         first-run wizard
-stt-server/              Python: FastAPI + onnx-asr Parakeet server
+                         first-run wizard (incl. model download step)
+stt-server/              Python: FastAPI + onnx-asr Parakeet server (optional)
 ```
+
+The pipeline routes each stage to the in-process engine or the HTTP client
+based on `stt.engine` / `cleanup.engine` ("builtin" | "server" | "remote").
+The native runtimes are loaded lazily inside the worker, so the app boots and
+the HTTP paths keep working even if a model isn't downloaded.
 
 Design constraints worth keeping:
 
-- **Zero runtime npm dependencies** in the app — Electron's built-ins and the
-  platform's own tools (PowerShell, AppleScript, xdotool/wtype) cover
-  everything.
+- **Few runtime npm dependencies.** The app stays close to Electron's built-ins
+  and the platform's own tools (PowerShell, AppleScript, xdotool/wtype). The
+  only runtime deps are the two native engines — `sherpa-onnx-node` (STT) and
+  `node-llama-cpp` (cleanup) — which ship prebuilt binaries and are unpacked
+  from the asar (`asarUnpack` in `electron-builder.yml`). Models are downloaded
+  at first run, not bundled.
 - **The overlay window owns the microphone.** The main process never touches
   audio; it receives a finished WAV from the renderer.
 - **Never lose the user's words.** If cleanup fails, deliver the raw

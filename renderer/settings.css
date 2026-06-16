@@ -313,3 +313,38 @@ footer {
   padding: 14px 24px;
   border-top: 1px solid var(--border);
 }
+
+/* ---------- built-in model management ---------- */
+
+.model-manage {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.model-manage .hint {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.dl-bar {
+  height: 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.dl-bar[hidden] {
+  display: none;
+}
+
+.dl-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}

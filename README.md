@@ -21,12 +21,19 @@ with a speech-to-text service, optionally cleans the transcript up with a
 language model, and then **pastes the result into whatever app you're typing
 in** (or just copies it to your clipboard).
 
-Both processing steps are **modular, OpenAI-compatible HTTP services**, so you
-choose where your voice goes:
+Out of the box both steps run **inside the app, on your computer** — no
+separate program, no Python, no account. The setup wizard downloads a small
+[Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) speech model and
+a small [Gemma](https://huggingface.co/google) cleanup model (with a progress
+bar) and runs them in-process. Nothing ever leaves your machine.
 
-- **Fully private**: run the bundled [Parakeet STT server](stt-server/) and an
-  [Ollama](https://ollama.com)/llama.cpp model locally — nothing ever leaves
-  your machine.
+Prefer to point Earheart elsewhere? Both steps are also **modular,
+OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
+
+- **Built-in (default)**: Parakeet + Gemma run in-process — fully private,
+  nothing to install.
+- **Local server**: run the [Parakeet STT server](stt-server/) and an
+  [Ollama](https://ollama.com)/llama.cpp model yourself.
 - **Mix and match**: local STT with a hosted LLM for cleanup, or any other
   combination. Switching is just a base URL in Settings.
 
@@ -67,20 +74,23 @@ Grab the latest installer for your platform from the
 > blocked by Gatekeeper. Right-click the app → **Open**, or allow it under
 > **System Settings → Privacy & Security → Open Anyway**.
 
-### For fully local dictation: install `uv`
+That's it — the built-in engines need nothing else installed. The first-run
+wizard downloads the speech and cleanup models for you.
 
-Out of the box Earheart transcribes with its bundled local
-[Parakeet STT server](stt-server/), which it launches as `uvx earheart-stt`.
-That needs [uv](https://docs.astral.sh/uv/getting-started/installation/)
-installed — one command:
+### Advanced: a local STT server with `uv`
+
+If you'd rather run the [Parakeet STT server](stt-server/) as a separate
+process (e.g. to share it with other tools or use a GPU), Earheart can launch
+it as `uvx earheart-stt`. That needs
+[uv](https://docs.astral.sh/uv/getting-started/installation/) installed:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh   # Linux / macOS
 winget install astral-sh.uv                       # Windows
 ```
 
-If you'd rather use a hosted transcription service (OpenAI, Groq, …) you can
-skip this — the setup wizard lets you enter its URL and API key instead.
+Or point Earheart at a hosted transcription service (OpenAI, Groq, …) — the
+setup wizard and Settings let you enter its URL and API key instead.
 
 ### Build from source
 
@@ -101,14 +111,16 @@ npm run dist     # installers for the current platform land in dist/
   <img src="docs/screenshots/wizard.png" width="560" alt="Earheart setup wizard" />
 </p>
 
-On first launch a short setup wizard asks where speech should become text and
-where the text should go — hotkey, microphone, speech-to-text, optional
-cleanup, output. The defaults give you fully local, private dictation: keep
-"On this computer" and Earheart starts the Parakeet server alongside the app.
+On first launch a short setup wizard walks through hotkey, microphone,
+speech-to-text, cleanup and output. The defaults give you fully local, private
+dictation that runs **inside the app**: keep "On this computer, built in" for
+both speech-to-text and cleanup.
 
-The first transcription downloads the Parakeet model (≈ 2.4 GB, or ≈ 660 MB
-with the `int8` variant), so it takes a few minutes — everything after that is
-faster than realtime, even on CPU.
+The wizard's last step downloads the models that run on your machine — a small
+Parakeet speech model (≈ 660 MB) and a small Gemma cleanup model (≈ 700 MB) —
+showing a progress bar as it goes. It's a one-time download; everything after
+that is faster than realtime, even on CPU. You can pick a larger, higher-
+quality cleanup model in the wizard or later in Settings → Cleanup.
 
 ### Optional: transcript cleanup
 
@@ -205,8 +217,8 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
 
 ## Contributing
 
-Want to hack on Earheart? It's plain JavaScript with zero runtime npm
-dependencies and no bundler, and the Python STT server is ~200 lines. See
+Want to hack on Earheart? It's plain JavaScript with no bundler and only two
+runtime dependencies (the native STT and cleanup engines). See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, architecture
 overview, and how to build installers.
 

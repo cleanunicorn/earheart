@@ -25,5 +25,9 @@
   "devDependencies": {
     "electron": "^41.2.0",
     "electron-builder": "^26.4.0"
+  },
+  "dependencies": {
+    "node-llama-cpp": "^3.18.1",
+    "sherpa-onnx-node": "^1.13.3"
   }
 }

@@ -71,6 +71,97 @@ test("wavToFloat32 rejects non-WAV input", () => {
   assert.throws(() => wavToFloat32(Buffer.from("not a wav at all!!")));
 });
 
+test("wavToFloat32 rejects an unsupported format", () => {
+  // A valid mono PCM16 WAV with the audioFormat field flipped to IEEE float (3)
+  // must be rejected, so the engine never feeds garbage to Parakeet (callers
+  // fall back to the HTTP STT path).
+  const wav = encodeWav(new Int16Array([1, 2, 3]));
+  wav.writeUInt16LE(3, 20); // audioFormat: 3 = IEEE float, not PCM
+  assert.throws(() => wavToFloat32(wav), /Unsupported WAV format/);
+
+  // 8-bit PCM is likewise unsupported.
+  const wav8 = encodeWav(new Int16Array([1, 2, 3]));
+  wav8.writeUInt16LE(8, 34); // bitsPerSample: 8
+  assert.throws(() => wavToFloat32(wav8), /Unsupported WAV format/);
+});
+
+test("wavToFloat32 rejects a WAV with no data chunk", () => {
+  // RIFF/WAVE header + a fmt chunk, but no data chunk at all.
+  const buf = Buffer.alloc(36);
+  buf.write("RIFF", 0);
+  buf.writeUInt32LE(28, 4);
+  buf.write("WAVE", 8);
+  buf.write("fmt ", 12);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20); // PCM
+  buf.writeUInt16LE(1, 22); // mono
+  buf.writeUInt32LE(16000, 24);
+  buf.writeUInt32LE(32000, 28);
+  buf.writeUInt16LE(2, 32);
+  buf.writeUInt16LE(16, 34);
+  assert.throws(() => wavToFloat32(buf), /no data chunk/);
+});
+
+test("wavToFloat32 averages stereo channels to mono", () => {
+  // Hand-build a 2-channel PCM16 WAV: L/R interleaved. Each output sample is
+  // the average of its L/R pair, so a stride/divide regression would corrupt it.
+  const pairs = [
+    [16384, 16384], // both 0.5 -> 0.5
+    [16384, -16384], // +0.5, -0.5 -> 0
+    [-32768, -32768], // both -1 -> -1
+  ];
+  const frames = pairs.length;
+  const dataSize = frames * 2 * 2; // frames * channels * bytesPerSample
+  const buf = Buffer.alloc(44 + dataSize);
+  buf.write("RIFF", 0);
+  buf.writeUInt32LE(36 + dataSize, 4);
+  buf.write("WAVE", 8);
+  buf.write("fmt ", 12);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20); // PCM
+  buf.writeUInt16LE(2, 22); // stereo
+  buf.writeUInt32LE(16000, 24);
+  buf.writeUInt32LE(16000 * 4, 28);
+  buf.writeUInt16LE(4, 32); // block align = channels * 2
+  buf.writeUInt16LE(16, 34);
+  buf.write("data", 36);
+  buf.writeUInt32LE(dataSize, 40);
+  let off = 44;
+  for (const [l, r] of pairs) {
+    buf.writeInt16LE(l, off);
+    buf.writeInt16LE(r, off + 2);
+    off += 4;
+  }
+  const { samples } = wavToFloat32(buf);
+  assert.strictEqual(samples.length, frames);
+  assert.ok(Math.abs(samples[0] - 0.5) < 1e-4);
+  assert.ok(Math.abs(samples[1]) < 1e-4);
+  assert.strictEqual(samples[2], -1);
+});
+
+test("wavToFloat32 tolerates an extra chunk before data", () => {
+  // A LIST chunk with an odd size (3 bytes -> 1 pad byte) sits between fmt and
+  // data; the parser must word-align past it and still find data correctly.
+  const samples = new Int16Array([1000, -1000, 500]);
+  const base = encodeWav(samples); // RIFF|fmt(24..)|data(36..)
+  const fmtEnd = 36; // where "data" starts in the base buffer
+  const listSize = 3;
+  const listChunk = Buffer.alloc(8 + listSize + 1); // header + body + pad byte
+  listChunk.write("LIST", 0);
+  listChunk.writeUInt32LE(listSize, 4);
+  listChunk.write("abc", 8);
+  const buf = Buffer.concat([
+    base.subarray(0, fmtEnd),
+    listChunk,
+    base.subarray(fmtEnd),
+  ]);
+  buf.writeUInt32LE(buf.length - 8, 4); // fix RIFF size
+  const out = wavToFloat32(buf);
+  assert.strictEqual(out.sampleRate, 16000);
+  assert.strictEqual(out.samples.length, samples.length);
+  assert.ok(Math.abs(out.samples[0] - 1000 / 32768) < 1e-4);
+});
+
 test("migrateLegacy maps pre-engine settings onto external engines", () => {
   // The old local autostart server has been removed; a config that used it
   // folds into "remote" and the stale sttServer key is dropped.

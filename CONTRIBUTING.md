@@ -1,8 +1,9 @@
 # Contributing to Earheart
 
-Earheart is intentionally small and hackable: plain JavaScript, zero runtime
-npm dependencies, no bundler. The Python STT server is ~200 lines. If you can
-read Electron docs, you can read this whole codebase in an afternoon.
+Earheart is intentionally small and hackable: plain JavaScript, only a couple
+of runtime npm dependencies (the native STT and cleanup engines), no bundler.
+The Python STT server is ~200 lines. If you can read Electron docs, you can
+read this whole codebase in an afternoon.
 
 ## Development setup
 

@@ -157,8 +157,33 @@ async function disposeStt() {
 
 /* ---------------- dispatch ---------------- */
 
+// Module-load smoke check: require/import both native addons without touching
+// any model files, so CI can prove the prebuilt .node binaries link against the
+// current Electron's ABI (a major Electron bump moves the N-API/V8 surface).
+// Returns which engines loaded rather than throwing, so the smoke caller can
+// assert on both regardless of which one breaks.
+async function loadcheck() {
+  const engines = {};
+  try {
+    require("sherpa-onnx-node");
+    engines.stt = true;
+  } catch (err) {
+    engines.stt = false;
+    engines.sttError = String((err && err.message) || err);
+  }
+  try {
+    await import("node-llama-cpp");
+    engines.cleanup = true;
+  } catch (err) {
+    engines.cleanup = false;
+    engines.cleanupError = String((err && err.message) || err);
+  }
+  return engines;
+}
+
 const HANDLERS = {
   ping: async () => ({ pong: true }),
+  loadcheck,
   "load-stt": loadStt,
   transcribe,
   "unload-stt": disposeStt,

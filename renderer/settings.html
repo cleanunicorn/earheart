@@ -79,6 +79,31 @@
 
       <!-- STT -->
       <section id="tab-stt" class="panel">
+        <div class="field">
+          <label class="choice">
+            <input type="radio" name="stt-engine" value="builtin" />
+            Run locally in Earheart
+            <span class="muted">(NVIDIA Parakeet, private &amp; offline)</span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="stt-engine" value="service" />
+            OpenAI-compatible service
+            <span class="muted">(local server, OpenAI, Groq, …)</span>
+          </label>
+        </div>
+
+        <div id="stt-builtin-fields">
+          <div class="field">
+            <label for="stt-builtin-model">Model</label>
+            <select id="stt-builtin-model"></select>
+          </div>
+          <div class="row">
+            <button id="stt-download">Download model</button>
+            <span id="stt-download-status" class="status"></span>
+          </div>
+        </div>
+
+        <div id="stt-service-fields">
         <p class="lead">
           Any service that speaks the OpenAI audio transcription API works here:
           the bundled local Parakeet server, OpenAI, Groq, speaches, …
@@ -106,6 +131,7 @@
           <button id="stt-test">Test connection</button>
           <span id="stt-test-result" class="status"></span>
         </div>
+        </div>
       </section>
 
       <!-- Cleanup -->
@@ -123,6 +149,40 @@
         </div>
         <div id="cleanup-fields">
           <div class="field">
+            <label class="choice">
+              <input type="radio" name="cleanup-engine" value="builtin" />
+              Run locally in Earheart
+              <span class="muted">(small Gemma model, private &amp; offline)</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="cleanup-engine" value="service" />
+              OpenAI-compatible service
+              <span class="muted">(Ollama, LM Studio, OpenAI, …)</span>
+            </label>
+          </div>
+
+          <div id="cleanup-builtin-fields">
+            <div class="field">
+              <label for="cleanup-builtin-model">Model</label>
+              <select id="cleanup-builtin-model"></select>
+            </div>
+            <div class="field" id="cleanup-custom-uri-field" hidden>
+              <label for="cleanup-custom-uri">Hugging Face model</label>
+              <input id="cleanup-custom-uri"
+                placeholder="hf:user/repo/model-file.gguf" />
+              <p class="hint">
+                Any GGUF chat model:
+                <code>hf:&lt;user&gt;/&lt;repo&gt;/&lt;file&gt;.gguf</code> or a URL.
+              </p>
+            </div>
+            <div class="row">
+              <button id="cleanup-download">Download model</button>
+              <span id="cleanup-download-status" class="status"></span>
+            </div>
+          </div>
+
+          <div id="cleanup-service-fields">
+          <div class="field">
             <label for="cleanup-url">Base URL</label>
             <input id="cleanup-url" placeholder="http://127.0.0.1:11434/v1" />
             <p class="hint">The app calls <code>{base URL}/chat/completions</code>.</p>
@@ -131,15 +191,16 @@
             <label for="cleanup-key">API key <span class="muted">(optional for local servers)</span></label>
             <input id="cleanup-key" type="password" autocomplete="off" />
           </div>
-          <div class="grid-2">
-            <div class="field">
-              <label for="cleanup-model">Model</label>
-              <input id="cleanup-model" placeholder="llama3.2" />
-            </div>
-            <div class="field">
-              <label for="cleanup-temperature">Temperature</label>
-              <input id="cleanup-temperature" type="number" min="0" max="2" step="0.1" />
-            </div>
+          <div class="field">
+            <label for="cleanup-model">Model</label>
+            <input id="cleanup-model" placeholder="llama3.2" />
+          </div>
+          </div>
+
+          <!-- shared by both engines -->
+          <div class="field">
+            <label for="cleanup-temperature">Temperature</label>
+            <input id="cleanup-temperature" type="number" min="0" max="2" step="0.1" />
           </div>
           <div class="field">
             <label for="cleanup-prompt">System prompt</label>

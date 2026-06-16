@@ -1,7 +1,8 @@
 # Contributing to Earheart
 
-Earheart is intentionally small and hackable: plain JavaScript, zero runtime
-npm dependencies, no bundler. The Python STT server is ~200 lines. If you can
+Earheart is intentionally small and hackable: plain JavaScript, no bundler, and
+only two runtime npm dependencies (the native engines that run models in-app).
+The Python STT server is ~200 lines. If you can
 read Electron docs, you can read this whole codebase in an afternoon.
 
 ## Development setup
@@ -101,6 +102,10 @@ main/                    Electron main process
   windows.js             overlay + settings + setup wizard windows
   services/stt.js        OpenAI-compatible transcription client
   services/cleanup.js    OpenAI-compatible chat client
+  services/local-stt.js  in-app Parakeet via sherpa-onnx-node
+  services/local-cleanup.js  in-app Gemma via node-llama-cpp
+  services/model-catalog.js   downloadable model definitions
+  services/model-manager.js   model download (progress/resume) + locate
   services/server-manager.js  optional local STT server autostart
   output/deliver.js      clipboard + per-OS paste keystroke injection
 renderer/                overlay (mic capture → 16 kHz WAV), settings UI,
@@ -110,9 +115,14 @@ stt-server/              Python: FastAPI + onnx-asr Parakeet server
 
 Design constraints worth keeping:
 
-- **Zero runtime npm dependencies** in the app — Electron's built-ins and the
-  platform's own tools (PowerShell, AppleScript, xdotool/wtype) cover
-  everything.
+- **Minimal runtime npm dependencies.** Only the two native inference engines
+  (`sherpa-onnx-node`, `node-llama-cpp`) that let the app run models in-process
+  with no Python and no separate server. They ship prebuilt binaries and are
+  loaded lazily, so a missing platform build degrades to the remote/server STT
+  and cleanup paths instead of crashing. Everything else is Electron's built-ins
+  and the platform's own tools (PowerShell, AppleScript, xdotool/wtype).
+  These native modules must be unpacked from the asar (see `asarUnpack` in
+  `electron-builder.yml`).
 - **The overlay window owns the microphone.** The main process never touches
   audio; it receives a finished WAV from the renderer.
 - **Never lose the user's words.** If cleanup fails, deliver the raw

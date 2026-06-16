@@ -10,6 +10,7 @@ const LISTEN = new Set([
   "history:changed",
   "overlay:show",
   "overlay:hide",
+  "models:progress",
 ]);
 
 const SEND = new Set([
@@ -29,6 +30,9 @@ const INVOKE = new Set([
   "wizard:open",
   "stt:test",
   "cleanup:test",
+  "models:status",
+  "models:download",
+  "models:cancel",
   "history:list",
   "history:clear",
 ]);

@@ -17,8 +17,19 @@ const windows = require("./windows");
 const settings = require("./settings");
 const stt = require("./services/stt");
 const cleanup = require("./services/cleanup");
+const localStt = require("./services/local-stt");
+const localCleanup = require("./services/local-cleanup");
 const { deliver } = require("./output/deliver");
 const history = require("./history");
+
+// Pick the in-app engine or the HTTP client based on the per-component
+// `engine` setting. Both expose the same call shape.
+function sttEngine(cfg) {
+  return cfg.engine === "builtin" ? localStt : stt;
+}
+function cleanupEngine(cfg) {
+  return cfg.engine === "builtin" ? localCleanup : cleanup;
+}
 
 let state = "idle"; // idle | recording | processing
 let session = 0; // current dictation session id
@@ -109,7 +120,7 @@ async function process(sid, wavArrayBuffer) {
 
   try {
     overlayStatus("transcribing");
-    const raw = await stt.transcribe(wav, cfg.stt, signal);
+    const raw = await sttEngine(cfg.stt).transcribe(wav, cfg.stt, signal);
     if (stale()) return;
 
     if (!raw) {
@@ -123,7 +134,7 @@ async function process(sid, wavArrayBuffer) {
     if (cfg.cleanup.enabled) {
       overlayStatus("cleaning");
       try {
-        text = await cleanup.clean(raw, cfg.cleanup, signal);
+        text = await cleanupEngine(cfg.cleanup).clean(raw, cfg.cleanup, signal);
         cleaned = true;
       } catch (err) {
         if (stale()) return;

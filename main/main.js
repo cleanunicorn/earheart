@@ -93,5 +93,8 @@ function main() {
   app.on("will-quit", () => {
     hotkeys.unregisterAll();
     serverManager.stop();
+    // Release native model memory held by the in-app engines.
+    require("./services/local-stt").unload();
+    require("./services/local-cleanup").unload();
   });
 }

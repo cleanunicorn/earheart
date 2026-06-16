@@ -4,6 +4,7 @@
 const { app } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
+const catalog = require("./services/model-catalog");
 
 const DEFAULT_CLEANUP_PROMPT = `You clean up raw speech-to-text transcriptions.
 
@@ -27,6 +28,12 @@ const DEFAULTS = {
     pasteDelayMs: 150, // wait before simulating the paste keystroke
   },
   stt: {
+    // "builtin" = run Parakeet in-app via sherpa-onnx (no Python, no server);
+    // "service" = talk to an OpenAI-compatible endpoint (baseUrl below).
+    // New installs default to builtin; upgrades are migrated to "service" so
+    // an existing HTTP setup keeps working (see load()).
+    engine: "builtin",
+    localModel: catalog.DEFAULT_STT_MODEL,
     baseUrl: "http://127.0.0.1:8484/v1",
     apiKey: "",
     model: "parakeet",
@@ -34,7 +41,13 @@ const DEFAULTS = {
     timeoutMs: 120000,
   },
   cleanup: {
-    enabled: false,
+    // Cleanup is on by default now that it can run fully in-app.
+    enabled: true,
+    // "builtin" = run a small Gemma GGUF in-app via node-llama-cpp;
+    // "service" = any OpenAI-compatible chat endpoint (baseUrl below).
+    engine: "builtin",
+    localModel: catalog.DEFAULT_CLEANUP_MODEL,
+    localModelUri: "", // used when localModel === "custom"
     baseUrl: "http://127.0.0.1:11434/v1",
     apiKey: "",
     model: "",
@@ -75,6 +88,19 @@ function deepMerge(base, override) {
   return out;
 }
 
+// Upgrades from before the in-app engines existed used the HTTP/service path
+// exclusively. Their stored settings have no `engine` key, so a plain merge
+// would silently flip them to the new "builtin" default and break a working
+// remote/server setup. Detect that case and keep them on "service".
+function migrate(stored, merged) {
+  if (!stored || Object.keys(stored).length === 0) return merged; // fresh install
+  if (stored.stt && stored.stt.engine === undefined) merged.stt.engine = "service";
+  if (stored.cleanup && stored.cleanup.engine === undefined) {
+    merged.cleanup.engine = "service";
+  }
+  return merged;
+}
+
 function load() {
   if (cached) return cached;
   let stored = {};
@@ -83,7 +109,7 @@ function load() {
   } catch {
     // First run or unreadable file: fall back to defaults.
   }
-  cached = deepMerge(DEFAULTS, stored);
+  cached = migrate(stored, deepMerge(DEFAULTS, stored));
   return cached;
 }
 
@@ -112,4 +138,5 @@ module.exports = {
   DEFAULTS,
   DEFAULT_CLEANUP_PROMPT,
   deepMerge,
+  migrate,
 };

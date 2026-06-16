@@ -187,6 +187,77 @@ kbd {
   100% { width: 18ch; opacity: 0; }
 }
 
+/* ---------- model download step ---------- */
+
+.benefits {
+  margin: 4px 0 18px;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.benefits strong {
+  color: var(--text);
+}
+
+.dl {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+
+.dl-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.dl-name {
+  font-weight: 600;
+}
+
+.dl-state {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dl-state.ok { color: #4caf6e; }
+.dl-state.err { color: #e57373; }
+
+.dl-bar {
+  height: 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.dl-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 6px;
+  transition: width 0.2s ease;
+}
+
+.dl-fill.done { width: 100% !important; }
+
+.dl-fill.indeterminate {
+  width: 35% !important;
+  animation: dl-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes dl-slide {
+  0% { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+
 /* ---------- summary on the last step ---------- */
 
 #summary {

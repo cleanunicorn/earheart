@@ -109,8 +109,14 @@
         <h2>Where should speech become text?</h2>
         <div class="field">
           <label class="choice">
-            <input type="radio" name="stt-mode" value="local" checked />
-            On this computer <span class="muted">(recommended — private and free)</span>
+            <input type="radio" name="stt-mode" value="builtin" checked />
+            Run locally in Earheart
+            <span class="muted">(recommended — private, free, nothing to install)</span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="stt-mode" value="local" />
+            Connect to a local STT server
+            <span class="muted">(advanced — needs <code>uv</code>/Python)</span>
           </label>
           <label class="choice">
             <input type="radio" name="stt-mode" value="remote" />
@@ -118,10 +124,25 @@
           </label>
         </div>
 
-        <div id="stt-local-fields">
+        <div id="stt-builtin-fields">
           <p class="lead">
-            Earheart ships a local server using NVIDIA's Parakeet model. Audio
-            never leaves your machine.
+            Earheart runs NVIDIA's Parakeet model directly inside the app.
+            Your voice is transcribed on this computer — it never leaves your
+            machine, there are no accounts or API keys, and it works offline.
+          </p>
+          <div class="field">
+            <label for="stt-builtin-model">Model</label>
+            <select id="stt-builtin-model"></select>
+            <p class="hint" id="stt-builtin-note">
+              Downloaded once on the next step.
+            </p>
+          </div>
+        </div>
+
+        <div id="stt-local-fields" hidden>
+          <p class="lead">
+            Connect to a separately running Parakeet STT server (the
+            <code>earheart-stt</code> package launched with <code>uv</code>).
           </p>
           <div class="field">
             <label class="choice">
@@ -133,9 +154,8 @@
               <input id="server-command" placeholder="uvx earheart-stt" />
               <p class="hint">
                 Needs <code>uv</code> installed. The first start downloads the
-                Parakeet model (~2.4&nbsp;GB), so the very first transcription
-                takes a while. See the <code>stt-server</code> README for
-                details.
+                Parakeet model (~2.4&nbsp;GB). See the <code>stt-server</code>
+                README for details.
               </p>
             </div>
           </div>
@@ -161,50 +181,100 @@
           </div>
         </div>
 
-        <div class="row">
+        <div class="row" id="stt-test-row">
           <button id="stt-test">Test connection</button>
           <span id="stt-test-result" class="status"></span>
         </div>
-        <p class="hint">
-          Optional — if the local server isn't installed yet, the test will
-          fail and that's okay. You can test again from Settings later.
-        </p>
       </section>
 
       <!-- 5. Cleanup -->
       <section class="step" id="step-cleanup">
         <h2>Tidy up transcripts? <span class="muted">(optional)</span></h2>
         <p class="lead">
-          A language model can fix punctuation and strip filler words ("um",
-          "uh") after transcription. Works with any OpenAI-compatible chat API:
-          Ollama, LM Studio, OpenAI, … Most people start without it.
+          A language model fixes punctuation, capitalization and strips filler
+          words ("um", "uh") and false starts after transcription — so what
+          lands in your document reads like writing, not a raw transcript.
         </p>
         <div class="field">
           <label class="choice">
-            <input type="checkbox" id="cleanup-enabled" />
+            <input type="checkbox" id="cleanup-enabled" checked />
             Clean up transcripts with a language model
           </label>
         </div>
         <div id="cleanup-fields">
           <div class="field">
-            <label for="cleanup-url">Base URL</label>
-            <input id="cleanup-url" placeholder="http://127.0.0.1:11434/v1" />
+            <label class="choice">
+              <input type="radio" name="cleanup-mode" value="builtin" checked />
+              Run locally in Earheart
+              <span class="muted">(recommended — private, free, no setup)</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="cleanup-mode" value="service" />
+              A remote / local API
+              <span class="muted">(Ollama, LM Studio, OpenAI, …)</span>
+            </label>
           </div>
-          <div class="grid-2">
+
+          <div id="cleanup-builtin-fields">
             <div class="field">
-              <label for="cleanup-key">API key <span class="muted">(optional for local servers)</span></label>
-              <input id="cleanup-key" type="password" autocomplete="off" />
+              <label for="cleanup-builtin-model">Model</label>
+              <select id="cleanup-builtin-model"></select>
+              <p class="hint" id="cleanup-builtin-note"></p>
             </div>
-            <div class="field">
-              <label for="cleanup-model">Model</label>
-              <input id="cleanup-model" placeholder="llama3.2" />
+            <div class="field" id="cleanup-custom-uri-field" hidden>
+              <label for="cleanup-custom-uri">Hugging Face model</label>
+              <input id="cleanup-custom-uri"
+                placeholder="hf:user/repo/model-file.gguf" />
+              <p class="hint">
+                Any GGUF chat model. Format:
+                <code>hf:&lt;user&gt;/&lt;repo&gt;/&lt;file&gt;.gguf</code> or a
+                direct download URL.
+              </p>
             </div>
           </div>
-          <div class="row">
-            <button id="cleanup-test">Test connection</button>
-            <span id="cleanup-test-result" class="status"></span>
+
+          <div id="cleanup-service-fields" hidden>
+            <div class="field">
+              <label for="cleanup-url">Base URL</label>
+              <input id="cleanup-url" placeholder="http://127.0.0.1:11434/v1" />
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="cleanup-key">API key <span class="muted">(optional for local servers)</span></label>
+                <input id="cleanup-key" type="password" autocomplete="off" />
+              </div>
+              <div class="field">
+                <label for="cleanup-model">Model</label>
+                <input id="cleanup-model" placeholder="llama3.2" />
+              </div>
+            </div>
+            <div class="row">
+              <button id="cleanup-test">Test connection</button>
+              <span id="cleanup-test-result" class="status"></span>
+            </div>
           </div>
         </div>
+      </section>
+
+      <!-- 6. Download local models -->
+      <section class="step" id="step-models">
+        <h2>Set up your private models</h2>
+        <p class="lead">
+          Earheart is downloading the models it runs on this computer. This
+          happens once. While it works, here's what you're getting:
+        </p>
+        <ul class="benefits">
+          <li><strong>Completely private</strong> — your voice and text are
+            processed on your machine and never sent to a server.</li>
+          <li><strong>Works offline</strong> — no internet needed after this.</li>
+          <li><strong>Free, no accounts or API keys</strong> — nothing to sign
+            up for, nothing to pay.</li>
+        </ul>
+        <div id="downloads"></div>
+        <p class="hint" id="models-hint">
+          You can keep going through setup while this downloads — Earheart will
+          finish the download in the background.
+        </p>
       </section>
 
       <!-- 6. Output + summary -->

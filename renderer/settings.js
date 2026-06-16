@@ -3,6 +3,7 @@
 let current = null; // settings object being edited
 let defaults = null;
 let platform = "linux";
+let catalog = { stt: [], cleanup: [] };
 
 const $ = (id) => document.getElementById(id);
 
@@ -117,18 +118,29 @@ function populate() {
     document.querySelector('input[name="output-mode"][value="paste"]')
   ).checked = true;
 
+  document.querySelector(
+    `input[name="stt-engine"][value="${current.stt.engine || "service"}"]`
+  ).checked = true;
+  $("stt-builtin-model").value = current.stt.localModel;
   $("stt-url").value = current.stt.baseUrl;
   $("stt-key").value = current.stt.apiKey;
   $("stt-model").value = current.stt.model;
   $("stt-language").value = current.stt.language;
+  syncSttEngine();
 
   $("cleanup-enabled").checked = current.cleanup.enabled;
+  document.querySelector(
+    `input[name="cleanup-engine"][value="${current.cleanup.engine || "service"}"]`
+  ).checked = true;
+  $("cleanup-builtin-model").value = current.cleanup.localModel;
+  $("cleanup-custom-uri").value = current.cleanup.localModelUri || "";
   $("cleanup-url").value = current.cleanup.baseUrl;
   $("cleanup-key").value = current.cleanup.apiKey;
   $("cleanup-model").value = current.cleanup.model;
   $("cleanup-temperature").value = current.cleanup.temperature;
   $("cleanup-prompt").value = current.cleanup.systemPrompt;
   syncCleanupEnabled();
+  syncCleanupEngine();
 
   $("history-enabled").checked = current.history.enabled;
   $("server-autostart").checked = current.sttServer.autoStart;
@@ -152,6 +164,8 @@ function collect() {
     },
     stt: {
       ...current.stt,
+      engine: document.querySelector('input[name="stt-engine"]:checked').value,
+      localModel: $("stt-builtin-model").value,
       baseUrl: $("stt-url").value.trim(),
       apiKey: $("stt-key").value.trim(),
       model: $("stt-model").value.trim(),
@@ -160,6 +174,9 @@ function collect() {
     cleanup: {
       ...current.cleanup,
       enabled: $("cleanup-enabled").checked,
+      engine: document.querySelector('input[name="cleanup-engine"]:checked').value,
+      localModel: $("cleanup-builtin-model").value,
+      localModelUri: $("cleanup-custom-uri").value.trim(),
       baseUrl: $("cleanup-url").value.trim(),
       apiKey: $("cleanup-key").value.trim(),
       model: $("cleanup-model").value.trim(),
@@ -186,6 +203,75 @@ function syncCleanupEnabled() {
   $("cleanup-fields").classList.toggle("disabled", !$("cleanup-enabled").checked);
 }
 $("cleanup-enabled").addEventListener("change", syncCleanupEnabled);
+
+/* ---------- engine selection (in-app vs OpenAI-compatible service) ---------- */
+
+function sttEngineValue() {
+  return document.querySelector('input[name="stt-engine"]:checked').value;
+}
+function cleanupEngineValue() {
+  return document.querySelector('input[name="cleanup-engine"]:checked').value;
+}
+
+function syncSttEngine() {
+  const builtin = sttEngineValue() === "builtin";
+  $("stt-builtin-fields").hidden = !builtin;
+  $("stt-service-fields").hidden = builtin;
+}
+
+function syncCleanupEngine() {
+  const builtin = cleanupEngineValue() === "builtin";
+  $("cleanup-builtin-fields").hidden = !builtin;
+  $("cleanup-service-fields").hidden = builtin;
+  $("cleanup-custom-uri-field").hidden =
+    !builtin || $("cleanup-builtin-model").value !== "custom";
+}
+
+document
+  .querySelectorAll('input[name="stt-engine"]')
+  .forEach((r) => r.addEventListener("change", syncSttEngine));
+document
+  .querySelectorAll('input[name="cleanup-engine"]')
+  .forEach((r) => r.addEventListener("change", syncCleanupEngine));
+$("cleanup-builtin-model").addEventListener("change", syncCleanupEngine);
+
+/* ---------- model downloads ---------- */
+
+function bindDownload(buttonId, statusId, target, getPayload) {
+  $(buttonId).addEventListener("click", async () => {
+    const el = $(statusId);
+    el.className = "status";
+    el.textContent = "Starting…";
+    $(buttonId).disabled = true;
+    const result = await earheart.invoke("models:download", {
+      target,
+      ...getPayload(),
+    });
+    $(buttonId).disabled = false;
+    if (result.ok) {
+      el.textContent = "Ready";
+      el.className = "status ok";
+    } else {
+      el.textContent = result.error;
+      el.className = "status err";
+    }
+  });
+}
+
+bindDownload("stt-download", "stt-download-status", "stt", () => ({
+  modelId: $("stt-builtin-model").value,
+}));
+bindDownload("cleanup-download", "cleanup-download-status", "cleanup", () => ({
+  modelId: $("cleanup-builtin-model").value,
+  customUri: $("cleanup-custom-uri").value.trim(),
+}));
+
+earheart.on("models:progress", (p) => {
+  const el = p.target === "stt" ? $("stt-download-status") : $("cleanup-download-status");
+  if (!el || p.phase !== "downloading" || !p.total) return;
+  el.className = "status";
+  el.textContent = `${Math.min(100, Math.round((p.received / p.total) * 100))}%`;
+});
 
 $("cleanup-prompt-reset").addEventListener("click", () => {
   $("cleanup-prompt").value = defaults.cleanup.systemPrompt;
@@ -306,12 +392,37 @@ $("wizard-banner-dismiss").addEventListener("click", () => {
 
 /* ---------- init ---------- */
 
+function fillSelect(select, items, selectedId) {
+  select.replaceChildren();
+  for (const m of items) {
+    const opt = document.createElement("option");
+    opt.value = m.id;
+    opt.textContent = m.label;
+    select.appendChild(opt);
+  }
+  if (selectedId) select.value = selectedId;
+}
+
 (async () => {
   const data = await earheart.invoke("settings:get");
   current = data.settings;
   defaults = data.defaults;
   platform = data.platform;
   $("version").textContent = `v${data.version}`;
+
+  const status = await earheart.invoke("models:status");
+  catalog = status.catalog;
+  fillSelect($("stt-builtin-model"), catalog.stt, current.stt.localModel);
+  fillSelect(
+    $("cleanup-builtin-model"),
+    [...catalog.cleanup, { id: "custom", label: "Custom (Hugging Face)…" }],
+    current.cleanup.localModel
+  );
+  if (status.stt.installed) $("stt-download-status").textContent = "Installed";
+  if (status.cleanup.installed) {
+    $("cleanup-download-status").textContent = "Installed";
+  }
+
   populate();
   loadMicrophones();
 })();

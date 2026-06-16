@@ -19,6 +19,16 @@ files:
   - assets/**/*
   - package.json
 
+# The in-app STT (sherpa-onnx) and cleanup (node-llama-cpp) engines load native
+# binaries (.node/.so/.dylib/.dll) at runtime; those cannot be read from inside
+# the asar archive, so unpack them. The platform-specific binaries live in
+# scoped/sibling packages (sherpa-onnx-<platform>, @node-llama-cpp/*).
+asarUnpack:
+  - "node_modules/sherpa-onnx-node/**"
+  - "node_modules/sherpa-onnx-*/**"
+  - "node_modules/node-llama-cpp/**"
+  - "node_modules/@node-llama-cpp/**"
+
 linux:
   target:
     - AppImage

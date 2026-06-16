@@ -126,7 +126,7 @@ dictation that runs **inside the app**: keep "On this computer, built in" for
 both speech-to-text and cleanup.
 
 The wizard's last step downloads the models that run on your machine — a small
-Parakeet speech model (≈ 660 MB) and a small Gemma cleanup model (≈ 700 MB) —
+Parakeet speech model (≈ 670 MB) and a small Gemma cleanup model (≈ 800 MB) —
 showing a progress bar as it goes. It's a one-time download; everything after
 that is faster than realtime, even on CPU. You can pick a larger, higher-
 quality cleanup model in the wizard or later in Settings → Cleanup.

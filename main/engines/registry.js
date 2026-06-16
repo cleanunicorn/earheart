@@ -41,7 +41,7 @@ const MODELS = {
       kind: "stt",
       engine: "sherpa-parakeet",
       // ~25 languages, auto-detected, faster-than-realtime on CPU.
-      note: "Runs on this computer · 25 languages · ~660 MB",
+      note: "Runs on this computer · 25 languages · ~670 MB",
       files: [
         { name: "encoder.int8.onnx", bytes: 652_184_281,
           sha256: "acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247",
@@ -73,7 +73,7 @@ const MODELS = {
       kind: "cleanup",
       engine: "llama-gguf",
       default: true,
-      note: "Runs on this computer · ~0.7 GB · best for most laptops",
+      note: "Runs on this computer · ~0.8 GB · best for most laptops",
       files: [
         { name: "gemma-3-1b-it-Q4_K_M.gguf", bytes: 806_058_240,
           sha256: "8ccc5cd1f1b3602548715ae25a66ed73fd5dc68a210412eea643eb20eb75a135",

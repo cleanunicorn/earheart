@@ -109,7 +109,7 @@ main/                    Electron main process
   windows.js             overlay + settings + setup wizard windows
   services/stt.js        OpenAI-compatible transcription client
   services/cleanup.js    OpenAI-compatible chat client
-  services/server-manager.js  optional local STT server autostart
+  services/models-remote.js   list a remote service's models (Settings)
   engines/               in-process STT + cleanup (no separate executable)
     registry.js          downloadable model catalogue
     model-manager.js     streaming, atomic, checksum-verified downloads
@@ -122,7 +122,7 @@ stt-server/              Python: FastAPI + onnx-asr Parakeet server (optional)
 ```
 
 The pipeline routes each stage to the in-process engine or the HTTP client
-based on `stt.engine` / `cleanup.engine` ("builtin" | "server" | "remote").
+based on `stt.engine` / `cleanup.engine` ("builtin" | "remote").
 The native runtimes are loaded lazily inside the worker, so the app boots and
 the HTTP paths keep working even if a model isn't downloaded.
 

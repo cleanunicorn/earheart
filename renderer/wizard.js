@@ -370,6 +370,12 @@ async function runDownload(kind, modelId) {
   } else if (res.cancelled) {
     row.status.textContent = "Cancelled";
     row.status.className = "status";
+  } else if (res.error === "Already downloading") {
+    // A fast re-entry (toggling the selection) can race the previous transfer's
+    // teardown. The download is still progressing, so keep showing it as such
+    // rather than a hard error; progress events continue to update the row.
+    row.status.textContent = "Downloading…";
+    row.status.className = "status";
   } else {
     row.status.textContent = res.error || "Download failed";
     row.status.className = "status err";

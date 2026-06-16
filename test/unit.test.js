@@ -166,6 +166,61 @@ test("listRemoteModels requires a base URL", async () => {
   await assert.rejects(() => listRemoteModels({}), /Base URL is required/);
 });
 
+test("listRemoteModels rejects a non-http(s) base URL", async () => {
+  await assert.rejects(
+    () => listRemoteModels({ baseUrl: "file:///etc/passwd" }),
+    /must use http or https/
+  );
+});
+
+test("listRemoteModels returns an empty list when the service reports none", async () => {
+  const { server, base } = await serveJson(() => ({ status: 200, body: { data: [] } }));
+  try {
+    assert.deepStrictEqual(await listRemoteModels({ baseUrl: base }), []);
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels rejects a non-JSON body", async () => {
+  const { server, base } = await serveJson(() => ({ status: 200, body: "not json{" }));
+  try {
+    await assert.rejects(() => listRemoteModels({ baseUrl: base }), /did not return JSON/);
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels rejects an unexpected JSON shape", async () => {
+  const { server, base } = await serveJson(() => ({ status: 200, body: { notdata: 1 } }));
+  try {
+    await assert.rejects(() => listRemoteModels({ baseUrl: base }), /Unexpected/);
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels strips a trailing slash before appending /models", async () => {
+  const { server, base } = await serveJson((req) => {
+    assert.strictEqual(req.url, "/v1/models"); // not /v1//models
+    return { status: 200, body: { data: [{ id: "m" }] } };
+  });
+  try {
+    // base already ends in /v1; add another slash so joinUrl has to strip it.
+    assert.deepStrictEqual(await listRemoteModels({ baseUrl: `${base}/` }), ["m"]);
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels wraps a network failure with the URL", async () => {
+  // Port 1 is not listenable, so the fetch rejects at the connection stage.
+  await assert.rejects(
+    () => listRemoteModels({ baseUrl: "http://127.0.0.1:1/v1" }),
+    /Could not reach/
+  );
+});
+
 test("idle model unload defaults to a finite window and is overridable", () => {
   // Sensible default: unload after a couple of idle minutes.
   assert.strictEqual(DEFAULTS.engines.idleUnloadMinutes, 2);

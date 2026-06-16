@@ -15,6 +15,18 @@ function joinUrl(baseUrl, route) {
 async function listRemoteModels(cfg, { signal } = {}) {
   if (!cfg || !cfg.baseUrl) throw new Error("Base URL is required");
   const url = joinUrl(cfg.baseUrl, "/models");
+  // Only fetch over HTTP(S). The base URL is user-supplied and reaches here
+  // from the renderer, so reject file:/other schemes rather than letting fetch
+  // read the local filesystem or a non-network resource.
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Invalid base URL: ${cfg.baseUrl}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`Base URL must use http or https, got ${parsed.protocol}`);
+  }
   const headers = {};
   if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
 

@@ -107,6 +107,29 @@ test("registry: every model file has a well-formed https url and filename", () =
   }
 });
 
+test("registry: every model file is checksum-pinned to an immutable commit", () => {
+  for (const { kind, id, file } of allModelFiles()) {
+    const where = `${kind}/${id} -> ${file.name}`;
+    // A 64-hex sha256 must be present — without it the download manager skips
+    // verification and trusts the bytes blindly.
+    assert.match(
+      file.sha256 || "",
+      /^[a-f0-9]{64}$/,
+      `${where}: missing or malformed sha256`
+    );
+    // The URL must pin a Hugging Face commit, not a moving branch, so the bytes
+    // (and thus the checksum) can't drift out from under us.
+    const url = new URL(file.url);
+    if (url.hostname === "huggingface.co") {
+      assert.doesNotMatch(
+        url.pathname,
+        /\/resolve\/main\//,
+        `${where}: pins resolve/main (a moving ref); use resolve/<commit>`
+      );
+    }
+  }
+});
+
 test("registry: no model file is hosted on a gated Hugging Face repo", () => {
   for (const { kind, id, file } of allModelFiles()) {
     const url = new URL(file.url);

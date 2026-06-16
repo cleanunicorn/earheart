@@ -47,13 +47,15 @@ function spawn() {
 }
 
 /**
- * Send a request to the worker and await its reply.
+ * Send a request to the worker and await its reply. Message payloads are
+ * structured-cloned across the process boundary; Electron's utilityProcess
+ * has no transfer list for plain buffers (only MessagePortMain), so callers
+ * pass any binary data as ordinary fields.
  * @param {string} type
  * @param {object} [args]
- * @param {ArrayBuffer[]} [transfer] - buffers to move (not copy)
  * @param {number} [timeoutMs]
  */
-function request(type, args = {}, transfer = [], timeoutMs = 180000) {
+function request(type, args = {}, timeoutMs = 180000) {
   const proc = spawn();
   const id = nextId++;
   return new Promise((resolve, reject) => {
@@ -73,7 +75,7 @@ function request(type, args = {}, transfer = [], timeoutMs = 180000) {
         reject(e);
       },
     });
-    proc.postMessage({ id, type, ...args }, transfer);
+    proc.postMessage({ id, type, ...args });
   });
 }
 

@@ -55,14 +55,17 @@ async function ensureStt(modelId) {
 async function transcribe(wav, cfg) {
   await ensureStt(cfg.builtin.model);
   const bytes = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
-  // Copy out an exact-length ArrayBuffer and transfer (rather than clone) it to
-  // the worker, so the audio crosses the process boundary only once.
+  // Copy out an exact-length ArrayBuffer for the worker. Electron's
+  // utilityProcess.postMessage only accepts MessagePortMain objects in its
+  // transfer list (not ArrayBuffers, unlike worker_threads) — passing the
+  // buffer there throws "port at index 0 is not a valid port" — so the audio
+  // is structured-cloned across. A few seconds of PCM16 is small enough that
+  // the one extra copy is negligible.
   const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  const text = await host.request(
-    "transcribe",
-    { wav: ab, language: cfg.language || "" },
-    [ab]
-  );
+  const text = await host.request("transcribe", {
+    wav: ab,
+    language: cfg.language || "",
+  });
   return (text || "").trim();
 }
 

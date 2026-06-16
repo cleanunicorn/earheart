@@ -5,6 +5,10 @@
 
 const path = require("node:path");
 
+// Default per-request ceiling: model loads and long transcriptions can take a
+// while, but a wedged worker should never hang a caller forever.
+const DEFAULT_REQUEST_TIMEOUT_MS = 180000;
+
 let child = null;
 let nextId = 1;
 const pending = new Map();
@@ -55,7 +59,7 @@ function spawn() {
  * @param {object} [args]
  * @param {number} [timeoutMs]
  */
-function request(type, args = {}, timeoutMs = 180000) {
+function request(type, args = {}, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
   const proc = spawn();
   const id = nextId++;
   return new Promise((resolve, reject) => {

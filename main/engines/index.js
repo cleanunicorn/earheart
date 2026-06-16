@@ -97,20 +97,26 @@ async function clean(transcript, cfg) {
   return cleaned && cleaned.length > 0 ? cleaned : transcript;
 }
 
-function stop() {
+// Forget which models the worker had resident, so the next call re-runs
+// ensureStt/ensureCleanup instead of assuming a model is still loaded.
+function forgetLoaded() {
   loadedStt = null;
   loadedCleanup = null;
+}
+
+function stop() {
+  forgetLoaded();
   host.stop();
 }
 
-// Free the native model memory without killing the worker, so an idle session
-// reclaims ~1.5 GB+ while leaving the worker ready for a fast re-load. The next
-// transcribe/clean call re-runs ensureStt/ensureCleanup. No-op if the worker
-// has already exited (nothing is loaded).
+// Release the loaded models without killing the worker, leaving it ready for a
+// fast re-load; the next transcribe/clean call re-runs ensureStt/ensureCleanup.
+// The cleanup engine frees its memory promptly via dispose(); the STT engine
+// has no explicit free, so its memory is reclaimed by GC rather than at once.
+// No-op if the worker has already exited (nothing is loaded).
 async function unloadIdle() {
   if (loadedStt === null && loadedCleanup === null) return;
-  loadedStt = null;
-  loadedCleanup = null;
+  forgetLoaded();
   try {
     await Promise.all([
       host.request("unload-stt"),
@@ -124,10 +130,7 @@ async function unloadIdle() {
 // If the worker dies (native crash, or our own stop()), it comes back empty.
 // Forget what we thought it had loaded so the next call re-loads the model
 // instead of sending inference to a worker that has no model resident.
-host.onExit(() => {
-  loadedStt = null;
-  loadedCleanup = null;
-});
+host.onExit(forgetLoaded);
 
 module.exports = {
   modelsDir,

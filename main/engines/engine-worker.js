@@ -16,9 +16,15 @@
 // dictation.
 
 const path = require("node:path");
-const { wavToFloat32 } = require("../util/wav");
+const { wavToFloat32, SAMPLE_RATE } = require("../util/wav");
 
 const port = process.parentPort;
+
+// Parakeet's mel-feature dimension, fixed by the model.
+const FEATURE_DIM = 80;
+// Cleanup engine defaults (overridable per request).
+const DEFAULT_CONTEXT_SIZE = 2048;
+const DEFAULT_CLEANUP_TEMPERATURE = 0.2;
 
 let recognizer = null; // sherpa-onnx OfflineRecognizer
 let sttModelId = null;
@@ -28,7 +34,6 @@ let llamaModel = null;
 let llamaContext = null;
 let llamaSession = null;
 let cleanupModelPath = null;
-let cleanupSystemPrompt = null;
 
 function reply(id, promise) {
   Promise.resolve(promise)
@@ -46,19 +51,11 @@ async function loadStt({ dir, sherpa, modelId }) {
   } catch (err) {
     throw new Error(`sherpa-onnx-node not available: ${err.message}`);
   }
-  // Free the previous recognizer before swapping models so we don't leak its
-  // native memory (the cleanup engine does the same via disposeCleanup).
-  if (recognizer && typeof recognizer.free === "function") {
-    try {
-      recognizer.free();
-    } catch {
-      // best effort
-    }
-  }
-  recognizer = null;
-  sttModelId = null;
+  // Drop the previous recognizer before swapping models (the cleanup engine
+  // does the same via disposeCleanup).
+  await disposeStt();
   recognizer = new sherpaOnnx.OfflineRecognizer({
-    featConfig: { sampleRate: 16000, featureDim: 80 },
+    featConfig: { sampleRate: SAMPLE_RATE, featureDim: FEATURE_DIM },
     modelConfig: {
       transducer: {
         encoder: path.join(dir, sherpa.encoder),
@@ -104,11 +101,10 @@ async function loadCleanup({ modelPath, contextSize }) {
   llama = llama || (await mod.getLlama());
   llamaModel = await llama.loadModel({ modelPath });
   llamaContext = await llamaModel.createContext({
-    contextSize: contextSize || 2048,
+    contextSize: contextSize || DEFAULT_CONTEXT_SIZE,
   });
   llamaSession = null;
   cleanupModelPath = modelPath;
-  cleanupSystemPrompt = null;
   return { ready: true };
 }
 
@@ -127,13 +123,12 @@ async function clean({ transcript, systemPrompt, temperature }) {
   } else {
     llamaSession.resetChatHistory();
   }
-  cleanupSystemPrompt = systemPrompt;
   // The transcript is labelled as data and followed by a cue, so the model
   // continues with the cleaned text rather than a reply to its content.
   const userTurn =
     `${systemPrompt}\n\nTranscript:\n${transcript}\n\nCleaned transcript:`;
   const out = await llamaSession.prompt(userTurn, {
-    temperature: temperature ?? 0.2,
+    temperature: temperature ?? DEFAULT_CLEANUP_TEMPERATURE,
   });
   return (out || "").trim();
 }
@@ -150,17 +145,12 @@ async function disposeCleanup() {
   llamaContext = null;
   llamaModel = null;
   cleanupModelPath = null;
-  cleanupSystemPrompt = null;
 }
 
 async function disposeStt() {
-  if (recognizer && typeof recognizer.free === "function") {
-    try {
-      recognizer.free();
-    } catch {
-      // best effort
-    }
-  }
+  // sherpa-onnx-node's OfflineRecognizer exposes no explicit free(); its native
+  // memory is released by a finalizer once the handle is unreachable. So we just
+  // drop the reference and let GC reclaim it — reclamation is not immediate.
   recognizer = null;
   sttModelId = null;
 }

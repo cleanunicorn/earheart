@@ -13,6 +13,44 @@ const crypto = require("node:crypto");
 const registry = require("../main/engines/registry");
 const manager = require("../main/engines/model-manager");
 
+const Module = require("node:module");
+
+// Load main/engines/index.js with `electron`, `./host`, and `./model-manager`
+// replaced by the supplied fakes, so the facade can be exercised without the
+// Electron runtime or the native engines. Returns the facade module.
+function loadFacadeWith({ host, manager: managerStub }) {
+  const indexPath = require.resolve("../main/engines/index");
+  const electronPath = require.resolve("electron", {
+    paths: [path.dirname(indexPath)],
+  });
+  const hostPath = require.resolve("../main/engines/host");
+  const managerPath = require.resolve("../main/engines/model-manager");
+  const stubs = {
+    [electronPath]: { app: { getPath: () => os.tmpdir() } },
+    [hostPath]: host,
+    [managerPath]: managerStub,
+  };
+  const saved = {};
+  for (const p of Object.keys(stubs)) {
+    saved[p] = require.cache[p];
+    const m = new Module(p, null);
+    m.filename = p;
+    m.loaded = true;
+    m.exports = stubs[p];
+    require.cache[p] = m;
+  }
+  delete require.cache[indexPath];
+  try {
+    return require(indexPath);
+  } finally {
+    delete require.cache[indexPath];
+    for (const p of Object.keys(stubs)) {
+      if (saved[p]) require.cache[p] = saved[p];
+      else delete require.cache[p];
+    }
+  }
+}
+
 /* ---------------- registry ---------------- */
 
 test("registry exposes default models that resolve", () => {
@@ -362,4 +400,39 @@ test("an aborted download leaves no .part and a retry succeeds", async () => {
   } finally {
     server.close();
   }
+});
+
+test("engines.clean falls back to the raw transcript when cleanup is empty", async () => {
+  // The in-process side of "never lose the user's words": if the model returns
+  // empty/whitespace, clean() must deliver the raw transcript instead.
+  let cleanReply = "";
+  const calls = [];
+  const host = {
+    request: async (type, args) => {
+      calls.push(type);
+      if (type === "load-cleanup") return { ready: true };
+      if (type === "clean") return cleanReply;
+      throw new Error(`unexpected request: ${type}`);
+    },
+    stop() {},
+    onExit() {},
+  };
+  const managerStub = {
+    isInstalled: () => true,
+    modelDir: (base, model) => path.join(base, model.kind, model.id),
+  };
+  const facade = loadFacadeWith({ host, manager: managerStub });
+
+  const cfg = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules" };
+
+  cleanReply = "   "; // whitespace-only -> treated as empty
+  assert.strictEqual(await facade.clean("hello world", cfg), "hello world");
+
+  cleanReply = ""; // empty
+  assert.strictEqual(await facade.clean("keep these words", cfg), "keep these words");
+
+  cleanReply = "Hello, world."; // real output passes through
+  assert.strictEqual(await facade.clean("hello world", cfg), "Hello, world.");
+
+  assert.ok(calls.includes("clean"));
 });

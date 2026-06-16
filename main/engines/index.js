@@ -93,8 +93,8 @@ async function clean(transcript, cfg) {
     systemPrompt: cfg.systemPrompt,
     temperature: cfg.temperature,
   });
-  // Never let an empty cleanup eat the user's words.
-  return cleaned && cleaned.length > 0 ? cleaned : transcript;
+  // Never let an empty (or whitespace-only) cleanup eat the user's words.
+  return cleaned && cleaned.trim().length > 0 ? cleaned : transcript;
 }
 
 // Forget which models the worker had resident, so the next call re-runs

@@ -100,18 +100,19 @@ function deepMerge(base, override) {
 // legacy configs onto the "remote" external engine instead. Idempotent: a file
 // already carrying a current `engine` is left untouched.
 function migrateLegacy(stored) {
-  if (stored && stored.stt && stored.stt.engine === undefined) {
+  if (!stored) return stored;
+  if (stored.stt && stored.stt.engine === undefined) {
     stored.stt.engine = "remote";
   }
   // The old autostarted local STT server has been removed; it was just a
   // "remote" endpoint with a spawned helper, so fold those users into "remote".
-  if (stored && stored.stt && stored.stt.engine === "server") {
+  if (stored.stt && stored.stt.engine === "server") {
     stored.stt.engine = "remote";
   }
-  if (stored && stored.sttServer) {
+  if (stored.sttServer) {
     delete stored.sttServer;
   }
-  if (stored && stored.cleanup && stored.cleanup.engine === undefined) {
+  if (stored.cleanup && stored.cleanup.engine === undefined) {
     stored.cleanup.engine = "remote";
   }
   return stored;

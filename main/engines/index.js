@@ -55,7 +55,8 @@ async function ensureStt(modelId) {
 async function transcribe(wav, cfg) {
   await ensureStt(cfg.builtin.model);
   const bytes = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
-  // Transfer the audio's backing buffer instead of copying it across.
+  // Copy out an exact-length ArrayBuffer and transfer (rather than clone) it to
+  // the worker, so the audio crosses the process boundary only once.
   const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   const text = await host.request(
     "transcribe",
@@ -98,6 +99,14 @@ function stop() {
   loadedCleanup = null;
   host.stop();
 }
+
+// If the worker dies (native crash, or our own stop()), it comes back empty.
+// Forget what we thought it had loaded so the next call re-loads the model
+// instead of sending inference to a worker that has no model resident.
+host.onExit(() => {
+  loadedStt = null;
+  loadedCleanup = null;
+});
 
 module.exports = {
   modelsDir,

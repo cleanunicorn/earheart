@@ -8,6 +8,14 @@ const path = require("node:path");
 let child = null;
 let nextId = 1;
 const pending = new Map();
+// Notified whenever the worker process goes away, so callers can drop any
+// state they were caching about what the (now gone) worker had loaded.
+const exitListeners = new Set();
+
+function onExit(fn) {
+  exitListeners.add(fn);
+  return fn;
+}
 
 function spawn() {
   if (child) return child;
@@ -31,6 +39,9 @@ function spawn() {
       entry.reject(new Error("engine process exited"));
     }
     pending.clear();
+    // A fresh worker has nothing loaded; let callers reset their caches so the
+    // next request re-loads the model instead of assuming it is still resident.
+    for (const fn of exitListeners) fn();
   });
   return child;
 }
@@ -77,4 +88,4 @@ function stop() {
   }
 }
 
-module.exports = { request, stop };
+module.exports = { request, stop, onExit };

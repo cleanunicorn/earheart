@@ -6,7 +6,6 @@ const history = require("./history");
 const windows = require("./windows");
 const stt = require("./services/stt");
 const cleanup = require("./services/cleanup");
-const serverManager = require("./services/server-manager");
 const engines = require("./engines");
 const { encodeSilenceWav } = require("./util/wav");
 
@@ -35,7 +34,6 @@ function init({ applyHotkey, onSettingsChanged }) {
     const saved = settings.save(next);
     const hotkeyResult = applyHotkey(saved.hotkey);
     onSettingsChanged?.();
-    serverManager.start(saved.sttServer);
     if (hotkeyResult.ok) {
       windows.openSettings({ fromWizard: true });
       windows.closeWizard();

@@ -29,8 +29,7 @@ const DEFAULTS = {
   },
   stt: {
     // "builtin" = run Parakeet in-process (no setup, default for new users),
-    // "server"  = a local OpenAI-compatible server we can autostart (uvx),
-    // "remote"  = any other OpenAI-compatible transcription endpoint.
+    // "remote"  = any OpenAI-compatible transcription endpoint.
     engine: "builtin",
     builtin: { model: registry.DEFAULT_STT_MODEL },
     baseUrl: "http://127.0.0.1:8484/v1",
@@ -55,11 +54,6 @@ const DEFAULTS = {
   audio: {
     deviceId: "", // empty = system default microphone
     maxRecordingSeconds: 300,
-  },
-  sttServer: {
-    // Optionally spawn a local STT server when the app starts.
-    autoStart: false,
-    command: "uvx earheart-stt",
   },
   history: {
     enabled: true,
@@ -88,13 +82,19 @@ function deepMerge(base, override) {
 // Settings files written before in-process engines existed have `stt`/`cleanup`
 // sections but no `engine` field. New defaults are "builtin", which would
 // silently switch an existing user off their configured HTTP service — so map
-// legacy configs onto the equivalent external engine instead. Idempotent: a
-// file already carrying `engine` is left untouched.
+// legacy configs onto the "remote" external engine instead. Idempotent: a file
+// already carrying a current `engine` is left untouched.
 function migrateLegacy(stored) {
   if (stored && stored.stt && stored.stt.engine === undefined) {
-    stored.stt.engine = stored.sttServer && stored.sttServer.autoStart
-      ? "server"
-      : "remote";
+    stored.stt.engine = "remote";
+  }
+  // The old autostarted local STT server has been removed; it was just a
+  // "remote" endpoint with a spawned helper, so fold those users into "remote".
+  if (stored && stored.stt && stored.stt.engine === "server") {
+    stored.stt.engine = "remote";
+  }
+  if (stored && stored.sttServer) {
+    delete stored.sttServer;
   }
   if (stored && stored.cleanup && stored.cleanup.engine === undefined) {
     stored.cleanup.engine = "remote";

@@ -69,18 +69,25 @@ test("wavToFloat32 rejects non-WAV input", () => {
 });
 
 test("migrateLegacy maps pre-engine settings onto external engines", () => {
-  // Local autostart server -> "server".
+  // The old local autostart server has been removed; a config that used it
+  // folds into "remote" and the stale sttServer key is dropped.
   const autostart = migrateLegacy({
     stt: { baseUrl: "http://x" },
     cleanup: { enabled: true },
     sttServer: { autoStart: true },
   });
-  assert.strictEqual(autostart.stt.engine, "server");
+  assert.strictEqual(autostart.stt.engine, "remote");
   assert.strictEqual(autostart.cleanup.engine, "remote");
+  assert.ok(!("sttServer" in autostart));
 
-  // No autostart -> "remote".
+  // No engine field -> "remote".
   const remote = migrateLegacy({ stt: {}, cleanup: {}, sttServer: {} });
   assert.strictEqual(remote.stt.engine, "remote");
+  assert.ok(!("sttServer" in remote));
+
+  // A config already carrying the removed "server" engine is rewritten too.
+  const legacyServer = migrateLegacy({ stt: { engine: "server" }, cleanup: {} });
+  assert.strictEqual(legacyServer.stt.engine, "remote");
 });
 
 test("migrateLegacy leaves fresh and already-migrated configs untouched", () => {

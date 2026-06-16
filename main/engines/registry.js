@@ -20,9 +20,11 @@
 // Hugging Face; we pull the encoder/decoder/joiner and the token table.
 const STT_HF = "https://huggingface.co/csukuangfj";
 
-// Google publishes QAT (quantization-aware-trained) Gemma weights as q4_0
-// GGUF, which is exactly what node-llama-cpp / llama.cpp load.
-const GEMMA_HF = "https://huggingface.co/google";
+// The ggml-org (llama.cpp) org publishes ungated GGUF builds of the Gemma 3
+// instruct models, which is exactly what node-llama-cpp / llama.cpp load. We
+// avoid google/* here because those repos are gated and return HTTP 401 to
+// anonymous downloads.
+const GEMMA_HF = "https://huggingface.co/ggml-org";
 
 const MODELS = {
   stt: {
@@ -62,10 +64,10 @@ const MODELS = {
       default: true,
       note: "Runs on this computer · ~0.7 GB · best for most laptops",
       files: [
-        { name: "gemma-3-1b-it-q4_0.gguf", bytes: 720_000_000,
-          url: `${GEMMA_HF}/gemma-3-1b-it-qat-q4_0-gguf/resolve/main/gemma-3-1b-it-q4_0.gguf` },
+        { name: "gemma-3-1b-it-Q4_K_M.gguf", bytes: 806_058_240,
+          url: `${GEMMA_HF}/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf` },
       ],
-      gguf: { file: "gemma-3-1b-it-q4_0.gguf" },
+      gguf: { file: "gemma-3-1b-it-Q4_K_M.gguf" },
     },
     "gemma-3-4b": {
       id: "gemma-3-4b",
@@ -74,22 +76,22 @@ const MODELS = {
       engine: "llama-gguf",
       note: "Runs on this computer · ~2.6 GB · needs ~6 GB RAM",
       files: [
-        { name: "gemma-3-4b-it-q4_0.gguf", bytes: 2_600_000_000,
-          url: `${GEMMA_HF}/gemma-3-4b-it-qat-q4_0-gguf/resolve/main/gemma-3-4b-it-q4_0.gguf` },
+        { name: "gemma-3-4b-it-Q4_K_M.gguf", bytes: 2_489_757_856,
+          url: `${GEMMA_HF}/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf` },
       ],
-      gguf: { file: "gemma-3-4b-it-q4_0.gguf" },
+      gguf: { file: "gemma-3-4b-it-Q4_K_M.gguf" },
     },
     "gemma-4-12b": {
       id: "gemma-4-12b",
-      label: "Gemma 4 12B (best quality)",
+      label: "Gemma 3 12B (best quality)",
       kind: "cleanup",
       engine: "llama-gguf",
       note: "Runs on this computer · ~7 GB · needs ~10 GB RAM, strong machine",
       files: [
-        { name: "gemma-4-12b-it-q4_0.gguf", bytes: 7_300_000_000,
-          url: `${GEMMA_HF}/gemma-4-12B-it-qat-q4_0-gguf/resolve/main/gemma-4-12b-it-q4_0.gguf` },
+        { name: "gemma-3-12b-it-Q4_K_M.gguf", bytes: 7_300_574_976,
+          url: `${GEMMA_HF}/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_K_M.gguf` },
       ],
-      gguf: { file: "gemma-4-12b-it-q4_0.gguf" },
+      gguf: { file: "gemma-3-12b-it-Q4_K_M.gguf" },
     },
   },
 };

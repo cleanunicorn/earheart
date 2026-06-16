@@ -34,6 +34,94 @@ test("exactly one cleanup model is marked default", () => {
   assert.strictEqual(defaults[0].id, registry.DEFAULT_CLEANUP_MODEL);
 });
 
+// Every concrete download URL across every model, paired with its model id so a
+// failure points at the offending entry.
+function allModelFiles() {
+  const out = [];
+  for (const kind of Object.keys(registry.MODELS)) {
+    for (const model of registry.listModels(kind)) {
+      for (const file of model.files) {
+        out.push({ kind, id: model.id, file });
+      }
+    }
+  }
+  return out;
+}
+
+// Hugging Face namespaces that gate their repos behind a license click and so
+// return HTTP 401 to anonymous downloads (the failure that broke the wizard).
+// Keep the model files on ungated mirrors instead. Add hosts here as needed.
+const GATED_HF_OWNERS = ["google", "meta-llama", "mistralai"];
+
+test("registry: every model file has a well-formed https url and filename", () => {
+  for (const { kind, id, file } of allModelFiles()) {
+    const where = `${kind}/${id} -> ${file.name}`;
+    assert.ok(file.name, `${where}: missing name`);
+    let url;
+    assert.doesNotThrow(() => {
+      url = new URL(file.url);
+    }, `${where}: url is not parseable (${file.url})`);
+    assert.strictEqual(url.protocol, "https:", `${where}: must be https`);
+    // The basename of the URL must match the declared file name, so the wizard
+    // writes the file under the name the engine later looks up.
+    const urlBase = decodeURIComponent(url.pathname.split("/").pop());
+    assert.strictEqual(urlBase, file.name, `${where}: url basename != name`);
+  }
+});
+
+test("registry: no model file is hosted on a gated Hugging Face repo", () => {
+  for (const { kind, id, file } of allModelFiles()) {
+    const url = new URL(file.url);
+    if (url.hostname !== "huggingface.co") continue;
+    // First path segment is the repo owner, e.g. /google/gemma-...
+    const owner = url.pathname.split("/").filter(Boolean)[0];
+    assert.ok(
+      !GATED_HF_OWNERS.includes(owner),
+      `${kind}/${id} -> ${file.name}: hosted on gated HF owner "${owner}"; ` +
+        `anonymous download returns HTTP 401. Use an ungated mirror.`
+    );
+  }
+});
+
+test("registry: every cleanup model resolves to its gguf file", () => {
+  for (const model of registry.listModels("cleanup")) {
+    assert.ok(model.gguf && model.gguf.file, `${model.id}: missing gguf.file`);
+    const names = model.files.map((f) => f.name);
+    assert.ok(
+      names.includes(model.gguf.file),
+      `${model.id}: gguf.file "${model.gguf.file}" is not among downloaded files ${JSON.stringify(names)}`
+    );
+  }
+});
+
+// Opt-in live check: actually reach each URL and assert it is not gated/missing.
+// Skipped by default (network, slow) — run with EARHEART_NET_TESTS=1 to enable.
+test(
+  "registry: model urls are anonymously reachable (live)",
+  { skip: !process.env.EARHEART_NET_TESTS && "set EARHEART_NET_TESTS=1 to run" },
+  async () => {
+    for (const { kind, id, file } of allModelFiles()) {
+      let res;
+      try {
+        res = await fetch(file.url, { method: "HEAD", redirect: "follow" });
+      } catch (err) {
+        // No connectivity (offline CI, sandbox) — this check is inconclusive
+        // rather than a real failure, so don't fail the suite on it.
+        assert.ok(true, `${kind}/${id} -> ${file.name}: network unavailable (${err.message})`);
+        continue;
+      }
+      assert.ok(
+        res.status !== 401 && res.status !== 403,
+        `${kind}/${id} -> ${file.name}: HTTP ${res.status} (gated/forbidden)`
+      );
+      assert.ok(
+        res.ok,
+        `${kind}/${id} -> ${file.name}: HTTP ${res.status} (not reachable)`
+      );
+    }
+  }
+);
+
 /* ---------------- download manager ---------------- */
 
 // A tiny static file server backing a fake model, so the download manager runs

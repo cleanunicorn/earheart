@@ -114,10 +114,6 @@
             <span class="muted">(recommended — no setup)</span>
           </label>
           <label class="choice">
-            <input type="radio" name="stt-mode" value="server" />
-            A local STT server <span class="muted">(advanced — <code>uvx earheart-stt</code>)</span>
-          </label>
-          <label class="choice">
             <input type="radio" name="stt-mode" value="remote" />
             A remote service <span class="muted">(OpenAI, Groq, your own server, …)</span>
           </label>
@@ -138,28 +134,6 @@
               The model (~660&nbsp;MB) downloads in the next step, with a
               progress bar.
             </p>
-          </div>
-        </div>
-
-        <div id="stt-local-fields" hidden>
-          <p class="lead">
-            Run the Parakeet server as a separate process. Audio never leaves
-            your machine.
-          </p>
-          <div class="field">
-            <label class="choice">
-              <input type="checkbox" id="server-autostart" checked />
-              Start the local STT server together with Earheart
-            </label>
-            <div class="field indent">
-              <label for="server-command">Command</label>
-              <input id="server-command" placeholder="uvx earheart-stt" />
-              <p class="hint">
-                Needs <code>uv</code> installed. The first start downloads the
-                Parakeet model (~2.4&nbsp;GB). See the <code>stt-server</code>
-                README for details.
-              </p>
-            </div>
           </div>
         </div>
 

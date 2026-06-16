@@ -138,8 +138,6 @@ function populate() {
   syncEngine("cleanup");
 
   $("history-enabled").checked = current.history.enabled;
-  $("server-autostart").checked = current.sttServer.autoStart;
-  $("server-command").value = current.sttServer.command;
   $("max-seconds").value = current.audio.maxRecordingSeconds;
 
   if (platform !== "linux") $("wayland-note").style.display = "none";
@@ -182,10 +180,6 @@ function collect() {
       deviceId: $("mic-device").value,
       maxRecordingSeconds: parseInt($("max-seconds").value, 10) || 300,
     },
-    sttServer: {
-      autoStart: $("server-autostart").checked,
-      command: $("server-command").value.trim(),
-    },
     history: {
       ...current.history,
       enabled: $("history-enabled").checked,
@@ -200,9 +194,9 @@ $("cleanup-enabled").addEventListener("change", syncCleanupEnabled);
 
 /* ---------- built-in engines + model management ---------- */
 
-// The settings UI offers a simple Built-in / External choice; the "server"
-// engine (a local OpenAI-compatible server, configured under Advanced) is
-// equivalent to "remote" for routing, so both map to the external option.
+// The settings UI offers a simple Built-in / External choice; anything that
+// isn't the in-process engine routes through the "remote" OpenAI-compatible
+// path, so the external option always maps to "remote".
 function engineValue(kind) {
   const v = document.querySelector(`input[name="${kind}-engine"]:checked`).value;
   return v === "builtin" ? "builtin" : "remote";

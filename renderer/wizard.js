@@ -135,7 +135,6 @@ function sttMode() {
 function syncSttMode() {
   const mode = sttMode();
   $("stt-builtin-fields").hidden = mode !== "builtin";
-  $("stt-local-fields").hidden = mode !== "server";
   $("stt-remote-fields").hidden = mode !== "remote";
   // The connection test only makes sense for an external endpoint.
   $("stt-test-row").hidden = mode !== "remote";
@@ -231,10 +230,6 @@ function collect() {
       ...current.audio,
       deviceId: $("mic-device").value,
     },
-    sttServer: {
-      autoStart: mode === "server" && $("server-autostart").checked,
-      command: $("server-command").value.trim() || defaults.sttServer.command,
-    },
   };
 }
 
@@ -266,7 +261,6 @@ bindTest("cleanup-test", "cleanup-test-result", "cleanup:test", () => ({
 
 const STT_LABELS = {
   builtin: "Built-in Parakeet (on this computer)",
-  server: "Local Parakeet server",
   remote: null, // shown as the base URL
 };
 
@@ -514,7 +508,6 @@ async function finish() {
   modelStatus = await earheart.invoke("models:status");
 
   hotkeyInput.value = current.hotkey;
-  $("server-command").value = current.sttServer.command;
   $("cleanup-url").value = current.cleanup.baseUrl;
   $("cleanup-model").value = current.cleanup.model;
   $("cleanup-enabled").checked = current.cleanup.enabled;

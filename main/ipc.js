@@ -111,10 +111,10 @@ function init({ applyHotkey, onSettingsChanged }) {
     try {
       await engines.download(kind, modelId, {
         signal: controller.signal,
+        // Broadcast so whichever window is open (wizard and/or Settings) tracks
+        // the same download, not just the one that started it.
         onProgress: (p) => {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send("models:progress", { kind, modelId, ...p });
-          }
+          windows.broadcast("models:progress", { kind, modelId, ...p });
         },
       });
       return { ok: true };

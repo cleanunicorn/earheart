@@ -226,6 +226,14 @@ function sendToSettings(channel, payload) {
   }
 }
 
+// Send to every live window. Used for events both the wizard and Settings care
+// about (e.g. model download progress) so whichever is open stays in sync.
+function broadcast(channel, payload) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send(channel, payload);
+  }
+}
+
 module.exports = {
   createOverlay,
   getOverlay,
@@ -235,6 +243,7 @@ module.exports = {
   sendToOverlay,
   openSettings,
   sendToSettings,
+  broadcast,
   openWizard,
   closeWizard,
 };

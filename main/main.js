@@ -9,6 +9,7 @@ const hotkeys = require("./hotkeys");
 const tray = require("./tray");
 const ipc = require("./ipc");
 const serverManager = require("./services/server-manager");
+const engines = require("./engines");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
 const startHidden = process.argv.includes("--hidden");
@@ -93,5 +94,6 @@ function main() {
   app.on("will-quit", () => {
     hotkeys.unregisterAll();
     serverManager.stop();
+    engines.stop();
   });
 }

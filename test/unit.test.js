@@ -4,9 +4,9 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 
-const { encodeWav, encodeSilenceWav } = require("../main/util/wav");
+const { encodeWav, encodeSilenceWav, wavToFloat32 } = require("../main/util/wav");
 const { stripThinking } = require("../main/services/cleanup");
-const { deepMerge } = require("../main/settings");
+const { deepMerge, migrateLegacy, DEFAULTS } = require("../main/settings");
 
 test("encodeWav produces a valid RIFF header", () => {
   const samples = new Int16Array([0, 1000, -1000, 32767, -32768]);
@@ -50,4 +50,49 @@ test("deepMerge keeps defaults for missing keys and overrides present ones", () 
 
 test("deepMerge ignores null/undefined overrides", () => {
   assert.deepStrictEqual(deepMerge({ a: 1 }, undefined), { a: 1 });
+});
+
+test("wavToFloat32 round-trips PCM16 samples to [-1, 1]", () => {
+  const wav = encodeWav(new Int16Array([0, 16384, -16384, 32767, -32768]));
+  const { samples, sampleRate } = wavToFloat32(wav);
+  assert.strictEqual(sampleRate, 16000);
+  assert.strictEqual(samples.length, 5);
+  assert.strictEqual(samples[0], 0);
+  assert.ok(Math.abs(samples[1] - 0.5) < 1e-4);
+  assert.ok(Math.abs(samples[2] + 0.5) < 1e-4);
+  assert.ok(samples[3] <= 1 && samples[3] > 0.99);
+  assert.strictEqual(samples[4], -1);
+});
+
+test("wavToFloat32 rejects non-WAV input", () => {
+  assert.throws(() => wavToFloat32(Buffer.from("not a wav at all!!")));
+});
+
+test("migrateLegacy maps pre-engine settings onto external engines", () => {
+  // Local autostart server -> "server".
+  const autostart = migrateLegacy({
+    stt: { baseUrl: "http://x" },
+    cleanup: { enabled: true },
+    sttServer: { autoStart: true },
+  });
+  assert.strictEqual(autostart.stt.engine, "server");
+  assert.strictEqual(autostart.cleanup.engine, "remote");
+
+  // No autostart -> "remote".
+  const remote = migrateLegacy({ stt: {}, cleanup: {}, sttServer: {} });
+  assert.strictEqual(remote.stt.engine, "remote");
+});
+
+test("migrateLegacy leaves fresh and already-migrated configs untouched", () => {
+  assert.deepStrictEqual(migrateLegacy({}), {}); // fresh install
+  const modern = { stt: { engine: "builtin" }, cleanup: { engine: "builtin" } };
+  assert.deepStrictEqual(migrateLegacy(modern), modern);
+});
+
+test("new installs default to in-process engines", () => {
+  assert.strictEqual(DEFAULTS.stt.engine, "builtin");
+  assert.strictEqual(DEFAULTS.cleanup.engine, "builtin");
+  assert.strictEqual(DEFAULTS.cleanup.enabled, true);
+  assert.ok(DEFAULTS.stt.builtin.model);
+  assert.ok(DEFAULTS.cleanup.builtin.model);
 });

@@ -17,8 +17,22 @@ const windows = require("./windows");
 const settings = require("./settings");
 const stt = require("./services/stt");
 const cleanup = require("./services/cleanup");
+const engines = require("./engines");
 const { deliver } = require("./output/deliver");
 const history = require("./history");
+
+// Route a stage to the in-process engine or the HTTP client based on settings.
+function runTranscribe(wav, cfg, signal) {
+  return cfg.engine === "builtin"
+    ? engines.transcribe(wav, cfg)
+    : stt.transcribe(wav, cfg, signal);
+}
+
+function runCleanup(raw, cfg, signal) {
+  return cfg.engine === "builtin"
+    ? engines.clean(raw, cfg)
+    : cleanup.clean(raw, cfg, signal);
+}
 
 let state = "idle"; // idle | recording | processing
 let session = 0; // current dictation session id
@@ -109,7 +123,7 @@ async function process(sid, wavArrayBuffer) {
 
   try {
     overlayStatus("transcribing");
-    const raw = await stt.transcribe(wav, cfg.stt, signal);
+    const raw = await runTranscribe(wav, cfg.stt, signal);
     if (stale()) return;
 
     if (!raw) {
@@ -123,7 +137,7 @@ async function process(sid, wavArrayBuffer) {
     if (cfg.cleanup.enabled) {
       overlayStatus("cleaning");
       try {
-        text = await cleanup.clean(raw, cfg.cleanup, signal);
+        text = await runCleanup(raw, cfg.cleanup, signal);
         cleaned = true;
       } catch (err) {
         if (stale()) return;

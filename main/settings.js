@@ -4,6 +4,7 @@
 const { app } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
+const registry = require("./engines/registry");
 
 const DEFAULT_CLEANUP_PROMPT = `You clean up raw speech-to-text transcriptions.
 
@@ -27,6 +28,11 @@ const DEFAULTS = {
     pasteDelayMs: 150, // wait before simulating the paste keystroke
   },
   stt: {
+    // "builtin" = run Parakeet in-process (no setup, default for new users),
+    // "server"  = a local OpenAI-compatible server we can autostart (uvx),
+    // "remote"  = any other OpenAI-compatible transcription endpoint.
+    engine: "builtin",
+    builtin: { model: registry.DEFAULT_STT_MODEL },
     baseUrl: "http://127.0.0.1:8484/v1",
     apiKey: "",
     model: "parakeet",
@@ -34,7 +40,11 @@ const DEFAULTS = {
     timeoutMs: 120000,
   },
   cleanup: {
-    enabled: false,
+    // On by default now that cleanup can run in-process with no setup.
+    enabled: true,
+    // "builtin" = run Gemma in-process, "remote" = OpenAI-compatible chat API.
+    engine: "builtin",
+    builtin: { model: registry.DEFAULT_CLEANUP_MODEL },
     baseUrl: "http://127.0.0.1:11434/v1",
     apiKey: "",
     model: "",
@@ -75,6 +85,23 @@ function deepMerge(base, override) {
   return out;
 }
 
+// Settings files written before in-process engines existed have `stt`/`cleanup`
+// sections but no `engine` field. New defaults are "builtin", which would
+// silently switch an existing user off their configured HTTP service — so map
+// legacy configs onto the equivalent external engine instead. Idempotent: a
+// file already carrying `engine` is left untouched.
+function migrateLegacy(stored) {
+  if (stored && stored.stt && stored.stt.engine === undefined) {
+    stored.stt.engine = stored.sttServer && stored.sttServer.autoStart
+      ? "server"
+      : "remote";
+  }
+  if (stored && stored.cleanup && stored.cleanup.engine === undefined) {
+    stored.cleanup.engine = "remote";
+  }
+  return stored;
+}
+
 function load() {
   if (cached) return cached;
   let stored = {};
@@ -83,7 +110,7 @@ function load() {
   } catch {
     // First run or unreadable file: fall back to defaults.
   }
-  cached = deepMerge(DEFAULTS, stored);
+  cached = deepMerge(DEFAULTS, migrateLegacy(stored));
   return cached;
 }
 
@@ -109,6 +136,7 @@ module.exports = {
   get,
   save,
   isFirstRun,
+  migrateLegacy,
   DEFAULTS,
   DEFAULT_CLEANUP_PROMPT,
   deepMerge,

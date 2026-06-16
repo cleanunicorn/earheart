@@ -38,4 +38,64 @@ function encodeSilenceWav(seconds) {
   return encodeWav(new Int16Array(Math.round(SAMPLE_RATE * seconds)));
 }
 
-module.exports = { encodeWav, encodeSilenceWav, SAMPLE_RATE };
+/**
+ * Decode a mono PCM16 WAV buffer to float32 samples in [-1, 1], the shape the
+ * in-process Parakeet engine wants. Walks the RIFF chunk list to find `fmt `
+ * (for the sample rate) and `data`, so it tolerates WAVs with extra chunks.
+ *
+ * Only the format the overlay produces is supported: PCM (format 1), 16-bit,
+ * mono. Anything else throws — callers fall back to the HTTP STT path.
+ *
+ * @param {Buffer} buf
+ * @returns {{ samples: Float32Array, sampleRate: number }}
+ */
+function wavToFloat32(buf) {
+  if (!Buffer.isBuffer(buf)) buf = Buffer.from(buf);
+  if (buf.length < 12 || buf.toString("ascii", 0, 4) !== "RIFF" ||
+      buf.toString("ascii", 8, 12) !== "WAVE") {
+    throw new Error("Not a RIFF/WAVE file");
+  }
+  let sampleRate = SAMPLE_RATE;
+  let format = 1;
+  let channels = 1;
+  let bitsPerSample = 16;
+  let dataOffset = -1;
+  let dataSize = 0;
+
+  let pos = 12;
+  while (pos + 8 <= buf.length) {
+    const id = buf.toString("ascii", pos, pos + 4);
+    const size = buf.readUInt32LE(pos + 4);
+    const body = pos + 8;
+    if (id === "fmt " && body + 16 <= buf.length) {
+      format = buf.readUInt16LE(body);
+      channels = buf.readUInt16LE(body + 2);
+      sampleRate = buf.readUInt32LE(body + 4);
+      bitsPerSample = buf.readUInt16LE(body + 14);
+    } else if (id === "data") {
+      dataOffset = body;
+      dataSize = Math.min(size, buf.length - body);
+    }
+    // Chunks are word-aligned: an odd size is followed by a pad byte.
+    pos = body + size + (size & 1);
+  }
+
+  if (dataOffset < 0) throw new Error("WAV has no data chunk");
+  if (format !== 1 || bitsPerSample !== 16) {
+    throw new Error(`Unsupported WAV format (format=${format}, bits=${bitsPerSample})`);
+  }
+
+  const frameCount = Math.floor(dataSize / 2 / channels);
+  const samples = new Float32Array(frameCount);
+  for (let i = 0; i < frameCount; i++) {
+    // Mixdown to mono by averaging channels (overlay audio is already mono).
+    let acc = 0;
+    for (let c = 0; c < channels; c++) {
+      acc += buf.readInt16LE(dataOffset + (i * channels + c) * 2);
+    }
+    samples[i] = acc / channels / 32768;
+  }
+  return { samples, sampleRate };
+}
+
+module.exports = { encodeWav, encodeSilenceWav, wavToFloat32, SAMPLE_RATE };

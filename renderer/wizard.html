@@ -109,8 +109,9 @@
         <h2>Where should speech become text?</h2>
         <div class="field">
           <label class="choice">
-            <input type="radio" name="stt-mode" value="local" checked />
-            On this computer <span class="muted">(recommended — private and free)</span>
+            <input type="radio" name="stt-mode" value="builtin" checked />
+            On this computer, built in
+            <span class="muted">(recommended — no setup)</span>
           </label>
           <label class="choice">
             <input type="radio" name="stt-mode" value="remote" />
@@ -118,26 +119,21 @@
           </label>
         </div>
 
-        <div id="stt-local-fields">
-          <p class="lead">
-            Earheart ships a local server using NVIDIA's Parakeet model. Audio
-            never leaves your machine.
-          </p>
-          <div class="field">
-            <label class="choice">
-              <input type="checkbox" id="server-autostart" checked />
-              Start the local STT server together with Earheart
-            </label>
-            <div class="field indent">
-              <label for="server-command">Command</label>
-              <input id="server-command" placeholder="uvx earheart-stt" />
-              <p class="hint">
-                Needs <code>uv</code> installed. The first start downloads the
-                Parakeet model (~2.4&nbsp;GB), so the very first transcription
-                takes a while. See the <code>stt-server</code> README for
-                details.
-              </p>
-            </div>
+        <div id="stt-builtin-fields">
+          <div class="value-card">
+            <p class="lead">
+              Earheart runs NVIDIA's <strong>Parakeet</strong> model right inside
+              the app — nothing to install, no separate program.
+            </p>
+            <ul class="value-list">
+              <li>🔒 Your voice never leaves this computer</li>
+              <li>⚡ Faster than real time, even without a graphics card</li>
+              <li>🌍 Understands 25 languages automatically</li>
+            </ul>
+            <p class="hint">
+              The model (~660&nbsp;MB) downloads in the next step, with a
+              progress bar.
+            </p>
           </div>
         </div>
 
@@ -161,54 +157,78 @@
           </div>
         </div>
 
-        <div class="row">
+        <div class="row" id="stt-test-row" hidden>
           <button id="stt-test">Test connection</button>
           <span id="stt-test-result" class="status"></span>
         </div>
-        <p class="hint">
-          Optional — if the local server isn't installed yet, the test will
-          fail and that's okay. You can test again from Settings later.
-        </p>
       </section>
 
       <!-- 5. Cleanup -->
       <section class="step" id="step-cleanup">
-        <h2>Tidy up transcripts? <span class="muted">(optional)</span></h2>
+        <h2>Polish your transcripts automatically?</h2>
         <p class="lead">
-          A language model can fix punctuation and strip filler words ("um",
-          "uh") after transcription. Works with any OpenAI-compatible chat API:
-          Ollama, LM Studio, OpenAI, … Most people start without it.
+          After transcription, a small language model can fix punctuation and
+          capitalization and remove filler words and false starts — so what
+          lands is clean, not a raw stream of speech.
         </p>
         <div class="field">
           <label class="choice">
-            <input type="checkbox" id="cleanup-enabled" />
-            Clean up transcripts with a language model
+            <input type="checkbox" id="cleanup-enabled" checked />
+            Clean up transcripts automatically <span class="muted">(recommended)</span>
           </label>
         </div>
+
         <div id="cleanup-fields">
           <div class="field">
-            <label for="cleanup-url">Base URL</label>
-            <input id="cleanup-url" placeholder="http://127.0.0.1:11434/v1" />
+            <label class="choice">
+              <input type="radio" name="cleanup-mode" value="builtin" checked />
+              On this computer, built in <span class="muted">(no setup)</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="cleanup-mode" value="external" />
+              An OpenAI-compatible service <span class="muted">(Ollama, LM Studio, OpenAI, …)</span>
+            </label>
           </div>
-          <div class="grid-2">
-            <div class="field">
-              <label for="cleanup-key">API key <span class="muted">(optional for local servers)</span></label>
-              <input id="cleanup-key" type="password" autocomplete="off" />
-            </div>
-            <div class="field">
-              <label for="cleanup-model">Model</label>
-              <input id="cleanup-model" placeholder="llama3.2" />
+
+          <div id="cleanup-builtin-fields">
+            <div class="value-card">
+              <p class="lead">
+                Runs Google's <strong>Gemma</strong> model inside the app — like
+                an editor that tidies every dictation for you, fully offline.
+              </p>
+              <div class="field">
+                <label for="cleanup-builtin-model">Quality</label>
+                <select id="cleanup-builtin-model"></select>
+                <p class="hint" id="cleanup-builtin-note"></p>
+              </div>
             </div>
           </div>
-          <div class="row">
-            <button id="cleanup-test">Test connection</button>
-            <span id="cleanup-test-result" class="status"></span>
+
+          <div id="cleanup-external-fields" hidden>
+            <div class="field">
+              <label for="cleanup-url">Base URL</label>
+              <input id="cleanup-url" placeholder="http://127.0.0.1:11434/v1" />
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="cleanup-key">API key <span class="muted">(optional for local servers)</span></label>
+                <input id="cleanup-key" type="password" autocomplete="off" />
+              </div>
+              <div class="field">
+                <label for="cleanup-model">Model</label>
+                <input id="cleanup-model" placeholder="llama3.2" />
+              </div>
+            </div>
+            <div class="row">
+              <button id="cleanup-test">Test connection</button>
+              <span id="cleanup-test-result" class="status"></span>
+            </div>
           </div>
         </div>
       </section>
 
       <!-- 6. Output + summary -->
-      <section class="step" id="step-finish">
+      <section class="step" id="step-output">
         <h2>Where should the text go?</h2>
         <div class="field">
           <label class="choice">
@@ -228,12 +248,28 @@
         <div class="field">
           <label>Your setup</label>
           <dl id="summary"></dl>
-          <p class="hint">
-            Finishing opens the settings screen with these choices pre-filled —
-            review them there, or just save them as they are.
-          </p>
-          <p id="finish-status" class="status"></p>
         </div>
+      </section>
+
+      <!-- 7. Download the on-device models -->
+      <section class="step" id="step-finish">
+        <h2 id="download-title">Setting up the models that run on your computer</h2>
+        <p class="lead" id="download-intro">
+          These run entirely on your machine, so your dictation stays private
+          and works offline. This is a one-time download.
+        </p>
+
+        <div id="download-list"></div>
+
+        <p class="hint" id="download-none" hidden>
+          Nothing to download — you're using remote services. You're all set!
+        </p>
+
+        <div class="row" id="download-later-row" hidden>
+          <button id="download-later" class="ghost">Download later (from Settings)</button>
+        </div>
+
+        <p id="finish-status" class="status"></p>
       </section>
     </main>
 

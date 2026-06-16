@@ -30,7 +30,9 @@ body {
      The border alone separates the pill from whatever is behind it. */
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: #f3f1f7;
-  cursor: grab;
+  /* The pill body is the drag handle; a move cursor signals it can be dragged.
+     Buttons reset this to a pointer below so they don't read as draggable. */
+  cursor: move;
   /* Hidden until the main process sends overlay:show, so the window can
      fade in instead of popping. */
   opacity: 0;
@@ -46,7 +48,6 @@ body {
 }
 
 #pill.dragging {
-  cursor: grabbing;
   transition: opacity 0.2s ease; /* no transform easing while dragging */
 }
 
@@ -55,6 +56,22 @@ body {
     transition: opacity 0.2s ease;
     transform: none;
   }
+}
+
+/* Visible drag affordance: the OS often ignores the CSS cursor on a
+   focusable:false overlay, so the grip dots make it clear the pill can be
+   dragged. It's part of the pill body, which is the drag surface. */
+#grip {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: -4px;
+  color: rgba(255, 255, 255, 0.35);
+  transition: color 0.15s ease;
+}
+
+#pill:hover #grip {
+  color: rgba(255, 255, 255, 0.6);
 }
 
 #indicator {
@@ -66,14 +83,14 @@ body {
 }
 
 [data-status="recording"] #indicator {
-  animation: pulse 1.2s ease-in-out infinite;
+  animation: pulse 2s ease-in-out infinite;
 }
 
 [data-status="transcribing"] #indicator,
 [data-status="cleaning"] #indicator,
 [data-status="delivering"] #indicator {
   background: #ffb347;
-  animation: pulse 0.8s ease-in-out infinite;
+  animation: pulse 1.4s ease-in-out infinite;
 }
 
 [data-status="done"] #indicator {

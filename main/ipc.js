@@ -6,8 +6,12 @@ const history = require("./history");
 const windows = require("./windows");
 const stt = require("./services/stt");
 const cleanup = require("./services/cleanup");
-const serverManager = require("./services/server-manager");
+const engines = require("./engines");
+const { listRemoteModels } = require("./services/models-remote");
 const { encodeSilenceWav } = require("./util/wav");
+
+// In-flight model downloads, so the UI can cancel them. Keyed by kind:modelId.
+const downloads = new Map();
 
 function init({ applyHotkey, onSettingsChanged }) {
   ipcMain.handle("settings:get", () => ({
@@ -31,7 +35,6 @@ function init({ applyHotkey, onSettingsChanged }) {
     const saved = settings.save(next);
     const hotkeyResult = applyHotkey(saved.hotkey);
     onSettingsChanged?.();
-    serverManager.start(saved.sttServer);
     if (hotkeyResult.ok) {
       windows.openSettings({ fromWizard: true });
       windows.closeWizard();
@@ -53,13 +56,25 @@ function init({ applyHotkey, onSettingsChanged }) {
     return { settings: saved };
   });
 
-  // Round-trip a short silent WAV through the configured STT service to
-  // verify URL/key/model without needing the microphone.
+  // Round-trip a short silent WAV through the configured STT service (or the
+  // in-process engine) to verify it actually works.
   ipcMain.handle("stt:test", async (event, cfg) => {
     try {
       const wav = encodeSilenceWav(0.5);
-      await stt.transcribe(wav, cfg);
+      if (cfg.engine === "builtin") await engines.transcribe(wav, cfg);
+      else await stt.transcribe(wav, cfg);
       return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  // List the models an external OpenAI-compatible service offers, so the
+  // settings UI can present them as a pick-list instead of a free-text field.
+  ipcMain.handle("models:list-remote", async (event, cfg) => {
+    try {
+      const models = await listRemoteModels(cfg || {});
+      return { ok: true, models };
     } catch (err) {
       return { ok: false, error: err.message };
     }
@@ -67,11 +82,70 @@ function init({ applyHotkey, onSettingsChanged }) {
 
   ipcMain.handle("cleanup:test", async (event, cfg) => {
     try {
-      const result = await cleanup.clean(
-        "um so this is uh a test of the cleanup service",
-        cfg
-      );
+      const sample = "um so this is uh a test of the cleanup service";
+      const result =
+        cfg.engine === "builtin"
+          ? await engines.clean(sample, cfg)
+          : await cleanup.clean(sample, cfg);
       return { ok: true, sample: result.slice(0, 200) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  // ---- in-process model management (wizard download step + Settings) ----
+
+  // Which built-in models are downloaded and how big they are. Used to decide
+  // whether the wizard needs to show its download step.
+  ipcMain.handle("models:status", () => {
+    const describe = (kind) =>
+      engines.registry.listModels(kind).map((m) => ({
+        id: m.id,
+        kind: m.kind,
+        label: m.label,
+        note: m.note,
+        default: !!m.default,
+        bytes: engines.registry.totalBytes(m),
+        installed: engines.isInstalled(kind, m.id),
+      }));
+    return { stt: describe("stt"), cleanup: describe("cleanup") };
+  });
+
+  // Stream a model download to disk, posting progress to the requesting window.
+  ipcMain.handle("models:download", async (event, { kind, modelId }) => {
+    const key = `${kind}:${modelId}`;
+    if (downloads.has(key)) return { ok: false, error: "Already downloading" };
+    if (engines.isInstalled(kind, modelId)) return { ok: true };
+    const controller = new AbortController();
+    downloads.set(key, controller);
+    try {
+      await engines.download(kind, modelId, {
+        signal: controller.signal,
+        // Broadcast so whichever window is open (wizard and/or Settings) tracks
+        // the same download, not just the one that started it.
+        onProgress: (p) => {
+          windows.broadcast("models:progress", { kind, modelId, ...p });
+        },
+      });
+      return { ok: true };
+    } catch (err) {
+      const aborted = controller.signal.aborted;
+      return { ok: false, cancelled: aborted, error: err.message };
+    } finally {
+      downloads.delete(key);
+    }
+  });
+
+  ipcMain.handle("models:cancel", (event, { kind, modelId }) => {
+    const controller = downloads.get(`${kind}:${modelId}`);
+    if (controller) controller.abort();
+    return { ok: true };
+  });
+
+  ipcMain.handle("models:remove", async (event, { kind, modelId }) => {
+    try {
+      await engines.remove(kind, modelId);
+      return { ok: true };
     } catch (err) {
       return { ok: false, error: err.message };
     }

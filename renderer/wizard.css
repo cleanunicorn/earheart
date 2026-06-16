@@ -219,3 +219,68 @@ kbd {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---------- value cards (built-in engine selling points) ---------- */
+
+.value-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-top: 12px;
+}
+
+.value-card .lead {
+  margin-top: 0;
+}
+
+.value-list {
+  list-style: none;
+  margin: 10px 0 4px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+/* ---------- model download progress (final step) ---------- */
+
+.dl-item {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.dl-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.dl-bar {
+  height: 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.dl-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.dl-item .hint {
+  margin-top: 8px;
+}
+
+.dl-item button {
+  margin-top: 10px;
+}

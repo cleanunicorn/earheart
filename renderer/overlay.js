@@ -16,6 +16,41 @@ let currentSid = null; // session id from the main process
 let stopWhenReady = false; // stop arrived while getUserMedia was still pending
 let levels = new Array(24).fill(0);
 
+// The audio worklet posts levels far faster than the screen refreshes, so we
+// don't redraw the meter per message. Instead each frame eases the displayed
+// bars toward the latest levels on a requestAnimationFrame loop: fewer canvas
+// redraws (one per frame, not per audio chunk) and a slower, smoother glide.
+let displayLevels = new Array(24).fill(0);
+let meterRaf = null;
+
+function meterFrame() {
+  let moved = false;
+  for (let i = 0; i < levels.length; i++) {
+    // Ease ~18% of the remaining distance per frame for a gentle ramp.
+    const next = displayLevels[i] + (levels[i] - displayLevels[i]) * 0.18;
+    if (Math.abs(next - displayLevels[i]) > 0.0005) moved = true;
+    displayLevels[i] = next;
+  }
+  drawMeter();
+  // Keep animating while recording; once levels settle after stop, let it idle.
+  if (recording || moved) {
+    meterRaf = requestAnimationFrame(meterFrame);
+  } else {
+    meterRaf = null;
+  }
+}
+
+function startMeter() {
+  if (meterRaf === null) meterRaf = requestAnimationFrame(meterFrame);
+}
+
+function stopMeter() {
+  if (meterRaf !== null) {
+    cancelAnimationFrame(meterRaf);
+    meterRaf = null;
+  }
+}
+
 function setStatus(status, title, detail) {
   pill.dataset.status = status;
   statusText.textContent = title;
@@ -24,9 +59,9 @@ function setStatus(status, title, detail) {
 
 function drawMeter() {
   meterCtx.clearRect(0, 0, meter.width, meter.height);
-  const barWidth = meter.width / levels.length;
+  const barWidth = meter.width / displayLevels.length;
   meterCtx.fillStyle = "#ff5470";
-  levels.forEach((level, i) => {
+  displayLevels.forEach((level, i) => {
     const h = Math.max(2, Math.min(1, level * 6) * meter.height);
     meterCtx.fillRect(
       i * barWidth + 1,
@@ -83,7 +118,8 @@ async function startRecording({ sid, deviceId, maxSeconds }) {
   stopWhenReady = false;
   setStatus("recording", "Listening…");
   levels.fill(0);
-  drawMeter();
+  displayLevels.fill(0);
+  drawMeter(); // clear to a flat baseline; the rAF loop starts once mic is live
   timerEl.textContent = "0:00";
 
   let stream = null;
@@ -111,9 +147,9 @@ async function startRecording({ sid, deviceId, maxSeconds }) {
     const chunks = [];
     recorder.port.onmessage = (event) => {
       chunks.push(event.data.samples);
+      // Just record the level; the rAF meter loop reads `levels` each frame.
       levels.push(event.data.rms);
       levels.shift();
-      drawMeter();
     };
     source.connect(recorder);
 
@@ -129,6 +165,7 @@ async function startRecording({ sid, deviceId, maxSeconds }) {
         (maxSeconds || 300) * 1000
       ),
     };
+    startMeter(); // rAF loop runs for the whole session (recording is now set)
     if (stopWhenReady) {
       stopWhenReady = false;
       stopRecording();
@@ -148,6 +185,7 @@ async function startRecording({ sid, deviceId, maxSeconds }) {
 async function teardown() {
   generation++; // invalidates any startRecording still awaiting the mic
   stopWhenReady = false;
+  stopMeter();
   if (!recording) return null;
   const rec = recording;
   recording = null;

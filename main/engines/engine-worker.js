@@ -1,0 +1,178 @@
+// Runs in an Electron utilityProcess: hosts the in-process STT (sherpa-onnx /
+// Parakeet) and cleanup (node-llama-cpp / Gemma) engines, off the main process
+// so a long inference or a native crash never freezes the UI.
+//
+// The native modules are required lazily and defensively: if they aren't
+// installed (or a model isn't downloaded yet) the worker answers with a clear
+// error and the caller falls back to the HTTP path — the app keeps working.
+//
+// Protocol: the parent posts { id, type, ...args }; we reply with
+// { id, ok: true, result } or { id, ok: false, error }.
+//
+// Engine state (the recognizer, the llama context/session) is single-instance,
+// so requests are assumed to arrive one at a time. The dictation pipeline is a
+// state machine that runs a single transcribe/clean at once; Settings "test"
+// actions are the only other callers and are not expected to overlap a live
+// dictation.
+
+const path = require("node:path");
+const { wavToFloat32, SAMPLE_RATE } = require("../util/wav");
+
+const port = process.parentPort;
+
+// Parakeet's mel-feature dimension, fixed by the model.
+const FEATURE_DIM = 80;
+// Cleanup engine defaults (overridable per request).
+const DEFAULT_CONTEXT_SIZE = 2048;
+const DEFAULT_CLEANUP_TEMPERATURE = 0.2;
+
+let recognizer = null; // sherpa-onnx OfflineRecognizer
+let sttModelId = null;
+
+let llama = null; // node-llama-cpp instance
+let llamaModel = null;
+let llamaContext = null;
+let llamaSession = null;
+let cleanupModelPath = null;
+
+function reply(id, promise) {
+  Promise.resolve(promise)
+    .then((result) => port.postMessage({ id, ok: true, result }))
+    .catch((err) => port.postMessage({ id, ok: false, error: String(err && err.message || err) }));
+}
+
+/* ---------------- speech-to-text (sherpa-onnx / Parakeet) ---------------- */
+
+async function loadStt({ dir, sherpa, modelId }) {
+  if (recognizer && sttModelId === modelId) return { ready: true };
+  let sherpaOnnx;
+  try {
+    sherpaOnnx = require("sherpa-onnx-node");
+  } catch (err) {
+    throw new Error(`sherpa-onnx-node not available: ${err.message}`);
+  }
+  // Drop the previous recognizer before swapping models (the cleanup engine
+  // does the same via disposeCleanup).
+  await disposeStt();
+  recognizer = new sherpaOnnx.OfflineRecognizer({
+    featConfig: { sampleRate: SAMPLE_RATE, featureDim: FEATURE_DIM },
+    modelConfig: {
+      transducer: {
+        encoder: path.join(dir, sherpa.encoder),
+        decoder: path.join(dir, sherpa.decoder),
+        joiner: path.join(dir, sherpa.joiner),
+      },
+      tokens: path.join(dir, sherpa.tokens),
+      numThreads: Math.max(1, Math.min(4, require("node:os").cpus().length - 1)),
+      provider: "cpu",
+      modelType: sherpa.modelType || "nemo_transducer",
+      debug: false,
+    },
+  });
+  sttModelId = modelId;
+  return { ready: true };
+}
+
+async function transcribe({ wav, language }) {
+  if (!recognizer) throw new Error("STT model not loaded");
+  const buf = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
+  const { samples, sampleRate } = wavToFloat32(buf);
+  const stream = recognizer.createStream();
+  stream.acceptWaveform({ sampleRate, samples });
+  recognizer.decode(stream);
+  const result = recognizer.getResult(stream);
+  return (result && result.text ? result.text : "").trim();
+  // `language` is accepted for parity with the HTTP API; Parakeet v3
+  // auto-detects, so it is not forwarded.
+}
+
+/* ---------------- cleanup (node-llama-cpp / Gemma) ---------------- */
+
+async function loadCleanup({ modelPath, contextSize }) {
+  if (llamaModel && cleanupModelPath === modelPath) return { ready: true };
+  // node-llama-cpp v3 is ESM-only; reach it via dynamic import from CommonJS.
+  let mod;
+  try {
+    mod = await import("node-llama-cpp");
+  } catch (err) {
+    throw new Error(`node-llama-cpp not available: ${err.message}`);
+  }
+  await disposeCleanup();
+  llama = llama || (await mod.getLlama());
+  llamaModel = await llama.loadModel({ modelPath });
+  llamaContext = await llamaModel.createContext({
+    contextSize: contextSize || DEFAULT_CONTEXT_SIZE,
+  });
+  llamaSession = null;
+  cleanupModelPath = modelPath;
+  return { ready: true };
+}
+
+async function clean({ transcript, systemPrompt, temperature }) {
+  if (!llamaContext) throw new Error("Cleanup model not loaded");
+  const mod = await import("node-llama-cpp");
+  // No systemPrompt: tested against Gemma 1B, putting the cleanup rules in the
+  // chat system prompt makes the small model behave like an assistant and
+  // answer/expand the dictation instead of cleaning it. Inlining the rules and
+  // the transcript into a single user turn keeps it in "transform this text"
+  // mode and returns just the cleaned text. (See scripts/try-cleanup-prompts.)
+  if (!llamaSession) {
+    llamaSession = new mod.LlamaChatSession({
+      contextSequence: llamaContext.getSequence(),
+    });
+  } else {
+    llamaSession.resetChatHistory();
+  }
+  // The transcript is labelled as data and followed by a cue, so the model
+  // continues with the cleaned text rather than a reply to its content.
+  const userTurn =
+    `${systemPrompt}\n\nTranscript:\n${transcript}\n\nCleaned transcript:`;
+  const out = await llamaSession.prompt(userTurn, {
+    temperature: temperature ?? DEFAULT_CLEANUP_TEMPERATURE,
+  });
+  return (out || "").trim();
+}
+
+async function disposeCleanup() {
+  try {
+    if (llamaSession && llamaSession.dispose) llamaSession.dispose();
+    if (llamaContext && llamaContext.dispose) await llamaContext.dispose();
+    if (llamaModel && llamaModel.dispose) await llamaModel.dispose();
+  } catch {
+    // Best effort; we're tearing down anyway.
+  }
+  llamaSession = null;
+  llamaContext = null;
+  llamaModel = null;
+  cleanupModelPath = null;
+}
+
+async function disposeStt() {
+  // sherpa-onnx-node's OfflineRecognizer exposes no explicit free(); its native
+  // memory is released by a finalizer once the handle is unreachable. So we just
+  // drop the reference and let GC reclaim it — reclamation is not immediate.
+  recognizer = null;
+  sttModelId = null;
+}
+
+/* ---------------- dispatch ---------------- */
+
+const HANDLERS = {
+  ping: async () => ({ pong: true }),
+  "load-stt": loadStt,
+  transcribe,
+  "unload-stt": disposeStt,
+  "load-cleanup": loadCleanup,
+  clean,
+  "unload-cleanup": disposeCleanup,
+};
+
+port.on("message", (event) => {
+  const { id, type, ...args } = event.data || {};
+  const handler = HANDLERS[type];
+  if (!handler) {
+    port.postMessage({ id, ok: false, error: `Unknown request: ${type}` });
+    return;
+  }
+  reply(id, handler(args));
+});

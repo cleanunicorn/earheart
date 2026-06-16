@@ -1,11 +1,13 @@
 // First-run setup wizard renderer. Walks through hotkey, microphone,
-// speech-to-text, cleanup and output, then saves and hands over to the
-// settings window with everything pre-filled.
+// speech-to-text, cleanup and output; the last step downloads any models that
+// run on this computer (with progress) before saving and handing over to the
+// settings window.
 
 let current = null; // settings object being edited
 let defaults = null;
 let platform = "linux";
 let micLoaded = false;
+let modelStatus = null; // { stt: [...], cleanup: [...] } from the main process
 
 const $ = (id) => document.getElementById(id);
 
@@ -34,11 +36,13 @@ function showStep(index) {
       : stepIndex === steps.length - 1
         ? "Finish setup"
         : "Next";
+  $("next").disabled = false;
   if (steps[stepIndex].id === "step-mic" && !micLoaded) {
     micLoaded = true;
     loadMicrophones();
   }
-  if (steps[stepIndex].id === "step-finish") renderSummary();
+  if (steps[stepIndex].id === "step-output") renderSummary();
+  if (steps[stepIndex].id === "step-finish") enterDownloadStep();
 }
 
 $("back").addEventListener("click", () => showStep(stepIndex - 1));
@@ -129,9 +133,11 @@ function sttMode() {
 }
 
 function syncSttMode() {
-  const local = sttMode() === "local";
-  $("stt-local-fields").hidden = !local;
-  $("stt-remote-fields").hidden = local;
+  const mode = sttMode();
+  $("stt-builtin-fields").hidden = mode !== "builtin";
+  $("stt-remote-fields").hidden = mode !== "remote";
+  // The connection test only makes sense for an external endpoint.
+  $("stt-test-row").hidden = mode !== "remote";
 }
 
 document
@@ -140,43 +146,89 @@ document
 
 /* ---------- cleanup ---------- */
 
+function cleanupMode() {
+  return document.querySelector('input[name="cleanup-mode"]:checked').value;
+}
+
 function syncCleanupEnabled() {
   $("cleanup-fields").classList.toggle("disabled", !$("cleanup-enabled").checked);
 }
+
+function syncCleanupMode() {
+  const builtin = cleanupMode() === "builtin";
+  $("cleanup-builtin-fields").hidden = !builtin;
+  $("cleanup-external-fields").hidden = builtin;
+}
+
 $("cleanup-enabled").addEventListener("change", syncCleanupEnabled);
+document
+  .querySelectorAll('input[name="cleanup-mode"]')
+  .forEach((radio) => radio.addEventListener("change", syncCleanupMode));
+
+function populateCleanupModels() {
+  const select = $("cleanup-builtin-model");
+  select.replaceChildren();
+  for (const m of modelStatus.cleanup) {
+    const option = document.createElement("option");
+    option.value = m.id;
+    option.textContent = m.label;
+    select.appendChild(option);
+  }
+  select.value = current.cleanup.builtin.model;
+  syncCleanupNote();
+}
+
+function syncCleanupNote() {
+  const id = $("cleanup-builtin-model").value;
+  const m = modelStatus.cleanup.find((x) => x.id === id);
+  $("cleanup-builtin-note").textContent = m
+    ? m.installed ? `${m.note} · already downloaded` : m.note
+    : "";
+}
+// Bound after the select exists.
 
 /* ---------- collect wizard choices into a settings object ---------- */
 
 function collect() {
-  const local = sttMode() === "local";
+  const mode = sttMode();
+  const cMode = cleanupMode();
   return {
     ...current,
     output: {
       ...current.output,
       mode: document.querySelector('input[name="output-mode"]:checked').value,
     },
-    stt: local
-      ? { ...defaults.stt }
-      : {
-          ...current.stt,
-          baseUrl: $("stt-url").value.trim() || defaults.stt.baseUrl,
-          apiKey: $("stt-key").value.trim(),
-          model: $("stt-model").value.trim() || defaults.stt.model,
-        },
+    stt: {
+      ...current.stt,
+      engine: mode,
+      builtin: { ...current.stt.builtin },
+      ...(mode === "remote"
+        ? {
+            baseUrl: $("stt-url").value.trim() || defaults.stt.baseUrl,
+            apiKey: $("stt-key").value.trim(),
+            model: $("stt-model").value.trim() || defaults.stt.model,
+          }
+        : {}),
+    },
     cleanup: {
       ...current.cleanup,
       enabled: $("cleanup-enabled").checked,
-      baseUrl: $("cleanup-url").value.trim() || defaults.cleanup.baseUrl,
-      apiKey: $("cleanup-key").value.trim(),
-      model: $("cleanup-model").value.trim(),
+      engine: cMode === "external" ? "remote" : "builtin",
+      builtin: {
+        ...current.cleanup.builtin,
+        model: $("cleanup-builtin-model").value,
+      },
+      ...(cMode === "external"
+        ? {
+            baseUrl: $("cleanup-url").value.trim() || defaults.cleanup.baseUrl,
+            apiKey: $("cleanup-key").value.trim(),
+            model: $("cleanup-model").value.trim(),
+          }
+        : {}),
     },
     audio: {
       ...current.audio,
       deviceId: $("mic-device").value,
-    },
-    sttServer: {
-      autoStart: local && $("server-autostart").checked,
-      command: $("server-command").value.trim() || defaults.sttServer.command,
     },
   };
 }
@@ -207,28 +259,37 @@ bindTest("cleanup-test", "cleanup-test-result", "cleanup:test", () => ({
 
 /* ---------- summary ---------- */
 
+const STT_LABELS = {
+  builtin: "Built-in Parakeet (on this computer)",
+  remote: null, // shown as the base URL
+};
+
 function renderSummary() {
   const next = collect();
-  const local = sttMode() === "local";
   const mic = $("mic-device");
   const rows = [
     ["Hotkey", next.hotkey],
     ["Microphone", mic.selectedOptions[0]?.textContent || "System default"],
     [
       "Speech-to-text",
-      local ? "Local Parakeet server" : next.stt.baseUrl,
+      STT_LABELS[next.stt.engine] || next.stt.baseUrl,
     ],
   ];
-  if (local) {
-    rows.push(["Start STT server with app", next.sttServer.autoStart ? "Yes" : "No"]);
+  if (!next.cleanup.enabled) {
+    rows.push(["Cleanup", "Off"]);
+  } else if (next.cleanup.engine === "builtin") {
+    const m = modelStatus.cleanup.find((x) => x.id === next.cleanup.builtin.model);
+    rows.push(["Cleanup", `Built-in ${m ? m.label : ""} (on this computer)`]);
+  } else {
+    rows.push(["Cleanup", next.cleanup.model || "external service"]);
   }
   rows.push([
-    "Cleanup",
-    next.cleanup.enabled ? next.cleanup.model || "enabled" : "Off",
-  ]);
-  rows.push([
     "Output",
-    next.output.mode === "paste" ? "Paste into active app" : "Clipboard only",
+    next.output.mode === "clipboard"
+      ? "Clipboard only"
+      : next.output.mode === "paste-copy"
+        ? "Paste and keep on clipboard"
+        : "Paste into active app",
   ]);
 
   const summary = $("summary");
@@ -247,6 +308,191 @@ function renderSummary() {
 document
   .querySelectorAll('input[name="output-mode"]')
   .forEach((radio) => radio.addEventListener("change", renderSummary));
+
+/* ---------- download step ---------- */
+
+// Models the user's choices require to run on this computer.
+function neededModels(cfg) {
+  const list = [];
+  if (cfg.stt.engine === "builtin") {
+    list.push({ kind: "stt", modelId: cfg.stt.builtin.model });
+  }
+  if (cfg.cleanup.enabled && cfg.cleanup.engine === "builtin") {
+    list.push({ kind: "cleanup", modelId: cfg.cleanup.builtin.model });
+  }
+  return list;
+}
+
+const dlRows = new Map(); // "kind:id" -> { fill, status, retry, done }
+let downloadStarted = false;
+
+function infoFor(kind, modelId) {
+  return modelStatus[kind].find((m) => m.id === modelId);
+}
+
+function setFill(row, fraction) {
+  row.fill.style.width = `${Math.round(fraction * 100)}%`;
+}
+
+function formatMB(bytes) {
+  return `${(bytes / 1e6).toFixed(0)} MB`;
+}
+
+// "42% · 280 MB / 660 MB" — concrete progress so a slow download reads as
+// working, not stalled.
+function progressLabel({ received, total, fraction }) {
+  const pct = Math.round((fraction ?? (total ? received / total : 0)) * 100);
+  if (!total) return `${pct}%`;
+  return `${pct}% · ${formatMB(received)} / ${formatMB(total)}`;
+}
+
+function checkAllDone() {
+  const allDone = [...dlRows.values()].every((r) => r.done);
+  $("next").disabled = !allDone;
+  $("next").textContent = allDone ? "Finish setup" : "Downloading…";
+}
+
+async function runDownload(kind, modelId) {
+  const key = `${kind}:${modelId}`;
+  const row = dlRows.get(key);
+  row.done = false;
+  row.retry.hidden = true;
+  row.status.textContent = "Downloading…";
+  row.status.className = "status";
+  checkAllDone();
+
+  const res = await earheart.invoke("models:download", { kind, modelId });
+  if (res.ok) {
+    setFill(row, 1);
+    row.status.textContent = "Ready ✓";
+    row.status.className = "status ok";
+    row.done = true;
+  } else if (res.cancelled) {
+    row.status.textContent = "Cancelled";
+    row.status.className = "status";
+  } else if (res.error === "Already downloading") {
+    // A fast re-entry (toggling the selection) can race the previous transfer's
+    // teardown. The download is still progressing, so keep showing it as such
+    // rather than a hard error; progress events continue to update the row.
+    row.status.textContent = "Downloading…";
+    row.status.className = "status";
+  } else {
+    row.status.textContent = res.error || "Download failed";
+    row.status.className = "status err";
+    row.retry.hidden = false;
+  }
+  checkAllDone();
+}
+
+function buildRow(kind, modelId) {
+  const info = infoFor(kind, modelId);
+  const wrap = document.createElement("div");
+  wrap.className = "dl-item";
+
+  const head = document.createElement("div");
+  head.className = "dl-head";
+  const name = document.createElement("strong");
+  name.textContent = info ? info.label : modelId;
+  const status = document.createElement("span");
+  status.className = "status";
+  head.append(name, status);
+
+  const bar = document.createElement("div");
+  bar.className = "dl-bar";
+  const fill = document.createElement("div");
+  fill.className = "dl-fill";
+  bar.appendChild(fill);
+
+  const note = document.createElement("p");
+  note.className = "hint";
+  note.textContent = info ? info.note : "";
+
+  const retry = document.createElement("button");
+  retry.className = "ghost";
+  retry.textContent = "Retry";
+  retry.hidden = true;
+  retry.addEventListener("click", () => runDownload(kind, modelId));
+
+  wrap.append(head, bar, note, retry);
+  dlRows.set(`${kind}:${modelId}`, { fill, status, retry, done: false });
+  return wrap;
+}
+
+async function enterDownloadStep() {
+  const cfg = collect();
+  const needed = neededModels(cfg);
+
+  // Rebuild only when the set of needed models changes (revisiting the step
+  // after going back shouldn't restart finished downloads).
+  const signature = needed.map((n) => `${n.kind}:${n.modelId}`).sort().join(",");
+  if (downloadStarted && signature === enterDownloadStep.signature) {
+    checkAllDone();
+    return;
+  }
+  enterDownloadStep.signature = signature;
+
+  // Cancel anything in flight from a previous selection.
+  for (const [key] of dlRows) {
+    const [kind, modelId] = key.split(":");
+    earheart.invoke("models:cancel", { kind, modelId });
+  }
+  dlRows.clear();
+  const listEl = $("download-list");
+  listEl.replaceChildren();
+
+  const toDownload = needed.filter((n) => {
+    const info = infoFor(n.kind, n.modelId);
+    return info && !info.installed;
+  });
+
+  $("download-none").hidden = needed.length > 0;
+  $("download-later-row").hidden = toDownload.length === 0;
+  $("download-title").textContent = toDownload.length
+    ? "Setting up the models that run on your computer"
+    : "You're all set";
+  $("download-intro").hidden = toDownload.length === 0;
+
+  // Show every needed model; already-installed ones render as Ready.
+  for (const n of needed) {
+    listEl.appendChild(buildRow(n.kind, n.modelId));
+    const row = dlRows.get(`${n.kind}:${n.modelId}`);
+    const info = infoFor(n.kind, n.modelId);
+    if (info && info.installed) {
+      setFill(row, 1);
+      row.status.textContent = "Ready ✓";
+      row.status.className = "status ok";
+      row.done = true;
+    }
+  }
+
+  downloadStarted = true;
+  checkAllDone();
+  // Kick off the downloads that are actually missing.
+  for (const n of toDownload) runDownload(n.kind, n.modelId);
+}
+
+earheart.on("models:progress", (p) => {
+  const row = dlRows.get(`${p.kind}:${p.modelId}`);
+  if (row && !row.done) {
+    setFill(row, p.fraction);
+    row.status.textContent = progressLabel(p);
+    row.status.className = "status";
+  }
+});
+
+$("download-later").addEventListener("click", () => {
+  // Stop in-flight downloads and let the user finish; models can be fetched
+  // later from Settings. The pipeline shows a clear error until they exist.
+  for (const [key, row] of dlRows) {
+    if (row.done) continue;
+    const [kind, modelId] = key.split(":");
+    earheart.invoke("models:cancel", { kind, modelId });
+    row.done = true;
+    row.status.textContent = "Skipped — download later in Settings";
+    row.status.className = "status";
+  }
+  checkAllDone();
+});
 
 /* ---------- finish ---------- */
 
@@ -281,17 +527,31 @@ async function finish() {
   current = data.settings;
   defaults = data.defaults;
   platform = data.platform;
+  modelStatus = await earheart.invoke("models:status");
 
   hotkeyInput.value = current.hotkey;
-  $("server-command").value = current.sttServer.command;
   $("cleanup-url").value = current.cleanup.baseUrl;
   $("cleanup-model").value = current.cleanup.model;
   $("cleanup-enabled").checked = current.cleanup.enabled;
   document.querySelector(
+    `input[name="stt-mode"][value="${current.stt.engine}"]`
+  ).checked = true;
+  document.querySelector(
+    `input[name="cleanup-mode"][value="${current.cleanup.engine === "builtin" ? "builtin" : "external"}"]`
+  ).checked = true;
+  document.querySelector(
     `input[name="output-mode"][value="${current.output.mode}"]`
   ).checked = true;
+
+  populateCleanupModels();
+  $("cleanup-builtin-model").addEventListener("change", () => {
+    current.cleanup.builtin.model = $("cleanup-builtin-model").value;
+    syncCleanupNote();
+  });
+
   syncSttMode();
   syncCleanupEnabled();
+  syncCleanupMode();
 
   if (platform === "darwin") $("demo-mod").textContent = "⌘";
   if (platform !== "linux") $("wayland-note").style.display = "none";

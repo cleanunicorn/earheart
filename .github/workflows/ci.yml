@@ -2,12 +2,18 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
 
 jobs:
   app:
-    runs-on: ubuntu-latest
+    # The in-process engines ship per-platform native binaries, so exercise
+    # install + tests + boot on all three target OSes, not just Linux.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -15,8 +21,21 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm test
+      # Electron needs a display; Linux runners are headless so wrap with xvfb.
       - name: Smoke test (headless)
+        if: runner.os == 'Linux'
         run: xvfb-run -a npx electron . --smoke-test --no-sandbox
+      - name: Smoke test
+        if: runner.os != 'Linux'
+        run: npx electron . --smoke-test --no-sandbox
+      # Boot the engine utilityProcess worker and round-trip a ping, so a broken
+      # worker or native-addon load surfaces here rather than at runtime.
+      - name: Engine worker boot (headless)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npx electron scripts/engine-smoke.js --no-sandbox
+      - name: Engine worker boot
+        if: runner.os != 'Linux'
+        run: npx electron scripts/engine-smoke.js --no-sandbox
 
   stt-server:
     runs-on: ubuntu-latest

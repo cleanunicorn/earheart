@@ -9,7 +9,31 @@ permissions:
   contents: write
 
 jobs:
+  # Create the GitHub release once, up front, so the three platform build jobs
+  # upload into an existing release instead of each racing to create it. When
+  # they raced, concurrent release creation clobbered asset uploads — v0.6.0
+  # lost its macOS dmg/zip/latest-mac.yml that way. Only runs on a tag push.
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Create the release if it does not exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists, reusing it."
+          else
+            gh release create "$tag" --title "$tag" --generate-notes
+          fi
+
   build:
+    needs: create-release
+    # workflow_dispatch on a branch skips create-release; don't block the build
+    # job on a skipped dependency.
+    if: ${{ always() && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped') }}
     strategy:
       # One platform failing must not cancel the other platforms' uploads.
       fail-fast: false
@@ -17,17 +41,17 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - run: npm install
+      - run: npm ci
       # On a tag, publish installers to the GitHub release; a plain
       # workflow_dispatch on a branch only uploads CI artifacts.
       - run: npx electron-builder --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: earheart-${{ matrix.os }}
           path: |

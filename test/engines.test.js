@@ -161,6 +161,28 @@ test("download skips files already on disk and remove frees them", async () => {
   }
 });
 
+test("isInstalled rejects a model whose file was truncated after download", async () => {
+  const a = Buffer.from("the-whole-file-".repeat(20));
+  const { server, base } = await serveFiles({ "/a.bin": a });
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "stt", id: "trunc",
+        files: [{ name: "a.bin", bytes: a.length, url: `${base}/a.bin` }],
+      };
+      await manager.download(dir, model);
+      assert.strictEqual(manager.isInstalled(dir, model), true);
+
+      // Simulate corruption/truncation of an already-installed file: the marker
+      // recorded the original size, so the shorter file no longer matches.
+      await fsp.writeFile(manager.filePath(dir, model, model.files[0]), "tiny");
+      assert.strictEqual(manager.isInstalled(dir, model), false);
+    });
+  } finally {
+    server.close();
+  }
+});
+
 test("download surfaces HTTP errors", async () => {
   const { server, base } = await serveFiles({}); // serves 404 for everything
   try {

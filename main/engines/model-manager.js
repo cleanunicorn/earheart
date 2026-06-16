@@ -7,7 +7,9 @@
 // Each file is streamed to `<name>.part`, optionally checksum-verified, then
 // renamed into place — so a half-finished download never looks complete. A
 // model counts as installed once every file is present and a `.complete`
-// marker has been written.
+// marker has been written. The marker records each file's size as actually
+// written, so `isInstalled` can reject a model whose files were later truncated
+// (e.g. a disk filling up) rather than trusting mere file presence.
 
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
@@ -28,11 +30,44 @@ function filePath(baseDir, model, file) {
   return path.join(modelDir(baseDir, model), file.name);
 }
 
-/** True once every file is on disk and the completion marker exists. */
+// Read the completion marker. Returns the recorded {name: size} map, an empty
+// map for a legacy (pre-size) marker, or null when no marker is present.
+function readMarker(dir) {
+  let raw;
+  try {
+    raw = fs.readFileSync(path.join(dir, MARKER), "utf8");
+  } catch {
+    return null; // no marker: not installed
+  }
+  if (!raw) return {}; // legacy empty marker: presence-only
+  try {
+    const parsed = JSON.parse(raw);
+    return (parsed && parsed.files) || {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * True once the completion marker exists and every file is on disk at the size
+ * recorded when it was downloaded. The recorded sizes (not the registry's
+ * approximate `bytes`) are the source of truth, so a finished file that was
+ * later truncated is treated as not installed.
+ */
 function isInstalled(baseDir, model) {
   const dir = modelDir(baseDir, model);
-  if (!fs.existsSync(path.join(dir, MARKER))) return false;
-  return model.files.every((f) => fs.existsSync(path.join(dir, f.name)));
+  const sizes = readMarker(dir);
+  if (sizes === null) return false;
+  return model.files.every((f) => {
+    const p = path.join(dir, f.name);
+    const expected = sizes[f.name];
+    if (expected === undefined) return fs.existsSync(p); // legacy marker
+    try {
+      return fs.statSync(p).size === expected;
+    } catch {
+      return false; // missing or unreadable
+    }
+  });
 }
 
 /** Free a model's disk space. */
@@ -58,6 +93,9 @@ async function downloadFile(baseDir, model, file, { onBytes, signal }) {
   const dest = path.join(dir, file.name);
   const part = `${dest}.part`;
 
+  // No HTTP range/resume: a failed or cancelled transfer discards the `.part`
+  // and the next attempt re-fetches the whole file from the start. Completed
+  // files are still skipped (below), so only the in-flight file is repeated.
   const res = await fetch(file.url, { signal });
   if (!res.ok || !res.body) {
     throw new Error(`Download failed for ${file.name}: HTTP ${res.status}`);
@@ -120,7 +158,17 @@ async function download(baseDir, model, { onProgress, signal } = {}) {
     });
   }
 
-  await fsp.writeFile(path.join(modelDir(baseDir, model), MARKER), "");
+  // Record each file's actual on-disk size in the marker, so a later integrity
+  // check can catch truncation without relying on the registry's approximate
+  // sizes.
+  const sizes = {};
+  for (const file of model.files) {
+    sizes[file.name] = fs.statSync(filePath(baseDir, model, file)).size;
+  }
+  await fsp.writeFile(
+    path.join(modelDir(baseDir, model), MARKER),
+    JSON.stringify({ files: sizes })
+  );
   onProgress?.({ received: total, total, fraction: 1, file: null });
 }
 

@@ -8,11 +8,13 @@
 // (rather than an archive) so there is nothing to extract: the download
 // manager streams each URL to disk and the engines load the files in place.
 //
-// `bytes` is the expected size of each file, used both for the wizard's
-// progress bar and as a cheap integrity check (a finished file whose size
-// doesn't match is treated as incomplete). `sha256` is optional; when present
-// the download manager verifies it. Sizes are approximate upstream values and
-// the source of truth if a model is re-hosted.
+// `bytes` is the approximate size of each file, used for the wizard's progress
+// bar. `sha256` is optional but strongly recommended before release: when
+// present the download manager verifies it, which is the only real guard
+// against a corrupted, tampered, or wrong file being loaded into the native
+// runtimes. The entries below ship without checksums and should have them
+// filled in (and the URLs/sizes sanity-checked against the live repos) before
+// the built-in engines are released.
 
 // Sherpa-onnx hosts ready-to-run ONNX bundles of the NeMo Parakeet models on
 // Hugging Face; we pull the encoder/decoder/joiner and the token table.

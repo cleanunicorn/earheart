@@ -1,9 +1,12 @@
 {
   "name": "earheart",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Private, hotkey-driven voice dictation for your desktop. Speech-to-text with NVIDIA Parakeet, cleanup with any OpenAI-compatible LLM.",
   "main": "main/main.js",
   "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
   "author": {
     "name": "Earheart contributors",
     "email": "lucadanielcostin@gmail.com"
@@ -23,7 +26,7 @@
     "dist:win": "electron-builder --win"
   },
   "devDependencies": {
-    "electron": "^41.2.0",
+    "electron": "^42.0.0",
     "electron-builder": "^26.4.0"
   },
   "dependencies": {

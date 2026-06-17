@@ -52,7 +52,7 @@ dist-win-docker: ## Cross-build Windows packages from Linux via Docker+Wine
 	docker run --rm --security-opt seccomp=unconfined \
 		-v "$(CURDIR)":/project -w /project \
 		electronuserland/builder:wine \
-		/bin/bash -c "npm install && npm run dist:win"
+		/bin/bash -c "npm ci && npm run dist:win"
 
 # ----- releasing -------------------------------------------------------------
 

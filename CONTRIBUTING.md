@@ -7,6 +7,8 @@ read this whole codebase in an afternoon.
 
 ## Development setup
 
+Requires Node 22+ (an `.nvmrc` is provided, so `nvm use` picks it up).
+
 ```bash
 git clone https://github.com/cleanunicorn/earheart
 cd earheart
@@ -87,8 +89,10 @@ conventional-commit prefix of the PR title
 | anything else (`chore:`, `docs:`, free-form, `[skip release]`) | none |
 
 The workflow bumps `package.json`, commits `release: vX.Y.Z` to master, tags
-it, and dispatches the release builds, which publish the installers to a
-GitHub release.
+it, and dispatches the release builds. Those builds create the GitHub release
+as a draft, each platform uploads its installers into it, and the release is
+flipped live only after all three platforms succeed — so a half-built release
+is never published.
 
 To cut a release manually instead:
 

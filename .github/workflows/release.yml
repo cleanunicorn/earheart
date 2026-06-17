@@ -5,6 +5,12 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# auto-release.yml dispatches this workflow with a tag ref (`--ref v<version>`),
+# so the normal path always runs on a tag: create the release, build, publish.
+# A manual workflow_dispatch against a branch is a dry-run — it builds and
+# uploads CI artifacts but creates/publishes nothing (create-release is skipped
+# and the build job's publish arg resolves to `never`).
+
 permissions:
   contents: write
 
@@ -24,6 +30,9 @@ jobs:
       - name: Create the draft release if it does not exist
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # With no checkout there's no git remote for gh to infer the repo
+          # from, so pass it explicitly (also matches publish-release).
+          GH_REPO: ${{ github.repository }}
         run: |
           tag="${GITHUB_REF_NAME}"
           # The tag reaches the release commands as a literal arg (env-var
@@ -34,6 +43,10 @@ jobs:
             echo "Refusing to create a release for non-version tag: $tag"
             exit 1
           fi
+          # Reuse an existing release so a re-run is idempotent. Note: if a prior
+          # run already published this tag (non-draft), electron-builder won't
+          # re-upload into a release older than 2h — re-run from a fresh tag
+          # rather than re-running a long-published one.
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag already exists, reusing it."
           else
@@ -80,7 +93,9 @@ jobs:
   # partial release.
   publish-release:
     needs: [create-release, build]
-    if: ${{ needs.create-release.result == 'success' && needs.build.result == 'success' }}
+    # always() so this is evaluated explicitly (mirrors the build job); the
+    # success-of-both gate then publishes only when every platform uploaded.
+    if: ${{ always() && needs.create-release.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Publish the release

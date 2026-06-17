@@ -7,3 +7,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Batch action bumps into one reviewable PR rather than one per action.
+    groups:
+      github-actions:
+        patterns: ["*"]

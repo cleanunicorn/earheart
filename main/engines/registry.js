@@ -21,10 +21,13 @@
 // download at the pinned commit and `shasum -a 256` it.
 
 // Sherpa-onnx hosts ready-to-run ONNX bundles of the NeMo Parakeet models on
-// Hugging Face; we pull the encoder/decoder/joiner and the token table.
-const STT_REPO = "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8";
-const STT_COMMIT = "2bda32ec70b097a55adaa07d9a7173915b43cc78";
-const sttUrl = (file) => `${STT_REPO}/resolve/${STT_COMMIT}/${file}`;
+// Hugging Face; we pull the encoder/decoder/joiner and the token table. Each
+// bundle lives in its own repo (int8 vs fp32, v3 multilingual vs v2 English),
+// so pin a repo + commit per model. The fp32 builds store the encoder weights
+// in a separate `encoder.weights` external-data file alongside `encoder.onnx`;
+// both must be downloaded into the same directory for the loader to find them.
+const sttUrl = (repo, commit, file) =>
+  `https://huggingface.co/csukuangfj/${repo}/resolve/${commit}/${file}`;
 
 // The ggml-org (llama.cpp) org publishes ungated GGUF builds of the Gemma 3
 // instruct models, which is exactly what node-llama-cpp / llama.cpp load. We
@@ -40,27 +43,94 @@ const MODELS = {
       label: "Parakeet TDT 0.6B v3 (multilingual, int8)",
       kind: "stt",
       engine: "sherpa-parakeet",
+      default: true,
       // ~25 languages, auto-detected, faster-than-realtime on CPU.
-      note: "Runs on this computer · 25 languages · ~670 MB",
+      note: "Runs on this computer · 25 languages · ~670 MB · best for most laptops",
       files: [
         { name: "encoder.int8.onnx", bytes: 652_184_281,
           sha256: "acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247",
-          url: sttUrl("encoder.int8.onnx") },
+          url: sttUrl("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "2bda32ec70b097a55adaa07d9a7173915b43cc78", "encoder.int8.onnx") },
         { name: "decoder.int8.onnx", bytes: 11_845_275,
           sha256: "179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e",
-          url: sttUrl("decoder.int8.onnx") },
+          url: sttUrl("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "2bda32ec70b097a55adaa07d9a7173915b43cc78", "decoder.int8.onnx") },
         { name: "joiner.int8.onnx", bytes: 6_355_277,
           sha256: "3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3",
-          url: sttUrl("joiner.int8.onnx") },
+          url: sttUrl("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "2bda32ec70b097a55adaa07d9a7173915b43cc78", "joiner.int8.onnx") },
         { name: "tokens.txt", bytes: 93_939,
           sha256: "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
-          url: sttUrl("tokens.txt") },
+          url: sttUrl("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "2bda32ec70b097a55adaa07d9a7173915b43cc78", "tokens.txt") },
       ],
       // How the sherpa-onnx engine should wire the files together.
       sherpa: {
         encoder: "encoder.int8.onnx",
         decoder: "decoder.int8.onnx",
         joiner: "joiner.int8.onnx",
+        tokens: "tokens.txt",
+        modelType: "nemo_transducer",
+      },
+    },
+    "parakeet-tdt-0.6b-v3": {
+      id: "parakeet-tdt-0.6b-v3",
+      label: "Parakeet TDT 0.6B v3 (multilingual, full precision)",
+      kind: "stt",
+      engine: "sherpa-parakeet",
+      // Same 25-language model as the default, but fp32 weights — slightly
+      // higher accuracy at a larger download and more RAM/CPU per transcription.
+      note: "Runs on this computer · 25 languages · ~2.4 GB · higher accuracy, needs a stronger machine",
+      files: [
+        { name: "encoder.onnx", bytes: 41_766_257,
+          sha256: "3eed7ce424bf8339ad09233533c687e2dbd07e74ccf5027b5e7344019ea373b0",
+          url: sttUrl("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3", "1a468a35cbba69418f126de829e75261dea4a4e4", "encoder.onnx") },
+        { name: "encoder.weights", bytes: 2_435_420_160,
+          sha256: "3af3f51af5f2d01dbbf5af47d42c7962a2c205f11004254bb4f2b979862f39a8",
+          url: sttUrl("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3", "1a468a35cbba69418f126de829e75261dea4a4e4", "encoder.weights") },
+        { name: "decoder.onnx", bytes: 47_233_743,
+          sha256: "d593cdb0e571f5a457ec2219af9968cbf6b0e8198e8f7839b40a8754593bf68c",
+          url: sttUrl("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3", "1a468a35cbba69418f126de829e75261dea4a4e4", "decoder.onnx") },
+        { name: "joiner.onnx", bytes: 25_286_330,
+          sha256: "b9b0bcf88ac571902e69a6536223ed2d94885e981b85045410f1403d53121a63",
+          url: sttUrl("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3", "1a468a35cbba69418f126de829e75261dea4a4e4", "joiner.onnx") },
+        { name: "tokens.txt", bytes: 93_939,
+          sha256: "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
+          url: sttUrl("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3", "1a468a35cbba69418f126de829e75261dea4a4e4", "tokens.txt") },
+      ],
+      sherpa: {
+        encoder: "encoder.onnx",
+        decoder: "decoder.onnx",
+        joiner: "joiner.onnx",
+        tokens: "tokens.txt",
+        modelType: "nemo_transducer",
+      },
+    },
+    "parakeet-tdt-0.6b-v2": {
+      id: "parakeet-tdt-0.6b-v2",
+      label: "Parakeet TDT 0.6B v2 (English only, full precision)",
+      kind: "stt",
+      engine: "sherpa-parakeet",
+      // English-only fp32 model. Top of the English ASR leaderboards; pick this
+      // if you only dictate in English and want the best accuracy.
+      note: "Runs on this computer · English only · ~2.4 GB · best English accuracy, needs a stronger machine",
+      files: [
+        { name: "encoder.onnx", bytes: 41_766_257,
+          sha256: "7ce8d2b3f45fcd3b553d3b7a188436db7748c271081cc004f28bf76f3df01893",
+          url: sttUrl("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2", "86891485dd8ad7cb28cb1aade45c3e23d0197c30", "encoder.onnx") },
+        { name: "encoder.weights", bytes: 2_435_420_160,
+          sha256: "90cd4bb6c9b60496d49be9bec3a844f4e9bf22c62a45ea93f391cc00f9a47cfe",
+          url: sttUrl("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2", "86891485dd8ad7cb28cb1aade45c3e23d0197c30", "encoder.weights") },
+        { name: "decoder.onnx", bytes: 28_883_663,
+          sha256: "0140d12782ccf550a9709f03a52c2782b3c54d045f47ce14af39c713ab42de7f",
+          url: sttUrl("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2", "86891485dd8ad7cb28cb1aade45c3e23d0197c30", "decoder.onnx") },
+        { name: "joiner.onnx", bytes: 6_907_576,
+          sha256: "a9e57e488cd1016cbefd51f60712896af6590e3f61ff466a540e085bbd6af59e",
+          url: sttUrl("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2", "86891485dd8ad7cb28cb1aade45c3e23d0197c30", "joiner.onnx") },
+        { name: "tokens.txt", bytes: 9_384,
+          sha256: "ec182b70dd42113aff6c5372c75cac58c952443eb22322f57bbd7f53977d497d",
+          url: sttUrl("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2", "86891485dd8ad7cb28cb1aade45c3e23d0197c30", "tokens.txt") },
+      ],
+      sherpa: {
+        encoder: "encoder.onnx",
+        decoder: "decoder.onnx",
+        joiner: "joiner.onnx",
         tokens: "tokens.txt",
         modelType: "nemo_transducer",
       },

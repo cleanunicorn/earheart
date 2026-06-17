@@ -72,9 +72,18 @@ Grab the latest installer for your platform from the
 | Linux (any distro) | `Earheart-<version>.AppImage` | `chmod +x` the file, then run it |
 | Debian / Ubuntu | `earheart_<version>_amd64.deb` | `sudo apt install ./earheart_<version>_amd64.deb` |
 
-> **macOS note:** builds are not yet notarized, so the first launch may be
-> blocked by Gatekeeper. Right-click the app → **Open**, or allow it under
-> **System Settings → Privacy & Security → Open Anyway**.
+> **macOS note:** builds are not yet signed or notarized, so Gatekeeper blocks
+> the first launch. If you see **"Earheart is damaged and can't be opened"**,
+> the app isn't actually broken — macOS quarantines unsigned downloads. After
+> dragging Earheart to Applications, clear the quarantine flag once:
+>
+> ```bash
+> xattr -dr com.apple.quarantine /Applications/Earheart.app
+> ```
+>
+> Then open it normally. (The "right-click → Open" trick only clears the
+> milder "unidentified developer" warning, not the "damaged" one.) See
+> [macOS](#macos) below for details.
 
 That's it — the built-in engines need nothing else installed. The first-run
 wizard downloads the speech and cleanup models for you.
@@ -207,6 +216,18 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
   the running app.
 
 ### macOS
+
+- **"Earheart is damaged and can't be opened"** on first launch means
+  Gatekeeper has quarantined the download — the app is unsigned and not yet
+  notarized, not corrupt. Drag it to Applications, then strip the quarantine
+  attribute once:
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/Earheart.app
+  ```
+
+  After that it opens normally. (Right-click → **Open** only works for the
+  "unidentified developer" prompt, not the "damaged" one.)
 
 - The first dictation asks for **Microphone** permission.
 - Auto-paste simulates Cmd+V via System Events, which requires

@@ -60,30 +60,54 @@ OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
 
 ## Install
 
-### Download a release
+### 1. Download the right file for your OS
 
-Grab the latest installer for your platform from the
-[releases page](https://github.com/cleanunicorn/earheart/releases/latest):
+Open the **[latest release page](https://github.com/cleanunicorn/earheart/releases/latest)**
+and, under **Assets**, download the file that matches your system. `<version>`
+is just the version number (e.g. `0.6.1`).
 
-| Platform | File | Install |
-| --- | --- | --- |
-| Windows | `Earheart Setup <version>.exe` | Run the installer (a portable `Earheart <version>.exe` is also available) |
-| macOS | `Earheart-<version>.dmg` | Open and drag Earheart to Applications |
-| Linux (any distro) | `Earheart-<version>.AppImage` | `chmod +x` the file, then run it |
-| Debian / Ubuntu | `earheart_<version>_amd64.deb` | `sudo apt install ./earheart_<version>_amd64.deb` |
+**🪟 Windows**
 
-> **macOS note:** builds are not yet signed or notarized, so Gatekeeper blocks
-> the first launch. If you see **"Earheart is damaged and can't be opened"**,
-> the app isn't actually broken — macOS quarantines unsigned downloads. After
-> dragging Earheart to Applications, clear the quarantine flag once:
+- **Most people:** `Earheart-Setup-<version>.exe` — the installer.
+- Don't want to install? `Earheart-<version>.exe` — a portable build you can
+  run directly.
+
+**🍎 macOS**
+
+- **Apple Silicon (M1/M2/M3/M4):** `Earheart-<version>-arm64.dmg`
+- **Intel Macs:** `Earheart-<version>.dmg`
+- Not sure which Mac you have? Click  → **About This Mac** and look at
+  "Chip" / "Processor".
+
+**🐧 Linux**
+
+- **Any distro:** `Earheart-<version>.AppImage` — works everywhere.
+- **Debian / Ubuntu:** `earheart_<version>_amd64.deb` — installs as a normal
+  package.
+
+### 2. Install it
+
+| Your download | What to do |
+| --- | --- |
+| `Earheart-Setup-<version>.exe` | Double-click and follow the installer. |
+| `Earheart-<version>.exe` (portable) | Just double-click to run — no install. |
+| `Earheart-<version>*.dmg` | Open it, then drag **Earheart** into **Applications**. (See the macOS note below — the first launch needs one extra step.) |
+| `Earheart-<version>.AppImage` | In a terminal: `chmod +x Earheart-*.AppImage`, then double-click or run it. |
+| `earheart_<version>_amd64.deb` | `sudo apt install ./earheart_<version>_amd64.deb` |
+
+> **⚠️ macOS first launch: "Earheart is damaged and can't be opened"**
+>
+> This does **not** mean the app is broken. Earheart isn't signed/notarized
+> yet, so macOS quarantines it. After dragging Earheart to Applications, run
+> this once in Terminal:
 >
 > ```bash
 > xattr -dr com.apple.quarantine /Applications/Earheart.app
 > ```
 >
-> Then open it normally. (The "right-click → Open" trick only clears the
-> milder "unidentified developer" warning, not the "damaged" one.) See
-> [macOS](#macos) below for details.
+> Then open Earheart normally. (The "right-click → Open" trick only clears the
+> milder "unidentified developer" warning, not the "damaged" one.) More detail
+> in [macOS notes](#macos) below.
 
 That's it — the built-in engines need nothing else installed. The first-run
 wizard downloads the speech and cleanup models for you.

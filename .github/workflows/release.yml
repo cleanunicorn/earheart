@@ -62,7 +62,10 @@ jobs:
       # One platform failing must not cancel the other platforms' uploads.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # macos-latest is Apple Silicon (arm64); macos-13 is Intel (x64). Each
+        # builds for its own arch so the per-arch native addons npm installed on
+        # that host are the ones that ship — see electron-builder.yml.
+        os: [ubuntu-latest, macos-latest, macos-13, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3

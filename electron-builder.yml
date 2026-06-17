@@ -42,6 +42,11 @@ linux:
     entry:
       StartupWMClass: earheart
 
+# The release matrix builds macOS on two runners — arm64 on macos-latest and
+# x64 on the Intel macos-13 runner — so the per-arch native addons
+# (sherpa-onnx-darwin-* and @node-llama-cpp/mac-*) are the ones npm actually
+# installed on that host. Each run defaults to the host arch; cross-compiling
+# both from one runner would bundle the wrong-arch native binaries.
 mac:
   target:
     - dmg

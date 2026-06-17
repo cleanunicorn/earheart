@@ -1,0 +1,9 @@
+# Keeps the SHA-pinned GitHub Actions current: Dependabot bumps the pin and
+# updates the trailing `# vX.Y.Z` comment when a new release lands, so pinning
+# to an immutable commit doesn't mean going stale.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

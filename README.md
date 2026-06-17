@@ -103,7 +103,7 @@ setup wizard and Settings let you enter its URL and API key instead.
 
 ### Build from source
 
-If there's no release for your platform:
+If there's no release for your platform (requires Node 22+):
 
 ```bash
 git clone https://github.com/cleanunicorn/earheart

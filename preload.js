@@ -28,6 +28,7 @@ const INVOKE = new Set([
   "wizard:complete",
   "wizard:skip",
   "wizard:open",
+  "permissions:accessibility",
   "stt:test",
   "cleanup:test",
   "models:list-remote",

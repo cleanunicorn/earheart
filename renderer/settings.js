@@ -508,6 +508,23 @@ $("open-wizard").addEventListener("click", () => {
   earheart.invoke("wizard:open");
 });
 
+/* ---------- macOS auto-paste (Accessibility) permission ---------- */
+
+$("accessibility-fix").addEventListener("click", async () => {
+  const el = $("accessibility-status");
+  el.textContent = "Checking…";
+  el.className = "status";
+  const result = await earheart.invoke("permissions:accessibility");
+  if (result.granted) {
+    el.textContent = "Already granted — auto-paste should work.";
+    el.className = "status ok";
+  } else {
+    el.textContent =
+      "Opened System Settings — turn Earheart on under Accessibility.";
+    el.className = "status";
+  }
+});
+
 // Opened right after the setup wizard: tell the user their choices are
 // already filled in and saving as-is is fine.
 if (new URLSearchParams(location.search).has("wizard")) {
@@ -524,6 +541,8 @@ $("wizard-banner-dismiss").addEventListener("click", () => {
   current = data.settings;
   defaults = data.defaults;
   platform = data.platform;
+  // The Accessibility permission only exists on macOS.
+  if (platform === "darwin") $("accessibility-field").hidden = false;
   $("version").textContent = `v${data.version}`;
   modelStatus = await earheart.invoke("models:status");
   populateModelSelect("stt");

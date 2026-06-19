@@ -238,8 +238,8 @@ function init() {
     process(sid, wav);
   });
 
-  ipcMain.on("audio:partial", (event, { sid, wav } = {}) => {
-    livePreview.handleAudio(sid, wav);
+  ipcMain.on("audio:partial", (event, { sid, seq, final, wav } = {}) => {
+    livePreview.handleAudio(sid, { seq, final, wav });
   });
 
   ipcMain.on("record:cancelled", (event, { sid } = {}) => {

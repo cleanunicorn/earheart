@@ -53,17 +53,18 @@ const DEFAULTS = {
     // recording, so it is exposed as a toggle.
     livePreview: {
       enabled: true,
-      // How often (ms) the overlay re-encodes the buffer and asks for a fresh
+      // How often (ms) the overlay ships the in-progress audio chunk for a fresh
       // partial transcript. Lower = snappier, but more CPU.
       intervalMs: 1200,
-      // Stop issuing partials once the recording passes this many seconds: the
-      // offline recognizer re-decodes the whole buffer each tick, so cost grows
-      // with length. 0 = no cap.
-      maxSeconds: 30,
-      // After the raw partial has been stable (unchanged) for this long, run a
-      // cleanup pass over the full raw transcript and show the cleaned line. A
-      // pause, not a sentence boundary — see the pipeline for why it cleans the
-      // whole text rather than per-segment.
+      // Transcription is append-only and chunked: every `chunkSeconds` of audio
+      // is frozen into a committed chunk, transcribed once, and accumulated. Only
+      // the current in-progress chunk is re-decoded each tick, so decode cost
+      // stays flat (~this many seconds of audio) no matter how long you talk,
+      // instead of growing with the whole buffer.
+      chunkSeconds: 5,
+      // After the in-progress chunk has been stable (unchanged) for this long,
+      // clean the newly committed text and append it to the cleaned line. Only
+      // the new text is cleaned, so cleanup cost is flat too.
       cleanupPauseMs: 1000,
     },
   },

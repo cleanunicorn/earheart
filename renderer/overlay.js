@@ -120,17 +120,62 @@ function encodeWav(chunks) {
   return buffer;
 }
 
-// Live preview: re-encode the audio captured so far and ship it for a fresh
-// partial transcript. Skipped once the recording passes the configured cap
-// (the offline recognizer re-decodes the whole buffer each tick, so cost grows
-// with length) and when there's nothing recorded yet.
+// Total samples recorded so far across all worklet chunks.
+function totalSamples(chunks) {
+  let n = 0;
+  for (const c of chunks) n += c.length;
+  return n;
+}
+
+// Encode the recorded samples in [from, to) into a WAV. Walks the chunk list,
+// skipping samples before `from` and stopping at `to`, so we only ever encode
+// the slice the live preview needs — not the whole growing buffer.
+function encodeWavRange(chunks, from, to) {
+  const flat = new Float32Array(to - from);
+  let pos = 0; // absolute sample index at the start of the current chunk
+  let out = 0;
+  for (const chunk of chunks) {
+    const start = Math.max(from, pos);
+    const end = Math.min(to, pos + chunk.length);
+    if (end > start) {
+      flat.set(chunk.subarray(start - pos, end - pos), out);
+      out += end - start;
+    }
+    pos += chunk.length;
+    if (pos >= to) break;
+  }
+  return encodeWav([flat]);
+}
+
+// Live preview, append-only and chunked: each tick we ship only the audio of the
+// CURRENT in-progress chunk (the samples since the last committed boundary), so
+// decode cost stays flat regardless of how long the dictation runs. Once that
+// chunk reaches `chunkSeconds`, we send it one last time marked `final` and
+// advance the boundary, freezing it into the committed transcript on the main
+// side and starting a fresh chunk.
 function sendPartial() {
   if (!recording || !livePreview) return;
-  const cap = livePreview.maxSeconds || 0;
-  if (cap > 0 && (Date.now() - recording.startedAt) / 1000 > cap) return;
-  if (recording.chunks.length === 0) return;
-  const wav = encodeWav(recording.chunks);
-  earheart.send("audio:partial", { sid: recording.sid, wav });
+  const total = totalSamples(recording.chunks);
+  const from = recording.committedSamples;
+  if (total <= from) return; // nothing new recorded since the last commit
+
+  const chunkSamples = (livePreview.chunkSeconds || 5) * SAMPLE_RATE;
+  const liveSamples = total - from;
+  const final = liveSamples >= chunkSamples;
+
+  const wav = encodeWavRange(recording.chunks, from, total);
+  earheart.send("audio:partial", {
+    sid: recording.sid,
+    seq: recording.seq,
+    final,
+    wav,
+  });
+
+  if (final) {
+    // Freeze this chunk: future ticks send only audio recorded after it.
+    recording.committedSamples = total;
+    recording.seq += 1;
+  }
 }
 
 // Paint the two layers. The prefix-reconcile logic lives in transcript.js so it
@@ -249,6 +294,13 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
       context,
       chunks,
       startedAt: Date.now(),
+      // Append-only live preview: `committedSamples` is the sample offset where
+      // the current in-progress chunk starts; everything before it has been
+      // frozen into committed chunks and need never be re-sent. `seq` counts
+      // committed chunks so the main process can tell a growing in-progress chunk
+      // from the start of a new one.
+      committedSamples: 0,
+      seq: 0,
       timerId: setInterval(updateTimer, 250),
       maxTimerId: setTimeout(
         () => stopRecording(),

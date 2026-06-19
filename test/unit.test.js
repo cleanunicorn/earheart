@@ -205,7 +205,7 @@ test("live preview defaults are present and overridable", () => {
   const lp = DEFAULTS.stt.livePreview;
   assert.strictEqual(lp.enabled, true);
   assert.ok(lp.intervalMs > 0);
-  assert.ok(lp.maxSeconds >= 0);
+  assert.ok(lp.chunkSeconds > 0);
   assert.ok(lp.cleanupPauseMs > 0);
 
   // A saved file that only flips the toggle keeps the rest of the tuning.

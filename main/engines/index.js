@@ -7,7 +7,16 @@ const { app } = require("electron");
 
 const registry = require("./registry");
 const manager = require("./model-manager");
-const host = require("./host");
+const hostModule = require("./host");
+
+// STT and cleanup each get their own worker process so they run in parallel and
+// a crash in one engine can't take down the other. Each host lazily forks its
+// worker on the first request, so a user who only ever transcribes (no cleanup)
+// never spawns the cleanup worker, and vice versa. Unit tests stub `./host` with
+// a `createHost`-shaped fake (see test/engines.test.js), so there's a single
+// host-construction path here.
+const sttHost = hostModule.createHost({ serviceName: "earheart-stt" });
+const cleanupHost = hostModule.createHost({ serviceName: "earheart-cleanup" });
 
 function modelsDir() {
   return path.join(app.getPath("userData"), "models");
@@ -45,7 +54,7 @@ async function ensureStt(modelId) {
     throw new Error(`STT model "${modelId}" is not downloaded yet`);
   }
   if (loadedStt !== modelId) {
-    await host.request("load-stt", {
+    await sttHost.request("load-stt", {
       dir: manager.modelDir(modelsDir(), model),
       sherpa: model.sherpa,
       modelId,
@@ -69,7 +78,7 @@ async function transcribe(wav, cfg, signal) {
   // is structured-cloned across. A few seconds of PCM16 is small enough that
   // the one extra copy is negligible.
   const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  const text = await host.request("transcribe", {
+  const text = await sttHost.request("transcribe", {
     wav: ab,
     language: cfg.language || "",
   });
@@ -88,7 +97,7 @@ async function ensureCleanup(modelId) {
     throw new Error(`Cleanup model "${modelId}" is not downloaded yet`);
   }
   if (loadedCleanup !== modelId) {
-    await host.request("load-cleanup", {
+    await cleanupHost.request("load-cleanup", {
       modelPath: path.join(manager.modelDir(modelsDir(), model), model.gguf.file),
     });
     loadedCleanup = modelId;
@@ -99,7 +108,7 @@ async function ensureCleanup(modelId) {
 async function clean(transcript, cfg, signal) {
   if (signal?.aborted) throw new Error("aborted");
   await ensureCleanup(cfg.builtin.model);
-  const cleaned = await host.request("clean", {
+  const cleaned = await cleanupHost.request("clean", {
     transcript,
     systemPrompt: cfg.systemPrompt,
     temperature: cfg.temperature,
@@ -108,40 +117,52 @@ async function clean(transcript, cfg, signal) {
   return cleaned && cleaned.trim().length > 0 ? cleaned : transcript;
 }
 
-// Forget which models the worker had resident, so the next call re-runs
+// Forget which models a worker had resident, so the next call re-runs
 // ensureStt/ensureCleanup instead of assuming a model is still loaded.
-function forgetLoaded() {
+function forgetStt() {
   loadedStt = null;
+}
+
+function forgetCleanup() {
   loadedCleanup = null;
 }
 
 function stop() {
-  forgetLoaded();
-  host.stop();
+  forgetStt();
+  forgetCleanup();
+  sttHost.stop();
+  cleanupHost.stop();
 }
 
-// Release the loaded models without killing the worker, leaving it ready for a
-// fast re-load; the next transcribe/clean call re-runs ensureStt/ensureCleanup.
+// Release the loaded models without killing the workers, leaving them ready for
+// a fast re-load; the next transcribe/clean call re-runs ensureStt/ensureCleanup.
 // The cleanup engine frees its memory promptly via dispose(); the STT engine
 // has no explicit free, so its memory is reclaimed by GC rather than at once.
-// No-op if the worker has already exited (nothing is loaded).
+// Each worker is unloaded independently and only if it had a model resident.
 async function unloadIdle() {
-  if (loadedStt === null && loadedCleanup === null) return;
-  forgetLoaded();
+  const jobs = [];
+  if (loadedStt !== null) {
+    forgetStt();
+    jobs.push(sttHost.request("unload-stt"));
+  }
+  if (loadedCleanup !== null) {
+    forgetCleanup();
+    jobs.push(cleanupHost.request("unload-cleanup"));
+  }
+  if (jobs.length === 0) return;
   try {
-    await Promise.all([
-      host.request("unload-stt"),
-      host.request("unload-cleanup"),
-    ]);
+    await Promise.all(jobs);
   } catch {
-    // Worker may have exited; the flags are already cleared either way.
+    // A worker may have exited; the flags are already cleared either way.
   }
 }
 
-// If the worker dies (native crash, or our own stop()), it comes back empty.
+// If a worker dies (native crash, or our own stop()), it comes back empty.
 // Forget what we thought it had loaded so the next call re-loads the model
-// instead of sending inference to a worker that has no model resident.
-host.onExit(forgetLoaded);
+// instead of sending inference to a worker that has no model resident. Each
+// host's exit only affects its own engine's loaded-state.
+sttHost.onExit(forgetStt);
+cleanupHost.onExit(forgetCleanup);
 
 module.exports = {
   modelsDir,

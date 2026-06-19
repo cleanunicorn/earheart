@@ -14,7 +14,11 @@
 //   npx electron scripts/engine-smoke.js                            # macOS/Win
 
 const { app } = require("electron");
-const host = require("../main/engines/host");
+const { createHost } = require("../main/engines/host");
+
+// One worker is enough to prove the addons load; the app runs two of these
+// (STT + cleanup) but they fork the same engine-worker.js.
+const host = createHost({ serviceName: "earheart-engine-smoke" });
 
 app.whenReady().then(async () => {
   try {

@@ -86,9 +86,12 @@ ipcMain.on("overlay:resize", (event, { height } = {}) => {
   const [w, h] = win.getSize();
   if (target === h) return;
   const [winX, winY] = win.getPosition();
-  // Keep the bottom edge fixed: the top moves up as the window grows.
+  // Keep the bottom edge fixed: the top moves up as the window grows. If that
+  // pushes the top above the work area (a tall transcript near the top of the
+  // screen), floor it at the work-area top so the transcript isn't clipped.
   const bottom = winY + h;
-  const nextY = bottom - target;
+  const { workArea } = screen.getDisplayNearestPoint({ x: winX, y: winY });
+  const nextY = Math.max(workArea.y, bottom - target);
   win.setBounds({ x: winX, y: nextY, width: w, height: target });
 });
 

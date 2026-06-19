@@ -171,17 +171,27 @@ function clearTranscript() {
 // Ask the main process to size the window to the rendered content. The overlay
 // is frameless and bottom-anchored, so the main process grows it upward.
 //
-// The height is quantized to whole transcript lines (line-height 1.45 × 13px ≈
-// 19px) so a single word that doesn't wrap the line doesn't nudge the window a
-// few pixels every partial — it grows in calm, full-line steps. lastReportedHeight
-// is reset on overlay:show because the main process resets the window to the base
-// pill height there; without the reset a later session whose transcript happens to
-// match a previous height would report no change and stay clipped.
-const LINE_STEP = 19;
+// We report BASE_HEIGHT (the pill) plus the transcript panel's own height when
+// it's showing. Measuring the transcript element — not document.body — is
+// deliberate: the body is `height:100vh`, so its scrollHeight tracks the current
+// window height and could only ever grow, never letting the window shrink back
+// when the transcript shrinks or hides. The transcript's growth above the base
+// is quantized to whole lines (~19px) so a single non-wrapping word doesn't nudge
+// the window every partial; the base itself is reported exactly so the window
+// returns to the pill size when the transcript clears. lastReportedHeight resets
+// on overlay:show because the main process resets the window to BASE_HEIGHT there.
+const BASE_HEIGHT = 80; // pill (56px) + 12px margin top/bottom; matches windows.js
+const LINE_STEP = 19; // line-height 1.45 × 13px, one transcript line
 let lastReportedHeight = 0;
 function syncOverlayHeight() {
-  const raw = document.body.scrollHeight;
-  const height = Math.ceil(raw / LINE_STEP) * LINE_STEP;
+  let height = BASE_HEIGHT;
+  if (!transcriptEl.hidden) {
+    // Outer height of the transcript panel including its top/bottom margin.
+    const style = getComputedStyle(transcriptEl);
+    const margin = parseFloat(style.marginTop) + parseFloat(style.marginBottom);
+    const panel = transcriptEl.offsetHeight + margin;
+    height = BASE_HEIGHT + Math.ceil(panel / LINE_STEP) * LINE_STEP;
+  }
   if (height !== lastReportedHeight) {
     lastReportedHeight = height;
     earheart.send("overlay:resize", { height });

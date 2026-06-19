@@ -9,6 +9,9 @@ const RENDERER = path.join(__dirname, "..", "renderer");
 
 const OVERLAY_WIDTH = 360;
 const OVERLAY_HEIGHT = 80;
+// Ceiling the live transcript can grow the overlay to (the CSS also caps the
+// transcript panel at max-height 132px; this is the hard window bound).
+const OVERLAY_MAX_HEIGHT = 600;
 // Matches the pill's fade-out transition in overlay.css.
 const OVERLAY_FADE_MS = 200;
 
@@ -19,11 +22,15 @@ let overlayCustomPosition = null; // set when the user drags the pill
 let overlayDragOrigin = null; // { winX, winY, pointerX, pointerY }
 let overlayHideTimer = null;
 
-function clampToWorkArea(x, y) {
+// Clamp a top-left position so the window stays on-screen. The height matters
+// for the bottom bound: a transcript-grown overlay is taller than OVERLAY_HEIGHT,
+// so pass its actual height (defaulting to the base pill height) or the window's
+// bottom edge can be dragged off the work area.
+function clampToWorkArea(x, y, height = OVERLAY_HEIGHT) {
   const { workArea } = screen.getDisplayNearestPoint({ x, y });
   return {
     x: Math.min(Math.max(x, workArea.x), workArea.x + workArea.width - OVERLAY_WIDTH),
-    y: Math.min(Math.max(y, workArea.y), workArea.y + workArea.height - OVERLAY_HEIGHT),
+    y: Math.min(Math.max(y, workArea.y), workArea.y + workArea.height - height),
   };
 }
 
@@ -53,12 +60,36 @@ ipcMain.on("overlay:drag", (event, { x, y } = {}) => {
   const win = getOverlay();
   if (!win || !overlayDragOrigin) return;
   if (typeof x !== "number" || typeof y !== "number") return;
+  const [, h] = win.getSize();
   const next = clampToWorkArea(
     Math.round(overlayDragOrigin.winX + x - overlayDragOrigin.pointerX),
-    Math.round(overlayDragOrigin.winY + y - overlayDragOrigin.pointerY)
+    Math.round(overlayDragOrigin.winY + y - overlayDragOrigin.pointerY),
+    h // a transcript-grown overlay is taller than the base pill height
   );
   win.setPosition(next.x, next.y);
-  overlayCustomPosition = next;
+  // Store the pill's *bottom-anchored* top-left (where a base-height window would
+  // sit), so the next show — which resets to base height — places it correctly
+  // instead of inheriting the grown top.
+  overlayCustomPosition = { x: next.x, y: next.y + h - OVERLAY_HEIGHT };
+});
+
+// The live transcript grows the overlay's content upward (the pill stays pinned
+// to the bottom edge so it doesn't jump). The renderer reports the height its
+// content needs; we resize the window and shift its top up by the delta, then
+// re-clamp so a tall transcript near the top of the screen isn't pushed off.
+// We deliberately do NOT touch overlayCustomPosition here — it tracks the pill's
+// resting (base-height) spot, which the grow-upward must not overwrite.
+ipcMain.on("overlay:resize", (event, { height } = {}) => {
+  const win = getOverlay();
+  if (!win || typeof height !== "number") return;
+  const target = Math.max(OVERLAY_HEIGHT, Math.min(Math.round(height), OVERLAY_MAX_HEIGHT));
+  const [w, h] = win.getSize();
+  if (target === h) return;
+  const [winX, winY] = win.getPosition();
+  // Keep the bottom edge fixed: the top moves up as the window grows.
+  const bottom = winY + h;
+  const nextY = bottom - target;
+  win.setBounds({ x: winX, y: nextY, width: w, height: target });
 });
 
 function createOverlay() {
@@ -127,8 +158,11 @@ function showOverlay() {
     clearTimeout(overlayHideTimer);
     overlayHideTimer = null;
   }
+  // Reset to the base pill size before showing: a previous dictation may have
+  // grown the window for its transcript, and overlayPosition() assumes the base
+  // height. The renderer re-reports its height as the new transcript fills in.
   const { x, y } = overlayPosition();
-  win.setPosition(x, y);
+  win.setBounds({ x, y, width: OVERLAY_WIDTH, height: OVERLAY_HEIGHT });
   win.showInactive();
   win.webContents.send("overlay:show");
 }

@@ -43,6 +43,20 @@
         </svg>
       </button>
     </div>
+    <!-- Live transcript: shown while recording when live preview is on. The
+         cleaned text is the prominent line; the still-streaming raw tail trails
+         it, faint, so the fast-but-jittery raw text and the calm cleaned text
+         don't fight. Hidden (and empty) when there's nothing to show. -->
+    <div id="transcript" hidden>
+      <div>
+        <!-- Only the cleaned line is a polite live region: it settles in calm
+             chunks on pauses, a natural announce cadence. The raw tail updates
+             every ~1.2s and would be far too chatty for a screen reader. -->
+        <span id="transcript-clean" aria-live="polite"></span
+        ><span id="transcript-raw" aria-hidden="true"></span>
+      </div>
+    </div>
+    <script src="transcript.js"></script>
     <script src="overlay.js"></script>
   </body>
 </html>

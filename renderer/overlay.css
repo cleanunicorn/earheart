@@ -17,6 +17,61 @@ body {
   -webkit-app-region: no-drag;
 }
 
+/* The window can grow upward to fit a live transcript above the pill; the pill
+   stays pinned to the bottom so it doesn't jump as the transcript fills in. */
+body {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: 100vh;
+}
+
+/* Live transcript panel, above the pill. Two layers on one wrapping line:
+   the cleaned text (prominent) and the still-streaming raw tail (faint). */
+#transcript {
+  margin: 0 12px;
+  padding: 10px 16px;
+  max-height: 132px;
+  overflow: hidden;
+  border-radius: 18px;
+  /* Solid (not translucent) so the faint raw tail's contrast doesn't depend on
+     whatever app shows through behind the overlay. */
+  background: rgb(22, 20, 28);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #f3f1f7;
+  font-size: 13px;
+  line-height: 1.45;
+  /* Bottom-align the text and clip the top, so the newest words stay visible
+     when the transcript outgrows max-height. */
+  display: flex;
+  align-items: flex-end;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+#transcript > div {
+  width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  /* When the transcript outgrows max-height the oldest line clips at the top;
+     fade it out instead of guillotining glyphs mid-row. */
+  mask-image: linear-gradient(to bottom, transparent, black 16px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 16px);
+}
+
+#transcript.visible {
+  opacity: 1;
+}
+
+#transcript-clean {
+  font-weight: 500;
+}
+
+#transcript-raw {
+  /* Subordinate to the cleaned line but still readable on the solid panel. */
+  color: rgba(243, 241, 247, 0.65);
+}
+
 #pill {
   display: flex;
   align-items: center;
@@ -55,6 +110,11 @@ body {
   #pill {
     transition: opacity 0.2s ease;
     transform: none;
+  }
+  /* The transcript appears/disappears instantly; the window still grows, but in
+     calm whole-line steps (quantized in overlay.js) rather than easing. */
+  #transcript {
+    transition: none;
   }
 }
 

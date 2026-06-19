@@ -7,6 +7,7 @@ const LISTEN = new Set([
   "record:stop",
   "record:cancel",
   "pipeline:status",
+  "pipeline:partial",
   "history:changed",
   "overlay:show",
   "overlay:hide",
@@ -15,11 +16,13 @@ const LISTEN = new Set([
 
 const SEND = new Set([
   "audio:captured",
+  "audio:partial",
   "record:cancelled",
   "record:error",
   "pipeline:cancel",
   "overlay:drag-start",
   "overlay:drag",
+  "overlay:resize",
 ]);
 
 const INVOKE = new Set([

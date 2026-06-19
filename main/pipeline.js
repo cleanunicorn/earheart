@@ -20,6 +20,7 @@ const cleanup = require("./services/cleanup");
 const engines = require("./engines");
 const { deliver } = require("./output/deliver");
 const history = require("./history");
+const { createLivePreview } = require("./live-preview");
 
 // Route a stage to the in-process engine or the HTTP client based on settings.
 // Both backends take the same (payload, cfg, signal) shape, so the only
@@ -114,6 +115,13 @@ function startRecording() {
       sid,
       deviceId: cfg.audio.deviceId,
       maxSeconds: cfg.audio.maxRecordingSeconds,
+      // Live preview only runs on the builtin engine (the HTTP path would be
+      // hammered with repeated full-file uploads). The overlay gates on
+      // `enabled`; we also gate on the engine here.
+      livePreview:
+        cfg.stt.engine === "builtin" && cfg.stt.livePreview?.enabled
+          ? cfg.stt.livePreview
+          : { enabled: false },
     });
   };
   // The overlay may still be loading right after launch (or after a renderer
@@ -132,6 +140,7 @@ function stopRecording() {
 
 function cancel() {
   session++; // invalidate in-flight session events
+  livePreview.cancel();
   if (state === "recording") {
     windows.sendToOverlay("record:cancel");
   } else if (state === "processing" && abortController) {
@@ -141,7 +150,24 @@ function cancel() {
   windows.hideOverlay();
 }
 
+// Live preview (the streaming partial transcript shown while recording) lives in
+// its own module; the pipeline just feeds it audio and cancels it at the right
+// lifecycle points. Dependencies are injected so it stays free of our private
+// session/state — `isCurrent(sid)` is the single source of truth for "this sid
+// is still the active recording".
+const livePreview = createLivePreview({
+  runTranscribe,
+  runCleanup,
+  sendToOverlay: windows.sendToOverlay,
+  getSettings: settings.get,
+  isCurrent: (sid) => sid === session && state === "recording",
+});
+
 async function process(sid, wavArrayBuffer) {
+  // The final pass is authoritative; stop any partial work so it doesn't
+  // contend with the real transcribe/clean on the engine workers.
+  livePreview.cancel();
+
   const cfg = settings.get();
   setState("processing");
   const controller = new AbortController();
@@ -212,14 +238,20 @@ function init() {
     process(sid, wav);
   });
 
+  ipcMain.on("audio:partial", (event, { sid, wav } = {}) => {
+    livePreview.handleAudio(sid, wav);
+  });
+
   ipcMain.on("record:cancelled", (event, { sid } = {}) => {
     if (sid !== session) return;
+    livePreview.cancel();
     if (state === "recording") setState("idle");
     windows.hideOverlay();
   });
 
   ipcMain.on("record:error", (event, { sid, message } = {}) => {
     if (sid !== session) return;
+    livePreview.cancel();
     if (state === "recording") setState("idle");
     overlayStatus("error", { message });
     hideOverlaySoon(sid, 5000);

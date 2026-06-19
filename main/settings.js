@@ -46,6 +46,26 @@ const DEFAULTS = {
     model: "parakeet",
     language: "",
     timeoutMs: 120000,
+    // Live preview: while recording, re-transcribe the audio captured so far on
+    // a short interval and show the provisional text in the overlay (with a
+    // cleaned line filling in behind it on pauses). Purely additive — the final
+    // transcribe/clean/deliver on stop is unchanged. Adds steady CPU load while
+    // recording, so it is exposed as a toggle.
+    livePreview: {
+      enabled: true,
+      // How often (ms) the overlay re-encodes the buffer and asks for a fresh
+      // partial transcript. Lower = snappier, but more CPU.
+      intervalMs: 1200,
+      // Stop issuing partials once the recording passes this many seconds: the
+      // offline recognizer re-decodes the whole buffer each tick, so cost grows
+      // with length. 0 = no cap.
+      maxSeconds: 30,
+      // After the raw partial has been stable (unchanged) for this long, run a
+      // cleanup pass over the full raw transcript and show the cleaned line. A
+      // pause, not a sentence boundary — see the pipeline for why it cleans the
+      // whole text rather than per-segment.
+      cleanupPauseMs: 1000,
+    },
   },
   cleanup: {
     // On by default now that cleanup can run in-process with no setup.

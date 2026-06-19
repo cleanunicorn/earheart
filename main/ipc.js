@@ -1,7 +1,8 @@
 // IPC handlers backing the settings window and the setup wizard.
 
-const { ipcMain, app, systemPreferences, shell } = require("electron");
+const { ipcMain, app } = require("electron");
 const settings = require("./settings");
+const deliver = require("./output/deliver");
 const history = require("./history");
 const windows = require("./windows");
 const stt = require("./services/stt");
@@ -48,29 +49,28 @@ function init({ applyHotkey, onSettingsChanged }) {
     windows.openWizard();
   });
 
-  // Settings → Advanced: get the user back into a working auto-paste state on
-  // macOS. Auto-paste drives keystrokes through System Events, which needs
-  // Accessibility permission. macOS only shows its permission prompt once per
-  // app, so after the first allow/deny there is nothing to re-trigger — we both
-  // fire the native prompt (covers a never-decided app) and open the
-  // Accessibility pane (the reliable path once a decision has been recorded).
-  // On other platforms there is no such permission, so we report that.
-  ipcMain.handle("permissions:accessibility", () => {
-    if (process.platform !== "darwin") {
-      return { ok: true, supported: false, granted: true };
-    }
-    // false = check only; true = check and prompt if not yet decided.
-    const before = systemPreferences.isTrustedAccessibilityClient(false);
-    if (before) return { ok: true, supported: true, granted: true };
+  // Settings → Advanced: report whether auto-paste is allowed, so the UI can
+  // re-check silently (e.g. when the window regains focus after the user
+  // toggled the permission) without re-opening System Settings.
+  ipcMain.handle("permissions:accessibility-check", () => ({
+    granted: deliver.accessibilityTrusted(),
+  }));
 
-    // Not granted: ask macOS to show the prompt (no-op if already decided)…
-    systemPreferences.isTrustedAccessibilityClient(true);
-    // …and always open the pane so the user can flip the toggle themselves,
-    // which is the only thing that works once the prompt won't reappear.
-    shell.openExternal(
-      "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-    );
-    return { ok: true, supported: true, granted: false };
+  // Get the user back into a working auto-paste state on macOS. Auto-paste
+  // drives keystrokes through System Events, which needs Accessibility
+  // permission. macOS only shows its prompt once per app, so after the first
+  // allow/deny there is nothing to re-trigger — we fire the native prompt
+  // (covers a never-decided app) and open the Accessibility pane (the reliable
+  // path once a decision has been recorded). On other platforms there is no
+  // such permission, so accessibilityTrusted always reports granted.
+  ipcMain.handle("permissions:accessibility-fix", async () => {
+    if (deliver.accessibilityTrusted(true)) return { granted: true };
+    try {
+      await deliver.openAccessibilitySettings();
+      return { granted: false, opened: true };
+    } catch {
+      return { granted: false, opened: false };
+    }
   });
 
   // Skipping still persists the defaults so the wizard only ever runs once.

@@ -618,3 +618,23 @@ test("unloadIdle unloads only the engines that are actually resident", async () 
   await facade.unloadIdle();
   assert.strictEqual(stt.calls.length + cleanup.calls.length, before, "idle unload with nothing loaded is a no-op");
 });
+
+test("transcribe/clean reject early on an already-aborted signal without touching the worker", async () => {
+  // The "pre-cancelled call returns early rather than spending a model load /
+  // inference" contract: an aborted signal short-circuits before any host request.
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const stt = hostsBySvc["earheart-stt"];
+  const cleanup = hostsBySvc["earheart-cleanup"];
+
+  await assert.rejects(
+    () => facade.transcribe(Buffer.from("wav"), STT_CFG, AbortSignal.abort()),
+    /abort/i
+  );
+  assert.strictEqual(stt.calls.length, 0, "no STT worker request for a pre-aborted transcribe");
+
+  await assert.rejects(
+    () => facade.clean("hello", CLEANUP_CFG, AbortSignal.abort()),
+    /abort/i
+  );
+  assert.strictEqual(cleanup.calls.length, 0, "no cleanup worker request for a pre-aborted clean");
+});

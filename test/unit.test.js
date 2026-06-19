@@ -245,6 +245,15 @@ test("reconcileTranscript tails after the anchor despite filler before it", () =
   assert.strictEqual(r.hasText, true);
 });
 
+test("reconcileTranscript anchors on the LAST occurrence of a repeated word", () => {
+  // The anchor word ("timer") appears twice; only a last-match scan tails the
+  // words after its final occurrence. A first-match implementation would wrongly
+  // tail "then set the timer for tea".
+  const r = reconcileTranscript("set the timer then set the timer for tea", "Set the timer");
+  assert.strictEqual(r.tail, " for tea");
+  assert.strictEqual(r.hasText, true);
+});
+
 test("reconcileTranscript shows raw only when there's no cleaned text yet", () => {
   const r = reconcileTranscript("hello world", "");
   assert.strictEqual(r.clean, "");

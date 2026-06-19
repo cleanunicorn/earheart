@@ -155,3 +155,75 @@ test("cancel aborts in-flight work and resets state so later results are dropped
   await h.lp.handleAudio(1, wav);
   assert.deepStrictEqual(raws(h), ["fresh"]);
 });
+
+test("cleanup re-arms when the raw text grew during a cleanup pass", async () => {
+  // The catch-up loop: if more is spoken while a cleanup runs, a second pass must
+  // fire over the newer raw text so the cleaned line keeps up.
+  const h = harness();
+  let rawText = "first chunk";
+  h.setTranscribe(async () => rawText);
+  const d1 = deferred();
+  let cleanupN = 0;
+  h.setCleanup(async (raw) => {
+    cleanupN++;
+    if (cleanupN === 1) {
+      // While this first cleanup is in flight, more audio arrives.
+      rawText = "first chunk second chunk";
+      await h.lp.handleAudio(1, wav); // updates lastRaw to the longer text
+      return d1.promise;
+    }
+    return `cleaned: ${raw}`;
+  });
+
+  await h.lp.handleAudio(1, wav); // raw "first chunk"
+  await new Promise((r) => setTimeout(r, 20)); // first cleanup starts, awaits d1
+  d1.resolve("cleaned: first chunk"); // first pass completes -> should re-arm
+  await new Promise((r) => setTimeout(r, 20)); // second pass fires over newer raw
+
+  assert.strictEqual(cleanupN, 2, "a second cleanup pass ran over the grown raw text");
+  assert.ok(
+    cleans(h).includes("cleaned: first chunk second chunk"),
+    "the re-armed cleanup cleaned the full grown text"
+  );
+});
+
+test("cancel during a cleanup await prevents a re-armed pause timer", async () => {
+  const h = harness();
+  let rawText = "alpha";
+  h.setTranscribe(async () => rawText);
+  const d = deferred();
+  let cleanupN = 0;
+  h.setCleanup(async () => {
+    cleanupN++;
+    rawText = "alpha beta"; // grow so the reschedule condition would be true
+    await h.lp.handleAudio(1, wav);
+    return d.promise;
+  });
+
+  await h.lp.handleAudio(1, wav);
+  await new Promise((r) => setTimeout(r, 20)); // cleanup in flight
+  h.lp.cancel(); // abort during the cleanup await
+  d.resolve("late cleaned");
+  await new Promise((r) => setTimeout(r, 20)); // give any (wrongly) re-armed timer time
+
+  assert.strictEqual(cleanupN, 1, "no second cleanup after cancel");
+  assert.strictEqual(cleans(h).length, 0, "cancelled cleanup result not sent");
+});
+
+test("a second cleanup over unchanged raw text is a no-op", async () => {
+  // runCleanupPass bails when lastRaw === lastCleanedRaw: re-cleaning the same
+  // text would just re-emit identical output and waste an inference.
+  const h = harness();
+  h.setTranscribe(async () => "steady text");
+  let cleanupN = 0;
+  h.setCleanup(async (raw) => {
+    cleanupN++;
+    return `clean ${raw}`;
+  });
+  await h.lp.handleAudio(1, wav);
+  await new Promise((r) => setTimeout(r, 20)); // first (and only) cleanup
+  // A duplicate raw partial doesn't change lastRaw, so no new cleanup is scheduled.
+  await h.lp.handleAudio(1, wav);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.strictEqual(cleanupN, 1, "unchanged raw text isn't re-cleaned");
+});

@@ -40,6 +40,19 @@ let session = 0; // current dictation session id
 let abortController = null;
 const stateListeners = new Set();
 
+// Live preview (the streaming partial transcript shown while recording) lives in
+// its own module; the pipeline just feeds it audio and cancels it at the right
+// lifecycle points. Dependencies are injected so it stays free of our private
+// session/state — `isCurrent(sid)` is the single source of truth for "this sid
+// is still the active recording".
+const livePreview = createLivePreview({
+  runTranscribe,
+  runCleanup,
+  sendToOverlay: windows.sendToOverlay,
+  getSettings: settings.get,
+  isCurrent: (sid) => sid === session && state === "recording",
+});
+
 // Idle eviction: after a dictation finishes, wait the configured idle window
 // and then unload the built-in models to reclaim memory. Any new dictation
 // cancels the pending timer (and re-arms it when done), so the models stay
@@ -149,19 +162,6 @@ function cancel() {
   setState("idle");
   windows.hideOverlay();
 }
-
-// Live preview (the streaming partial transcript shown while recording) lives in
-// its own module; the pipeline just feeds it audio and cancels it at the right
-// lifecycle points. Dependencies are injected so it stays free of our private
-// session/state — `isCurrent(sid)` is the single source of truth for "this sid
-// is still the active recording".
-const livePreview = createLivePreview({
-  runTranscribe,
-  runCleanup,
-  sendToOverlay: windows.sendToOverlay,
-  getSettings: settings.get,
-  isCurrent: (sid) => sid === session && state === "recording",
-});
 
 async function process(sid, wavArrayBuffer) {
   // The final pass is authoritative; stop any partial work so it doesn't

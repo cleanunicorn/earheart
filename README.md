@@ -256,7 +256,9 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
 - The first dictation asks for **Microphone** permission.
 - Auto-paste simulates Cmd+V via System Events, which requires
   **Accessibility** permission (System Settings → Privacy & Security →
-  Accessibility → enable Earheart).
+  Accessibility → enable Earheart). If auto-paste stops working later, use
+  Settings → Advanced → **Fix auto-paste permission** to re-check it and jump
+  to the right System Settings pane.
 
 ### Windows
 

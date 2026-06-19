@@ -13,9 +13,15 @@
 //   Linux   - wtype or ydotool on Wayland, xdotool on X11; if none of those
 //             tools exist we degrade to clipboard-only and tell the caller.
 
-const { clipboard } = require("electron");
+const { clipboard, systemPreferences, shell } = require("electron");
 const { execFile } = require("node:child_process");
 const fs = require("node:fs");
+
+// Deep link to System Settings ▸ Privacy & Security ▸ Accessibility. The URL is
+// unchanged across the old System Preferences and the new System Settings, so it
+// resolves on modern macOS (Ventura+).
+const ACCESSIBILITY_PANE_URL =
+  "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
 
 function execFileAsync(cmd, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -147,4 +153,24 @@ async function deliver(text, cfg, signal) {
   return { method: cfg.mode };
 }
 
-module.exports = { deliver };
+// Whether macOS trusts this app for Accessibility, which auto-paste needs to
+// drive the Cmd+V keystroke through System Events. Non-macOS platforms have no
+// such permission, so they are always "granted". Pass prompt=true to let macOS
+// show its permission dialog — a no-op once the user has already decided, which
+// is why openAccessibilitySettings exists as the reliable fallback.
+function accessibilityTrusted(prompt = false) {
+  if (process.platform !== "darwin") return true;
+  return systemPreferences.isTrustedAccessibilityClient(prompt);
+}
+
+// Open the Accessibility pane so the user can flip Earheart's toggle — the only
+// thing that works once macOS has recorded a decision and won't prompt again.
+function openAccessibilitySettings() {
+  return shell.openExternal(ACCESSIBILITY_PANE_URL);
+}
+
+module.exports = {
+  deliver,
+  accessibilityTrusted,
+  openAccessibilitySettings,
+};

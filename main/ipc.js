@@ -2,6 +2,7 @@
 
 const { ipcMain, app } = require("electron");
 const settings = require("./settings");
+const deliver = require("./output/deliver");
 const history = require("./history");
 const windows = require("./windows");
 const stt = require("./services/stt");
@@ -46,6 +47,30 @@ function init({ applyHotkey, onSettingsChanged }) {
   // itself doesn't change anything until it is completed.
   ipcMain.handle("wizard:open", () => {
     windows.openWizard();
+  });
+
+  // Settings → Advanced: report whether auto-paste is allowed, so the UI can
+  // re-check silently (e.g. when the window regains focus after the user
+  // toggled the permission) without re-opening System Settings.
+  ipcMain.handle("permissions:accessibility-check", () => ({
+    granted: deliver.accessibilityTrusted(),
+  }));
+
+  // Get the user back into a working auto-paste state on macOS. Auto-paste
+  // drives keystrokes through System Events, which needs Accessibility
+  // permission. macOS only shows its prompt once per app, so after the first
+  // allow/deny there is nothing to re-trigger — we fire the native prompt
+  // (covers a never-decided app) and open the Accessibility pane (the reliable
+  // path once a decision has been recorded). On other platforms there is no
+  // such permission, so accessibilityTrusted always reports granted.
+  ipcMain.handle("permissions:accessibility-fix", async () => {
+    if (deliver.accessibilityTrusted(true)) return { granted: true };
+    try {
+      await deliver.openAccessibilitySettings();
+      return { granted: false, opened: true };
+    } catch {
+      return { granted: false, opened: false };
+    }
   });
 
   // Skipping still persists the defaults so the wizard only ever runs once.

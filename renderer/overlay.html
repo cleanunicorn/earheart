@@ -9,51 +9,44 @@
     <link rel="stylesheet" href="overlay.css" />
   </head>
   <body>
-    <div id="pill" data-status="recording">
-      <div id="grip" title="Drag to move" aria-hidden="true">
-        <svg viewBox="0 0 6 16" width="6" height="16">
-          <circle cx="1.5" cy="3" r="1.1" fill="currentColor" />
-          <circle cx="4.5" cy="3" r="1.1" fill="currentColor" />
-          <circle cx="1.5" cy="8" r="1.1" fill="currentColor" />
-          <circle cx="4.5" cy="8" r="1.1" fill="currentColor" />
-          <circle cx="1.5" cy="13" r="1.1" fill="currentColor" />
-          <circle cx="4.5" cy="13" r="1.1" fill="currentColor" />
-        </svg>
-      </div>
-      <div id="indicator"></div>
-      <canvas id="meter" width="120" height="36"></canvas>
-      <div id="message">
-        <span id="status-text">Listening…</span>
-        <span id="detail-text"></span>
-      </div>
-      <span id="timer">0:00</span>
-      <button id="stop" title="Stop and transcribe" aria-label="Stop and transcribe">
-        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-          <rect x="3" y="3" width="10" height="10" rx="2.5" fill="currentColor" />
-        </svg>
-      </button>
-      <button id="cancel" title="Cancel" aria-label="Cancel">
-        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-          <path
-            d="M4 4l8 8M12 4l-8 8"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-          />
-        </svg>
-      </button>
-    </div>
-    <!-- Live transcript: shown while recording when live preview is on. The
-         cleaned text is the prominent line; the still-streaming raw tail trails
-         it, faint, so the fast-but-jittery raw text and the calm cleaned text
-         don't fight. Hidden (and empty) when there's nothing to show. -->
-    <div id="transcript" hidden>
-      <div>
+    <!-- One unified card: the live transcript fills the top and grows freely;
+         a slim control row sits along the bottom. The whole card is the drag
+         surface and carries the data-status state. -->
+    <div id="card" data-status="recording">
+      <!-- Live transcript: shown while recording when live preview is on. The
+           cleaned text is the prominent line; the still-streaming raw tail trails
+           it, faint, so the fast-but-jittery raw text and the calm cleaned text
+           don't fight. Hidden (and empty) when there's nothing to show. -->
+      <div id="transcript" hidden>
         <!-- Only the cleaned line is a polite live region: it settles in calm
              chunks on pauses, a natural announce cadence. The raw tail updates
              every ~1.2s and would be far too chatty for a screen reader. -->
         <span id="transcript-clean" aria-live="polite"></span
         ><span id="transcript-raw" aria-hidden="true"></span>
+      </div>
+      <div id="controls">
+        <div id="indicator"></div>
+        <canvas id="meter" width="120" height="36"></canvas>
+        <div id="message">
+          <span id="status-text">Listening…</span>
+          <span id="detail-text"></span>
+        </div>
+        <span id="timer">0:00</span>
+        <button id="stop" title="Stop and transcribe" aria-label="Stop and transcribe">
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <rect x="3" y="3" width="10" height="10" rx="2.5" fill="currentColor" />
+          </svg>
+        </button>
+        <button id="cancel" title="Cancel" aria-label="Cancel">
+          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+            <path
+              d="M4 4l8 8M12 4l-8 8"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
       </div>
     </div>
     <script src="transcript.js"></script>

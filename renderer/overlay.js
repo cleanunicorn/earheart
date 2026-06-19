@@ -3,7 +3,7 @@
 
 const SAMPLE_RATE = 16000;
 
-const pill = document.getElementById("pill");
+const card = document.getElementById("card");
 const statusText = document.getElementById("status-text");
 const detailText = document.getElementById("detail-text");
 const timerEl = document.getElementById("timer");
@@ -62,7 +62,7 @@ function stopMeter() {
 }
 
 function setStatus(status, title, detail) {
-  pill.dataset.status = status;
+  card.dataset.status = status;
   statusText.textContent = title;
   detailText.textContent = detail || "";
 }
@@ -179,32 +179,18 @@ function sendPartial() {
 }
 
 // Paint the two layers. The prefix-reconcile logic lives in transcript.js so it
-// can be unit-tested; here we just apply the result to the DOM. The panel fades
-// in and out via the `.visible` opacity transition; `hidden` (which removes it
-// from layout, collapsing the window height) is applied only *after* the
-// fade-out so the exit animation matches the entrance instead of popping.
-let hideTranscriptTimer = null;
+// can be unit-tested; here we just apply the result to the DOM. Showing/hiding
+// the transcript toggles `hidden` (in/out of layout) and the card's
+// `data-transcript` flag (which adds the divider above the controls), then resizes
+// the window to fit. The whole card fades via its own opacity transition.
 function renderTranscript() {
   const { clean, tail, hasText } = reconcileTranscript(partialRaw, partialClean);
   transcriptCleanEl.textContent = clean;
   transcriptRawEl.textContent = tail;
-  if (hasText) {
-    if (hideTranscriptTimer) {
-      clearTimeout(hideTranscriptTimer);
-      hideTranscriptTimer = null;
-    }
-    transcriptEl.hidden = false;
-    transcriptEl.classList.add("visible");
-    syncOverlayHeight();
-  } else if (!transcriptEl.hidden && !hideTranscriptTimer) {
-    // Fade out, then collapse the layout once the opacity transition is done.
-    transcriptEl.classList.remove("visible");
-    hideTranscriptTimer = setTimeout(() => {
-      hideTranscriptTimer = null;
-      transcriptEl.hidden = true;
-      syncOverlayHeight();
-    }, 200); // matches the #transcript opacity transition
-  }
+  transcriptEl.hidden = !hasText;
+  if (hasText) card.setAttribute("data-transcript", "");
+  else card.removeAttribute("data-transcript");
+  syncOverlayHeight();
 }
 
 function clearTranscript() {
@@ -216,27 +202,20 @@ function clearTranscript() {
 // Ask the main process to size the window to the rendered content. The overlay
 // is frameless and bottom-anchored, so the main process grows it upward.
 //
-// We report BASE_HEIGHT (the pill) plus the transcript panel's own height when
-// it's showing. Measuring the transcript element — not document.body — is
-// deliberate: the body is `height:100vh`, so its scrollHeight tracks the current
-// window height and could only ever grow, never letting the window shrink back
-// when the transcript shrinks or hides. The transcript's growth above the base
-// is quantized to whole lines (~19px) so a single non-wrapping word doesn't nudge
-// the window every partial; the base itself is reported exactly so the window
-// returns to the pill size when the transcript clears. lastReportedHeight resets
-// on overlay:show because the main process resets the window to BASE_HEIGHT there.
-const BASE_HEIGHT = 80; // pill (56px) + 12px margin top/bottom; matches windows.js
-const LINE_STEP = 19; // line-height 1.45 × 13px, one transcript line
+// We measure the card's CONTENT via scrollHeight (not offsetHeight, which the
+// viewport clamps to the current window height before it has grown, and not
+// document.body, whose `height:100vh` pins it to the window). The card has
+// `overflow:hidden` for its rounded corners, so its content can exceed the
+// window; scrollHeight reports that true desired height. Plus the 12px card
+// margins. Quantized to whole lines (~21px) so a single non-wrapping word doesn't
+// nudge the window every partial; it grows in calm, full-line steps and collapses
+// cleanly when the transcript hides. lastReportedHeight resets on overlay:show.
+const CARD_MARGIN = 12; // matches #card margin in overlay.css
+const LINE_STEP = 21; // line-height 1.5 × 14px, one transcript line
 let lastReportedHeight = 0;
 function syncOverlayHeight() {
-  let height = BASE_HEIGHT;
-  if (!transcriptEl.hidden) {
-    // Outer height of the transcript panel including its top/bottom margin.
-    const style = getComputedStyle(transcriptEl);
-    const margin = parseFloat(style.marginTop) + parseFloat(style.marginBottom);
-    const panel = transcriptEl.offsetHeight + margin;
-    height = BASE_HEIGHT + Math.ceil(panel / LINE_STEP) * LINE_STEP;
-  }
+  const raw = card.scrollHeight + CARD_MARGIN * 2;
+  const height = Math.ceil(raw / LINE_STEP) * LINE_STEP;
   if (height !== lastReportedHeight) {
     lastReportedHeight = height;
     earheart.send("overlay:resize", { height });
@@ -373,7 +352,8 @@ earheart.on("record:cancel", () => {
 
 // Live partial transcript: `raw` keeps pace with the voice, `cleaned` fills in
 // behind it on pauses. The pipeline only sends these while recording; once it
-// moves on to the final pass we clear the panel (the pill takes over).
+// moves on to the final pass we clear the transcript (the control row's status
+// takes over).
 earheart.on("pipeline:partial", ({ kind, text }) => {
   if (kind === "raw") partialRaw = text || "";
   else if (kind === "cleaned") partialClean = text || "";
@@ -382,8 +362,8 @@ earheart.on("pipeline:partial", ({ kind, text }) => {
 
 earheart.on("pipeline:status", ({ status, detail }) => {
   // The live preview belongs to the recording phase; the moment the pipeline
-  // reports a post-recording status, retire the panel so it doesn't linger
-  // alongside the pill's own status/preview.
+  // reports a post-recording status, retire the transcript so it doesn't linger
+  // alongside the control row's own status/preview.
   clearTranscript();
   switch (status) {
     case "transcribing":
@@ -418,38 +398,38 @@ earheart.on("pipeline:status", ({ status, detail }) => {
 });
 
 earheart.on("overlay:show", () => {
-  // The main process resets the window to the base pill height on show; mirror
+  // The main process resets the window to the base card height on show; mirror
   // that here so the next syncOverlayHeight() always re-reports against it.
   lastReportedHeight = 0;
-  pill.classList.add("visible");
+  card.classList.add("visible");
 });
-earheart.on("overlay:hide", () => pill.classList.remove("visible"));
+earheart.on("overlay:hide", () => card.classList.remove("visible"));
 
 document.getElementById("stop").addEventListener("click", stopRecording);
 document.getElementById("cancel").addEventListener("click", cancelRecording);
 
-// Click-and-drag anywhere on the pill (except the buttons) moves the overlay.
+// Click-and-drag anywhere on the card (except the buttons) moves the overlay.
 // The window itself is moved by the main process from the streamed screen
 // coordinates, since a focusable:false frameless window can't be dragged
 // natively.
 let dragging = false;
-pill.addEventListener("pointerdown", (event) => {
+card.addEventListener("pointerdown", (event) => {
   if (event.button !== 0 || event.target.closest("button")) return;
   dragging = true;
-  pill.classList.add("dragging");
-  pill.setPointerCapture(event.pointerId);
+  card.classList.add("dragging");
+  card.setPointerCapture(event.pointerId);
   earheart.send("overlay:drag-start", { x: event.screenX, y: event.screenY });
 });
 
-pill.addEventListener("pointermove", (event) => {
+card.addEventListener("pointermove", (event) => {
   if (!dragging) return;
   earheart.send("overlay:drag", { x: event.screenX, y: event.screenY });
 });
 
 function endDrag() {
   dragging = false;
-  pill.classList.remove("dragging");
+  card.classList.remove("dragging");
 }
 
-pill.addEventListener("pointerup", endDrag);
-pill.addEventListener("pointercancel", endDrag);
+card.addEventListener("pointerup", endDrag);
+card.addEventListener("pointercancel", endDrag);

@@ -8,11 +8,8 @@ const PRELOAD = path.join(__dirname, "..", "preload.js");
 const RENDERER = path.join(__dirname, "..", "renderer");
 
 const OVERLAY_WIDTH = 360;
-const OVERLAY_HEIGHT = 80;
-// Ceiling the live transcript can grow the overlay to (the CSS also caps the
-// transcript panel at max-height 132px; this is the hard window bound).
-const OVERLAY_MAX_HEIGHT = 600;
-// Matches the pill's fade-out transition in overlay.css.
+const OVERLAY_HEIGHT = 80; // base card: 56px control row + 12px margin top/bottom
+// Matches the card's fade-out transition in overlay.css.
 const OVERLAY_FADE_MS = 200;
 
 let overlayWindow = null;
@@ -82,15 +79,18 @@ ipcMain.on("overlay:drag", (event, { x, y } = {}) => {
 ipcMain.on("overlay:resize", (event, { height } = {}) => {
   const win = getOverlay();
   if (!win || typeof height !== "number") return;
-  const target = Math.max(OVERLAY_HEIGHT, Math.min(Math.round(height), OVERLAY_MAX_HEIGHT));
   const [w, h] = win.getSize();
-  if (target === h) return;
   const [winX, winY] = win.getPosition();
+  const { workArea } = screen.getDisplayNearestPoint({ x: winX, y: winY });
+  // Grow freely, but never taller than the work area leaves room for (with a
+  // small bottom gap) — a runaway transcript shouldn't fill the whole screen.
+  const cap = Math.max(OVERLAY_HEIGHT, workArea.height - 48);
+  const target = Math.max(OVERLAY_HEIGHT, Math.min(Math.round(height), cap));
+  if (target === h) return;
   // Keep the bottom edge fixed: the top moves up as the window grows. If that
   // pushes the top above the work area (a tall transcript near the top of the
   // screen), floor it at the work-area top so the transcript isn't clipped.
   const bottom = winY + h;
-  const { workArea } = screen.getDisplayNearestPoint({ x: winX, y: winY });
   const nextY = Math.max(workArea.y, bottom - target);
   win.setBounds({ x: winX, y: nextY, width: w, height: target });
 });
@@ -106,7 +106,10 @@ function createOverlay() {
     show: false,
     frame: false,
     transparent: true,
-    resizable: false,
+    // Must be resizable so the live transcript can grow the window via setBounds:
+    // macOS ignores programmatic height changes on a non-resizable window. The
+    // window is frameless, so there are no user-facing resize handles anyway.
+    resizable: true,
     movable: false,
     minimizable: false,
     maximizable: false,

@@ -510,18 +510,47 @@ $("open-wizard").addEventListener("click", () => {
 
 /* ---------- macOS auto-paste (Accessibility) permission ---------- */
 
-$("accessibility-fix").addEventListener("click", async () => {
+function setAccessibilityStatus(text, cls = "status") {
   const el = $("accessibility-status");
-  el.textContent = "Checking…";
-  el.className = "status";
-  const result = await earheart.invoke("permissions:accessibility");
+  el.textContent = text;
+  el.className = cls;
+}
+
+$("accessibility-fix").addEventListener("click", async () => {
+  const btn = $("accessibility-fix");
+  btn.disabled = true;
+  setAccessibilityStatus("Checking…");
+  try {
+    const result = await earheart.invoke("permissions:accessibility-fix");
+    if (result.granted) {
+      setAccessibilityStatus(
+        "Already granted — if auto-paste still fails, toggle Earheart off and on under Accessibility.",
+        "status ok"
+      );
+    } else if (result.opened) {
+      setAccessibilityStatus(
+        "Opened System Settings — turn Earheart on under Accessibility."
+      );
+    } else {
+      setAccessibilityStatus(
+        "Couldn't open System Settings — open it manually: Privacy & Security ▸ Accessibility.",
+        "status err"
+      );
+    }
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// Re-check silently when the window regains focus, so the status updates from
+// "turn Earheart on…" to confirmation once the user grants it in System
+// Settings — without re-opening System Settings. Only meaningful after the user
+// has clicked Fix (so an empty status stays empty).
+window.addEventListener("focus", async () => {
+  if (platform !== "darwin" || !$("accessibility-status").textContent) return;
+  const result = await earheart.invoke("permissions:accessibility-check");
   if (result.granted) {
-    el.textContent = "Already granted — auto-paste should work.";
-    el.className = "status ok";
-  } else {
-    el.textContent =
-      "Opened System Settings — turn Earheart on under Accessibility.";
-    el.className = "status";
+    setAccessibilityStatus("Auto-paste permission is on.", "status ok");
   }
 });
 

@@ -10,6 +10,7 @@ const { encodeWav, encodeSilenceWav, wavToFloat32 } = require("../main/util/wav"
 const { stripThinking } = require("../main/services/cleanup");
 const { deepMerge, migrateLegacy, DEFAULTS } = require("../main/settings");
 const { listRemoteModels } = require("../main/services/models-remote");
+const { reconcileTranscript } = require("../renderer/transcript");
 
 test("encodeWav produces a valid RIFF header", () => {
   const samples = new Int16Array([0, 1000, -1000, 32767, -32768]);
@@ -196,6 +197,109 @@ test("new installs default to in-process engines", () => {
   assert.strictEqual(DEFAULTS.cleanup.enabled, true);
   assert.ok(DEFAULTS.stt.builtin.model);
   assert.ok(DEFAULTS.cleanup.builtin.model);
+});
+
+/* ---------------- live preview ---------------- */
+
+test("live preview defaults are present and overridable", () => {
+  const lp = DEFAULTS.stt.livePreview;
+  assert.strictEqual(lp.enabled, true);
+  assert.ok(lp.intervalMs > 0);
+  assert.ok(lp.chunkSeconds > 0);
+  assert.ok(lp.cleanupPauseMs > 0);
+
+  // A saved file that only flips the toggle keeps the rest of the tuning.
+  const off = deepMerge(DEFAULTS, { stt: { livePreview: { enabled: false } } });
+  assert.strictEqual(off.stt.livePreview.enabled, false);
+  assert.strictEqual(off.stt.livePreview.intervalMs, lp.intervalMs);
+  assert.strictEqual(off.stt.livePreview.cleanupPauseMs, lp.cleanupPauseMs);
+});
+
+/* ---------------- two-layer transcript reconcile ---------------- */
+
+test("reconcileTranscript shows freshly-spoken words as the faint tail", () => {
+  // Cleanup has processed the first four words (fixing case); the fifth was
+  // spoken since, so it shows as the not-yet-cleaned tail. Anchoring on the
+  // cleaned line's last word survives cleanup's capitalization changes.
+  const r = reconcileTranscript("the quick brown fox jumps", "The quick brown fox");
+  assert.strictEqual(r.clean, "The quick brown fox");
+  assert.strictEqual(r.tail, " jumps");
+  assert.strictEqual(r.hasText, true);
+});
+
+test("reconcileTranscript doesn't re-show words when cleanup removed filler", () => {
+  // The whole reason cleanup exists: it drops "um" and collapses the stutter, so
+  // the cleaned line has fewer words than the raw words it represents. Anchoring
+  // on the last cleaned word ("quick") instead of a word-count offset means the
+  // already-covered words are NOT duplicated into the tail.
+  const r = reconcileTranscript("um the the quick", "The quick");
+  assert.strictEqual(r.clean, "The quick");
+  assert.strictEqual(r.tail, ""); // "quick" is the last raw word — nothing fresh
+  assert.strictEqual(r.hasText, true);
+});
+
+test("reconcileTranscript tails after the anchor despite filler before it", () => {
+  // Filler before the anchor word, plus genuinely fresh words after it.
+  const r = reconcileTranscript("um so the quick brown fox runs fast", "So the quick brown fox");
+  assert.strictEqual(r.tail, " runs fast");
+  assert.strictEqual(r.hasText, true);
+});
+
+test("reconcileTranscript anchors on the LAST occurrence of a repeated word", () => {
+  // The anchor word ("timer") appears twice; only a last-match scan tails the
+  // words after its final occurrence. A first-match implementation would wrongly
+  // tail "then set the timer for tea".
+  const r = reconcileTranscript("set the timer then set the timer for tea", "Set the timer");
+  assert.strictEqual(r.tail, " for tea");
+  assert.strictEqual(r.hasText, true);
+});
+
+test("reconcileTranscript shows raw only when there's no cleaned text yet", () => {
+  const r = reconcileTranscript("hello world", "");
+  assert.strictEqual(r.clean, "");
+  assert.strictEqual(r.tail, "hello world");
+  assert.strictEqual(r.hasText, true);
+});
+
+test("reconcileTranscript shows the cleaned line alone when the ending was reworded", () => {
+  // Cleanup reworded the tail ("alice" never appears in raw), so the anchor isn't
+  // found: show the authoritative cleaned line without guessing a tail.
+  const r = reconcileTranscript("send it to bob", "Send it to Bob, no to Alice.");
+  assert.strictEqual(r.clean, "Send it to Bob, no to Alice.");
+  assert.strictEqual(r.tail, "");
+  assert.strictEqual(r.hasText, true);
+});
+
+test("reconcileTranscript reports no text when both are empty", () => {
+  const r = reconcileTranscript("", "");
+  assert.strictEqual(r.hasText, false);
+  assert.strictEqual(r.clean, "");
+  assert.strictEqual(r.tail, "");
+});
+
+test("reconcileTranscript treats the anchor as the last raw word as no tail", () => {
+  const r = reconcileTranscript("all done", "All done.");
+  assert.strictEqual(r.clean, "All done.");
+  assert.strictEqual(r.tail, "");
+  assert.strictEqual(r.hasText, true);
+});
+
+test("reconcileTranscript collapses internal whitespace in the tail", () => {
+  // The tail is rebuilt from split tokens, so runs of spaces normalize to one.
+  const r = reconcileTranscript("the quick   brown  fox jumps", "The quick brown fox");
+  assert.strictEqual(r.tail, " jumps");
+});
+
+test("reconcileTranscript hides whitespace-only input", () => {
+  // Whitespace-only clean is treated as no clean; whitespace-only raw with no
+  // clean yields no visible text so the overlay panel stays hidden.
+  const a = reconcileTranscript("hello world", "   ");
+  assert.strictEqual(a.clean, "");
+  assert.strictEqual(a.tail, "hello world");
+  assert.strictEqual(a.hasText, true);
+
+  const b = reconcileTranscript("   ", "");
+  assert.strictEqual(b.hasText, false);
 });
 
 /* ---------------- remote model listing ---------------- */

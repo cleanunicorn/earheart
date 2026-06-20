@@ -430,21 +430,25 @@ test("engines.clean falls back to the raw transcript when cleanup is empty", asy
   // empty/whitespace, clean() must deliver the raw transcript instead.
   let cleanReply = "";
   const calls = [];
-  const host = {
-    request: async (type, args) => {
-      calls.push(type);
-      if (type === "load-cleanup") return { ready: true };
-      if (type === "clean") return cleanReply;
-      throw new Error(`unexpected request: ${type}`);
-    },
-    stop() {},
-    onExit() {},
+  // createHost factory shape (the real host module); this test only drives the
+  // cleanup path, so both services share one fake.
+  const hostModule = {
+    createHost: () => ({
+      request: async (type, args) => {
+        calls.push(type);
+        if (type === "load-cleanup") return { ready: true };
+        if (type === "clean") return cleanReply;
+        throw new Error(`unexpected request: ${type}`);
+      },
+      stop() {},
+      onExit() {},
+    }),
   };
   const managerStub = {
     isInstalled: () => true,
     modelDir: (base, model) => path.join(base, model.kind, model.id),
   };
-  const facade = loadFacadeWith({ host, manager: managerStub });
+  const facade = loadFacadeWith({ host: hostModule, manager: managerStub });
 
   const cfg = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules" };
 
@@ -458,4 +462,179 @@ test("engines.clean falls back to the raw transcript when cleanup is empty", asy
   assert.strictEqual(await facade.clean("hello world", cfg), "Hello, world.");
 
   assert.ok(calls.includes("clean"));
+});
+
+test("engines facade routes STT and cleanup to separate worker hosts", async () => {
+  // The two-worker split: transcribe must only ever talk to the STT host and
+  // clean only to the cleanup host, so a crash or load in one engine can't
+  // affect the other. We hand the facade a `createHost` factory and assert each
+  // host sees only its own request types.
+  const hostsBySvc = {};
+  const hostModule = {
+    createHost({ serviceName }) {
+      const calls = [];
+      const host = {
+        serviceName,
+        calls,
+        request: async (type) => {
+          calls.push(type);
+          if (type === "load-stt" || type === "load-cleanup") return { ready: true };
+          if (type === "transcribe") return "transcribed";
+          if (type === "clean") return "cleaned";
+          if (type === "unload-stt" || type === "unload-cleanup") return {};
+          throw new Error(`unexpected request: ${type}`);
+        },
+        stopped: false,
+        stop() {
+          this.stopped = true;
+        },
+        exitFns: [],
+        onExit(fn) {
+          this.exitFns.push(fn);
+        },
+      };
+      hostsBySvc[serviceName] = host;
+      return host;
+    },
+  };
+  const managerStub = {
+    isInstalled: () => true,
+    modelDir: (base, model) => path.join(base, model.kind, model.id),
+  };
+  const facade = loadFacadeWith({ host: hostModule, manager: managerStub });
+
+  const stt = hostsBySvc["earheart-stt"];
+  const cleanup = hostsBySvc["earheart-cleanup"];
+  assert.ok(stt && cleanup, "both hosts should be created");
+
+  await facade.transcribe(
+    Buffer.from("wav"),
+    { builtin: { model: registry.DEFAULT_STT_MODEL }, language: "" }
+  );
+  await facade.clean(
+    "hello",
+    { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules" }
+  );
+
+  // Each host saw only its own engine's request types.
+  assert.ok(stt.calls.includes("load-stt") && stt.calls.includes("transcribe"));
+  assert.ok(!stt.calls.includes("clean") && !stt.calls.includes("load-cleanup"));
+  assert.ok(cleanup.calls.includes("load-cleanup") && cleanup.calls.includes("clean"));
+  assert.ok(!cleanup.calls.includes("transcribe") && !cleanup.calls.includes("load-stt"));
+
+  // unloadIdle only unloads hosts that have a model resident, on their own host.
+  await facade.unloadIdle();
+  assert.ok(stt.calls.includes("unload-stt"));
+  assert.ok(cleanup.calls.includes("unload-cleanup"));
+
+  // stop tears down both workers.
+  facade.stop();
+  assert.ok(stt.stopped && cleanup.stopped);
+});
+
+// Build a two-host facade over fake STT + cleanup workers. Each fake records its
+// calls and its registered onExit listeners, so tests can simulate one worker
+// dying and assert the other is unaffected.
+function loadTwoHostFacade() {
+  const hostsBySvc = {};
+  const hostModule = {
+    createHost({ serviceName }) {
+      const calls = [];
+      const host = {
+        serviceName,
+        calls,
+        request: async (type) => {
+          calls.push(type);
+          if (type === "load-stt" || type === "load-cleanup") return { ready: true };
+          if (type === "transcribe") return "transcribed";
+          if (type === "clean") return "cleaned";
+          if (type === "unload-stt" || type === "unload-cleanup") return {};
+          throw new Error(`unexpected request: ${type}`);
+        },
+        stopped: false,
+        stop() {
+          this.stopped = true;
+        },
+        exitFns: [],
+        onExit(fn) {
+          this.exitFns.push(fn);
+        },
+        die() {
+          for (const fn of this.exitFns) fn();
+        },
+      };
+      hostsBySvc[serviceName] = host;
+      return host;
+    },
+  };
+  const managerStub = {
+    isInstalled: () => true,
+    modelDir: (base, model) => path.join(base, model.kind, model.id),
+  };
+  const facade = loadFacadeWith({ host: hostModule, manager: managerStub });
+  return { facade, hostsBySvc };
+}
+
+const STT_CFG = { builtin: { model: registry.DEFAULT_STT_MODEL }, language: "" };
+const CLEANUP_CFG = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules" };
+const count = (host, type) => host.calls.filter((t) => t === type).length;
+
+test("an STT worker crash forgets only STT loaded-state, not cleanup", async () => {
+  // Crash isolation is the point of the split: if the STT worker dies, the next
+  // transcribe must re-load STT, but cleanup (a separate, still-alive worker)
+  // must NOT be made to re-load. A regression wiring both forget callbacks onto
+  // one host would break this.
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  await facade.transcribe(Buffer.from("wav"), STT_CFG);
+  await facade.clean("hello", CLEANUP_CFG);
+  const stt = hostsBySvc["earheart-stt"];
+  const cleanup = hostsBySvc["earheart-cleanup"];
+  assert.strictEqual(count(stt, "load-stt"), 1);
+  assert.strictEqual(count(cleanup, "load-cleanup"), 1);
+
+  stt.die(); // the STT worker process exits
+
+  await facade.transcribe(Buffer.from("wav"), STT_CFG);
+  await facade.clean("hello", CLEANUP_CFG);
+  // STT was forgotten on exit -> re-loaded; cleanup was untouched -> not reloaded.
+  assert.strictEqual(count(stt, "load-stt"), 2, "STT should re-load after its worker died");
+  assert.strictEqual(count(cleanup, "load-cleanup"), 1, "cleanup must not re-load when only STT died");
+});
+
+test("unloadIdle unloads only the engines that are actually resident", async () => {
+  // A transcribe-only user (never cleaned) must unload STT but never send
+  // unload-cleanup to a cleanup worker that was never loaded.
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  await facade.transcribe(Buffer.from("wav"), STT_CFG);
+  const stt = hostsBySvc["earheart-stt"];
+  const cleanup = hostsBySvc["earheart-cleanup"];
+
+  await facade.unloadIdle();
+  assert.ok(stt.calls.includes("unload-stt"));
+  assert.ok(!cleanup.calls.includes("unload-cleanup"), "cleanup was never loaded; must not be unloaded");
+
+  // A second unloadIdle with nothing resident is a no-op on both hosts.
+  const before = stt.calls.length + cleanup.calls.length;
+  await facade.unloadIdle();
+  assert.strictEqual(stt.calls.length + cleanup.calls.length, before, "idle unload with nothing loaded is a no-op");
+});
+
+test("transcribe/clean reject early on an already-aborted signal without touching the worker", async () => {
+  // The "pre-cancelled call returns early rather than spending a model load /
+  // inference" contract: an aborted signal short-circuits before any host request.
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const stt = hostsBySvc["earheart-stt"];
+  const cleanup = hostsBySvc["earheart-cleanup"];
+
+  await assert.rejects(
+    () => facade.transcribe(Buffer.from("wav"), STT_CFG, AbortSignal.abort()),
+    /abort/i
+  );
+  assert.strictEqual(stt.calls.length, 0, "no STT worker request for a pre-aborted transcribe");
+
+  await assert.rejects(
+    () => facade.clean("hello", CLEANUP_CFG, AbortSignal.abort()),
+    /abort/i
+  );
+  assert.strictEqual(cleanup.calls.length, 0, "no cleanup worker request for a pre-aborted clean");
 });

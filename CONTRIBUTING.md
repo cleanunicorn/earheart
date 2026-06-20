@@ -117,18 +117,24 @@ main/                    Electron main process
   engines/               in-process STT + cleanup (no separate executable)
     registry.js          downloadable model catalogue
     model-manager.js     streaming, atomic, checksum-verified downloads
-    engine-worker.js     utilityProcess: sherpa-onnx (STT) + node-llama-cpp
-    host.js / index.js   parent-side worker lifecycle + facade
+    engine-worker.js     utilityProcess: sherpa-onnx (STT) + node-llama-cpp;
+                         forked once per engine (two workers)
+    host.js              createHost() factory: one worker process per host
+    index.js             facade routing STT → sttHost, cleanup → cleanupHost
   output/deliver.js      clipboard + per-OS paste keystroke injection
-renderer/                overlay (mic capture → 16 kHz WAV), settings UI,
-                         first-run wizard (incl. model download step)
+renderer/                overlay (mic capture → 16 kHz WAV, live transcript
+                         preview), settings UI, first-run wizard
+  transcript.js          pure two-layer (raw/cleaned) reconcile helper
 stt-server/              Python: FastAPI + onnx-asr Parakeet server (optional)
 ```
 
 The pipeline routes each stage to the in-process engine or the HTTP client
 based on `stt.engine` / `cleanup.engine` ("builtin" | "remote").
-The native runtimes are loaded lazily inside the worker, so the app boots and
-the HTTP paths keep working even if a model isn't downloaded.
+STT and cleanup each run in their **own** `utilityProcess` worker, so they
+parallelize (used by the live-transcript preview) and a native crash in one
+engine can't take down the other. The native runtimes are loaded lazily inside
+each worker, so the app boots and the HTTP paths keep working even if a model
+isn't downloaded.
 
 Design constraints worth keeping:
 
@@ -139,7 +145,9 @@ Design constraints worth keeping:
   from the asar (`asarUnpack` in `electron-builder.yml`). Models are downloaded
   at first run, not bundled.
 - **The overlay window owns the microphone.** The main process never touches
-  audio; it receives a finished WAV from the renderer.
+  raw audio; it receives finished WAVs from the renderer — the final one on stop,
+  plus periodic partial WAVs while recording for the live preview (re-transcribed
+  best-effort; see [docs/live-transcription-plan.md](docs/live-transcription-plan.md)).
 - **Never lose the user's words.** If cleanup fails, deliver the raw
   transcript; if paste fails, fall back to the clipboard; history keeps the
   text either way.

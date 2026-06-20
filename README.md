@@ -47,6 +47,10 @@ OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
   Runtime, faster than realtime on CPU and with no network hop. Or point
   Earheart at any OpenAI-compatible transcription API, or run the optional
   [`earheart-stt`](stt-server/) server yourself.
+- **Live transcript while you speak (on by default)** — with the built-in
+  engine the overlay fills in the text as you talk, with a cleaned-up version
+  settling in behind the raw words on pauses. The final transcript on stop is
+  unchanged. Toggle it under Settings → Speech-to-text.
 - **LLM cleanup (on by default)** — punctuation, filler-word removal, false
   starts. By default a small Gemma model runs **in-process**; or point cleanup
   at any OpenAI-compatible chat API. The prompt is fully editable. If cleanup

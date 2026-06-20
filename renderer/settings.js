@@ -124,6 +124,7 @@ function populate() {
   $("stt-language").value = current.stt.language;
   selectEngine("stt", current.stt.engine);
   $("stt-builtin-model").value = current.stt.builtin.model;
+  $("stt-live-preview").checked = current.stt.livePreview?.enabled ?? true;
 
   $("cleanup-enabled").checked = current.cleanup.enabled;
   $("cleanup-url").value = current.cleanup.baseUrl;
@@ -164,6 +165,12 @@ function collect() {
       apiKey: $("stt-key").value.trim(),
       model: $("stt-model").value.trim(),
       language: $("stt-language").value.trim(),
+      // Preserve the live-preview tuning (interval, caps); only the toggle is
+      // surfaced in the UI.
+      livePreview: {
+        ...current.stt.livePreview,
+        enabled: $("stt-live-preview").checked,
+      },
     },
     cleanup: {
       ...current.cleanup,

@@ -17,61 +17,118 @@ body {
   -webkit-app-region: no-drag;
 }
 
-#pill {
+/* The card is pinned to the bottom of the window; the transcript above the
+   controls grows the card upward so the control row never jumps. */
+body {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 56px;
-  margin: 12px;
-  padding: 0 14px 0 16px;
-  border-radius: 28px;
-  background: rgba(22, 20, 28, 0.88);
-  /* No drop shadow: soft shadows band/halo badly on transparent windows.
-     The border alone separates the pill from whatever is behind it. */
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  color: #f3f1f7;
-  /* The pill body is the drag handle; a move cursor signals it can be dragged.
-     Buttons reset this to a pointer below so they don't read as draggable. */
-  cursor: move;
-  /* Hidden until the main process sends overlay:show, so the window can
-     fade in instead of popping. */
-  opacity: 0;
-  transform: translateY(8px) scale(0.97);
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: 100vh;
 }
 
-#pill.visible {
+/* One unified card holding the transcript (top) and controls (bottom). */
+#card {
+  display: flex;
+  flex-direction: column;
+  margin: 12px;
+  border-radius: 22px;
+  /* Solid (not translucent) so the faint raw tail's contrast doesn't depend on
+     whatever app shows through behind the overlay, and so text never sits over a
+     see-through edge. */
+  background: rgb(24, 22, 30);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #f3f1f7;
+  /* The card body is the drag handle; buttons reset this to a pointer below. */
+  cursor: move;
+  overflow: hidden; /* keep children inside the rounded corners */
+  /* Hidden until overlay:show, so the window can fade in instead of popping. */
+  opacity: 0;
+  transform: translateY(8px) scale(0.98);
+  /* The window resizes instantly (native setBounds can't ease); the card eases
+     its own height from old to new inside it, so the transcript slides into the
+     new space rather than popping. overlay.js sets an explicit pixel height. */
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    height 0.18s ease;
+}
+
+#card.visible {
   opacity: 1;
   transform: none;
 }
 
-#pill.dragging {
+#card.dragging {
   transition: opacity 0.2s ease; /* no transform easing while dragging */
 }
 
+/* Grip handle: a short centered bar that signifies the card is draggable. The
+   card carries the actual drag, so this is purely a visual affordance. */
+#grip {
+  flex-shrink: 0;
+  width: 32px;
+  height: 4px;
+  margin: 7px auto 0;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+  transition: background 0.15s ease;
+}
+
+#card:hover #grip {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Live transcript: fills the top of the card and grows freely (no clip, no
+   scroll, no mask). Two layers inline: the cleaned text (prominent) and the
+   still-streaming raw tail (faint). */
+#transcript {
+  /* Left/right inset matches the control row below so the text column and the
+     controls share one left edge. Smaller top pad because the grip handle above
+     already adds spacing; bottom frames the divider. */
+  padding: 8px 16px 12px;
+  font-size: 15px;
+  line-height: 1.5;
+  /* Wrap long words instead of overflowing the card width. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+#transcript[hidden] {
+  display: none;
+}
+
+#transcript-clean {
+  font-weight: 500;
+  color: #f6f4fb;
+}
+
+#transcript-raw {
+  /* Subordinate to the cleaned line but still readable on the solid card. */
+  color: rgba(243, 241, 247, 0.62);
+}
+
+/* Control row: meter, status, timer, buttons. The pill's old chrome, now the
+   bottom strip of the card. */
+#controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+
+/* A subtle top divider only when the transcript is showing above the controls;
+   when the card is controls-only there's nothing to divide from. */
+#card[data-transcript] #controls {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  #pill {
+  #card {
     transition: opacity 0.2s ease;
     transform: none;
   }
-}
-
-/* Visible drag affordance: the OS often ignores the CSS cursor on a
-   focusable:false overlay, so the grip dots make it clear the pill can be
-   dragged. It's part of the pill body, which is the drag surface. */
-#grip {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  margin-left: -4px;
-  color: rgba(255, 255, 255, 0.35);
-  transition: color 0.15s ease;
-}
-
-#pill:hover #grip {
-  color: rgba(255, 255, 255, 0.6);
 }
 
 #indicator {
@@ -120,9 +177,9 @@ body {
   flex-shrink: 0;
 }
 
-#pill:not([data-status="recording"]) #meter,
-#pill:not([data-status="recording"]) #timer,
-#pill:not([data-status="recording"]) #stop {
+#card:not([data-status="recording"]) #meter,
+#card:not([data-status="recording"]) #timer,
+#card:not([data-status="recording"]) #stop {
   display: none;
 }
 
@@ -133,7 +190,7 @@ body {
   flex: 1;
 }
 
-#pill:not([data-status="recording"]) #message {
+#card:not([data-status="recording"]) #message {
   display: flex;
 }
 
@@ -160,6 +217,7 @@ body {
 }
 
 button {
+  position: relative;
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -176,6 +234,15 @@ button {
     transform 0.12s ease;
 }
 
+/* Enlarge the clickable area to ~40px without changing the painted 32px circle,
+   so the tightly-packed controls are easier to hit (and harder to mis-hit). */
+button::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+}
+
 button svg {
   display: block;
 }
@@ -184,9 +251,19 @@ button:active {
   transform: scale(0.92);
 }
 
+/* Keyboard focus ring. The overlay is focusable:false so focus normally never
+   lands here, but this is cheap insurance for AT or a future focusable context. */
+button:focus-visible {
+  outline: 2px solid #f6f4fb;
+  outline-offset: 2px;
+}
+
 #stop {
   background: #ff5470;
   color: #fff;
+  /* An emphasis ring, not elevation — the only box-shadow in the UI. The card
+     deliberately has no drop shadow (soft shadows band/halo on transparent
+     windows), so don't "fix" that by adding one. */
   box-shadow: 0 0 0 3px rgba(255, 84, 112, 0.25);
 }
 
@@ -196,6 +273,9 @@ button:active {
 }
 
 #cancel {
+  /* Extra gap before the destructive cancel (discards the dictation) so it isn't
+     hit by reflex right next to stop. */
+  margin-left: 4px;
   background: rgba(255, 255, 255, 0.08);
   color: #d6d2e0;
 }

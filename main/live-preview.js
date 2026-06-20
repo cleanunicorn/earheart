@@ -1,33 +1,13 @@
-// Live preview: while recording, transcribe the audio and push a partial
-// transcript to the overlay. This is the second, side-channel state machine of a
-// dictation — separate from the pipeline's authoritative record→transcribe→clean
-// →deliver flow — so it lives in its own module and the pipeline just wires it.
+// Live preview: the streaming partial transcript shown while recording — a
+// side-channel state machine separate from the pipeline's authoritative
+// record→transcribe→clean→deliver flow, which just wires it.
 //
-// Append-only chunking (the key to flat cost): the overlay ships audio in
-// chunks. Each tick it sends the CURRENT in-progress chunk (the audio recorded
-// since the last committed boundary); when that chunk reaches its length it's
-// sent once more marked `final`. We re-decode only the in-progress chunk, so
-// decode cost is bounded by the chunk length (~5s) no matter how long the
-// dictation runs — instead of re-decoding the whole growing buffer every tick
-// (which was O(n²) and ground the app to a halt after ~30s). On `final` we append
-// the chunk's text to the committed transcript and never touch that audio again.
-//
-// Raw shown = committedRaw + the live (in-progress) chunk's text.
-// Cleanup is likewise incremental: when a chunk commits, only its new text is
-// cleaned and appended to the committed cleaned line — never the whole transcript.
-//
-// STT and cleanup live in separate engine workers, so partial STT and partial
-// cleanup run in parallel. Within each worker requests are serialized, so a
-// drop-if-busy flag per stage keeps partials from queueing up behind real time.
-//
-// One thing the worker split does NOT buy us: partial STT and the pipeline's
-// *final* transcribe share the same STT worker, and a dispatched worker request
-// isn't cancellable mid-inference. So if the user stops while a partial decode is
-// in flight, the final transcribe waits for it to finish (bounded by one chunk's
-// decode — now small). cancel() prevents *new* partial work from starting.
-//
-// All of this is best-effort and silent: a dropped or failed partial is cosmetic
-// and must never disturb the dictation.
+// Append-only chunking is what keeps cost flat: the overlay ships audio in
+// chunks and we re-decode only the current in-progress chunk, so decode (and
+// incremental cleanup) cost is bounded by one chunk — not the whole growing
+// buffer, which was O(n²) and stalled the app after ~30s. The accumulator
+// comments below describe the resulting state. All best-effort and silent: a
+// dropped or failed partial is cosmetic and must never disturb the dictation.
 //
 // Dependencies are injected so the module stays free of the pipeline's private
 // session/state and is unit-testable:
@@ -45,13 +25,13 @@ function joinText(a, b) {
 function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettings, isCurrent }) {
   let sttBusy = false;
   let cleanupBusy = false;
-  let abort = null; // aborts in-flight partial work when recording ends
+  let abortController = null; // aborts in-flight partial work when recording ends
 
   // Append-only accumulators.
   let committedRaw = ""; // text from finalized chunks (never re-decoded)
   let committedClean = ""; // cleaned text from finalized chunks
   let liveRaw = ""; // decode of the current in-progress chunk (replaced each tick)
-  let pendingClean = ""; // committed raw not yet reflected in committedClean
+  let uncleanedRaw = ""; // committed raw text awaiting cleanup
   let lastSeq = -1; // highest chunk seq we've committed
   let pauseTimer = null; // fires a cleanup pass once a chunk has committed + settled
 
@@ -59,14 +39,14 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
     committedRaw = "";
     committedClean = "";
     liveRaw = "";
-    pendingClean = "";
+    uncleanedRaw = "";
     lastSeq = -1;
   }
 
   function cancel() {
-    if (abort) {
-      abort.abort();
-      abort = null;
+    if (abortController) {
+      abortController.abort();
+      abortController = null;
     }
     if (pauseTimer) {
       clearTimeout(pauseTimer);
@@ -95,8 +75,8 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
     if (sttBusy) return; // drop-if-busy: keep up with the latest audio only
     const cfg = getSettings();
     if (cfg.stt.engine !== "builtin") return;
-    if (!abort) abort = new AbortController();
-    const { signal } = abort;
+    if (!abortController) abortController = new AbortController();
+    const { signal } = abortController;
     sttBusy = true;
     try {
       const wav = Buffer.from(wavArrayBuffer);
@@ -109,7 +89,7 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
         lastSeq = seq;
         committedRaw = joinText(committedRaw, text);
         liveRaw = "";
-        pendingClean = joinText(pendingClean, text);
+        uncleanedRaw = joinText(uncleanedRaw, text);
         pushRaw();
         scheduleCleanup(sid, cfg, signal);
       } else {
@@ -126,7 +106,7 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   }
 
   // After a chunk commits and the dictation settles for the pause window, clean
-  // ONLY the newly committed text (pendingClean) and append it to the cleaned
+  // ONLY the newly committed text (uncleanedRaw) and append it to the cleaned
   // line. Flat cost — we never re-clean the whole transcript.
   function scheduleCleanup(sid, cfg, signal) {
     // Only clean live when cleanup is on and runs in-process: a remote cleanup
@@ -144,15 +124,15 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   async function runCleanupPass(sid, cfg, signal) {
     if (stale(sid, signal)) return;
     if (cleanupBusy) return; // drop-if-busy
-    const toClean = pendingClean.trim();
+    const toClean = uncleanedRaw.trim();
     if (!toClean) return; // nothing new committed to clean
     cleanupBusy = true;
-    pendingClean = "";
+    uncleanedRaw = "";
     try {
       const cleaned = await runCleanup(toClean, cfg.cleanup, signal);
       if (stale(sid, signal)) {
         // Put the text back so a later (non-stale) pass still cleans it.
-        pendingClean = joinText(toClean, pendingClean);
+        uncleanedRaw = joinText(toClean, uncleanedRaw);
         return;
       }
       const text = (cleaned || "").trim();
@@ -163,12 +143,12 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
     } catch {
       // Cosmetic: a failed partial cleanup just leaves the raw tail showing.
       // Restore the pending text so the next pass retries it.
-      pendingClean = joinText(toClean, pendingClean);
+      uncleanedRaw = joinText(toClean, uncleanedRaw);
     } finally {
       cleanupBusy = false;
       // More may have committed while we were cleaning; if so, clean it after the
-      // next pause. Bail if aborted so a cancelled cleanup can't re-arm pauseTimer.
-      if (!signal.aborted && pendingClean.trim() && isCurrent(sid)) {
+      // next pause. Bail if stale (cancelled/ended) so a dead pass can't re-arm.
+      if (!stale(sid, signal) && uncleanedRaw.trim()) {
         scheduleCleanup(sid, cfg, signal);
       }
     }

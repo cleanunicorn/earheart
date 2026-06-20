@@ -25,7 +25,6 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
 
   function onExit(fn) {
     exitListeners.add(fn);
-    return fn;
   }
 
   function spawn() {
@@ -67,7 +66,7 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
    * @param {number} [timeoutMs]
    */
   function request(type, args = {}, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
-    const proc = spawn();
+    const child = spawn();
     const id = nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -86,7 +85,7 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
           reject(e);
         },
       });
-      proc.postMessage({ id, type, ...args });
+      child.postMessage({ id, type, ...args });
     });
   }
 

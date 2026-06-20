@@ -1,5 +1,5 @@
 // High-level facade over the in-process engines: where models live on disk,
-// downloading them, and running transcription / cleanup through the worker.
+// downloading them, and running transcription / cleanup through their workers.
 // The pipeline and IPC layers use only this module.
 
 const path = require("node:path");
@@ -10,11 +10,9 @@ const manager = require("./model-manager");
 const hostModule = require("./host");
 
 // STT and cleanup each get their own worker process so they run in parallel and
-// a crash in one engine can't take down the other. Each host lazily forks its
-// worker on the first request, so a user who only ever transcribes (no cleanup)
-// never spawns the cleanup worker, and vice versa. Unit tests stub `./host` with
-// a `createHost`-shaped fake (see test/engines.test.js), so there's a single
-// host-construction path here.
+// a crash in one engine can't take down the other (see host.js). Each lazily
+// forks on the first request, so a transcribe-only user never spawns the cleanup
+// worker, and vice versa.
 const sttHost = hostModule.createHost({ serviceName: "earheart-stt" });
 const cleanupHost = hostModule.createHost({ serviceName: "earheart-cleanup" });
 

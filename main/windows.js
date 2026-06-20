@@ -1,4 +1,4 @@
-// Window management: the recording overlay (a small always-on-top pill that
+// Window management: the recording overlay (a small always-on-top card that
 // also owns the microphone) and the settings window.
 
 const { BrowserWindow, ipcMain, screen } = require("electron");
@@ -16,13 +16,13 @@ const OVERLAY_FADE_MS = 200;
 let overlayWindow = null;
 let settingsWindow = null;
 let wizardWindow = null;
-let overlayCustomPosition = null; // set when the user drags the pill
+let overlayCustomPosition = null; // set when the user drags the card
 let overlayDragOrigin = null; // { winX, winY, pointerX, pointerY }
 let overlayHideTimer = null;
 
 // Clamp a top-left position so the window stays on-screen. The height matters
 // for the bottom bound: a transcript-grown overlay is taller than OVERLAY_HEIGHT,
-// so pass its actual height (defaulting to the base pill height) or the window's
+// so pass its actual height (defaulting to the base card height) or the window's
 // bottom edge can be dragged off the work area.
 function clampToWorkArea(x, y, height = OVERLAY_HEIGHT) {
   const { workArea } = screen.getDisplayNearestPoint({ x, y });
@@ -44,9 +44,9 @@ function overlayPosition() {
   };
 }
 
-// Click-and-drag for the overlay pill. The renderer streams absolute screen
+// Click-and-drag for the overlay card. The renderer streams absolute screen
 // coordinates; positioning from a recorded origin (instead of incremental
-// deltas) keeps the pill glued to the cursor even if events are dropped.
+// deltas) keeps the card glued to the cursor even if events are dropped.
 ipcMain.on("overlay:drag-start", (event, { x, y } = {}) => {
   const win = getOverlay();
   if (!win || typeof x !== "number" || typeof y !== "number") return;
@@ -62,20 +62,20 @@ ipcMain.on("overlay:drag", (event, { x, y } = {}) => {
   const next = clampToWorkArea(
     Math.round(overlayDragOrigin.winX + x - overlayDragOrigin.pointerX),
     Math.round(overlayDragOrigin.winY + y - overlayDragOrigin.pointerY),
-    h // a transcript-grown overlay is taller than the base pill height
+    h // a transcript-grown overlay is taller than the base card height
   );
   win.setPosition(next.x, next.y);
-  // Store the pill's *bottom-anchored* top-left (where a base-height window would
+  // Store the card's *bottom-anchored* top-left (where a base-height window would
   // sit), so the next show — which resets to base height — places it correctly
   // instead of inheriting the grown top.
   overlayCustomPosition = { x: next.x, y: next.y + h - OVERLAY_HEIGHT };
 });
 
-// The live transcript grows the overlay's content upward (the pill stays pinned
+// The live transcript grows the overlay's content upward (the card stays pinned
 // to the bottom edge so it doesn't jump). The renderer reports the height its
 // content needs; we resize the window and shift its top up by the delta, then
 // re-clamp so a tall transcript near the top of the screen isn't pushed off.
-// We deliberately do NOT touch overlayCustomPosition here — it tracks the pill's
+// We deliberately do NOT touch overlayCustomPosition here — it tracks the card's
 // resting (base-height) spot, which the grow-upward must not overwrite.
 ipcMain.on("overlay:resize", (event, { height } = {}) => {
   const win = getOverlay();
@@ -165,7 +165,7 @@ function showOverlay() {
     clearTimeout(overlayHideTimer);
     overlayHideTimer = null;
   }
-  // Reset to the base pill size before showing: a previous dictation may have
+  // Reset to the base card size before showing: a previous dictation may have
   // grown the window for its transcript, and overlayPosition() assumes the base
   // height. The renderer re-reports its height as the new transcript fills in.
   const { x, y } = overlayPosition();
@@ -177,7 +177,7 @@ function showOverlay() {
 function hideOverlay() {
   const win = getOverlay();
   if (!win || !win.isVisible() || overlayHideTimer) return;
-  // Let the pill fade out before the window actually disappears.
+  // Let the card fade out before the window actually disappears.
   win.webContents.send("overlay:hide");
   overlayHideTimer = setTimeout(() => {
     overlayHideTimer = null;

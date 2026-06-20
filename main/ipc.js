@@ -5,8 +5,7 @@ const settings = require("./settings");
 const deliver = require("./output/deliver");
 const history = require("./history");
 const windows = require("./windows");
-const stt = require("./services/stt");
-const cleanup = require("./services/cleanup");
+const route = require("./services/route");
 const engines = require("./engines");
 const { listRemoteModels } = require("./services/models-remote");
 const { encodeSilenceWav } = require("./util/wav");
@@ -86,8 +85,7 @@ function init({ applyHotkey, onSettingsChanged }) {
   ipcMain.handle("stt:test", async (event, cfg) => {
     try {
       const wav = encodeSilenceWav(0.5);
-      if (cfg.engine === "builtin") await engines.transcribe(wav, cfg);
-      else await stt.transcribe(wav, cfg);
+      await route.transcribe(wav, cfg);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err.message };
@@ -108,10 +106,7 @@ function init({ applyHotkey, onSettingsChanged }) {
   ipcMain.handle("cleanup:test", async (event, cfg) => {
     try {
       const sample = "um so this is uh a test of the cleanup service";
-      const result =
-        cfg.engine === "builtin"
-          ? await engines.clean(sample, cfg)
-          : await cleanup.clean(sample, cfg);
+      const result = await route.clean(sample, cfg);
       return { ok: true, sample: result.slice(0, 200) };
     } catch (err) {
       return { ok: false, error: err.message };

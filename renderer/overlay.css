@@ -17,8 +17,7 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* The card is pinned to the bottom of the window; the transcript above the
-   controls grows the card upward so the control row never jumps. */
+/* Pin the card to the bottom edge; the transcript grows it upward. */
 body {
   display: flex;
   flex-direction: column;
@@ -26,7 +25,7 @@ body {
   height: 100vh;
 }
 
-/* One unified card holding the transcript (top) and controls (bottom). */
+/* #card: transcript (top) + control row (bottom). */
 #card {
   display: flex;
   flex-direction: column;
@@ -107,8 +106,7 @@ body {
   color: rgba(243, 241, 247, 0.62);
 }
 
-/* Control row: meter, status, timer, buttons. The pill's old chrome, now the
-   bottom strip of the card. */
+/* Control row: meter, status, timer, buttons. */
 #controls {
   display: flex;
   align-items: center;

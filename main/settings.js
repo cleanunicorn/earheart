@@ -46,26 +46,17 @@ const DEFAULTS = {
     model: "parakeet",
     language: "",
     timeoutMs: 120000,
-    // Live preview: while recording, re-transcribe the audio captured so far on
-    // a short interval and show the provisional text in the overlay (with a
-    // cleaned line filling in behind it on pauses). Purely additive — the final
-    // transcribe/clean/deliver on stop is unchanged. Adds steady CPU load while
-    // recording, so it is exposed as a toggle.
+    // Live preview: while recording, show the transcript filling in (with a
+    // cleaned line behind it on pauses). Additive — the final transcribe/clean/
+    // deliver on stop is unchanged. Append-only chunked (audio is frozen into
+    // committed chunks; only the in-progress chunk is re-decoded each tick), so
+    // decode and cleanup cost stay flat no matter how long you talk. See
+    // main/live-preview.js. Adds steady CPU while recording, hence the toggle.
     livePreview: {
       enabled: true,
-      // How often (ms) the overlay ships the in-progress audio chunk for a fresh
-      // partial transcript. Lower = snappier, but more CPU.
-      intervalMs: 1200,
-      // Transcription is append-only and chunked: every `chunkSeconds` of audio
-      // is frozen into a committed chunk, transcribed once, and accumulated. Only
-      // the current in-progress chunk is re-decoded each tick, so decode cost
-      // stays flat (~this many seconds of audio) no matter how long you talk,
-      // instead of growing with the whole buffer.
-      chunkSeconds: 5,
-      // After the in-progress chunk has been stable (unchanged) for this long,
-      // clean the newly committed text and append it to the cleaned line. Only
-      // the new text is cleaned, so cleanup cost is flat too.
-      cleanupPauseMs: 1000,
+      intervalMs: 1200, // how often the in-progress chunk is sent; lower = snappier, more CPU
+      chunkSeconds: 5, // audio per committed chunk (and the most that's ever re-decoded)
+      cleanupPauseMs: 1000, // stable-for-this-long after a chunk commits before cleaning it
     },
   },
   cleanup: {

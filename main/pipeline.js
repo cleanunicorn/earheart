@@ -15,25 +15,11 @@
 const { ipcMain, Notification } = require("electron");
 const windows = require("./windows");
 const settings = require("./settings");
-const stt = require("./services/stt");
-const cleanup = require("./services/cleanup");
+const route = require("./services/route");
 const engines = require("./engines");
 const { deliver } = require("./output/deliver");
 const history = require("./history");
 const { createLivePreview } = require("./live-preview");
-
-// Route a stage to the in-process engine or the HTTP client based on settings.
-// Both backends take the same (payload, cfg, signal) shape, so the only
-// difference here is which implementation runs.
-function runTranscribe(wav, cfg, signal) {
-  const impl = cfg.engine === "builtin" ? engines.transcribe : stt.transcribe;
-  return impl(wav, cfg, signal);
-}
-
-function runCleanup(raw, cfg, signal) {
-  const impl = cfg.engine === "builtin" ? engines.clean : cleanup.clean;
-  return impl(raw, cfg, signal);
-}
 
 let state = "idle"; // idle | recording | processing
 let session = 0; // current dictation session id
@@ -46,8 +32,8 @@ const stateListeners = new Set();
 // session/state — `isCurrent(sid)` is the single source of truth for "this sid
 // is still the active recording".
 const livePreview = createLivePreview({
-  runTranscribe,
-  runCleanup,
+  runTranscribe: route.transcribe,
+  runCleanup: route.clean,
   sendToOverlay: windows.sendToOverlay,
   getSettings: settings.get,
   isCurrent: (sid) => sid === session && state === "recording",
@@ -178,7 +164,7 @@ async function process(sid, wavArrayBuffer) {
 
   try {
     overlayStatus("transcribing");
-    const raw = await runTranscribe(wav, cfg.stt, signal);
+    const raw = await route.transcribe(wav, cfg.stt, signal);
     if (stale()) return;
 
     if (!raw) {
@@ -192,7 +178,7 @@ async function process(sid, wavArrayBuffer) {
     if (cfg.cleanup.enabled) {
       overlayStatus("cleaning");
       try {
-        text = await runCleanup(raw, cfg.cleanup, signal);
+        text = await route.clean(raw, cfg.cleanup, signal);
         cleaned = true;
       } catch (err) {
         if (stale()) return;

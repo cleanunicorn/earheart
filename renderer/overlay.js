@@ -91,8 +91,7 @@ function updateTimer() {
 }
 
 function encodeWav(chunks) {
-  let total = 0;
-  for (const chunk of chunks) total += chunk.length;
+  const total = totalSamples(chunks);
   const buffer = new ArrayBuffer(44 + total * 2);
   const view = new DataView(buffer);
   const writeStr = (offset, str) => {
@@ -341,8 +340,8 @@ async function stopRecording() {
 
 async function cancelRecording() {
   const sid = currentSid;
-  const wasRecording = await teardown();
-  if (wasRecording) {
+  const rec = await teardown();
+  if (rec) {
     earheart.send("record:cancelled", { sid });
   } else {
     earheart.send("pipeline:cancel");
@@ -384,13 +383,11 @@ earheart.on("pipeline:status", ({ status, detail }) => {
     case "done":
       setStatus(
         "done",
-        detail?.note
+        detail?.note || detail?.method === "clipboard"
           ? "Copied to clipboard"
-          : detail?.method === "clipboard"
-            ? "Copied to clipboard"
-            : detail?.method === "paste-copy"
-              ? "Pasted & copied"
-              : "Pasted",
+          : detail?.method === "paste-copy"
+            ? "Pasted & copied"
+            : "Pasted",
         detail?.note || detail?.preview
       );
       break;

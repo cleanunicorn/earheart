@@ -13,6 +13,10 @@
          a slim control row sits along the bottom. The whole card is the drag
          surface and carries the data-status state. -->
     <div id="card" data-status="recording">
+      <!-- Grip handle: signifies the card is draggable (the OS ignores the CSS
+           move-cursor on a focusable:false overlay, so a visible cue is needed).
+           Decorative — the card itself handles the drag. -->
+      <div id="grip" aria-hidden="true"></div>
       <!-- Live transcript: shown while recording when live preview is on. The
            cleaned text is the prominent line; the still-streaming raw tail trails
            it, faint, so the fast-but-jittery raw text and the calm cleaned text
@@ -27,7 +31,10 @@
       <div id="controls">
         <div id="indicator"></div>
         <canvas id="meter" width="120" height="36"></canvas>
-        <div id="message">
+        <!-- Polite live region so a screen reader hears the post-recording
+             status (Transcribing… / Pasted / Failed) — the feedback that tells
+             the user whether their dictation landed. -->
+        <div id="message" aria-live="polite">
           <span id="status-text">Listening…</span>
           <span id="detail-text"></span>
         </div>

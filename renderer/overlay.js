@@ -70,7 +70,9 @@ function setStatus(status, title, detail) {
 function drawMeter() {
   meterCtx.clearRect(0, 0, meter.width, meter.height);
   const barWidth = meter.width / displayLevels.length;
-  meterCtx.fillStyle = "#ff5470";
+  // A muted rose, not the full #ff5470 accent: the saturated red is reserved for
+  // the primary (stop) button so it stays the one thing the eye lands on.
+  meterCtx.fillStyle = "rgba(255, 120, 140, 0.5)";
   displayLevels.forEach((level, i) => {
     const h = Math.max(2, Math.min(1, level * 6) * meter.height);
     meterCtx.fillRect(
@@ -207,15 +209,19 @@ function clearTranscript() {
 // document.body, whose `height:100vh` pins it to the window). The card has
 // `overflow:hidden` for its rounded corners, so its content can exceed the
 // window; scrollHeight reports that true desired height. Plus the 12px card
-// margins. Quantized to whole lines (~21px) so a single non-wrapping word doesn't
-// nudge the window every partial; it grows in calm, full-line steps and collapses
-// cleanly when the transcript hides. lastReportedHeight resets on overlay:show.
+// margins. The window jump is un-eased, but the card's own height eases via CSS
+// (see #card transition), so content slides into the new space smoothly.
 const CARD_MARGIN = 12; // matches #card margin in overlay.css
-const LINE_STEP = 21; // line-height 1.5 × 14px, one transcript line
 let lastReportedHeight = 0;
 function syncOverlayHeight() {
-  const raw = card.scrollHeight + CARD_MARGIN * 2;
-  const height = Math.ceil(raw / LINE_STEP) * LINE_STEP;
+  // Measure the card's NATURAL content height: clear any pinned height first so a
+  // shrink (e.g. transcript cleared) is measured, not clamped by the old value.
+  card.style.height = "";
+  const content = card.scrollHeight;
+  // Pin it so the CSS height transition has a concrete from/to to ease between
+  // (it can't animate `height: auto`); the window resizes instantly around it.
+  card.style.height = `${content}px`;
+  const height = content + CARD_MARGIN * 2;
   if (height !== lastReportedHeight) {
     lastReportedHeight = height;
     earheart.send("overlay:resize", { height });

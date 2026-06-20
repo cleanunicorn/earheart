@@ -10,8 +10,12 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/overlay-recording.png" width="340" alt="Earheart recording overlay" /><br/>
-  <img src="docs/screenshots/overlay-done.png" width="340" alt="Earheart after pasting the transcript" />
+  <img src="docs/screenshots/overlay-recording.png" width="340" alt="Earheart overlay showing a live transcript while recording" /><br/>
+  <img src="docs/screenshots/overlay-done.png" width="340" alt="Earheart overlay confirming the transcript was pasted" />
+</p>
+
+<p align="center">
+  <sub>The overlay transcribes live as you speak, then confirms where the text landed — without stealing focus.</sub>
 </p>
 
 ---
@@ -68,7 +72,7 @@ OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
 
 Open the **[latest release page](https://github.com/cleanunicorn/earheart/releases/latest)**
 and, under **Assets**, download the file that matches your system. `<version>`
-is just the version number (e.g. `0.6.1`).
+is just the version number (e.g. `0.8.0`).
 
 **🪟 Windows**
 

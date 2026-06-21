@@ -136,26 +136,42 @@ test("a chunk that finishes decoding after the session ends is dropped", async (
   assert.strictEqual(h.sent.length, 0);
 });
 
-test("cleanup runs only on newly committed text and appends to the cleaned line", async () => {
+test("cleanup re-cleans the whole committed transcript and replaces the cleaned line", async () => {
   const h = harness();
   h.setTranscribe(async () => "the first chunk");
   h.setCleanup(async (raw) => {
-    assert.strictEqual(raw, "the first chunk", "cleanup gets only the committed chunk text");
+    assert.strictEqual(raw, "the first chunk", "first pass cleans the whole committed transcript");
     return "The first chunk.";
   });
   await h.lp.handleAudio(1, chunk(0, true));
   await tick();
   assert.strictEqual(lastClean(h), "The first chunk.");
 
-  // A second committed chunk cleans only the new text, appended to the line.
+  // A second committed chunk re-cleans the WHOLE transcript (both chunks) and the
+  // cleaned line is replaced with that result — not appended per-chunk. Cleaning
+  // the whole thing is what makes the live cleaned line read like the final clean.
   h.setTranscribe(async () => "second chunk");
   h.setCleanup(async (raw) => {
-    assert.strictEqual(raw, "second chunk", "second pass cleans only the new chunk");
-    return "Second chunk.";
+    assert.strictEqual(raw, "the first chunk second chunk", "second pass cleans the full transcript");
+    return "The first chunk, second chunk.";
   });
   await h.lp.handleAudio(1, chunk(1, true));
   await tick();
-  assert.strictEqual(lastClean(h), "The first chunk. Second chunk.", "cleaned line accumulates");
+  assert.strictEqual(lastClean(h), "The first chunk, second chunk.", "cleaned line is replaced, not appended");
+});
+
+test("no new commit means no redundant re-clean", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "only chunk");
+  await h.lp.handleAudio(1, chunk(0, true)); // commit -> one cleanup pass
+  await tick();
+  const passesAfterFirst = h.cleanupCalls.length;
+  // A growing in-progress (non-final) chunk commits nothing new, so the cleaned
+  // line must not be re-cleaned.
+  h.setTranscribe(async () => "only chunk more");
+  await h.lp.handleAudio(1, chunk(1, false));
+  await tick();
+  assert.strictEqual(h.cleanupCalls.length, passesAfterFirst, "no extra clean without a new commit");
 });
 
 test("cleanup is skipped when cleanup is disabled", async () => {

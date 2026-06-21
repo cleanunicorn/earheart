@@ -36,12 +36,17 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   let cleanupBusy = false;
   let abortController = null; // aborts in-flight partial work when recording ends
 
-  // Append-only accumulators.
+  // Decode accumulators — append-only; only the in-progress chunk is re-decoded,
+  // so decode cost stays flat however long the dictation runs.
   let committedRaw = ""; // text from finalized chunks (never re-decoded)
-  let committedClean = ""; // whole committed raw, cleaned in one pass (mirrors the final clean)
   let liveRaw = ""; // decode of the current in-progress chunk (replaced each tick)
-  let lastCleanedRaw = ""; // the committedRaw value committedClean was produced from
   let lastSeq = -1; // highest chunk seq we've committed
+  // Cleanup mirror — whole-text replace, not append.
+  let committedClean = ""; // whole committed raw, cleaned in one pass (mirrors the final clean)
+  // The trimmed committedRaw that committedClean mirrors — the cleanup change
+  // marker. Always holds a trimmed value, so the skip and re-arm guards both
+  // compare cleanTarget() (committedRaw.trim()) against it to stay in lock-step.
+  let lastCleanedRaw = "";
   let pauseTimer = null; // fires a cleanup pass once a chunk has committed + settled
 
   function reset() {
@@ -74,6 +79,13 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
 
   function pushRaw() {
     sendToOverlay("pipeline:partial", { kind: "raw", text: joinText(committedRaw, liveRaw) });
+  }
+
+  // The committed transcript a cleanup pass would clean. Trimmed so it compares
+  // cleanly against lastCleanedRaw; the skip guard and the re-arm guard both read
+  // it, keeping "nothing new to clean" defined in exactly one place.
+  function cleanTarget() {
+    return committedRaw.trim();
   }
 
   // Handle one chunk's audio. `seq` identifies the chunk; `final` means this is
@@ -133,7 +145,7 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   async function runCleanupPass(sid, cfg, signal) {
     if (stale(sid, signal)) return;
     if (cleanupBusy) return; // drop-if-busy
-    const toClean = committedRaw.trim();
+    const toClean = cleanTarget();
     if (!toClean || toClean === lastCleanedRaw) return; // nothing new committed to clean
     cleanupBusy = true;
     try {
@@ -157,7 +169,7 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
       cleanupBusy = false;
       // More may have committed while we were cleaning; if so, re-clean after the
       // next pause. Bail if stale (cancelled/ended) so a dead pass can't re-arm.
-      if (!stale(sid, signal) && committedRaw.trim() !== lastCleanedRaw) {
+      if (!stale(sid, signal) && cleanTarget() !== lastCleanedRaw) {
         scheduleCleanup(sid, cfg, signal);
       }
     }

@@ -146,8 +146,9 @@ Design constraints worth keeping:
   at first run, not bundled.
 - **The overlay window owns the microphone.** The main process never touches
   raw audio; it receives finished WAVs from the renderer — the final one on stop,
-  plus periodic partial WAVs while recording for the live preview (re-transcribed
-  best-effort; see [docs/live-transcription-plan.md](docs/live-transcription-plan.md)).
+  plus periodic partial WAVs while recording for the live preview (re-transcribed,
+  and re-cleaned on pauses, best-effort; see
+  [docs/live-transcription-plan.md](docs/live-transcription-plan.md)).
 - **Never lose the user's words.** If cleanup fails, deliver the raw
   transcript; if paste fails, fall back to the clipboard; history keeps the
   text either way.

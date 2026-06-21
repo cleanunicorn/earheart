@@ -50,7 +50,9 @@ const DEFAULTS = {
     // cleaned line behind it on pauses). Additive — the final transcribe/clean/
     // deliver on stop is unchanged. Append-only chunked (audio is frozen into
     // committed chunks; only the in-progress chunk is re-decoded each tick), so
-    // decode and cleanup cost stay flat no matter how long you talk. See
+    // decode cost stays flat no matter how long you talk. Cleanup re-cleans the
+    // whole committed transcript per pause (O(n)) so the live line tracks the
+    // final clean, but it's pause-gated and drop-if-busy so it stays cheap. See
     // main/live-preview.js. Adds steady CPU while recording, hence the toggle.
     livePreview: {
       enabled: true,

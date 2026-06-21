@@ -62,17 +62,21 @@ hotkey ─▶ pipeline.toggle()                         (main/pipeline.js:95)
 > grew with total length (1.7s at 30s, 6.3s at 73s), crossed the tick interval at
 > ~21s, and crashed the app after ~30s. It was replaced with **append-only
 > chunking** — the overlay ships audio in ~5s chunks, each transcribed once and
-> accumulated; only the in-progress chunk is re-decoded, so cost stays flat (~370ms
-> per chunk regardless of dictation length). Cleanup is likewise incremental (only
-> newly committed text). The two-layer display and lifecycle below are unchanged.
+> accumulated; only the in-progress chunk is re-decoded, so decode cost stays flat
+> (~370ms per chunk regardless of dictation length). Cleanup, by contrast,
+> re-cleans the *whole* committed transcript on each pause and replaces the cleaned
+> line — `clean(a)+clean(b)` reads differently from `clean(a+b)`, so cleaning the
+> whole thing is what makes the live cleaned line track the authoritative final
+> clean. It's O(n) but pause-gated and drop-if-busy, so it stays cheap. The
+> two-layer display and lifecycle below are unchanged.
 
 Keep Parakeet offline. While recording, the overlay ships the audio of the
 current in-progress chunk; the main process transcribes it and accumulates a
 committed transcript, pushing the partial **raw** transcript back to the overlay.
-On speech pauses after a chunk commits, the main process cleans **only the newly
-committed text** and appends it to the partial **cleaned** transcript. The overlay
-shows both as two layers (see below). On stop, the existing final pass (+ cleanup
-+ deliver) runs unchanged over the whole authoritative audio.
+On speech pauses after a chunk commits, the main process re-cleans the **whole
+committed transcript** and replaces the partial **cleaned** transcript with the
+result. The overlay shows both as two layers (see below). On stop, the existing
+final pass (+ cleanup + deliver) runs unchanged over the whole authoritative audio.
 
 No new model, no new dependency, fully private, reuses the whole pipeline.
 

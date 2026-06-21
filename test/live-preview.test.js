@@ -29,6 +29,9 @@ function harness({ cfg = builtinCfg(), current = true } = {}) {
   const cleanupCalls = [];
   let transcribeImpl = async () => "hello world";
   let cleanupImpl = async (raw) => raw;
+  // Default send records to `sent`; a test can override it to simulate a send
+  // that throws (e.g. the overlay torn down mid-pass).
+  let sendImpl = (channel, payload) => sent.push({ channel, payload });
   const lp = createLivePreview({
     runTranscribe: (...a) => {
       transcribeCalls.push(a);
@@ -38,7 +41,7 @@ function harness({ cfg = builtinCfg(), current = true } = {}) {
       cleanupCalls.push(a);
       return cleanupImpl(...a);
     },
-    sendToOverlay: (channel, payload) => sent.push({ channel, payload }),
+    sendToOverlay: (channel, payload) => sendImpl(channel, payload),
     getSettings: () => cfg,
     isCurrent: () => current,
   });
@@ -49,6 +52,7 @@ function harness({ cfg = builtinCfg(), current = true } = {}) {
     cleanupCalls,
     setTranscribe: (fn) => (transcribeImpl = fn),
     setCleanup: (fn) => (cleanupImpl = fn),
+    setSend: (fn) => (sendImpl = fn),
     setCurrent: (v) => (current = v),
   };
 }
@@ -60,6 +64,9 @@ const raws = (h) => h.sent.filter((m) => m.payload.kind === "raw").map((m) => m.
 const cleans = (h) => h.sent.filter((m) => m.payload.kind === "cleaned").map((m) => m.payload.text);
 const lastRaw = (h) => raws(h).at(-1);
 const lastClean = (h) => cleans(h).at(-1);
+// One `tick` (25ms) is sized to comfortably cover one cleanup pause window
+// (cleanupPauseMs is 5ms in builtinCfg). Tests that count cleanup passes rely on
+// this 5x margin — keep cleanupPauseMs well under tick if either is ever changed.
 const tick = () => new Promise((r) => setTimeout(r, 25));
 
 test("an in-progress chunk shows as the live raw tail", async () => {
@@ -174,6 +181,165 @@ test("no new commit means no redundant re-clean", async () => {
   assert.strictEqual(h.cleanupCalls.length, passesAfterFirst, "no extra clean without a new commit");
 });
 
+test("an empty cleanup result does not re-clean the same transcript forever", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "um uh you know");
+  // Cleanup legitimately strips an all-filler chunk to nothing.
+  h.setCleanup(async () => "");
+  await h.lp.handleAudio(1, chunk(0, true)); // commit -> one cleanup pass returns ""
+  await tick();
+  await tick(); // give any (wrongly) re-armed pause timer room to fire
+  // The empty result is recorded as "this snapshot is cleaned", so the pass is
+  // not retried: exactly one cleanup call, and nothing painted to the overlay.
+  assert.strictEqual(h.cleanupCalls.length, 1, "empty result is not re-cleaned in a loop");
+  assert.strictEqual(cleans(h).length, 0, "an empty clean emits no cleaned line");
+});
+
+test("consecutive empty results then a real one cleans the whole transcript once", async () => {
+  const h = harness();
+  // Two filler-only chunks clean to nothing, then a real one.
+  h.setTranscribe(async () => "um");
+  h.setCleanup(async () => "");
+  await h.lp.handleAudio(1, chunk(0, true));
+  await tick();
+  h.setTranscribe(async () => "uh");
+  await h.lp.handleAudio(1, chunk(1, true));
+  await tick();
+  h.setTranscribe(async () => "real");
+  h.setCleanup(async (raw) => {
+    assert.strictEqual(raw, "um uh real", "the non-empty pass cleans the whole transcript, not a delta");
+    return "Real.";
+  });
+  await h.lp.handleAudio(1, chunk(2, true));
+  await tick();
+  assert.strictEqual(h.cleanupCalls.length, 3, "each commit cleaned once; no empty-driven loop");
+  assert.deepStrictEqual(cleans(h), ["Real."], "the two empties emitted nothing; the real one emitted once");
+});
+
+test("an empty result does not poison a later real commit", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "first");
+  h.setCleanup(async () => ""); // empty advances lastCleanedRaw to "first"
+  await h.lp.handleAudio(1, chunk(0, true));
+  await tick();
+  // A later commit must still re-clean the WHOLE transcript, not skip because
+  // the empty pass advanced the marker.
+  h.setTranscribe(async () => "second");
+  let seen = null;
+  h.setCleanup(async (raw) => {
+    seen = raw;
+    return "First second.";
+  });
+  await h.lp.handleAudio(1, chunk(1, true));
+  await tick();
+  assert.strictEqual(seen, "first second", "the later pass re-cleans the full transcript");
+  assert.strictEqual(lastClean(h), "First second.");
+});
+
+test("a cleaned send that throws leaves the marker so the next pause retries", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "the first chunk");
+  h.setCleanup(async () => "The first chunk.");
+  let throwOnce = true;
+  h.setSend((channel, payload) => {
+    if (payload.kind === "cleaned" && throwOnce) {
+      throwOnce = false;
+      throw new Error("overlay gone"); // marker must NOT have advanced yet
+    }
+    h.sent.push({ channel, payload });
+  });
+  await h.lp.handleAudio(1, chunk(0, true)); // pass 1: send throws -> catch -> re-arm
+  await tick();
+  await tick(); // pass 2 resends successfully
+  assert.deepStrictEqual(cleans(h), ["The first chunk."], "the cleaned line is retried after a thrown send");
+});
+
+test("cancel keeps cleanup drop-if-busy: no second concurrent cleanup mid-flight", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "old words");
+  const d = deferred();
+  let inFlight = 0;
+  h.setCleanup(() => {
+    inFlight++;
+    return d.promise;
+  });
+  await h.lp.handleAudio(1, chunk(0, true)); // cleanup starts, awaits d (inFlight=1)
+  await tick();
+  h.lp.cancel(); // mid-cleanup — must NOT free cleanupBusy
+  // A new session commits while the cancelled session's cleanup is still running.
+  h.setTranscribe(async () => "new words");
+  await h.lp.handleAudio(2, chunk(0, true));
+  await tick();
+  assert.strictEqual(inFlight, 1, "the in-flight pass still holds the busy flag; no concurrent second pass");
+  d.resolve("done"); // let the in-flight pass settle so no pending promise leaks
+  await tick();
+});
+
+test("a failed cleanup pass retries on the next pause and recovers", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "the first chunk");
+  let n = 0;
+  h.setCleanup(async (raw) => {
+    n++;
+    if (n === 1) throw new Error("cleanup boom"); // lastCleanedRaw must stay put
+    assert.strictEqual(raw, "the first chunk", "the retry re-cleans the whole transcript");
+    return "The first chunk.";
+  });
+  await h.lp.handleAudio(1, chunk(0, true)); // commit -> pass 1 throws -> re-arm
+  await tick();
+  await tick(); // pass 2 recovers
+  assert.ok(n >= 2, "the failed pass was retried");
+  assert.deepStrictEqual(cleans(h), ["The first chunk."], "nothing emitted until the recovery");
+});
+
+test("a result resolving after the session goes stale is dropped without poisoning later passes", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "early words");
+  const d = deferred();
+  h.setCleanup(() => d.promise);
+  await h.lp.handleAudio(1, chunk(0, true)); // commit -> pass starts, awaits d
+  await tick();
+  h.setCurrent(false); // session goes stale mid-cleanup
+  d.resolve("Early words.");
+  await tick();
+  assert.strictEqual(cleans(h).length, 0, "the stale result is dropped");
+
+  // A later, current pass must still clean the WHOLE transcript — proving the
+  // dropped pass left lastCleanedRaw untouched rather than marking it cleaned.
+  h.setCurrent(true);
+  h.setTranscribe(async () => "more words");
+  let seen = null;
+  h.setCleanup(async (raw) => {
+    seen = raw;
+    return "Early words, more words.";
+  });
+  await h.lp.handleAudio(1, chunk(1, true));
+  await tick();
+  assert.strictEqual(seen, "early words more words", "the later pass re-cleans the full transcript");
+  assert.strictEqual(lastClean(h), "Early words, more words.");
+});
+
+test("a later whole-transcript pass rewrites earlier cleaned text (replace, not append)", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "hello");
+  h.setCleanup(async () => "Hello.");
+  await h.lp.handleAudio(1, chunk(0, true));
+  await tick();
+  assert.strictEqual(lastClean(h), "Hello.");
+
+  // The second chunk's whole-transcript clean reworks the earlier sentence too;
+  // the cleaned line is replaced with the new result, not appended to the old.
+  h.setTranscribe(async () => "there world");
+  h.setCleanup(async (raw) => {
+    assert.strictEqual(raw, "hello there world", "the pass cleans the full transcript");
+    return "Hi there, world.";
+  });
+  await h.lp.handleAudio(1, chunk(1, true));
+  await tick();
+  assert.strictEqual(lastClean(h), "Hi there, world.");
+  assert.ok(!lastClean(h).startsWith("Hello."), "earlier cleaned text was rewritten, not kept");
+});
+
 test("cleanup is skipped when cleanup is disabled", async () => {
   const h = harness({ cfg: builtinCfg({ cleanup: { enabled: false, engine: "builtin" } }) });
   await h.lp.handleAudio(1, chunk(0, true));
@@ -239,6 +405,11 @@ test("cleanup re-arms when more committed while a cleanup pass ran", async () =>
 
   assert.strictEqual(cleanupN, 2, "a second cleanup pass ran for the later chunk");
   assert.ok(cleans(h).some((t) => t.includes("chunk one")), "the later chunk was cleaned");
+  // Each pass cleans the exact committed snapshot at its scheduling time — the
+  // first the chunk-0 text, the second the full transcript — not a delta or a
+  // stale value.
+  assert.strictEqual(h.cleanupCalls[0][0], "chunk zero", "first pass cleaned the chunk-0 snapshot");
+  assert.strictEqual(h.cleanupCalls[1][0], "chunk zero chunk one", "second pass cleaned the full snapshot");
 });
 
 test("cancel during a cleanup await prevents a re-armed pause timer", async () => {

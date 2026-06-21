@@ -36,20 +36,23 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   let cleanupBusy = false;
   let abortController = null; // aborts in-flight partial work when recording ends
 
-  // Append-only accumulators.
+  // Decode accumulators — append-only; only the in-progress chunk is re-decoded,
+  // so decode cost stays flat however long the dictation runs.
   let committedRaw = ""; // text from finalized chunks (never re-decoded)
-  let committedClean = ""; // whole committed raw, cleaned in one pass (mirrors the final clean)
   let liveRaw = ""; // decode of the current in-progress chunk (replaced each tick)
-  let lastCleanedRaw = ""; // the committedRaw value committedClean was produced from
   let lastSeq = -1; // highest chunk seq we've committed
+  // Cleanup change marker — the trimmed committedRaw snapshot the last cleanup
+  // pass consumed. The cleaned text isn't stored (it's sent straight to the
+  // overlay); this is all the cleanup side keeps. Always a trimmed value, so the
+  // skip and re-arm guards both compare cleanTarget() against it in lock-step.
+  let lastCleanedRaw = "";
   let pauseTimer = null; // fires a cleanup pass once a chunk has committed + settled
 
   function reset() {
     committedRaw = "";
-    committedClean = "";
     liveRaw = "";
-    lastCleanedRaw = "";
     lastSeq = -1;
+    lastCleanedRaw = "";
   }
 
   function cancel() {
@@ -61,8 +64,12 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
       clearTimeout(pauseTimer);
       pauseTimer = null;
     }
+    // Don't force-clear cleanupBusy: an in-flight cleanup clears it in its own
+    // finally (and its aborted signal makes it drop its result). Clearing it here
+    // would let a new session start a second concurrent cleanup on the engine
+    // worker before the old one returns. sttBusy is cleared so the next session's
+    // raw preview isn't gated on a slow in-flight transcribe.
     sttBusy = false;
-    cleanupBusy = false;
     reset();
   }
 
@@ -74,6 +81,13 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
 
   function pushRaw() {
     sendToOverlay("pipeline:partial", { kind: "raw", text: joinText(committedRaw, liveRaw) });
+  }
+
+  // The committed transcript a cleanup pass would clean. Trimmed so it compares
+  // cleanly against lastCleanedRaw; the skip guard and the re-arm guard both read
+  // it, keeping "nothing new to clean" defined in exactly one place.
+  function cleanTarget() {
+    return committedRaw.trim();
   }
 
   // Handle one chunk's audio. `seq` identifies the chunk; `final` means this is
@@ -133,18 +147,25 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   async function runCleanupPass(sid, cfg, signal) {
     if (stale(sid, signal)) return;
     if (cleanupBusy) return; // drop-if-busy
-    const toClean = committedRaw.trim();
+    const toClean = cleanTarget();
     if (!toClean || toClean === lastCleanedRaw) return; // nothing new committed to clean
     cleanupBusy = true;
     try {
       const cleaned = await runCleanup(toClean, cfg.cleanup, signal);
       if (stale(sid, signal)) return; // lastCleanedRaw unchanged; a later pass retries
       const text = (cleaned || "").trim();
+      // Send first, then mark this snapshot cleaned. Advancing the marker only
+      // AFTER the send means a thrown send (e.g. the overlay was torn down at
+      // end-of-recording) falls through to catch with lastCleanedRaw un-advanced,
+      // so the next pause retries instead of silently dropping the cleaned line.
+      // An empty result is still a successful pass — it skips the send but still
+      // advances the marker, so a filler-only chunk that cleans to nothing isn't
+      // re-cleaned forever. Only the catch (failure) and stale paths leave the
+      // marker behind to retry.
       if (text) {
-        committedClean = text;
-        lastCleanedRaw = toClean;
-        sendToOverlay("pipeline:partial", { kind: "cleaned", text: committedClean });
+        sendToOverlay("pipeline:partial", { kind: "cleaned", text });
       }
+      lastCleanedRaw = toClean;
     } catch {
       // Cosmetic: a failed pass just leaves the raw tail showing. lastCleanedRaw
       // is unchanged, so the next pause re-cleans the whole transcript and retries.
@@ -152,7 +173,7 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
       cleanupBusy = false;
       // More may have committed while we were cleaning; if so, re-clean after the
       // next pause. Bail if stale (cancelled/ended) so a dead pass can't re-arm.
-      if (!stale(sid, signal) && committedRaw.trim() !== lastCleanedRaw) {
+      if (!stale(sid, signal) && cleanTarget() !== lastCleanedRaw) {
         scheduleCleanup(sid, cfg, signal);
       }
     }

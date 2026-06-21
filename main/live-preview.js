@@ -140,10 +140,15 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
       const cleaned = await runCleanup(toClean, cfg.cleanup, signal);
       if (stale(sid, signal)) return; // lastCleanedRaw unchanged; a later pass retries
       const text = (cleaned || "").trim();
+      // Mark this snapshot cleaned even when the result is empty: an empty clean
+      // is a successful pass (cleanup can legitimately strip a filler-only chunk
+      // to nothing), so we must NOT re-clean the same text next pause. Only the
+      // failure (catch) and stale paths leave lastCleanedRaw behind to retry —
+      // advancing it here on empty is what stops an endless re-clean loop.
+      lastCleanedRaw = toClean;
       if (text) {
         committedClean = text;
-        lastCleanedRaw = toClean;
-        sendToOverlay("pipeline:partial", { kind: "cleaned", text: committedClean });
+        sendToOverlay("pipeline:partial", { kind: "cleaned", text });
       }
     } catch {
       // Cosmetic: a failed pass just leaves the raw tail showing. lastCleanedRaw

@@ -174,6 +174,20 @@ test("no new commit means no redundant re-clean", async () => {
   assert.strictEqual(h.cleanupCalls.length, passesAfterFirst, "no extra clean without a new commit");
 });
 
+test("an empty cleanup result does not re-clean the same transcript forever", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "um uh you know");
+  // Cleanup legitimately strips an all-filler chunk to nothing.
+  h.setCleanup(async () => "");
+  await h.lp.handleAudio(1, chunk(0, true)); // commit -> one cleanup pass returns ""
+  await tick();
+  await tick(); // give any (wrongly) re-armed pause timer room to fire
+  // The empty result is recorded as "this snapshot is cleaned", so the pass is
+  // not retried: exactly one cleanup call, and nothing painted to the overlay.
+  assert.strictEqual(h.cleanupCalls.length, 1, "empty result is not re-cleaned in a loop");
+  assert.strictEqual(cleans(h).length, 0, "an empty clean emits no cleaned line");
+});
+
 test("cleanup is skipped when cleanup is disabled", async () => {
   const h = harness({ cfg: builtinCfg({ cleanup: { enabled: false, engine: "builtin" } }) });
   await h.lp.handleAudio(1, chunk(0, true));

@@ -97,10 +97,12 @@ The quick brown fox jumps              ← cleaned (main line, settled)
   every raw tick, keeping pace with the voice. As cleanup catches up, the tail
   shrinks and the cleaned line grows.
 
-The two layers are reconciled by prefix: the raw tail is `raw` with the
-already-cleaned span removed. Because cleanup runs over the *full* raw text each
-time (not per-segment), the cleaned line is internally coherent and re-cleaning a
-stable prefix yields stable output, which keeps the main line from flickering.
+The two layers are reconciled by anchoring the raw tail on the cleaned line's
+last content word (cleanup's capitalization/punctuation edits and filler removal
+break literal prefix alignment) — see `renderer/transcript.js`. Because cleanup
+runs over the *full* raw text each time (not per-segment), the cleaned line is
+internally coherent and re-cleaning a stable prefix yields stable output, which
+keeps the main line from flickering.
 
 ### Changes
 
@@ -116,9 +118,9 @@ stable prefix yields stable output, which keeps the main line from flickering.
      outlives a session.
    - Handle `pipeline:partial { kind, text }` where `kind` is `"raw"` or
      `"cleaned"`: update the raw tail or the cleaned line respectively, then
-     re-derive the tail as `raw` minus the cleaned prefix so the two layers stay
-     reconciled. Clear both on `record:start` and on the final `done` status
-     (the delivered transcript supersedes the preview).
+     re-derive the tail by anchoring on the cleaned line's last content word so
+     the two layers stay reconciled. Clear both on `record:start` and on the
+     final `done` status (the delivered transcript supersedes the preview).
    - Gate the whole thing on a `livePreview` flag passed in `record:start`
      (see settings below) so it's off-path when disabled.
 
@@ -227,6 +229,10 @@ stable prefix yields stable output, which keeps the main line from flickering.
   `audio:partial` traffic, no partial cleanup).
 - Cancelling mid-dictation tears down the partial timer and drops any in-flight
   partial decode and cleanup.
+- A filler-only chunk that cleanup strips to empty is fine: the empty result is
+  recorded as cleaned (not re-cleaned forever), and nothing is painted for it.
+- A failed live cleanup pass self-heals: it leaves the raw tail showing and
+  silently re-cleans the whole transcript on the next pause.
 
 ---
 

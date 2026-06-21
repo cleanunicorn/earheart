@@ -2,12 +2,21 @@
 // side-channel state machine separate from the pipeline's authoritative
 // record→transcribe→clean→deliver flow, which just wires it.
 //
-// Append-only chunking is what keeps cost flat: the overlay ships audio in
-// chunks and we re-decode only the current in-progress chunk, so decode (and
-// incremental cleanup) cost is bounded by one chunk — not the whole growing
-// buffer, which was O(n²) and stalled the app after ~30s. The accumulator
-// comments below describe the resulting state. All best-effort and silent: a
-// dropped or failed partial is cosmetic and must never disturb the dictation.
+// Append-only chunking is what keeps DECODE cost flat: the overlay ships audio
+// in chunks and we re-decode only the current in-progress chunk, so decode cost
+// is bounded by one chunk — not the whole growing buffer, which was O(n²) and
+// stalled the app after ~30s. The accumulator comments below describe the
+// resulting state.
+//
+// Cleanup, by contrast, re-cleans the WHOLE committed transcript on each pause
+// rather than appending per-chunk: `clean(a) + clean(b)` reads very differently
+// from `clean(a + b)` (filler removal, sentence merging and punctuation all need
+// surrounding context), so cleaning the whole thing is what makes the live
+// cleaned line track the authoritative final whole-text clean. It's O(n) but
+// gated to pauses and drop-if-busy, so it stays cheap in practice.
+//
+// All best-effort and silent: a dropped or failed partial is cosmetic and must
+// never disturb the dictation.
 //
 // Dependencies are injected so the module stays free of the pipeline's private
 // session/state and is unit-testable:
@@ -29,9 +38,9 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
 
   // Append-only accumulators.
   let committedRaw = ""; // text from finalized chunks (never re-decoded)
-  let committedClean = ""; // cleaned text from finalized chunks
+  let committedClean = ""; // whole committed raw, cleaned in one pass (mirrors the final clean)
   let liveRaw = ""; // decode of the current in-progress chunk (replaced each tick)
-  let uncleanedRaw = ""; // committed raw text awaiting cleanup
+  let lastCleanedRaw = ""; // the committedRaw value committedClean was produced from
   let lastSeq = -1; // highest chunk seq we've committed
   let pauseTimer = null; // fires a cleanup pass once a chunk has committed + settled
 
@@ -39,7 +48,7 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
     committedRaw = "";
     committedClean = "";
     liveRaw = "";
-    uncleanedRaw = "";
+    lastCleanedRaw = "";
     lastSeq = -1;
   }
 
@@ -89,7 +98,6 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
         lastSeq = seq;
         committedRaw = joinText(committedRaw, text);
         liveRaw = "";
-        uncleanedRaw = joinText(uncleanedRaw, text);
         pushRaw();
         scheduleCleanup(sid, cfg, signal);
       } else {
@@ -105,9 +113,10 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
     }
   }
 
-  // After a chunk commits and the dictation settles for the pause window, clean
-  // ONLY the newly committed text (uncleanedRaw) and append it to the cleaned
-  // line. Flat cost — we never re-clean the whole transcript.
+  // After a chunk commits and the dictation settles for the pause window,
+  // re-clean the WHOLE committed transcript and replace the cleaned line with the
+  // result. Cleaning the whole thing (rather than appending per-chunk) is what
+  // makes the live cleaned line read like the authoritative final clean.
   function scheduleCleanup(sid, cfg, signal) {
     // Only clean live when cleanup is on and runs in-process: a remote cleanup
     // endpoint shouldn't be hit repeatedly mid-dictation. The final pass on stop
@@ -124,31 +133,26 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   async function runCleanupPass(sid, cfg, signal) {
     if (stale(sid, signal)) return;
     if (cleanupBusy) return; // drop-if-busy
-    const toClean = uncleanedRaw.trim();
-    if (!toClean) return; // nothing new committed to clean
+    const toClean = committedRaw.trim();
+    if (!toClean || toClean === lastCleanedRaw) return; // nothing new committed to clean
     cleanupBusy = true;
-    uncleanedRaw = "";
     try {
       const cleaned = await runCleanup(toClean, cfg.cleanup, signal);
-      if (stale(sid, signal)) {
-        // Put the text back so a later (non-stale) pass still cleans it.
-        uncleanedRaw = joinText(toClean, uncleanedRaw);
-        return;
-      }
+      if (stale(sid, signal)) return; // lastCleanedRaw unchanged; a later pass retries
       const text = (cleaned || "").trim();
       if (text) {
-        committedClean = joinText(committedClean, text);
+        committedClean = text;
+        lastCleanedRaw = toClean;
         sendToOverlay("pipeline:partial", { kind: "cleaned", text: committedClean });
       }
     } catch {
-      // Cosmetic: a failed partial cleanup just leaves the raw tail showing.
-      // Restore the pending text so the next pass retries it.
-      uncleanedRaw = joinText(toClean, uncleanedRaw);
+      // Cosmetic: a failed pass just leaves the raw tail showing. lastCleanedRaw
+      // is unchanged, so the next pause re-cleans the whole transcript and retries.
     } finally {
       cleanupBusy = false;
-      // More may have committed while we were cleaning; if so, clean it after the
+      // More may have committed while we were cleaning; if so, re-clean after the
       // next pause. Bail if stale (cancelled/ended) so a dead pass can't re-arm.
-      if (!stale(sid, signal) && uncleanedRaw.trim()) {
+      if (!stale(sid, signal) && committedRaw.trim() !== lastCleanedRaw) {
         scheduleCleanup(sid, cfg, signal);
       }
     }

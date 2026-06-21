@@ -64,8 +64,12 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
       clearTimeout(pauseTimer);
       pauseTimer = null;
     }
+    // Don't force-clear cleanupBusy: an in-flight cleanup clears it in its own
+    // finally (and its aborted signal makes it drop its result). Clearing it here
+    // would let a new session start a second concurrent cleanup on the engine
+    // worker before the old one returns. sttBusy is cleared so the next session's
+    // raw preview isn't gated on a slow in-flight transcribe.
     sttBusy = false;
-    cleanupBusy = false;
     reset();
   }
 

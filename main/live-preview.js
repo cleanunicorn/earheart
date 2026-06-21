@@ -41,20 +41,18 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   let committedRaw = ""; // text from finalized chunks (never re-decoded)
   let liveRaw = ""; // decode of the current in-progress chunk (replaced each tick)
   let lastSeq = -1; // highest chunk seq we've committed
-  // Cleanup mirror — whole-text replace, not append.
-  let committedClean = ""; // whole committed raw, cleaned in one pass (mirrors the final clean)
-  // The trimmed committedRaw that committedClean mirrors — the cleanup change
-  // marker. Always holds a trimmed value, so the skip and re-arm guards both
-  // compare cleanTarget() (committedRaw.trim()) against it to stay in lock-step.
+  // Cleanup change marker — the trimmed committedRaw snapshot the last cleanup
+  // pass consumed. The cleaned text isn't stored (it's sent straight to the
+  // overlay); this is all the cleanup side keeps. Always a trimmed value, so the
+  // skip and re-arm guards both compare cleanTarget() against it in lock-step.
   let lastCleanedRaw = "";
   let pauseTimer = null; // fires a cleanup pass once a chunk has committed + settled
 
   function reset() {
     committedRaw = "";
-    committedClean = "";
     liveRaw = "";
-    lastCleanedRaw = "";
     lastSeq = -1;
+    lastCleanedRaw = "";
   }
 
   function cancel() {
@@ -152,16 +150,18 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
       const cleaned = await runCleanup(toClean, cfg.cleanup, signal);
       if (stale(sid, signal)) return; // lastCleanedRaw unchanged; a later pass retries
       const text = (cleaned || "").trim();
-      // Mark this snapshot cleaned even when the result is empty: an empty clean
-      // is a successful pass (cleanup can legitimately strip a filler-only chunk
-      // to nothing), so we must NOT re-clean the same text next pause. Only the
-      // failure (catch) and stale paths leave lastCleanedRaw behind to retry —
-      // advancing it here on empty is what stops an endless re-clean loop.
-      lastCleanedRaw = toClean;
+      // Send first, then mark this snapshot cleaned. Advancing the marker only
+      // AFTER the send means a thrown send (e.g. the overlay was torn down at
+      // end-of-recording) falls through to catch with lastCleanedRaw un-advanced,
+      // so the next pause retries instead of silently dropping the cleaned line.
+      // An empty result is still a successful pass — it skips the send but still
+      // advances the marker, so a filler-only chunk that cleans to nothing isn't
+      // re-cleaned forever. Only the catch (failure) and stale paths leave the
+      // marker behind to retry.
       if (text) {
-        committedClean = text;
         sendToOverlay("pipeline:partial", { kind: "cleaned", text });
       }
+      lastCleanedRaw = toClean;
     } catch {
       // Cosmetic: a failed pass just leaves the raw tail showing. lastCleanedRaw
       // is unchanged, so the next pause re-cleans the whole transcript and retries.

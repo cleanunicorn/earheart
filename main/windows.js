@@ -177,6 +177,18 @@ function showOverlay() {
   const { x, y } = overlayPosition();
   win.setBounds({ x, y, width: OVERLAY_WIDTH, height: OVERLAY_HEIGHT });
   win.showInactive();
+  // Transparent, frameless windows don't begin hit-testing mouse input until
+  // their bounds actually change *while visible*. The setBounds above runs while
+  // the window is hidden and resolves to the same base size, so it's a no-op for
+  // hit-testing — which is why Stop/Cancel and drag were dead until the live
+  // transcript first grew the window (the first real on-screen resize). Nudge the
+  // height by a pixel and back to force that geometry update now, so the controls
+  // work the moment the overlay appears. This is the cross-platform half of the
+  // fix; macOS additionally needs acceptFirstMouse (set on the window) because an
+  // inactive window there swallows the first click regardless of hit-testing.
+  const [w, h] = win.getSize();
+  win.setSize(w, h + 1);
+  win.setSize(w, h);
   win.webContents.send("overlay:show");
 }
 

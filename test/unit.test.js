@@ -235,12 +235,15 @@ test("linux launch command starts hidden and prefers $APPIMAGE", () => {
 });
 
 test("linux autostart path honours XDG_CONFIG_HOME", () => {
+  const path = require("node:path");
   const saved = process.env.XDG_CONFIG_HOME;
   try {
     process.env.XDG_CONFIG_HOME = "/tmp/cfg";
+    // Build the expected path with path.join so the separator matches the host
+    // OS — the test runs on Windows CI too, where join uses backslashes.
     assert.strictEqual(
       autostart.linuxAutostartPath(),
-      "/tmp/cfg/autostart/earheart.desktop"
+      path.join("/tmp/cfg", "autostart", "earheart.desktop")
     );
   } finally {
     if (saved === undefined) delete process.env.XDG_CONFIG_HOME;

@@ -1,0 +1,66 @@
+name: PR title
+
+# The PR title is load-bearing: auto-release.yml reads its conventional-commit
+# prefix to decide the version bump (feat → minor, fix/perf/refactor → patch,
+# type! → major, anything else → no release). A typo'd or free-form title
+# silently ships the wrong bump (or no release at all), so validate the title
+# follows Conventional Commits before the PR can merge.
+#
+# Format checked:  type(optional scope)!: description
+#   type   — one of the Conventional Commits types below
+#   scope  — optional, in parentheses, e.g. feat(overlay):
+#   !      — optional, marks a breaking change (drives a major bump)
+#   :<sp>  — a colon and a single space, then a non-empty description
+
+on:
+  pull_request:
+    # `edited` matters most: it fires when the title is changed after opening,
+    # so a fixed-up title re-runs the check.
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR title is Conventional Commits style
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # The regex lives in a variable: bash cannot parse `[^)]` inside an
+          # inline [[ =~ ]] expression (same reason as auto-release.yml).
+          title_re='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .+'
+          if [[ "$TITLE" =~ $title_re ]]; then
+            echo "PR title OK: $TITLE"
+            exit 0
+          fi
+          echo "::error title=Invalid PR title::\"$TITLE\" is not a Conventional Commits title"
+          cat <<'EOF'
+          The PR title must follow Conventional Commits, because auto-release.yml
+          turns its prefix into the release version bump.
+
+          Format:  type(optional scope)!: description
+
+          Allowed types:
+            feat      a new feature                 → minor release
+            fix       a bug fix                      → patch release
+            perf      a performance improvement      → patch release
+            refactor  a code change, no behavior     → patch release
+            docs      documentation only             → no release
+            style     formatting, no code change     → no release
+            test      adding or fixing tests         → no release
+            build     build system or dependencies   → no release
+            ci        CI configuration               → no release
+            chore     anything else                  → no release
+            revert    reverts a previous commit      → no release
+
+          Add ! before the colon for a breaking change (feat!: ...) → major release.
+
+          Examples:
+            feat(overlay): add a copy-to-clipboard button
+            fix: accept first mouse so overlay controls work
+            chore!: drop support for Node 20
+          EOF
+          exit 1

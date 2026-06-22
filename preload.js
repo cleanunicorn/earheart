@@ -28,6 +28,7 @@ const SEND = new Set([
 const INVOKE = new Set([
   "settings:get",
   "settings:save",
+  "settings:close",
   "wizard:complete",
   "wizard:skip",
   "wizard:open",

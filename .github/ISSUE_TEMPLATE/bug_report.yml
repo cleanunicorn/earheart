@@ -1,0 +1,102 @@
+name: Bug report
+description: Something in Earheart isn't working the way you expect.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug! A clear, reproducible report
+        is the fastest path to a fix. Please fill in as much as you can.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+      placeholder: |
+        I pressed the hotkey, spoke, and pressed it again, but no text was pasted.
+        I expected the transcript to land in the focused app.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact sequence that triggers the bug.
+      placeholder: |
+        1. Launch Earheart
+        2. Focus a text field in <app>
+        3. Press Ctrl/Cmd+Shift+Space, speak, press again
+        4. …
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      description: e.g. macOS 15.5, Windows 11 23H2, Ubuntu 24.04 (and desktop, e.g. GNOME/Wayland).
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Earheart version
+      description: From the tray menu / installer filename, or the commit if running from source.
+      placeholder: v0.8.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stt-engine
+    attributes:
+      label: Speech-to-text engine
+      description: Settings → Speech-to-text.
+      options:
+        - Built-in (Parakeet, in-process)
+        - Local server (stt-server)
+        - Remote / hosted (OpenAI-compatible)
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: cleanup-engine
+    attributes:
+      label: Cleanup engine
+      description: Settings → Cleanup.
+      options:
+        - Built-in (Gemma, in-process)
+        - Remote / hosted (OpenAI-compatible)
+        - Cleanup disabled
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / errors
+      description: |
+        Any error text, console output, or relevant log lines. Launch from a
+        terminal (`npm start`) to capture main-process logs if you can.
+      render: shell
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, the affected target app, network setup, or other context.

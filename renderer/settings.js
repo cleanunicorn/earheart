@@ -381,15 +381,19 @@ $("save").addEventListener("click", async () => {
   }
   current = result.settings;
   if (result.hotkey.ok) {
+    // Clean save — close the window so the user doesn't have to dismiss it.
     save.textContent = "Saved";
     save.className = "status ok";
     hotkeyStatus.textContent = "";
-  } else {
-    save.textContent = "Saved, but the hotkey could not be registered";
-    save.className = "status err";
-    hotkeyStatus.textContent = result.hotkey.error;
-    hotkeyStatus.className = "status err";
+    earheart.invoke("settings:close");
+    return;
   }
+  // The hotkey couldn't be registered: keep the window open so the error is
+  // visible and the user can pick a combination that works.
+  save.textContent = "Saved, but the hotkey could not be registered";
+  save.className = "status err";
+  hotkeyStatus.textContent = result.hotkey.error;
+  hotkeyStatus.className = "status err";
   setTimeout(() => {
     save.textContent = "";
   }, 4000);

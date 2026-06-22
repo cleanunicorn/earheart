@@ -106,18 +106,7 @@
 
       <!-- 4. Speech-to-text -->
       <section class="step" id="step-stt">
-        <h2>Where should speech become text?</h2>
-        <div class="field">
-          <label class="choice">
-            <input type="radio" name="stt-mode" value="builtin" checked />
-            On this computer, built in
-            <span class="muted">(recommended — no setup)</span>
-          </label>
-          <label class="choice">
-            <input type="radio" name="stt-mode" value="remote" />
-            A remote service <span class="muted">(OpenAI, Groq, your own server, …)</span>
-          </label>
-        </div>
+        <h2>Speech becomes text on this computer</h2>
 
         <div id="stt-builtin-fields">
           <div class="value-card">
@@ -137,30 +126,10 @@
           </div>
         </div>
 
-        <div id="stt-remote-fields" hidden>
-          <p class="lead">
-            Any service that speaks the OpenAI audio transcription API works.
-          </p>
-          <div class="field">
-            <label for="stt-url">Base URL</label>
-            <input id="stt-url" placeholder="https://api.openai.com/v1" />
-          </div>
-          <div class="grid-2">
-            <div class="field">
-              <label for="stt-key">API key</label>
-              <input id="stt-key" type="password" autocomplete="off" />
-            </div>
-            <div class="field">
-              <label for="stt-model">Model</label>
-              <input id="stt-model" placeholder="whisper-1" />
-            </div>
-          </div>
-        </div>
-
-        <div class="row" id="stt-test-row" hidden>
-          <button id="stt-test">Test connection</button>
-          <span id="stt-test-result" class="status"></span>
-        </div>
+        <p class="hint">
+          Prefer a remote service (OpenAI, Groq, your own server)? You can
+          switch to one anytime in Settings.
+        </p>
       </section>
 
       <!-- 5. Cleanup -->
@@ -179,17 +148,6 @@
         </div>
 
         <div id="cleanup-fields">
-          <div class="field">
-            <label class="choice">
-              <input type="radio" name="cleanup-mode" value="builtin" checked />
-              On this computer, built in <span class="muted">(no setup)</span>
-            </label>
-            <label class="choice">
-              <input type="radio" name="cleanup-mode" value="external" />
-              An OpenAI-compatible service <span class="muted">(Ollama, LM Studio, OpenAI, …)</span>
-            </label>
-          </div>
-
           <div id="cleanup-builtin-fields">
             <div class="value-card">
               <p class="lead">
@@ -204,26 +162,10 @@
             </div>
           </div>
 
-          <div id="cleanup-external-fields" hidden>
-            <div class="field">
-              <label for="cleanup-url">Base URL</label>
-              <input id="cleanup-url" placeholder="http://127.0.0.1:11434/v1" />
-            </div>
-            <div class="grid-2">
-              <div class="field">
-                <label for="cleanup-key">API key <span class="muted">(optional for local servers)</span></label>
-                <input id="cleanup-key" type="password" autocomplete="off" />
-              </div>
-              <div class="field">
-                <label for="cleanup-model">Model</label>
-                <input id="cleanup-model" placeholder="llama3.2" />
-              </div>
-            </div>
-            <div class="row">
-              <button id="cleanup-test">Test connection</button>
-              <span id="cleanup-test-result" class="status"></span>
-            </div>
-          </div>
+          <p class="hint">
+            Prefer an OpenAI-compatible service (Ollama, LM Studio, OpenAI)? You
+            can point cleanup at one anytime in Settings.
+          </p>
         </div>
       </section>
 

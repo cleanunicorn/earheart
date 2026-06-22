@@ -42,8 +42,10 @@ function init({ applyHotkey, onSettingsChanged }) {
     return { settings: saved, hotkey: hotkeyResult };
   });
 
-  // Close the settings window. The renderer calls this after a successful save
-  // so the user doesn't have to dismiss it manually.
+  // Close the settings window. The renderer calls this only after a clean save
+  // (settings saved *and* the hotkey registered) so the user doesn't have to
+  // dismiss it manually; on a hotkey-registration failure the renderer keeps the
+  // window open instead, so the error stays visible.
   ipcMain.handle("settings:close", () => {
     windows.closeSettings();
   });

@@ -125,7 +125,7 @@ wizard downloads the speech and cleanup models for you.
 If you'd rather run the [Parakeet STT server](stt-server/) as a separate
 process (e.g. to share it with other tools or use a GPU), start it yourself and
 point Earheart's speech-to-text at its URL (default `http://127.0.0.1:8484/v1`)
-in the setup wizard or Settings. Running it needs
+in Settings → Speech-to-text. Running it needs
 [uv](https://docs.astral.sh/uv/getting-started/installation/) installed:
 
 ```bash
@@ -134,8 +134,8 @@ winget install astral-sh.uv                       # Windows
 cd stt-server && uv run earheart-stt              # start the server
 ```
 
-Or point Earheart at a hosted transcription service (OpenAI, Groq, …) — the
-setup wizard and Settings let you enter its URL and API key instead.
+Or point Earheart at a hosted transcription service (OpenAI, Groq, …) —
+Settings → Speech-to-text lets you enter its URL and API key instead.
 
 > **Upgrading from 0.4.x?** The in-process engines are new defaults; your
 > existing configured STT/cleanup endpoints are preserved and keep working
@@ -162,9 +162,10 @@ npm run dist     # installers for the current platform land in dist/
 </p>
 
 On first launch a short setup wizard walks through hotkey, microphone,
-speech-to-text, cleanup and output. The defaults give you fully local, private
-dictation that runs **inside the app**: keep "On this computer, built in" for
-both speech-to-text and cleanup.
+speech-to-text, cleanup and output. It sets up the **on-device engines** for
+both speech-to-text and cleanup, so first-run dictation is fully local and
+private with nothing to configure. Prefer a remote service? Switch any time in
+Settings → Speech-to-text or Settings → Cleanup.
 
 The wizard's last step downloads the models that run on your machine — a small
 Parakeet speech model (≈ 670 MB) and a small Gemma cleanup model (≈ 800 MB) —
@@ -186,7 +187,7 @@ fully local example with [Ollama](https://ollama.com):
 ollama pull llama3.1:8b
 ```
 
-Then in the wizard (or Settings → Cleanup): base URL
+Then in Settings → Cleanup: base URL
 `http://127.0.0.1:11434/v1`, model `llama3.1:8b`. For a hosted service
 instead, use its base URL, API key and model name (e.g. OpenRouter, Groq,
 OpenAI).

@@ -8,7 +8,7 @@ const PRELOAD = path.join(__dirname, "..", "preload.js");
 const RENDERER = path.join(__dirname, "..", "renderer");
 
 const OVERLAY_WIDTH = 360;
-// Base card: grip (~11px) + 56px control row + 12px margin top/bottom.
+// Base card: grip (~12px) + 56px control row + 12px margin top/bottom.
 const OVERLAY_HEIGHT = 92;
 // Matches the card's fade-out transition in overlay.css.
 const OVERLAY_FADE_MS = 200;

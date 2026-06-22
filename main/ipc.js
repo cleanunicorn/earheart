@@ -42,6 +42,12 @@ function init({ applyHotkey, onSettingsChanged }) {
     return { settings: saved, hotkey: hotkeyResult };
   });
 
+  // Close the settings window. The renderer calls this after a successful save
+  // so the user doesn't have to dismiss it manually.
+  ipcMain.handle("settings:close", () => {
+    windows.closeSettings();
+  });
+
   // Settings → Advanced: re-run the setup wizard on demand. The wizard
   // itself doesn't change anything until it is completed.
   ipcMain.handle("wizard:open", () => {

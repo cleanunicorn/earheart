@@ -261,6 +261,10 @@ function closeWizard() {
   if (wizardWindow && !wizardWindow.isDestroyed()) wizardWindow.close();
 }
 
+function closeSettings() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.close();
+}
+
 function sendToSettings(channel, payload) {
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     settingsWindow.webContents.send(channel, payload);
@@ -287,4 +291,5 @@ module.exports = {
   broadcast,
   openWizard,
   closeWizard,
+  closeSettings,
 };

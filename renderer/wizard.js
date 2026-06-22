@@ -126,44 +126,18 @@ async function loadMicrophones() {
   }
 }
 
-/* ---------- speech-to-text mode ---------- */
-
-function sttMode() {
-  return document.querySelector('input[name="stt-mode"]:checked').value;
-}
-
-function syncSttMode() {
-  const mode = sttMode();
-  $("stt-builtin-fields").hidden = mode !== "builtin";
-  $("stt-remote-fields").hidden = mode !== "remote";
-  // The connection test only makes sense for an external endpoint.
-  $("stt-test-row").hidden = mode !== "remote";
-}
-
-document
-  .querySelectorAll('input[name="stt-mode"]')
-  .forEach((radio) => radio.addEventListener("change", syncSttMode));
-
 /* ---------- cleanup ---------- */
-
-function cleanupMode() {
-  return document.querySelector('input[name="cleanup-mode"]:checked').value;
-}
+//
+// The wizard always sets up the built-in (on-device) engines. Switching speech-
+// to-text or cleanup to a remote/OpenAI-compatible service is left to Settings,
+// so first-run setup stays on the happy path. The wizard preserves whatever
+// remote config already exists in settings (collect() spreads it through).
 
 function syncCleanupEnabled() {
   $("cleanup-fields").classList.toggle("disabled", !$("cleanup-enabled").checked);
 }
 
-function syncCleanupMode() {
-  const builtin = cleanupMode() === "builtin";
-  $("cleanup-builtin-fields").hidden = !builtin;
-  $("cleanup-external-fields").hidden = builtin;
-}
-
 $("cleanup-enabled").addEventListener("change", syncCleanupEnabled);
-document
-  .querySelectorAll('input[name="cleanup-mode"]')
-  .forEach((radio) => radio.addEventListener("change", syncCleanupMode));
 
 function populateCleanupModels() {
   const select = $("cleanup-builtin-model");
@@ -190,8 +164,6 @@ function syncCleanupNote() {
 /* ---------- collect wizard choices into a settings object ---------- */
 
 function collect() {
-  const mode = sttMode();
-  const cMode = cleanupMode();
   return {
     ...current,
     output: {
@@ -200,31 +172,17 @@ function collect() {
     },
     stt: {
       ...current.stt,
-      engine: mode,
+      engine: "builtin",
       builtin: { ...current.stt.builtin },
-      ...(mode === "remote"
-        ? {
-            baseUrl: $("stt-url").value.trim() || defaults.stt.baseUrl,
-            apiKey: $("stt-key").value.trim(),
-            model: $("stt-model").value.trim() || defaults.stt.model,
-          }
-        : {}),
     },
     cleanup: {
       ...current.cleanup,
       enabled: $("cleanup-enabled").checked,
-      engine: cMode === "external" ? "remote" : "builtin",
+      engine: "builtin",
       builtin: {
         ...current.cleanup.builtin,
         model: $("cleanup-builtin-model").value,
       },
-      ...(cMode === "external"
-        ? {
-            baseUrl: $("cleanup-url").value.trim() || defaults.cleanup.baseUrl,
-            apiKey: $("cleanup-key").value.trim(),
-            model: $("cleanup-model").value.trim(),
-          }
-        : {}),
     },
     audio: {
       ...current.audio,
@@ -233,36 +191,7 @@ function collect() {
   };
 }
 
-/* ---------- connection tests ---------- */
-
-function bindTest(buttonId, resultId, channel, getCfg) {
-  $(buttonId).addEventListener("click", async () => {
-    const el = $(resultId);
-    el.textContent = "Testing…";
-    el.className = "status";
-    const result = await earheart.invoke(channel, getCfg());
-    if (result.ok) {
-      el.textContent = result.sample ? `OK — "${result.sample}"` : "OK";
-      el.className = "status ok";
-    } else {
-      el.textContent = result.error;
-      el.className = "status err";
-    }
-  });
-}
-
-bindTest("stt-test", "stt-test-result", "stt:test", () => collect().stt);
-bindTest("cleanup-test", "cleanup-test-result", "cleanup:test", () => ({
-  ...collect().cleanup,
-  enabled: true,
-}));
-
 /* ---------- summary ---------- */
-
-const STT_LABELS = {
-  builtin: "Built-in Parakeet (on this computer)",
-  remote: null, // shown as the base URL
-};
 
 function renderSummary() {
   const next = collect();
@@ -270,18 +199,13 @@ function renderSummary() {
   const rows = [
     ["Hotkey", next.hotkey],
     ["Microphone", mic.selectedOptions[0]?.textContent || "System default"],
-    [
-      "Speech-to-text",
-      STT_LABELS[next.stt.engine] || next.stt.baseUrl,
-    ],
+    ["Speech-to-text", "Built-in Parakeet (on this computer)"],
   ];
   if (!next.cleanup.enabled) {
     rows.push(["Cleanup", "Off"]);
-  } else if (next.cleanup.engine === "builtin") {
+  } else {
     const m = modelStatus.cleanup.find((x) => x.id === next.cleanup.builtin.model);
     rows.push(["Cleanup", `Built-in ${m ? m.label : ""} (on this computer)`]);
-  } else {
-    rows.push(["Cleanup", next.cleanup.model || "external service"]);
   }
   rows.push([
     "Output",
@@ -530,15 +454,7 @@ async function finish() {
   modelStatus = await earheart.invoke("models:status");
 
   hotkeyInput.value = current.hotkey;
-  $("cleanup-url").value = current.cleanup.baseUrl;
-  $("cleanup-model").value = current.cleanup.model;
   $("cleanup-enabled").checked = current.cleanup.enabled;
-  document.querySelector(
-    `input[name="stt-mode"][value="${current.stt.engine}"]`
-  ).checked = true;
-  document.querySelector(
-    `input[name="cleanup-mode"][value="${current.cleanup.engine === "builtin" ? "builtin" : "external"}"]`
-  ).checked = true;
   document.querySelector(
     `input[name="output-mode"][value="${current.output.mode}"]`
   ).checked = true;
@@ -549,9 +465,7 @@ async function finish() {
     syncCleanupNote();
   });
 
-  syncSttMode();
   syncCleanupEnabled();
-  syncCleanupMode();
 
   if (platform === "darwin") $("demo-mod").textContent = "⌘";
   if (platform !== "linux") $("wayland-note").style.display = "none";

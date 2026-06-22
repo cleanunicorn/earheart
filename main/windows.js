@@ -120,6 +120,12 @@ function createOverlay() {
     alwaysOnTop: true,
     // Never steal keyboard focus from the app the user is dictating into.
     focusable: false,
+    // A focusable:false window shown with showInactive() is never the active
+    // window, so on macOS its mouse-downs are swallowed to (try to) activate it
+    // instead of reaching the page — leaving Stop/Cancel and drag dead until some
+    // later event jostled the window. acceptFirstMouse delivers that first click
+    // straight to the web contents, so the controls work the moment it appears.
+    acceptFirstMouse: true,
     hasShadow: false,
     webPreferences: {
       preload: PRELOAD,

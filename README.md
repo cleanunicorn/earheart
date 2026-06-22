@@ -62,6 +62,10 @@ OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
 - **Auto-paste, clipboard, or both** — paste straight into the focused app
   (with clipboard restore), paste *and* keep the transcript on the clipboard,
   or clipboard-only if you prefer to paste yourself.
+- **Start on login (optional)** — have Earheart launch into the tray
+  automatically when you sign in, so the hotkey is always ready. Off by
+  default; toggle it under Settings → General. Works on Windows, macOS and
+  Linux.
 - **Local history** — recent transcriptions are kept in a local JSON file so a
   mis-aimed paste never loses a dictation. Can be disabled.
 - **No telemetry, no accounts, no cloud requirement.**

@@ -28,6 +28,11 @@ const DEFAULTS = {
   // Global hotkey (Electron accelerator format). Press once to start
   // recording, press again to stop and transcribe.
   hotkey: "CommandOrControl+Shift+Space",
+  // Launch Earheart automatically at login (it lands in the tray, ready for
+  // the hotkey). Pushed to the OS by main/autostart.js — a native login item
+  // on Windows/macOS, an XDG autostart .desktop file on Linux — on save, and
+  // reconciled on every startup.
+  startOnBoot: false,
   output: {
     // "paste" = type into focused app (restores clipboard afterwards),
     // "paste-copy" = paste AND keep the transcript on the clipboard,

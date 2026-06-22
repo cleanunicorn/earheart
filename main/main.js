@@ -9,6 +9,7 @@ const hotkeys = require("./hotkeys");
 const tray = require("./tray");
 const ipc = require("./ipc");
 const engines = require("./engines");
+const autostart = require("./autostart");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
 const startHidden = process.argv.includes("--hidden");
@@ -41,6 +42,14 @@ function main() {
     // this is a fresh install and the user gets the setup wizard.
     const firstRun = settings.isFirstRun();
     const cfg = settings.get();
+
+    // Reconcile the OS login item with the saved setting on every launch, so a
+    // moved AppImage or an externally-cleared registration self-heals.
+    try {
+      autostart.apply(cfg.startOnBoot);
+    } catch (err) {
+      console.warn(`[earheart] could not apply start-on-boot: ${err.message}`);
+    }
 
     // The renderer asks for microphone and clipboard access; grant those.
     // Everything the renderer can reach is our own local files (no remote

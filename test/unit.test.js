@@ -9,6 +9,7 @@ const http = require("node:http");
 const { encodeWav, encodeSilenceWav, wavToFloat32 } = require("../main/util/wav");
 const { stripThinking } = require("../main/services/cleanup");
 const { deepMerge, migrateLegacy, DEFAULTS } = require("../main/settings");
+const autostart = require("../main/autostart");
 const { listRemoteModels } = require("../main/services/models-remote");
 const { reconcileTranscript } = require("../renderer/transcript");
 
@@ -197,6 +198,57 @@ test("new installs default to in-process engines", () => {
   assert.strictEqual(DEFAULTS.cleanup.enabled, true);
   assert.ok(DEFAULTS.stt.builtin.model);
   assert.ok(DEFAULTS.cleanup.builtin.model);
+});
+
+/* ---------------- start on boot (autostart) ---------------- */
+
+test("start-on-boot defaults to off and survives the merge both ways", () => {
+  assert.strictEqual(DEFAULTS.startOnBoot, false);
+  // A stored true must not be reset to the default false.
+  assert.strictEqual(deepMerge(DEFAULTS, { startOnBoot: true }).startOnBoot, true);
+  assert.strictEqual(deepMerge(DEFAULTS, { startOnBoot: false }).startOnBoot, false);
+});
+
+test("linux autostart entry is a valid XDG desktop file launched hidden", () => {
+  const entry = autostart.linuxDesktopEntry("/opt/Earheart.AppImage --hidden");
+  assert.match(entry, /^\[Desktop Entry\]/);
+  assert.match(entry, /\nType=Application\n/);
+  assert.match(entry, /\nExec=\/opt\/Earheart\.AppImage --hidden\n/);
+  // GNOME treats a missing flag as disabled, so it must be present and true.
+  assert.match(entry, /\nX-GNOME-Autostart-enabled=true\n/);
+});
+
+test("linux launch command starts hidden and prefers $APPIMAGE", () => {
+  const saved = process.env.APPIMAGE;
+  try {
+    process.env.APPIMAGE = "/home/u/Earheart.AppImage";
+    assert.strictEqual(
+      autostart.linuxLaunchCommand(),
+      "/home/u/Earheart.AppImage --hidden"
+    );
+    delete process.env.APPIMAGE;
+    assert.ok(autostart.linuxLaunchCommand().endsWith(" --hidden"));
+  } finally {
+    if (saved === undefined) delete process.env.APPIMAGE;
+    else process.env.APPIMAGE = saved;
+  }
+});
+
+test("linux autostart path honours XDG_CONFIG_HOME", () => {
+  const path = require("node:path");
+  const saved = process.env.XDG_CONFIG_HOME;
+  try {
+    process.env.XDG_CONFIG_HOME = "/tmp/cfg";
+    // Build the expected path with path.join so the separator matches the host
+    // OS — the test runs on Windows CI too, where join uses backslashes.
+    assert.strictEqual(
+      autostart.linuxAutostartPath(),
+      path.join("/tmp/cfg", "autostart", "earheart.desktop")
+    );
+  } finally {
+    if (saved === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = saved;
+  }
 });
 
 /* ---------------- live preview ---------------- */

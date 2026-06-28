@@ -7,23 +7,46 @@ const history = require("./history");
 const windows = require("./windows");
 const route = require("./services/route");
 const engines = require("./engines");
+const autostart = require("./autostart");
 const { listRemoteModels } = require("./services/models-remote");
 const { encodeSilenceWav } = require("./util/wav");
 
 // In-flight model downloads, so the UI can cancel them. Keyed by kind:modelId.
 const downloads = new Map();
 
+// Push the start-on-boot choice to the OS, swallowing failures (e.g. a
+// read-only autostart dir) so a save never fails over a login-item glitch.
+function applyAutostart(cfg) {
+  try {
+    autostart.apply(cfg.startOnBoot);
+  } catch (err) {
+    console.warn(`[earheart] could not apply start-on-boot: ${err.message}`);
+  }
+}
+
 function init({ applyHotkey, onSettingsChanged }) {
-  ipcMain.handle("settings:get", () => ({
-    settings: settings.get(),
-    defaults: settings.DEFAULTS,
-    platform: process.platform,
-    version: app.getVersion(),
-  }));
+  ipcMain.handle("settings:get", () => {
+    // Shallow copy so reporting the live OS state doesn't mutate the cache.
+    const cfg = { ...settings.get() };
+    // Report the real OS login-item state so the toggle reflects reality even
+    // if it was changed outside the app (e.g. the autostart file was removed).
+    try {
+      cfg.startOnBoot = autostart.isEnabled();
+    } catch {
+      // Fall back to the stored value if the OS query fails.
+    }
+    return {
+      settings: cfg,
+      defaults: settings.DEFAULTS,
+      platform: process.platform,
+      version: app.getVersion(),
+    };
+  });
 
   ipcMain.handle("settings:save", (event, next) => {
     const saved = settings.save(next);
     const hotkeyResult = applyHotkey(saved.hotkey);
+    applyAutostart(saved);
     onSettingsChanged?.();
     return { settings: saved, hotkey: hotkeyResult };
   });
@@ -34,6 +57,7 @@ function init({ applyHotkey, onSettingsChanged }) {
   ipcMain.handle("wizard:complete", (event, next) => {
     const saved = settings.save(next);
     const hotkeyResult = applyHotkey(saved.hotkey);
+    applyAutostart(saved);
     onSettingsChanged?.();
     if (hotkeyResult.ok) {
       windows.openSettings({ fromWizard: true });

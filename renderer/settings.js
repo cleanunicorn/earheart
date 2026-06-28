@@ -138,6 +138,8 @@ function populate() {
   syncEngine("stt");
   syncEngine("cleanup");
 
+  $("start-on-boot").checked = !!current.startOnBoot;
+
   $("history-enabled").checked = current.history.enabled;
   $("max-seconds").value = current.audio.maxRecordingSeconds;
   $("idle-unload").value = current.engines?.idleUnloadMinutes ?? 2;
@@ -149,6 +151,7 @@ function collect() {
   return {
     ...current,
     hotkey: current.hotkey,
+    startOnBoot: $("start-on-boot").checked,
     output: {
       ...current.output,
       mode: document.querySelector('input[name="output-mode"]:checked').value,

@@ -234,6 +234,36 @@ test("linux launch command starts hidden and prefers $APPIMAGE", () => {
   }
 });
 
+test("loginItemEnabled trusts Windows' run key even when openAtLogin lies", () => {
+  // The Windows bug: we register the login item with --hidden, but
+  // getLoginItemSettings() compares the stored command against the args it's
+  // queried with, so a no-args (or mismatched) query reports openAtLogin:false
+  // even though the run key is present and fires at boot.
+  // executableWillLaunchAtLogin ignores args and reflects the run key, so the
+  // toggle reads back as enabled — matching what actually happens on reboot.
+  assert.strictEqual(
+    autostart.loginItemEnabled({
+      openAtLogin: false,
+      executableWillLaunchAtLogin: true,
+    }),
+    true
+  );
+  // Disabled on Windows: no run key, both signals agree.
+  assert.strictEqual(
+    autostart.loginItemEnabled({
+      openAtLogin: false,
+      executableWillLaunchAtLogin: false,
+    }),
+    false
+  );
+  // macOS/Linux don't report executableWillLaunchAtLogin, so fall back to
+  // openAtLogin both ways.
+  assert.strictEqual(autostart.loginItemEnabled({ openAtLogin: true }), true);
+  assert.strictEqual(autostart.loginItemEnabled({ openAtLogin: false }), false);
+  // A bare object (no fields at all) reads as off, never undefined.
+  assert.strictEqual(autostart.loginItemEnabled({}), false);
+});
+
 test("linux autostart path honours XDG_CONFIG_HOME", () => {
   const path = require("node:path");
   const saved = process.env.XDG_CONFIG_HOME;

@@ -17,6 +17,12 @@ const os = require("node:os");
 
 const LINUX_DESKTOP_FILE = "earheart.desktop";
 
+// Arguments the login item launches with, so login lands in the tray (not a
+// window). Shared by the set and get calls below: on Windows
+// getLoginItemSettings compares the stored launch command against the args you
+// query with, so the two MUST match or the read-back state drifts.
+const LOGIN_ITEM_ARGS = ["--hidden"];
+
 // The command the desktop environment should run at login. On Linux AppImages
 // the relaunchable path lives in $APPIMAGE — process.execPath points inside the
 // mounted image and would be stale next boot — so prefer it; fall back to
@@ -75,21 +81,32 @@ function apply(enabled) {
   app.setLoginItemSettings({
     openAtLogin: enabled,
     openAsHidden: enabled,
-    args: ["--hidden"],
+    args: LOGIN_ITEM_ARGS,
   });
+}
+
+// Decide whether autostart is on from an Electron login-item settings object.
+// On Windows, openAtLogin only reads true when the query args match the ones the
+// item was registered with — so we always query with LOGIN_ITEM_ARGS — but
+// executableWillLaunchAtLogin reflects the run key directly (it ignores args),
+// which is the most faithful "will it actually launch?" signal. macOS/Linux
+// don't set that field, so fall back to openAtLogin there.
+function loginItemEnabled(item) {
+  return item.executableWillLaunchAtLogin ?? item.openAtLogin ?? false;
 }
 
 // Whether autostart is currently registered with the OS. Used as the source of
 // truth so the settings UI reflects reality even if it drifted.
 function isEnabled() {
   if (process.platform === "linux") return fs.existsSync(linuxAutostartPath());
-  return app.getLoginItemSettings().openAtLogin;
+  return loginItemEnabled(app.getLoginItemSettings({ args: LOGIN_ITEM_ARGS }));
 }
 
 module.exports = {
   apply,
   isEnabled,
   // Exported for unit tests (pure, no Electron).
+  loginItemEnabled,
   linuxDesktopEntry,
   linuxLaunchCommand,
   linuxAutostartPath,

@@ -101,6 +101,12 @@ const DEFAULTS = {
     enabled: true,
     limit: 100,
   },
+  // Cleanup models the user added from a custom Hugging Face URL. Each entry is
+  // a registry-shaped model definition (see main/services/hf-gguf.js). Managed
+  // only by the models:add-custom / models:remove-custom IPC handlers; the
+  // settings form carries it through untouched (collect() spreads it). deepMerge
+  // replaces arrays wholesale, so a saved list survives a merge intact.
+  customModels: [],
 };
 
 let cached = null;

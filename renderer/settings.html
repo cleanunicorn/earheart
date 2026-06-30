@@ -184,6 +184,24 @@
               <select id="cleanup-builtin-model"></select>
             </div>
             <div id="cleanup-model-manage" class="model-manage"></div>
+
+            <div class="field" id="cleanup-custom">
+              <label for="cleanup-hf-url">Add a model from Hugging Face</label>
+              <input id="cleanup-hf-url"
+                placeholder="https://huggingface.co/unsloth/gemma-3-1b-it-GGUF" />
+              <div class="row">
+                <button id="cleanup-hf-find" class="ghost" type="button">Find versions</button>
+                <span id="cleanup-hf-result" class="status"></span>
+              </div>
+              <div class="row" id="cleanup-hf-pick" hidden>
+                <select id="cleanup-hf-quant"></select>
+                <button id="cleanup-hf-add" type="button">Add</button>
+              </div>
+              <p class="hint">
+                Paste a Hugging Face GGUF model URL. Earheart lists its versions and
+                downloads the one you pick. Custom models aren't checksum-verified.
+              </p>
+            </div>
           </div>
 
           <div id="cleanup-external-fields">

@@ -10,6 +10,7 @@ const route = require("./services/route");
 const engines = require("./engines");
 const autostart = require("./autostart");
 const { listRemoteModels } = require("./services/models-remote");
+const { parseRepoUrl, listGgufQuants, buildCleanupModel } = require("./services/hf-gguf");
 const { STYLES: CLEANUP_STYLES } = require("./cleanup-styles");
 const { encodeSilenceWav } = require("./util/wav");
 
@@ -27,6 +28,11 @@ function applyAutostart(cfg) {
 }
 
 function init({ applyHotkey, onSettingsChanged }) {
+  // Register any models the user added from a custom Hugging Face URL so they
+  // resolve for download and for loading into the cleanup worker after a
+  // restart, exactly like the built-ins.
+  engines.registry.setCustomModels(settings.get().customModels || []);
+
   ipcMain.handle("settings:get", () => {
     // Shallow copy so reporting the live OS state doesn't mutate the cache.
     const cfg = { ...settings.get() };
@@ -150,6 +156,70 @@ function init({ applyHotkey, onSettingsChanged }) {
     }
   });
 
+  // List the GGUF quantizations in a Hugging Face repo, so the settings UI can
+  // offer them as a pick-list (defaulting to the best Q4). Read-only.
+  ipcMain.handle("models:hf-quants", async (event, { url } = {}) => {
+    try {
+      const { owner, repo, ref } = parseRepoUrl(url);
+      const result = await listGgufQuants({ owner, repo, ref }, fetch);
+      return { ok: true, ...result };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  // Add a custom cleanup model from a Hugging Face URL + chosen quant: build a
+  // registry-shaped entry, persist it, and register it so it behaves like a
+  // built-in (status/download/remove). Re-lists server-side rather than
+  // trusting a file list from the renderer.
+  ipcMain.handle("models:add-custom", async (event, { url, quant } = {}) => {
+    try {
+      const { owner, repo, ref } = parseRepoUrl(url);
+      const listing = await listGgufQuants({ owner, repo, ref }, fetch);
+      const chosen =
+        listing.quants.find((q) => q.label === quant) ||
+        listing.quants.find((q) => q.label === listing.recommended);
+      if (!chosen) return { ok: false, error: "That version is no longer available" };
+      const model = buildCleanupModel(listing.repo, chosen);
+      const cfg = settings.get();
+      // Dedupe by id so re-adding the same repo+quant just refreshes the entry.
+      const customModels = [
+        ...(cfg.customModels || []).filter((m) => m.id !== model.id),
+        model,
+      ];
+      settings.save({ ...cfg, customModels });
+      engines.registry.setCustomModels(customModels);
+      return { ok: true, modelId: model.id, customModels };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  // Remove a custom model entirely: delete any downloaded files and drop its
+  // definition from settings + the registry.
+  ipcMain.handle("models:remove-custom", async (event, { modelId } = {}) => {
+    try {
+      try {
+        await engines.remove("cleanup", modelId);
+      } catch {
+        // Not downloaded (or already gone) — still drop the definition below.
+      }
+      const cfg = settings.get();
+      const customModels = (cfg.customModels || []).filter((m) => m.id !== modelId);
+      // If the removed model was the configured cleanup model, fall back to the
+      // default so cleanup doesn't later fail to resolve a model that's gone.
+      const cleanup =
+        cfg.cleanup.builtin.model === modelId
+          ? { ...cfg.cleanup, builtin: { ...cfg.cleanup.builtin, model: engines.registry.DEFAULT_CLEANUP_MODEL } }
+          : cfg.cleanup;
+      settings.save({ ...cfg, cleanup, customModels });
+      engines.registry.setCustomModels(customModels);
+      return { ok: true, customModels };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   ipcMain.handle("cleanup:test", async (event, cfg) => {
     try {
       const sample = "um so this is uh a test of the cleanup service";
@@ -172,6 +242,7 @@ function init({ applyHotkey, onSettingsChanged }) {
         label: m.label,
         note: m.note,
         default: !!m.default,
+        custom: !!m.custom,
         bytes: engines.registry.totalBytes(m),
         installed: engines.isInstalled(kind, m.id),
       }));

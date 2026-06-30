@@ -8,6 +8,7 @@ const { app } = require("electron");
 const registry = require("./registry");
 const manager = require("./model-manager");
 const hostModule = require("./host");
+const { resolveCleanup } = require("../cleanup-styles");
 
 // STT and cleanup each get their own worker process so they run in parallel and
 // a crash in one engine can't take down the other (see host.js). Each lazily
@@ -106,10 +107,13 @@ async function ensureCleanup(modelId) {
 async function clean(transcript, cfg, signal) {
   if (signal?.aborted) throw new Error("aborted");
   await ensureCleanup(cfg.builtin.model);
+  // The selected style supplies both the prompt (base + directive) and the
+  // sampling profile (temperature/topP/topK/minP) the worker applies.
+  const { systemPrompt, sampling } = resolveCleanup(cfg);
   const cleaned = await cleanupHost.request("clean", {
     transcript,
-    systemPrompt: cfg.systemPrompt,
-    temperature: cfg.temperature,
+    systemPrompt,
+    sampling,
   });
   // Never let an empty (or whitespace-only) cleanup eat the user's words.
   return cleaned && cleaned.trim().length > 0 ? cleaned : transcript;

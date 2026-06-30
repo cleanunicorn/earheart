@@ -2,6 +2,8 @@
 // contract (`POST {baseUrl}/chat/completions`), so it works with Ollama,
 // llama.cpp, LM Studio, vLLM, OpenRouter, OpenAI, or anything else compatible.
 
+const { resolveCleanup, remoteSamplingBody } = require("../cleanup-styles");
+
 function joinUrl(baseUrl, route) {
   return baseUrl.replace(/\/+$/, "") + route;
 }
@@ -22,15 +24,19 @@ async function clean(transcript, cfg, signal) {
   const headers = { "Content-Type": "application/json" };
   if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
 
+  // The selected style supplies the system prompt (base + its directive) and
+  // the sampling profile; remoteSamplingBody emits only the portable fields.
+  const { systemPrompt, sampling } = resolveCleanup(cfg);
+
   const timeout = AbortSignal.timeout(cfg.timeoutMs || 60000);
   const res = await fetch(url, {
     method: "POST",
     headers,
     body: JSON.stringify({
       model: cfg.model,
-      temperature: cfg.temperature ?? 0.2,
+      ...remoteSamplingBody(sampling),
       messages: [
-        { role: "system", content: cfg.systemPrompt },
+        { role: "system", content: systemPrompt },
         { role: "user", content: transcript },
       ],
     }),

@@ -8,6 +8,7 @@ let defaults = null;
 let platform = "linux";
 let micLoaded = false;
 let modelStatus = null; // { stt: [...], cleanup: [...] } from the main process
+let cleanupStyles = []; // [{ id, label, hint }] — the cleanup style slider stops
 
 const $ = (id) => document.getElementById(id);
 
@@ -161,6 +162,27 @@ function syncCleanupNote() {
 }
 // Bound after the select exists.
 
+// The wizard exposes only the named style stops (verbatim → clean → polished);
+// raw "custom" sampling stays in Settings. A migrated/custom config just starts
+// the slider at the default and leaves cleanup.custom untouched via collect().
+function populateCleanupStyle() {
+  let idx = cleanupStyles.findIndex((s) => s.id === current.cleanup.style);
+  if (idx < 0) idx = cleanupStyles.findIndex((s) => s.id === "clean");
+  if (idx < 0) idx = 0;
+  $("cleanup-style").value = String(idx);
+  renderStyleLabel();
+}
+
+function renderStyleLabel() {
+  const idx = parseInt($("cleanup-style").value, 10) || 0;
+  const style = cleanupStyles[idx];
+  if (!style) return;
+  $("cleanup-style-label").textContent = style.label;
+  $("cleanup-style-hint").textContent = style.hint;
+}
+
+$("cleanup-style").addEventListener("input", renderStyleLabel);
+
 /* ---------- collect wizard choices into a settings object ---------- */
 
 function collect() {
@@ -183,6 +205,7 @@ function collect() {
         ...current.cleanup.builtin,
         model: $("cleanup-builtin-model").value,
       },
+      style: cleanupStyles[parseInt($("cleanup-style").value, 10) || 0]?.id || "clean",
     },
     audio: {
       ...current.audio,
@@ -205,7 +228,11 @@ function renderSummary() {
     rows.push(["Cleanup", "Off"]);
   } else {
     const m = modelStatus.cleanup.find((x) => x.id === next.cleanup.builtin.model);
-    rows.push(["Cleanup", `Built-in ${m ? m.label : ""} (on this computer)`]);
+    const style = cleanupStyles.find((s) => s.id === next.cleanup.style);
+    rows.push([
+      "Cleanup",
+      `Built-in ${m ? m.label : ""} (on this computer)${style ? ` · ${style.label}` : ""}`,
+    ]);
   }
   rows.push([
     "Output",
@@ -451,6 +478,7 @@ async function finish() {
   current = data.settings;
   defaults = data.defaults;
   platform = data.platform;
+  cleanupStyles = data.cleanupStyles || [];
   modelStatus = await earheart.invoke("models:status");
 
   hotkeyInput.value = current.hotkey;
@@ -460,6 +488,7 @@ async function finish() {
   ).checked = true;
 
   populateCleanupModels();
+  populateCleanupStyle();
   $("cleanup-builtin-model").addEventListener("change", () => {
     current.cleanup.builtin.model = $("cleanup-builtin-model").value;
     syncCleanupNote();

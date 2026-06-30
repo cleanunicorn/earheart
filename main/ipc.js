@@ -1,7 +1,8 @@
 // IPC handlers backing the settings window and the setup wizard.
 
-const { ipcMain, app } = require("electron");
+const { ipcMain, app, shell } = require("electron");
 const settings = require("./settings");
+const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const history = require("./history");
 const windows = require("./windows");
@@ -9,6 +10,7 @@ const route = require("./services/route");
 const engines = require("./engines");
 const autostart = require("./autostart");
 const { listRemoteModels } = require("./services/models-remote");
+const { STYLES: CLEANUP_STYLES } = require("./cleanup-styles");
 const { encodeSilenceWav } = require("./util/wav");
 
 // In-flight model downloads, so the UI can cancel them. Keyed by kind:modelId.
@@ -20,7 +22,7 @@ function applyAutostart(cfg) {
   try {
     autostart.apply(cfg.startOnBoot);
   } catch (err) {
-    console.warn(`[earheart] could not apply start-on-boot: ${err.message}`);
+    logger.warn(`could not apply start-on-boot: ${err.message}`);
   }
 }
 
@@ -40,6 +42,9 @@ function init({ applyHotkey, onSettingsChanged }) {
       defaults: settings.DEFAULTS,
       platform: process.platform,
       version: app.getVersion(),
+      // Drives the cleanup style slider (id/label/hint per stop), so the UI
+      // copy stays in lockstep with the presets the engines actually use.
+      cleanupStyles: CLEANUP_STYLES.map(({ id, label, hint }) => ({ id, label, hint })),
     };
   });
 
@@ -72,6 +77,16 @@ function init({ applyHotkey, onSettingsChanged }) {
   // window open instead, so the error stays visible.
   ipcMain.handle("settings:close", () => {
     windows.closeSettings();
+  });
+
+  // Settings → About: open the error log in the OS default handler so the user
+  // can read or attach it when something goes wrong. Returns the path (or an
+  // error) so the UI can show where it lives even if opening fails.
+  ipcMain.handle("logs:open", async () => {
+    const logPath = logger.getLogPath();
+    if (!logPath) return { ok: false, error: "No log file yet." };
+    const error = await shell.openPath(logPath); // "" on success
+    return error ? { ok: false, error, path: logPath } : { ok: true, path: logPath };
   });
 
   // Settings → Advanced: re-run the setup wizard on demand. The wizard

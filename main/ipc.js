@@ -1,7 +1,8 @@
 // IPC handlers backing the settings window and the setup wizard.
 
-const { ipcMain, app } = require("electron");
+const { ipcMain, app, shell } = require("electron");
 const settings = require("./settings");
+const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const history = require("./history");
 const windows = require("./windows");
@@ -21,7 +22,7 @@ function applyAutostart(cfg) {
   try {
     autostart.apply(cfg.startOnBoot);
   } catch (err) {
-    console.warn(`[earheart] could not apply start-on-boot: ${err.message}`);
+    logger.warn(`could not apply start-on-boot: ${err.message}`);
   }
 }
 
@@ -76,6 +77,16 @@ function init({ applyHotkey, onSettingsChanged }) {
   // window open instead, so the error stays visible.
   ipcMain.handle("settings:close", () => {
     windows.closeSettings();
+  });
+
+  // Settings → About: open the error log in the OS default handler so the user
+  // can read or attach it when something goes wrong. Returns the path (or an
+  // error) so the UI can show where it lives even if opening fails.
+  ipcMain.handle("logs:open", async () => {
+    const logPath = logger.getLogPath();
+    if (!logPath) return { ok: false, error: "No log file yet." };
+    const error = await shell.openPath(logPath); // "" on success
+    return error ? { ok: false, error, path: logPath } : { ok: true, path: logPath };
   });
 
   // Settings → Advanced: re-run the setup wizard on demand. The wizard

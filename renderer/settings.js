@@ -592,6 +592,21 @@ $("open-wizard").addEventListener("click", () => {
   earheart.invoke("wizard:open");
 });
 
+/* ---------- error log ---------- */
+
+$("open-logs").addEventListener("click", async () => {
+  const el = $("open-logs-result");
+  const result = await earheart.invoke("logs:open");
+  if (result.ok) {
+    el.textContent = result.path;
+    el.className = "status";
+  } else {
+    // Opening can fail (no default handler for .log); still show where it is.
+    el.textContent = result.path ? `Couldn't open it — find it at ${result.path}` : result.error;
+    el.className = "status err";
+  }
+});
+
 /* ---------- macOS auto-paste (Accessibility) permission ---------- */
 
 function setAccessibilityStatus(text, cls = "status") {

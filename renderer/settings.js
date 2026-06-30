@@ -280,7 +280,10 @@ function renderManage(kind) {
     status.className = "status ok";
     btn.textContent = "Remove";
     btn.className = "ghost danger";
-    btn.onclick = () => removeModel(kind, modelId);
+    // For a custom model "Remove" also forgets its definition, since there's no
+    // curated reason to keep an un-downloaded custom entry around.
+    btn.onclick = () =>
+      info.custom ? removeCustomModel(modelId) : removeModel(kind, modelId);
   } else {
     status.textContent = "Not downloaded";
     btn.textContent = "Download";
@@ -288,6 +291,14 @@ function renderManage(kind) {
     btn.onclick = () => downloadModel(kind, modelId, ui);
   }
   row.append(btn, status);
+  // A custom model that isn't downloaded still needs a way off the list.
+  if (info.custom && !info.installed) {
+    const forget = document.createElement("button");
+    forget.textContent = "Remove from list";
+    forget.className = "ghost danger";
+    forget.onclick = () => removeCustomModel(modelId);
+    row.append(forget);
+  }
   container.append(note, bar, row);
   manage[kind] = ui;
 }
@@ -329,8 +340,29 @@ async function removeModel(kind, modelId) {
   await refreshModels();
 }
 
-async function refreshModels() {
+// Remove a custom model entirely: its files (if downloaded) and its definition.
+async function removeCustomModel(modelId) {
+  const info = modelStatus.cleanup.find((m) => m.id === modelId);
+  const label = info ? info.label : modelId;
+  if (!confirm(`Remove ${label} from your models?`)) return;
+  const res = await earheart.invoke("models:remove-custom", { modelId });
+  if (res.ok) current.customModels = res.customModels;
+  await refreshModels();
+}
+
+// Re-pull model status and rebuild the dropdowns (custom models may have been
+// added or removed), keeping the current selection — or a `preferred` id per
+// kind, e.g. to select a model that was just added.
+async function refreshModels(preferred = {}) {
   modelStatus = await earheart.invoke("models:status");
+  for (const kind of ["stt", "cleanup"]) {
+    const select = $(`${kind}-builtin-model`);
+    const want = preferred[kind] || select.value || current[kind].builtin.model;
+    populateModelSelect(kind);
+    select.value = modelStatus[kind].some((m) => m.id === want)
+      ? want
+      : current[kind].builtin.model;
+  }
   renderManage("stt");
   renderManage("cleanup");
 }
@@ -471,6 +503,87 @@ bindFetchModels("cleanup-fetch-models", "cleanup-fetch-result", "cleanup-model-l
   const c = collect().cleanup;
   return { baseUrl: c.baseUrl, apiKey: c.apiKey };
 });
+
+/* ---------- add a custom cleanup model from a Hugging Face URL ---------- */
+
+function humanSize(bytes) {
+  if (!bytes) return "";
+  return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`;
+}
+
+// Paste a Hugging Face GGUF repo URL → "Find versions" lists its quantizations
+// (defaulting to the best Q4) → "Add" registers the chosen one as a custom
+// model, which then downloads/removes through the same UI as the built-ins.
+function bindAddCustomModel() {
+  const urlInput = $("cleanup-hf-url");
+  const findBtn = $("cleanup-hf-find");
+  const result = $("cleanup-hf-result");
+  const pick = $("cleanup-hf-pick");
+  const quantSelect = $("cleanup-hf-quant");
+  const addBtn = $("cleanup-hf-add");
+
+  findBtn.addEventListener("click", async () => {
+    const url = urlInput.value.trim();
+    if (!url) return;
+    findBtn.disabled = true;
+    pick.hidden = true;
+    result.textContent = "Looking up versions…";
+    result.className = "status";
+    try {
+      const res = await earheart.invoke("models:hf-quants", { url });
+      if (!res.ok) {
+        result.textContent = res.error;
+        result.className = "status err";
+        return;
+      }
+      quantSelect.replaceChildren(
+        ...res.quants.map((q) => {
+          const opt = document.createElement("option");
+          opt.value = q.label;
+          const size = humanSize(q.totalBytes);
+          opt.textContent =
+            q.label +
+            (size ? ` · ${size}` : "") +
+            (q.label === res.recommended ? " · recommended" : "");
+          return opt;
+        })
+      );
+      if (res.recommended) quantSelect.value = res.recommended;
+      pick.hidden = false;
+      result.textContent = `${res.repo} — ${res.quants.length} version${res.quants.length === 1 ? "" : "s"}`;
+      result.className = "status ok";
+    } finally {
+      findBtn.disabled = false;
+    }
+  });
+
+  addBtn.addEventListener("click", async () => {
+    const url = urlInput.value.trim();
+    const quant = quantSelect.value;
+    if (!url || !quant) return;
+    addBtn.disabled = true;
+    result.textContent = "Adding…";
+    result.className = "status";
+    try {
+      const res = await earheart.invoke("models:add-custom", { url, quant });
+      if (!res.ok) {
+        result.textContent = res.error;
+        result.className = "status err";
+        return;
+      }
+      // Keep `current` in sync so a later settings save doesn't drop the model.
+      current.customModels = res.customModels;
+      await refreshModels({ cleanup: res.modelId });
+      urlInput.value = "";
+      pick.hidden = true;
+      result.textContent = "Added — click Download to fetch it";
+      result.className = "status ok";
+    } finally {
+      addBtn.disabled = false;
+    }
+  });
+}
+bindAddCustomModel();
 
 /* ---------- history ---------- */
 

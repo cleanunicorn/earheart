@@ -183,14 +183,31 @@ const MODELS = {
 const DEFAULT_STT_MODEL = "parakeet-tdt-0.6b-v3-int8";
 const DEFAULT_CLEANUP_MODEL = "gemma-3-1b";
 
-/** Look up a model by kind ("stt" | "cleanup") and id. */
-function getModel(kind, id) {
-  return (MODELS[kind] && MODELS[kind][id]) || null;
+// User-added models (cleanup GGUFs from a custom Hugging Face URL). Kept in
+// memory and registered at startup from persisted settings (see main/ipc.js),
+// so they resolve through the same getModel/listModels path the built-ins use
+// — no special-casing in the download manager, engines, or IPC layers. Same
+// shape as a MODELS entry, minus the sha256 we can't pre-verify for a user URL.
+let customModels = [];
+
+function setCustomModels(list) {
+  customModels = Array.isArray(list) ? list.filter((m) => m && m.id && m.kind) : [];
 }
 
-/** All models of a kind, as an array (for settings dropdowns). */
+/** Look up a model by kind ("stt" | "cleanup") and id. */
+function getModel(kind, id) {
+  return (
+    (MODELS[kind] && MODELS[kind][id]) ||
+    customModels.find((m) => m.kind === kind && m.id === id) ||
+    null
+  );
+}
+
+/** All models of a kind, as an array (built-ins first, then custom). */
 function listModels(kind) {
-  return Object.values(MODELS[kind] || {});
+  return Object.values(MODELS[kind] || {}).concat(
+    customModels.filter((m) => m.kind === kind)
+  );
 }
 
 /** Total download size of a model in bytes. */
@@ -202,6 +219,7 @@ module.exports = {
   MODELS,
   DEFAULT_STT_MODEL,
   DEFAULT_CLEANUP_MODEL,
+  setCustomModels,
   getModel,
   listModels,
   totalBytes,

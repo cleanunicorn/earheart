@@ -9,6 +9,7 @@ const route = require("./services/route");
 const engines = require("./engines");
 const autostart = require("./autostart");
 const { listRemoteModels } = require("./services/models-remote");
+const { STYLES: CLEANUP_STYLES } = require("./cleanup-styles");
 const { encodeSilenceWav } = require("./util/wav");
 
 // In-flight model downloads, so the UI can cancel them. Keyed by kind:modelId.
@@ -40,6 +41,9 @@ function init({ applyHotkey, onSettingsChanged }) {
       defaults: settings.DEFAULTS,
       platform: process.platform,
       version: app.getVersion(),
+      // Drives the cleanup style slider (id/label/hint per stop), so the UI
+      // copy stays in lockstep with the presets the engines actually use.
+      cleanupStyles: CLEANUP_STYLES.map(({ id, label, hint }) => ({ id, label, hint })),
     };
   });
 

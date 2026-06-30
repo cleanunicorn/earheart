@@ -4,6 +4,7 @@ let current = null; // settings object being edited
 let defaults = null;
 let platform = "linux";
 let modelStatus = null; // { stt: [...], cleanup: [...] } from the main process
+let cleanupStyles = []; // [{ id, label, hint }] — the cleanup style slider stops
 
 const $ = (id) => document.getElementById(id);
 
@@ -130,7 +131,7 @@ function populate() {
   $("cleanup-url").value = current.cleanup.baseUrl;
   $("cleanup-key").value = current.cleanup.apiKey;
   $("cleanup-model").value = current.cleanup.model;
-  $("cleanup-temperature").value = current.cleanup.temperature;
+  populateCleanupStyle();
   $("cleanup-prompt").value = current.cleanup.systemPrompt;
   selectEngine("cleanup", current.cleanup.engine);
   $("cleanup-builtin-model").value = current.cleanup.builtin.model;
@@ -183,7 +184,7 @@ function collect() {
       baseUrl: $("cleanup-url").value.trim(),
       apiKey: $("cleanup-key").value.trim(),
       model: $("cleanup-model").value.trim(),
-      temperature: parseFloat($("cleanup-temperature").value) || 0,
+      ...collectCleanupStyle(),
       systemPrompt: $("cleanup-prompt").value,
     },
     audio: {
@@ -207,6 +208,75 @@ function syncCleanupEnabled() {
   $("cleanup-fields").classList.toggle("disabled", !$("cleanup-enabled").checked);
 }
 $("cleanup-enabled").addEventListener("change", syncCleanupEnabled);
+
+/* ---------- cleanup style slider + advanced sampling ---------- */
+
+// The slider stops are the named styles (verbatim → clean → polished);
+// "custom" takes over when the user opts into raw sampling values, at which
+// point the slider is ignored. One control, two modes.
+function populateCleanupStyle() {
+  const c = current.cleanup;
+  const isCustom = c.style === "custom";
+  $("cleanup-custom-enabled").checked = isCustom;
+
+  let idx = cleanupStyles.findIndex((s) => s.id === c.style);
+  if (idx < 0) idx = cleanupStyles.findIndex((s) => s.id === "clean");
+  if (idx < 0) idx = 0;
+  $("cleanup-style").value = String(idx);
+
+  const custom = c.custom || {};
+  $("cleanup-temperature").value = custom.temperature ?? "";
+  $("cleanup-top-p").value = custom.topP ?? "";
+  $("cleanup-top-k").value = custom.topK ?? "";
+  $("cleanup-min-p").value = custom.minP ?? "";
+
+  renderStyleLabel();
+  syncCustomEnabled();
+  $("cleanup-advanced").open = isCustom;
+}
+
+function renderStyleLabel() {
+  const idx = parseInt($("cleanup-style").value, 10) || 0;
+  const style = cleanupStyles[idx];
+  if (!style) return;
+  $("cleanup-style-label").textContent = style.label;
+  $("cleanup-style-hint").textContent = style.hint;
+}
+
+function syncCustomEnabled() {
+  const custom = $("cleanup-custom-enabled").checked;
+  $("cleanup-style").disabled = custom;
+  $("cleanup-custom-fields").classList.toggle("disabled", !custom);
+}
+
+// Clamp a parsed number into [min, max], falling back when the field is blank
+// or unparseable so a stray entry never writes NaN into settings.
+function num(id, min, max, fallback) {
+  const v = parseFloat($(id).value);
+  if (!Number.isFinite(v)) return fallback;
+  return Math.min(max, Math.max(min, v));
+}
+
+function collectCleanupStyle() {
+  const customEnabled = $("cleanup-custom-enabled").checked;
+  const idx = parseInt($("cleanup-style").value, 10) || 0;
+  const style = customEnabled ? "custom" : cleanupStyles[idx]?.id || "clean";
+  return {
+    style,
+    custom: {
+      temperature: num("cleanup-temperature", 0, 2, 0.2),
+      topP: num("cleanup-top-p", 0, 1, 1),
+      topK: Math.round(num("cleanup-top-k", 0, 1000, 0)),
+      minP: num("cleanup-min-p", 0, 1, 0),
+    },
+  };
+}
+
+$("cleanup-style").addEventListener("input", renderStyleLabel);
+$("cleanup-custom-enabled").addEventListener("change", () => {
+  syncCustomEnabled();
+  if ($("cleanup-custom-enabled").checked) $("cleanup-advanced").open = true;
+});
 
 /* ---------- built-in engines + model management ---------- */
 
@@ -584,6 +654,7 @@ $("wizard-banner-dismiss").addEventListener("click", () => {
   current = data.settings;
   defaults = data.defaults;
   platform = data.platform;
+  cleanupStyles = data.cleanupStyles || [];
   // The Accessibility permission only exists on macOS.
   if (platform === "darwin") $("accessibility-field").hidden = false;
   $("version").textContent = `v${data.version}`;

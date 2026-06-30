@@ -108,7 +108,19 @@ async function loadCleanup({ modelPath, contextSize }) {
   return { ready: true };
 }
 
-async function clean({ transcript, systemPrompt, temperature }) {
+// Map a resolved cleanup sampling profile onto node-llama-cpp prompt options.
+// topK 0 and minP 0 mean "disabled", so they're only forwarded when active;
+// temperature always has a value (falls back to the engine default).
+function samplingOptions(sampling) {
+  const s = sampling || {};
+  const opts = { temperature: s.temperature ?? DEFAULT_CLEANUP_TEMPERATURE };
+  if (s.topP != null) opts.topP = s.topP;
+  if (s.topK != null && s.topK > 0) opts.topK = s.topK;
+  if (s.minP != null && s.minP > 0) opts.minP = s.minP;
+  return opts;
+}
+
+async function clean({ transcript, systemPrompt, sampling }) {
   if (!llamaContext) throw new Error("Cleanup model not loaded");
   const mod = await import("node-llama-cpp");
   // No systemPrompt: tested against Gemma 1B, putting the cleanup rules in the
@@ -127,9 +139,7 @@ async function clean({ transcript, systemPrompt, temperature }) {
   // continues with the cleaned text rather than a reply to its content.
   const userTurn =
     `${systemPrompt}\n\nTranscript:\n${transcript}\n\nCleaned transcript:`;
-  const out = await llamaSession.prompt(userTurn, {
-    temperature: temperature ?? DEFAULT_CLEANUP_TEMPERATURE,
-  });
+  const out = await llamaSession.prompt(userTurn, samplingOptions(sampling));
   return (out || "").trim();
 }
 

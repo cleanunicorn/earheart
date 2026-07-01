@@ -72,7 +72,7 @@ header h1 {
 
 header p {
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 13px;
   margin-top: 1px;
 }
 
@@ -121,6 +121,12 @@ nav#tabs {
 
 .tab.active::after {
   background: var(--accent);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--r-sm);
 }
 
 /* ---------- scroll area + panels ---------- */
@@ -187,7 +193,10 @@ main {
   margin-bottom: 0;
 }
 
-.field > label:first-child {
+/* A field's heading: a real <label> when it targets a control, or a plain
+   .field-label element for group headings that own no single control. */
+.field > label:first-child,
+.field > .field-label {
   display: block;
   font-weight: 550;
   font-size: 13px;
@@ -218,7 +227,7 @@ textarea {
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   padding: 10px 12px;
-  font-size: 13.5px;
+  font-size: 13px;
   font-family: inherit;
   transition:
     border-color 0.12s ease,
@@ -233,7 +242,7 @@ textarea::placeholder {
 
 textarea {
   font-family: ui-monospace, "Cascadia Code", monospace;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.5;
   resize: vertical;
   margin-bottom: 8px;
@@ -249,6 +258,8 @@ textarea:focus {
 
 select {
   appearance: none;
+  /* Self-drawn caret: a CSS var can't be interpolated into a data: URI, so the
+     stroke hex is a hardcoded copy of --muted (#9c94af) — keep the two in sync. */
   background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="%239c94af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>');
   background-repeat: no-repeat;
   background-position: right 12px center;
@@ -286,7 +297,10 @@ select {
   gap: 14px;
 }
 
-/* ---------- segmented control (Built-in / External engine choice) ---------- */
+/* ---------- segmented control (Built-in / External engine choice) ----------
+   The real radio is stretched invisibly (opacity:0) over each label so the whole
+   segment is the click target; the selected state is driven off :has(input:checked)
+   on the label, and keyboard focus off :has(input:focus-visible). */
 
 .segmented {
   display: flex;
@@ -335,6 +349,12 @@ select {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
+/* The overlaid radio is invisible, so surface keyboard focus on the label. */
+.segmented label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* ---------- option rows (radio cards, e.g. output mode) ---------- */
 
 .options {
@@ -357,7 +377,7 @@ select {
 }
 
 .option:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .option:has(input:checked) {
@@ -373,7 +393,7 @@ select {
 }
 
 .option-text {
-  font-size: 13.5px;
+  font-size: 13px;
 }
 
 /* ---------- toggle switch rows (checkboxes) ---------- */
@@ -394,12 +414,12 @@ select {
 }
 
 .toggle-text .t {
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
 }
 
 .toggle-text .d {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   line-height: 1.5;
 }
@@ -411,7 +431,7 @@ input.switch {
   width: 40px;
   height: 23px;
   flex-shrink: 0;
-  border-radius: 12px;
+  border-radius: var(--r);
   border: none;
   background: var(--border);
   cursor: pointer;
@@ -481,7 +501,7 @@ code {
   border: 1px solid var(--border);
   border-radius: 5px;
   padding: 1px 5px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 /* ---------- buttons ---------- */
@@ -503,8 +523,10 @@ button {
 }
 
 button:hover {
-  background: #322d40;
-  border-color: var(--border);
+  /* Lighten the resting --elevate surface rather than hardcode a hover hex,
+     matching how .primary:hover brightens its own background. */
+  filter: brightness(1.15);
+  border-color: var(--muted);
 }
 
 button.primary {
@@ -542,7 +564,7 @@ button.danger:hover {
 /* ---------- status text ---------- */
 
 .status {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -569,10 +591,6 @@ button.danger:hover {
   padding: 13px 15px;
   font-size: 13px;
   line-height: 1.5;
-}
-
-.banner[hidden] {
-  display: none;
 }
 
 /* ---------- disabled cleanup block ---------- */
@@ -616,13 +634,13 @@ button.danger:hover {
   justify-content: space-between;
   align-items: center;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 12px;
   margin-top: 10px;
 }
 
 #history-list .copy {
   padding: 3px 11px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 /* ---------- footer ---------- */
@@ -663,10 +681,6 @@ footer {
   border: 1px solid var(--border);
   overflow: hidden;
   margin-bottom: 11px;
-}
-
-.dl-bar[hidden] {
-  display: none;
 }
 
 .dl-fill {

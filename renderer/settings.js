@@ -9,13 +9,32 @@ const $ = (id) => document.getElementById(id);
 
 /* ---------- tabs ---------- */
 
-document.querySelectorAll(".tab").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
-    document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
-    tab.classList.add("active");
-    $(`tab-${tab.dataset.tab}`).classList.add("active");
-    if (tab.dataset.tab === "history") renderHistory();
+// The tabs are an ARIA tablist: exactly one tab is selected and in the tab
+// order (roving tabindex), and Left/Right arrows move between them.
+const tabButtons = [...document.querySelectorAll(".tab")];
+
+function activateTab(name, { focus = false } = {}) {
+  for (const t of tabButtons) {
+    const on = t.dataset.tab === name;
+    t.classList.toggle("active", on);
+    t.setAttribute("aria-selected", on ? "true" : "false");
+    t.tabIndex = on ? 0 : -1;
+    if (on && focus) t.focus();
+  }
+  document
+    .querySelectorAll(".panel")
+    .forEach((p) => p.classList.toggle("active", p.id === `tab-${name}`));
+  if (name === "history") renderHistory();
+}
+
+tabButtons.forEach((tab, i) => {
+  tab.addEventListener("click", () => activateTab(tab.dataset.tab));
+  tab.addEventListener("keydown", (event) => {
+    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const next = tabButtons[(i + step + tabButtons.length) % tabButtons.length];
+    activateTab(next.dataset.tab, { focus: true });
   });
 });
 
@@ -204,7 +223,14 @@ function collect() {
 }
 
 function syncCleanupEnabled() {
-  $("cleanup-fields").classList.toggle("disabled", !$("cleanup-enabled").checked);
+  const on = $("cleanup-enabled").checked;
+  const fields = $("cleanup-fields");
+  fields.classList.toggle("disabled", !on);
+  // The .disabled class dims and sets pointer-events:none, which blocks the
+  // mouse but leaves the controls in the tab order; `inert` also removes them
+  // from keyboard focus and the accessibility tree so the visual and real
+  // interactivity match.
+  fields.inert = !on;
 }
 $("cleanup-enabled").addEventListener("change", syncCleanupEnabled);
 

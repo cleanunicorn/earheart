@@ -18,12 +18,12 @@
       </div>
     </header>
 
-    <nav id="tabs">
-      <button class="tab active" data-tab="general">General</button>
-      <button class="tab" data-tab="stt">Speech-to-text</button>
-      <button class="tab" data-tab="cleanup">Cleanup</button>
-      <button class="tab" data-tab="history">History</button>
-      <button class="tab" data-tab="advanced">Advanced</button>
+    <nav id="tabs" role="tablist" aria-label="Settings sections">
+      <button class="tab active" id="tabbtn-general" data-tab="general" role="tab" aria-selected="true" aria-controls="tab-general">General</button>
+      <button class="tab" id="tabbtn-stt" data-tab="stt" role="tab" aria-selected="false" aria-controls="tab-stt" tabindex="-1">Speech-to-text</button>
+      <button class="tab" id="tabbtn-cleanup" data-tab="cleanup" role="tab" aria-selected="false" aria-controls="tab-cleanup" tabindex="-1">Cleanup</button>
+      <button class="tab" id="tabbtn-history" data-tab="history" role="tab" aria-selected="false" aria-controls="tab-history" tabindex="-1">History</button>
+      <button class="tab" id="tabbtn-advanced" data-tab="advanced" role="tab" aria-selected="false" aria-controls="tab-advanced" tabindex="-1">Advanced</button>
     </nav>
 
     <main>
@@ -36,7 +36,7 @@
       </div>
 
       <!-- General -->
-      <section id="tab-general" class="panel active">
+      <section id="tab-general" class="panel active" role="tabpanel" aria-labelledby="tabbtn-general">
         <div class="card">
           <div class="field">
             <label for="hotkey">Global hotkey</label>
@@ -87,13 +87,13 @@
               <span class="t">Start Earheart when I log in</span>
               <span class="d">Launches in the background (system tray) after you sign in.</span>
             </span>
-            <input type="checkbox" id="start-on-boot" class="switch" />
+            <input type="checkbox" id="start-on-boot" class="switch" role="switch" />
           </label>
         </div>
       </section>
 
       <!-- STT -->
-      <section id="tab-stt" class="panel">
+      <section id="tab-stt" class="panel" role="tabpanel" aria-labelledby="tabbtn-stt">
         <div class="card">
           <div class="card-title">Transcription engine</div>
           <div class="field">
@@ -160,13 +160,13 @@
                 pauses. The final transcript is unchanged. Adds some CPU load while recording.
               </span>
             </span>
-            <input type="checkbox" id="stt-live-preview" class="switch" />
+            <input type="checkbox" id="stt-live-preview" class="switch" role="switch" />
           </label>
         </div>
       </section>
 
       <!-- Cleanup -->
-      <section id="tab-cleanup" class="panel">
+      <section id="tab-cleanup" class="panel" role="tabpanel" aria-labelledby="tabbtn-cleanup">
         <div class="card">
           <label class="toggle">
             <span class="toggle-text">
@@ -176,7 +176,7 @@
                 words and false starts.
               </span>
             </span>
-            <input type="checkbox" id="cleanup-enabled" class="switch" />
+            <input type="checkbox" id="cleanup-enabled" class="switch" role="switch" />
           </label>
         </div>
 
@@ -251,14 +251,14 @@
       </section>
 
       <!-- History -->
-      <section id="tab-history" class="panel">
+      <section id="tab-history" class="panel" role="tabpanel" aria-labelledby="tabbtn-history">
         <div class="card">
           <label class="toggle">
             <span class="toggle-text">
               <span class="t">Keep a local history of transcriptions</span>
               <span class="d">Stored on this computer only. Never uploaded anywhere.</span>
             </span>
-            <input type="checkbox" id="history-enabled" class="switch" />
+            <input type="checkbox" id="history-enabled" class="switch" role="switch" />
           </label>
         </div>
         <div class="row space-between history-head">
@@ -269,7 +269,7 @@
       </section>
 
       <!-- Advanced -->
-      <section id="tab-advanced" class="panel">
+      <section id="tab-advanced" class="panel" role="tabpanel" aria-labelledby="tabbtn-advanced">
         <div class="card">
           <div class="grid-2">
             <div class="field">
@@ -290,7 +290,7 @@
 
         <div class="card" id="accessibility-field" hidden>
           <div class="field">
-            <label>Auto-paste permission</label>
+            <div class="field-label">Auto-paste permission</div>
             <div class="row">
               <button id="accessibility-fix" class="ghost">Fix auto-paste permission…</button>
               <span id="accessibility-status" class="status"></span>
@@ -306,7 +306,7 @@
 
         <div class="card">
           <div class="field">
-            <label>Setup wizard</label>
+            <div class="field-label">Setup wizard</div>
             <div class="row">
               <button id="open-wizard" class="ghost">Run the setup wizard again…</button>
             </div>
@@ -316,7 +316,7 @@
             </p>
           </div>
           <div class="field">
-            <label>About</label>
+            <div class="field-label">About</div>
             <p class="hint">
               Earheart <span id="version"></span> — private, hotkey-driven voice dictation.
               Free and open source (MIT).

@@ -144,8 +144,10 @@
             </div>
             <div class="row">
               <button id="stt-fetch-models" class="ghost" type="button">Fetch models</button>
-              <button id="stt-test">Test connection</button>
               <span id="stt-fetch-result" class="status"></span>
+            </div>
+            <div class="row">
+              <button id="stt-test">Test connection</button>
               <span id="stt-test-result" class="status"></span>
             </div>
           </div>
@@ -250,19 +252,29 @@
 
           <div class="card">
             <div class="field">
-              <label for="cleanup-style">Cleanup style</label>
-              <input id="cleanup-style" type="range" min="0" max="2" step="1" />
-              <div class="row space-between" id="cleanup-style-labels">
-                <span class="muted">Closer to your words</span>
-                <span class="muted">More polished</span>
-              </div>
-              <p class="hint"><strong id="cleanup-style-label"></strong> — <span id="cleanup-style-hint"></span></p>
-              <details id="cleanup-advanced">
-                <summary>Advanced sampling</summary>
-                <label class="choice">
-                  <input type="checkbox" id="cleanup-custom-enabled" />
-                  Use custom sampling values (ignores the slider)
+              <div class="field-label">Cleanup style</div>
+              <div class="segmented">
+                <label>
+                  <input type="radio" name="cleanup-style-mode" value="preset" />
+                  Preset
                 </label>
+                <label>
+                  <input type="radio" name="cleanup-style-mode" value="custom" />
+                  Custom values
+                </label>
+              </div>
+
+              <div id="cleanup-style-preset">
+                <input id="cleanup-style" type="range" min="0" max="2" step="1"
+                  aria-label="Cleanup style preset" />
+                <div class="row space-between" id="cleanup-style-labels">
+                  <span class="muted">Closer to your words</span>
+                  <span class="muted">More polished</span>
+                </div>
+                <p class="hint"><strong id="cleanup-style-label"></strong> — <span id="cleanup-style-hint"></span></p>
+              </div>
+
+              <div id="cleanup-style-custom">
                 <p class="hint">
                   Lower values keep the model closer to the most likely wording;
                   higher values let it vary more. <code>top-k</code> and
@@ -287,7 +299,7 @@
                     <input id="cleanup-min-p" type="number" min="0" max="1" step="0.01" />
                   </div>
                 </div>
-              </details>
+              </div>
             </div>
 
             <div class="field">

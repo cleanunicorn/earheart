@@ -235,15 +235,24 @@ function syncCleanupEnabled() {
 }
 $("cleanup-enabled").addEventListener("change", syncCleanupEnabled);
 
-/* ---------- cleanup style slider + advanced sampling ---------- */
+/* ---------- cleanup style: preset slider vs custom sampling ---------- */
 
-// The slider stops are the named styles (verbatim → clean → polished);
-// "custom" takes over when the user opts into raw sampling values, at which
-// point the slider is ignored. One control, two modes.
+// A segmented control picks the mode. "Preset" shows the slider (verbatim →
+// clean → polished); "Custom values" shows the raw sampling fields. Only the
+// active mode's controls are visible, so switching is one click.
+function styleMode() {
+  const el = document.querySelector('input[name="cleanup-style-mode"]:checked');
+  return el ? el.value : "preset";
+}
+
+function setStyleMode(mode) {
+  const el = document.querySelector(`input[name="cleanup-style-mode"][value="${mode}"]`);
+  if (el) el.checked = true;
+}
+
 function populateCleanupStyle() {
   const c = current.cleanup;
-  const isCustom = c.style === "custom";
-  $("cleanup-custom-enabled").checked = isCustom;
+  setStyleMode(c.style === "custom" ? "custom" : "preset");
 
   let idx = cleanupStyles.findIndex((s) => s.id === c.style);
   if (idx < 0) idx = cleanupStyles.findIndex((s) => s.id === "clean");
@@ -257,8 +266,7 @@ function populateCleanupStyle() {
   $("cleanup-min-p").value = custom.minP ?? "";
 
   renderStyleLabel();
-  syncCustomEnabled();
-  $("cleanup-advanced").open = isCustom;
+  syncStyleMode();
 }
 
 function renderStyleLabel() {
@@ -269,14 +277,12 @@ function renderStyleLabel() {
   $("cleanup-style-hint").textContent = style.hint;
 }
 
-function syncCustomEnabled() {
-  const custom = $("cleanup-custom-enabled").checked;
-  $("cleanup-style").disabled = custom;
-  const fields = $("cleanup-custom-fields");
-  fields.classList.toggle("disabled", !custom);
-  // Match syncCleanupEnabled: the .disabled class only blocks the mouse, so also
-  // set `inert` to keep the dimmed sampling inputs out of the tab order and AT.
-  fields.inert = !custom;
+// Show only the active mode's controls; `hidden` also removes the inactive
+// ones from the tab order and accessibility tree.
+function syncStyleMode() {
+  const custom = styleMode() === "custom";
+  $("cleanup-style-preset").hidden = custom;
+  $("cleanup-style-custom").hidden = !custom;
 }
 
 // Clamp a parsed number into [min, max], falling back when the field is blank
@@ -288,9 +294,8 @@ function num(id, min, max, fallback) {
 }
 
 function collectCleanupStyle() {
-  const customEnabled = $("cleanup-custom-enabled").checked;
   const idx = parseInt($("cleanup-style").value, 10) || 0;
-  const style = customEnabled ? "custom" : cleanupStyles[idx]?.id || "clean";
+  const style = styleMode() === "custom" ? "custom" : cleanupStyles[idx]?.id || "clean";
   return {
     style,
     custom: {
@@ -303,10 +308,9 @@ function collectCleanupStyle() {
 }
 
 $("cleanup-style").addEventListener("input", renderStyleLabel);
-$("cleanup-custom-enabled").addEventListener("change", () => {
-  syncCustomEnabled();
-  if ($("cleanup-custom-enabled").checked) $("cleanup-advanced").open = true;
-});
+document
+  .querySelectorAll('input[name="cleanup-style-mode"]')
+  .forEach((r) => r.addEventListener("change", syncStyleMode));
 
 /* ---------- built-in engines + model management ---------- */
 

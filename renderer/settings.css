@@ -291,6 +291,12 @@ select {
   justify-content: space-between;
 }
 
+/* Stacked action rows (e.g. Fetch models / Test connection) get a small gap so
+   each button+status sits on its own line without touching. */
+#stt-external-fields .row + .row {
+  margin-top: 8px;
+}
+
 .grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -595,13 +601,19 @@ button.danger:hover {
 
 /* ---------- disabled cleanup blocks ---------- */
 
-#cleanup-fields.disabled,
-#cleanup-custom-fields.disabled {
+#cleanup-fields.disabled {
   opacity: 0.42;
   pointer-events: none;
 }
 
-/* ---------- cleanup style slider + advanced sampling ---------- */
+/* ---------- cleanup style: preset slider vs custom sampling ---------- */
+
+/* A segmented control (Preset / Custom values) picks the mode; the matching
+   section sits just below it. */
+#cleanup-style-preset,
+#cleanup-style-custom {
+  margin-top: 12px;
+}
 
 /* The native range ships browser-default chrome (a foreign blue thumb, a
    platform track) that clashes with the app's pink accent and flat
@@ -653,19 +665,6 @@ input[type="range"]:focus {
 input[type="range"]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
-}
-
-/* When custom sampling takes over, the slider is disabled — make that read. */
-input[type="range"]:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* The Advanced disclosure should read as a clickable row, not static text. */
-#cleanup-advanced summary {
-  cursor: pointer;
-  padding: 4px 0;
-  font-size: 13px;
 }
 
 /* Bracket the slider's endpoints, with a small gap below the track. */

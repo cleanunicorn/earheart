@@ -170,10 +170,14 @@ body {
   }
 }
 
+/* The waveform is the hero of the recording row: it flexes to fill all the space
+   between the pulse dot and the timer, so there's no dead gap. min-width:0 lets
+   it shrink below the canvas's intrinsic width; overlay.js keeps the canvas
+   backing store matched to this flexed box so the bars never stretch. */
 #meter {
-  width: 120px;
+  flex: 1;
+  min-width: 0;
   height: 36px;
-  flex-shrink: 0;
 }
 
 #card:not([data-status="recording"]) #meter,
@@ -207,12 +211,14 @@ body {
   text-overflow: ellipsis;
 }
 
+/* Sits right after the waveform (no flex stretch), reading as its caption. The
+   waveform's flex:1 owns the leftover width, so the timer hugs the meter and the
+   Stop/Cancel buttons follow. */
 #timer {
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   color: #b8b3c4;
-  flex: 1;
-  text-align: right;
+  flex-shrink: 0;
 }
 
 button {

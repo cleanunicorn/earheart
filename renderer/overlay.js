@@ -67,6 +67,22 @@ function setStatus(status, title, detail) {
   detailText.textContent = detail || "";
 }
 
+// The meter now flexes to fill the control row, so its rendered width varies with
+// the card size and device pixel ratio. Keep the canvas backing store matched to
+// its CSS box (× dpr) so the bars stay crisp and un-stretched at any width; a
+// ResizeObserver (wired up below) calls this whenever that box changes.
+function resizeMeter() {
+  const rect = meter.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(rect.width * dpr));
+  const h = Math.max(1, Math.round(rect.height * dpr));
+  if (meter.width !== w || meter.height !== h) {
+    meter.width = w;
+    meter.height = h;
+    drawMeter(); // repaint into the resized buffer (a resize clears the canvas)
+  }
+}
+
 function drawMeter() {
   meterCtx.clearRect(0, 0, meter.width, meter.height);
   const barWidth = meter.width / displayLevels.length;
@@ -408,6 +424,11 @@ earheart.on("overlay:show", () => {
 });
 earheart.on("overlay:hide", () => card.classList.remove("visible"));
 
+// Keep the waveform canvas's backing store matched to its flexed CSS box. The
+// observer fires once on observe() (sizing the canvas before the first draw) and
+// again on any later change (window/DPR/layout), so the bars are always crisp.
+new ResizeObserver(resizeMeter).observe(meter);
+
 document.getElementById("stop").addEventListener("click", stopRecording);
 document.getElementById("cancel").addEventListener("click", cancelRecording);
 
@@ -424,14 +445,38 @@ card.addEventListener("pointerdown", (event) => {
   earheart.send("overlay:drag-start", { x: event.screenX, y: event.screenY });
 });
 
+// Coalesce the drag stream to one send per animation frame. pointermove can fire
+// far faster than a transparent, always-on-top window can be repositioned, and an
+// unbatched send-per-event floods the IPC channel so the window trails a stale
+// backlog (the "lags behind" feel). We keep only the freshest coordinate and send
+// it once per frame; this is lossless because the main process positions from a
+// recorded origin (see windows.js), not from accumulated deltas, so dropping the
+// intermediate points never desyncs the card from the cursor.
+let pendingDrag = null;
+let dragRaf = null;
+function flushDrag() {
+  dragRaf = null;
+  if (pendingDrag) {
+    earheart.send("overlay:drag", pendingDrag);
+    pendingDrag = null;
+  }
+}
+
 card.addEventListener("pointermove", (event) => {
   if (!dragging) return;
-  earheart.send("overlay:drag", { x: event.screenX, y: event.screenY });
+  pendingDrag = { x: event.screenX, y: event.screenY };
+  if (dragRaf === null) dragRaf = requestAnimationFrame(flushDrag);
 });
 
 function endDrag() {
   dragging = false;
   card.classList.remove("dragging");
+  // Send the final position immediately so the card settles exactly under the
+  // release point even if a frame was still pending.
+  if (dragRaf !== null) {
+    cancelAnimationFrame(dragRaf);
+    flushDrag();
+  }
 }
 
 card.addEventListener("pointerup", endDrag);

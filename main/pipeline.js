@@ -38,6 +38,10 @@ const livePreview = createLivePreview({
   sendToOverlay: windows.sendToOverlay,
   getSettings: settings.get,
   isCurrent: (sid) => sid === session && state === "recording",
+  // Partials are best-effort and must never disturb the dictation, but silently
+  // swallowing their errors hid real breakage (STT model still loading or not
+  // downloaded) — so surface them here for diagnosis without interrupting.
+  onError: (err) => logger.warn("live preview partial failed:", err.message),
 });
 
 // Idle eviction: after a dictation finishes, wait the configured idle window
@@ -107,6 +111,13 @@ function startRecording() {
   const cfg = settings.get();
   const sid = ++session;
   setState("recording");
+  const liveOn = cfg.stt.engine === "builtin" && cfg.stt.livePreview?.enabled;
+  // Warm the built-in STT model as recording begins so the first live-preview
+  // partials aren't all dropped while it loads. The drop-if-busy guard discards
+  // every partial tick until a decode is free, so a cold multi-second first load
+  // would starve the whole preview on short dictations (no text ever appears).
+  // Best effort — the authoritative final pass calls ensureStt again regardless.
+  if (liveOn) engines.ensureStt(cfg.stt.builtin.model).catch(() => {});
   const win = windows.createOverlay();
   const begin = () => {
     if (session !== sid) return; // cancelled before the overlay was ready
@@ -117,11 +128,8 @@ function startRecording() {
       maxSeconds: cfg.audio.maxRecordingSeconds,
       // Live preview only runs on the builtin engine (the HTTP path would be
       // hammered with repeated full-file uploads). The overlay gates on
-      // `enabled`; we also gate on the engine here.
-      livePreview:
-        cfg.stt.engine === "builtin" && cfg.stt.livePreview?.enabled
-          ? cfg.stt.livePreview
-          : { enabled: false },
+      // `enabled`; we also gate on the engine here (see `liveOn` above).
+      livePreview: liveOn ? cfg.stt.livePreview : { enabled: false },
     });
   };
   // The overlay may still be loading right after launch (or after a renderer

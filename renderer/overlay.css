@@ -33,8 +33,9 @@ body {
   border-radius: 22px;
   /* Solid (not translucent) so the faint raw tail's contrast doesn't depend on
      whatever app shows through behind the overlay, and so text never sits over a
-     see-through edge. */
-  background: rgb(24, 22, 30);
+     see-through edge. Matches the settings window's --panel surface so the two
+     windows read as one product. */
+  background: rgb(27, 24, 38);
   border: 1px solid rgba(255, 255, 255, 0.16);
   color: #f3f1f7;
   /* The card body is the drag handle; buttons reset this to a pointer below. */

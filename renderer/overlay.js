@@ -67,6 +67,22 @@ function setStatus(status, title, detail) {
   detailText.textContent = detail || "";
 }
 
+// The meter now flexes to fill the control row, so its rendered width varies with
+// the card size and device pixel ratio. Keep the canvas backing store matched to
+// its CSS box (× dpr) so the bars stay crisp and un-stretched at any width; a
+// ResizeObserver (wired up below) calls this whenever that box changes.
+function resizeMeter() {
+  const rect = meter.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(rect.width * dpr));
+  const h = Math.max(1, Math.round(rect.height * dpr));
+  if (meter.width !== w || meter.height !== h) {
+    meter.width = w;
+    meter.height = h;
+    drawMeter(); // repaint into the resized buffer (a resize clears the canvas)
+  }
+}
+
 function drawMeter() {
   meterCtx.clearRect(0, 0, meter.width, meter.height);
   const barWidth = meter.width / displayLevels.length;
@@ -407,6 +423,11 @@ earheart.on("overlay:show", () => {
   card.classList.add("visible");
 });
 earheart.on("overlay:hide", () => card.classList.remove("visible"));
+
+// Keep the waveform canvas's backing store matched to its flexed CSS box. The
+// observer fires once on observe() (sizing the canvas before the first draw) and
+// again on any later change (window/DPR/layout), so the bars are always crisp.
+new ResizeObserver(resizeMeter).observe(meter);
 
 document.getElementById("stop").addEventListener("click", stopRecording);
 document.getElementById("cancel").addEventListener("click", cancelRecording);

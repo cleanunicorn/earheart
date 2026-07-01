@@ -35,7 +35,7 @@ body {
      whatever app shows through behind the overlay, and so text never sits over a
      see-through edge. Matches the settings window's --panel surface so the two
      windows read as one product. */
-  background: rgb(27, 24, 38);
+  background: rgb(32, 28, 44);
   border: 1px solid rgba(255, 255, 255, 0.16);
   color: #f3f1f7;
   /* The card body is the drag handle; buttons reset this to a pointer below. */

@@ -5,14 +5,16 @@
 
 :root {
   --bg: #131019; /* page background */
-  --panel: #1b1826; /* card surface */
+  --panel: #201c2c; /* card surface — lifted off --bg so cards read as raised */
   --elevate: #292534; /* raised chip / selected segment / hover */
   --field: #14121d; /* inset inputs + segmented track */
-  --border: #2c2839;
+  --border: #2c2839; /* chrome: chips, buttons, dividers */
+  --border-input: #6a6486; /* form-field boundaries — ~3:1 on --panel (WCAG 1.4.11) */
   --border-soft: #221f2e;
   --text: #f1eef7;
   --muted: #9c94af;
-  --accent: #ff5470;
+  --accent: #ff5470; /* brand accent: focus, selection, toggles, slider */
+  --accent-strong: #d92a54; /* darker accent for the filled primary — #fff hits AA */
   --accent-soft: rgba(255, 84, 112, 0.13);
   --accent-line: rgba(255, 84, 112, 0.42);
   --ok: #4ade80;
@@ -211,6 +213,7 @@ main {
   color: var(--muted);
   margin-bottom: 16px;
   line-height: 1.55;
+  max-width: 62ch;
 }
 
 /* ---------- inputs ---------- */
@@ -224,7 +227,9 @@ textarea {
   width: 100%;
   background: var(--field);
   color: var(--text);
-  border: 1px solid var(--border);
+  /* A field's boundary is its main cue against the card — use the stronger
+     input border so it clears the 3:1 UI-component bar. */
+  border: 1px solid var(--border-input);
   border-radius: var(--r-sm);
   padding: 10px 12px;
   font-size: 13px;
@@ -236,8 +241,8 @@ textarea {
 
 input::placeholder,
 textarea::placeholder {
+  /* Full --muted (6.4:1 on --field) — no opacity, which dropped it under AA. */
   color: var(--muted);
-  opacity: 0.7;
 }
 
 textarea {
@@ -271,6 +276,13 @@ select {
   cursor: pointer;
   font-family: ui-monospace, monospace;
   letter-spacing: 0.02em;
+}
+
+/* The hotkey is a click-to-capture field; once populated it looks like a static
+   value, so give it a button-like hover so it reads as changeable. */
+#hotkey:not(.capturing):hover {
+  border-color: var(--muted);
+  background: var(--elevate);
 }
 
 #hotkey.capturing {
@@ -439,7 +451,9 @@ input.switch {
   flex-shrink: 0;
   border-radius: var(--r);
   border: none;
-  background: var(--border);
+  /* Off track: the stronger input border so an off switch is legible on the
+     card without relying on the thumb alone. */
+  background: var(--border-input);
   cursor: pointer;
   transition: background 0.16s ease;
 }
@@ -453,7 +467,7 @@ input.switch::after {
   height: 19px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   transition: transform 0.16s ease;
 }
 
@@ -494,6 +508,9 @@ input.switch:focus-visible {
   font-size: 12px;
   margin-top: 7px;
   line-height: 1.55;
+  /* Keep running explanatory copy near a comfortable ~70-char measure rather
+     than letting it span the full 620px column. */
+  max-width: 62ch;
 }
 
 .muted {
@@ -528,24 +545,33 @@ button {
     filter 0.12s ease;
 }
 
-button:hover {
+button:hover:not(:disabled) {
   /* Lighten the resting --elevate surface rather than hardcode a hover hex,
      matching how .primary:hover brightens its own background. */
   filter: brightness(1.15);
   border-color: var(--muted);
 }
 
+/* A disabled button (e.g. while an async action is in flight) must read as
+   inert — not clickable, and never brightening on hover. */
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+  filter: none;
+}
+
 button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  /* Darker accent so #fff text clears WCAG AA (the raw --accent is too light). */
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
   color: #fff;
   font-weight: 600;
   padding: 9px 22px;
 }
 
-button.primary:hover {
-  background: var(--accent);
-  filter: brightness(1.08);
+button.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  filter: brightness(1.1);
 }
 
 button.ghost {
@@ -554,7 +580,7 @@ button.ghost {
   color: var(--muted);
 }
 
-button.ghost:hover {
+button.ghost:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.04);
   color: var(--text);
 }
@@ -563,7 +589,7 @@ button.danger {
   color: var(--err);
 }
 
-button.danger:hover {
+button.danger:hover:not(:disabled) {
   background: rgba(251, 113, 133, 0.1);
 }
 
@@ -594,7 +620,7 @@ button.danger:hover {
   background: var(--accent-soft);
   border: 1px solid var(--accent-line);
   border-radius: var(--r);
-  padding: 13px 15px;
+  padding: 12px 14px;
   font-size: 13px;
   line-height: 1.5;
 }
@@ -746,7 +772,7 @@ footer {
   background: var(--field);
   border: 1px solid var(--border-soft);
   border-radius: var(--r);
-  padding: 13px 15px;
+  padding: 12px 14px;
   margin-top: 12px;
 }
 

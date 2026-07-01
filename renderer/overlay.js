@@ -445,14 +445,38 @@ card.addEventListener("pointerdown", (event) => {
   earheart.send("overlay:drag-start", { x: event.screenX, y: event.screenY });
 });
 
+// Coalesce the drag stream to one send per animation frame. pointermove can fire
+// far faster than a transparent, always-on-top window can be repositioned, and an
+// unbatched send-per-event floods the IPC channel so the window trails a stale
+// backlog (the "lags behind" feel). We keep only the freshest coordinate and send
+// it once per frame; this is lossless because the main process positions from a
+// recorded origin (see windows.js), not from accumulated deltas, so dropping the
+// intermediate points never desyncs the card from the cursor.
+let pendingDrag = null;
+let dragRaf = null;
+function flushDrag() {
+  dragRaf = null;
+  if (pendingDrag) {
+    earheart.send("overlay:drag", pendingDrag);
+    pendingDrag = null;
+  }
+}
+
 card.addEventListener("pointermove", (event) => {
   if (!dragging) return;
-  earheart.send("overlay:drag", { x: event.screenX, y: event.screenY });
+  pendingDrag = { x: event.screenX, y: event.screenY };
+  if (dragRaf === null) dragRaf = requestAnimationFrame(flushDrag);
 });
 
 function endDrag() {
   dragging = false;
   card.classList.remove("dragging");
+  // Send the final position immediately so the card settles exactly under the
+  // release point even if a frame was still pending.
+  if (dragRaf !== null) {
+    cancelAnimationFrame(dragRaf);
+    flushDrag();
+  }
 }
 
 card.addEventListener("pointerup", endDrag);

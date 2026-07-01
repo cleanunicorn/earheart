@@ -62,17 +62,31 @@ function acceleratorFromEvent(event) {
 }
 
 const hotkeyInput = $("hotkey");
-hotkeyInput.addEventListener("click", () => {
+function startHotkeyCapture() {
   hotkeyInput.classList.add("capturing");
   hotkeyInput.value = "Press keys…";
-});
+}
+hotkeyInput.addEventListener("click", startHotkeyCapture);
 hotkeyInput.addEventListener("blur", () => {
   hotkeyInput.classList.remove("capturing");
   hotkeyInput.value = current?.hotkey || "";
 });
 hotkeyInput.addEventListener("keydown", (event) => {
-  if (!hotkeyInput.classList.contains("capturing")) return;
+  // Keyboard users can't click, so Enter/Space on the focused field arms
+  // capture — matching what a mouse click does.
+  if (!hotkeyInput.classList.contains("capturing")) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      startHotkeyCapture();
+    }
+    return;
+  }
   event.preventDefault();
+  // Escape leaves capture without changing the binding (blur restores it).
+  if (event.key === "Escape") {
+    hotkeyInput.blur();
+    return;
+  }
   const accelerator = acceleratorFromEvent(event);
   if (accelerator) {
     current.hotkey = accelerator;
@@ -506,16 +520,23 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
 
 /* ---------- save ---------- */
 
-$("save").addEventListener("click", async () => {
+const saveButton = $("save");
+saveButton.addEventListener("click", async () => {
   const save = $("save-status");
   const hotkeyStatus = $("hotkey-status");
   let result;
+  // Acknowledge the click immediately and block a duplicate save while the
+  // round-trip is in flight.
+  saveButton.disabled = true;
+  save.textContent = "Saving…";
+  save.className = "status";
   try {
     current = collect();
     result = await earheart.invoke("settings:save", current);
   } catch (err) {
     save.textContent = `Could not save: ${err.message}`;
     save.className = "status err";
+    saveButton.disabled = false;
     return;
   }
   current = result.settings;
@@ -529,6 +550,7 @@ $("save").addEventListener("click", async () => {
   }
   // The hotkey couldn't be registered: keep the window open so the error is
   // visible and the user can pick a combination that works.
+  saveButton.disabled = false;
   save.textContent = "Saved, but the hotkey could not be registered";
   save.className = "status err";
   hotkeyStatus.textContent = result.hotkey.error;
@@ -541,17 +563,25 @@ $("save").addEventListener("click", async () => {
 /* ---------- connection tests ---------- */
 
 function bindTest(buttonId, resultId, channel, getCfg) {
-  $(buttonId).addEventListener("click", async () => {
+  const btn = $(buttonId);
+  btn.addEventListener("click", async () => {
     const el = $(resultId);
+    // Disable while the test is in flight so a second click can't race a stale
+    // response over the result (mirrors bindFetchModels).
+    btn.disabled = true;
     el.textContent = "Testing…";
     el.className = "status";
-    const result = await earheart.invoke(channel, getCfg());
-    if (result.ok) {
-      el.textContent = result.sample ? `OK — "${result.sample}"` : "OK";
-      el.className = "status ok";
-    } else {
-      el.textContent = result.error;
-      el.className = "status err";
+    try {
+      const result = await earheart.invoke(channel, getCfg());
+      if (result.ok) {
+        el.textContent = result.sample ? `OK — "${result.sample}"` : "OK";
+        el.className = "status ok";
+      } else {
+        el.textContent = result.error;
+        el.className = "status err";
+      }
+    } finally {
+      btn.disabled = false;
     }
   });
 }

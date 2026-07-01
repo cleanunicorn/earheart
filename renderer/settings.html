@@ -38,6 +38,7 @@
       <!-- General -->
       <section id="tab-general" class="panel active" role="tabpanel" aria-labelledby="tabbtn-general">
         <div class="card">
+          <div class="card-title">Recording</div>
           <div class="field">
             <label for="hotkey">Global hotkey</label>
             <div class="row">
@@ -251,8 +252,8 @@
           </div>
 
           <div class="card">
+            <div class="card-title">Cleanup style</div>
             <div class="field">
-              <div class="field-label">Cleanup style</div>
               <div class="segmented">
                 <label>
                   <input type="radio" name="cleanup-style-mode" value="preset" />
@@ -301,10 +302,12 @@
                 </div>
               </div>
             </div>
+          </div>
 
+          <div class="card">
+            <div class="card-title">System prompt</div>
             <div class="field">
-              <label for="cleanup-prompt">System prompt</label>
-              <textarea id="cleanup-prompt" rows="8" spellcheck="false"></textarea>
+              <textarea id="cleanup-prompt" rows="8" spellcheck="false" aria-label="System prompt"></textarea>
               <button id="cleanup-prompt-reset" class="ghost">Reset to default</button>
             </div>
             <div class="row" id="cleanup-test-row">
@@ -380,6 +383,9 @@
               Nothing changes until you finish the wizard.
             </p>
           </div>
+        </div>
+
+        <div class="card">
           <div class="field">
             <div class="field-label">About</div>
             <p class="hint">

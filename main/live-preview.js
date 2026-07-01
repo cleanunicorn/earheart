@@ -31,10 +31,15 @@ function joinText(a, b) {
   return `${a} ${b}`;
 }
 
-function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettings, isCurrent }) {
+function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettings, isCurrent, onError }) {
+  const reportError = onError || (() => {});
   let sttBusy = false;
   let cleanupBusy = false;
   let abortController = null; // aborts in-flight partial work when recording ends
+  // The last partial-error message we surfaced. A persistent failure (e.g. the
+  // model isn't downloaded) recurs every tick; dedupe so it's logged once, and
+  // reset on any successful decode so a later, different failure still surfaces.
+  let lastErrorLogged = "";
 
   // Decode accumulators — append-only; only the in-progress chunk is re-decoded,
   // so decode cost stays flat however long the dictation runs.
@@ -105,6 +110,7 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
       const wav = Buffer.from(wavArrayBuffer);
       const raw = await runTranscribe(wav, cfg.stt, signal);
       if (stale(sid, signal)) return;
+      lastErrorLogged = ""; // a decode succeeded; let the next failure surface
       const text = (raw || "").trim();
 
       if (final && seq > lastSeq) {
@@ -120,8 +126,16 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
         liveRaw = text;
         pushRaw();
       }
-    } catch {
-      // Cosmetic: ignore failed partials entirely; the final pass is authoritative.
+    } catch (err) {
+      // A failed partial is cosmetic — the final pass is authoritative, so never
+      // let it disturb the dictation. But report it (deduped) instead of eating
+      // it silently: a persistently blank preview is almost always a surfaced-here
+      // error (model loading, not downloaded, or a decode failure).
+      const msg = err?.message || String(err);
+      if (msg !== lastErrorLogged) {
+        lastErrorLogged = msg;
+        reportError(err);
+      }
     } finally {
       sttBusy = false;
     }

@@ -223,9 +223,13 @@ function openSettings({ fromWizard = false } = {}) {
     return settingsWindow;
   }
   settingsWindow = new BrowserWindow({
-    width: 760,
-    height: 640,
-    minWidth: 620,
+    // Snug around the 620px content column (max-width in settings.css) plus its
+    // 28px side padding, so there's little left/right dead space.
+    width: 680,
+    // Sized so the roomier card-based General tab fits without scrolling; the
+    // longer tabs (Cleanup) still scroll, which is expected.
+    height: 780,
+    minWidth: 560,
     minHeight: 480,
     title: "Earheart",
     autoHideMenuBar: true,

@@ -11,330 +11,382 @@
   </head>
   <body>
     <header>
-      <img src="../assets/icon.png" alt="" width="36" height="36" />
+      <img src="../assets/icon.png" alt="" width="34" height="34" />
       <div>
         <h1>Earheart</h1>
-        <p>Press the hotkey, speak, press it again. Your words appear where you type.</p>
+        <p>Press the hotkey, speak, press it again — your words appear where you type.</p>
       </div>
     </header>
 
-    <nav id="tabs">
-      <button class="tab active" data-tab="general">General</button>
-      <button class="tab" data-tab="stt">Speech-to-text</button>
-      <button class="tab" data-tab="cleanup">Cleanup</button>
-      <button class="tab" data-tab="history">History</button>
-      <button class="tab" data-tab="advanced">Advanced</button>
+    <nav id="tabs" role="tablist" aria-label="Settings sections">
+      <button class="tab active" id="tabbtn-general" data-tab="general" role="tab" aria-selected="true" aria-controls="tab-general">General</button>
+      <button class="tab" id="tabbtn-stt" data-tab="stt" role="tab" aria-selected="false" aria-controls="tab-stt" tabindex="-1">Speech-to-text</button>
+      <button class="tab" id="tabbtn-cleanup" data-tab="cleanup" role="tab" aria-selected="false" aria-controls="tab-cleanup" tabindex="-1">Cleanup</button>
+      <button class="tab" id="tabbtn-history" data-tab="history" role="tab" aria-selected="false" aria-controls="tab-history" tabindex="-1">History</button>
+      <button class="tab" id="tabbtn-advanced" data-tab="advanced" role="tab" aria-selected="false" aria-controls="tab-advanced" tabindex="-1">Advanced</button>
     </nav>
 
     <main>
       <div id="wizard-banner" class="banner" hidden>
         <span>
           <strong>Setup complete.</strong> These settings were pre-configured by
-          the setup wizard — you can save them just as they are, or adjust
-          anything first.
+          the setup wizard — save them as they are, or adjust anything first.
         </span>
         <button id="wizard-banner-dismiss" class="ghost">Dismiss</button>
       </div>
 
       <!-- General -->
-      <section id="tab-general" class="panel active">
-        <div class="field">
-          <label for="hotkey">Global hotkey</label>
-          <div class="row">
-            <input id="hotkey" readonly placeholder="Click, then press a key combination" />
-            <button id="hotkey-clear" class="ghost">Reset</button>
+      <section id="tab-general" class="panel active" role="tabpanel" aria-labelledby="tabbtn-general">
+        <div class="card">
+          <div class="card-title">Recording</div>
+          <div class="field">
+            <label for="hotkey">Global hotkey</label>
+            <div class="row">
+              <input id="hotkey" readonly placeholder="Click, then press a key combination" />
+              <button id="hotkey-clear" class="ghost">Reset</button>
+            </div>
+            <p class="hint">
+              Press once to start recording, again to stop and transcribe.
+              <span id="wayland-note">On GNOME/KDE Wayland, apps may not be able to grab
+              global keys — instead, bind a system keyboard shortcut to
+              <code>earheart --toggle</code>.</span>
+            </p>
+            <p id="hotkey-status" class="status"></p>
           </div>
-          <p class="hint">
-            Press once to start recording, again to stop and transcribe.
-            <span id="wayland-note">On GNOME/KDE Wayland, apps may not be able to grab global
-            keys — instead, bind a system keyboard shortcut to
-            <code>earheart --toggle</code>.</span>
-          </p>
-          <p id="hotkey-status" class="status"></p>
+
+          <div class="field">
+            <label for="mic-device">Microphone</label>
+            <select id="mic-device">
+              <option value="">System default</option>
+            </select>
+          </div>
         </div>
 
-        <div class="field">
-          <label>Output</label>
-          <label class="choice">
-            <input type="radio" name="output-mode" value="paste" />
-            Paste into the active app
-          </label>
-          <label class="choice">
-            <input type="radio" name="output-mode" value="paste-copy" />
-            Paste and keep the transcript on the clipboard
-          </label>
-          <label class="choice">
-            <input type="radio" name="output-mode" value="clipboard" />
-            Copy to clipboard only — I'll paste myself
-          </label>
+        <div class="card">
+          <div class="card-title">Where the text goes</div>
+          <div class="field">
+            <div class="options">
+              <label class="option">
+                <input type="radio" name="output-mode" value="paste" />
+                <span class="option-text">Paste into the active app</span>
+              </label>
+              <label class="option">
+                <input type="radio" name="output-mode" value="paste-copy" />
+                <span class="option-text">Paste and keep the transcript on the clipboard</span>
+              </label>
+              <label class="option">
+                <input type="radio" name="output-mode" value="clipboard" />
+                <span class="option-text">Copy to clipboard only — I'll paste myself</span>
+              </label>
+            </div>
+          </div>
         </div>
 
-        <div class="field">
-          <label for="mic-device">Microphone</label>
-          <select id="mic-device">
-            <option value="">System default</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label>Startup</label>
-          <label class="choice">
-            <input type="checkbox" id="start-on-boot" />
-            Start Earheart when I log in
+        <div class="card">
+          <label class="toggle">
+            <span class="toggle-text">
+              <span class="t">Start Earheart when I log in</span>
+              <span class="d">Launches in the background (system tray) after you sign in.</span>
+            </span>
+            <input type="checkbox" id="start-on-boot" class="switch" role="switch" />
           </label>
-          <p class="hint">
-            Launches Earheart in the background (system tray) after you sign in.
-          </p>
         </div>
       </section>
 
       <!-- STT -->
-      <section id="tab-stt" class="panel">
-        <div class="field">
-          <label>Speech-to-text engine</label>
-          <label class="choice">
-            <input type="radio" name="stt-engine" value="builtin" />
-            On this computer, built in <span class="muted">(Parakeet — private, no setup)</span>
-          </label>
-          <label class="choice">
-            <input type="radio" name="stt-engine" value="external" />
-            An OpenAI-compatible service <span class="muted">(local server, OpenAI, Groq, …)</span>
-          </label>
-        </div>
+      <section id="tab-stt" class="panel" role="tabpanel" aria-labelledby="tabbtn-stt">
+        <div class="card">
+          <div class="card-title">Transcription engine</div>
+          <div class="field">
+            <div class="segmented">
+              <label>
+                <input type="radio" name="stt-engine" value="builtin" />
+                On this computer
+              </label>
+              <label>
+                <input type="radio" name="stt-engine" value="external" />
+                OpenAI-compatible
+              </label>
+            </div>
+            <p class="hint">
+              Built-in runs NVIDIA Parakeet privately, with nothing to install.
+              OpenAI-compatible points at a local server, OpenAI, Groq, and the like.
+            </p>
+          </div>
 
-        <div id="stt-builtin-fields">
-          <div class="field">
-            <label for="stt-builtin-model">Model</label>
-            <select id="stt-builtin-model"></select>
-          </div>
-          <div id="stt-model-manage" class="model-manage"></div>
-        </div>
-
-        <div id="stt-external-fields">
-          <div class="field">
-            <label for="stt-url">Base URL</label>
-            <input id="stt-url" placeholder="http://127.0.0.1:8484/v1" />
-            <p class="hint">The app calls <code>{base URL}/audio/transcriptions</code>.</p>
-          </div>
-          <div class="field">
-            <label for="stt-key">API key <span class="muted">(optional for local servers)</span></label>
-            <input id="stt-key" type="password" autocomplete="off" />
-          </div>
-          <div class="grid-2">
+          <div id="stt-builtin-fields">
             <div class="field">
-              <label for="stt-model">Model</label>
-              <input id="stt-model" placeholder="parakeet" list="stt-model-list" />
-              <datalist id="stt-model-list"></datalist>
-              <div class="row">
-                <button id="stt-fetch-models" class="ghost" type="button">Fetch models</button>
-                <span id="stt-fetch-result" class="status"></span>
+              <label for="stt-builtin-model">Model</label>
+              <select id="stt-builtin-model"></select>
+            </div>
+            <div id="stt-model-manage" class="model-manage"></div>
+          </div>
+
+          <div id="stt-external-fields">
+            <div class="field">
+              <label for="stt-url">Base URL</label>
+              <input id="stt-url" placeholder="http://127.0.0.1:8484/v1" />
+              <p class="hint">The app calls <code>{base URL}/audio/transcriptions</code>.</p>
+            </div>
+            <div class="field">
+              <label for="stt-key">API key <span class="muted">(optional for local servers)</span></label>
+              <input id="stt-key" type="password" autocomplete="off" />
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="stt-model">Model</label>
+                <input id="stt-model" placeholder="parakeet" list="stt-model-list" />
+                <datalist id="stt-model-list"></datalist>
+              </div>
+              <div class="field">
+                <label for="stt-language">Language <span class="muted">(optional, e.g. en)</span></label>
+                <input id="stt-language" placeholder="auto" />
               </div>
             </div>
-            <div class="field">
-              <label for="stt-language">Language <span class="muted">(optional, e.g. en)</span></label>
-              <input id="stt-language" placeholder="auto" />
+            <div class="row">
+              <button id="stt-fetch-models" class="ghost" type="button">Fetch models</button>
+              <span id="stt-fetch-result" class="status"></span>
+            </div>
+            <div class="row">
+              <button id="stt-test">Test connection</button>
+              <span id="stt-test-result" class="status"></span>
             </div>
           </div>
-          <div class="row">
-            <button id="stt-test">Test connection</button>
-            <span id="stt-test-result" class="status"></span>
-          </div>
         </div>
-        <div class="field">
-          <label class="choice">
-            <input type="checkbox" id="stt-live-preview" />
-            Show a live transcript while you speak
+
+        <div class="card">
+          <label class="toggle">
+            <span class="toggle-text">
+              <span class="t">Show a live transcript while you speak</span>
+              <span class="d">
+                Fills in the overlay as you talk, with a cleaned version settling in on
+                pauses. The final transcript is unchanged. Adds some CPU load while recording.
+              </span>
+            </span>
+            <input type="checkbox" id="stt-live-preview" class="switch" role="switch" />
           </label>
-          <p class="hint">
-            Transcribes as you talk and shows the text in the overlay, with a
-            cleaned version filling in on pauses. The final transcript on stop is
-            unchanged. Adds some CPU load while recording.
-          </p>
         </div>
       </section>
 
       <!-- Cleanup -->
-      <section id="tab-cleanup" class="panel">
-        <p class="lead">
-          After transcription, a language model fixes punctuation and removes
-          filler words and false starts.
-        </p>
-        <div class="field">
-          <label class="choice">
-            <input type="checkbox" id="cleanup-enabled" />
-            Clean up transcripts automatically
+      <section id="tab-cleanup" class="panel" role="tabpanel" aria-labelledby="tabbtn-cleanup">
+        <div class="card">
+          <label class="toggle">
+            <span class="toggle-text">
+              <span class="t">Clean up transcripts automatically</span>
+              <span class="d">
+                After transcription, a language model fixes punctuation and removes filler
+                words and false starts.
+              </span>
+            </span>
+            <input type="checkbox" id="cleanup-enabled" class="switch" role="switch" />
           </label>
         </div>
+
         <div id="cleanup-fields">
-          <div class="field">
-            <label>Cleanup engine</label>
-            <label class="choice">
-              <input type="radio" name="cleanup-engine" value="builtin" />
-              On this computer, built in <span class="muted">(Gemma — no setup)</span>
-            </label>
-            <label class="choice">
-              <input type="radio" name="cleanup-engine" value="external" />
-              An OpenAI-compatible service <span class="muted">(Ollama, LM Studio, OpenAI, …)</span>
-            </label>
-          </div>
-
-          <div id="cleanup-builtin-fields">
+          <div class="card">
+            <div class="card-title">Cleanup engine</div>
             <div class="field">
-              <label for="cleanup-builtin-model">Model</label>
-              <select id="cleanup-builtin-model"></select>
-            </div>
-            <div id="cleanup-model-manage" class="model-manage"></div>
-
-            <div class="field" id="cleanup-custom">
-              <label for="cleanup-hf-url">Add a model from Hugging Face</label>
-              <input id="cleanup-hf-url"
-                placeholder="https://huggingface.co/unsloth/gemma-3-1b-it-GGUF" />
-              <div class="row">
-                <button id="cleanup-hf-find" class="ghost" type="button">Find versions</button>
-                <span id="cleanup-hf-result" class="status"></span>
-              </div>
-              <div class="row" id="cleanup-hf-pick" hidden>
-                <select id="cleanup-hf-quant"></select>
-                <button id="cleanup-hf-add" type="button">Add</button>
+              <div class="segmented">
+                <label>
+                  <input type="radio" name="cleanup-engine" value="builtin" />
+                  On this computer
+                </label>
+                <label>
+                  <input type="radio" name="cleanup-engine" value="external" />
+                  OpenAI-compatible
+                </label>
               </div>
               <p class="hint">
-                Paste a Hugging Face GGUF model URL. Earheart lists its versions and
-                downloads the one you pick. Custom models aren't checksum-verified.
+                Built-in runs a small Gemma model, with nothing to install.
+                OpenAI-compatible points at Ollama, LM Studio, OpenAI, and the like.
               </p>
             </div>
-          </div>
 
-          <div id="cleanup-external-fields">
-            <div class="field">
-              <label for="cleanup-url">Base URL</label>
-              <input id="cleanup-url" placeholder="http://127.0.0.1:11434/v1" />
-              <p class="hint">The app calls <code>{base URL}/chat/completions</code>.</p>
+            <div id="cleanup-builtin-fields">
+              <div class="field">
+                <label for="cleanup-builtin-model">Model</label>
+                <select id="cleanup-builtin-model"></select>
+              </div>
+              <div id="cleanup-model-manage" class="model-manage"></div>
+
+              <div class="field" id="cleanup-custom">
+                <label for="cleanup-hf-url">Add a model from Hugging Face</label>
+                <input id="cleanup-hf-url"
+                  placeholder="https://huggingface.co/unsloth/gemma-3-1b-it-GGUF" />
+                <div class="row">
+                  <button id="cleanup-hf-find" class="ghost" type="button">Find versions</button>
+                  <span id="cleanup-hf-result" class="status"></span>
+                </div>
+                <div class="row" id="cleanup-hf-pick" hidden>
+                  <select id="cleanup-hf-quant"></select>
+                  <button id="cleanup-hf-add" type="button">Add</button>
+                </div>
+                <p class="hint">
+                  Paste a Hugging Face GGUF model URL. Earheart lists its versions and
+                  downloads the one you pick. Custom models aren't checksum-verified.
+                </p>
+              </div>
             </div>
-            <div class="field">
-              <label for="cleanup-key">API key <span class="muted">(optional for local servers)</span></label>
-              <input id="cleanup-key" type="password" autocomplete="off" />
-            </div>
-            <div class="field">
-              <label for="cleanup-model">Model</label>
-              <input id="cleanup-model" placeholder="llama3.2" list="cleanup-model-list" />
-              <datalist id="cleanup-model-list"></datalist>
-              <div class="row">
-                <button id="cleanup-fetch-models" class="ghost" type="button">Fetch models</button>
-                <span id="cleanup-fetch-result" class="status"></span>
+
+            <div id="cleanup-external-fields">
+              <div class="field">
+                <label for="cleanup-url">Base URL</label>
+                <input id="cleanup-url" placeholder="http://127.0.0.1:11434/v1" />
+                <p class="hint">The app calls <code>{base URL}/chat/completions</code>.</p>
+              </div>
+              <div class="field">
+                <label for="cleanup-key">API key <span class="muted">(optional for local servers)</span></label>
+                <input id="cleanup-key" type="password" autocomplete="off" />
+              </div>
+              <div class="field">
+                <label for="cleanup-model">Model</label>
+                <input id="cleanup-model" placeholder="llama3.2" list="cleanup-model-list" />
+                <datalist id="cleanup-model-list"></datalist>
+                <div class="row">
+                  <button id="cleanup-fetch-models" class="ghost" type="button">Fetch models</button>
+                  <span id="cleanup-fetch-result" class="status"></span>
+                </div>
               </div>
             </div>
           </div>
 
-          <div class="field">
-            <label for="cleanup-style">Cleanup style</label>
-            <input id="cleanup-style" type="range" min="0" max="2" step="1" />
-            <div class="row space-between" id="cleanup-style-labels">
-              <span class="muted">Closer to your words</span>
-              <span class="muted">More polished</span>
-            </div>
-            <p class="hint"><strong id="cleanup-style-label"></strong> — <span id="cleanup-style-hint"></span></p>
-            <details id="cleanup-advanced">
-              <summary>Advanced sampling</summary>
-              <label class="choice">
-                <input type="checkbox" id="cleanup-custom-enabled" />
-                Use custom sampling values (ignores the slider)
-              </label>
-              <p class="hint">
-                Lower values keep the model closer to the most likely wording;
-                higher values let it vary more. <code>top-k</code> and
-                <code>min-p</code> apply to the built-in engine only — external
-                services receive temperature and <code>top-p</code>.
-              </p>
-              <div class="grid-2" id="cleanup-custom-fields">
-                <div class="field">
-                  <label for="cleanup-temperature">Temperature <span class="muted">(0–2)</span></label>
-                  <input id="cleanup-temperature" type="number" min="0" max="2" step="0.05" />
+          <div class="card">
+            <div class="card-title">Cleanup style</div>
+            <div class="field">
+              <div class="segmented">
+                <label>
+                  <input type="radio" name="cleanup-style-mode" value="preset" />
+                  Preset
+                </label>
+                <label>
+                  <input type="radio" name="cleanup-style-mode" value="custom" />
+                  Custom values
+                </label>
+              </div>
+
+              <div id="cleanup-style-preset">
+                <input id="cleanup-style" type="range" min="0" max="2" step="1"
+                  aria-label="Cleanup style preset" />
+                <div class="row space-between" id="cleanup-style-labels">
+                  <span class="muted">Closer to your words</span>
+                  <span class="muted">More polished</span>
                 </div>
-                <div class="field">
-                  <label for="cleanup-top-p">top-p <span class="muted">(0–1)</span></label>
-                  <input id="cleanup-top-p" type="number" min="0" max="1" step="0.05" />
-                </div>
-                <div class="field">
-                  <label for="cleanup-top-k">top-k <span class="muted">(0 = off)</span></label>
-                  <input id="cleanup-top-k" type="number" min="0" max="200" step="1" />
-                </div>
-                <div class="field">
-                  <label for="cleanup-min-p">min-p <span class="muted">(0 = off)</span></label>
-                  <input id="cleanup-min-p" type="number" min="0" max="1" step="0.01" />
+                <p class="hint"><strong id="cleanup-style-label"></strong> — <span id="cleanup-style-hint"></span></p>
+              </div>
+
+              <div id="cleanup-style-custom">
+                <p class="hint">
+                  Lower values keep the model closer to the most likely wording;
+                  higher values let it vary more. <code>top-k</code> and
+                  <code>min-p</code> apply to the built-in engine only — external
+                  services receive temperature and <code>top-p</code>.
+                </p>
+                <div class="grid-2" id="cleanup-custom-fields">
+                  <div class="field">
+                    <label for="cleanup-temperature">Temperature <span class="muted">(0–2)</span></label>
+                    <input id="cleanup-temperature" type="number" min="0" max="2" step="0.05" />
+                  </div>
+                  <div class="field">
+                    <label for="cleanup-top-p">top-p <span class="muted">(0–1)</span></label>
+                    <input id="cleanup-top-p" type="number" min="0" max="1" step="0.05" />
+                  </div>
+                  <div class="field">
+                    <label for="cleanup-top-k">top-k <span class="muted">(0 = off)</span></label>
+                    <input id="cleanup-top-k" type="number" min="0" max="200" step="1" />
+                  </div>
+                  <div class="field">
+                    <label for="cleanup-min-p">min-p <span class="muted">(0 = off)</span></label>
+                    <input id="cleanup-min-p" type="number" min="0" max="1" step="0.01" />
+                  </div>
                 </div>
               </div>
-            </details>
+            </div>
           </div>
 
-          <div class="field">
-            <label for="cleanup-prompt">System prompt</label>
-            <textarea id="cleanup-prompt" rows="9" spellcheck="false"></textarea>
-            <button id="cleanup-prompt-reset" class="ghost">Reset to default</button>
-          </div>
-          <div class="row" id="cleanup-test-row">
-            <button id="cleanup-test">Test connection</button>
-            <span id="cleanup-test-result" class="status"></span>
+          <div class="card">
+            <div class="card-title">System prompt</div>
+            <div class="field">
+              <textarea id="cleanup-prompt" rows="8" spellcheck="false" aria-label="System prompt"></textarea>
+              <button id="cleanup-prompt-reset" class="ghost">Reset to default</button>
+            </div>
+            <div class="row" id="cleanup-test-row">
+              <button id="cleanup-test">Test connection</button>
+              <span id="cleanup-test-result" class="status"></span>
+            </div>
           </div>
         </div>
       </section>
 
       <!-- History -->
-      <section id="tab-history" class="panel">
-        <div class="row space-between">
-          <label class="choice">
-            <input type="checkbox" id="history-enabled" />
-            Keep a local history of transcriptions
+      <section id="tab-history" class="panel" role="tabpanel" aria-labelledby="tabbtn-history">
+        <div class="card">
+          <label class="toggle">
+            <span class="toggle-text">
+              <span class="t">Keep a local history of transcriptions</span>
+              <span class="d">Stored on this computer only. Never uploaded anywhere.</span>
+            </span>
+            <input type="checkbox" id="history-enabled" class="switch" role="switch" />
           </label>
+        </div>
+        <div class="row space-between history-head">
+          <span class="muted">Recent transcriptions</span>
           <button id="history-clear" class="ghost danger">Clear history</button>
         </div>
         <ul id="history-list"></ul>
       </section>
 
       <!-- Advanced -->
-      <section id="tab-advanced" class="panel">
-        <div class="field">
-          <label for="max-seconds">Maximum recording length (seconds)</label>
-          <input id="max-seconds" type="number" min="10" max="3600" step="10" />
-        </div>
-        <div class="field">
-          <label for="idle-unload">Unload models after idle (minutes)</label>
-          <input id="idle-unload" type="number" min="0" max="240" step="1" />
+      <section id="tab-advanced" class="panel" role="tabpanel" aria-labelledby="tabbtn-advanced">
+        <div class="card">
+          <div class="card-title">Performance</div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="max-seconds">Max recording length (s)</label>
+              <input id="max-seconds" type="number" min="10" max="3600" step="10" />
+            </div>
+            <div class="field">
+              <label for="idle-unload">Unload models after idle (min)</label>
+              <input id="idle-unload" type="number" min="0" max="240" step="1" />
+            </div>
+          </div>
           <p class="hint">
-            Built-in speech-to-text and cleanup models stay in memory for fast
-            repeat dictations, then unload after this many idle minutes to free
-            memory (~1.5 GB or more). Set to 0 to keep them loaded for the whole
-            session. Only affects the in-app models, not external services.
+            Built-in models stay in memory for fast repeat dictations, then unload after this
+            many idle minutes to free memory (~1.5 GB or more). Set to 0 to keep them loaded
+            for the whole session. Only affects in-app models, not external services.
           </p>
         </div>
-        <div class="field" id="accessibility-field" hidden>
-          <label>Auto-paste permission</label>
+
+        <div class="card" id="accessibility-field" hidden>
+          <div class="card-title">Auto-paste permission</div>
           <div class="row">
             <button id="accessibility-fix" class="ghost">Fix auto-paste permission…</button>
             <span id="accessibility-status" class="status"></span>
           </div>
           <p class="hint">
             Auto-paste types into the focused app, which macOS allows only with
-            Accessibility permission. If pasting stopped working, click here to
-            check the permission and open System Settings ▸ Privacy &amp; Security ▸
-            Accessibility, then turn Earheart on (toggle it off and on again if
-            it is already listed).
+            Accessibility permission. If pasting stopped working, click here to check the
+            permission and open System Settings ▸ Privacy &amp; Security ▸ Accessibility,
+            then turn Earheart on (toggle it off and on again if it is already listed).
           </p>
         </div>
-        <div class="field">
-          <label>Setup wizard</label>
+
+        <div class="card">
+          <div class="card-title">Setup wizard</div>
           <div class="row">
             <button id="open-wizard" class="ghost">Run the setup wizard again…</button>
           </div>
           <p class="hint">
-            Walks through hotkey, microphone, speech-to-text and cleanup from
-            scratch. Nothing changes until you finish the wizard.
+            Walks through hotkey, microphone, speech-to-text and cleanup from scratch.
+            Nothing changes until you finish the wizard.
           </p>
         </div>
-        <div class="field">
-          <label>About</label>
+
+        <div class="card">
+          <div class="card-title">About</div>
           <p class="hint">
-            Earheart <span id="version"></span> — private, hotkey-driven voice
-            dictation. Free and open source (MIT).
+            Earheart <span id="version"></span> — private, hotkey-driven voice dictation.
+            Free and open source (MIT).
           </p>
           <div class="row">
             <button id="open-logs" class="ghost">Open error log</button>

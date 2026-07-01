@@ -10,13 +10,32 @@ const $ = (id) => document.getElementById(id);
 
 /* ---------- tabs ---------- */
 
-document.querySelectorAll(".tab").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
-    document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
-    tab.classList.add("active");
-    $(`tab-${tab.dataset.tab}`).classList.add("active");
-    if (tab.dataset.tab === "history") renderHistory();
+// The tabs are an ARIA tablist: exactly one tab is selected and in the tab
+// order (roving tabindex), and Left/Right arrows move between them.
+const tabButtons = [...document.querySelectorAll(".tab")];
+
+function activateTab(name, { focus = false } = {}) {
+  for (const t of tabButtons) {
+    const on = t.dataset.tab === name;
+    t.classList.toggle("active", on);
+    t.setAttribute("aria-selected", on ? "true" : "false");
+    t.tabIndex = on ? 0 : -1;
+    if (on && focus) t.focus();
+  }
+  document
+    .querySelectorAll(".panel")
+    .forEach((p) => p.classList.toggle("active", p.id === `tab-${name}`));
+  if (name === "history") renderHistory();
+}
+
+tabButtons.forEach((tab, i) => {
+  tab.addEventListener("click", () => activateTab(tab.dataset.tab));
+  tab.addEventListener("keydown", (event) => {
+    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const next = tabButtons[(i + step + tabButtons.length) % tabButtons.length];
+    activateTab(next.dataset.tab, { focus: true });
   });
 });
 
@@ -43,17 +62,31 @@ function acceleratorFromEvent(event) {
 }
 
 const hotkeyInput = $("hotkey");
-hotkeyInput.addEventListener("click", () => {
+function startHotkeyCapture() {
   hotkeyInput.classList.add("capturing");
   hotkeyInput.value = "Press keys…";
-});
+}
+hotkeyInput.addEventListener("click", startHotkeyCapture);
 hotkeyInput.addEventListener("blur", () => {
   hotkeyInput.classList.remove("capturing");
   hotkeyInput.value = current?.hotkey || "";
 });
 hotkeyInput.addEventListener("keydown", (event) => {
-  if (!hotkeyInput.classList.contains("capturing")) return;
+  // Keyboard users can't click, so Enter/Space on the focused field arms
+  // capture — matching what a mouse click does.
+  if (!hotkeyInput.classList.contains("capturing")) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      startHotkeyCapture();
+    }
+    return;
+  }
   event.preventDefault();
+  // Escape leaves capture without changing the binding (blur restores it).
+  if (event.key === "Escape") {
+    hotkeyInput.blur();
+    return;
+  }
   const accelerator = acceleratorFromEvent(event);
   if (accelerator) {
     current.hotkey = accelerator;
@@ -205,19 +238,35 @@ function collect() {
 }
 
 function syncCleanupEnabled() {
-  $("cleanup-fields").classList.toggle("disabled", !$("cleanup-enabled").checked);
+  const on = $("cleanup-enabled").checked;
+  const fields = $("cleanup-fields");
+  fields.classList.toggle("disabled", !on);
+  // The .disabled class dims and sets pointer-events:none, which blocks the
+  // mouse but leaves the controls in the tab order; `inert` also removes them
+  // from keyboard focus and the accessibility tree so the visual and real
+  // interactivity match.
+  fields.inert = !on;
 }
 $("cleanup-enabled").addEventListener("change", syncCleanupEnabled);
 
-/* ---------- cleanup style slider + advanced sampling ---------- */
+/* ---------- cleanup style: preset slider vs custom sampling ---------- */
 
-// The slider stops are the named styles (verbatim → clean → polished);
-// "custom" takes over when the user opts into raw sampling values, at which
-// point the slider is ignored. One control, two modes.
+// A segmented control picks the mode. "Preset" shows the slider (verbatim →
+// clean → polished); "Custom values" shows the raw sampling fields. Only the
+// active mode's controls are visible, so switching is one click.
+function styleMode() {
+  const el = document.querySelector('input[name="cleanup-style-mode"]:checked');
+  return el ? el.value : "preset";
+}
+
+function setStyleMode(mode) {
+  const el = document.querySelector(`input[name="cleanup-style-mode"][value="${mode}"]`);
+  if (el) el.checked = true;
+}
+
 function populateCleanupStyle() {
   const c = current.cleanup;
-  const isCustom = c.style === "custom";
-  $("cleanup-custom-enabled").checked = isCustom;
+  setStyleMode(c.style === "custom" ? "custom" : "preset");
 
   let idx = cleanupStyles.findIndex((s) => s.id === c.style);
   if (idx < 0) idx = cleanupStyles.findIndex((s) => s.id === "clean");
@@ -231,8 +280,7 @@ function populateCleanupStyle() {
   $("cleanup-min-p").value = custom.minP ?? "";
 
   renderStyleLabel();
-  syncCustomEnabled();
-  $("cleanup-advanced").open = isCustom;
+  syncStyleMode();
 }
 
 function renderStyleLabel() {
@@ -243,10 +291,12 @@ function renderStyleLabel() {
   $("cleanup-style-hint").textContent = style.hint;
 }
 
-function syncCustomEnabled() {
-  const custom = $("cleanup-custom-enabled").checked;
-  $("cleanup-style").disabled = custom;
-  $("cleanup-custom-fields").classList.toggle("disabled", !custom);
+// Show only the active mode's controls; `hidden` also removes the inactive
+// ones from the tab order and accessibility tree.
+function syncStyleMode() {
+  const custom = styleMode() === "custom";
+  $("cleanup-style-preset").hidden = custom;
+  $("cleanup-style-custom").hidden = !custom;
 }
 
 // Clamp a parsed number into [min, max], falling back when the field is blank
@@ -258,9 +308,8 @@ function num(id, min, max, fallback) {
 }
 
 function collectCleanupStyle() {
-  const customEnabled = $("cleanup-custom-enabled").checked;
   const idx = parseInt($("cleanup-style").value, 10) || 0;
-  const style = customEnabled ? "custom" : cleanupStyles[idx]?.id || "clean";
+  const style = styleMode() === "custom" ? "custom" : cleanupStyles[idx]?.id || "clean";
   return {
     style,
     custom: {
@@ -273,10 +322,9 @@ function collectCleanupStyle() {
 }
 
 $("cleanup-style").addEventListener("input", renderStyleLabel);
-$("cleanup-custom-enabled").addEventListener("change", () => {
-  syncCustomEnabled();
-  if ($("cleanup-custom-enabled").checked) $("cleanup-advanced").open = true;
-});
+document
+  .querySelectorAll('input[name="cleanup-style-mode"]')
+  .forEach((r) => r.addEventListener("change", syncStyleMode));
 
 /* ---------- built-in engines + model management ---------- */
 
@@ -472,29 +520,39 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
 
 /* ---------- save ---------- */
 
-$("save").addEventListener("click", async () => {
+const saveButton = $("save");
+saveButton.addEventListener("click", async () => {
   const save = $("save-status");
   const hotkeyStatus = $("hotkey-status");
   let result;
+  // Acknowledge the click immediately and block a duplicate save while the
+  // round-trip is in flight.
+  saveButton.disabled = true;
+  save.textContent = "Saving…";
+  save.className = "status";
   try {
     current = collect();
     result = await earheart.invoke("settings:save", current);
+    current = result.settings;
+    if (result.hotkey.ok) {
+      // Clean save — close the window so the user doesn't have to dismiss it.
+      save.textContent = "Saved";
+      save.className = "status ok";
+      hotkeyStatus.textContent = "";
+      earheart.invoke("settings:close");
+      return;
+    }
   } catch (err) {
+    // Covers a rejected save AND a resolved-but-malformed result, so the button
+    // never stays stuck disabled on "Saving…".
     save.textContent = `Could not save: ${err.message}`;
     save.className = "status err";
-    return;
-  }
-  current = result.settings;
-  if (result.hotkey.ok) {
-    // Clean save — close the window so the user doesn't have to dismiss it.
-    save.textContent = "Saved";
-    save.className = "status ok";
-    hotkeyStatus.textContent = "";
-    earheart.invoke("settings:close");
+    saveButton.disabled = false;
     return;
   }
   // The hotkey couldn't be registered: keep the window open so the error is
   // visible and the user can pick a combination that works.
+  saveButton.disabled = false;
   save.textContent = "Saved, but the hotkey could not be registered";
   save.className = "status err";
   hotkeyStatus.textContent = result.hotkey.error;
@@ -507,17 +565,25 @@ $("save").addEventListener("click", async () => {
 /* ---------- connection tests ---------- */
 
 function bindTest(buttonId, resultId, channel, getCfg) {
-  $(buttonId).addEventListener("click", async () => {
+  const btn = $(buttonId);
+  btn.addEventListener("click", async () => {
     const el = $(resultId);
+    // Disable while the test is in flight so a second click can't race a stale
+    // response over the result (mirrors bindFetchModels).
+    btn.disabled = true;
     el.textContent = "Testing…";
     el.className = "status";
-    const result = await earheart.invoke(channel, getCfg());
-    if (result.ok) {
-      el.textContent = result.sample ? `OK — "${result.sample}"` : "OK";
-      el.className = "status ok";
-    } else {
-      el.textContent = result.error;
-      el.className = "status err";
+    try {
+      const result = await earheart.invoke(channel, getCfg());
+      if (result.ok) {
+        el.textContent = result.sample ? `OK — "${result.sample}"` : "OK";
+        el.className = "status ok";
+      } else {
+        el.textContent = result.error;
+        el.className = "status err";
+      }
+    } finally {
+      btn.disabled = false;
     }
   });
 }

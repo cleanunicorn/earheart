@@ -593,18 +593,103 @@ button.danger:hover {
   line-height: 1.5;
 }
 
-/* ---------- disabled cleanup block ---------- */
+/* ---------- disabled cleanup blocks ---------- */
 
-#cleanup-fields.disabled {
+#cleanup-fields.disabled,
+#cleanup-custom-fields.disabled {
   opacity: 0.42;
   pointer-events: none;
+}
+
+/* ---------- cleanup style slider + advanced sampling ---------- */
+
+/* The native range ships browser-default chrome (a foreign blue thumb, a
+   platform track) that clashes with the app's pink accent and flat
+   surface+border language. Style it to match: an inset --field track and an
+   accent thumb. */
+input[type="range"] {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 6px;
+  background: var(--field);
+  border: 1px solid var(--border);
+}
+input[type="range"]::-moz-range-track {
+  height: 8px;
+  border-radius: 6px;
+  background: var(--field);
+  border: 1px solid var(--border);
+}
+
+/* Accent thumb, a comfortable grab target, no shadow. */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -4px; /* centre the thumb on the 8px track */
+  border-radius: 50%;
+  background: var(--accent);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* The global `input:focus { outline: none }` leaves a range with no focus cue
+   (it has no border to recolour). Restore a visible, keyboard-only ring. */
+input[type="range"]:focus {
+  outline: none;
+}
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* When custom sampling takes over, the slider is disabled — make that read. */
+input[type="range"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* The Advanced disclosure should read as a clickable row, not static text. */
+#cleanup-advanced summary {
+  cursor: pointer;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+/* Bracket the slider's endpoints, with a small gap below the track. */
+#cleanup-style-labels {
+  margin-top: 6px;
+}
+
+/* The live readout is the field's primary feedback — lift the style name out
+   of the muted hint tier so the current selection is the bright element. */
+#cleanup-style-label {
+  color: var(--text);
+  font-size: 14px;
+}
+
+/* The custom fields are .field inside a .grid-2 whose own 14px gap should be the
+   only spacing; grid margins aren't absorbed by gap. */
+#cleanup-custom-fields > .field {
+  margin-bottom: 0;
 }
 
 /* ---------- history ---------- */
 
 .history-head {
   margin-bottom: 10px;
-}
 
 #history-list {
   list-style: none;
@@ -688,4 +773,16 @@ footer {
   width: 0;
   background: var(--accent);
   transition: width 0.2s ease;
+}
+
+/* Honour a reduced-motion preference: collapse transitions (the download fill,
+   focus, etc.) to effectively instant. Covers the wizard too — it imports this
+   stylesheet. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

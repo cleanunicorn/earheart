@@ -20,6 +20,7 @@ const engines = require("./engines");
 const { deliver } = require("./output/deliver");
 const history = require("./history");
 const { createLivePreview } = require("./live-preview");
+const logger = require("./util/logger");
 
 let state = "idle"; // idle | recording | processing
 let session = 0; // current dictation session id
@@ -184,7 +185,7 @@ async function process(sid, wavArrayBuffer) {
         if (stale()) return;
         // Cleanup is an enhancement: fall back to the raw transcript and
         // surface what happened instead of dropping the dictation.
-        console.error("[earheart] cleanup failed:", err.message);
+        logger.error("cleanup failed:", err.message);
         new Notification({
           title: "Earheart: cleanup failed, used raw transcript",
           body: String(err.message).slice(0, 180),
@@ -209,7 +210,7 @@ async function process(sid, wavArrayBuffer) {
     hideOverlaySoon(sid, result.note ? 4000 : 1600);
   } catch (err) {
     if (stale()) return;
-    console.error("[earheart] pipeline failed:", err);
+    logger.error("pipeline failed:", err);
     overlayStatus("error", { message: String(err.message).slice(0, 200) });
     hideOverlaySoon(sid, 5000);
   } finally {

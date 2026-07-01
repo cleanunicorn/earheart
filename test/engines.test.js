@@ -61,6 +61,29 @@ test("registry exposes default models that resolve", () => {
   assert.strictEqual(registry.getModel("stt", "nope"), null);
 });
 
+test("registry: setCustomModels makes custom models resolvable and listable", () => {
+  const custom = {
+    id: "custom-acme-foo-q4-k-m",
+    kind: "cleanup",
+    label: "foo · Q4_K_M",
+    engine: "llama-gguf",
+    custom: true,
+    files: [{ name: "foo-Q4_K_M.gguf", url: "https://huggingface.co/acme/foo/resolve/c/foo-Q4_K_M.gguf" }],
+    gguf: { file: "foo-Q4_K_M.gguf" },
+  };
+  try {
+    registry.setCustomModels([custom]);
+    assert.strictEqual(registry.getModel("cleanup", custom.id), custom);
+    assert.ok(registry.listModels("cleanup").some((m) => m.id === custom.id));
+    // Custom STT entries don't leak into the cleanup list and vice versa.
+    assert.ok(!registry.listModels("stt").some((m) => m.id === custom.id));
+    // Built-ins still resolve alongside custom models.
+    assert.ok(registry.getModel("cleanup", registry.DEFAULT_CLEANUP_MODEL));
+  } finally {
+    registry.setCustomModels([]); // reset so later invariant tests see built-ins only
+  }
+});
+
 test("registry totalBytes sums the file sizes", () => {
   const model = { files: [{ bytes: 10 }, { bytes: 5 }, {}] };
   assert.strictEqual(registry.totalBytes(model), 15);

@@ -10,6 +10,7 @@ const tray = require("./tray");
 const ipc = require("./ipc");
 const engines = require("./engines");
 const autostart = require("./autostart");
+const logger = require("./util/logger");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
 const startHidden = process.argv.includes("--hidden");
@@ -38,6 +39,10 @@ function applyHotkey(accelerator) {
 
 function main() {
   app.whenReady().then(() => {
+    // Open the log file and start capturing uncaught errors before anything
+    // else can fail.
+    logger.init();
+
     // Check before anything can write the settings file: no file yet means
     // this is a fresh install and the user gets the setup wizard.
     const firstRun = settings.isFirstRun();
@@ -48,7 +53,7 @@ function main() {
     try {
       autostart.apply(cfg.startOnBoot);
     } catch (err) {
-      console.warn(`[earheart] could not apply start-on-boot: ${err.message}`);
+      logger.warn(`could not apply start-on-boot: ${err.message}`);
     }
 
     // The renderer asks for microphone and clipboard access; grant those.
@@ -74,7 +79,7 @@ function main() {
 
     const hotkeyResult = applyHotkey(cfg.hotkey);
     if (!hotkeyResult.ok) {
-      console.warn(`[earheart] ${hotkeyResult.error}`);
+      logger.warn(hotkeyResult.error);
     }
 
     if (!startHidden && !isSmokeTest) {

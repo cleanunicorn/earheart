@@ -200,6 +200,14 @@ test("new installs default to in-process engines", () => {
   assert.ok(DEFAULTS.cleanup.builtin.model);
 });
 
+test("customModels defaults to empty and a stored list survives the merge", () => {
+  assert.deepStrictEqual(DEFAULTS.customModels, []);
+  const stored = [{ id: "custom-x", kind: "cleanup", files: [] }];
+  // deepMerge replaces arrays wholesale, so a saved custom-models list is kept
+  // intact (not element-merged against the empty default) when settings load.
+  assert.deepStrictEqual(deepMerge(DEFAULTS, { customModels: stored }).customModels, stored);
+});
+
 /* ---------------- start on boot (autostart) ---------------- */
 
 test("start-on-boot defaults to off and survives the merge both ways", () => {

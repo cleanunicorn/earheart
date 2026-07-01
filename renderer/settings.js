@@ -4,6 +4,7 @@ let current = null; // settings object being edited
 let defaults = null;
 let platform = "linux";
 let modelStatus = null; // { stt: [...], cleanup: [...] } from the main process
+let cleanupStyles = []; // [{ id, label, hint }] — the cleanup style slider stops
 
 const $ = (id) => document.getElementById(id);
 
@@ -149,7 +150,7 @@ function populate() {
   $("cleanup-url").value = current.cleanup.baseUrl;
   $("cleanup-key").value = current.cleanup.apiKey;
   $("cleanup-model").value = current.cleanup.model;
-  $("cleanup-temperature").value = current.cleanup.temperature;
+  populateCleanupStyle();
   $("cleanup-prompt").value = current.cleanup.systemPrompt;
   selectEngine("cleanup", current.cleanup.engine);
   $("cleanup-builtin-model").value = current.cleanup.builtin.model;
@@ -202,7 +203,7 @@ function collect() {
       baseUrl: $("cleanup-url").value.trim(),
       apiKey: $("cleanup-key").value.trim(),
       model: $("cleanup-model").value.trim(),
-      temperature: parseFloat($("cleanup-temperature").value) || 0,
+      ...collectCleanupStyle(),
       systemPrompt: $("cleanup-prompt").value,
     },
     audio: {
@@ -233,6 +234,75 @@ function syncCleanupEnabled() {
   fields.inert = !on;
 }
 $("cleanup-enabled").addEventListener("change", syncCleanupEnabled);
+
+/* ---------- cleanup style slider + advanced sampling ---------- */
+
+// The slider stops are the named styles (verbatim → clean → polished);
+// "custom" takes over when the user opts into raw sampling values, at which
+// point the slider is ignored. One control, two modes.
+function populateCleanupStyle() {
+  const c = current.cleanup;
+  const isCustom = c.style === "custom";
+  $("cleanup-custom-enabled").checked = isCustom;
+
+  let idx = cleanupStyles.findIndex((s) => s.id === c.style);
+  if (idx < 0) idx = cleanupStyles.findIndex((s) => s.id === "clean");
+  if (idx < 0) idx = 0;
+  $("cleanup-style").value = String(idx);
+
+  const custom = c.custom || {};
+  $("cleanup-temperature").value = custom.temperature ?? "";
+  $("cleanup-top-p").value = custom.topP ?? "";
+  $("cleanup-top-k").value = custom.topK ?? "";
+  $("cleanup-min-p").value = custom.minP ?? "";
+
+  renderStyleLabel();
+  syncCustomEnabled();
+  $("cleanup-advanced").open = isCustom;
+}
+
+function renderStyleLabel() {
+  const idx = parseInt($("cleanup-style").value, 10) || 0;
+  const style = cleanupStyles[idx];
+  if (!style) return;
+  $("cleanup-style-label").textContent = style.label;
+  $("cleanup-style-hint").textContent = style.hint;
+}
+
+function syncCustomEnabled() {
+  const custom = $("cleanup-custom-enabled").checked;
+  $("cleanup-style").disabled = custom;
+  $("cleanup-custom-fields").classList.toggle("disabled", !custom);
+}
+
+// Clamp a parsed number into [min, max], falling back when the field is blank
+// or unparseable so a stray entry never writes NaN into settings.
+function num(id, min, max, fallback) {
+  const v = parseFloat($(id).value);
+  if (!Number.isFinite(v)) return fallback;
+  return Math.min(max, Math.max(min, v));
+}
+
+function collectCleanupStyle() {
+  const customEnabled = $("cleanup-custom-enabled").checked;
+  const idx = parseInt($("cleanup-style").value, 10) || 0;
+  const style = customEnabled ? "custom" : cleanupStyles[idx]?.id || "clean";
+  return {
+    style,
+    custom: {
+      temperature: num("cleanup-temperature", 0, 2, 0.2),
+      topP: num("cleanup-top-p", 0, 1, 1),
+      topK: Math.round(num("cleanup-top-k", 0, 1000, 0)),
+      minP: num("cleanup-min-p", 0, 1, 0),
+    },
+  };
+}
+
+$("cleanup-style").addEventListener("input", renderStyleLabel);
+$("cleanup-custom-enabled").addEventListener("change", () => {
+  syncCustomEnabled();
+  if ($("cleanup-custom-enabled").checked) $("cleanup-advanced").open = true;
+});
 
 /* ---------- built-in engines + model management ---------- */
 
@@ -306,7 +376,10 @@ function renderManage(kind) {
     status.className = "status ok";
     btn.textContent = "Remove";
     btn.className = "ghost danger";
-    btn.onclick = () => removeModel(kind, modelId);
+    // For a custom model "Remove" also forgets its definition, since there's no
+    // curated reason to keep an un-downloaded custom entry around.
+    btn.onclick = () =>
+      info.custom ? removeCustomModel(modelId) : removeModel(kind, modelId);
   } else {
     status.textContent = "Not downloaded";
     btn.textContent = "Download";
@@ -314,6 +387,14 @@ function renderManage(kind) {
     btn.onclick = () => downloadModel(kind, modelId, ui);
   }
   row.append(btn, status);
+  // A custom model that isn't downloaded still needs a way off the list.
+  if (info.custom && !info.installed) {
+    const forget = document.createElement("button");
+    forget.textContent = "Remove from list";
+    forget.className = "ghost danger";
+    forget.onclick = () => removeCustomModel(modelId);
+    row.append(forget);
+  }
   container.append(note, bar, row);
   manage[kind] = ui;
 }
@@ -355,8 +436,29 @@ async function removeModel(kind, modelId) {
   await refreshModels();
 }
 
-async function refreshModels() {
+// Remove a custom model entirely: its files (if downloaded) and its definition.
+async function removeCustomModel(modelId) {
+  const info = modelStatus.cleanup.find((m) => m.id === modelId);
+  const label = info ? info.label : modelId;
+  if (!confirm(`Remove ${label} from your models?`)) return;
+  const res = await earheart.invoke("models:remove-custom", { modelId });
+  if (res.ok) current.customModels = res.customModels;
+  await refreshModels();
+}
+
+// Re-pull model status and rebuild the dropdowns (custom models may have been
+// added or removed), keeping the current selection — or a `preferred` id per
+// kind, e.g. to select a model that was just added.
+async function refreshModels(preferred = {}) {
   modelStatus = await earheart.invoke("models:status");
+  for (const kind of ["stt", "cleanup"]) {
+    const select = $(`${kind}-builtin-model`);
+    const want = preferred[kind] || select.value || current[kind].builtin.model;
+    populateModelSelect(kind);
+    select.value = modelStatus[kind].some((m) => m.id === want)
+      ? want
+      : current[kind].builtin.model;
+  }
   renderManage("stt");
   renderManage("cleanup");
 }
@@ -498,6 +600,87 @@ bindFetchModels("cleanup-fetch-models", "cleanup-fetch-result", "cleanup-model-l
   return { baseUrl: c.baseUrl, apiKey: c.apiKey };
 });
 
+/* ---------- add a custom cleanup model from a Hugging Face URL ---------- */
+
+function humanSize(bytes) {
+  if (!bytes) return "";
+  return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`;
+}
+
+// Paste a Hugging Face GGUF repo URL → "Find versions" lists its quantizations
+// (defaulting to the best Q4) → "Add" registers the chosen one as a custom
+// model, which then downloads/removes through the same UI as the built-ins.
+function bindAddCustomModel() {
+  const urlInput = $("cleanup-hf-url");
+  const findBtn = $("cleanup-hf-find");
+  const result = $("cleanup-hf-result");
+  const pick = $("cleanup-hf-pick");
+  const quantSelect = $("cleanup-hf-quant");
+  const addBtn = $("cleanup-hf-add");
+
+  findBtn.addEventListener("click", async () => {
+    const url = urlInput.value.trim();
+    if (!url) return;
+    findBtn.disabled = true;
+    pick.hidden = true;
+    result.textContent = "Looking up versions…";
+    result.className = "status";
+    try {
+      const res = await earheart.invoke("models:hf-quants", { url });
+      if (!res.ok) {
+        result.textContent = res.error;
+        result.className = "status err";
+        return;
+      }
+      quantSelect.replaceChildren(
+        ...res.quants.map((q) => {
+          const opt = document.createElement("option");
+          opt.value = q.label;
+          const size = humanSize(q.totalBytes);
+          opt.textContent =
+            q.label +
+            (size ? ` · ${size}` : "") +
+            (q.label === res.recommended ? " · recommended" : "");
+          return opt;
+        })
+      );
+      if (res.recommended) quantSelect.value = res.recommended;
+      pick.hidden = false;
+      result.textContent = `${res.repo} — ${res.quants.length} version${res.quants.length === 1 ? "" : "s"}`;
+      result.className = "status ok";
+    } finally {
+      findBtn.disabled = false;
+    }
+  });
+
+  addBtn.addEventListener("click", async () => {
+    const url = urlInput.value.trim();
+    const quant = quantSelect.value;
+    if (!url || !quant) return;
+    addBtn.disabled = true;
+    result.textContent = "Adding…";
+    result.className = "status";
+    try {
+      const res = await earheart.invoke("models:add-custom", { url, quant });
+      if (!res.ok) {
+        result.textContent = res.error;
+        result.className = "status err";
+        return;
+      }
+      // Keep `current` in sync so a later settings save doesn't drop the model.
+      current.customModels = res.customModels;
+      await refreshModels({ cleanup: res.modelId });
+      urlInput.value = "";
+      pick.hidden = true;
+      result.textContent = "Added — click Download to fetch it";
+      result.className = "status ok";
+    } finally {
+      addBtn.disabled = false;
+    }
+  });
+}
+bindAddCustomModel();
+
 /* ---------- history ---------- */
 
 async function renderHistory() {
@@ -546,6 +729,21 @@ earheart.on("history:changed", () => {
 
 $("open-wizard").addEventListener("click", () => {
   earheart.invoke("wizard:open");
+});
+
+/* ---------- error log ---------- */
+
+$("open-logs").addEventListener("click", async () => {
+  const el = $("open-logs-result");
+  const result = await earheart.invoke("logs:open");
+  if (result.ok) {
+    el.textContent = result.path;
+    el.className = "status";
+  } else {
+    // Opening can fail (no default handler for .log); still show where it is.
+    el.textContent = result.path ? `Couldn't open it — find it at ${result.path}` : result.error;
+    el.className = "status err";
+  }
 });
 
 /* ---------- macOS auto-paste (Accessibility) permission ---------- */
@@ -610,6 +808,7 @@ $("wizard-banner-dismiss").addEventListener("click", () => {
   current = data.settings;
   defaults = data.defaults;
   platform = data.platform;
+  cleanupStyles = data.cleanupStyles || [];
   // The Accessibility permission only exists on macOS.
   if (platform === "darwin") $("accessibility-field").hidden = false;
   $("version").textContent = `v${data.version}`;

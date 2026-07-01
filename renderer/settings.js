@@ -533,19 +533,21 @@ saveButton.addEventListener("click", async () => {
   try {
     current = collect();
     result = await earheart.invoke("settings:save", current);
+    current = result.settings;
+    if (result.hotkey.ok) {
+      // Clean save — close the window so the user doesn't have to dismiss it.
+      save.textContent = "Saved";
+      save.className = "status ok";
+      hotkeyStatus.textContent = "";
+      earheart.invoke("settings:close");
+      return;
+    }
   } catch (err) {
+    // Covers a rejected save AND a resolved-but-malformed result, so the button
+    // never stays stuck disabled on "Saving…".
     save.textContent = `Could not save: ${err.message}`;
     save.className = "status err";
     saveButton.disabled = false;
-    return;
-  }
-  current = result.settings;
-  if (result.hotkey.ok) {
-    // Clean save — close the window so the user doesn't have to dismiss it.
-    save.textContent = "Saved";
-    save.className = "status ok";
-    hotkeyStatus.textContent = "";
-    earheart.invoke("settings:close");
     return;
   }
   // The hotkey couldn't be registered: keep the window open so the error is

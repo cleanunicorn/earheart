@@ -339,6 +339,7 @@
       <!-- Advanced -->
       <section id="tab-advanced" class="panel" role="tabpanel" aria-labelledby="tabbtn-advanced">
         <div class="card">
+          <div class="card-title">Performance</div>
           <div class="grid-2">
             <div class="field">
               <label for="max-seconds">Max recording length (s)</label>
@@ -357,47 +358,41 @@
         </div>
 
         <div class="card" id="accessibility-field" hidden>
-          <div class="field">
-            <div class="field-label">Auto-paste permission</div>
-            <div class="row">
-              <button id="accessibility-fix" class="ghost">Fix auto-paste permission…</button>
-              <span id="accessibility-status" class="status"></span>
-            </div>
-            <p class="hint">
-              Auto-paste types into the focused app, which macOS allows only with
-              Accessibility permission. If pasting stopped working, click here to check the
-              permission and open System Settings ▸ Privacy &amp; Security ▸ Accessibility,
-              then turn Earheart on (toggle it off and on again if it is already listed).
-            </p>
+          <div class="card-title">Auto-paste permission</div>
+          <div class="row">
+            <button id="accessibility-fix" class="ghost">Fix auto-paste permission…</button>
+            <span id="accessibility-status" class="status"></span>
           </div>
+          <p class="hint">
+            Auto-paste types into the focused app, which macOS allows only with
+            Accessibility permission. If pasting stopped working, click here to check the
+            permission and open System Settings ▸ Privacy &amp; Security ▸ Accessibility,
+            then turn Earheart on (toggle it off and on again if it is already listed).
+          </p>
         </div>
 
         <div class="card">
-          <div class="field">
-            <div class="field-label">Setup wizard</div>
-            <div class="row">
-              <button id="open-wizard" class="ghost">Run the setup wizard again…</button>
-            </div>
-            <p class="hint">
-              Walks through hotkey, microphone, speech-to-text and cleanup from scratch.
-              Nothing changes until you finish the wizard.
-            </p>
+          <div class="card-title">Setup wizard</div>
+          <div class="row">
+            <button id="open-wizard" class="ghost">Run the setup wizard again…</button>
           </div>
+          <p class="hint">
+            Walks through hotkey, microphone, speech-to-text and cleanup from scratch.
+            Nothing changes until you finish the wizard.
+          </p>
         </div>
 
         <div class="card">
-          <div class="field">
-            <div class="field-label">About</div>
-            <p class="hint">
-              Earheart <span id="version"></span> — private, hotkey-driven voice dictation.
-              Free and open source (MIT).
-            </p>
-            <div class="row">
-              <button id="open-logs" class="ghost">Open error log</button>
-              <span id="open-logs-result" class="status"></span>
-            </div>
-            <p class="hint">Errors are written here — attach it when reporting a problem.</p>
+          <div class="card-title">About</div>
+          <p class="hint">
+            Earheart <span id="version"></span> — private, hotkey-driven voice dictation.
+            Free and open source (MIT).
+          </p>
+          <div class="row">
+            <button id="open-logs" class="ghost">Open error log</button>
+            <span id="open-logs-result" class="status"></span>
           </div>
+          <p class="hint">Errors are written here — attach it when reporting a problem.</p>
         </div>
       </section>
     </main>

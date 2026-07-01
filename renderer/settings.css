@@ -9,7 +9,7 @@
   --elevate: #292534; /* raised chip / selected segment / hover */
   --field: #14121d; /* inset inputs + segmented track */
   --border: #2c2839; /* chrome: chips, buttons, dividers */
-  --border-input: #6a6486; /* form-field boundaries — ~3:1 on --panel (WCAG 1.4.11) */
+  --border-input: #6d6789; /* form-field boundaries — 3.1:1 on --panel (WCAG 1.4.11) */
   --border-soft: #221f2e;
   --text: #f1eef7;
   --muted: #9c94af;
@@ -195,10 +195,7 @@ main {
   margin-bottom: 0;
 }
 
-/* A field's heading: a real <label> when it targets a control, or a plain
-   .field-label element for group headings that own no single control. */
-.field > label:first-child,
-.field > .field-label {
+.field > label:first-child {
   display: block;
   font-weight: 550;
   font-size: 13px;

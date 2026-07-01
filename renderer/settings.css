@@ -690,6 +690,7 @@ input[type="range"]:disabled {
 
 .history-head {
   margin-bottom: 10px;
+}
 
 #history-list {
   list-style: none;

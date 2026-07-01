@@ -272,7 +272,11 @@ function renderStyleLabel() {
 function syncCustomEnabled() {
   const custom = $("cleanup-custom-enabled").checked;
   $("cleanup-style").disabled = custom;
-  $("cleanup-custom-fields").classList.toggle("disabled", !custom);
+  const fields = $("cleanup-custom-fields");
+  fields.classList.toggle("disabled", !custom);
+  // Match syncCleanupEnabled: the .disabled class only blocks the mouse, so also
+  // set `inert` to keep the dimmed sampling inputs out of the tab order and AT.
+  fields.inert = !custom;
 }
 
 // Clamp a parsed number into [min, max], falling back when the field is blank

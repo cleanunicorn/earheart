@@ -224,7 +224,9 @@ function openSettings({ fromWizard = false } = {}) {
   }
   settingsWindow = new BrowserWindow({
     width: 760,
-    height: 640,
+    // Sized so the roomier card-based General tab fits without scrolling; the
+    // longer tabs (Cleanup) still scroll, which is expected.
+    height: 770,
     minWidth: 620,
     minHeight: 480,
     title: "Earheart",

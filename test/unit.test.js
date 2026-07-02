@@ -6,7 +6,7 @@ const assert = require("node:assert");
 
 const http = require("node:http");
 
-const { encodeWav, encodeSilenceWav, wavToFloat32 } = require("../main/util/wav");
+const { encodeWav, encodeSilenceWav, wavToFloat32, wavDurationSec } = require("../main/util/wav");
 const { stripThinking } = require("../main/services/cleanup");
 const { deepMerge, migrateLegacy, DEFAULTS } = require("../main/settings");
 const autostart = require("../main/autostart");
@@ -28,6 +28,48 @@ test("encodeWav produces a valid RIFF header", () => {
 test("encodeSilenceWav has the requested duration", () => {
   const wav = encodeSilenceWav(0.5);
   assert.strictEqual(wav.readUInt32LE(40), 16000 * 0.5 * 2);
+});
+
+test("wavDurationSec reads the duration from the chunk list", () => {
+  assert.strictEqual(wavDurationSec(encodeSilenceWav(0.5)), 0.5);
+  assert.strictEqual(wavDurationSec(encodeSilenceWav(3)), 3);
+  // Degenerate/malformed buffers floor at 0.01s instead of throwing — the
+  // value feeds progress estimates, so best-effort beats an error.
+  assert.strictEqual(wavDurationSec(Buffer.alloc(0)), 0.01);
+  assert.strictEqual(wavDurationSec(Buffer.from("not a wav at all")), 0.01);
+});
+
+test("wavDurationSec genuinely walks chunks: junk chunk, stereo, non-16k, pad byte", () => {
+  // Hand-built WAV that breaks every fixed-44-byte-header assumption: an
+  // odd-sized LIST chunk (so the word-alignment pad byte matters) sits between
+  // fmt and data, and the audio is stereo 44.1kHz — exactly 1s of frames.
+  const sr = 44100;
+  const channels = 2;
+  const dataSize = sr * 2 * channels; // 1 second of PCM16 stereo
+  const junk = 7; // odd on purpose: chunk must be followed by a pad byte
+  const buf = Buffer.alloc(12 + (8 + 16) + (8 + junk + 1) + 8 + dataSize);
+  let p = 0;
+  buf.write("RIFF", p);
+  buf.writeUInt32LE(buf.length - 8, p + 4);
+  buf.write("WAVE", p + 8);
+  p += 12;
+  buf.write("fmt ", p);
+  buf.writeUInt32LE(16, p + 4);
+  p += 8;
+  buf.writeUInt16LE(1, p); // PCM
+  buf.writeUInt16LE(channels, p + 2);
+  buf.writeUInt32LE(sr, p + 4);
+  buf.writeUInt32LE(sr * 2 * channels, p + 8);
+  buf.writeUInt16LE(2 * channels, p + 12);
+  buf.writeUInt16LE(16, p + 14);
+  p += 16;
+  buf.write("LIST", p);
+  buf.writeUInt32LE(junk, p + 4);
+  p += 8 + junk + 1; // skip the junk body plus its alignment pad
+  buf.write("data", p);
+  buf.writeUInt32LE(dataSize, p + 4);
+
+  assert.strictEqual(wavDurationSec(buf), 1);
 });
 
 test("stripThinking removes reasoning blocks", () => {

@@ -22,13 +22,13 @@ const host = createHost({ serviceName: "earheart-engine-smoke" });
 
 app.whenReady().then(async () => {
   try {
-    const ping = await host.request("ping", {}, 30000);
+    const ping = await host.request("ping", {}, { timeoutMs: 30000 });
     if (!ping || ping.pong !== true) {
       throw new Error(`unexpected ping reply: ${JSON.stringify(ping)}`);
     }
     console.log("[engine-smoke] worker ping ok");
 
-    const engines = await host.request("loadcheck", {}, 30000);
+    const engines = await host.request("loadcheck", {}, { timeoutMs: 30000 });
     if (!engines || engines.stt !== true || engines.cleanup !== true) {
       throw new Error(
         `native addon load failed: ${JSON.stringify(engines)}`

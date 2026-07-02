@@ -7,7 +7,9 @@
 // error and the caller falls back to the HTTP path — the app keeps working.
 //
 // Protocol: the parent posts { id, type, ...args }; we reply with
-// { id, ok: true, result } or { id, ok: false, error }.
+// { id, ok: true, result } or { id, ok: false, error }. Long-running handlers
+// may post interim { id, progress } messages before the reply; the host routes
+// them to the caller's onProgress without settling the request.
 //
 // Engine state (the recognizer, the llama context/session) is single-instance,
 // so requests are assumed to arrive one at a time. The dictation pipeline is a
@@ -39,6 +41,24 @@ function reply(id, promise) {
   Promise.resolve(promise)
     .then((result) => port.postMessage({ id, ok: true, result }))
     .catch((err) => port.postMessage({ id, ok: false, error: String(err && err.message || err) }));
+}
+
+// Interim { id, progress } sender for a request, throttled at the source so a
+// per-token callback can't flood the IPC channel. Timestamp-based (no timers),
+// so nothing outlives the request — a dropped trailing update is fine because
+// the reply itself is the final word.
+const PROGRESS_INTERVAL_MS = 100;
+// Streamed cleanup progress never claims completion — only the reply does.
+const CLEAN_PROGRESS_CAP = 0.99;
+
+function makeProgressEmitter(id) {
+  let lastSentAt = 0;
+  return (progress) => {
+    const now = Date.now();
+    if (now - lastSentAt < PROGRESS_INTERVAL_MS) return;
+    lastSentAt = now;
+    port.postMessage({ id, progress });
+  };
 }
 
 /* ---------------- speech-to-text (sherpa-onnx / Parakeet) ---------------- */
@@ -79,9 +99,15 @@ async function transcribe({ wav, language }) {
   const { samples, sampleRate } = wavToFloat32(buf);
   const stream = recognizer.createStream();
   stream.acceptWaveform({ sampleRate, samples });
+  // Time the decode here, where nothing else can leak in: measured from the
+  // pipeline it would include model loads and queueing behind an in-flight
+  // live-preview decode on this single-threaded worker — poisoning the
+  // realtime-factor estimate that paces the transcribing bar.
+  const startedAt = Date.now();
   recognizer.decode(stream);
+  const decodeMs = Date.now() - startedAt;
   const result = recognizer.getResult(stream);
-  return (result && result.text ? result.text : "").trim();
+  return { text: (result && result.text ? result.text : "").trim(), decodeMs };
   // `language` is accepted for parity with the HTTP API; Parakeet v3
   // auto-detects, so it is not forwarded.
 }
@@ -120,7 +146,7 @@ function samplingOptions(sampling) {
   return opts;
 }
 
-async function clean({ transcript, systemPrompt, sampling }) {
+async function clean({ transcript, systemPrompt, sampling }, emitProgress) {
   if (!llamaContext) throw new Error("Cleanup model not loaded");
   const mod = await import("node-llama-cpp");
   // No systemPrompt: tested against Gemma 1B, putting the cleanup rules in the
@@ -139,7 +165,17 @@ async function clean({ transcript, systemPrompt, sampling }) {
   // continues with the cleaned text rather than a reply to its content.
   const userTurn =
     `${systemPrompt}\n\nTranscript:\n${transcript}\n\nCleaned transcript:`;
-  const out = await llamaSession.prompt(userTurn, samplingOptions(sampling));
+  // Cleaned output tracks the input's length closely (punctuation in, fillers
+  // out), so generated-chars / transcript-chars is an honest progress ratio.
+  const total = Math.max(1, transcript.length);
+  let generated = 0;
+  const out = await llamaSession.prompt(userTurn, {
+    ...samplingOptions(sampling),
+    onTextChunk: (text) => {
+      generated += text.length;
+      if (emitProgress) emitProgress(Math.min(CLEAN_PROGRESS_CAP, generated / total));
+    },
+  });
   return (out || "").trim();
 }
 
@@ -209,5 +245,5 @@ port.on("message", (event) => {
     port.postMessage({ id, ok: false, error: `Unknown request: ${type}` });
     return;
   }
-  reply(id, handler(args));
+  reply(id, handler(args, makeProgressEmitter(id)));
 });

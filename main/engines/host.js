@@ -11,8 +11,10 @@
 
 const path = require("node:path");
 
-// Default per-request ceiling: model loads and long transcriptions can take a
-// while, but a wedged worker should never hang a caller forever.
+// Default silence deadline: a request is rejected after this long with no
+// reply AND no progress. Interim progress messages re-arm it (see request()),
+// so this bounds a wedged worker, not a slow-but-progressing one — model loads
+// and long transcriptions emit nothing and must still fit under it.
 const DEFAULT_REQUEST_TIMEOUT_MS = 180000;
 
 function createHost({ serviceName = "earheart-engines" } = {}) {
@@ -37,7 +39,18 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
     });
     child.on("message", (msg) => {
       const entry = msg && pending.get(msg.id);
-      if (!entry) return;
+      if (!entry) return; // late progress/reply for a finished request: drop
+      if (msg.progress !== undefined) {
+        // Interim progress: the request is still in flight. The protocol
+        // promises a finite number; anything else is dropped like an unknown
+        // id — a malformed message must not extend the deadline or reach the
+        // caller. Valid progress proves the worker is alive, so push the
+        // inactivity deadline out.
+        if (typeof msg.progress !== "number" || !Number.isFinite(msg.progress)) return;
+        entry.touch();
+        if (entry.onProgress) entry.onProgress(msg.progress);
+        return;
+      }
       pending.delete(msg.id);
       if (msg.ok) entry.resolve(msg.result);
       else entry.reject(new Error(msg.error || "engine error"));
@@ -61,21 +74,34 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
    * structured-cloned across the process boundary; Electron's utilityProcess
    * has no transfer list for plain buffers (only MessagePortMain), so callers
    * pass any binary data as ordinary fields.
+   *
+   * The worker may post interim `{ id, progress }` messages before its reply;
+   * they invoke `onProgress` without settling the promise, and each one resets
+   * the timeout — the ceiling bounds *silence*, not total duration, so a slow
+   * but visibly progressing inference is never cut off.
    * @param {string} type
    * @param {object} [args]
-   * @param {number} [timeoutMs]
+   * @param {{timeoutMs?: number, onProgress?: (progress: number) => void}} [opts]
    */
-  function request(type, args = {}, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
+  function request(type, args = {}, opts = {}) {
+    const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, onProgress } = opts;
     const child = spawn();
     const id = nextId++;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        if (pending.has(id)) {
-          pending.delete(id);
-          reject(new Error(`engine request '${type}' timed out`));
-        }
-      }, timeoutMs);
+      let timer = null;
+      const arm = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          if (pending.has(id)) {
+            pending.delete(id);
+            reject(new Error(`engine request '${type}' timed out`));
+          }
+        }, timeoutMs);
+      };
+      arm();
       pending.set(id, {
+        onProgress,
+        touch: arm,
         resolve: (v) => {
           clearTimeout(timer);
           resolve(v);

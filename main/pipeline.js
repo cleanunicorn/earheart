@@ -12,7 +12,8 @@
 // messages. Events from a torn-down session (late cancels, slow renderers)
 // are ignored instead of corrupting the current one.
 
-const { ipcMain, Notification } = require("electron");
+const { app, ipcMain, Notification } = require("electron");
+const path = require("node:path");
 const windows = require("./windows");
 const settings = require("./settings");
 const route = require("./services/route");
@@ -20,6 +21,8 @@ const engines = require("./engines");
 const { deliver } = require("./output/deliver");
 const history = require("./history");
 const { createLivePreview } = require("./live-preview");
+const { createPersistedRtfEstimator } = require("./util/rtf");
+const { wavDurationSec } = require("./util/wav");
 const logger = require("./util/logger");
 
 let state = "idle"; // idle | recording | processing
@@ -88,6 +91,105 @@ function getState() {
 
 function overlayStatus(status, detail) {
   windows.sendToOverlay("pipeline:status", { status, detail });
+}
+
+// Determinate progress within a processing phase. A separate event from
+// pipeline:status: status means "the phase changed" (and resets the overlay's
+// transcript/layout), progress just advances the bar for the current phase.
+// The 0..1 field is named `fraction` to match the models:progress vocabulary.
+function sendProgress(phase, fraction) {
+  windows.sendToOverlay("pipeline:progress", { phase, fraction });
+}
+
+// The final STT decode exposes no progress, so the transcribing bar runs on an
+// estimate calibrated by the measured realtime factor of previous decodes,
+// persisted in userData so calibration survives app restarts. The singleton is
+// created lazily because app.getPath needs the app ready; the first use is
+// inside process(). (Same deferred-getPath shape as history.js/settings.js.)
+let sttRtf = null;
+
+// Cadence of the estimated transcribing bar. Faster than the worker's own
+// 100ms progress throttle so the two bars feel equally alive, well below the
+// bar's 150ms CSS width transition so motion stays continuous.
+const STT_PROGRESS_TICK_MS = 120;
+
+function getSttRtf() {
+  if (!sttRtf) {
+    sttRtf = createPersistedRtfEstimator(
+      path.join(app.getPath("userData"), "stt-rtf.json")
+    );
+  }
+  return sttRtf;
+}
+
+// Run the final transcription with the estimated transcribing bar. The builtin
+// decoder is one opaque blocking call, so the bar is elapsed time against the
+// audio duration times the learned decode speed; this helper owns that plumbing
+// (model preload, ticker lifecycle, RTF sample) so process() stays a readable
+// phase list. Remote STT (network-bound, no meaningful local estimate) skips
+// the estimate and keeps the indeterminate pulse. `stale` mutes sends from a
+// cancelled/superseded session; the ticker itself dies in `finally` regardless.
+async function transcribeWithEstimate(wav, sttCfg, signal, stale) {
+  const rtf = sttCfg.engine === "builtin" ? getSttRtf() : null;
+  if (rtf) {
+    // Load the model BEFORE starting the clock: a cold load (first dictation,
+    // post-idle-unload, worker restart) takes seconds and would both freeze
+    // the bar at its cap and poison the persisted RTF sample with load time
+    // that isn't decode speed. Idempotent — route.transcribe re-runs it as a
+    // no-op; errors land in the caller's catch either way.
+    await engines.ensureStt(sttCfg.builtin.model);
+    if (stale()) return "";
+  }
+  const durationSec = wavDurationSec(wav);
+  const startedAt = Date.now();
+  const elapsedSec = () => (Date.now() - startedAt) / 1000;
+  const tick = rtf
+    ? setInterval(() => {
+        if (stale()) return;
+        sendProgress("transcribing", rtf.progressAt(elapsedSec(), durationSec));
+      }, STT_PROGRESS_TICK_MS)
+    : null;
+  try {
+    // The RTF sample comes from the worker's own decode timing, not wall
+    // clock: elapsed here also contains queueing behind an in-flight
+    // live-preview decode on the single STT worker, which would drag the
+    // estimate high on exactly the common case (live preview is on by
+    // default). The bar's ticker above still runs on wall clock — that IS
+    // what the user is waiting through.
+    let decodeMs = null;
+    const raw = await route.transcribe(wav, sttCfg, signal, {
+      onDecodeMs: (ms) => {
+        decodeMs = ms;
+      },
+    });
+    if (rtf && !stale()) {
+      if (decodeMs !== null) rtf.record(durationSec, decodeMs / 1000);
+      // The estimate never reaches 1 on its own (capped); on success, let the
+      // bar visibly complete instead of always vanishing short of the end.
+      sendProgress("transcribing", 1);
+    }
+    return raw;
+  } finally {
+    if (tick) clearInterval(tick);
+  }
+}
+
+// Sibling of transcribeWithEstimate: run cleanup with its streamed progress.
+// The builtin worker reports real token progress (generated vs transcript
+// length, capped below 1 — only the reply says done), so on success this sends
+// the explicit final 1; the remote path never showed a bar, so a completion
+// flash there would be noise. The raw-transcript fallback stays with the
+// caller — that's dictation policy, not progress plumbing.
+async function cleanWithProgress(raw, cleanupCfg, signal, stale) {
+  const text = await route.clean(raw, cleanupCfg, signal, {
+    onProgress: (fraction) => {
+      if (!stale()) sendProgress("cleaning", fraction);
+    },
+  });
+  if (cleanupCfg.engine === "builtin" && !stale()) {
+    sendProgress("cleaning", 1);
+  }
+  return text;
 }
 
 function hideOverlaySoon(sid, ms) {
@@ -173,7 +275,7 @@ async function process(sid, wavArrayBuffer) {
 
   try {
     overlayStatus("transcribing");
-    const raw = await route.transcribe(wav, cfg.stt, signal);
+    const raw = await transcribeWithEstimate(wav, cfg.stt, signal, stale);
     if (stale()) return;
 
     if (!raw) {
@@ -187,7 +289,7 @@ async function process(sid, wavArrayBuffer) {
     if (cfg.cleanup.enabled) {
       overlayStatus("cleaning");
       try {
-        text = await route.clean(raw, cfg.cleanup, signal);
+        text = await cleanWithProgress(raw, cfg.cleanup, signal, stale);
         cleaned = true;
       } catch (err) {
         if (stale()) return;

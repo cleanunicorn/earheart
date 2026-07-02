@@ -8,6 +8,7 @@ const LISTEN = new Set([
   "record:cancel",
   "pipeline:status",
   "pipeline:partial",
+  "pipeline:progress",
   "history:changed",
   "overlay:show",
   "overlay:hide",

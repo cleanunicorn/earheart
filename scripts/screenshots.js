@@ -63,6 +63,17 @@ app.whenReady().then(async () => {
   await sleep(400);
   await shot(overlay, "overlay-recording");
 
+  // Processing state with the determinate progress bar mid-fill (the README's
+  // middle hero shot).
+  await overlay.webContents.executeJavaScript(`
+    setStatus("cleaning", "Cleaning up…");
+    progressEl.hidden = false;
+    progressFill.style.width = "62%";
+    "";
+  `);
+  await sleep(400);
+  await shot(overlay, "overlay-processing");
+
   await overlay.webContents.executeJavaScript(`
     setStatus("done", "Pasted", "Let's meet tomorrow at ten to review the draft.");
     "";

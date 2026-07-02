@@ -55,6 +55,32 @@ function wavToFloat32(buf) {
       buf.toString("ascii", 8, 12) !== "WAVE") {
     throw new Error("Not a RIFF/WAVE file");
   }
+  const { format, channels, sampleRate, bitsPerSample, dataOffset, dataSize } =
+    parseRiffChunks(buf);
+
+  if (dataOffset < 0) throw new Error("WAV has no data chunk");
+  if (format !== 1 || bitsPerSample !== 16) {
+    throw new Error(`Unsupported WAV format (format=${format}, bits=${bitsPerSample})`);
+  }
+
+  const frameCount = Math.floor(dataSize / 2 / channels);
+  const samples = new Float32Array(frameCount);
+  for (let i = 0; i < frameCount; i++) {
+    // Mixdown to mono by averaging channels (overlay audio is already mono).
+    let acc = 0;
+    for (let c = 0; c < channels; c++) {
+      acc += buf.readInt16LE(dataOffset + (i * channels + c) * 2);
+    }
+    samples[i] = acc / channels / 32768;
+  }
+  return { samples, sampleRate };
+}
+
+// Walk the RIFF chunk list once and collect the fmt/data fields both readers
+// need. Tolerant by design: absent chunks leave the canonical defaults (16 kHz
+// mono PCM16, no data) for the caller to judge — wavToFloat32 validates and
+// throws, wavDurationSec floors.
+function parseRiffChunks(buf) {
   let sampleRate = SAMPLE_RATE;
   let format = 1;
   let channels = 1;
@@ -79,23 +105,23 @@ function wavToFloat32(buf) {
     // Chunks are word-aligned: an odd size is followed by a pad byte.
     pos = body + size + (size & 1);
   }
-
-  if (dataOffset < 0) throw new Error("WAV has no data chunk");
-  if (format !== 1 || bitsPerSample !== 16) {
-    throw new Error(`Unsupported WAV format (format=${format}, bits=${bitsPerSample})`);
-  }
-
-  const frameCount = Math.floor(dataSize / 2 / channels);
-  const samples = new Float32Array(frameCount);
-  for (let i = 0; i < frameCount; i++) {
-    // Mixdown to mono by averaging channels (overlay audio is already mono).
-    let acc = 0;
-    for (let c = 0; c < channels; c++) {
-      acc += buf.readInt16LE(dataOffset + (i * channels + c) * 2);
-    }
-    samples[i] = acc / channels / 32768;
-  }
-  return { samples, sampleRate };
+  return { format, channels, sampleRate, bitsPerSample, dataOffset, dataSize };
 }
 
-module.exports = { encodeWav, encodeSilenceWav, wavToFloat32, SAMPLE_RATE };
+/**
+ * Duration in seconds of a PCM16 WAV buffer. Walks the RIFF chunk list like
+ * wavToFloat32 (rather than assuming a fixed 44-byte header) so extra chunks
+ * never skew the result. Best-effort by design — it feeds progress estimates,
+ * not decoding — so a malformed buffer yields the 0.01s floor instead of a
+ * throw (the floor also keeps downstream divisions safe).
+ * @param {Buffer} buf
+ * @returns {number} seconds, >= 0.01
+ */
+function wavDurationSec(buf) {
+  if (!Buffer.isBuffer(buf)) buf = Buffer.from(buf);
+  const { channels, sampleRate, dataSize } = parseRiffChunks(buf);
+  const frames = dataSize / 2 / Math.max(1, channels);
+  return Math.max(0.01, frames / Math.max(1, sampleRate));
+}
+
+module.exports = { encodeWav, encodeSilenceWav, wavToFloat32, wavDurationSec, SAMPLE_RATE };

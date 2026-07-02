@@ -12,6 +12,8 @@ const meterCtx = meter.getContext("2d");
 const transcriptEl = document.getElementById("transcript");
 const transcriptCleanEl = document.getElementById("transcript-clean");
 const transcriptRawEl = document.getElementById("transcript-raw");
+const progressEl = document.getElementById("progress");
+const progressFill = document.getElementById("progress-fill");
 
 let recording = null; // { stream, context, chunks, startedAt, timerId, maxTimerId, partialTimerId }
 let generation = 0; // bumped on every start/teardown to invalidate stale awaits
@@ -61,10 +63,45 @@ function stopMeter() {
   }
 }
 
+// How long a completed (fraction >= 1) bar lingers before hiding — long enough
+// to see it finish (the 0.15s width transition fits inside), short enough not
+// to trail into the next phase's own progress.
+const PROGRESS_COMPLETE_HOLD_MS = 400;
+let progressHideTimer = null;
+
+// Statuses whose layout reserves the bar's box (see overlay.css), so a
+// completed bar mid-hold can ride through them without a collapse. Terminal
+// statuses (done/empty/error) are absent on purpose: there the box isn't
+// reserved, so the hold must end WITH the status swap — expiring 400ms later
+// would shift the final text mid-read (and park an amber bar under a green
+// dot).
+const PROGRESS_HOLD_STATUSES = new Set(["transcribing", "cleaning", "delivering"]);
+
 function setStatus(status, title, detail) {
   card.dataset.status = status;
   statusText.textContent = title;
   detailText.textContent = detail || "";
+  // Every phase change retires the previous phase's bar. It stays hidden until
+  // the new phase's first pipeline:progress event, so phases that report no
+  // progress (remote engines, near-instant steps) never flash an empty track.
+  // Exception: a completed bar mid-hold survives into hold-friendly statuses
+  // so the user sees it actually finish; its own timer hides it.
+  if (!progressHideTimer || !PROGRESS_HOLD_STATUSES.has(status)) resetProgress();
+}
+
+// Cancel a pending completion hold; returns whether one was active (i.e. the
+// on-screen width still belongs to the previous, completed phase).
+function clearProgressHold() {
+  if (!progressHideTimer) return false;
+  clearTimeout(progressHideTimer);
+  progressHideTimer = null;
+  return true;
+}
+
+function resetProgress() {
+  clearProgressHold();
+  progressEl.hidden = true;
+  progressFill.style.width = "0";
 }
 
 // The meter now flexes to fill the control row, so its rendered width varies with
@@ -369,6 +406,7 @@ earheart.on("record:stop", stopRecording);
 earheart.on("record:cancel", () => {
   teardown();
   clearTranscript();
+  resetProgress();
 });
 
 // Live partial transcript: `raw` keeps pace with the voice, `cleaned` fills in
@@ -379,6 +417,32 @@ earheart.on("pipeline:partial", ({ kind, text }) => {
   if (kind === "raw") partialRaw = text || "";
   else if (kind === "cleaned") partialClean = text || "";
   renderTranscript();
+});
+
+// Determinate progress within the current processing phase. The phase guard
+// drops stale/out-of-order events (e.g. a late "transcribing" tick arriving
+// after the status already moved on to "cleaning").
+earheart.on("pipeline:progress", ({ phase, fraction }) => {
+  if (card.dataset.status !== phase) return;
+  const supersedesHold = clearProgressHold();
+  const pct = Math.max(0, Math.min(100, (fraction || 0) * 100));
+  progressEl.hidden = false;
+  if (supersedesHold) {
+    // The 100% on screen belongs to the PREVIOUS phase's hold; easing down
+    // from it would read as the bar draining backwards. Snap, then let the
+    // transition resume for this phase's own updates.
+    progressFill.style.transition = "none";
+    progressFill.style.width = `${pct.toFixed(1)}%`;
+    void progressFill.offsetWidth; // flush the un-animated width
+    progressFill.style.transition = "";
+  } else {
+    progressFill.style.width = `${pct.toFixed(1)}%`;
+  }
+  // A completed bar holds at 100% briefly, then hides itself — the phase's
+  // closing statement rather than a cut-off.
+  if (fraction >= 1) {
+    progressHideTimer = setTimeout(resetProgress, PROGRESS_COMPLETE_HOLD_MS);
+  }
 });
 
 earheart.on("pipeline:status", ({ status, detail }) => {

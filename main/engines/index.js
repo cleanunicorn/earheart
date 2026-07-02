@@ -66,7 +66,10 @@ async function ensureStt(modelId) {
 // pipeline can route to either backend identically. The worker request itself
 // isn't abortable mid-flight, but an already-cancelled call returns early
 // rather than spending a model load / inference.
-async function transcribe(wav, cfg, signal) {
+// `onDecodeMs` receives the worker's own decode timing (excludes model load
+// and any queueing in front of the request) — the clean sample the RTF
+// estimator needs.
+async function transcribe(wav, cfg, signal, { onDecodeMs } = {}) {
   if (signal?.aborted) throw new Error("aborted");
   await ensureStt(cfg.builtin.model);
   const bytes = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
@@ -77,10 +80,16 @@ async function transcribe(wav, cfg, signal) {
   // is structured-cloned across. A few seconds of PCM16 is small enough that
   // the one extra copy is negligible.
   const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  const text = await sttHost.request("transcribe", {
+  const reply = await sttHost.request("transcribe", {
     wav: ab,
     language: cfg.language || "",
   });
+  // The worker replies { text, decodeMs }; tolerate a bare string so test
+  // fakes (and any older worker) keep working.
+  const text = reply && typeof reply === "object" ? reply.text : reply;
+  if (onDecodeMs && reply && Number.isFinite(reply.decodeMs)) {
+    onDecodeMs(reply.decodeMs);
+  }
   return (text || "").trim();
 }
 
@@ -104,17 +113,23 @@ async function ensureCleanup(modelId) {
 }
 
 // Accepts a `signal` for parity with the HTTP cleanup client (see transcribe).
-async function clean(transcript, cfg, signal) {
+// `onProgress` (0..1) relays the worker's token-streaming progress, so the
+// pipeline can drive a determinate bar while the model generates.
+async function clean(transcript, cfg, signal, { onProgress } = {}) {
   if (signal?.aborted) throw new Error("aborted");
   await ensureCleanup(cfg.builtin.model);
   // The selected style supplies both the prompt (base + directive) and the
   // sampling profile (temperature/topP/topK/minP) the worker applies.
   const { systemPrompt, sampling } = resolveCleanup(cfg);
-  const cleaned = await cleanupHost.request("clean", {
-    transcript,
-    systemPrompt,
-    sampling,
-  });
+  const cleaned = await cleanupHost.request(
+    "clean",
+    {
+      transcript,
+      systemPrompt,
+      sampling,
+    },
+    { onProgress }
+  );
   // Never let an empty (or whitespace-only) cleanup eat the user's words.
   return cleaned && cleaned.trim().length > 0 ? cleaned : transcript;
 }

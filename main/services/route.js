@@ -8,14 +8,18 @@ const stt = require("./stt");
 const cleanup = require("./cleanup");
 const engines = require("../engines");
 
-function transcribe(wav, cfg, signal) {
+// `opts.onDecodeMs` only has an effect on the builtin engine (the worker
+// reports its decode timing); the HTTP client ignores it.
+function transcribe(wav, cfg, signal, opts) {
   const impl = cfg.engine === "builtin" ? engines.transcribe : stt.transcribe;
-  return impl(wav, cfg, signal);
+  return impl(wav, cfg, signal, opts);
 }
 
-function clean(raw, cfg, signal) {
+// `opts.onProgress` only has an effect on the builtin engine (the worker
+// streams token progress); the HTTP client ignores it.
+function clean(raw, cfg, signal, opts) {
   const impl = cfg.engine === "builtin" ? engines.clean : cleanup.clean;
-  return impl(raw, cfg, signal);
+  return impl(raw, cfg, signal, opts);
 }
 
 module.exports = { transcribe, clean };

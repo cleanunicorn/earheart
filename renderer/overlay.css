@@ -211,6 +211,46 @@ body {
   text-overflow: ellipsis;
 }
 
+/* Determinate progress under the status text (transcribing/cleaning). Same
+   track/fill pattern as the wizard's download bar; the fill reuses the amber
+   of the processing indicator dot. Slim enough to fit the fixed control row,
+   so showing it never changes the card height. */
+#progress {
+  height: 3px;
+  margin-top: 3px;
+  border-radius: 2px;
+  /* Same value as the #grip track: at 3px tall anything fainter disappears
+     against the card, and the unfilled remainder is what makes the fill read
+     as "X% of a whole" rather than a floating amber sliver. */
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+
+#progress[hidden] {
+  display: none;
+}
+
+/* During the processing phases the hidden bar keeps its box (invisible track)
+   so the centered status text doesn't jump 3px when the first progress event
+   unhides it mid-read. Delivering is included so a completed bar's brief hold
+   (see overlay.js) can ride through "Typing…" without a collapse. Terminal
+   states (done/empty/error) collapse it entirely — remote engines and final
+   text never pay for space they won't use. */
+#card[data-status="transcribing"] #progress[hidden],
+#card[data-status="cleaning"] #progress[hidden],
+#card[data-status="delivering"] #progress[hidden] {
+  display: block;
+  visibility: hidden;
+}
+
+#progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: #ffb347;
+  transition: width 0.15s linear;
+}
+
 /* Sits right after the waveform (no flex stretch), reading as its caption. The
    waveform's flex:1 owns the leftover width, so the timer hugs the meter and the
    Stop/Cancel buttons follow. */

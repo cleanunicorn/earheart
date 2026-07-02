@@ -219,7 +219,10 @@ body {
   height: 3px;
   margin-top: 3px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.12);
+  /* Same value as the #grip track: at 3px tall anything fainter disappears
+     against the card, and the unfilled remainder is what makes the fill read
+     as "X% of a whole" rather than a floating amber sliver. */
+  background: rgba(255, 255, 255, 0.18);
   overflow: hidden;
 }
 

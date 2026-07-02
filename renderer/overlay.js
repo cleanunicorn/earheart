@@ -69,6 +69,14 @@ function stopMeter() {
 const PROGRESS_COMPLETE_HOLD_MS = 400;
 let progressHideTimer = null;
 
+// Statuses whose layout reserves the bar's box (see overlay.css), so a
+// completed bar mid-hold can ride through them without a collapse. Terminal
+// statuses (done/empty/error) are absent on purpose: there the box isn't
+// reserved, so the hold must end WITH the status swap — expiring 400ms later
+// would shift the final text mid-read (and park an amber bar under a green
+// dot).
+const PROGRESS_HOLD_STATUSES = new Set(["transcribing", "cleaning", "delivering"]);
+
 function setStatus(status, title, detail) {
   card.dataset.status = status;
   statusText.textContent = title;
@@ -76,9 +84,9 @@ function setStatus(status, title, detail) {
   // Every phase change retires the previous phase's bar. It stays hidden until
   // the new phase's first pipeline:progress event, so phases that report no
   // progress (remote engines, near-instant steps) never flash an empty track.
-  // Exception: a completed bar mid-hold survives the status change so the user
-  // sees it actually finish; its own timer hides it.
-  if (!progressHideTimer) resetProgress();
+  // Exception: a completed bar mid-hold survives into hold-friendly statuses
+  // so the user sees it actually finish; its own timer hides it.
+  if (!progressHideTimer || !PROGRESS_HOLD_STATUSES.has(status)) resetProgress();
 }
 
 function resetProgress() {
@@ -274,9 +282,6 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
   stopWhenReady = false;
   livePreview = live && live.enabled ? live : null;
   setStatus("recording", "Listening…");
-  // Unconditional: a completed bar mid-hold must not survive into a new
-  // recording (setStatus deliberately spares it for phase transitions).
-  resetProgress();
   clearTranscript();
   levels.fill(0);
   displayLevels.fill(0);

@@ -232,10 +232,13 @@ body {
 
 /* During the processing phases the hidden bar keeps its box (invisible track)
    so the centered status text doesn't jump 3px when the first progress event
-   unhides it mid-read. Other phases collapse it entirely — remote engines and
-   done/error states never pay for space they won't use. */
+   unhides it mid-read. Delivering is included so a completed bar's brief hold
+   (see overlay.js) can ride through "Typing…" without a collapse. Terminal
+   states (done/empty/error) collapse it entirely — remote engines and final
+   text never pay for space they won't use. */
 #card[data-status="transcribing"] #progress[hidden],
-#card[data-status="cleaning"] #progress[hidden] {
+#card[data-status="cleaning"] #progress[hidden],
+#card[data-status="delivering"] #progress[hidden] {
   display: block;
   visibility: hidden;
 }

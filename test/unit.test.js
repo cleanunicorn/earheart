@@ -6,7 +6,7 @@ const assert = require("node:assert");
 
 const http = require("node:http");
 
-const { encodeWav, encodeSilenceWav, wavToFloat32 } = require("../main/util/wav");
+const { encodeWav, encodeSilenceWav, wavToFloat32, wavDurationSec } = require("../main/util/wav");
 const { stripThinking } = require("../main/services/cleanup");
 const { deepMerge, migrateLegacy, DEFAULTS } = require("../main/settings");
 const autostart = require("../main/autostart");
@@ -28,6 +28,15 @@ test("encodeWav produces a valid RIFF header", () => {
 test("encodeSilenceWav has the requested duration", () => {
   const wav = encodeSilenceWav(0.5);
   assert.strictEqual(wav.readUInt32LE(40), 16000 * 0.5 * 2);
+});
+
+test("wavDurationSec reads the duration from the chunk list", () => {
+  assert.strictEqual(wavDurationSec(encodeSilenceWav(0.5)), 0.5);
+  assert.strictEqual(wavDurationSec(encodeSilenceWav(3)), 3);
+  // Degenerate/malformed buffers floor at 0.01s instead of throwing — the
+  // value feeds progress estimates, so best-effort beats an error.
+  assert.strictEqual(wavDurationSec(Buffer.alloc(0)), 0.01);
+  assert.strictEqual(wavDurationSec(Buffer.from("not a wav at all")), 0.01);
 });
 
 test("stripThinking removes reasoning blocks", () => {

@@ -98,4 +98,36 @@ function wavToFloat32(buf) {
   return { samples, sampleRate };
 }
 
-module.exports = { encodeWav, encodeSilenceWav, wavToFloat32, SAMPLE_RATE };
+/**
+ * Duration in seconds of a PCM16 WAV buffer. Walks the RIFF chunk list like
+ * wavToFloat32 (rather than assuming a fixed 44-byte header) so extra chunks
+ * never skew the result. Best-effort by design — it feeds progress estimates,
+ * not decoding — so a malformed buffer yields the 0.01s floor instead of a
+ * throw (the floor also keeps downstream divisions safe).
+ * @param {Buffer} buf
+ * @returns {number} seconds, >= 0.01
+ */
+function wavDurationSec(buf) {
+  if (!Buffer.isBuffer(buf)) buf = Buffer.from(buf);
+  let sampleRate = SAMPLE_RATE;
+  let channels = 1;
+  let dataSize = 0;
+  let pos = 12;
+  while (pos + 8 <= buf.length) {
+    const id = buf.toString("ascii", pos, pos + 4);
+    const size = buf.readUInt32LE(pos + 4);
+    const body = pos + 8;
+    if (id === "fmt " && body + 16 <= buf.length) {
+      channels = buf.readUInt16LE(body + 2);
+      sampleRate = buf.readUInt32LE(body + 4);
+    } else if (id === "data") {
+      dataSize = Math.min(size, buf.length - body);
+    }
+    // Chunks are word-aligned: an odd size is followed by a pad byte.
+    pos = body + size + (size & 1);
+  }
+  const frames = dataSize / 2 / Math.max(1, channels);
+  return Math.max(0.01, frames / Math.max(1, sampleRate));
+}
+
+module.exports = { encodeWav, encodeSilenceWav, wavToFloat32, wavDurationSec, SAMPLE_RATE };

@@ -21,7 +21,7 @@ const { deliver } = require("./output/deliver");
 const history = require("./history");
 const { createLivePreview } = require("./live-preview");
 const { createPersistedRtfEstimator } = require("./util/rtf");
-const { SAMPLE_RATE } = require("./util/wav");
+const { wavDurationSec } = require("./util/wav");
 const logger = require("./util/logger");
 
 let state = "idle"; // idle | recording | processing
@@ -115,14 +115,6 @@ function getSttRtf() {
     sttRtf = createPersistedRtfEstimator(rtfPath);
   }
   return sttRtf;
-}
-
-// Duration of a canonical 16 kHz mono PCM16 WAV (44-byte header) — the exact
-// format the overlay's encodeWav produces.
-const WAV_HEADER_BYTES = 44;
-
-function wavDurationSec(wav) {
-  return Math.max(0.01, (wav.byteLength - WAV_HEADER_BYTES) / 2 / SAMPLE_RATE);
 }
 
 function hideOverlaySoon(sid, ms) {

@@ -11,7 +11,13 @@ const engines = require("./engines");
 const autostart = require("./autostart");
 const updates = require("./updates");
 const { listRemoteModels } = require("./services/models-remote");
-const { parseRepoUrl, listGgufQuants, buildCleanupModel } = require("./services/hf-gguf");
+const {
+  parseRepoInput,
+  listGgufQuants,
+  listSttVariants,
+  buildCleanupModel,
+  buildSttModel,
+} = require("./services/hf-models");
 const { STYLES: CLEANUP_STYLES } = require("./cleanup-styles");
 const { encodeSilenceWav } = require("./util/wav");
 
@@ -165,31 +171,36 @@ function init({ applyHotkey, onSettingsChanged }) {
     }
   });
 
-  // List the GGUF quantizations in a Hugging Face repo, so the settings UI can
-  // offer them as a pick-list (defaulting to the best Q4). Read-only.
-  ipcMain.handle("models:hf-quants", async (event, { url } = {}) => {
+  // Per-kind discovery + entry builders for custom Hugging Face models.
+  const hfDiscover = { cleanup: listGgufQuants, stt: listSttVariants };
+  const hfBuild = { cleanup: buildCleanupModel, stt: buildSttModel };
+
+  // List the downloadable variants (GGUF quantizations for cleanup, transducer
+  // precisions for STT) in a Hugging Face repo — pasted as a URL or a bare
+  // owner/model — so the settings UI can offer them as a pick-list. Read-only.
+  ipcMain.handle("models:hf-variants", async (event, { kind, url } = {}) => {
     try {
-      const { owner, repo, ref } = parseRepoUrl(url);
-      const result = await listGgufQuants({ owner, repo, ref }, fetch);
+      if (!hfDiscover[kind]) return { ok: false, error: `Unknown model kind: ${kind}` };
+      const result = await hfDiscover[kind](parseRepoInput(url), fetch);
       return { ok: true, ...result };
     } catch (err) {
       return { ok: false, error: err.message };
     }
   });
 
-  // Add a custom cleanup model from a Hugging Face URL + chosen quant: build a
+  // Add a custom model from a Hugging Face repo + chosen variant: build a
   // registry-shaped entry, persist it, and register it so it behaves like a
   // built-in (status/download/remove). Re-lists server-side rather than
   // trusting a file list from the renderer.
-  ipcMain.handle("models:add-custom", async (event, { url, quant } = {}) => {
+  ipcMain.handle("models:add-custom", async (event, { kind, url, variant } = {}) => {
     try {
-      const { owner, repo, ref } = parseRepoUrl(url);
-      const listing = await listGgufQuants({ owner, repo, ref }, fetch);
+      if (!hfDiscover[kind]) return { ok: false, error: `Unknown model kind: ${kind}` };
+      const listing = await hfDiscover[kind](parseRepoInput(url), fetch);
       const chosen =
-        listing.quants.find((q) => q.label === quant) ||
-        listing.quants.find((q) => q.label === listing.recommended);
+        listing.variants.find((v) => v.label === variant) ||
+        listing.variants.find((v) => v.label === listing.recommended);
       if (!chosen) return { ok: false, error: "That version is no longer available" };
-      const model = buildCleanupModel(listing.repo, chosen);
+      const model = hfBuild[kind](listing.repo, chosen);
       const cfg = settings.get();
       // Dedupe by id so re-adding the same repo+quant just refreshes the entry.
       const customModels = [
@@ -208,20 +219,29 @@ function init({ applyHotkey, onSettingsChanged }) {
   // definition from settings + the registry.
   ipcMain.handle("models:remove-custom", async (event, { modelId } = {}) => {
     try {
+      const cfg = settings.get();
+      // The stored definition knows which kind it is; a definition that's
+      // already gone still gets the cleanup-side fallbacks below.
+      const entry = (cfg.customModels || []).find((m) => m.id === modelId);
+      const kind = entry && entry.kind === "stt" ? "stt" : "cleanup";
       try {
-        await engines.remove("cleanup", modelId);
+        await engines.remove(kind, modelId);
       } catch {
         // Not downloaded (or already gone) — still drop the definition below.
       }
-      const cfg = settings.get();
       const customModels = (cfg.customModels || []).filter((m) => m.id !== modelId);
-      // If the removed model was the configured cleanup model, fall back to the
-      // default so cleanup doesn't later fail to resolve a model that's gone.
-      const cleanup =
-        cfg.cleanup.builtin.model === modelId
-          ? { ...cfg.cleanup, builtin: { ...cfg.cleanup.builtin, model: engines.registry.DEFAULT_CLEANUP_MODEL } }
-          : cfg.cleanup;
-      settings.save({ ...cfg, cleanup, customModels });
+      // If the removed model was the configured one for its kind, fall back to
+      // the default so the engine doesn't later fail to resolve a model that's
+      // gone.
+      const defaults = {
+        stt: engines.registry.DEFAULT_STT_MODEL,
+        cleanup: engines.registry.DEFAULT_CLEANUP_MODEL,
+      };
+      const kindCfg =
+        cfg[kind].builtin.model === modelId
+          ? { ...cfg[kind], builtin: { ...cfg[kind].builtin, model: defaults[kind] } }
+          : cfg[kind];
+      settings.save({ ...cfg, [kind]: kindCfg, customModels });
       engines.registry.setCustomModels(customModels);
       return { ok: true, customModels };
     } catch (err) {

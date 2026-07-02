@@ -120,6 +120,25 @@
               <select id="stt-builtin-model"></select>
             </div>
             <div id="stt-model-manage" class="model-manage"></div>
+
+            <div class="field" id="stt-custom">
+              <label for="stt-hf-url">Add a model from Hugging Face</label>
+              <input id="stt-hf-url"
+                placeholder="csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2" />
+              <div class="row">
+                <button id="stt-hf-find" class="ghost" type="button">Find versions</button>
+                <span id="stt-hf-result" class="status"></span>
+              </div>
+              <div class="row" id="stt-hf-pick" hidden>
+                <select id="stt-hf-variant"></select>
+                <button id="stt-hf-add" type="button">Add</button>
+              </div>
+              <p class="hint">
+                Paste a Hugging Face URL or owner/model of a sherpa-onnx transducer
+                bundle (encoder, decoder, joiner + tokens.txt). Custom models aren't
+                checksum-verified.
+              </p>
+            </div>
           </div>
 
           <div id="stt-external-fields">
@@ -213,18 +232,19 @@
               <div class="field" id="cleanup-custom">
                 <label for="cleanup-hf-url">Add a model from Hugging Face</label>
                 <input id="cleanup-hf-url"
-                  placeholder="https://huggingface.co/unsloth/gemma-3-1b-it-GGUF" />
+                  placeholder="unsloth/gemma-3-1b-it-GGUF" />
                 <div class="row">
                   <button id="cleanup-hf-find" class="ghost" type="button">Find versions</button>
                   <span id="cleanup-hf-result" class="status"></span>
                 </div>
                 <div class="row" id="cleanup-hf-pick" hidden>
-                  <select id="cleanup-hf-quant"></select>
+                  <select id="cleanup-hf-variant"></select>
                   <button id="cleanup-hf-add" type="button">Add</button>
                 </div>
                 <p class="hint">
-                  Paste a Hugging Face GGUF model URL. Earheart lists its versions and
-                  downloads the one you pick. Custom models aren't checksum-verified.
+                  Paste a Hugging Face GGUF model URL or owner/model. Earheart lists its
+                  versions and downloads the one you pick. Custom models aren't
+                  checksum-verified.
                 </p>
               </div>
             </div>

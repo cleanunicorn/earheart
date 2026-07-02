@@ -465,7 +465,7 @@ async function removeModel(kind, modelId) {
 
 // Remove a custom model entirely: its files (if downloaded) and its definition.
 async function removeCustomModel(modelId) {
-  const info = modelStatus.cleanup.find((m) => m.id === modelId);
+  const info = [...modelStatus.stt, ...modelStatus.cleanup].find((m) => m.id === modelId);
   const label = info ? info.label : modelId;
   if (!confirm(`Remove ${label} from your models?`)) return;
   const res = await earheart.invoke("models:remove-custom", { modelId });
@@ -645,23 +645,24 @@ bindFetchModels("cleanup-fetch-models", "cleanup-fetch-result", "cleanup-model-l
   return { baseUrl: c.baseUrl, apiKey: c.apiKey };
 });
 
-/* ---------- add a custom cleanup model from a Hugging Face URL ---------- */
+/* ---------- add a custom model from a Hugging Face repo ---------- */
 
 function humanSize(bytes) {
   if (!bytes) return "";
   return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`;
 }
 
-// Paste a Hugging Face GGUF repo URL → "Find versions" lists its quantizations
-// (defaulting to the best Q4) → "Add" registers the chosen one as a custom
-// model, which then downloads/removes through the same UI as the built-ins.
-function bindAddCustomModel() {
-  const urlInput = $("cleanup-hf-url");
-  const findBtn = $("cleanup-hf-find");
-  const result = $("cleanup-hf-result");
-  const pick = $("cleanup-hf-pick");
-  const quantSelect = $("cleanup-hf-quant");
-  const addBtn = $("cleanup-hf-add");
+// Paste a Hugging Face repo URL or owner/model → "Find versions" lists its
+// variants (GGUF quantizations for cleanup, transducer precisions for STT) →
+// "Add" registers the chosen one as a custom model, which then downloads and
+// removes through the same UI as the built-ins.
+function bindAddCustomModel(kind) {
+  const urlInput = $(`${kind}-hf-url`);
+  const findBtn = $(`${kind}-hf-find`);
+  const result = $(`${kind}-hf-result`);
+  const pick = $(`${kind}-hf-pick`);
+  const variantSelect = $(`${kind}-hf-variant`);
+  const addBtn = $(`${kind}-hf-add`);
 
   findBtn.addEventListener("click", async () => {
     const url = urlInput.value.trim();
@@ -671,27 +672,27 @@ function bindAddCustomModel() {
     result.textContent = "Looking up versions…";
     result.className = "status";
     try {
-      const res = await earheart.invoke("models:hf-quants", { url });
+      const res = await earheart.invoke("models:hf-variants", { kind, url });
       if (!res.ok) {
         result.textContent = res.error;
         result.className = "status err";
         return;
       }
-      quantSelect.replaceChildren(
-        ...res.quants.map((q) => {
+      variantSelect.replaceChildren(
+        ...res.variants.map((v) => {
           const opt = document.createElement("option");
-          opt.value = q.label;
-          const size = humanSize(q.totalBytes);
+          opt.value = v.label;
+          const size = humanSize(v.totalBytes);
           opt.textContent =
-            q.label +
+            v.label +
             (size ? ` · ${size}` : "") +
-            (q.label === res.recommended ? " · recommended" : "");
+            (v.label === res.recommended ? " · recommended" : "");
           return opt;
         })
       );
-      if (res.recommended) quantSelect.value = res.recommended;
+      if (res.recommended) variantSelect.value = res.recommended;
       pick.hidden = false;
-      result.textContent = `${res.repo} — ${res.quants.length} version${res.quants.length === 1 ? "" : "s"}`;
+      result.textContent = `${res.repo} — ${res.variants.length} version${res.variants.length === 1 ? "" : "s"}`;
       result.className = "status ok";
     } finally {
       findBtn.disabled = false;
@@ -700,13 +701,13 @@ function bindAddCustomModel() {
 
   addBtn.addEventListener("click", async () => {
     const url = urlInput.value.trim();
-    const quant = quantSelect.value;
-    if (!url || !quant) return;
+    const variant = variantSelect.value;
+    if (!url || !variant) return;
     addBtn.disabled = true;
     result.textContent = "Adding…";
     result.className = "status";
     try {
-      const res = await earheart.invoke("models:add-custom", { url, quant });
+      const res = await earheart.invoke("models:add-custom", { kind, url, variant });
       if (!res.ok) {
         result.textContent = res.error;
         result.className = "status err";
@@ -714,7 +715,7 @@ function bindAddCustomModel() {
       }
       // Keep `current` in sync so a later settings save doesn't drop the model.
       current.customModels = res.customModels;
-      await refreshModels({ cleanup: res.modelId });
+      await refreshModels({ [kind]: res.modelId });
       urlInput.value = "";
       pick.hidden = true;
       result.textContent = "Added — click Download to fetch it";
@@ -724,7 +725,8 @@ function bindAddCustomModel() {
     }
   });
 }
-bindAddCustomModel();
+bindAddCustomModel("stt");
+bindAddCustomModel("cleanup");
 
 /* ---------- history ---------- */
 

@@ -183,7 +183,8 @@ const MODELS = {
 const DEFAULT_STT_MODEL = "parakeet-tdt-0.6b-v3-int8";
 const DEFAULT_CLEANUP_MODEL = "gemma-3-1b";
 
-// User-added models (cleanup GGUFs from a custom Hugging Face URL). Kept in
+// User-added models (cleanup GGUFs or STT bundles from a Hugging Face repo
+// the user pasted). Kept in
 // memory and registered at startup from persisted settings (see main/ipc.js),
 // so they resolve through the same getModel/listModels path the built-ins use
 // — no special-casing in the download manager, engines, or IPC layers. Same

@@ -27,7 +27,8 @@ const DEFAULTS = {
 
 function createRtfEstimator(options = {}) {
   const cfg = { ...DEFAULTS, ...options };
-  let rtf = Math.min(cfg.max, Math.max(cfg.min, cfg.initial));
+  const clamp = (x) => Math.min(cfg.max, Math.max(cfg.min, x));
+  let rtf = clamp(cfg.initial);
 
   function estimate() {
     return rtf;
@@ -39,8 +40,7 @@ function createRtfEstimator(options = {}) {
     if (!Number.isFinite(audioDurationSec) || audioDurationSec <= 0) return;
     if (!Number.isFinite(elapsedSec) || elapsedSec <= 0) return;
     const observed = elapsedSec / audioDurationSec;
-    const next = rtf + cfg.alpha * (observed - rtf);
-    rtf = Math.min(cfg.max, Math.max(cfg.min, next));
+    rtf = clamp(rtf + cfg.alpha * (observed - rtf));
   }
 
   // Estimated completion ratio after `elapsedSec` of decoding `audioDurationSec`
@@ -76,9 +76,10 @@ function createPersistedRtfEstimator(filePath, options = {}) {
   function record(audioDurationSec, elapsedSec) {
     const before = inner.estimate();
     inner.record(audioDurationSec, elapsedSec);
-    if (inner.estimate() === before) return; // rejected sample: nothing new
+    const next = inner.estimate();
+    if (next === before) return; // rejected sample (or no-op fold): nothing new
     try {
-      fs.writeFileSync(filePath, JSON.stringify({ rtf: inner.estimate() }));
+      fs.writeFileSync(filePath, JSON.stringify({ rtf: next }));
     } catch {
       // Best effort — this session still benefits from the in-memory value.
     }

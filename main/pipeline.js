@@ -151,7 +151,12 @@ async function transcribeWithEstimate(wav, sttCfg, signal, stale) {
     : null;
   try {
     const raw = await route.transcribe(wav, sttCfg, signal);
-    if (rtf && !stale()) rtf.record(durationSec, elapsedSec());
+    if (rtf && !stale()) {
+      rtf.record(durationSec, elapsedSec());
+      // The estimate never reaches 1 on its own (capped); on success, let the
+      // bar visibly complete instead of always vanishing short of the end.
+      sendProgress("transcribing", 1);
+    }
     return raw;
   } finally {
     if (tick) clearInterval(tick);
@@ -259,11 +264,17 @@ async function process(sid, wavArrayBuffer) {
         // length); the HTTP client ignores onProgress. stale() mutes late
         // events from a cancelled/superseded session.
         text = await route.clean(raw, cfg.cleanup, signal, {
-          onProgress: (value) => {
-            if (!stale()) sendProgress("cleaning", value);
+          onProgress: (fraction) => {
+            if (!stale()) sendProgress("cleaning", fraction);
           },
         });
         cleaned = true;
+        // Streamed progress is capped below 1 (only the reply says done) —
+        // this is the "done". Builtin only: the remote path never showed a
+        // bar, so a completion flash there would be noise.
+        if (cfg.cleanup.engine === "builtin" && !stale()) {
+          sendProgress("cleaning", 1);
+        }
       } catch (err) {
         if (stale()) return;
         // Cleanup is an enhancement: fall back to the raw transcript and

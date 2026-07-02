@@ -63,6 +63,12 @@ function stopMeter() {
   }
 }
 
+// How long a completed (fraction >= 1) bar lingers before hiding — long enough
+// to see it finish (the 0.15s width transition fits inside), short enough not
+// to trail into the next phase's own progress.
+const PROGRESS_COMPLETE_HOLD_MS = 400;
+let progressHideTimer = null;
+
 function setStatus(status, title, detail) {
   card.dataset.status = status;
   statusText.textContent = title;
@@ -70,10 +76,16 @@ function setStatus(status, title, detail) {
   // Every phase change retires the previous phase's bar. It stays hidden until
   // the new phase's first pipeline:progress event, so phases that report no
   // progress (remote engines, near-instant steps) never flash an empty track.
-  resetProgress();
+  // Exception: a completed bar mid-hold survives the status change so the user
+  // sees it actually finish; its own timer hides it.
+  if (!progressHideTimer) resetProgress();
 }
 
 function resetProgress() {
+  if (progressHideTimer) {
+    clearTimeout(progressHideTimer);
+    progressHideTimer = null;
+  }
   progressEl.hidden = true;
   progressFill.style.width = "0";
 }
@@ -262,6 +274,9 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
   stopWhenReady = false;
   livePreview = live && live.enabled ? live : null;
   setStatus("recording", "Listening…");
+  // Unconditional: a completed bar mid-hold must not survive into a new
+  // recording (setStatus deliberately spares it for phase transitions).
+  resetProgress();
   clearTranscript();
   levels.fill(0);
   displayLevels.fill(0);
@@ -398,9 +413,18 @@ earheart.on("pipeline:partial", ({ kind, text }) => {
 // after the status already moved on to "cleaning").
 earheart.on("pipeline:progress", ({ phase, fraction }) => {
   if (card.dataset.status !== phase) return;
+  if (progressHideTimer) {
+    clearTimeout(progressHideTimer);
+    progressHideTimer = null;
+  }
   const pct = Math.max(0, Math.min(100, (fraction || 0) * 100));
   progressEl.hidden = false;
   progressFill.style.width = `${pct.toFixed(1)}%`;
+  // A completed bar holds at 100% briefly, then hides itself — the phase's
+  // closing statement rather than a cut-off.
+  if (fraction >= 1) {
+    progressHideTimer = setTimeout(resetProgress, PROGRESS_COMPLETE_HOLD_MS);
+  }
 });
 
 earheart.on("pipeline:status", ({ status, detail }) => {

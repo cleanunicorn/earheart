@@ -131,6 +131,31 @@ test("host: a request times out on silence, and progress resets the clock", asyn
   assert.strictEqual(await promise, "slow but alive");
 });
 
+test("host: concurrent requests get their own progress, routed by id", async () => {
+  // The pending map supports overlapping requests (a Settings test action can
+  // overlap a dictation). A regression stashing the callback host-wide instead
+  // of per-entry would cross-wire request B's bar with request A's progress —
+  // and pass every single-request test.
+  const { child, host } = setup();
+
+  const seenA = [];
+  const seenB = [];
+  const promiseA = host.request("clean", {}, { onProgress: (p) => seenA.push(p) });
+  const promiseB = host.request("clean", {}, { onProgress: (p) => seenB.push(p) });
+  const idA = child.sent[0].id;
+  const idB = child.sent[1].id;
+
+  child.emit("message", { id: idA, progress: 0.3 });
+  child.emit("message", { id: idB, progress: 0.7 });
+  assert.deepStrictEqual(seenA, [0.3]);
+  assert.deepStrictEqual(seenB, [0.7]);
+
+  child.emit("message", { id: idA, ok: true, result: "a" });
+  child.emit("message", { id: idB, ok: true, result: "b" });
+  assert.strictEqual(await promiseA, "a");
+  assert.strictEqual(await promiseB, "b");
+});
+
 test("host: progress re-arms the timeout, it doesn't disable it", async () => {
   // The deadline bounds silence, not total duration — so after progress STOPS,
   // the clock must still be running. A touch() that merely cleared the timer

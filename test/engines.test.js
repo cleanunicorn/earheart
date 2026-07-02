@@ -528,6 +528,42 @@ test("engines.clean forwards onProgress to the worker host request", async () =>
   assert.strictEqual(await facade.clean("hello", cfg), "cleaned");
 });
 
+test("engines.transcribe unwraps the worker reply and reports decode timing", async () => {
+  // The worker replies { text, decodeMs }; callers get the trimmed text and
+  // the RTF estimator gets the worker's own decode timing via onDecodeMs.
+  // A bare-string reply (older worker / simple fakes) must still work.
+  let reply = { text: "  hello there ", decodeMs: 250 };
+  const hostModule = {
+    createHost: () => ({
+      request: async (type) => {
+        if (type === "load-stt") return { ready: true };
+        if (type === "transcribe") return reply;
+        throw new Error(`unexpected request: ${type}`);
+      },
+      stop() {},
+      onExit() {},
+    }),
+  };
+  const managerStub = {
+    isInstalled: () => true,
+    modelDir: (base, model) => path.join(base, model.kind, model.id),
+  };
+  const facade = loadFacadeWith({ host: hostModule, manager: managerStub });
+  const cfg = { builtin: { model: registry.DEFAULT_STT_MODEL }, language: "" };
+
+  const timings = [];
+  const text = await facade.transcribe(Buffer.from("wav"), cfg, undefined, {
+    onDecodeMs: (ms) => timings.push(ms),
+  });
+  assert.strictEqual(text, "hello there");
+  assert.deepStrictEqual(timings, [250]);
+
+  // Bare-string reply: text passes through, no timing reported.
+  reply = "plain";
+  assert.strictEqual(await facade.transcribe(Buffer.from("wav"), cfg), "plain");
+  assert.deepStrictEqual(timings, [250]);
+});
+
 test("engines facade routes STT and cleanup to separate worker hosts", async () => {
   // The two-worker split: transcribe must only ever talk to the STT host and
   // clean only to the cleanup host, so a crash or load in one engine can't

@@ -99,9 +99,15 @@ async function transcribe({ wav, language }) {
   const { samples, sampleRate } = wavToFloat32(buf);
   const stream = recognizer.createStream();
   stream.acceptWaveform({ sampleRate, samples });
+  // Time the decode here, where nothing else can leak in: measured from the
+  // pipeline it would include model loads and queueing behind an in-flight
+  // live-preview decode on this single-threaded worker — poisoning the
+  // realtime-factor estimate that paces the transcribing bar.
+  const startedAt = Date.now();
   recognizer.decode(stream);
+  const decodeMs = Date.now() - startedAt;
   const result = recognizer.getResult(stream);
-  return (result && result.text ? result.text : "").trim();
+  return { text: (result && result.text ? result.text : "").trim(), decodeMs };
   // `language` is accepted for parity with the HTTP API; Parakeet v3
   // auto-detects, so it is not forwarded.
 }

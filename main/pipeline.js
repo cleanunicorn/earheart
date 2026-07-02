@@ -150,9 +150,20 @@ async function transcribeWithEstimate(wav, sttCfg, signal, stale) {
       }, STT_PROGRESS_TICK_MS)
     : null;
   try {
-    const raw = await route.transcribe(wav, sttCfg, signal);
+    // The RTF sample comes from the worker's own decode timing, not wall
+    // clock: elapsed here also contains queueing behind an in-flight
+    // live-preview decode on the single STT worker, which would drag the
+    // estimate high on exactly the common case (live preview is on by
+    // default). The bar's ticker above still runs on wall clock — that IS
+    // what the user is waiting through.
+    let decodeMs = null;
+    const raw = await route.transcribe(wav, sttCfg, signal, {
+      onDecodeMs: (ms) => {
+        decodeMs = ms;
+      },
+    });
     if (rtf && !stale()) {
-      rtf.record(durationSec, elapsedSec());
+      if (decodeMs !== null) rtf.record(durationSec, decodeMs / 1000);
       // The estimate never reaches 1 on its own (capped); on success, let the
       // bar visibly complete instead of always vanishing short of the end.
       sendProgress("transcribing", 1);

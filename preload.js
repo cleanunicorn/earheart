@@ -40,7 +40,7 @@ const INVOKE = new Set([
   "stt:test",
   "cleanup:test",
   "models:list-remote",
-  "models:hf-quants",
+  "models:hf-variants",
   "models:add-custom",
   "models:remove-custom",
   "history:list",

@@ -118,8 +118,8 @@ const DEFAULTS = {
   // placeholder values (deepMerge treats a null base as a mergeable object,
   // so a `x: null` default would corrupt the saved coordinate).
   overlay: {},
-  // Cleanup models the user added from a custom Hugging Face URL. Each entry is
-  // a registry-shaped model definition (see main/services/hf-gguf.js). Managed
+  // Models (cleanup or STT) the user added from a Hugging Face repo. Each entry
+  // is a registry-shaped model definition (see main/services/hf-models.js). Managed
   // only by the models:add-custom / models:remove-custom IPC handlers; the
   // settings form carries it through untouched (collect() spreads it). deepMerge
   // replaces arrays wholesale, so a saved list survives a merge intact.

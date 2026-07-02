@@ -12,7 +12,8 @@
 // messages. Events from a torn-down session (late cancels, slow renderers)
 // are ignored instead of corrupting the current one.
 
-const { ipcMain, Notification } = require("electron");
+const { app, ipcMain, Notification } = require("electron");
+const path = require("node:path");
 const windows = require("./windows");
 const settings = require("./settings");
 const route = require("./services/route");
@@ -101,18 +102,16 @@ function sendProgress(phase, value) {
 
 // The final STT decode exposes no progress, so the transcribing bar runs on an
 // estimate calibrated by the measured realtime factor of previous decodes,
-// persisted in userData so calibration survives app restarts. Created lazily
-// because app.getPath needs the app ready; the first use is inside process().
+// persisted in userData so calibration survives app restarts. The singleton is
+// created lazily because app.getPath needs the app ready; the first use is
+// inside process(). (Same deferred-getPath shape as history.js/settings.js.)
 let sttRtf = null;
 
 function getSttRtf() {
   if (!sttRtf) {
-    const { app } = require("electron");
-    const rtfPath = require("node:path").join(
-      app.getPath("userData"),
-      "stt-rtf.json"
+    sttRtf = createPersistedRtfEstimator(
+      path.join(app.getPath("userData"), "stt-rtf.json")
     );
-    sttRtf = createPersistedRtfEstimator(rtfPath);
   }
   return sttRtf;
 }

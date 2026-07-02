@@ -113,6 +113,24 @@ test("host: a request times out on silence, and progress resets the clock", asyn
   assert.strictEqual(await promise, "slow but alive");
 });
 
+test("host: progress re-arms the timeout, it doesn't disable it", async () => {
+  // The deadline bounds silence, not total duration — so after progress STOPS,
+  // the clock must still be running. A touch() that merely cleared the timer
+  // would pass the silent-timeout and progress-until-reply tests but hang the
+  // pipeline forever on a worker that emits once and then wedges.
+  const { child, host } = setup();
+
+  const promise = host.request("clean", {}, {
+    timeoutMs: 30,
+    onProgress: () => {},
+  });
+  const { id } = child.sent[0];
+  await new Promise((r) => setTimeout(r, 10)); // inside the first window
+  child.emit("message", { id, progress: 0.1 });
+  // Worker goes silent: the re-armed deadline must still fire.
+  await assert.rejects(promise, /timed out/);
+});
+
 test("host: worker exit rejects in-flight requests", async () => {
   const { child, host } = setup();
 

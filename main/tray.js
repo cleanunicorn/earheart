@@ -4,6 +4,7 @@ const { Tray, Menu, nativeImage } = require("electron");
 const path = require("node:path");
 const windows = require("./windows");
 const settings = require("./settings");
+const updates = require("./updates");
 
 let tray = null;
 let pipeline = null;
@@ -64,10 +65,38 @@ function buildMenu(app) {
       },
     },
     { type: "separator" },
+    ...updateItems(),
     { label: "Settings…", click: () => windows.openSettings() },
     { type: "separator" },
     { label: "Quit Earheart", click: () => app.quit() },
   ]);
+}
+
+// Update entries appear only while there is something to act on; the menu is
+// rebuilt on every updates state change (main.js wires updates.init's
+// onStateChange to refresh), so the label tracks download progress.
+function updateItems() {
+  const u = updates.getState();
+  if (u.status === "available" && u.method === "install") {
+    return [
+      { label: `Update to v${u.latest}…`, click: () => updates.startUpdate() },
+      { type: "separator" },
+    ];
+  }
+  if (u.status === "downloading") {
+    const pct = u.progress ? ` ${Math.round((u.progress.fraction || 0) * 100)}%` : "";
+    return [
+      { label: `Downloading update…${pct}`, enabled: false },
+      { type: "separator" },
+    ];
+  }
+  if (u.status === "ready") {
+    return [
+      { label: `Restart to update to v${u.latest}`, click: () => updates.installNow() },
+      { type: "separator" },
+    ];
+  }
+  return [];
 }
 
 function refresh(app = appRef) {

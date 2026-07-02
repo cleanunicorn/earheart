@@ -383,6 +383,26 @@
         </div>
 
         <div class="card">
+          <div class="card-title">Updates</div>
+          <label class="toggle">
+            <span class="toggle-text">
+              <span class="t">Check for updates automatically</span>
+              <span class="d">Looks at GitHub releases on startup and twice a day. Nothing installs without you.</span>
+            </span>
+            <input type="checkbox" id="updates-autocheck" class="switch" role="switch" />
+          </label>
+          <div class="dl-bar" id="update-bar" hidden><div class="dl-fill" id="update-fill"></div></div>
+          <div class="row">
+            <button id="update-action" class="ghost">Check for updates</button>
+            <button id="update-skip" class="ghost" hidden>Skip this version</button>
+            <span id="update-status" class="status"></span>
+          </div>
+          <p class="hint" id="update-hint">
+            Updates are downloaded from the GitHub release and verified before installing.
+          </p>
+        </div>
+
+        <div class="card">
           <div class="card-title">About</div>
           <p class="hint">
             Earheart <span id="version"></span> — private, hotkey-driven voice dictation.

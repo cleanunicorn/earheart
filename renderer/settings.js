@@ -175,6 +175,7 @@ function populate() {
   $("start-on-boot").checked = !!current.startOnBoot;
 
   $("history-enabled").checked = current.history.enabled;
+  $("updates-autocheck").checked = current.updates?.autoCheck !== false;
   $("max-seconds").value = current.audio.maxRecordingSeconds;
   $("idle-unload").value = current.engines?.idleUnloadMinutes ?? 2;
 
@@ -186,6 +187,10 @@ function collect() {
     ...current,
     hotkey: current.hotkey,
     startOnBoot: $("start-on-boot").checked,
+    updates: {
+      ...current.updates,
+      autoCheck: $("updates-autocheck").checked,
+    },
     output: {
       ...current.output,
       mode: document.querySelector('input[name="output-mode"]:checked').value,
@@ -841,6 +846,83 @@ $("wizard-banner-dismiss").addEventListener("click", () => {
   $("wizard-banner").hidden = true;
 });
 
+/* ---------- updates ---------- */
+
+// Last state pushed from main; drives what the action button does on click.
+let updateState = null;
+
+function renderUpdateState(u) {
+  updateState = u;
+  const action = $("update-action");
+  const status = $("update-status");
+  $("update-bar").hidden = u.status !== "downloading";
+  $("update-skip").hidden = !(u.status === "available" && u.method === "install");
+  action.disabled = u.status === "checking" || u.status === "installing";
+  status.className = "status";
+
+  switch (u.status) {
+    case "checking":
+      action.textContent = "Checking…";
+      status.textContent = "";
+      break;
+    case "available":
+      if (u.method === "install") {
+        action.textContent = `Update to v${u.latest}`;
+      } else {
+        action.textContent = "Open download page";
+        if (u.hint) $("update-hint").textContent = u.hint;
+      }
+      status.textContent = `Version ${u.latest} is available`;
+      status.className = "status ok";
+      break;
+    case "downloading": {
+      const pct = Math.round(((u.progress && u.progress.fraction) || 0) * 100);
+      $("update-fill").style.width = `${pct}%`;
+      action.textContent = "Cancel";
+      status.textContent = `Downloading… ${pct}%`;
+      break;
+    }
+    case "ready":
+      action.textContent = `Restart to update to v${u.latest}`;
+      status.textContent = "Downloaded ✓";
+      status.className = "status ok";
+      break;
+    case "installing":
+      action.textContent = "Restarting…";
+      status.textContent = "";
+      break;
+    case "error":
+      action.textContent = u.latest ? "Retry update" : "Check for updates";
+      status.textContent = u.error || "Update failed";
+      status.className = "status err";
+      break;
+    default:
+      // idle — leave any "Up to date ✓" set by a manual check in place
+      action.textContent = "Check for updates";
+  }
+}
+
+$("update-action").addEventListener("click", async () => {
+  const u = updateState || { status: "idle" };
+  if (u.status === "downloading") {
+    earheart.invoke("updates:cancel");
+  } else if (u.status === "ready") {
+    earheart.invoke("updates:install");
+  } else if (u.status === "available" || (u.status === "error" && u.latest)) {
+    earheart.invoke("updates:apply");
+  } else {
+    const res = await earheart.invoke("updates:check");
+    if (res.status === "idle") {
+      $("update-status").textContent = "Up to date ✓";
+      $("update-status").className = "status ok";
+    }
+  }
+});
+
+$("update-skip").addEventListener("click", () => earheart.invoke("updates:skip"));
+
+earheart.on("updates:state", renderUpdateState);
+
 /* ---------- init ---------- */
 
 (async () => {
@@ -852,6 +934,15 @@ $("wizard-banner-dismiss").addEventListener("click", () => {
   // The Accessibility permission only exists on macOS.
   if (platform === "darwin") $("accessibility-field").hidden = false;
   $("version").textContent = `v${data.version}`;
+  if (platform === "darwin") {
+    // The app ships unsigned; this is the one-time manual step after which
+    // in-app updates de-quarantine new versions automatically.
+    $("update-hint").textContent +=
+      " If a freshly downloaded Earheart says it is damaged, run" +
+      " `xattr -cr /Applications/Earheart.app` once — updates installed from" +
+      " here handle that automatically afterwards.";
+  }
+  renderUpdateState(await earheart.invoke("updates:get"));
   modelStatus = await earheart.invoke("models:status");
   populateModelSelect("stt");
   populateModelSelect("cleanup");

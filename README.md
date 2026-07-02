@@ -120,9 +120,30 @@ is just the version number (e.g. `0.8.0`).
 > Then open Earheart normally. (The "right-click → Open" trick only clears the
 > milder "unidentified developer" warning, not the "damaged" one.) More detail
 > in [macOS notes](#macos) below.
+>
+> You only ever do this once: Earheart updates itself from GitHub releases
+> (see below), and updates installed from inside the app clear the quarantine
+> automatically.
 
 That's it — the built-in engines need nothing else installed. The first-run
 wizard downloads the speech and cleanup models for you.
+
+### Updates
+
+Earheart checks GitHub releases for a new version on startup and twice a day
+(toggle under Settings → Advanced → Updates) and shows a notification plus an
+**Update to vX.Y.Z** entry in the tray menu when one is out. One click
+downloads the release, verifies its checksum and reinstalls in place:
+
+- **Windows (installed):** the new installer runs silently and the app
+  relaunches. The portable exe can't update itself — the app opens the
+  releases page instead.
+- **macOS:** the app bundle is swapped and the quarantine attribute is
+  stripped automatically, so the updated app opens normally — no `xattr`
+  needed after the first manual install.
+- **Linux (AppImage):** the AppImage file is replaced in place (same path, so
+  launchers and autostart keep working) and the app relaunches. A `.deb`
+  install opens the releases page instead (upgrading needs `sudo`).
 
 ### Advanced: a local STT server with `uv`
 

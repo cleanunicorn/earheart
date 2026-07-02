@@ -101,6 +101,14 @@ const DEFAULTS = {
     enabled: true,
     limit: 100,
   },
+  updates: {
+    // Check GitHub releases on startup and twice a day. Manual "Check for
+    // updates" in Settings works regardless of this toggle.
+    autoCheck: true,
+    // A version the user chose to skip: auto-checks stay quiet about it,
+    // a manual check surfaces it again.
+    skippedVersion: "",
+  },
   // Cleanup models the user added from a custom Hugging Face URL. Each entry is
   // a registry-shaped model definition (see main/services/hf-gguf.js). Managed
   // only by the models:add-custom / models:remove-custom IPC handlers; the

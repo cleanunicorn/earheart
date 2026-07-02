@@ -11,8 +11,10 @@
 
 const path = require("node:path");
 
-// Default per-request ceiling: model loads and long transcriptions can take a
-// while, but a wedged worker should never hang a caller forever.
+// Default silence deadline: a request is rejected after this long with no
+// reply AND no progress. Interim progress messages re-arm it (see request()),
+// so this bounds a wedged worker, not a slow-but-progressing one — model loads
+// and long transcriptions emit nothing and must still fit under it.
 const DEFAULT_REQUEST_TIMEOUT_MS = 180000;
 
 function createHost({ serviceName = "earheart-engines" } = {}) {

@@ -45,7 +45,10 @@ OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
 
 - **Global hotkey** (default `Ctrl/Cmd+Shift+Space`): press to start, press to
   stop. A small overlay shows recording level and progress without stealing
-  focus from the app you're dictating into.
+  focus from the app you're dictating into. With the built-in engines, a slim
+  bar tracks the finishing passes too — estimated from your machine's measured
+  decode speed while transcribing (so it deliberately stops short of the end
+  rather than overpromise), and following actual generation during cleanup.
 - **Speech-to-text with NVIDIA Parakeet** — by default Parakeet TDT 0.6B v3
   (multilingual, 25 languages) runs **in-process** via sherpa-onnx / ONNX
   Runtime, faster than realtime on CPU and with no network hop. Or point

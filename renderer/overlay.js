@@ -418,13 +418,24 @@ earheart.on("pipeline:partial", ({ kind, text }) => {
 // after the status already moved on to "cleaning").
 earheart.on("pipeline:progress", ({ phase, fraction }) => {
   if (card.dataset.status !== phase) return;
-  if (progressHideTimer) {
+  const supersedesHold = progressHideTimer !== null;
+  if (supersedesHold) {
     clearTimeout(progressHideTimer);
     progressHideTimer = null;
   }
   const pct = Math.max(0, Math.min(100, (fraction || 0) * 100));
   progressEl.hidden = false;
-  progressFill.style.width = `${pct.toFixed(1)}%`;
+  if (supersedesHold) {
+    // The 100% on screen belongs to the PREVIOUS phase's hold; easing down
+    // from it would read as the bar draining backwards. Snap, then let the
+    // transition resume for this phase's own updates.
+    progressFill.style.transition = "none";
+    progressFill.style.width = `${pct.toFixed(1)}%`;
+    void progressFill.offsetWidth; // flush the un-animated width
+    progressFill.style.transition = "";
+  } else {
+    progressFill.style.width = `${pct.toFixed(1)}%`;
+  }
   // A completed bar holds at 100% briefly, then hides itself — the phase's
   // closing statement rather than a cut-off.
   if (fraction >= 1) {

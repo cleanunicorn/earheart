@@ -75,7 +75,6 @@ app.whenReady().then(async () => {
   await shot(overlay, "overlay-processing");
 
   await overlay.webContents.executeJavaScript(`
-    resetProgress();
     setStatus("done", "Pasted", "Let's meet tomorrow at ten to review the draft.");
     "";
   `);

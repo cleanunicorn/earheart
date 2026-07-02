@@ -89,11 +89,17 @@ function setStatus(status, title, detail) {
   if (!progressHideTimer || !PROGRESS_HOLD_STATUSES.has(status)) resetProgress();
 }
 
+// Cancel a pending completion hold; returns whether one was active (i.e. the
+// on-screen width still belongs to the previous, completed phase).
+function clearProgressHold() {
+  if (!progressHideTimer) return false;
+  clearTimeout(progressHideTimer);
+  progressHideTimer = null;
+  return true;
+}
+
 function resetProgress() {
-  if (progressHideTimer) {
-    clearTimeout(progressHideTimer);
-    progressHideTimer = null;
-  }
+  clearProgressHold();
   progressEl.hidden = true;
   progressFill.style.width = "0";
 }
@@ -418,11 +424,7 @@ earheart.on("pipeline:partial", ({ kind, text }) => {
 // after the status already moved on to "cleaning").
 earheart.on("pipeline:progress", ({ phase, fraction }) => {
   if (card.dataset.status !== phase) return;
-  const supersedesHold = progressHideTimer !== null;
-  if (supersedesHold) {
-    clearTimeout(progressHideTimer);
-    progressHideTimer = null;
-  }
+  const supersedesHold = clearProgressHold();
   const pct = Math.max(0, Math.min(100, (fraction || 0) * 100));
   progressEl.hidden = false;
   if (supersedesHold) {

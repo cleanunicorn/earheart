@@ -55,8 +55,16 @@ function init({ applyHotkey, onSettingsChanged }) {
     };
   });
 
+  // The overlay position (settings.overlay) is owned by the main process: it
+  // changes when the user drags the card, not through any form. The settings
+  // and wizard windows save a payload spread from the snapshot they opened
+  // with, so their `overlay` can be stale — dragging the card while a form is
+  // open, then saving the form, would roll the position back. Re-inject the
+  // live value on every form save.
+  const keepLiveOverlay = (next) => ({ ...next, overlay: settings.get().overlay });
+
   ipcMain.handle("settings:save", (event, next) => {
-    const saved = settings.save(next);
+    const saved = settings.save(keepLiveOverlay(next));
     const hotkeyResult = applyHotkey(saved.hotkey);
     applyAutostart(saved);
     onSettingsChanged?.();
@@ -67,7 +75,7 @@ function init({ applyHotkey, onSettingsChanged }) {
   // window so the user can review what was pre-configured. If the chosen
   // hotkey can't be registered, the wizard stays open to let them fix it.
   ipcMain.handle("wizard:complete", (event, next) => {
-    const saved = settings.save(next);
+    const saved = settings.save(keepLiveOverlay(next));
     const hotkeyResult = applyHotkey(saved.hotkey);
     applyAutostart(saved);
     onSettingsChanged?.();

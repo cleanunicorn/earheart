@@ -533,6 +533,8 @@ card.addEventListener("pointermove", (event) => {
 });
 
 function endDrag() {
+  // pointercancel can trail pointerup; only the first end of a real drag counts.
+  if (!dragging) return;
   dragging = false;
   card.classList.remove("dragging");
   // Send the final position immediately so the card settles exactly under the
@@ -541,6 +543,8 @@ function endDrag() {
     cancelAnimationFrame(dragRaf);
     flushDrag();
   }
+  // Tell the main process the drag is over so it persists the resting spot.
+  earheart.send("overlay:drag-end");
 }
 
 card.addEventListener("pointerup", endDrag);

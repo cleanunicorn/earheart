@@ -20,6 +20,8 @@ const engines = require("./engines");
 const { deliver } = require("./output/deliver");
 const history = require("./history");
 const { createLivePreview } = require("./live-preview");
+const { createRtfEstimator } = require("./util/rtf");
+const { SAMPLE_RATE } = require("./util/wav");
 const logger = require("./util/logger");
 
 let state = "idle"; // idle | recording | processing
@@ -88,6 +90,25 @@ function getState() {
 
 function overlayStatus(status, detail) {
   windows.sendToOverlay("pipeline:status", { status, detail });
+}
+
+// Determinate progress within a processing phase (0..1). A separate event from
+// pipeline:status: status means "the phase changed" (and resets the overlay's
+// transcript/layout), progress just advances the bar for the current phase.
+function sendProgress(phase, value) {
+  windows.sendToOverlay("pipeline:progress", { phase, value });
+}
+
+// The final STT decode exposes no progress, so the transcribing bar runs on an
+// estimate calibrated by the measured realtime factor of previous decodes.
+const sttRtf = createRtfEstimator();
+
+// Duration of a canonical 16 kHz mono PCM16 WAV (44-byte header) — the exact
+// format the overlay's encodeWav produces.
+const WAV_HEADER_BYTES = 44;
+
+function wavDurationSec(wav) {
+  return Math.max(0.01, (wav.byteLength - WAV_HEADER_BYTES) / 2 / SAMPLE_RATE);
 }
 
 function hideOverlaySoon(sid, ms) {
@@ -173,7 +194,32 @@ async function process(sid, wavArrayBuffer) {
 
   try {
     overlayStatus("transcribing");
-    const raw = await route.transcribe(wav, cfg.stt, signal);
+    // The builtin decoder is one opaque blocking call, so the transcribing bar
+    // is an estimate: elapsed time against the audio duration times the learned
+    // decode speed. The interval dies in `finally` on every path; a stale
+    // session just mutes the sends until then. Remote STT (network-bound, no
+    // meaningful local estimate) keeps the indeterminate pulse.
+    const builtinStt = cfg.stt.engine === "builtin";
+    const durationSec = wavDurationSec(wav);
+    const startedAt = Date.now();
+    const sttTick = builtinStt
+      ? setInterval(() => {
+          if (stale()) return;
+          sendProgress(
+            "transcribing",
+            sttRtf.progressAt((Date.now() - startedAt) / 1000, durationSec)
+          );
+        }, 120)
+      : null;
+    let raw;
+    try {
+      raw = await route.transcribe(wav, cfg.stt, signal);
+      if (builtinStt && !stale()) {
+        sttRtf.record(durationSec, (Date.now() - startedAt) / 1000);
+      }
+    } finally {
+      if (sttTick) clearInterval(sttTick);
+    }
     if (stale()) return;
 
     if (!raw) {
@@ -187,7 +233,14 @@ async function process(sid, wavArrayBuffer) {
     if (cfg.cleanup.enabled) {
       overlayStatus("cleaning");
       try {
-        text = await route.clean(raw, cfg.cleanup, signal);
+        // The builtin worker streams token progress (generated vs transcript
+        // length); the HTTP client ignores onProgress. stale() mutes late
+        // events from a cancelled/superseded session.
+        text = await route.clean(raw, cfg.cleanup, signal, {
+          onProgress: (value) => {
+            if (!stale()) sendProgress("cleaning", value);
+          },
+        });
         cleaned = true;
       } catch (err) {
         if (stale()) return;

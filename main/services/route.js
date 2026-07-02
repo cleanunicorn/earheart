@@ -13,9 +13,11 @@ function transcribe(wav, cfg, signal) {
   return impl(wav, cfg, signal);
 }
 
-function clean(raw, cfg, signal) {
+// `opts.onProgress` only has an effect on the builtin engine (the worker
+// streams token progress); the HTTP client ignores it.
+function clean(raw, cfg, signal, opts) {
   const impl = cfg.engine === "builtin" ? engines.clean : cleanup.clean;
-  return impl(raw, cfg, signal);
+  return impl(raw, cfg, signal, opts);
 }
 
 module.exports = { transcribe, clean };

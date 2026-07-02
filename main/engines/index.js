@@ -104,17 +104,23 @@ async function ensureCleanup(modelId) {
 }
 
 // Accepts a `signal` for parity with the HTTP cleanup client (see transcribe).
-async function clean(transcript, cfg, signal) {
+// `onProgress` (0..1) relays the worker's token-streaming progress, so the
+// pipeline can drive a determinate bar while the model generates.
+async function clean(transcript, cfg, signal, { onProgress } = {}) {
   if (signal?.aborted) throw new Error("aborted");
   await ensureCleanup(cfg.builtin.model);
   // The selected style supplies both the prompt (base + directive) and the
   // sampling profile (temperature/topP/topK/minP) the worker applies.
   const { systemPrompt, sampling } = resolveCleanup(cfg);
-  const cleaned = await cleanupHost.request("clean", {
-    transcript,
-    systemPrompt,
-    sampling,
-  });
+  const cleaned = await cleanupHost.request(
+    "clean",
+    {
+      transcript,
+      systemPrompt,
+      sampling,
+    },
+    { onProgress }
+  );
   // Never let an empty (or whitespace-only) cleanup eat the user's words.
   return cleaned && cleaned.trim().length > 0 ? cleaned : transcript;
 }

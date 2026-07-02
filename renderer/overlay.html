@@ -37,6 +37,12 @@
         <div id="message" aria-live="polite">
           <span id="status-text">Listening…</span>
           <span id="detail-text"></span>
+          <!-- Determinate progress for the transcribing/cleaning phases.
+               aria-hidden keeps the live region quiet: the status text already
+               announces the phase, the bar is purely visual. -->
+          <div id="progress" hidden aria-hidden="true">
+            <div id="progress-fill"></div>
+          </div>
         </div>
         <span id="timer">0:00</span>
         <button id="stop" title="Stop and transcribe" aria-label="Stop and transcribe">

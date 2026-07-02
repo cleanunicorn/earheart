@@ -12,6 +12,8 @@ const meterCtx = meter.getContext("2d");
 const transcriptEl = document.getElementById("transcript");
 const transcriptCleanEl = document.getElementById("transcript-clean");
 const transcriptRawEl = document.getElementById("transcript-raw");
+const progressEl = document.getElementById("progress");
+const progressFill = document.getElementById("progress-fill");
 
 let recording = null; // { stream, context, chunks, startedAt, timerId, maxTimerId, partialTimerId }
 let generation = 0; // bumped on every start/teardown to invalidate stale awaits
@@ -65,6 +67,15 @@ function setStatus(status, title, detail) {
   card.dataset.status = status;
   statusText.textContent = title;
   detailText.textContent = detail || "";
+  // Every phase change retires the previous phase's bar. It stays hidden until
+  // the new phase's first pipeline:progress event, so phases that report no
+  // progress (remote engines, near-instant steps) never flash an empty track.
+  resetProgress();
+}
+
+function resetProgress() {
+  progressEl.hidden = true;
+  progressFill.style.width = "0";
 }
 
 // The meter now flexes to fill the control row, so its rendered width varies with
@@ -369,6 +380,7 @@ earheart.on("record:stop", stopRecording);
 earheart.on("record:cancel", () => {
   teardown();
   clearTranscript();
+  resetProgress();
 });
 
 // Live partial transcript: `raw` keeps pace with the voice, `cleaned` fills in
@@ -379,6 +391,16 @@ earheart.on("pipeline:partial", ({ kind, text }) => {
   if (kind === "raw") partialRaw = text || "";
   else if (kind === "cleaned") partialClean = text || "";
   renderTranscript();
+});
+
+// Determinate progress within the current processing phase. The phase guard
+// drops stale/out-of-order events (e.g. a late "transcribing" tick arriving
+// after the status already moved on to "cleaning").
+earheart.on("pipeline:progress", ({ phase, value }) => {
+  if (card.dataset.status !== phase) return;
+  const pct = Math.max(0, Math.min(100, (value || 0) * 100));
+  progressEl.hidden = false;
+  progressFill.style.width = `${pct.toFixed(1)}%`;
 });
 
 earheart.on("pipeline:status", ({ status, detail }) => {

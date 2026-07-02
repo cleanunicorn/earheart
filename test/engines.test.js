@@ -487,6 +487,47 @@ test("engines.clean falls back to the raw transcript when cleanup is empty", asy
   assert.ok(calls.includes("clean"));
 });
 
+test("engines.clean forwards onProgress to the worker host request", async () => {
+  // The pipeline's progress bar rides on this: clean() must hand its
+  // onProgress callback to the host so the worker's interim { id, progress }
+  // messages reach the caller.
+  const requests = [];
+  const hostModule = {
+    createHost: () => ({
+      request: async (type, args, opts) => {
+        requests.push({ type, opts });
+        if (type === "load-cleanup") return { ready: true };
+        if (type === "clean") {
+          opts?.onProgress?.(0.5);
+          return "cleaned";
+        }
+        throw new Error(`unexpected request: ${type}`);
+      },
+      stop() {},
+      onExit() {},
+    }),
+  };
+  const managerStub = {
+    isInstalled: () => true,
+    modelDir: (base, model) => path.join(base, model.kind, model.id),
+  };
+  const facade = loadFacadeWith({ host: hostModule, manager: managerStub });
+
+  const seen = [];
+  const cfg = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules" };
+  const out = await facade.clean("hello", cfg, undefined, {
+    onProgress: (p) => seen.push(p),
+  });
+
+  assert.strictEqual(out, "cleaned");
+  assert.deepStrictEqual(seen, [0.5]);
+  const cleanReq = requests.find((r) => r.type === "clean");
+  assert.strictEqual(typeof cleanReq.opts.onProgress, "function");
+
+  // Without the options arg, clean() still works and passes no callback.
+  assert.strictEqual(await facade.clean("hello", cfg), "cleaned");
+});
+
 test("engines facade routes STT and cleanup to separate worker hosts", async () => {
   // The two-worker split: transcribe must only ever talk to the STT host and
   // clean only to the cleanup host, so a crash or load in one engine can't

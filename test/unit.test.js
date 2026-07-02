@@ -39,6 +39,39 @@ test("wavDurationSec reads the duration from the chunk list", () => {
   assert.strictEqual(wavDurationSec(Buffer.from("not a wav at all")), 0.01);
 });
 
+test("wavDurationSec genuinely walks chunks: junk chunk, stereo, non-16k, pad byte", () => {
+  // Hand-built WAV that breaks every fixed-44-byte-header assumption: an
+  // odd-sized LIST chunk (so the word-alignment pad byte matters) sits between
+  // fmt and data, and the audio is stereo 44.1kHz — exactly 1s of frames.
+  const sr = 44100;
+  const channels = 2;
+  const dataSize = sr * 2 * channels; // 1 second of PCM16 stereo
+  const junk = 7; // odd on purpose: chunk must be followed by a pad byte
+  const buf = Buffer.alloc(12 + (8 + 16) + (8 + junk + 1) + 8 + dataSize);
+  let p = 0;
+  buf.write("RIFF", p);
+  buf.writeUInt32LE(buf.length - 8, p + 4);
+  buf.write("WAVE", p + 8);
+  p += 12;
+  buf.write("fmt ", p);
+  buf.writeUInt32LE(16, p + 4);
+  p += 8;
+  buf.writeUInt16LE(1, p); // PCM
+  buf.writeUInt16LE(channels, p + 2);
+  buf.writeUInt32LE(sr, p + 4);
+  buf.writeUInt32LE(sr * 2 * channels, p + 8);
+  buf.writeUInt16LE(2 * channels, p + 12);
+  buf.writeUInt16LE(16, p + 14);
+  p += 16;
+  buf.write("LIST", p);
+  buf.writeUInt32LE(junk, p + 4);
+  p += 8 + junk + 1; // skip the junk body plus its alignment pad
+  buf.write("data", p);
+  buf.writeUInt32LE(dataSize, p + 4);
+
+  assert.strictEqual(wavDurationSec(buf), 1);
+});
+
 test("stripThinking removes reasoning blocks", () => {
   assert.strictEqual(
     stripThinking("<think>hmm, let me see</think>Hello world."),

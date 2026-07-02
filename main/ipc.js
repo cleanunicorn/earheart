@@ -9,6 +9,7 @@ const windows = require("./windows");
 const route = require("./services/route");
 const engines = require("./engines");
 const autostart = require("./autostart");
+const updates = require("./updates");
 const { listRemoteModels } = require("./services/models-remote");
 const { parseRepoUrl, listGgufQuants, buildCleanupModel } = require("./services/hf-gguf");
 const { STYLES: CLEANUP_STYLES } = require("./cleanup-styles");
@@ -293,6 +294,30 @@ function init({ applyHotkey, onSettingsChanged }) {
   ipcMain.handle("history:clear", () => {
     history.clear();
     return [];
+  });
+
+  ipcMain.handle("updates:get", () => updates.getState());
+  ipcMain.handle("updates:check", async () => {
+    await updates.check({ manual: true });
+    return updates.getState();
+  });
+  // Fire-and-forget: progress and outcome arrive via the updates:state
+  // broadcast, mirroring how model downloads report through models:progress.
+  ipcMain.handle("updates:apply", () => {
+    updates.startUpdate();
+    return { ok: true };
+  });
+  ipcMain.handle("updates:install", () => {
+    updates.installNow();
+    return { ok: true };
+  });
+  ipcMain.handle("updates:cancel", () => {
+    updates.cancel();
+    return { ok: true };
+  });
+  ipcMain.handle("updates:skip", () => {
+    updates.skipVersion();
+    return { ok: true };
   });
 }
 

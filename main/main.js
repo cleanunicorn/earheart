@@ -10,6 +10,7 @@ const tray = require("./tray");
 const ipc = require("./ipc");
 const engines = require("./engines");
 const autostart = require("./autostart");
+const updates = require("./updates");
 const logger = require("./util/logger");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
@@ -72,10 +73,14 @@ function main() {
       onSettingsChanged: () => {
         tray.refresh();
         pipeline.onSettingsChanged();
+        updates.onSettingsChanged();
       },
     });
     windows.createOverlay();
     tray.init(app, pipeline);
+    if (!isSmokeTest) {
+      updates.init({ onStateChange: () => tray.refresh() });
+    }
 
     const hotkeyResult = applyHotkey(cfg.hotkey);
     if (!hotkeyResult.ok) {
@@ -112,5 +117,6 @@ function main() {
   app.on("will-quit", () => {
     hotkeys.unregisterAll();
     engines.stop();
+    updates.dispose();
   });
 }

@@ -63,8 +63,8 @@ app.whenReady().then(async () => {
   await sleep(400);
   await shot(overlay, "overlay-recording");
 
-  // Processing state with the determinate progress bar mid-fill. Not embedded
-  // in the README (which keeps two shots); captured for PR/reference use.
+  // Processing state with the determinate progress bar mid-fill (the README's
+  // middle hero shot).
   await overlay.webContents.executeJavaScript(`
     setStatus("cleaning", "Cleaning up…");
     progressEl.hidden = false;

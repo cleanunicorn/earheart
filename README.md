@@ -11,11 +11,12 @@
 
 <p align="center">
   <img src="docs/screenshots/overlay-recording.png" width="340" alt="Earheart overlay showing a live transcript while recording" /><br/>
+  <img src="docs/screenshots/overlay-processing.png" width="340" alt="Earheart overlay showing a progress bar while the transcript is cleaned up" /><br/>
   <img src="docs/screenshots/overlay-done.png" width="340" alt="Earheart overlay confirming the transcript was pasted" />
 </p>
 
 <p align="center">
-  <sub>The overlay transcribes live as you speak, then confirms where the text landed — without stealing focus.</sub>
+  <sub>The overlay transcribes live as you speak, shows progress while it finishes up, then confirms where the text landed — without stealing focus.</sub>
 </p>
 
 ---

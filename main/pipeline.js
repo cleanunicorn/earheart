@@ -174,6 +174,24 @@ async function transcribeWithEstimate(wav, sttCfg, signal, stale) {
   }
 }
 
+// Sibling of transcribeWithEstimate: run cleanup with its streamed progress.
+// The builtin worker reports real token progress (generated vs transcript
+// length, capped below 1 — only the reply says done), so on success this sends
+// the explicit final 1; the remote path never showed a bar, so a completion
+// flash there would be noise. The raw-transcript fallback stays with the
+// caller — that's dictation policy, not progress plumbing.
+async function cleanWithProgress(raw, cleanupCfg, signal, stale) {
+  const text = await route.clean(raw, cleanupCfg, signal, {
+    onProgress: (fraction) => {
+      if (!stale()) sendProgress("cleaning", fraction);
+    },
+  });
+  if (cleanupCfg.engine === "builtin" && !stale()) {
+    sendProgress("cleaning", 1);
+  }
+  return text;
+}
+
 function hideOverlaySoon(sid, ms) {
   setTimeout(() => {
     // Only hide if no new session started in the meantime.
@@ -271,21 +289,8 @@ async function process(sid, wavArrayBuffer) {
     if (cfg.cleanup.enabled) {
       overlayStatus("cleaning");
       try {
-        // The builtin worker streams token progress (generated vs transcript
-        // length); the HTTP client ignores onProgress. stale() mutes late
-        // events from a cancelled/superseded session.
-        text = await route.clean(raw, cfg.cleanup, signal, {
-          onProgress: (fraction) => {
-            if (!stale()) sendProgress("cleaning", fraction);
-          },
-        });
+        text = await cleanWithProgress(raw, cfg.cleanup, signal, stale);
         cleaned = true;
-        // Streamed progress is capped below 1 (only the reply says done) —
-        // this is the "done". Builtin only: the remote path never showed a
-        // bar, so a completion flash there would be noise.
-        if (cfg.cleanup.engine === "builtin" && !stale()) {
-          sendProgress("cleaning", 1);
-        }
       } catch (err) {
         if (stale()) return;
         // Cleanup is an enhancement: fall back to the raw transcript and

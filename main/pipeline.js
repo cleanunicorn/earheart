@@ -93,11 +93,12 @@ function overlayStatus(status, detail) {
   windows.sendToOverlay("pipeline:status", { status, detail });
 }
 
-// Determinate progress within a processing phase (0..1). A separate event from
+// Determinate progress within a processing phase. A separate event from
 // pipeline:status: status means "the phase changed" (and resets the overlay's
 // transcript/layout), progress just advances the bar for the current phase.
-function sendProgress(phase, value) {
-  windows.sendToOverlay("pipeline:progress", { phase, value });
+// The 0..1 field is named `fraction` to match the models:progress vocabulary.
+function sendProgress(phase, fraction) {
+  windows.sendToOverlay("pipeline:progress", { phase, fraction });
 }
 
 // The final STT decode exposes no progress, so the transcribing bar runs on an

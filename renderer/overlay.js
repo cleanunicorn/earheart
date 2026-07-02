@@ -396,9 +396,9 @@ earheart.on("pipeline:partial", ({ kind, text }) => {
 // Determinate progress within the current processing phase. The phase guard
 // drops stale/out-of-order events (e.g. a late "transcribing" tick arriving
 // after the status already moved on to "cleaning").
-earheart.on("pipeline:progress", ({ phase, value }) => {
+earheart.on("pipeline:progress", ({ phase, fraction }) => {
   if (card.dataset.status !== phase) return;
-  const pct = Math.max(0, Math.min(100, (value || 0) * 100));
+  const pct = Math.max(0, Math.min(100, (fraction || 0) * 100));
   progressEl.hidden = false;
   progressFill.style.width = `${pct.toFixed(1)}%`;
 });

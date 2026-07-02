@@ -24,6 +24,7 @@ const SEND = new Set([
   "pipeline:cancel",
   "overlay:drag-start",
   "overlay:drag",
+  "overlay:drag-end",
   "overlay:resize",
 ]);
 

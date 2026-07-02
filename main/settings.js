@@ -109,6 +109,15 @@ const DEFAULTS = {
     // a manual check surfaces it again.
     skippedVersion: "",
   },
+  // Where the user last dragged the recording overlay: `{ x, y }` screen
+  // coordinates of the base-height card's top-left corner. Empty until the
+  // card is first dragged — the overlay then gets the default bottom-center
+  // spot. Owned by main/windows.js (persisted on drag end, validated against
+  // the connected displays on startup); the settings/wizard forms never edit
+  // it, so main/ipc.js re-injects the live value when they save. Kept free of
+  // placeholder values (deepMerge treats a null base as a mergeable object,
+  // so a `x: null` default would corrupt the saved coordinate).
+  overlay: {},
   // Cleanup models the user added from a custom Hugging Face URL. Each entry is
   // a registry-shaped model definition (see main/services/hf-gguf.js). Managed
   // only by the models:add-custom / models:remove-custom IPC handlers; the

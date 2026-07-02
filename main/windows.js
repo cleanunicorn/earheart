@@ -3,6 +3,7 @@
 
 const { BrowserWindow, ipcMain, screen } = require("electron");
 const path = require("node:path");
+const settings = require("./settings");
 
 const PRELOAD = path.join(__dirname, "..", "preload.js");
 const RENDERER = path.join(__dirname, "..", "renderer");
@@ -30,6 +31,26 @@ function clampToWorkArea(x, y, height = OVERLAY_HEIGHT) {
     x: Math.min(Math.max(x, workArea.x), workArea.x + workArea.width - OVERLAY_WIDTH),
     y: Math.min(Math.max(y, workArea.y), workArea.y + workArea.height - height),
   };
+}
+
+// Restore the position the user last dragged the card to, saved in settings.
+// Only honoured if the base-height card still fits entirely on a connected
+// display's work area: a spot remembered from a monitor that's since been
+// unplugged (or a resolution that shrank) must not strand the card off-screen,
+// so it falls back to the default bottom-center instead. Display changes while
+// the app is running are handled separately: overlayPosition() re-clamps on
+// every show.
+function restoreOverlayPosition() {
+  const { x, y } = settings.get().overlay ?? {};
+  if (typeof x !== "number" || typeof y !== "number") return;
+  const fits = screen.getAllDisplays().some(
+    ({ workArea }) =>
+      x >= workArea.x &&
+      y >= workArea.y &&
+      x + OVERLAY_WIDTH <= workArea.x + workArea.width &&
+      y + OVERLAY_HEIGHT <= workArea.y + workArea.height
+  );
+  if (fits) overlayCustomPosition = { x, y };
 }
 
 function overlayPosition() {
@@ -71,6 +92,15 @@ ipcMain.on("overlay:drag", (event, { x, y } = {}) => {
   overlayCustomPosition = { x: next.x, y: next.y + h - OVERLAY_HEIGHT };
 });
 
+// Persist the dragged position once, when the drag ends (saving from the
+// per-frame drag stream would rewrite the settings file on every mousemove),
+// so the card comes back to the same spot after a restart.
+ipcMain.on("overlay:drag-end", () => {
+  overlayDragOrigin = null;
+  if (!overlayCustomPosition) return;
+  settings.save({ ...settings.get(), overlay: { ...overlayCustomPosition } });
+});
+
 // The live transcript grows the overlay's content upward (the card stays pinned
 // to the bottom edge so it doesn't jump). The renderer reports the height its
 // content needs; we resize the window and shift its top up by the delta, then
@@ -98,6 +128,7 @@ ipcMain.on("overlay:resize", (event, { height } = {}) => {
 
 function createOverlay() {
   if (overlayWindow && !overlayWindow.isDestroyed()) return overlayWindow;
+  restoreOverlayPosition();
   const { x, y } = overlayPosition();
   overlayWindow = new BrowserWindow({
     width: OVERLAY_WIDTH,

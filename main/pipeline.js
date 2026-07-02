@@ -214,6 +214,16 @@ async function process(sid, wavArrayBuffer) {
     // session just mutes the sends until then. Remote STT (network-bound, no
     // meaningful local estimate) keeps the indeterminate pulse.
     const builtinStt = cfg.stt.engine === "builtin";
+    // Load the model BEFORE starting the estimate clock: a cold load (first
+    // dictation, post-idle-unload, worker restart) takes seconds and would both
+    // freeze the bar at its cap and poison the persisted RTF sample with
+    // load time that isn't decode speed. ensureStt is idempotent — the
+    // route.transcribe below re-runs it as a no-op. Errors (model not
+    // downloaded, worker dead) land in the same catch route.transcribe uses.
+    if (builtinStt) {
+      await engines.ensureStt(cfg.stt.builtin.model);
+      if (stale()) return;
+    }
     const rtf = builtinStt ? getSttRtf() : null;
     const durationSec = wavDurationSec(wav);
     const startedAt = Date.now();

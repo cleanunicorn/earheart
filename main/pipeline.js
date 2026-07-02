@@ -117,6 +117,42 @@ function getSttRtf() {
   return sttRtf;
 }
 
+// Run the final transcription with the estimated transcribing bar. The builtin
+// decoder is one opaque blocking call, so the bar is elapsed time against the
+// audio duration times the learned decode speed; this helper owns that plumbing
+// (model preload, ticker lifecycle, RTF sample) so process() stays a readable
+// phase list. Remote STT (network-bound, no meaningful local estimate) skips
+// the estimate and keeps the indeterminate pulse. `stale` mutes sends from a
+// cancelled/superseded session; the ticker itself dies in `finally` regardless.
+async function transcribeWithEstimate(wav, sttCfg, signal, stale) {
+  const rtf = sttCfg.engine === "builtin" ? getSttRtf() : null;
+  if (rtf) {
+    // Load the model BEFORE starting the clock: a cold load (first dictation,
+    // post-idle-unload, worker restart) takes seconds and would both freeze
+    // the bar at its cap and poison the persisted RTF sample with load time
+    // that isn't decode speed. Idempotent — route.transcribe re-runs it as a
+    // no-op; errors land in the caller's catch either way.
+    await engines.ensureStt(sttCfg.builtin.model);
+    if (stale()) return "";
+  }
+  const durationSec = wavDurationSec(wav);
+  const startedAt = Date.now();
+  const elapsedSec = () => (Date.now() - startedAt) / 1000;
+  const tick = rtf
+    ? setInterval(() => {
+        if (stale()) return;
+        sendProgress("transcribing", rtf.progressAt(elapsedSec(), durationSec));
+      }, 120)
+    : null;
+  try {
+    const raw = await route.transcribe(wav, sttCfg, signal);
+    if (rtf && !stale()) rtf.record(durationSec, elapsedSec());
+    return raw;
+  } finally {
+    if (tick) clearInterval(tick);
+  }
+}
+
 function hideOverlaySoon(sid, ms) {
   setTimeout(() => {
     // Only hide if no new session started in the meantime.
@@ -200,43 +236,7 @@ async function process(sid, wavArrayBuffer) {
 
   try {
     overlayStatus("transcribing");
-    // The builtin decoder is one opaque blocking call, so the transcribing bar
-    // is an estimate: elapsed time against the audio duration times the learned
-    // decode speed. The interval dies in `finally` on every path; a stale
-    // session just mutes the sends until then. Remote STT (network-bound, no
-    // meaningful local estimate) keeps the indeterminate pulse.
-    const builtinStt = cfg.stt.engine === "builtin";
-    // Load the model BEFORE starting the estimate clock: a cold load (first
-    // dictation, post-idle-unload, worker restart) takes seconds and would both
-    // freeze the bar at its cap and poison the persisted RTF sample with
-    // load time that isn't decode speed. ensureStt is idempotent — the
-    // route.transcribe below re-runs it as a no-op. Errors (model not
-    // downloaded, worker dead) land in the same catch route.transcribe uses.
-    if (builtinStt) {
-      await engines.ensureStt(cfg.stt.builtin.model);
-      if (stale()) return;
-    }
-    const rtf = builtinStt ? getSttRtf() : null;
-    const durationSec = wavDurationSec(wav);
-    const startedAt = Date.now();
-    const sttTick = rtf
-      ? setInterval(() => {
-          if (stale()) return;
-          sendProgress(
-            "transcribing",
-            rtf.progressAt((Date.now() - startedAt) / 1000, durationSec)
-          );
-        }, 120)
-      : null;
-    let raw;
-    try {
-      raw = await route.transcribe(wav, cfg.stt, signal);
-      if (rtf && !stale()) {
-        rtf.record(durationSec, (Date.now() - startedAt) / 1000);
-      }
-    } finally {
-      if (sttTick) clearInterval(sttTick);
-    }
+    const raw = await transcribeWithEstimate(wav, cfg.stt, signal, stale);
     if (stale()) return;
 
     if (!raw) {

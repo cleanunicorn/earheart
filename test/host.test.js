@@ -120,11 +120,13 @@ test("host: a request times out on silence, and progress resets the clock", asyn
   );
 
   // Progressing worker: each interim message re-arms the timer, so the request
-  // survives well past a single timeout window and still resolves.
-  const promise = host.request("clean", {}, { timeoutMs: 40 });
+  // survives well past a single timeout window and still resolves. Margins are
+  // generous (50ms cadence vs 150ms window) so scheduler jitter on a loaded
+  // runner can't push a sleep past the deadline and flake the test.
+  const promise = host.request("clean", {}, { timeoutMs: 150 });
   const { id } = child.sent[child.sent.length - 1];
-  for (let i = 0; i < 4; i++) {
-    await new Promise((r) => setTimeout(r, 25));
+  for (let i = 0; i < 5; i++) {
+    await new Promise((r) => setTimeout(r, 50));
     child.emit("message", { id, progress: (i + 1) / 10 });
   }
   child.emit("message", { id, ok: true, result: "slow but alive" });
@@ -164,11 +166,11 @@ test("host: progress re-arms the timeout, it doesn't disable it", async () => {
   const { child, host } = setup();
 
   const promise = host.request("clean", {}, {
-    timeoutMs: 30,
+    timeoutMs: 100,
     onProgress: () => {},
   });
   const { id } = child.sent[0];
-  await new Promise((r) => setTimeout(r, 10)); // inside the first window
+  await new Promise((r) => setTimeout(r, 30)); // well inside the first window
   child.emit("message", { id, progress: 0.1 });
   // Worker goes silent: the re-armed deadline must still fire.
   await assert.rejects(promise, /timed out/);

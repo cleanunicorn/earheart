@@ -79,6 +79,24 @@ test("host: progress without an onProgress callback is a no-op", async () => {
   assert.strictEqual(await promise, "ok");
 });
 
+test("host: non-numeric progress is dropped without touching the timeout", async () => {
+  // The protocol promises finite numbers; a malformed message must neither
+  // reach the caller nor re-arm the silence deadline.
+  const { child, host } = setup();
+
+  const seen = [];
+  const promise = host.request("clean", {}, {
+    timeoutMs: 30,
+    onProgress: (p) => seen.push(p),
+  });
+  const { id } = child.sent[0];
+  child.emit("message", { id, progress: "0.5" });
+  child.emit("message", { id, progress: { sneaky: true } });
+  child.emit("message", { id, progress: NaN });
+  await assert.rejects(promise, /timed out/); // garbage never extended the clock
+  assert.deepStrictEqual(seen, []);
+});
+
 test("host: progress after the reply (or for an unknown id) is dropped", async () => {
   const { child, host } = setup();
 

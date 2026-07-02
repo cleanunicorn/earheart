@@ -39,8 +39,12 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
       const entry = msg && pending.get(msg.id);
       if (!entry) return; // late progress/reply for a finished request: drop
       if (msg.progress !== undefined) {
-        // Interim progress: the request is still in flight. Progress also
-        // proves the worker is alive, so push the inactivity deadline out.
+        // Interim progress: the request is still in flight. The protocol
+        // promises a finite number; anything else is dropped like an unknown
+        // id — a malformed message must not extend the deadline or reach the
+        // caller. Valid progress proves the worker is alive, so push the
+        // inactivity deadline out.
+        if (typeof msg.progress !== "number" || !Number.isFinite(msg.progress)) return;
         entry.touch();
         if (entry.onProgress) entry.onProgress(msg.progress);
         return;

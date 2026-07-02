@@ -3,8 +3,11 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
-const { createRtfEstimator } = require("../main/util/rtf");
+const { createRtfEstimator, createPersistedRtfEstimator } = require("../main/util/rtf");
 
 test("rtf: starts from the initial guess, clamped to bounds", () => {
   assert.strictEqual(createRtfEstimator().estimate(), 0.25);
@@ -53,4 +56,55 @@ test("rtf: progressAt guards zero/invalid inputs", () => {
   assert.strictEqual(rtf.progressAt(1, 0), 0);
   assert.strictEqual(rtf.progressAt(1, NaN), 0);
   assert.strictEqual(rtf.progressAt(NaN, 10), 0);
+});
+
+/* ---------------- persistence across restarts ---------------- */
+
+function tmpStateFile() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-rtf-"));
+  return path.join(dir, "stt-rtf.json");
+}
+
+test("persisted rtf: saves after record and reloads on the next construction", () => {
+  const file = tmpStateFile();
+
+  const first = createPersistedRtfEstimator(file);
+  assert.strictEqual(first.estimate(), 0.25); // no file yet: default guess
+  first.record(10, 1); // fast machine: observed 0.1
+  const learned = first.estimate();
+  assert.ok(learned < 0.25);
+
+  // "Restart": a fresh estimator over the same file resumes the calibration
+  // instead of starting from the default guess.
+  const second = createPersistedRtfEstimator(file);
+  assert.strictEqual(second.estimate(), learned);
+});
+
+test("persisted rtf: missing or corrupt state falls back to the default", () => {
+  const file = tmpStateFile();
+  assert.strictEqual(createPersistedRtfEstimator(file).estimate(), 0.25);
+
+  fs.writeFileSync(file, "not json");
+  assert.strictEqual(createPersistedRtfEstimator(file).estimate(), 0.25);
+
+  fs.writeFileSync(file, JSON.stringify({ rtf: -3 }));
+  assert.strictEqual(createPersistedRtfEstimator(file).estimate(), 0.25);
+
+  fs.writeFileSync(file, JSON.stringify({ rtf: "fast" }));
+  assert.strictEqual(createPersistedRtfEstimator(file).estimate(), 0.25);
+});
+
+test("persisted rtf: rejected samples don't touch the state file", () => {
+  const file = tmpStateFile();
+  const rtf = createPersistedRtfEstimator(file);
+  rtf.record(0, 1); // garbage: ignored by the estimator
+  assert.ok(!fs.existsSync(file));
+});
+
+test("persisted rtf: a failed save keeps the in-memory estimate working", () => {
+  // Point the state file at a directory so writeFileSync fails.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-rtf-"));
+  const rtf = createPersistedRtfEstimator(dir);
+  rtf.record(10, 1); // save fails silently
+  assert.ok(rtf.estimate() < 0.25); // EMA still updated for this session
 });

@@ -20,7 +20,7 @@ const engines = require("./engines");
 const { deliver } = require("./output/deliver");
 const history = require("./history");
 const { createLivePreview } = require("./live-preview");
-const { createRtfEstimator } = require("./util/rtf");
+const { createPersistedRtfEstimator } = require("./util/rtf");
 const { SAMPLE_RATE } = require("./util/wav");
 const logger = require("./util/logger");
 
@@ -100,8 +100,22 @@ function sendProgress(phase, value) {
 }
 
 // The final STT decode exposes no progress, so the transcribing bar runs on an
-// estimate calibrated by the measured realtime factor of previous decodes.
-const sttRtf = createRtfEstimator();
+// estimate calibrated by the measured realtime factor of previous decodes,
+// persisted in userData so calibration survives app restarts. Created lazily
+// because app.getPath needs the app ready; the first use is inside process().
+let sttRtf = null;
+
+function getSttRtf() {
+  if (!sttRtf) {
+    const { app } = require("electron");
+    const rtfPath = require("node:path").join(
+      app.getPath("userData"),
+      "stt-rtf.json"
+    );
+    sttRtf = createPersistedRtfEstimator(rtfPath);
+  }
+  return sttRtf;
+}
 
 // Duration of a canonical 16 kHz mono PCM16 WAV (44-byte header) — the exact
 // format the overlay's encodeWav produces.
@@ -200,22 +214,23 @@ async function process(sid, wavArrayBuffer) {
     // session just mutes the sends until then. Remote STT (network-bound, no
     // meaningful local estimate) keeps the indeterminate pulse.
     const builtinStt = cfg.stt.engine === "builtin";
+    const rtf = builtinStt ? getSttRtf() : null;
     const durationSec = wavDurationSec(wav);
     const startedAt = Date.now();
-    const sttTick = builtinStt
+    const sttTick = rtf
       ? setInterval(() => {
           if (stale()) return;
           sendProgress(
             "transcribing",
-            sttRtf.progressAt((Date.now() - startedAt) / 1000, durationSec)
+            rtf.progressAt((Date.now() - startedAt) / 1000, durationSec)
           );
         }, 120)
       : null;
     let raw;
     try {
       raw = await route.transcribe(wav, cfg.stt, signal);
-      if (builtinStt && !stale()) {
-        sttRtf.record(durationSec, (Date.now() - startedAt) / 1000);
+      if (rtf && !stale()) {
+        rtf.record(durationSec, (Date.now() - startedAt) / 1000);
       }
     } finally {
       if (sttTick) clearInterval(sttTick);

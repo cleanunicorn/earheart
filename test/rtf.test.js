@@ -94,6 +94,19 @@ test("persisted rtf: missing or corrupt state falls back to the default", () => 
   assert.strictEqual(createPersistedRtfEstimator(file).estimate(), 0.25);
 });
 
+test("persisted rtf: finite but absurd stored values are clamped on load", () => {
+  // A hand-edited or units-mixed state file must not freeze the bar near 0%
+  // (huge rtf) or snap it to the cap instantly (tiny rtf). Pins the
+  // constructor clamp, which would otherwise look redundant with record()'s.
+  const file = tmpStateFile();
+
+  fs.writeFileSync(file, JSON.stringify({ rtf: 50 }));
+  assert.strictEqual(createPersistedRtfEstimator(file).estimate(), 2); // default max
+
+  fs.writeFileSync(file, JSON.stringify({ rtf: 1e-9 }));
+  assert.strictEqual(createPersistedRtfEstimator(file).estimate(), 0.02); // default min
+});
+
 test("persisted rtf: rejected samples don't touch the state file", () => {
   const file = tmpStateFile();
   const rtf = createPersistedRtfEstimator(file);

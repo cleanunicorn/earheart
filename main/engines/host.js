@@ -81,7 +81,7 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
    * but visibly progressing inference is never cut off.
    * @param {string} type
    * @param {object} [args]
-   * @param {{timeoutMs?: number, onProgress?: (progress: any) => void}} [opts]
+   * @param {{timeoutMs?: number, onProgress?: (progress: number) => void}} [opts]
    */
   function request(type, args = {}, opts = {}) {
     const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, onProgress } = opts;

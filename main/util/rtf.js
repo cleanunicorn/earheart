@@ -2,8 +2,8 @@
 // no progress callbacks, so the transcribing bar runs on an estimate: we know
 // the audio's duration, and we learn how fast the machine decodes (RTF =
 // decode seconds per audio second) from each completed run via an exponential
-// moving average. `progressAt` is capped below 1 so the bar never claims to be
-// done — completion is signalled by the pipeline moving to the next phase.
+// moving average. `progressAt` is capped below 1 so the estimate never claims
+// to be done on its own — on success the pipeline sends an explicit final 1.
 //
 // The EMA is what keeps the estimate tracking "the last few transcriptions":
 // each observation pulls the value `alpha` of the way toward itself, so a run

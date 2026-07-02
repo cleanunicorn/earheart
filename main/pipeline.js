@@ -108,6 +108,11 @@ function sendProgress(phase, fraction) {
 // inside process(). (Same deferred-getPath shape as history.js/settings.js.)
 let sttRtf = null;
 
+// Cadence of the estimated transcribing bar. Faster than the worker's own
+// 100ms progress throttle so the two bars feel equally alive, well below the
+// bar's 150ms CSS width transition so motion stays continuous.
+const STT_PROGRESS_TICK_MS = 120;
+
 function getSttRtf() {
   if (!sttRtf) {
     sttRtf = createPersistedRtfEstimator(
@@ -142,7 +147,7 @@ async function transcribeWithEstimate(wav, sttCfg, signal, stale) {
     ? setInterval(() => {
         if (stale()) return;
         sendProgress("transcribing", rtf.progressAt(elapsedSec(), durationSec));
-      }, 120)
+      }, STT_PROGRESS_TICK_MS)
     : null;
   try {
     const raw = await route.transcribe(wav, sttCfg, signal);

@@ -48,6 +48,8 @@ function reply(id, promise) {
 // so nothing outlives the request — a dropped trailing update is fine because
 // the reply itself is the final word.
 const PROGRESS_INTERVAL_MS = 100;
+// Streamed cleanup progress never claims completion — only the reply does.
+const CLEAN_PROGRESS_CAP = 0.99;
 
 function makeProgressEmitter(id) {
   let lastSentAt = 0;
@@ -159,14 +161,13 @@ async function clean({ transcript, systemPrompt, sampling }, emitProgress) {
     `${systemPrompt}\n\nTranscript:\n${transcript}\n\nCleaned transcript:`;
   // Cleaned output tracks the input's length closely (punctuation in, fillers
   // out), so generated-chars / transcript-chars is an honest progress ratio.
-  // Capped below 1: only the finished reply gets to say "done".
   const total = Math.max(1, transcript.length);
   let generated = 0;
   const out = await llamaSession.prompt(userTurn, {
     ...samplingOptions(sampling),
     onTextChunk: (text) => {
       generated += text.length;
-      if (emitProgress) emitProgress(Math.min(0.99, generated / total));
+      if (emitProgress) emitProgress(Math.min(CLEAN_PROGRESS_CAP, generated / total));
     },
   });
   return (out || "").trim();

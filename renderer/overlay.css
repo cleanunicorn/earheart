@@ -227,6 +227,16 @@ body {
   display: none;
 }
 
+/* During the processing phases the hidden bar keeps its box (invisible track)
+   so the centered status text doesn't jump 3px when the first progress event
+   unhides it mid-read. Other phases collapse it entirely — remote engines and
+   done/error states never pay for space they won't use. */
+#card[data-status="transcribing"] #progress[hidden],
+#card[data-status="cleaning"] #progress[hidden] {
+  display: block;
+  visibility: hidden;
+}
+
 #progress-fill {
   height: 100%;
   width: 0;

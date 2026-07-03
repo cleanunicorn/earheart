@@ -157,8 +157,9 @@ class Pipeline extends ChangeNotifier {
 
       _setState(
           PipelineState.processing, const OverlayStatus(OverlayPhase.delivering));
-      final result = await deliver(res.text, settings.output);
-      if (sid != _session) return;
+      final result = await deliver(res.text, settings.output,
+          cancelled: () => sid != _session);
+      if (sid != _session || result.method == 'cancelled') return;
 
       final preview =
           res.text.length > 120 ? '${res.text.substring(0, 120)}…' : res.text;

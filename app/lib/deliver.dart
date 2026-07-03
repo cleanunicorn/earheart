@@ -20,7 +20,13 @@ class DeliverResult {
 
 Timer? _pendingRestore;
 
-Future<DeliverResult> deliver(String text, OutputSettings cfg) async {
+/// Deliver [text] per the output settings. [cancelled] is polled at the two
+/// points the Electron original checks its AbortSignal — on entry and again
+/// after the paste delay — so a cancel during "Typing…" cannot still paste
+/// into the focused app moments later.
+Future<DeliverResult> deliver(String text, OutputSettings cfg,
+    {bool Function()? cancelled}) async {
+  if (cancelled?.call() ?? false) return DeliverResult('cancelled');
   _pendingRestore?.cancel();
   _pendingRestore = null;
 
@@ -34,6 +40,7 @@ Future<DeliverResult> deliver(String text, OutputSettings cfg) async {
   if (!pasting) return DeliverResult('clipboard');
 
   await Future<void>.delayed(Duration(milliseconds: cfg.pasteDelayMs));
+  if (cancelled?.call() ?? false) return DeliverResult('cancelled');
   try {
     await _simulatePaste();
   } catch (e) {

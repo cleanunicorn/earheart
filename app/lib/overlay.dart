@@ -125,8 +125,8 @@ class _OverlayCardState extends State<OverlayCard> {
         return _message(
             Icons.check_circle, Colors.greenAccent, title, p.status.detail);
       case OverlayPhase.empty:
-        return _message(
-            Icons.help_outline, Colors.amberAccent, 'Nothing heard', null);
+        return _message(Icons.help_outline, Colors.amberAccent,
+            'Nothing heard', 'Try again closer to the mic');
       case OverlayPhase.error:
         return _message(
             Icons.error_outline, Colors.redAccent, 'Failed', p.status.detail);

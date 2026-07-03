@@ -83,6 +83,7 @@ Match what CI runs on every platform — do not open a PR with these failing:
 npm test                                            # unit tests (node --test)
 make smoke                                           # boot app headlessly and exit
 npx electron scripts/engine-smoke.js --no-sandbox    # boot engine worker, round-trip a ping
+npx electron scripts/overlay-smoke.js --no-sandbox   # fake-mic overlay: capture/UI sync checks
 ```
 
 `make help` lists every wrapped task. On Linux the smoke checks need a display —

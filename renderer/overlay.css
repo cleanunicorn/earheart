@@ -138,6 +138,16 @@ body {
   background: #ff5470;
 }
 
+/* Mic warming up: a hollow ring, deliberately NOT the filled recording dot.
+   The visual contract is that the filled pulsing dot + waveform + timer mean
+   "audio is being captured right now"; until the first samples arrive the
+   card only promises that it's getting there. */
+[data-status="starting"] #indicator {
+  background: transparent;
+  border: 2px solid #ff5470;
+  animation: pulse 1s ease-in-out infinite;
+}
+
 [data-status="recording"] #indicator {
   animation: pulse 2s ease-in-out infinite;
 }

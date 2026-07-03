@@ -21,6 +21,9 @@ const kDoneGreen = Color(0xFF4ADE80);
 const kMuted = Color(0xFF94A3B8);
 const kTextPrimary = Color(0xFFF6F4FB);
 const kTextDetail = Color(0xFFB8B3C4);
+// Muted rose for the level meter (overlay.js drawMeter): saturated red is
+// reserved for the stop button so it stays the one thing the eye lands on.
+const kMeterRose = Color(0x80FF788C);
 
 class OverlayCard extends StatefulWidget {
   final Pipeline pipeline;
@@ -58,6 +61,10 @@ class _OverlayCardState extends State<OverlayCard> {
     return Align(
       alignment: Alignment.bottomCenter,
       child: Container(
+        // Constant width (the reference card spans the window minus margins):
+        // a content-hugging pill would visibly pop wider/narrower at every
+        // phase change.
+        width: double.infinity,
         margin: const EdgeInsets.all(12),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
@@ -97,10 +104,21 @@ class _OverlayCardState extends State<OverlayCard> {
   Widget _statusRow(Pipeline p) {
     switch (p.status.phase) {
       case OverlayPhase.recording:
-        return Row(mainAxisSize: MainAxisSize.min, children: [
-          const _PulsingDot(color: kRecordRed),
+        return Row(children: [
+          // The live region announces that the mic is hot; the dot and meter
+          // are decoration, and the ticking timer stays out so it doesn't
+          // announce every update.
+          Semantics(
+            label: 'Recording',
+            liveRegion: true,
+            child: const _PulsingDot(color: kRecordRed),
+          ),
           const SizedBox(width: 8),
-          _Meter(level: widget.recorder.level),
+          // flex like the reference's #meter so stop/cancel share the card's
+          // right edge.
+          Expanded(
+              child: ExcludeSemantics(
+                  child: _Meter(level: widget.recorder.level))),
           const SizedBox(width: 10),
           Text(_fmt(widget.recorder.seconds),
               style: const TextStyle(
@@ -135,7 +153,10 @@ class _OverlayCardState extends State<OverlayCard> {
                 p.status.phase == OverlayPhase.transcribing
                     ? 'Transcribing…'
                     : 'Typing…',
-                style: const TextStyle(color: kTextPrimary, fontSize: 13)),
+                style: const TextStyle(
+                    color: kTextPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600)),
           ),
           const SizedBox(width: 10),
           _iconBtn(Icons.close, 'Cancel', () => p.cancel()),
@@ -146,9 +167,10 @@ class _OverlayCardState extends State<OverlayCard> {
         // and a degraded delivery (note) must not wear the green check.
         final note = p.status.note;
         if (note != null) {
-          return _message(
-              Icons.help_outline, kProcessingAmber, 'Copied to clipboard',
-              note);
+          // Warning glyph, not the question mark — "?" reads as uncertainty
+          // and already means "Nothing heard" on the empty state.
+          return _message(Icons.warning_amber_rounded, kProcessingAmber,
+              'Copied to clipboard', note);
         }
         final title = switch (p.status.method) {
           'paste' => 'Pasted',
@@ -180,7 +202,10 @@ class _OverlayCardState extends State<OverlayCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(title,
-                  style: const TextStyle(color: kTextPrimary, fontSize: 13)),
+                  style: const TextStyle(
+                      color: kTextPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600)),
               if (detail != null && detail.isNotEmpty)
                 Text(detail,
                     maxLines: 2,
@@ -202,10 +227,14 @@ class _OverlayCardState extends State<OverlayCard> {
       // ~40px targets like the reference's deliberately expanded hit areas —
       // a mis-hit on Cancel destroys the dictation.
       constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      // The ghost keeps a faint resting circle (overlay.css #cancel) so it
+      // still reads as a button next to the filled stop.
       style: filled
           ? IconButton.styleFrom(
               backgroundColor: kRecordRed, shape: const CircleBorder())
-          : null,
+          : IconButton.styleFrom(
+              backgroundColor: Colors.white.withValues(alpha: 0.08),
+              shape: const CircleBorder()),
       onPressed: onTap,
     );
   }
@@ -233,7 +262,7 @@ class _Meter extends StatelessWidget {
             height: 6 + i * 1.2,
             margin: const EdgeInsets.symmetric(horizontal: 1),
             decoration: BoxDecoration(
-              color: active ? kDoneGreen : Colors.white24,
+              color: active ? kMeterRose : Colors.white24,
               borderRadius: BorderRadius.circular(1.5),
             ),
           );

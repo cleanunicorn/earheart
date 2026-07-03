@@ -72,6 +72,60 @@ dist-win-docker: ## Cross-build Windows packages from Linux via Docker+Wine
 				sherpa-onnx-win-x64 @node-llama-cpp/win-x64 && \
 			npm run dist:win"
 
+# ----- Flutter rewrite proof-of-concept (flutter-app/) ----------------------
+
+# Uses `flutter` from PATH, falling back to the common SDK location; override
+# with `make flutter-build FLUTTER=/path/to/flutter`.
+FLUTTER ?= $(shell command -v flutter 2>/dev/null || echo $(HOME)/Development/flutter/bin/flutter)
+
+.PHONY: flutter-install
+flutter-install: ## Fetch Flutter POC dependencies (pub get)
+	cd flutter-app && $(FLUTTER) pub get
+
+.PHONY: flutter-run
+flutter-run: ## Run the Flutter POC in development (needs a desktop session)
+	cd flutter-app && $(FLUTTER) run
+
+.PHONY: flutter-test
+flutter-test: ## Analyze and unit-test the Flutter POC
+	cd flutter-app && $(FLUTTER) analyze && $(FLUTTER) test
+
+.PHONY: flutter-build
+flutter-build: ## Build the Flutter POC for the current platform
+ifeq ($(OS),Windows_NT)
+	cd flutter-app && $(FLUTTER) build windows --release
+	@echo "Built: flutter-app/build/windows/x64/runner/Release/earheart.exe"
+else ifeq ($(shell uname -s),Darwin)
+	cd flutter-app && $(FLUTTER) build macos --release
+else
+	cd flutter-app && $(FLUTTER) build linux --release
+	@echo "Built: flutter-app/build/linux/x64/release/bundle/earheart"
+endif
+
+.PHONY: flutter-build-windows
+flutter-build-windows: ## Build the Flutter POC for Windows — run on Windows
+	# Flutter cannot cross-compile Windows from Linux/macOS (no docker+wine
+	# analog to dist-win-docker). Off-Windows, use the CI artifact instead:
+	# the flutter-poc workflow's `windows` job uploads earheart-windows-x64.
+	@if [ "$$OS" = "Windows_NT" ] || [ -n "$$WINDIR" ]; then \
+		cd flutter-app && $(FLUTTER) build windows --release && \
+		echo "Built: flutter-app/build/windows/x64/runner/Release/earheart.exe"; \
+	else \
+		echo "flutter build windows only runs on Windows."; \
+		echo "Download the earheart-windows-x64 artifact from the flutter-poc"; \
+		echo "workflow run instead (Actions tab), or run this target on a"; \
+		echo "Windows machine."; \
+		exit 1; \
+	fi
+
+.PHONY: flutter-smoke
+flutter-smoke: ## Boot the built Flutter POC headlessly and exit
+	xvfb-run -a flutter-app/build/linux/x64/release/bundle/earheart --smoke-test
+
+.PHONY: flutter-clean
+flutter-clean: ## Remove Flutter POC build output
+	cd flutter-app && $(FLUTTER) clean
+
 # ----- releasing -------------------------------------------------------------
 
 # Releases also happen automatically when a PR merges to master, sized by the

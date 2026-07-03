@@ -35,7 +35,13 @@ class TrayController with TrayListener {
     }
   }
 
-  Future<void> dispose() => trayManager.destroy();
+  Future<void> dispose() {
+    // Mirror init(): drop both listeners so a future re-init can't leak a
+    // pipeline listener rebuilding a destroyed tray.
+    pipeline.removeListener(_rebuild);
+    trayManager.removeListener(this);
+    return trayManager.destroy();
+  }
 
   @override
   void onTrayIconMouseDown() {

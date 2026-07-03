@@ -86,27 +86,27 @@ bool _isWayland() =>
     (Platform.environment['WAYLAND_DISPLAY'] ?? '').isNotEmpty;
 
 Future<void> _simulatePasteLinux() async {
-  final candidates = <List<dynamic>>[];
-  if (_isWayland()) {
-    candidates.add(['wtype', ['-M', 'ctrl', '-k', 'v', '-m', 'ctrl']]);
-    candidates.add(['ydotool', ['key', '29:1', '47:1', '47:0', '29:0']]);
-    candidates.add(['xdotool', ['key', '--clearmodifiers', 'ctrl+v']]);
-  } else {
-    candidates.add(['xdotool', ['key', '--clearmodifiers', 'ctrl+v']]);
-  }
+  final candidates = <(String, List<String>)>[
+    if (_isWayland()) ...[
+      ('wtype', ['-M', 'ctrl', '-k', 'v', '-m', 'ctrl']),
+      ('ydotool', ['key', '29:1', '47:1', '47:0', '29:0']),
+    ],
+    // XWayland apps can still be reachable via xdotool; on X11 it is the tool.
+    ('xdotool', ['key', '--clearmodifiers', 'ctrl+v']),
+  ];
 
-  final available = <List<dynamic>>[];
+  final available = <(String, List<String>)>[];
   for (final c in candidates) {
-    if (await _commandExists(c[0] as String)) available.add(c);
+    if (await _commandExists(c.$1)) available.add(c);
   }
   if (available.isEmpty) {
     throw StateError(
         'No keystroke tool found (install wtype, ydotool or xdotool)');
   }
   Object? lastErr;
-  for (final c in available) {
+  for (final (cmd, args) in available) {
     try {
-      await _run(c[0] as String, (c[1] as List).cast<String>());
+      await _run(cmd, args);
       return;
     } catch (e) {
       lastErr = e;

@@ -26,7 +26,11 @@ import 'settings.dart';
 import 'stt.dart';
 
 const overlayWidth = 420.0;
-const overlayHeight = 120.0;
+// Sized for the worst-case recording state: a 3-line live transcript
+// (15px × 1.5 line-height) over the 40px control row, plus card padding,
+// borders and margins. The card itself hugs its content (bottom-aligned),
+// so shorter states just leave transparent space above.
+const overlayHeight = 168.0;
 
 late final Settings settings;
 late final Pipeline pipeline;

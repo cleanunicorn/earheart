@@ -143,21 +143,33 @@ class Pipeline extends ChangeNotifier {
     // renderer teardown and the audio:captured handler.
     if (state != PipelineState.recording) return;
     final sid = _session;
+    // The live preview belongs to the recording phase only (Electron clears
+    // it on the first post-recording status): a stale partial lingering above
+    // "Transcribing…" would then duplicate the done-preview text.
+    partialText = '';
     _setState(PipelineState.processing,
         const OverlayStatus(OverlayPhase.transcribing));
     _liveTimer?.cancel();
     _maxTimer?.cancel();
-    final samples = await recorder.stop();
+    Float32List samples;
+    try {
+      samples = await recorder.stop();
+    } catch (e) {
+      if (sid != _session) return;
+      // The plugin's stop can throw (device unplugged mid-recording).
+      // Salvage whatever was captured — "never lose the user's words" — and
+      // only fail if there is nothing left to transcribe.
+      samples = recorder.snapshot();
+      if (samples.isEmpty) {
+        _fail('Recording failed: ${describeError(e)}', sid);
+        return;
+      }
+    }
     if (sid != _session) return;
     await _process(sid, samples);
   }
 
   Future<void> _process(int sid, Float32List samples) async {
-    // The live preview belongs to the recording phase only (Electron clears
-    // it on the first post-recording status): a stale partial lingering above
-    // "Transcribing…" would then duplicate the done-preview text.
-    partialText = '';
-    _setState(PipelineState.processing, const OverlayStatus(OverlayPhase.transcribing));
     try {
       await engine.ensureLoaded(settings.stt.modelDir);
       if (sid != _session) return;
@@ -216,11 +228,15 @@ class Pipeline extends ChangeNotifier {
     _session++;
     _liveTimer?.cancel();
     _maxTimer?.cancel();
-    if (state == PipelineState.recording) {
-      await recorder.cancel();
+    try {
+      if (state == PipelineState.recording) {
+        await recorder.cancel();
+      }
+    } finally {
+      // The idle reset must run even if the recorder teardown throws.
+      partialText = '';
+      _setState(PipelineState.idle, const OverlayStatus(OverlayPhase.idle));
+      onHideOverlay?.call();
     }
-    partialText = '';
-    _setState(PipelineState.idle, const OverlayStatus(OverlayPhase.idle));
-    onHideOverlay?.call();
   }
 }

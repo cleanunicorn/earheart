@@ -88,7 +88,7 @@ class Pipeline extends ChangeNotifier {
       await recorder.start();
     } catch (e) {
       if (sid != _session) return;
-      _fail('$e', sid);
+      _fail('Microphone unavailable: ${describeError(e)}', sid);
       return;
     }
     // Cancel (or a fast stop) may have raced the mic setup: recorder.cancel()
@@ -148,6 +148,10 @@ class Pipeline extends ChangeNotifier {
   }
 
   Future<void> _process(int sid, Float32List samples) async {
+    // The live preview belongs to the recording phase only (Electron clears
+    // it on the first post-recording status): a stale partial lingering above
+    // "Transcribing…" would then duplicate the done-preview text.
+    partialText = '';
     _setState(PipelineState.processing, const OverlayStatus(OverlayPhase.transcribing));
     try {
       await engine.ensureLoaded(settings.stt.modelDir);
@@ -179,9 +183,14 @@ class Pipeline extends ChangeNotifier {
       _hideSoon(sid, result.note != null ? 4000 : 1600);
     } catch (e) {
       if (sid != _session) return;
-      _fail('$e', sid);
+      _fail(describeError(e), sid);
     }
   }
+
+  /// Human text for an exception — drops Dart's "Bad state:"-style prefixes
+  /// so the overlay reads like a message, not a stack frame.
+  static String describeError(Object e) =>
+      e is StateError ? e.message : '$e';
 
   void _fail(String message, int sid) {
     _setState(PipelineState.idle, OverlayStatus(OverlayPhase.error, message));

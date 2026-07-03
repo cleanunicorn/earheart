@@ -10,10 +10,11 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 
+import 'settings.dart' show kDefaultHotkey;
+
 Future<void> registerHotkey(String accelerator, void Function() onTrigger) async {
   await hotKeyManager.unregisterAll();
-  final hk = parseAccelerator(accelerator) ??
-      parseAccelerator('CommandOrControl+Shift+Space')!;
+  final hk = parseAccelerator(accelerator) ?? parseAccelerator(kDefaultHotkey)!;
   try {
     await hotKeyManager.register(hk, keyDownHandler: (_) => onTrigger());
   } catch (e) {

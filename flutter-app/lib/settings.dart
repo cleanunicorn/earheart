@@ -12,6 +12,11 @@ String _homeDir() =>
     Platform.environment['USERPROFILE'] ??
     '.';
 
+/// Electron accelerator syntax (settings.js DEFAULTS.hotkey). Single source
+/// for the constructor default, the load fallback, and hotkey.dart's
+/// parse-failure fallback.
+const kDefaultHotkey = 'CommandOrControl+Shift+Space';
+
 class OutputSettings {
   /// "paste" | "paste-copy" | "clipboard"
   String mode;
@@ -70,27 +75,33 @@ class SttSettings {
 }
 
 class Settings {
-  String hotkey; // informational for now; POC registers Ctrl/Cmd+Shift+Space
+  /// Electron accelerator syntax; registered at startup via hotkey.dart.
+  String hotkey;
   OutputSettings output;
   SttSettings stt;
   int maxRecordingSeconds;
 
   Settings({
-    this.hotkey = 'CommandOrControl+Shift+Space',
+    this.hotkey = kDefaultHotkey,
     required this.output,
     required this.stt,
     this.maxRecordingSeconds = 300,
   });
 
-  static File _file() =>
-      File(p.join(_homeDir(), '.config', 'earheart-flutter', 'settings.json'));
+  /// Test seam: when set, load()/save() use this directory instead of the
+  /// user's config dir (same pattern as deliver()'s simulatePaste).
+  static String? configDirOverride;
+
+  static File _file() => File(p.join(
+      configDirOverride ?? p.join(_homeDir(), '.config', 'earheart-flutter'),
+      'settings.json'));
 
   static Settings load() {
     try {
       final raw = _file().readAsStringSync();
       final j = jsonDecode(raw) as Map<String, dynamic>;
       return Settings(
-        hotkey: j['hotkey'] as String? ?? 'CommandOrControl+Shift+Space',
+        hotkey: j['hotkey'] as String? ?? kDefaultHotkey,
         output: OutputSettings.fromJson(j['output'] as Map<String, dynamic>?),
         stt: SttSettings.fromJson(j['stt'] as Map<String, dynamic>?),
         maxRecordingSeconds: j['audio']?['maxRecordingSeconds'] as int? ?? 300,
@@ -113,18 +124,28 @@ class Settings {
   void save() {
     final f = _file();
     f.parent.createSync(recursive: true);
+    // The full port stores API keys in this file; don't leave it (or its
+    // directory) readable to other local users. Tighten permissions BEFORE
+    // the content lands — chmod-after-write would leave the first save
+    // world-readable for a window. Windows relies on per-user profile ACLs.
+    if (!Platform.isWindows) {
+      f.createSync();
+      _chmod('700', f.parent.path);
+      _chmod('600', f.path);
+    }
     f.writeAsStringSync(const JsonEncoder.withIndent('  ').convert({
       'hotkey': hotkey,
       'output': output.toJson(),
       'stt': stt.toJson(),
       'audio': {'maxRecordingSeconds': maxRecordingSeconds},
     }));
-    // The full port stores API keys in this file; don't leave it (or its
-    // directory) readable to other local users. Windows relies on per-user
-    // profile ACLs instead.
-    if (!Platform.isWindows) {
-      Process.runSync('chmod', ['700', f.parent.path]);
-      Process.runSync('chmod', ['600', f.path]);
+  }
+
+  static void _chmod(String mode, String path) {
+    final result = Process.runSync('chmod', [mode, path]);
+    if (result.exitCode != 0) {
+      stderr.writeln('earheart: chmod $mode $path failed: '
+          '${(result.stderr as String).trim()}');
     }
   }
 }

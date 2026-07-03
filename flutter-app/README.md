@@ -1,17 +1,42 @@
-# earheart
+# Earheart — Flutter rewrite proof-of-concept
 
-A new Flutter project.
+An experimental Flutter port of Earheart's core dictation loop: overlay
+pill, tray menu, global hotkey, mic capture, in-process Parakeet STT (the
+same sherpa-onnx engine the Electron app uses), live preview, and
+clipboard/paste delivery. **It is not part of the shipped Electron app.**
 
-## Getting Started
+Rationale, measured trade-offs, and the phased plan to parity live in
+[../docs/flutter-rewrite.md](../docs/flutter-rewrite.md).
 
-This project is a starting point for a Flutter application.
+## Build & run
 
-A few resources to get you started if this is your first Flutter project:
+Requires a Flutter SDK with Dart ≥ 3.12 (Flutter 3.44 stable or newer):
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```bash
+flutter pub get
+flutter analyze && flutter test
+flutter build linux --release
+./build/linux/x64/release/bundle/earheart          # tray → Start dictation
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The built-in engine expects the Parakeet int8 model files (the same four
+files the Electron model manager downloads) at:
+
+```
+~/.local/share/earheart-flutter/models/parakeet-tdt-0.6b-v3-int8/
+  encoder.int8.onnx  decoder.int8.onnx  joiner.int8.onnx  tokens.txt
+```
+
+## CLI hooks
+
+```bash
+./earheart --smoke-test              # boot everything, print SMOKE OK, exit
+./earheart --transcribe some.wav     # decode a 16 kHz WAV, print transcript
+```
+
+## Local edits to generated files
+
+Two `flutter create`-generated files carry deliberate local edits — keep
+them when regenerating: `linux/runner/my_application.cc` (never-focusable
+overlay window + RGBA visual) and `linux/CMakeLists.txt` (per-plugin
+-Wno-error quirks, see the comment at the bottom of the file).

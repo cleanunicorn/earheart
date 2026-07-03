@@ -126,6 +126,9 @@ renderer/                overlay (mic capture → 16 kHz WAV, live transcript
                          preview), settings UI, first-run wizard
   transcript.js          pure two-layer (raw/cleaned) reconcile helper
 stt-server/              Python: FastAPI + onnx-asr Parakeet server (optional)
+flutter-app/             experimental Flutter rewrite proof-of-concept — not
+                         part of the shipped Electron app; see
+                         docs/flutter-rewrite.md
 ```
 
 The pipeline routes each stage to the in-process engine or the HTTP client

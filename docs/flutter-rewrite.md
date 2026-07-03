@@ -1,6 +1,6 @@
 # Flutter rewrite — plan and proof-of-concept
 
-Status: **proof-of-concept working** (Linux, 2026-07). The `app/` directory
+Status: **proof-of-concept working** (Linux, 2026-07). The `flutter-app/` directory
 contains a Flutter port of the vertical slice — overlay pill, tray menu,
 global hotkey, mic capture, in-process Parakeet STT, live preview, and
 paste delivery — that builds and passes a headless smoke test plus a real
@@ -41,7 +41,9 @@ Honest disadvantages / risks:
   on Linux, `hotkey_manager` maps the space key to `KP_Space` on Linux
   (letter keys bind fine — needs a one-line upstream patch or vendored
   fork), and two plugins fail `-Werror` builds on new clang. All shallow,
-  none blocking, but that's the trade.
+  none blocking, but that's the trade. Two generated files carry local
+  edits for this (`flutter-app/linux/runner/my_application.cc`,
+  `flutter-app/linux/CMakeLists.txt`) — keep them when regenerating.
 - **Multi-window is Flutter desktop's weak spot.** Overlay + settings +
   wizard as simultaneous windows needs either `desktop_multi_window`
   (alpha-quality) or a cleaner two-process design: the single-instance
@@ -63,19 +65,25 @@ Honest disadvantages / risks:
 | `main/engines/engine-worker.js` (utilityProcess) | `lib/stt.dart` (long-lived Isolate) | ported; same OfflineRecognizer config (`nemo_transducer`, 16 kHz) |
 | `renderer/overlay.js` recorder (getUserMedia + worklet) | `lib/recorder.dart` (`record` plugin, PCM16 stream) | ported; RMS level for the meter |
 | `main/live-preview.js` | drop-if-busy periodic decode in `pipeline.dart` | simplified (full re-decode, no chunk commit yet) |
-| `main/output/deliver.js` | `lib/deliver.dart` | ported 1:1 (modes, clipboard restore, per-OS keystroke tools, degrade-to-clipboard note) |
-| `main/windows.js` overlay BrowserWindow | main window via `window_manager` + GTK runner tweaks | frameless, always-on-top, skip-taskbar, bottom-center; `gtk_window_set_accept_focus(FALSE)` + RGBA visual in `linux/runner/my_application.cc` |
-| `main/tray.js` | `lib/main.dart` `_initTray` (`tray_manager`) | ported (state-driven labels, output-mode radios) |
+| `main/output/deliver.js` | `lib/deliver.dart` | ported (modes, clipboard restore, cancellation, per-OS keystroke tools, degrade-to-clipboard note) — minus the macOS Accessibility trust check + Settings deep link |
+| `main/windows.js` overlay BrowserWindow | `lib/window.dart` (`window_manager`) + GTK runner tweaks | frameless, always-on-top, skip-taskbar, bottom-center; `gtk_window_set_accept_focus(FALSE)` + RGBA visual in `linux/runner/my_application.cc` |
+| `main/hotkeys.js` | `lib/hotkey.dart` | ported, plus an Electron-accelerator parser for the persisted hotkey |
+| `main/tray.js` | `lib/tray.dart` (`tray_manager`) | ported (state-driven labels, output-mode radios) |
 | `main/settings.js` | `lib/settings.dart` | minimal slice only |
+| `renderer/recorder-worklet.js` PCM math | `lib/pcm.dart` | ported with unit tests (split-sample carry, odd offsets) |
 
 CLI hooks mirror the repo's: `--smoke-test` (boot, print `SMOKE OK`, exit)
 and `--transcribe <wav>` (headless decode; used to prove the engine).
 
 ## Try it
 
+Requires a Flutter SDK with Dart ≥ 3.12 (Flutter 3.44 stable or newer) on
+your PATH:
+
 ```bash
-cd app
-~/Development/flutter/bin/flutter build linux --release
+cd flutter-app
+flutter analyze && flutter test
+flutter build linux --release
 ./build/linux/x64/release/bundle/earheart            # tray menu → Start dictation
 ./build/linux/x64/release/bundle/earheart --transcribe some-16k.wav
 ```
@@ -112,6 +120,8 @@ risk concentrated in phase 3 (cleanup engine) and phase 4 (multi-window).
 ## Verified so far / still to verify
 
 - ✅ Linux: build, boot, tray init, window flags, STT round-trip (10× RT).
+- ✅ Unit tests (`flutter test`): PCM conversion, settings round-trips,
+  deliver mode gating/cancellation, pipeline state machine with fakes.
 - ⬜ Mic capture end-to-end (needs a desktop session with a microphone).
 - ⬜ Hotkey on a real session (space-key mapping patch; Wayland caveats).
 - ⬜ macOS/Windows builds (plugins all claim support; unverified here).

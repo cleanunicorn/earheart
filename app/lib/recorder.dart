@@ -14,7 +14,9 @@ import 'pcm.dart';
 import 'stt.dart' show kSampleRate;
 
 class Recorder {
-  final AudioRecorder _rec = AudioRecorder();
+  // Created lazily: AudioRecorder() registers a platform channel at
+  // construction, which would make the class untestable off-device.
+  AudioRecorder? _rec;
   final List<Float32List> _chunks = [];
   int _totalSamples = 0;
   StreamSubscription<Uint8List>? _sub;
@@ -28,13 +30,14 @@ class Recorder {
 
   Future<void> start() async {
     if (_sub != null) return;
-    if (!await _rec.hasPermission()) {
+    final rec = _rec ??= AudioRecorder();
+    if (!await rec.hasPermission()) {
       throw StateError('Microphone permission denied');
     }
     _chunks.clear();
     _totalSamples = 0;
     _pcm.reset();
-    final stream = await _rec.startStream(const RecordConfig(
+    final stream = await rec.startStream(const RecordConfig(
       encoder: AudioEncoder.pcm16bits,
       sampleRate: kSampleRate,
       numChannels: 1,
@@ -82,13 +85,13 @@ class Recorder {
   /// words"). A cancel doesn't care about buffered audio.
   Future<void> _teardown({required bool drain}) async {
     if (_sub != null && drain) {
-      await _rec.stop();
+      await _rec?.stop();
       await _streamDone?.future
           .timeout(const Duration(seconds: 2), onTimeout: () {});
       await _sub?.cancel();
     } else {
       await _sub?.cancel();
-      await _rec.stop();
+      await _rec?.stop();
     }
     _sub = null;
     level.value = 0;

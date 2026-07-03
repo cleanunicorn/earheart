@@ -59,12 +59,20 @@ class SttEngine {
   Future<void> ensureLoaded(String modelDir) {
     final pending = _loading;
     if (pending != null && _loadedDir == modelDir) return pending;
-    final future = () async {
+    late final Future<void> future;
+    future = () async {
       if (pending != null) {
         // A different model is loading/loaded: let it settle, then replace.
         try {
           await pending;
         } catch (_) {}
+        // While we waited, the worker may have died (_onWorkerDeath) or a
+        // newer ensureLoaded may have taken over — in either case this chain
+        // no longer owns the engine fields and must not spawn a second
+        // concurrent worker.
+        if (!identical(_loading, future)) {
+          throw StateError('STT load superseded');
+        }
         _shutdown();
       }
       await _load(modelDir);
@@ -115,16 +123,10 @@ class SttEngine {
   }
 
   /// The worker died (native crash in a decode, or an uncaught isolate
-  /// error): fail everything in flight so the pipeline surfaces an error
-  /// instead of hanging forever at "Transcribing…", and reset so the next
-  /// dictation respawns a fresh worker.
+  /// error): reset so the next dictation respawns a fresh worker. In-flight
+  /// requests are failed by [_shutdown].
   void _onWorkerDeath() {
-    final waiting = List.of(_pending.values);
-    _pending.clear();
-    for (final c in waiting) {
-      c.completeError(StateError('STT worker died'));
-    }
-    _shutdown();
+    _shutdown('STT worker died');
     _loading = null;
     _loadedDir = null;
   }
@@ -150,7 +152,15 @@ class SttEngine {
     }
   }
 
-  void _shutdown() {
+  void _shutdown([String reason = 'STT worker shut down']) {
+    // Fail anything in flight FIRST: abandoning the completers would leave
+    // transcribe() awaiting forever with `busy` latched true (killing live
+    // preview and hanging the pipeline until a manual cancel).
+    final waiting = List.of(_pending.values);
+    _pending.clear();
+    for (final c in waiting) {
+      c.completeError(StateError(reason));
+    }
     _results?.close();
     _results = null;
     _lifecycle?.close();
@@ -213,7 +223,7 @@ void _engineMain(SendPort ready) {
           final samples = m['samples'] as Float32List;
           final started = DateTime.now();
           final stream = recognizer!.createStream();
-          stream.acceptWaveform(samples: samples, sampleRate: 16000);
+          stream.acceptWaveform(samples: samples, sampleRate: kSampleRate);
           recognizer!.decode(stream);
           final text = recognizer!.getResult(stream).text.trim();
           stream.free();

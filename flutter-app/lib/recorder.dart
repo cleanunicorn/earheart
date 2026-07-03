@@ -50,7 +50,11 @@ class Recorder {
       if (f32.isNotEmpty) {
         level.value = clamp01(rms(f32) * 4);
       }
-    }, onDone: () => _streamDone?.complete(), onError: (Object _) {
+    }, onDone: () {
+      // An error event may already have completed it (errors don't end the
+      // stream, so onDone can still follow).
+      if (!(_streamDone?.isCompleted ?? true)) _streamDone?.complete();
+    }, onError: (Object _) {
       if (!(_streamDone?.isCompleted ?? true)) _streamDone?.complete();
     });
   }

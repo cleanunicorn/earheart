@@ -36,7 +36,15 @@ files the Electron model manager downloads) at:
 
 ## Local edits to generated files
 
-Two `flutter create`-generated files carry deliberate local edits — keep
-them when regenerating: `linux/runner/my_application.cc` (never-focusable
-overlay window + RGBA visual) and `linux/CMakeLists.txt` (per-plugin
--Wno-error quirks, see the comment at the bottom of the file).
+These `flutter create`-generated files carry deliberate local edits — keep
+them when regenerating:
+
+- `linux/runner/my_application.cc` — never-focusable overlay window + RGBA
+  visual
+- `linux/CMakeLists.txt` — per-plugin -Wno-error quirks (see the comment at
+  the bottom of the file)
+- `macos/Runner/Info.plist` — NSMicrophoneUsageDescription +
+  NSAppleEventsUsageDescription (dropping them breaks recording/paste on
+  macOS with no build error)
+- `macos/Runner/DebugProfile.entitlements` + `Release.entitlements` —
+  sandbox off, audio-input and Apple Events entitlements

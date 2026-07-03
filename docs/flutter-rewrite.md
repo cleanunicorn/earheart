@@ -41,9 +41,11 @@ Honest disadvantages / risks:
   on Linux, `hotkey_manager` maps the space key to `KP_Space` on Linux
   (letter keys bind fine — needs a one-line upstream patch or vendored
   fork), and two plugins fail `-Werror` builds on new clang. All shallow,
-  none blocking, but that's the trade. Two generated files carry local
-  edits for this (`flutter-app/linux/runner/my_application.cc`,
-  `flutter-app/linux/CMakeLists.txt`) — keep them when regenerating.
+  none blocking, but that's the trade. Several generated files carry local
+  edits (`flutter-app/linux/runner/my_application.cc`,
+  `flutter-app/linux/CMakeLists.txt`, `flutter-app/macos/Runner/Info.plist`
+  and both entitlements files) — see flutter-app/README.md's keep-list when
+  regenerating.
 - **Multi-window is Flutter desktop's weak spot.** Overlay + settings +
   wizard as simultaneous windows needs either `desktop_multi_window`
   (alpha-quality) or a cleaner two-process design: the single-instance

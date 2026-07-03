@@ -127,11 +127,16 @@ class _OverlayCardState extends State<OverlayCard> {
               child: CircularProgressIndicator(
                   strokeWidth: 2, color: kProcessingAmber)),
           const SizedBox(width: 10),
-          Text(
-              p.status.phase == OverlayPhase.transcribing
-                  ? 'Transcribing…'
-                  : 'Typing…',
-              style: const TextStyle(color: kTextPrimary, fontSize: 13)),
+          // liveRegion: the Electron overlay marks this aria-live="polite" so
+          // screen-reader users hear whether their dictation landed.
+          Semantics(
+            liveRegion: true,
+            child: Text(
+                p.status.phase == OverlayPhase.transcribing
+                    ? 'Transcribing…'
+                    : 'Typing…',
+                style: const TextStyle(color: kTextPrimary, fontSize: 13)),
+          ),
           const SizedBox(width: 10),
           _iconBtn(Icons.close, 'Cancel', () => p.cancel()),
         ]);
@@ -164,7 +169,9 @@ class _OverlayCardState extends State<OverlayCard> {
   }
 
   Widget _message(IconData icon, Color color, String title, String? detail) {
-    return Row(mainAxisSize: MainAxisSize.min, children: [
+    return Semantics(
+      liveRegion: true,
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
       Icon(icon, color: color, size: 16),
       const SizedBox(width: 8),
       Flexible(
@@ -181,8 +188,9 @@ class _OverlayCardState extends State<OverlayCard> {
                     style:
                         const TextStyle(color: kTextDetail, fontSize: 11)),
             ]),
-      ),
-    ]);
+        ),
+      ]),
+    );
   }
 
   Widget _iconBtn(IconData icon, String tooltip, VoidCallback onTap,

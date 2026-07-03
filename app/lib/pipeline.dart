@@ -82,6 +82,14 @@ class Pipeline extends ChangeNotifier {
       _fail('$e', sid);
       return;
     }
+    // Cancel (or a fast stop) may have raced the mic setup: recorder.cancel()
+    // ran while start() was still opening the stream, so nothing was torn
+    // down and the mic would stay hot forever. Same race the Electron
+    // renderer handles with its generation check + stopWhenReady.
+    if (sid != _session || state != PipelineState.recording) {
+      await recorder.cancel();
+      return;
+    }
     _maxTimer = Timer(Duration(seconds: settings.maxRecordingSeconds), () {
       if (sid == _session && state == PipelineState.recording) {
         _stopRecording();
@@ -114,7 +122,15 @@ class Pipeline extends ChangeNotifier {
   }
 
   Future<void> _stopRecording() async {
+    // Leave `recording` synchronously, before the first await: a second
+    // hotkey press (or key auto-repeat, or the max-recording timer racing
+    // the hotkey) must not run the processing pass twice — that would paste
+    // the transcript twice. The Electron original guards this in both the
+    // renderer teardown and the audio:captured handler.
+    if (state != PipelineState.recording) return;
     final sid = _session;
+    _setState(PipelineState.processing,
+        const OverlayStatus(OverlayPhase.transcribing));
     _liveTimer?.cancel();
     _maxTimer?.cancel();
     final samples = await recorder.stop();

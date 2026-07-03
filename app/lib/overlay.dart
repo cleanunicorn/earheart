@@ -109,8 +109,13 @@ class _OverlayCardState extends State<OverlayCard> {
                   // Tabular digits so the timer doesn't jiggle every second.
                   fontFeatures: [FontFeature.tabularFigures()])),
           const SizedBox(width: 10),
-          _iconBtn(Icons.stop_circle_outlined, 'Stop & transcribe',
-              () => p.toggle()),
+          // Stop is the commit action and wears the filled record-red circle;
+          // Cancel stays a ghost with a separating gap so the destructive
+          // action isn't hit by reflex (overlay.css gives #stop the same
+          // emphasis and extra margin).
+          _iconBtn(Icons.stop, 'Stop & transcribe', () => p.toggle(),
+              filled: true),
+          const SizedBox(width: 4),
           _iconBtn(Icons.close, 'Cancel', () => p.cancel()),
         ]);
       case OverlayPhase.transcribing:
@@ -180,12 +185,19 @@ class _OverlayCardState extends State<OverlayCard> {
     ]);
   }
 
-  Widget _iconBtn(IconData icon, String tooltip, VoidCallback onTap) {
+  Widget _iconBtn(IconData icon, String tooltip, VoidCallback onTap,
+      {bool filled = false}) {
     return IconButton(
-      icon: Icon(icon, size: 18, color: Colors.white70),
+      icon: Icon(icon, size: 18, color: filled ? Colors.white : kTextDetail),
       tooltip: tooltip,
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+      // ~40px targets like the reference's deliberately expanded hit areas —
+      // a mis-hit on Cancel destroys the dictation.
+      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      style: filled
+          ? IconButton.styleFrom(
+              backgroundColor: kRecordRed, shape: const CircleBorder())
+          : null,
       onPressed: onTap,
     );
   }

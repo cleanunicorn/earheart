@@ -27,8 +27,17 @@ enum OverlayPhase { idle, recording, transcribing, delivering, done, empty, erro
 
 class OverlayStatus {
   final OverlayPhase phase;
+
+  /// Preview text (done) or error message (error).
   final String? detail;
-  const OverlayStatus(this.phase, [this.detail]);
+
+  /// How the text was delivered (done): paste | paste-copy | clipboard.
+  final String? method;
+
+  /// Degradation note (done): e.g. auto-paste failed, text left on clipboard.
+  final String? note;
+
+  const OverlayStatus(this.phase, [this.detail, this.method, this.note]);
 }
 
 class Pipeline extends ChangeNotifier {
@@ -163,8 +172,10 @@ class Pipeline extends ChangeNotifier {
 
       final preview =
           res.text.length > 120 ? '${res.text.substring(0, 120)}…' : res.text;
-      _setState(PipelineState.idle,
-          OverlayStatus(OverlayPhase.done, result.note ?? preview));
+      _setState(
+          PipelineState.idle,
+          OverlayStatus(
+              OverlayPhase.done, preview, result.method, result.note));
       _hideSoon(sid, result.note != null ? 4000 : 1600);
     } catch (e) {
       if (sid != _session) return;

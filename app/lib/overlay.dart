@@ -108,8 +108,22 @@ class _OverlayCardState extends State<OverlayCard> {
           _iconBtn(Icons.close, 'Cancel', () => p.cancel()),
         ]);
       case OverlayPhase.done:
-        return _message(Icons.check_circle, Colors.greenAccent, 'Pasted',
-            p.status.detail);
+        // Title reflects what actually happened (overlay.js does the same):
+        // a clipboard fallback or clipboard-only mode must not claim "Pasted",
+        // and a degraded delivery (note) must not wear the green check.
+        final note = p.status.note;
+        if (note != null) {
+          return _message(
+              Icons.help_outline, Colors.amberAccent, 'Copied to clipboard',
+              note);
+        }
+        final title = switch (p.status.method) {
+          'paste' => 'Pasted',
+          'paste-copy' => 'Pasted & copied',
+          _ => 'Copied to clipboard',
+        };
+        return _message(
+            Icons.check_circle, Colors.greenAccent, title, p.status.detail);
       case OverlayPhase.empty:
         return _message(
             Icons.help_outline, Colors.amberAccent, 'Nothing heard', null);

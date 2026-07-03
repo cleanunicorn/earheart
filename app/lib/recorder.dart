@@ -18,6 +18,7 @@ class Recorder {
   final List<Float32List> _chunks = [];
   int _totalSamples = 0;
   StreamSubscription<Uint8List>? _sub;
+  Completer<void>? _streamDone;
 
   /// 0..1-ish RMS level for the overlay meter.
   final ValueNotifier<double> level = ValueNotifier(0);
@@ -37,6 +38,7 @@ class Recorder {
       sampleRate: kSampleRate,
       numChannels: 1,
     ));
+    _streamDone = Completer<void>();
     _sub = stream.listen((bytes) {
       final f32 = _pcm16ToFloat32(bytes);
       _chunks.add(f32);
@@ -48,6 +50,8 @@ class Recorder {
       if (f32.isNotEmpty) {
         level.value = _clamp01(math.sqrt(sum / f32.length) * 4);
       }
+    }, onDone: () => _streamDone?.complete(), onError: (Object _) {
+      if (!(_streamDone?.isCompleted ?? true)) _streamDone?.complete();
     });
   }
 
@@ -64,9 +68,17 @@ class Recorder {
 
   /// Stop and return the full recording.
   Future<Float32List> stop() async {
-    await _sub?.cancel();
-    _sub = null;
-    await _rec.stop();
+    // Stop the plugin FIRST and drain the stream to its close before
+    // cancelling the subscription — cancelling first would discard whatever
+    // audio the plugin still had buffered, clipping the user's last word
+    // ("never lose the user's words").
+    if (_sub != null) {
+      await _rec.stop();
+      await _streamDone?.future
+          .timeout(const Duration(seconds: 2), onTimeout: () {});
+      await _sub?.cancel();
+      _sub = null;
+    }
     level.value = 0;
     return snapshot();
   }

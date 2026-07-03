@@ -11,6 +11,17 @@ import 'package:flutter/material.dart';
 import 'pipeline.dart';
 import 'recorder.dart';
 
+// Palette mirroring renderer/overlay.css so the two implementations stay
+// visually interchangeable: record red, processing amber, done green, a
+// neutral slate for empty/error, and the two text tones.
+const kPanel = Color(0xFF201C2C);
+const kRecordRed = Color(0xFFFF5470);
+const kProcessingAmber = Color(0xFFFFB347);
+const kDoneGreen = Color(0xFF4ADE80);
+const kMuted = Color(0xFF94A3B8);
+const kTextPrimary = Color(0xFFF6F4FB);
+const kTextDetail = Color(0xFFB8B3C4);
+
 class OverlayCard extends StatefulWidget {
   final Pipeline pipeline;
   final Recorder recorder;
@@ -79,7 +90,7 @@ class _OverlayCardState extends State<OverlayCard> {
     switch (p.status.phase) {
       case OverlayPhase.recording:
         return Row(mainAxisSize: MainAxisSize.min, children: [
-          const _PulsingDot(color: Colors.redAccent),
+          const _PulsingDot(color: kRecordRed),
           const SizedBox(width: 8),
           _Meter(level: widget.recorder.level),
           const SizedBox(width: 10),
@@ -114,7 +125,7 @@ class _OverlayCardState extends State<OverlayCard> {
         final note = p.status.note;
         if (note != null) {
           return _message(
-              Icons.help_outline, Colors.amberAccent, 'Copied to clipboard',
+              Icons.help_outline, kProcessingAmber, 'Copied to clipboard',
               note);
         }
         final title = switch (p.status.method) {
@@ -123,13 +134,13 @@ class _OverlayCardState extends State<OverlayCard> {
           _ => 'Copied to clipboard',
         };
         return _message(
-            Icons.check_circle, Colors.greenAccent, title, p.status.detail);
+            Icons.check_circle, kDoneGreen, title, p.status.detail);
       case OverlayPhase.empty:
-        return _message(Icons.help_outline, Colors.amberAccent,
-            'Nothing heard', 'Try again closer to the mic');
+        return _message(Icons.help_outline, kMuted, 'Nothing heard',
+            'Try again closer to the mic');
       case OverlayPhase.error:
         return _message(
-            Icons.error_outline, Colors.redAccent, 'Failed', p.status.detail);
+            Icons.error_outline, kMuted, 'Failed', p.status.detail);
       case OverlayPhase.idle:
         return const SizedBox.shrink();
     }
@@ -190,7 +201,7 @@ class _Meter extends StatelessWidget {
             height: 6 + i * 1.2,
             margin: const EdgeInsets.symmetric(horizontal: 1),
             decoration: BoxDecoration(
-              color: active ? Colors.greenAccent : Colors.white24,
+              color: active ? kDoneGreen : Colors.white24,
               borderRadius: BorderRadius.circular(1.5),
             ),
           );

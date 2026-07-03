@@ -1,0 +1,178 @@
+// The dictation pipeline — the Dart port of main/pipeline.js.
+//
+// State machine:
+//   idle ──hotkey──▶ recording ──hotkey──▶ processing ──▶ idle
+//                        │                     │
+//                        └──cancel──▶ idle ◀───┘ (error/cancel)
+//
+// Every dictation gets a session id; events from a torn-down session are
+// ignored instead of corrupting the current one — same discipline as the
+// Electron pipeline. Recording happens in-process here (no renderer hop):
+// the recorder streams PCM straight into Dart.
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+
+import 'deliver.dart';
+import 'recorder.dart';
+import 'settings.dart';
+import 'stt.dart';
+
+enum PipelineState { idle, recording, processing }
+
+class OverlayStatus {
+  final String status; // recording|transcribing|delivering|done|empty|error
+  final String? detail;
+  const OverlayStatus(this.status, [this.detail]);
+}
+
+class Pipeline extends ChangeNotifier {
+  final Settings settings;
+  final Recorder recorder;
+  final SttEngine engine;
+
+  /// Called when the overlay should appear / disappear.
+  void Function()? onShowOverlay;
+  void Function()? onHideOverlay;
+
+  PipelineState state = PipelineState.idle;
+  OverlayStatus status = const OverlayStatus('idle');
+  String partialText = '';
+  int _session = 0;
+  Timer? _liveTimer;
+  Timer? _maxTimer;
+  Timer? _hideTimer;
+
+  Pipeline(this.settings, this.recorder, this.engine);
+
+  void toggle() {
+    if (state == PipelineState.idle) {
+      _startRecording();
+    } else if (state == PipelineState.recording) {
+      _stopRecording();
+    }
+    // While processing the hotkey is ignored; cancel comes from the overlay
+    // or the tray menu.
+  }
+
+  void _setState(PipelineState next, OverlayStatus s) {
+    state = next;
+    status = s;
+    notifyListeners();
+  }
+
+  Future<void> _startRecording() async {
+    final sid = ++_session;
+    _hideTimer?.cancel();
+    partialText = '';
+    _setState(PipelineState.recording, const OverlayStatus('recording'));
+    onShowOverlay?.call();
+    // Warm the model while recording so live preview / the final decode
+    // don't pay the cold-load cost — mirrors pipeline.js startRecording.
+    engine.ensureLoaded(settings.stt.modelDir).catchError((_) {});
+    try {
+      await recorder.start();
+    } catch (e) {
+      if (sid != _session) return;
+      _fail('$e', sid);
+      return;
+    }
+    _maxTimer = Timer(Duration(seconds: settings.maxRecordingSeconds), () {
+      if (sid == _session && state == PipelineState.recording) {
+        _stopRecording();
+      }
+    });
+    if (settings.stt.livePreviewEnabled) {
+      _liveTimer = Timer.periodic(
+          Duration(milliseconds: settings.stt.livePreviewIntervalMs),
+          (_) => _livePreviewTick(sid));
+    }
+  }
+
+  /// Live preview: decode everything captured so far, drop-if-busy — the
+  /// same "partials are best-effort" contract as live-preview.js.
+  Future<void> _livePreviewTick(int sid) async {
+    if (sid != _session || state != PipelineState.recording) return;
+    if (!engine.loaded || engine.busy) return;
+    final samples = recorder.snapshot();
+    if (samples.length < kSampleRate ~/ 2) return; // <0.5s: nothing to say yet
+    try {
+      final res = await engine.transcribe(samples);
+      if (sid != _session || state != PipelineState.recording) return;
+      if (res.text.isNotEmpty) {
+        partialText = res.text;
+        notifyListeners();
+      }
+    } catch (_) {
+      // Best-effort; the final pass is authoritative.
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    final sid = _session;
+    _liveTimer?.cancel();
+    _maxTimer?.cancel();
+    final samples = await recorder.stop();
+    if (sid != _session) return;
+    await _process(sid, samples);
+  }
+
+  Future<void> _process(int sid, Float32List samples) async {
+    _setState(PipelineState.processing, const OverlayStatus('transcribing'));
+    try {
+      await engine.ensureLoaded(settings.stt.modelDir);
+      if (sid != _session) return;
+      final res = await engine.transcribe(samples);
+      if (sid != _session) return;
+
+      if (res.text.isEmpty) {
+        _setState(PipelineState.idle, const OverlayStatus('empty'));
+        _hideSoon(sid, 1800);
+        return;
+      }
+
+      // NOTE: cleanup phase goes here in the full port; on failure it must
+      // fall back to the raw transcript (never lose the user's words).
+
+      _setState(
+          PipelineState.processing, const OverlayStatus('delivering'));
+      final result = await deliver(res.text, settings.output);
+      if (sid != _session) return;
+
+      final preview =
+          res.text.length > 120 ? '${res.text.substring(0, 120)}…' : res.text;
+      _setState(PipelineState.idle,
+          OverlayStatus('done', result.note ?? preview));
+      _hideSoon(sid, result.note != null ? 4000 : 1600);
+    } catch (e) {
+      if (sid != _session) return;
+      _fail('$e', sid);
+    }
+  }
+
+  void _fail(String message, int sid) {
+    _setState(PipelineState.idle, OverlayStatus('error', message));
+    _hideSoon(sid, 5000);
+  }
+
+  void _hideSoon(int sid, int ms) {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(Duration(milliseconds: ms), () {
+      if (sid == _session && state == PipelineState.idle) {
+        onHideOverlay?.call();
+      }
+    });
+  }
+
+  Future<void> cancel() async {
+    _session++;
+    _liveTimer?.cancel();
+    _maxTimer?.cancel();
+    if (state == PipelineState.recording) {
+      await recorder.cancel();
+    }
+    partialText = '';
+    _setState(PipelineState.idle, const OverlayStatus('idle'));
+    onHideOverlay?.call();
+  }
+}

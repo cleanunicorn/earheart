@@ -101,7 +101,11 @@ class Pipeline extends ChangeNotifier {
     // down and the mic would stay hot forever. Same race the Electron
     // renderer handles with its generation check + stopWhenReady.
     if (sid != _session || state != PipelineState.recording) {
-      await recorder.cancel();
+      try {
+        await recorder.cancel();
+      } catch (_) {
+        // Best effort — the session is already torn down.
+      }
       return;
     }
     _maxTimer = Timer(Duration(seconds: settings.maxRecordingSeconds), () {

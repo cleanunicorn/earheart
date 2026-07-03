@@ -87,18 +87,32 @@ class Recorder {
   /// cancelling first would discard whatever audio the plugin still had
   /// buffered, clipping the user's last word ("never lose the user's
   /// words"). A cancel doesn't care about buffered audio.
+  ///
+  /// State is reset unconditionally: the pipeline treats a throwing stop as
+  /// survivable (it salvages the snapshot), so a plugin exception here must
+  /// not leave `_sub` set — that would make every later start() a silent
+  /// no-op and brick recording until app restart. Exceptions still
+  /// propagate after the reset.
   Future<void> _teardown({required bool drain}) async {
-    if (_sub != null && drain) {
-      await _rec?.stop();
-      await _streamDone?.future
-          .timeout(const Duration(seconds: 2), onTimeout: () {});
-      await _sub?.cancel();
-    } else {
-      await _sub?.cancel();
-      await _rec?.stop();
+    final sub = _sub;
+    try {
+      if (sub != null && drain) {
+        try {
+          await _rec?.stop();
+        } finally {
+          // Even if stop() threw, collect what arrived and detach.
+          await _streamDone?.future
+              .timeout(const Duration(seconds: 2), onTimeout: () {});
+          await sub.cancel();
+        }
+      } else {
+        await sub?.cancel();
+        await _rec?.stop();
+      }
+    } finally {
+      _sub = null;
+      level.value = 0;
     }
-    _sub = null;
-    level.value = 0;
   }
 }
 

@@ -88,13 +88,16 @@ void main() {
       expect(s.maxRecordingSeconds, 300);
     });
 
-    test('saved file is owner-only on POSIX', () {
+    test('saved file and config dir are owner-only on POSIX', () {
       Settings(
         output: OutputSettings(),
         stt: SttSettings(modelDir: '/m'),
       ).save();
-      final mode = File('${dir.path}/settings.json').statSync().mode;
-      expect(mode & 0x3F, 0, reason: 'group/other bits must be clear');
+      final fileMode = File('${dir.path}/settings.json').statSync().mode;
+      expect(fileMode & 0x3F, 0, reason: 'group/other bits must be clear');
+      final dirMode = Directory(dir.path).statSync().mode;
+      expect(dirMode & 0x3F, 0,
+          reason: 'config dir must not be listable by others');
     }, skip: Platform.isWindows);
   });
 }

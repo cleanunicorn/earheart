@@ -6,10 +6,11 @@
 // Samples accumulate as float32 (what sherpa-onnx consumes) and an RMS level
 // feeds the overlay meter, matching the worklet's {samples, rms} messages.
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
+
+import 'pcm.dart';
 
 const int kSampleRate = 16000;
 
@@ -19,6 +20,7 @@ class Recorder {
   int _totalSamples = 0;
   StreamSubscription<Uint8List>? _sub;
   Completer<void>? _streamDone;
+  final Pcm16Converter _pcm = Pcm16Converter();
 
   /// 0..1-ish RMS level for the overlay meter.
   final ValueNotifier<double> level = ValueNotifier(0);
@@ -33,6 +35,7 @@ class Recorder {
     }
     _chunks.clear();
     _totalSamples = 0;
+    _pcm.reset();
     final stream = await _rec.startStream(const RecordConfig(
       encoder: AudioEncoder.pcm16bits,
       sampleRate: kSampleRate,
@@ -40,15 +43,11 @@ class Recorder {
     ));
     _streamDone = Completer<void>();
     _sub = stream.listen((bytes) {
-      final f32 = _pcm16ToFloat32(bytes);
+      final f32 = _pcm.convert(bytes);
       _chunks.add(f32);
       _totalSamples += f32.length;
-      double sum = 0;
-      for (final s in f32) {
-        sum += s * s;
-      }
       if (f32.isNotEmpty) {
-        level.value = _clamp01(math.sqrt(sum / f32.length) * 4);
+        level.value = clamp01(rms(f32) * 4);
       }
     }, onDone: () => _streamDone?.complete(), onError: (Object _) {
       if (!(_streamDone?.isCompleted ?? true)) _streamDone?.complete();
@@ -98,14 +97,3 @@ class Recorder {
   }
 }
 
-Float32List _pcm16ToFloat32(Uint8List bytes) {
-  final pcm = bytes.buffer.asInt16List(
-      bytes.offsetInBytes, bytes.lengthInBytes ~/ 2);
-  final out = Float32List(pcm.length);
-  for (var i = 0; i < pcm.length; i++) {
-    out[i] = pcm[i] / 32768.0;
-  }
-  return out;
-}
-
-double _clamp01(double v) => v < 0 ? 0 : (v > 1 ? 1 : v);

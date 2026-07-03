@@ -28,5 +28,9 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Earheart records your voice while you dictate so it can transcribe it on this Mac.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Earheart uses System Events to paste your transcript into the app you are dictating into.</string>
 </dict>
 </plist>

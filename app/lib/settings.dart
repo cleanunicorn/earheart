@@ -7,6 +7,11 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+String _homeDir() =>
+    Platform.environment['HOME'] ??
+    Platform.environment['USERPROFILE'] ??
+    '.';
+
 class OutputSettings {
   /// "paste" | "paste-copy" | "clipboard"
   String mode;
@@ -60,13 +65,8 @@ class SttSettings {
             (j?['livePreview']?['intervalMs'] as int?) ?? 1200,
       );
 
-  static String defaultModelDir() {
-    final home = Platform.environment['HOME'] ??
-        Platform.environment['USERPROFILE'] ??
-        '.';
-    return p.join(home, '.local', 'share', 'earheart-flutter', 'models',
-        'parakeet-tdt-0.6b-v3-int8');
-  }
+  static String defaultModelDir() => p.join(_homeDir(), '.local', 'share',
+      'earheart-flutter', 'models', 'parakeet-tdt-0.6b-v3-int8');
 }
 
 class Settings {
@@ -82,12 +82,8 @@ class Settings {
     this.maxRecordingSeconds = 300,
   });
 
-  static File _file() {
-    final home = Platform.environment['HOME'] ??
-        Platform.environment['USERPROFILE'] ??
-        '.';
-    return File(p.join(home, '.config', 'earheart-flutter', 'settings.json'));
-  }
+  static File _file() =>
+      File(p.join(_homeDir(), '.config', 'earheart-flutter', 'settings.json'));
 
   static Settings load() {
     try {
@@ -99,7 +95,14 @@ class Settings {
         stt: SttSettings.fromJson(j['stt'] as Map<String, dynamic>?),
         maxRecordingSeconds: j['audio']?['maxRecordingSeconds'] as int? ?? 300,
       );
-    } catch (_) {
+    } catch (e) {
+      // Defaults for a missing file are the normal first run; an EXISTING
+      // file we can't read must not be silently discarded (the next save
+      // would overwrite the user's config — and later, stored API keys).
+      if (_file().existsSync()) {
+        stderr.writeln('earheart: unreadable settings.json, '
+            'falling back to defaults: $e');
+      }
       return Settings(
         output: OutputSettings(),
         stt: SttSettings(modelDir: SttSettings.defaultModelDir()),
@@ -116,5 +119,12 @@ class Settings {
       'stt': stt.toJson(),
       'audio': {'maxRecordingSeconds': maxRecordingSeconds},
     }));
+    // The full port stores API keys in this file; don't leave it (or its
+    // directory) readable to other local users. Windows relies on per-user
+    // profile ACLs instead.
+    if (!Platform.isWindows) {
+      Process.runSync('chmod', ['700', f.parent.path]);
+      Process.runSync('chmod', ['600', f.path]);
+    }
   }
 }

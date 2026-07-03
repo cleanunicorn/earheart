@@ -36,7 +36,14 @@ Future<void> main(List<String> args) async {
   // Headless STT check: decode a WAV with the same engine the app uses.
   final ti = args.indexOf('--transcribe');
   if (ti != -1 && ti + 1 < args.length) {
-    await _transcribeFile(args[ti + 1]);
+    try {
+      await _transcribeFile(args[ti + 1]);
+    } catch (e) {
+      // Without this the engine event loop keeps running and the CLI hangs
+      // instead of failing — missing model files are the likely first hit.
+      stderr.writeln('transcribe failed: ${Pipeline.describeError(e)}');
+      exit(1);
+    }
     return;
   }
 
@@ -52,8 +59,13 @@ Future<void> main(List<String> args) async {
   if (args.contains('--smoke-test')) {
     Timer(const Duration(seconds: 2), () async {
       stdout.writeln('SMOKE OK');
-      await tray.dispose();
-      exit(0);
+      try {
+        await tray.dispose();
+      } finally {
+        // exit unconditionally — a tray teardown throw on a host with no
+        // status-notifier service must not leave the smoke run hanging.
+        exit(0);
+      }
     });
   }
 
@@ -61,6 +73,7 @@ Future<void> main(List<String> args) async {
 }
 
 void _quit() {
+  engine.dispose();
   tray.dispose();
   exit(0);
 }
@@ -91,6 +104,14 @@ class EarheartApp extends StatelessWidget {
       title: 'Earheart',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(useMaterial3: true),
+      // The window is fixed at overlayHeight, budgeted for text scale 1.0 —
+      // clamp OS accessibility scaling so the pill clips instead of
+      // overflowing. The full port should size the window from scaled
+      // metrics instead.
+      builder: (context, child) => MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.0,
+        child: child!,
+      ),
       home: Scaffold(
         backgroundColor: Colors.transparent,
         body: OverlayCard(pipeline: pipeline, recorder: recorder),

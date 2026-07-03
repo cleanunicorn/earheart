@@ -6,6 +6,7 @@
 // user's words: by the time paste can fail the text is already on the
 // clipboard.
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -33,7 +34,9 @@ Future<DeliverResult> deliver(String text, OutputSettings cfg,
   final pasting = cfg.mode == 'paste' || cfg.mode == 'paste-copy';
   String? previous;
   if (cfg.mode == 'paste' && cfg.restoreClipboard) {
-    previous = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+    // An empty clipboard reads as null here but must still be restorable
+    // (Electron's clipboard.readText() returns '' and restores it).
+    previous = (await Clipboard.getData(Clipboard.kTextPlain))?.text ?? '';
   }
   await Clipboard.setData(ClipboardData(text: text));
 
@@ -118,10 +121,22 @@ Future<bool> _commandExists(String cmd) async {
 }
 
 Future<void> _run(String cmd, List<String> args) async {
-  final result =
-      await Process.run(cmd, args).timeout(const Duration(seconds: 10));
-  if (result.exitCode != 0) {
-    final stderrText = (result.stderr as String).trim();
-    throw StateError(stderrText.isNotEmpty ? stderrText : '$cmd failed');
+  // Process.run(...).timeout() would abandon a hung tool but leave it
+  // running — its Ctrl+V could still fire long after we reported failure.
+  // Kill the child on timeout instead (execFile's timeout does the same).
+  final process = await Process.start(cmd, args);
+  final stderrText = process.stderr.transform(utf8.decoder).join();
+  unawaited(process.stdout.drain<void>());
+  var timedOut = false;
+  final killTimer = Timer(const Duration(seconds: 10), () {
+    timedOut = true;
+    process.kill(ProcessSignal.sigkill);
+  });
+  final code = await process.exitCode;
+  killTimer.cancel();
+  if (timedOut) throw StateError('$cmd timed out');
+  if (code != 0) {
+    final err = (await stderrText).trim();
+    throw StateError(err.isNotEmpty ? err : '$cmd failed');
   }
 }

@@ -36,7 +36,11 @@ class SttEngine {
   final Map<int, Completer<Map<String, dynamic>>> _pending = {};
 
   bool get loaded => _ready;
-  bool busy = false;
+
+  /// Whether a decode is in flight — read by the pipeline's drop-if-busy
+  /// live preview; managed exclusively by [transcribe].
+  bool get busy => _busy;
+  bool _busy = false;
 
   /// Load the model, retrying after failures and respawning when [modelDir]
   /// changes. Concurrent callers share the in-flight load.
@@ -124,13 +128,13 @@ class SttEngine {
   /// Decode 16 kHz mono float32 samples to text.
   Future<TranscribeResult> transcribe(Float32List samples) async {
     if (_commands == null) throw StateError('engine not loaded');
-    busy = true;
+    _busy = true;
     try {
       final res = await _request({'type': 'transcribe', 'samples': samples});
       if (res['ok'] != true) throw StateError('decode failed: ${res['error']}');
       return TranscribeResult(res['text'] as String, res['decodeMs'] as int);
     } finally {
-      busy = false;
+      _busy = false;
     }
   }
 

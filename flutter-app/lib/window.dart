@@ -37,9 +37,13 @@ Future<void> initOverlayWindow() async {
 
 Future<void> positionBottomCenter() async {
   final display = await screenRetriever.getPrimaryDisplay();
+  // Anchor within the work area, not the full screen: an always-on-top
+  // overlay parked on the raw screen bottom would sit on top of a taskbar.
+  final origin = display.visiblePosition ?? Offset.zero;
+  final area = display.visibleSize ?? display.size;
   await windowManager.setBounds(Rect.fromLTWH(
-      (display.size.width - overlayWidth) / 2,
-      display.size.height - overlayHeight - 24,
+      origin.dx + (area.width - overlayWidth) / 2,
+      origin.dy + area.height - overlayHeight - 24,
       overlayWidth,
       overlayHeight));
 }

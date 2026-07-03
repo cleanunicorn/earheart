@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:earheart/settings.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -42,21 +44,57 @@ void main() {
     });
   });
 
-  test('a full save-shaped map parses back the same values', () {
-    // Mirrors the map Settings.save() writes; a key rename desyncing save()
-    // from fromJson would silently reset every user setting to defaults.
-    final saved = {
-      'hotkey': 'Control+Alt+D',
-      'output': OutputSettings(mode: 'clipboard').toJson(),
-      'stt': SttSettings(modelDir: '/m', livePreviewEnabled: false).toJson(),
-      'audio': {'maxRecordingSeconds': 42},
-    };
-    expect(saved['hotkey'], 'Control+Alt+D');
-    final out = OutputSettings.fromJson(saved['output'] as Map<String, dynamic>);
-    final stt = SttSettings.fromJson(saved['stt'] as Map<String, dynamic>);
-    expect(out.mode, 'clipboard');
-    expect(stt.modelDir, '/m');
-    expect(stt.livePreviewEnabled, false);
-    expect((saved['audio'] as Map<String, dynamic>)['maxRecordingSeconds'], 42);
+  group('save/load disk round trip', () {
+    late Directory dir;
+
+    setUp(() {
+      dir = Directory.systemTemp.createTempSync('earheart-settings-test');
+      Settings.configDirOverride = dir.path;
+    });
+
+    tearDown(() {
+      Settings.configDirOverride = null;
+      dir.deleteSync(recursive: true);
+    });
+
+    test('save() then load() preserves every key', () {
+      // The real desync guard: a key rename in save() that load() doesn't
+      // know about would silently reset every user setting to defaults.
+      final s = Settings(
+        hotkey: 'Control+Alt+D',
+        output: OutputSettings(mode: 'clipboard', restoreClipboard: false),
+        stt: SttSettings(modelDir: '/m', livePreviewEnabled: false),
+        maxRecordingSeconds: 42,
+      )..save();
+      final back = Settings.load();
+      expect(back.hotkey, s.hotkey);
+      expect(back.output.mode, 'clipboard');
+      expect(back.output.restoreClipboard, false);
+      expect(back.stt.modelDir, '/m');
+      expect(back.stt.livePreviewEnabled, false);
+      expect(back.maxRecordingSeconds, 42);
+    });
+
+    test('missing file yields defaults', () {
+      final s = Settings.load();
+      expect(s.hotkey, kDefaultHotkey);
+      expect(s.output.mode, 'paste');
+    });
+
+    test('malformed JSON yields defaults instead of throwing', () {
+      File('${dir.path}/settings.json').writeAsStringSync('{not json');
+      final s = Settings.load();
+      expect(s.hotkey, kDefaultHotkey);
+      expect(s.maxRecordingSeconds, 300);
+    });
+
+    test('saved file is owner-only on POSIX', () {
+      Settings(
+        output: OutputSettings(),
+        stt: SttSettings(modelDir: '/m'),
+      ).save();
+      final mode = File('${dir.path}/settings.json').statSync().mode;
+      expect(mode & 0x3F, 0, reason: 'group/other bits must be clear');
+    }, skip: Platform.isWindows);
   });
 }

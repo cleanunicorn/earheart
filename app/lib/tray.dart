@@ -43,8 +43,8 @@ class TrayController with TrayListener {
   }
 
   @override
-  void onTrayMenuItemClick(MenuItem item) {
-    final key = item.key;
+  void onTrayMenuItemClick(MenuItem menuItem) {
+    final key = menuItem.key;
     if (key == null) return;
     if (key.startsWith('mode-')) {
       settings.output.mode = key.substring('mode-'.length);

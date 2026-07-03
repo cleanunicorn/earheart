@@ -127,7 +127,10 @@ Future<void> _run(String cmd, List<String> args) async {
   // running — its Ctrl+V could still fire long after we reported failure.
   // Kill the child on timeout instead (execFile's timeout does the same).
   final process = await Process.start(cmd, args);
-  final stderrText = process.stderr.transform(utf8.decoder).join();
+  // Tolerate non-UTF-8 tool output: a strict decoder would turn stray bytes
+  // into a FormatException that masks (or outlives) the real result.
+  final stderrText =
+      process.stderr.transform(const Utf8Decoder(allowMalformed: true)).join();
   unawaited(process.stdout.drain<void>());
   var timedOut = false;
   final killTimer = Timer(const Duration(seconds: 10), () {

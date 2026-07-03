@@ -58,12 +58,14 @@ class _OverlayCardState extends State<OverlayCard> {
     return Align(
       alignment: Alignment.bottomCenter,
       child: Container(
-        margin: const EdgeInsets.all(8),
+        margin: const EdgeInsets.all(12),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xEE1C1C22),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white12),
+          // Solid panel (overlay.css --panel): faint-text contrast must never
+          // depend on whatever happens to be behind the overlay.
+          color: kPanel,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -76,7 +78,13 @@ class _OverlayCardState extends State<OverlayCard> {
                   p.partialText,
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  // The transcript is the hero (overlay.css #transcript):
+                  // bigger and brighter than the status row, never dimmer.
+                  style: const TextStyle(
+                      color: kTextPrimary,
+                      fontSize: 15,
+                      height: 1.5,
+                      fontWeight: FontWeight.w500),
                 ),
               ),
             _statusRow(p),
@@ -95,7 +103,11 @@ class _OverlayCardState extends State<OverlayCard> {
           _Meter(level: widget.recorder.level),
           const SizedBox(width: 10),
           Text(_fmt(widget.recorder.seconds),
-              style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              style: const TextStyle(
+                  color: kTextDetail,
+                  fontSize: 13,
+                  // Tabular digits so the timer doesn't jiggle every second.
+                  fontFeatures: [FontFeature.tabularFigures()])),
           const SizedBox(width: 10),
           _iconBtn(Icons.stop_circle_outlined, 'Stop & transcribe',
               () => p.toggle()),
@@ -108,13 +120,13 @@ class _OverlayCardState extends State<OverlayCard> {
               width: 14,
               height: 14,
               child: CircularProgressIndicator(
-                  strokeWidth: 2, color: Colors.white70)),
+                  strokeWidth: 2, color: kProcessingAmber)),
           const SizedBox(width: 10),
           Text(
               p.status.phase == OverlayPhase.transcribing
                   ? 'Transcribing…'
                   : 'Typing…',
-              style: const TextStyle(color: Colors.white, fontSize: 13)),
+              style: const TextStyle(color: kTextPrimary, fontSize: 13)),
           const SizedBox(width: 10),
           _iconBtn(Icons.close, 'Cancel', () => p.cancel()),
         ]);
@@ -156,13 +168,13 @@ class _OverlayCardState extends State<OverlayCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(title,
-                  style: const TextStyle(color: Colors.white, fontSize: 13)),
+                  style: const TextStyle(color: kTextPrimary, fontSize: 13)),
               if (detail != null && detail.isNotEmpty)
                 Text(detail,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Colors.white54, fontSize: 11)),
+                    style:
+                        const TextStyle(color: kTextDetail, fontSize: 11)),
             ]),
       ),
     ]);
@@ -180,7 +192,7 @@ class _OverlayCardState extends State<OverlayCard> {
 
   String _fmt(double seconds) {
     final s = seconds.floor();
-    return '${(s ~/ 60).toString().padLeft(1, '0')}:${(s % 60).toString().padLeft(2, '0')}';
+    return '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
   }
 }
 

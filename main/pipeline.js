@@ -244,7 +244,9 @@ function startRecording() {
 }
 
 function stopRecording() {
-  // The overlay answers with `audio:captured` (or `record:error`).
+  // The overlay answers with `audio:captured` — or `record:cancelled` when
+  // the mic never went live (nothing captured, nothing to transcribe), or
+  // `record:error`.
   windows.sendToOverlay("record:stop");
 }
 

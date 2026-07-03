@@ -6,8 +6,8 @@
 //   2. Capture is aligned with the UI: the WAV delivered on stop covers (at
 //      least) everything from the moment "Listening…" appeared, and it is not
 //      silence — so no words spoken after the invitation to talk are lost.
-//   3. A stop that races mic startup still resolves with audio:captured
-//      instead of hanging the pipeline.
+//   3. A stop that races mic startup resolves as record:cancelled (nothing was
+//      captured, so there is no dictation to transcribe) instead of hanging.
 //   4. The shared AudioContext survives across sessions: after a completed
 //      dictation AND after a cancel mid-startup, the next session records
 //      again (suspend/resume reuse, no stale worklet).
@@ -17,17 +17,14 @@
 //   xvfb-run -a npx electron scripts/overlay-smoke.js --no-sandbox   # Linux
 //   npx electron scripts/overlay-smoke.js                            # macOS/Win
 
-const { app, BrowserWindow, ipcMain, session } = require("electron");
-const path = require("node:path");
+const { app, ipcMain, session } = require("electron");
+const windows = require("../main/windows");
+const { wavToFloat32, wavDurationSec } = require("../main/util/wav");
 
 // The fake device makes getUserMedia succeed without hardware and produces a
 // tone, so captured WAVs contain real, non-silent samples deterministically.
 app.commandLine.appendSwitch("use-fake-device-for-media-stream");
 app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
-
-const RENDERER = path.join(__dirname, "..", "renderer");
-const PRELOAD = path.join(__dirname, "..", "preload.js");
-const SAMPLE_RATE = 16000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -37,6 +34,11 @@ function check(name, ok, detail) {
   const suffix = detail ? ` (${detail})` : "";
   console.log(`[overlay-smoke] ${ok ? "ok  " : "FAIL"} ${name}${suffix}`);
 }
+
+// Any record:error is a failure: the fake device always delivers, so a mic
+// error here means the session plumbing broke. Collected so waitForStatus can
+// surface the real diagnostic instead of an opaque status timeout.
+const micErrors = [];
 
 function waitForMessage(channel, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
@@ -62,6 +64,9 @@ function cardStatus(win) {
 async function waitForStatus(win, want, timeoutMs = 15000) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
+    if (micErrors.length > 0) {
+      throw new Error(`record:error while waiting for "${want}": ${micErrors[0]}`);
+    }
     const status = await cardStatus(win);
     if (status === want) return Date.now();
     if (Date.now() > deadline) {
@@ -71,19 +76,17 @@ async function waitForStatus(win, want, timeoutMs = 15000) {
   }
 }
 
-// Duration and level of an audio:captured WAV (16 kHz mono PCM16).
+// Duration and level of an audio:captured WAV, via the same RIFF parsers the
+// main process uses on real dictations.
 function wavStats(wav) {
   const buf = Buffer.from(wav);
-  const samples = Math.max(0, Math.floor((buf.length - 44) / 2));
+  const { samples } = wavToFloat32(buf);
   let sum = 0;
-  for (let i = 0; i < samples; i++) {
-    const s = buf.readInt16LE(44 + i * 2) / 0x8000;
-    sum += s * s;
-  }
+  for (const s of samples) sum += s * s;
   return {
-    samples,
-    seconds: samples / SAMPLE_RATE,
-    rms: samples ? Math.sqrt(sum / samples) : 0,
+    samples: samples.length,
+    seconds: wavDurationSec(buf),
+    rms: samples.length ? Math.sqrt(sum / samples.length) : 0,
   };
 }
 
@@ -100,23 +103,17 @@ app.whenReady().then(async () => {
     session.defaultSession.setPermissionRequestHandler((wc, permission, cb) =>
       cb(true)
     );
-    // A mic error anywhere is a failure worth seeing in the log.
-    ipcMain.on("record:error", (event, payload) =>
-      console.error("[overlay-smoke] record:error:", payload?.message)
-    );
-
-    const win = new BrowserWindow({
-      width: 360,
-      height: 92,
-      show: false,
-      webPreferences: {
-        preload: PRELOAD,
-        contextIsolation: true,
-        nodeIntegration: false,
-        backgroundThrottling: false,
-      },
+    ipcMain.on("record:error", (event, payload) => {
+      micErrors.push(payload?.message || "unknown");
+      console.error("[overlay-smoke] record:error:", payload?.message);
     });
-    await win.loadFile(path.join(RENDERER, "overlay.html"));
+
+    // The production overlay window (same flags, preload, throttling config the
+    // shipped app runs with) — the same staging approach as scripts/screenshots.js.
+    const win = windows.createOverlay();
+    await new Promise((resolve) =>
+      win.webContents.once("did-finish-load", resolve)
+    );
 
     // ---- Session 1: status order, and capture aligned with the UI ----------
     // Record every data-status transition from inside the page, so the order
@@ -157,17 +154,15 @@ app.whenReady().then(async () => {
     );
     check("captured audio is not silence", stats1.rms > 0.001, `rms=${stats1.rms.toFixed(4)}`);
 
-    // ---- Session 2: stop racing mic startup still resolves -----------------
-    const captured2P = waitForMessage("audio:captured");
+    // ---- Session 2: stop racing mic startup resolves as abandoned ----------
+    const cancelled2P = waitForMessage("record:cancelled");
     start(win, 2);
     win.webContents.send("record:stop"); // lands while getUserMedia is pending
-    const captured2 = await captured2P;
-    const stats2 = wavStats(captured2.wav);
-    check("stop during mic startup still completes", captured2.sid === 2);
+    const cancelled2 = await cancelled2P;
     check(
-      "stop before mic-live captures (near) nothing",
-      stats2.seconds < 0.5,
-      `wav=${stats2.seconds.toFixed(2)}s`
+      "stop before mic-live resolves as an abandoned attempt",
+      cancelled2.sid === 2,
+      `sid=${cancelled2.sid}`
     );
 
     // ---- Session 3: the shared context records again after reuse -----------
@@ -202,12 +197,14 @@ app.whenReady().then(async () => {
       `wav=${stats5.seconds.toFixed(2)}s rms=${stats5.rms.toFixed(4)}`
     );
 
+    check("no mic errors during the run", micErrors.length === 0, micErrors.join("; "));
+
     const failed = checks.filter((c) => !c.ok);
     if (failed.length > 0) {
       throw new Error(`${failed.length} check(s) failed`);
     }
     console.log(`[overlay-smoke] all ${checks.length} checks passed`);
-    win.destroy();
+    windows.destroyOverlay();
     app.exit(0);
   } catch (err) {
     console.error("[overlay-smoke] failed:", (err && err.message) || err);

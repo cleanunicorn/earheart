@@ -49,13 +49,24 @@ function ensureAudioEngine() {
     // A failed warm-up (worklet fetch hiccup, audio stack not up yet) must not
     // poison every future dictation: drop the cache so the next start retries.
     audioEngineReady.catch(() => {
-      audioContext = null;
       audioEngineReady = null;
     });
   }
   return audioEngineReady;
 }
 ensureAudioEngine();
+
+// Drop (and close) the cached engine so the next session rebuilds it from
+// scratch. The escape hatch for a context that died AFTER a successful
+// warm-up — an audio backend restart (PipeWire/PulseAudio), a wedged device
+// stack — which the resolve-once cache above would otherwise pin until the
+// app restarts, failing every dictation.
+function resetAudioEngine() {
+  const context = audioContext;
+  audioContext = null;
+  audioEngineReady = null;
+  context?.close().catch(() => {});
+}
 
 // Watchdog for the whole mic start (getUserMedia through first samples): a
 // stream that opens but never delivers audio, or a getUserMedia that hangs,
@@ -339,6 +350,14 @@ function micLive() {
   if (!recording || recording.startedAt) return;
   recording.startedAt = Date.now();
   clearStartWatchdog();
+  // The max-duration cap counts CAPTURED audio, anchored here alongside the
+  // visible timer so the two never disagree: a slow-to-wake device must not
+  // eat dictation time, and a mic that never delivers is the watchdog's
+  // error to report — not a premature empty "Nothing heard".
+  recording.maxTimerId = setTimeout(
+    () => stopRecording(),
+    recording.maxSeconds * 1000
+  );
   setStatus("recording", "Listening…");
 }
 
@@ -358,15 +377,6 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
   displayLevels.fill(0);
   drawMeter(); // clear to a flat baseline; the rAF loop starts once mic is live
   timerEl.textContent = "0:00";
-  startWatchdogId = setTimeout(() => {
-    startWatchdogId = null;
-    if (myGeneration !== generation || recording?.startedAt) return;
-    teardown();
-    earheart.send("record:error", {
-      sid,
-      message: "Microphone did not deliver audio in time — check the input device in Settings",
-    });
-  }, MIC_START_TIMEOUT_MS);
 
   let streamPromise = null;
   try {
@@ -381,7 +391,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
         autoGainControl: true,
       },
     });
-    const [stream, context] = await Promise.all([
+    let [stream, context] = await Promise.all([
       streamPromise,
       ensureAudioEngine(),
     ]);
@@ -391,6 +401,31 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
       stream.getTracks().forEach((track) => track.stop());
       return;
     }
+    if (context.state === "closed") {
+      // The cached context died behind our back (audio backend restart).
+      // Rebuild once rather than failing every dictation until app restart.
+      resetAudioEngine();
+      context = await ensureAudioEngine();
+      if (myGeneration !== generation) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+    }
+    // Watchdog armed only now that the mic is granted: getUserMedia may
+    // legitimately sit on an OS permission prompt for as long as the user
+    // ponders it. What must not hang silently is an OPEN stream that never
+    // delivers samples — a dead device, or a wedged shared context (which is
+    // why a firing watchdog also discards the cached engine).
+    startWatchdogId = setTimeout(() => {
+      startWatchdogId = null;
+      if (myGeneration !== generation || recording?.startedAt) return;
+      teardown();
+      resetAudioEngine();
+      earheart.send("record:error", {
+        sid,
+        message: "Microphone did not deliver audio in time — check the input device in Settings",
+      });
+    }, MIC_START_TIMEOUT_MS);
     // Safe ordering without awaiting: Web Audio applies state changes in call
     // order, this resume() is called strictly after any prior teardown's
     // suspend(), and any LATER teardown's suspend() lands after it — so the
@@ -428,10 +463,10 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
       committedSamples: 0,
       seq: 0,
       timerId: setInterval(updateTimer, 250),
-      maxTimerId: setTimeout(
-        () => stopRecording(),
-        (maxSeconds || 300) * 1000
-      ),
+      // Armed by micLive() with the first samples, so the cap and the visible
+      // timer share one clock.
+      maxSeconds: maxSeconds || 300,
+      maxTimerId: null,
       partialTimerId: livePreview
         ? setInterval(sendPartial, livePreview.intervalMs || 1200)
         : null,
@@ -448,8 +483,15 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
     streamPromise
       ?.then((stream) => stream.getTracks().forEach((track) => track.stop()))
       .catch(() => {});
-    clearStartWatchdog();
+    // Only touch shared session state if this session still owns it: a stale
+    // catch must not clear a superseding session's watchdog or suspend the
+    // context it just resumed.
     if (myGeneration === generation) {
+      clearStartWatchdog();
+      // resume() may already have run before the throw; park the context so a
+      // failed session never leaves the audio thread ticking while idle
+      // (suspending an already-suspended context is a no-op).
+      audioContext?.suspend().catch(() => {});
       earheart.send("record:error", {
         sid,
         message: `Microphone unavailable: ${err.message}`,
@@ -458,11 +500,24 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
   }
 }
 
+// How long to wait for the worklet's {flushed} reply before encoding anyway.
+// In-flight sample messages arrive within a few main-thread task checkpoints;
+// this is a generous ceiling, not a fixed pause (the flush usually lands in
+// single-digit milliseconds).
+const STOP_FLUSH_TIMEOUT_MS = 150;
+
 // Synchronous on purpose: the suspend() of the shared context must be CALLED
 // before a superseding session's resume() (see the ordering note in
 // startRecording), which is guaranteed because every start calls teardown()
 // in the same synchronous turn before touching the context.
-function teardown() {
+//
+// With `collectTail`, samples the worklet posted but the main thread hasn't
+// received yet keep being collected into rec.chunks until the processor's
+// {flushed} reply (posted after everything else it ever sent) or the fallback
+// timeout; rec.flushed resolves when the tail is complete. Words spoken right
+// up to the stop keystroke live in those in-flight messages — dropping them
+// would clip the last syllable off every dictation.
+function teardown({ collectTail = false } = {}) {
   generation++; // invalidates any startRecording still awaiting the mic
   stopWhenReady = false;
   clearStartWatchdog();
@@ -471,11 +526,30 @@ function teardown() {
   const rec = recording;
   recording = null;
   clearInterval(rec.timerId);
-  clearTimeout(rec.maxTimerId);
+  if (rec.maxTimerId) clearTimeout(rec.maxTimerId);
   if (rec.partialTimerId) clearInterval(rec.partialTimerId);
   // Tear down the session's graph but keep the shared context: disconnect the
-  // nodes, drop the worklet port, release the microphone.
-  rec.recorder.port.onmessage = null;
+  // nodes, retire the worklet processor, release the microphone.
+  if (collectTail) {
+    rec.flushed = new Promise((resolve) => {
+      let fallback = null;
+      const done = () => {
+        clearTimeout(fallback);
+        rec.recorder.port.onmessage = null;
+        resolve();
+      };
+      fallback = setTimeout(done, STOP_FLUSH_TIMEOUT_MS);
+      rec.recorder.port.onmessage = (event) => {
+        if (event.data.flushed) done();
+        else rec.chunks.push(event.data.samples);
+      };
+    });
+  } else {
+    rec.recorder.port.onmessage = null;
+  }
+  // The processor stops (process() returns false) once it sees this, so it
+  // doesn't keep running on the shared context for every past dictation.
+  rec.recorder.port.postMessage("stop");
   try {
     rec.source.disconnect();
   } catch {}
@@ -487,14 +561,23 @@ function teardown() {
   return rec;
 }
 
-function stopRecording() {
+async function stopRecording() {
   if (!recording) {
     // Stop raced ahead of microphone setup; finish once the mic is live.
     stopWhenReady = true;
     return;
   }
-  const rec = teardown();
+  const wasLive = Boolean(recording.startedAt);
+  const rec = teardown({ collectTail: wasLive });
   if (!rec) return;
+  if (!wasLive) {
+    // Stopped before any audio was captured: there is no dictation to
+    // transcribe, and "Nothing heard — try again closer to the mic" would be
+    // misleading advice. Treat it as the user abandoning the attempt.
+    earheart.send("record:cancelled", { sid: rec.sid });
+    return;
+  }
+  await rec.flushed; // pick up the last in-flight chunks before encoding
   const wav = encodeWav(rec.chunks);
   earheart.send("audio:captured", { sid: rec.sid, wav });
 }

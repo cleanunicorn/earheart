@@ -190,9 +190,12 @@ body {
   height: 36px;
 }
 
+/* The waveform and timer only mean something once audio flows, but Stop stays
+   available from the first instant of "starting" too: a user aborting a slow
+   mic warm-up must not lose the control they reach for by muscle memory. */
 #card:not([data-status="recording"]) #meter,
 #card:not([data-status="recording"]) #timer,
-#card:not([data-status="recording"]) #stop {
+#card:not([data-status="recording"]):not([data-status="starting"]) #stop {
   display: none;
 }
 

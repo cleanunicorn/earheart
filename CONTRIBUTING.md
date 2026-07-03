@@ -24,6 +24,7 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | `make run` | Run the app in development |
 | `make test` | Run unit tests (`node --test`) |
 | `make smoke` | Boot the app headlessly and exit (CI-style sanity check) |
+| `make overlay-smoke` | Drive the overlay with a fake mic and check capture/UI sync |
 | `make icons` | Regenerate app/tray icons into `assets/` |
 | `make screenshots` | Regenerate README screenshots into `docs/screenshots/` |
 | `make dist` | Build installers for the current platform |
@@ -53,11 +54,16 @@ other models.
 npm test                       # unit tests (node --test, no test framework)
 make smoke                     # boots the full app with --smoke-test and exits
 npx electron scripts/engine-smoke.js --no-sandbox   # boot the engine worker, round-trip a ping
+make overlay-smoke             # drive the overlay with a fake mic, check capture/UI sync
 ```
 
 The engine-smoke step forks the in-process engine `utilityProcess` worker and
 round-trips a request, so a broken worker or a native-addon load failure
-surfaces here rather than at runtime. CI runs all three on every platform.
+surfaces here rather than at runtime. The overlay-smoke step drives the real
+overlay page against Chromium's fake audio device and asserts the dictation
+capture contract: "Listening…" only appears once samples actually flow, the
+captured WAV covers everything said from that moment, and stop/cancel racing
+mic startup still resolve. CI runs all four on every platform.
 Built-in models download to Electron's `userData/models` on first use; the
 smoke checks don't need them present.
 

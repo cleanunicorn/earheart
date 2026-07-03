@@ -12,7 +12,9 @@
     <!-- One unified card: the live transcript fills the top and grows freely;
          a slim control row sits along the bottom. The whole card is the drag
          surface and carries the data-status state. -->
-    <div id="card" data-status="recording">
+    <!-- Initial state is "starting", matching what record:start shows: the card
+         must never claim Listening… before the mic actually delivers audio. -->
+    <div id="card" data-status="starting">
       <!-- Grip handle: signifies the card is draggable (the OS ignores the CSS
            move-cursor on a focusable:false overlay, so a visible cue is needed).
            Decorative — the card itself handles the drag. -->
@@ -35,7 +37,7 @@
              status (Transcribing… / Pasted / Failed) — the feedback that tells
              the user whether their dictation landed. -->
         <div id="message" aria-live="polite">
-          <span id="status-text">Listening…</span>
+          <span id="status-text">Starting mic…</span>
           <span id="detail-text"></span>
           <!-- Determinate progress for the transcribing/cleaning phases.
                aria-hidden keeps the live region quiet: the status text already

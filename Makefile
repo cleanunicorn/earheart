@@ -21,6 +21,10 @@ test: ## Run unit tests
 smoke: ## Boot the app headlessly and exit (CI-style sanity check)
 	xvfb-run -a npx electron . --smoke-test --no-sandbox
 
+.PHONY: overlay-smoke
+overlay-smoke: ## Drive the overlay with a fake mic and check capture/UI sync
+	xvfb-run -a npx electron scripts/overlay-smoke.js --no-sandbox
+
 .PHONY: icons
 icons: ## Regenerate app/tray icons into assets/
 	node scripts/gen-icons.js

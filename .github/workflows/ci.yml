@@ -37,6 +37,16 @@ jobs:
       - name: Engine worker boot
         if: runner.os != 'Linux'
         run: npx electron scripts/engine-smoke.js --no-sandbox
+      # Drive the real overlay page against Chromium's fake audio device and
+      # verify the capture/UI sync contract: "Listening…" appears only once
+      # samples actually flow, and the captured WAV covers everything said
+      # from that moment on.
+      - name: Overlay capture sync (headless)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npx electron scripts/overlay-smoke.js --no-sandbox
+      - name: Overlay capture sync
+        if: runner.os != 'Linux'
+        run: npx electron scripts/overlay-smoke.js --no-sandbox
 
   stt-server:
     runs-on: ubuntu-latest

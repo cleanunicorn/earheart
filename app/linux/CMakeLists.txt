@@ -41,7 +41,7 @@ endif()
 # of modifying this function.
 function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_features(${TARGET} PUBLIC cxx_std_14)
-  target_compile_options(${TARGET} PRIVATE -Wall -Werror -Wno-error=deprecated-declarations -Wno-error=sometimes-uninitialized)
+  target_compile_options(${TARGET} PRIVATE -Wall -Werror)
   target_compile_options(${TARGET} PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-O3>")
   target_compile_definitions(${TARGET} PRIVATE "$<$<NOT:$<CONFIG:Debug>>:NDEBUG>")
 endfunction()
@@ -126,3 +126,16 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# === Earheart local edit — keep when regenerating with `flutter create` ===
+# These third-party plugins trip -Werror on recent clang (deprecated
+# libayatana-appindicator calls in tray_manager; -Wsometimes-uninitialized in
+# hotkey_manager). Relax ONLY those targets instead of weakening
+# APPLY_STANDARD_SETTINGS for the whole build. See docs/flutter-rewrite.md.
+foreach(quirky_plugin tray_manager_plugin hotkey_manager_linux_plugin)
+  if(TARGET ${quirky_plugin})
+    target_compile_options(${quirky_plugin} PRIVATE
+      -Wno-error=deprecated-declarations
+      $<$<CXX_COMPILER_ID:Clang>:-Wno-error=sometimes-uninitialized>)
+  endif()
+endforeach()

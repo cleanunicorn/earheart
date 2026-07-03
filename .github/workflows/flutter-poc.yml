@@ -43,3 +43,33 @@ jobs:
         run: |
           xvfb-run -a build/linux/x64/release/bundle/earheart --smoke-test \
             | tee /dev/stderr | grep -q "SMOKE OK"
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: flutter-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Analyze and test
+        run: |
+          flutter analyze
+          flutter test
+
+      - name: Build (Windows release)
+        run: flutter build windows --release
+
+      # Downloadable from the workflow-run page; contains earheart.exe plus
+      # the Flutter/plugin DLLs and assets — unzip anywhere and run.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: earheart-windows-x64
+          path: flutter-app/build/windows/x64/runner/Release
+          if-no-files-found: error

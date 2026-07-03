@@ -20,7 +20,9 @@ class TrayController with TrayListener {
 
   Future<void> init() async {
     try {
-      await trayManager.setIcon('assets/icon.png');
+      // Windows tray icons must be .ico; everywhere else takes the PNG.
+      await trayManager
+          .setIcon(Platform.isWindows ? 'assets/icon.ico' : 'assets/icon.png');
       try {
         await trayManager.setToolTip('Earheart — ready');
       } catch (_) {

@@ -15,7 +15,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:screen_retriever/screen_retriever.dart';
-import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -89,8 +88,7 @@ Future<void> main(List<String> args) async {
 Future<void> _transcribeFile(String path) async {
   stderr.writeln('loading model from ${settings.stt.modelDir} …');
   await engine.ensureLoaded(settings.stt.modelDir);
-  sherpa.initBindings();
-  final wave = sherpa.readWave(path);
+  final wave = readWaveFile(path);
   if (wave.sampleRate != kSampleRate) {
     stderr.writeln(
         'warning: ${wave.sampleRate} Hz input; engine expects $kSampleRate');

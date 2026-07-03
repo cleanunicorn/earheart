@@ -18,10 +18,22 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
+/// The engine consumes 16 kHz mono audio; the recorder and the WAV hooks
+/// conform to this, not the other way around.
+const int kSampleRate = 16000;
+
 class TranscribeResult {
   final String text;
   final int decodeMs;
   TranscribeResult(this.text, this.decodeMs);
+}
+
+/// Read a WAV file into samples — the CLI/test hook. Lives here so
+/// sherpa_onnx stays encapsulated in this module.
+({Float32List samples, int sampleRate}) readWaveFile(String path) {
+  sherpa.initBindings();
+  final wave = sherpa.readWave(path);
+  return (samples: wave.samples, sampleRate: wave.sampleRate);
 }
 
 class SttEngine {

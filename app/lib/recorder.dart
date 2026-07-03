@@ -11,8 +11,7 @@ import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
 
 import 'pcm.dart';
-
-const int kSampleRate = 16000;
+import 'stt.dart' show kSampleRate;
 
 class Recorder {
   final AudioRecorder _rec = AudioRecorder();

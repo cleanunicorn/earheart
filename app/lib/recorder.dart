@@ -25,7 +25,6 @@ class Recorder {
   /// 0..1-ish RMS level for the overlay meter.
   final ValueNotifier<double> level = ValueNotifier(0);
 
-  bool get recording => _sub != null;
   double get seconds => _totalSamples / kSampleRate;
 
   Future<void> start() async {
@@ -67,33 +66,33 @@ class Recorder {
 
   /// Stop and return the full recording.
   Future<Float32List> stop() async {
-    // Stop the plugin FIRST and drain the stream to its close before
-    // cancelling the subscription — cancelling first would discard whatever
-    // audio the plugin still had buffered, clipping the user's last word
-    // ("never lose the user's words").
-    if (_sub != null) {
-      await _rec.stop();
-      await _streamDone?.future
-          .timeout(const Duration(seconds: 2), onTimeout: () {});
-      await _sub?.cancel();
-      _sub = null;
-    }
-    level.value = 0;
+    await _teardown(drain: true);
     return snapshot();
   }
 
   Future<void> cancel() async {
-    await _sub?.cancel();
-    _sub = null;
-    await _rec.stop();
-    level.value = 0;
+    await _teardown(drain: false);
     _chunks.clear();
     _totalSamples = 0;
   }
 
-  void dispose() {
-    _sub?.cancel();
-    _rec.dispose();
+  /// Shared stop path. With [drain], the plugin is stopped FIRST and the
+  /// stream drained to its close before cancelling the subscription —
+  /// cancelling first would discard whatever audio the plugin still had
+  /// buffered, clipping the user's last word ("never lose the user's
+  /// words"). A cancel doesn't care about buffered audio.
+  Future<void> _teardown({required bool drain}) async {
+    if (_sub != null && drain) {
+      await _rec.stop();
+      await _streamDone?.future
+          .timeout(const Duration(seconds: 2), onTimeout: () {});
+      await _sub?.cancel();
+    } else {
+      await _sub?.cancel();
+      await _rec.stop();
+    }
+    _sub = null;
+    level.value = 0;
   }
 }
 

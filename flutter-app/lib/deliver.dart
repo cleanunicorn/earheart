@@ -49,7 +49,10 @@ Future<DeliverResult> deliver(String text, OutputSettings cfg,
   try {
     await (simulatePaste ?? _simulatePaste)();
   } catch (e) {
-    return DeliverResult('clipboard', 'Auto-paste failed: $e');
+    // Overlay-facing text: strip Dart's "Bad state:" prefix like the
+    // pipeline's describeError does for every other user-visible error.
+    final why = e is StateError ? e.message : '$e';
+    return DeliverResult('clipboard', 'Auto-paste failed: $why');
   }
 
   if (previous != null) {

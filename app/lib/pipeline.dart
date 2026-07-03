@@ -20,10 +20,15 @@ import 'stt.dart';
 
 enum PipelineState { idle, recording, processing }
 
+/// What the overlay is currently showing. Unlike the Electron original there
+/// is no IPC string boundary here, so the phase is a real enum and the
+/// overlay can switch on it exhaustively.
+enum OverlayPhase { idle, recording, transcribing, delivering, done, empty, error }
+
 class OverlayStatus {
-  final String status; // recording|transcribing|delivering|done|empty|error
+  final OverlayPhase phase;
   final String? detail;
-  const OverlayStatus(this.status, [this.detail]);
+  const OverlayStatus(this.phase, [this.detail]);
 }
 
 class Pipeline extends ChangeNotifier {
@@ -36,7 +41,7 @@ class Pipeline extends ChangeNotifier {
   void Function()? onHideOverlay;
 
   PipelineState state = PipelineState.idle;
-  OverlayStatus status = const OverlayStatus('idle');
+  OverlayStatus status = const OverlayStatus(OverlayPhase.idle);
   String partialText = '';
   int _session = 0;
   Timer? _liveTimer;
@@ -65,7 +70,7 @@ class Pipeline extends ChangeNotifier {
     final sid = ++_session;
     _hideTimer?.cancel();
     partialText = '';
-    _setState(PipelineState.recording, const OverlayStatus('recording'));
+    _setState(PipelineState.recording, const OverlayStatus(OverlayPhase.recording));
     onShowOverlay?.call();
     // Warm the model while recording so live preview / the final decode
     // don't pay the cold-load cost — mirrors pipeline.js startRecording.
@@ -118,7 +123,7 @@ class Pipeline extends ChangeNotifier {
   }
 
   Future<void> _process(int sid, Float32List samples) async {
-    _setState(PipelineState.processing, const OverlayStatus('transcribing'));
+    _setState(PipelineState.processing, const OverlayStatus(OverlayPhase.transcribing));
     try {
       await engine.ensureLoaded(settings.stt.modelDir);
       if (sid != _session) return;
@@ -126,7 +131,7 @@ class Pipeline extends ChangeNotifier {
       if (sid != _session) return;
 
       if (res.text.isEmpty) {
-        _setState(PipelineState.idle, const OverlayStatus('empty'));
+        _setState(PipelineState.idle, const OverlayStatus(OverlayPhase.empty));
         _hideSoon(sid, 1800);
         return;
       }
@@ -135,14 +140,14 @@ class Pipeline extends ChangeNotifier {
       // fall back to the raw transcript (never lose the user's words).
 
       _setState(
-          PipelineState.processing, const OverlayStatus('delivering'));
+          PipelineState.processing, const OverlayStatus(OverlayPhase.delivering));
       final result = await deliver(res.text, settings.output);
       if (sid != _session) return;
 
       final preview =
           res.text.length > 120 ? '${res.text.substring(0, 120)}…' : res.text;
       _setState(PipelineState.idle,
-          OverlayStatus('done', result.note ?? preview));
+          OverlayStatus(OverlayPhase.done, result.note ?? preview));
       _hideSoon(sid, result.note != null ? 4000 : 1600);
     } catch (e) {
       if (sid != _session) return;
@@ -151,7 +156,7 @@ class Pipeline extends ChangeNotifier {
   }
 
   void _fail(String message, int sid) {
-    _setState(PipelineState.idle, OverlayStatus('error', message));
+    _setState(PipelineState.idle, OverlayStatus(OverlayPhase.error, message));
     _hideSoon(sid, 5000);
   }
 
@@ -172,7 +177,7 @@ class Pipeline extends ChangeNotifier {
       await recorder.cancel();
     }
     partialText = '';
-    _setState(PipelineState.idle, const OverlayStatus('idle'));
+    _setState(PipelineState.idle, const OverlayStatus(OverlayPhase.idle));
     onHideOverlay?.call();
   }
 }

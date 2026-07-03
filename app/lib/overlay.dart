@@ -76,8 +76,8 @@ class _OverlayCardState extends State<OverlayCard> {
   }
 
   Widget _statusRow(Pipeline p) {
-    switch (p.status.status) {
-      case 'recording':
+    switch (p.status.phase) {
+      case OverlayPhase.recording:
         return Row(mainAxisSize: MainAxisSize.min, children: [
           const _PulsingDot(color: Colors.redAccent),
           const SizedBox(width: 8),
@@ -90,8 +90,8 @@ class _OverlayCardState extends State<OverlayCard> {
               () => p.toggle()),
           _iconBtn(Icons.close, 'Cancel', () => p.cancel()),
         ]);
-      case 'transcribing':
-      case 'delivering':
+      case OverlayPhase.transcribing:
+      case OverlayPhase.delivering:
         return Row(mainAxisSize: MainAxisSize.min, children: [
           const SizedBox(
               width: 14,
@@ -99,21 +99,24 @@ class _OverlayCardState extends State<OverlayCard> {
               child: CircularProgressIndicator(
                   strokeWidth: 2, color: Colors.white70)),
           const SizedBox(width: 10),
-          Text(p.status.status == 'transcribing' ? 'Transcribing…' : 'Typing…',
+          Text(
+              p.status.phase == OverlayPhase.transcribing
+                  ? 'Transcribing…'
+                  : 'Typing…',
               style: const TextStyle(color: Colors.white, fontSize: 13)),
           const SizedBox(width: 10),
           _iconBtn(Icons.close, 'Cancel', () => p.cancel()),
         ]);
-      case 'done':
+      case OverlayPhase.done:
         return _message(Icons.check_circle, Colors.greenAccent, 'Pasted',
             p.status.detail);
-      case 'empty':
+      case OverlayPhase.empty:
         return _message(
             Icons.help_outline, Colors.amberAccent, 'Nothing heard', null);
-      case 'error':
+      case OverlayPhase.error:
         return _message(
             Icons.error_outline, Colors.redAccent, 'Failed', p.status.detail);
-      default:
+      case OverlayPhase.idle:
         return const SizedBox.shrink();
     }
   }

@@ -35,13 +35,20 @@ Future<void> main(List<String> args) async {
 
   // Headless STT check: decode a WAV with the same engine the app uses.
   final ti = args.indexOf('--transcribe');
-  if (ti != -1 && ti + 1 < args.length) {
+  if (ti != -1) {
+    if (ti + 1 >= args.length) {
+      // Don't silently fall through to booting the GUI on a missing arg.
+      stderr.writeln('usage: earheart --transcribe <file.wav>');
+      await stderr.flush();
+      exit(2);
+    }
     try {
       await _transcribeFile(args[ti + 1]);
     } catch (e) {
       // Without this the engine event loop keeps running and the CLI hangs
       // instead of failing — missing model files are the likely first hit.
       stderr.writeln('transcribe failed: ${Pipeline.describeError(e)}');
+      await stderr.flush();
       exit(1);
     }
     return;
@@ -59,6 +66,7 @@ Future<void> main(List<String> args) async {
   if (args.contains('--smoke-test')) {
     Timer(const Duration(seconds: 2), () async {
       stdout.writeln('SMOKE OK');
+      await stdout.flush();
       try {
         await tray.dispose();
       } finally {
@@ -92,6 +100,9 @@ Future<void> _transcribeFile(String path) async {
   stdout.writeln('TRANSCRIPT: ${res.text}');
   stdout.writeln(
       'decodeMs=${res.decodeMs} wallMs=$wallMs audioSec=${(wave.samples.length / kSampleRate).toStringAsFixed(1)}');
+  // exit() doesn't flush buffered pipe writes — a CI harness reading stdout
+  // could see a truncated transcript.
+  await stdout.flush();
   exit(0);
 }
 

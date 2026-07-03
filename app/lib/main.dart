@@ -43,6 +43,7 @@ Future<void> main(List<String> args) async {
   await initOverlayWindow();
   pipeline.onShowOverlay = showOverlay;
   pipeline.onHideOverlay = hideOverlay;
+  pipeline.onBeforeDeliver = ensureUnfocusedForPaste;
 
   tray = TrayController(pipeline, settings, onQuit: _quit);
   await tray.init();

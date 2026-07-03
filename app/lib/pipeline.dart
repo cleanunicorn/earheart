@@ -49,6 +49,11 @@ class Pipeline extends ChangeNotifier {
   void Function()? onShowOverlay;
   void Function()? onHideOverlay;
 
+  /// Called right before text is delivered — the window layer uses this to
+  /// make sure the overlay doesn't hold keyboard focus when the paste
+  /// keystroke fires (a Stop click can focus it on macOS/Windows).
+  Future<void> Function()? onBeforeDeliver;
+
   PipelineState state = PipelineState.idle;
   OverlayStatus status = const OverlayStatus(OverlayPhase.idle);
   String partialText = '';
@@ -170,6 +175,7 @@ class Pipeline extends ChangeNotifier {
 
       _setState(
           PipelineState.processing, const OverlayStatus(OverlayPhase.delivering));
+      await onBeforeDeliver?.call();
       final result = await deliver(res.text, settings.output,
           cancelled: () => sid != _session);
       if (sid != _session || result.method == 'cancelled') return;

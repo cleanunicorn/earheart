@@ -325,6 +325,21 @@
           </div>
 
           <div class="card">
+            <div class="card-title">Dictionary</div>
+            <div class="field">
+              <label for="cleanup-dictionary">Preferred terms <span class="muted">(one per line)</span></label>
+              <textarea id="cleanup-dictionary" rows="6" spellcheck="false"
+                placeholder="Earheart&#10;sherpa-onnx&#10;Kubernetes"></textarea>
+              <p class="hint">
+                Names, jargon and product terms that often get misheard. When
+                the transcript comes close to one, cleanup corrects it to the
+                exact spelling listed here. Keep the list short and specific —
+                a handful of terms works better than hundreds.
+              </p>
+            </div>
+          </div>
+
+          <div class="card">
             <div class="card-title">System prompt</div>
             <div class="field">
               <textarea id="cleanup-prompt" rows="8" spellcheck="false" aria-label="System prompt"></textarea>

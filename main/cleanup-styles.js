@@ -62,11 +62,31 @@ function styleById(id) {
   return STYLES.find((s) => s.id === id) || STYLES.find((s) => s.id === DEFAULT_STYLE);
 }
 
+// User dictionary: names, jargon and product terms STT tends to mishear
+// (cleanup.dictionary, an array of strings). Rendered as a prompt block so the
+// cleanup model corrects near-miss transcriptions to the exact spellings
+// listed. Empty (or all-blank) lists add nothing, so the prompt is unchanged
+// for anyone who never filled the dictionary in.
+function dictionaryDirective(terms) {
+  const list = (terms || []).map((t) => String(t).trim()).filter(Boolean);
+  if (list.length === 0) return "";
+  return (
+    "\n\nPreferred vocabulary: the speaker uses these exact terms and " +
+    "spellings. When a word or phrase in the transcript is a mishearing, " +
+    "misspelling or wrong casing of one of them, replace it with the term " +
+    "exactly as written below. Never force a term in where the speaker " +
+    "clearly said something else.\n" +
+    list.map((t) => `- ${t}`).join("\n")
+  );
+}
+
 // Resolve a cleanup config slice into the prompt + sampling actually used.
 // custom → the user's raw numbers and their base prompt untouched; otherwise
 // the chosen preset's sampling plus its directive appended to the base prompt.
+// The dictionary applies in every mode — preferring the user's spellings is
+// orthogonal to how aggressively the model is allowed to edit.
 function resolveCleanup(cfg) {
-  const base = cfg.systemPrompt || "";
+  const base = (cfg.systemPrompt || "") + dictionaryDirective(cfg.dictionary);
   if (cfg.style === "custom") {
     return { systemPrompt: base, sampling: { ...(cfg.custom || {}) } };
   }

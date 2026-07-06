@@ -165,6 +165,7 @@ function populate() {
   $("cleanup-key").value = current.cleanup.apiKey;
   $("cleanup-model").value = current.cleanup.model;
   populateCleanupStyle();
+  $("cleanup-dictionary").value = (current.cleanup.dictionary || []).join("\n");
   $("cleanup-prompt").value = current.cleanup.systemPrompt;
   selectEngine("cleanup", current.cleanup.engine);
   $("cleanup-builtin-model").value = current.cleanup.builtin.model;
@@ -223,6 +224,12 @@ function collect() {
       apiKey: $("cleanup-key").value.trim(),
       model: $("cleanup-model").value.trim(),
       ...collectCleanupStyle(),
+      // One term per line in the textarea; stored as an array of trimmed,
+      // non-empty lines.
+      dictionary: $("cleanup-dictionary")
+        .value.split("\n")
+        .map((t) => t.trim())
+        .filter(Boolean),
       systemPrompt: $("cleanup-prompt").value,
     },
     audio: {

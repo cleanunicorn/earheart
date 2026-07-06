@@ -9,6 +9,7 @@ const http = require("node:http");
 const { encodeWav, encodeSilenceWav, wavToFloat32, wavDurationSec } = require("../main/util/wav");
 const { stripThinking } = require("../main/services/cleanup");
 const { deepMerge, migrateLegacy, DEFAULTS } = require("../main/settings");
+const { resolveCleanup } = require("../main/cleanup-styles");
 const autostart = require("../main/autostart");
 const { listRemoteModels } = require("../main/services/models-remote");
 const { reconcileTranscript } = require("../renderer/transcript");
@@ -248,6 +249,55 @@ test("customModels defaults to empty and a stored list survives the merge", () =
   // deepMerge replaces arrays wholesale, so a saved custom-models list is kept
   // intact (not element-merged against the empty default) when settings load.
   assert.deepStrictEqual(deepMerge(DEFAULTS, { customModels: stored }).customModels, stored);
+});
+
+/* ---------------- cleanup dictionary ---------------- */
+
+test("dictionary defaults to empty and a stored list survives the merge", () => {
+  assert.deepStrictEqual(DEFAULTS.cleanup.dictionary, []);
+  const stored = ["Earheart", "sherpa-onnx"];
+  assert.deepStrictEqual(
+    deepMerge(DEFAULTS, { cleanup: { dictionary: stored } }).cleanup.dictionary,
+    stored
+  );
+});
+
+test("resolveCleanup injects dictionary terms into the prompt for every style", () => {
+  const preset = resolveCleanup({
+    systemPrompt: "Base prompt.",
+    style: "clean",
+    dictionary: ["Earheart", "sherpa-onnx"],
+  });
+  assert.match(preset.systemPrompt, /Preferred vocabulary/);
+  assert.match(preset.systemPrompt, /- Earheart\n- sherpa-onnx/);
+  // The style directive still applies after the dictionary block.
+  assert.match(preset.systemPrompt, /Editing style:/);
+
+  // The dictionary is orthogonal to the editing style, so custom mode (raw
+  // sampling numbers, base prompt untouched otherwise) gets it too.
+  const custom = resolveCleanup({
+    systemPrompt: "Base prompt.",
+    style: "custom",
+    custom: { temperature: 0.3 },
+    dictionary: ["Earheart"],
+  });
+  assert.match(custom.systemPrompt, /Preferred vocabulary/);
+  assert.match(custom.systemPrompt, /- Earheart/);
+});
+
+test("resolveCleanup leaves the prompt unchanged for an empty or blank dictionary", () => {
+  const base = { systemPrompt: "Base prompt.", style: "custom", custom: {} };
+  assert.strictEqual(resolveCleanup(base).systemPrompt, "Base prompt.");
+  assert.strictEqual(
+    resolveCleanup({ ...base, dictionary: [] }).systemPrompt,
+    "Base prompt."
+  );
+  // Whitespace-only entries (blank textarea lines) must not produce an empty
+  // vocabulary block.
+  assert.strictEqual(
+    resolveCleanup({ ...base, dictionary: ["  ", ""] }).systemPrompt,
+    "Base prompt."
+  );
 });
 
 /* ---------------- start on boot (autostart) ---------------- */

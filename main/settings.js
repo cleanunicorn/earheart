@@ -86,6 +86,12 @@ const DEFAULTS = {
     custom: { ...styleById(DEFAULT_STYLE).sampling },
     timeoutMs: 60000,
     systemPrompt: DEFAULT_CLEANUP_PROMPT,
+    // Preferred terms (names, jargon, product words) the speaker uses and STT
+    // tends to mishear. Injected into the cleanup prompt so near-misses get
+    // corrected to these exact spellings — see dictionaryDirective in
+    // main/cleanup-styles.js. Array of strings; deepMerge replaces arrays
+    // wholesale, so a saved list survives the merge intact.
+    dictionary: [],
   },
   audio: {
     deviceId: "", // empty = system default microphone

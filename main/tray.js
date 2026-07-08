@@ -1,10 +1,11 @@
 // System tray icon and menu. The icon doubles as a recording indicator.
 
-const { Tray, Menu, nativeImage } = require("electron");
+const { Tray, Menu, nativeImage, clipboard } = require("electron");
 const path = require("node:path");
 const windows = require("./windows");
 const settings = require("./settings");
 const updates = require("./updates");
+const history = require("./history");
 
 let tray = null;
 let pipeline = null;
@@ -20,6 +21,7 @@ function icon(name) {
 function buildMenu(app) {
   const cfg = settings.get();
   const state = pipeline.getState();
+  const lastEntry = history.list()[0];
   return Menu.buildFromTemplate([
     {
       label:
@@ -62,6 +64,17 @@ function buildMenu(app) {
       click: () => {
         cfg.output.mode = "clipboard";
         settings.save(cfg);
+      },
+    },
+    { type: "separator" },
+    {
+      label: "Copy last transcription",
+      enabled: !!lastEntry,
+      // Re-read at click time so we copy the freshest entry even if the menu
+      // was built a moment before the dictation landed.
+      click: () => {
+        const entry = history.list()[0];
+        if (entry) clipboard.writeText(entry.text);
       },
     },
     { type: "separator" },

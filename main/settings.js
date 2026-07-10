@@ -62,7 +62,11 @@ const DEFAULTS = {
     livePreview: {
       enabled: true,
       intervalMs: 1200, // how often the in-progress chunk is sent; lower = snappier, more CPU
-      chunkSeconds: 5, // audio per committed chunk (and the most that's ever re-decoded)
+      // Soft target of audio per committed chunk: from here on the overlay
+      // commits at the next natural pause (hard cap 2×). Chunks also feed the
+      // FINAL transcript (only the tail past them is decoded on stop), and
+      // ~10s of context keeps chunk decodes as accurate as a whole-file pass.
+      chunkSeconds: 10,
       cleanupPauseMs: 1000, // stable-for-this-long after a chunk commits before cleaning it
     },
   },
@@ -170,6 +174,13 @@ function migrateLegacy(stored) {
   }
   if (stored.cleanup && stored.cleanup.engine === undefined) {
     stored.cleanup.engine = "remote";
+  }
+  // chunkSeconds 5 was the old default and was never exposed in the settings
+  // UI, so a stored 5 is just a persisted default — lift it to the current
+  // one (larger silence-bounded chunks decode as accurately as a whole-file
+  // pass, which the final-transcript assembly relies on).
+  if (stored.stt?.livePreview?.chunkSeconds === 5) {
+    stored.stt.livePreview.chunkSeconds = 10;
   }
   // Configs written before the style slider existed carried a bare
   // `cleanup.temperature` and no `style`. Fold them onto the "custom" style so

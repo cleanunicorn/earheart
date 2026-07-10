@@ -22,7 +22,7 @@ const { deliver } = require("./output/deliver");
 const history = require("./history");
 const { createLivePreview } = require("./live-preview");
 const { createPersistedRtfEstimator } = require("./util/rtf");
-const { wavDurationSec } = require("./util/wav");
+const { wavDurationSec, wavSliceFromFrame } = require("./util/wav");
 const logger = require("./util/logger");
 
 let state = "idle"; // idle | recording | processing
@@ -129,7 +129,14 @@ function getSttRtf() {
 // phase list. Remote STT (network-bound, no meaningful local estimate) skips
 // the estimate and keeps the indeterminate pulse. `stale` mutes sends from a
 // cancelled/superseded session; the ticker itself dies in `finally` regardless.
-async function transcribeWithEstimate(wav, sttCfg, signal, stale) {
+//
+// `assembly` (builtin only) is the live-preview snapshot when its committed
+// chunk decodes cover the recording's first `decodedSamples` samples intact:
+// then only the tail past that coverage is decoded and joined onto the
+// committed text, so stop→transcript stays near-constant however long the
+// dictation ran. Without a usable snapshot (preview machinery broken, remote
+// STT, no chunk committed yet) the whole recording decodes as before.
+async function transcribeWithEstimate(wav, sttCfg, signal, stale, assembly) {
   const rtf = sttCfg.engine === "builtin" ? getSttRtf() : null;
   if (rtf) {
     // Load the model BEFORE starting the clock: a cold load (first dictation,
@@ -140,7 +147,19 @@ async function transcribeWithEstimate(wav, sttCfg, signal, stale) {
     await engines.ensureStt(sttCfg.builtin.model);
     if (stale()) return "";
   }
-  const durationSec = wavDurationSec(wav);
+  let decodeWav = wav;
+  let committedText = "";
+  if (rtf && assembly && !assembly.broken && assembly.decodedSamples > 0) {
+    decodeWav = wavSliceFromFrame(wav, assembly.decodedSamples);
+    committedText = assembly.committedRaw;
+    // An effectively empty tail (stop landed right on a chunk boundary):
+    // the committed text IS the transcript, no decode needed.
+    if (wavDurationSec(decodeWav) < 0.05) {
+      if (!stale()) sendProgress("transcribing", 1);
+      return committedText;
+    }
+  }
+  const durationSec = wavDurationSec(decodeWav);
   const startedAt = Date.now();
   const elapsedSec = () => (Date.now() - startedAt) / 1000;
   const tick = rtf
@@ -157,7 +176,7 @@ async function transcribeWithEstimate(wav, sttCfg, signal, stale) {
     // default). The bar's ticker above still runs on wall clock — that IS
     // what the user is waiting through.
     let decodeMs = null;
-    const raw = await route.transcribe(wav, sttCfg, signal, {
+    const raw = await route.transcribe(decodeWav, sttCfg, signal, {
       onDecodeMs: (ms) => {
         decodeMs = ms;
       },
@@ -168,10 +187,18 @@ async function transcribeWithEstimate(wav, sttCfg, signal, stale) {
       // bar visibly complete instead of always vanishing short of the end.
       sendProgress("transcribing", 1);
     }
-    return raw;
+    return joinRaw(committedText, raw);
   } finally {
     if (tick) clearInterval(tick);
   }
+}
+
+// Join the committed live-preview text with the decoded tail. Mirrors the
+// live preview's own joinText: a space, and either side may be empty.
+function joinRaw(a, b) {
+  if (!a) return b || "";
+  if (!b) return a;
+  return `${a} ${b}`;
 }
 
 // Sibling of transcribeWithEstimate: run cleanup with its streamed progress.
@@ -214,12 +241,22 @@ function startRecording() {
   const sid = ++session;
   setState("recording");
   const liveOn = cfg.stt.engine === "builtin" && cfg.stt.livePreview?.enabled;
-  // Warm the built-in STT model as recording begins so the first live-preview
-  // partials aren't all dropped while it loads. The drop-if-busy guard discards
-  // every partial tick until a decode is free, so a cold multi-second first load
-  // would starve the whole preview on short dictations (no text ever appears).
-  // Best effort — the authoritative final pass calls ensureStt again regardless.
-  if (liveOn) engines.ensureStt(cfg.stt.builtin.model).catch(() => {});
+  // Warm the built-in models as recording begins, so their load time is hidden
+  // under the time the user spends speaking instead of being paid after stop.
+  // STT: with live preview on this also keeps the first partials from all being
+  // dropped while the model loads (the drop-if-busy guard discards every tick
+  // until a decode is free). Cleanup: loading Gemma takes seconds cold and used
+  // to start only after transcription finished; priming additionally prefills
+  // the static prompt prefix so even the first clean of the session skips it.
+  // Both are best effort — the final pass re-runs ensureStt/ensureCleanup
+  // (idempotent) and surfaces real errors there; a failed warm-up here must
+  // never block the recording.
+  if (cfg.stt.engine === "builtin") {
+    engines.ensureStt(cfg.stt.builtin.model).catch(() => {});
+  }
+  if (cfg.cleanup.enabled && cfg.cleanup.engine === "builtin") {
+    engines.primeCleanup(cfg.cleanup).catch(() => {});
+  }
   const win = windows.createOverlay();
   const begin = () => {
     if (session !== sid) return; // cancelled before the overlay was ready
@@ -228,10 +265,15 @@ function startRecording() {
       sid,
       deviceId: cfg.audio.deviceId,
       maxSeconds: cfg.audio.maxRecordingSeconds,
-      // Live preview only runs on the builtin engine (the HTTP path would be
-      // hammered with repeated full-file uploads). The overlay gates on
-      // `enabled`; we also gate on the engine here (see `liveOn` above).
-      livePreview: liveOn ? cfg.stt.livePreview : { enabled: false },
+      // Chunked partial decoding runs whenever STT is builtin (the committed
+      // chunk decodes become the final transcript's prefix — see
+      // live-preview.js); `display` additionally paints the live transcript
+      // and is the user's toggle. Remote STT gets neither (the HTTP path
+      // would be hammered with repeated uploads).
+      livePreview:
+        cfg.stt.engine === "builtin"
+          ? { ...cfg.stt.livePreview, enabled: true, display: !!liveOn }
+          : { enabled: false },
     });
   };
   // The overlay may still be loading right after launch (or after a renderer
@@ -257,17 +299,25 @@ function cancel() {
     windows.sendToOverlay("record:cancel");
   } else if (state === "processing" && abortController) {
     abortController.abort();
+    // The abort only mutes the reply; the cleanup worker would keep generating
+    // for nothing (and delay the next dictation's clean). Stop it too.
+    engines.cancelClean();
   }
   setState("idle");
   windows.hideOverlay();
 }
 
 async function process(sid, wavArrayBuffer) {
+  const cfg = settings.get();
+  // Snapshot the committed chunk decodes BEFORE cancelling the live preview
+  // (cancel resets them): they are the final transcript's prefix, so the
+  // final pass only decodes the audio tail.
+  const assembly =
+    cfg.stt.engine === "builtin" ? livePreview.snapshotFinal() : null;
   // The final pass is authoritative; stop any partial work so it doesn't
   // contend with the real transcribe/clean on the engine workers.
   livePreview.cancel();
 
-  const cfg = settings.get();
   setState("processing");
   const controller = new AbortController();
   abortController = controller;
@@ -275,9 +325,23 @@ async function process(sid, wavArrayBuffer) {
   const wav = Buffer.from(wavArrayBuffer);
   const stale = () => session !== sid || signal.aborted;
 
+  const builtinCleanup = cfg.cleanup.enabled && cfg.cleanup.engine === "builtin";
+  if (builtinCleanup) {
+    // Free the cleanup worker NOW: an in-flight live-preview clean would
+    // otherwise keep generating and the final clean would queue behind it.
+    engines.cancelClean();
+    // Prefill-ahead: the committed text is a known prefix of the final
+    // transcript, so its prompt prefix can be evaluated on the cleanup worker
+    // WHILE the tail decodes on the STT worker. The final clean then only
+    // prefills the tail's words before generating. Best effort.
+    if (assembly && !assembly.broken && assembly.committedRaw) {
+      engines.primeCleanup(cfg.cleanup, assembly.committedRaw).catch(() => {});
+    }
+  }
+
   try {
     overlayStatus("transcribing");
-    const raw = await transcribeWithEstimate(wav, cfg.stt, signal, stale);
+    const raw = await transcribeWithEstimate(wav, cfg.stt, signal, stale, assembly);
     if (stale()) return;
 
     if (!raw) {

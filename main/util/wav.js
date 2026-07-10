@@ -124,4 +124,50 @@ function wavDurationSec(buf) {
   return Math.max(0.01, frames / Math.max(1, sampleRate));
 }
 
-module.exports = { encodeWav, encodeSilenceWav, wavToFloat32, wavDurationSec, SAMPLE_RATE };
+/**
+ * Number of sample frames in a PCM16 WAV buffer. Same tolerant RIFF walk as
+ * wavDurationSec; a malformed buffer yields 0.
+ * @param {Buffer} buf
+ * @returns {number} frames
+ */
+function wavSampleFrames(buf) {
+  if (!Buffer.isBuffer(buf)) buf = Buffer.from(buf);
+  if (buf.length < 12 || buf.toString("ascii", 0, 4) !== "RIFF") return 0;
+  const { channels, dataSize } = parseRiffChunks(buf);
+  return Math.floor(dataSize / 2 / Math.max(1, channels));
+}
+
+/**
+ * Re-encode the samples of a mono PCM16 WAV from `fromFrame` onward as a new
+ * WAV buffer — the tail slice the final transcription decodes when everything
+ * before `fromFrame` was already decoded chunk by chunk during recording.
+ * Clamped: a `fromFrame` at/past the end yields a valid zero-sample WAV.
+ * @param {Buffer} buf
+ * @param {number} fromFrame
+ * @returns {Buffer}
+ */
+function wavSliceFromFrame(buf, fromFrame) {
+  if (!Buffer.isBuffer(buf)) buf = Buffer.from(buf);
+  const { format, channels, sampleRate, bitsPerSample, dataOffset, dataSize } =
+    parseRiffChunks(buf);
+  if (dataOffset < 0 || format !== 1 || bitsPerSample !== 16 || channels !== 1) {
+    throw new Error("Unsupported WAV for slicing (need mono PCM16)");
+  }
+  const frames = Math.floor(dataSize / 2);
+  const from = Math.max(0, Math.min(frames, Math.floor(fromFrame)));
+  const tail = new Int16Array(frames - from);
+  for (let i = 0; i < tail.length; i++) {
+    tail[i] = buf.readInt16LE(dataOffset + (from + i) * 2);
+  }
+  return encodeWav(tail, sampleRate);
+}
+
+module.exports = {
+  encodeWav,
+  encodeSilenceWav,
+  wavToFloat32,
+  wavDurationSec,
+  wavSampleFrames,
+  wavSliceFromFrame,
+  SAMPLE_RATE,
+};

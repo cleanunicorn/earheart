@@ -17,7 +17,10 @@ function deferred() {
 }
 
 const builtinCfg = (over = {}) => ({
-  stt: { engine: "builtin", livePreview: { cleanupPauseMs: 5 }, ...over.stt },
+  // `enabled` is the preview DISPLAY toggle: on (the app default) paints the
+  // partials and runs live cleanup passes; chunk decoding for final assembly
+  // happens regardless (see the display-off tests below).
+  stt: { engine: "builtin", livePreview: { enabled: true, cleanupPauseMs: 5 }, ...over.stt },
   cleanup: { enabled: true, engine: "builtin", ...over.cleanup },
 });
 
@@ -432,4 +435,128 @@ test("cancel during a cleanup await prevents a re-armed pause timer", async () =
 
   assert.strictEqual(cleanupN, 1, "no second cleanup after cancel");
   assert.strictEqual(cleans(h).length, 0, "cancelled cleanup result not sent");
+});
+
+/* ---------------- final assembly (snapshotFinal) ---------------- */
+
+// Real WAV buffers so wavSampleFrames sees actual sample counts.
+const { encodeWav } = require("../main/util/wav");
+const wavOf = (frames) => {
+  const buf = encodeWav(new Int16Array(frames));
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+};
+// A committed-chunk payload carrying its absolute start offset.
+const finalChunk = (seq, fromSample, frames) => ({
+  seq,
+  final: true,
+  fromSample,
+  wav: wavOf(frames),
+});
+
+test("snapshotFinal covers contiguous committed chunks", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "chunk zero");
+  await h.lp.handleAudio(1, finalChunk(0, 0, 16000));
+  h.setTranscribe(async () => "chunk one");
+  await h.lp.handleAudio(1, finalChunk(1, 16000, 8000));
+  const snap = h.lp.snapshotFinal();
+  assert.strictEqual(snap.committedRaw, "chunk zero chunk one");
+  assert.strictEqual(snap.decodedSamples, 24000);
+  assert.strictEqual(snap.broken, false);
+});
+
+test("a gap between committed chunks breaks the snapshot (fallback to full decode)", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "chunk zero");
+  await h.lp.handleAudio(1, finalChunk(0, 0, 16000));
+  // Chunk 1 never arrives (dropped); chunk 2 starts past the decoded coverage.
+  h.setTranscribe(async () => "chunk two");
+  await h.lp.handleAudio(1, finalChunk(2, 32000, 16000));
+  const snap = h.lp.snapshotFinal();
+  assert.strictEqual(snap.broken, true, "non-contiguous coverage is broken");
+  // The preview display still accumulated both texts.
+  assert.strictEqual(snap.committedRaw, "chunk zero chunk two");
+});
+
+test("a failed final-chunk decode breaks the snapshot", async () => {
+  const h = harness();
+  h.setTranscribe(async () => {
+    throw new Error("decode boom");
+  });
+  await h.lp.handleAudio(1, finalChunk(0, 0, 16000));
+  assert.strictEqual(h.lp.snapshotFinal().broken, true);
+});
+
+test("a failed in-progress decode does NOT break the snapshot", async () => {
+  const h = harness();
+  h.setTranscribe(async () => {
+    throw new Error("decode boom");
+  });
+  await h.lp.handleAudio(1, { seq: 0, final: false, fromSample: 0, wav: wavOf(4000) });
+  h.setTranscribe(async () => "ok");
+  await h.lp.handleAudio(1, finalChunk(0, 0, 16000));
+  const snap = h.lp.snapshotFinal();
+  assert.strictEqual(snap.broken, false);
+  assert.strictEqual(snap.decodedSamples, 16000);
+});
+
+test("a final chunk decodes even while an in-progress decode is in flight", async () => {
+  const h = harness();
+  const d = deferred();
+  h.setTranscribe(() => d.promise);
+  const inProgress = h.lp.handleAudio(1, { seq: 1, final: false, fromSample: 16000, wav: wavOf(4000) });
+  // The committed chunk must not be dropped by drop-if-busy.
+  h.setTranscribe(async () => "committed text");
+  await h.lp.handleAudio(1, finalChunk(0, 0, 16000));
+  d.resolve("live tail");
+  await inProgress;
+  const snap = h.lp.snapshotFinal();
+  assert.strictEqual(snap.broken, false);
+  assert.strictEqual(snap.decodedSamples, 16000);
+  assert.strictEqual(snap.committedRaw, "committed text");
+});
+
+test("a stale in-progress result for an already-committed seq does not resurrect its text", async () => {
+  const h = harness();
+  const d = deferred();
+  h.setTranscribe(() => d.promise);
+  // In-progress decode of chunk 0 hangs...
+  const inProgress = h.lp.handleAudio(1, { seq: 0, final: false, fromSample: 0, wav: wavOf(4000) });
+  // ...while chunk 0's final commits.
+  h.setTranscribe(async () => "final zero");
+  await h.lp.handleAudio(1, finalChunk(0, 0, 16000));
+  const rawsBefore = raws(h).length;
+  d.resolve("stale partial of zero");
+  await inProgress;
+  assert.strictEqual(raws(h).length, rawsBefore, "no repaint from the stale in-progress result");
+  assert.strictEqual(lastRaw(h), "final zero");
+});
+
+test("cancel resets the snapshot", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "text");
+  await h.lp.handleAudio(1, finalChunk(0, 0, 16000));
+  h.lp.cancel();
+  const snap = h.lp.snapshotFinal();
+  assert.strictEqual(snap.committedRaw, "");
+  assert.strictEqual(snap.decodedSamples, 0);
+  assert.strictEqual(snap.broken, false);
+});
+
+/* ---------------- display off (headless chunking) ---------------- */
+
+const displayOffCfg = () =>
+  builtinCfg({ stt: { engine: "builtin", livePreview: { enabled: false, cleanupPauseMs: 5 } } });
+
+test("display off: committed chunks are tracked but nothing is painted or cleaned", async () => {
+  const h = harness({ cfg: displayOffCfg() });
+  h.setTranscribe(async () => "quiet words");
+  await h.lp.handleAudio(1, finalChunk(0, 0, 16000));
+  await tick();
+  assert.strictEqual(h.sent.length, 0, "no overlay traffic with the display off");
+  assert.strictEqual(h.cleanupCalls.length, 0, "no live cleanup passes with the display off");
+  const snap = h.lp.snapshotFinal();
+  assert.strictEqual(snap.committedRaw, "quiet words");
+  assert.strictEqual(snap.decodedSamples, 16000);
+  assert.strictEqual(snap.broken, false);
 });

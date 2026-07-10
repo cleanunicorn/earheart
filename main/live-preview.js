@@ -18,6 +18,16 @@
 // All best-effort and silent: a dropped or failed partial is cosmetic and must
 // never disturb the dictation.
 //
+// Beyond the on-screen preview, the committed chunk decodes double as the
+// FINAL transcript's prefix: snapshotFinal() hands the pipeline the committed
+// text plus how many samples it covers, so the final pass only decodes the
+// audio tail instead of re-decoding the whole recording. That works even with
+// the preview display off (the overlay still commits chunks; nothing is
+// painted). Integrity is tracked per commit — each final chunk must start
+// exactly where decoded coverage ends (`fromSample === decodedSamples`) and
+// decode successfully, else the snapshot is marked broken and the final pass
+// falls back to the full decode. Never lose the user's words.
+//
 // Dependencies are injected so the module stays free of the pipeline's private
 // session/state and is unit-testable:
 //   runTranscribe(wav, cfg.stt, signal) -> Promise<string>
@@ -25,6 +35,9 @@
 //   sendToOverlay(channel, payload)
 //   getSettings() -> settings object
 //   isCurrent(sid) -> true iff sid is the active, still-recording session
+
+const { wavSampleFrames } = require("./util/wav");
+
 function joinText(a, b) {
   if (!a) return b;
   if (!b) return a;
@@ -33,7 +46,10 @@ function joinText(a, b) {
 
 function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettings, isCurrent, onError }) {
   const reportError = onError || (() => {});
-  let sttBusy = false;
+  // Count rather than a flag: a committed-chunk decode may legitimately overlap
+  // an in-progress one (finals skip drop-if-busy — see handleAudio), and two
+  // finishing out of order must not free the busy state early.
+  let sttInFlight = 0;
   let cleanupBusy = false;
   let abortController = null; // aborts in-flight partial work when recording ends
   // The last partial-error message we surfaced. A persistent failure (e.g. the
@@ -46,6 +62,11 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   let committedRaw = ""; // text from finalized chunks (never re-decoded)
   let liveRaw = ""; // decode of the current in-progress chunk (replaced each tick)
   let lastSeq = -1; // highest chunk seq we've committed
+  // Final-assembly bookkeeping: committedRaw covers exactly the recording's
+  // first `decodedSamples` samples — unless `broken`, which flags any hole in
+  // that coverage (a final chunk dropped, failed, or arriving out of order).
+  let decodedSamples = 0;
+  let broken = false;
   // Cleanup change marker — the trimmed committedRaw snapshot the last cleanup
   // pass consumed. The cleaned text isn't stored (it's sent straight to the
   // overlay); this is all the cleanup side keeps. Always a trimmed value, so the
@@ -58,6 +79,8 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
     liveRaw = "";
     lastSeq = -1;
     lastCleanedRaw = "";
+    decodedSamples = 0;
+    broken = false;
   }
 
   function cancel() {
@@ -72,10 +95,16 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
     // Don't force-clear cleanupBusy: an in-flight cleanup clears it in its own
     // finally (and its aborted signal makes it drop its result). Clearing it here
     // would let a new session start a second concurrent cleanup on the engine
-    // worker before the old one returns. sttBusy is cleared so the next session's
-    // raw preview isn't gated on a slow in-flight transcribe.
-    sttBusy = false;
+    // worker before the old one returns. sttInFlight is cleared so the next
+    // session's raw preview isn't gated on a slow in-flight transcribe.
+    sttInFlight = 0;
     reset();
+  }
+
+  // The committed transcript and the exact sample coverage it stands for, for
+  // the pipeline's final assembly. Read BEFORE cancel() (which resets it).
+  function snapshotFinal() {
+    return { committedRaw: committedRaw.trim(), decodedSamples, broken };
   }
 
   // A partial is stale the moment its session ends, recording stops, or its work
@@ -97,15 +126,25 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
 
   // Handle one chunk's audio. `seq` identifies the chunk; `final` means this is
   // the last send of that chunk (commit it). A growing in-progress chunk arrives
-  // as repeated non-final sends with the same seq.
-  async function handleAudio(sid, { seq, final, wav: wavArrayBuffer } = {}) {
+  // as repeated non-final sends with the same seq. `fromSample` is the absolute
+  // sample offset the chunk starts at — final assembly's contiguity check.
+  async function handleAudio(sid, { seq, final, fromSample, wav: wavArrayBuffer } = {}) {
     if (!isCurrent(sid)) return;
-    if (sttBusy) return; // drop-if-busy: keep up with the latest audio only
     const cfg = getSettings();
     if (cfg.stt.engine !== "builtin") return;
+    // Drop-if-busy applies to in-progress ticks only (cosmetic, replaceable).
+    // A final chunk is sent exactly once — dropping it would punch a hole in
+    // the committed transcript and force the final pass back to a full decode
+    // — so it always decodes (the worker serializes; at most one extra queues,
+    // since commits are many seconds apart).
+    if (sttInFlight > 0 && !final) return;
+    // The preview display is optional; the chunk decodes feeding the final
+    // assembly are not. With the display off only finals arrive (the overlay
+    // sends no in-progress ticks), and nothing is painted.
+    const display = !!cfg.stt.livePreview?.enabled;
     if (!abortController) abortController = new AbortController();
     const { signal } = abortController;
-    sttBusy = true;
+    sttInFlight++;
     try {
       const wav = Buffer.from(wavArrayBuffer);
       const raw = await runTranscribe(wav, cfg.stt, signal);
@@ -118,26 +157,43 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
         lastSeq = seq;
         committedRaw = joinText(committedRaw, text);
         liveRaw = "";
-        pushRaw();
-        scheduleCleanup(sid, cfg, signal);
-      } else {
-        // In-progress chunk: replace the live tail.
+        // Contiguous coverage only: the chunk must start exactly where decoded
+        // coverage ends. Anything else (an earlier final dropped or failed, an
+        // out-of-order commit, an unparseable buffer) breaks the snapshot for
+        // final assembly — the preview display above is unaffected.
+        const frames = wavSampleFrames(wav);
+        if (!broken && fromSample === decodedSamples && frames > 0) {
+          decodedSamples = fromSample + frames;
+        } else {
+          broken = true;
+        }
+        if (display) {
+          pushRaw();
+          scheduleCleanup(sid, cfg, signal);
+        }
+      } else if (!final) {
+        // In-progress chunk: replace the live tail. A stale in-progress result
+        // for an already-committed seq must not resurrect its text.
+        if (seq <= lastSeq) return;
         if (text === liveRaw) return;
         liveRaw = text;
-        pushRaw();
+        if (display) pushRaw();
       }
     } catch (err) {
-      // A failed partial is cosmetic — the final pass is authoritative, so never
-      // let it disturb the dictation. But report it (deduped) instead of eating
-      // it silently: a persistently blank preview is almost always a surfaced-here
-      // error (model loading, not downloaded, or a decode failure).
+      // A failed partial is cosmetic for the preview — but a failed FINAL chunk
+      // means the committed transcript is missing words, so final assembly must
+      // fall back to the full decode.
+      if (final) broken = true;
+      // Report (deduped) instead of eating it silently: a persistently blank
+      // preview is almost always a surfaced-here error (model loading, not
+      // downloaded, or a decode failure).
       const msg = err?.message || String(err);
       if (msg !== lastErrorLogged) {
         lastErrorLogged = msg;
         reportError(err);
       }
     } finally {
-      sttBusy = false;
+      sttInFlight = Math.max(0, sttInFlight - 1);
     }
   }
 
@@ -193,7 +249,7 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
     }
   }
 
-  return { handleAudio, cancel };
+  return { handleAudio, cancel, snapshotFinal };
 }
 
 module.exports = { createLivePreview };

@@ -608,3 +608,30 @@ test("idle model unload defaults to a finite window and is overridable", () => {
   const custom = deepMerge(DEFAULTS, { engines: { idleUnloadMinutes: 10 } });
   assert.strictEqual(custom.engines.idleUnloadMinutes, 10);
 });
+
+test("wavSampleFrames counts frames; 0 for malformed buffers", () => {
+  const { wavSampleFrames } = require("../main/util/wav");
+  const samples = new Int16Array(1234);
+  assert.strictEqual(wavSampleFrames(encodeWav(samples, 16000)), 1234);
+  assert.strictEqual(wavSampleFrames(Buffer.from("not a wav")), 0);
+});
+
+test("wavSliceFromFrame keeps the exact tail samples", () => {
+  const { wavSliceFromFrame } = require("../main/util/wav");
+  const samples = new Int16Array(2000);
+  for (let i = 0; i < samples.length; i++) samples[i] = i - 1000;
+  const tail = wavSliceFromFrame(encodeWav(samples, 16000), 1500);
+  const { samples: decoded, sampleRate } = wavToFloat32(tail);
+  assert.strictEqual(sampleRate, 16000);
+  assert.strictEqual(decoded.length, 500);
+  // First tail sample is original frame 1500 (value 500).
+  assert.ok(Math.abs(decoded[0] - 500 / 32768) < 1e-6);
+  assert.ok(Math.abs(decoded[499] - 999 / 32768) < 1e-6);
+});
+
+test("wavSliceFromFrame clamps a past-the-end offset to an empty wav", () => {
+  const { wavSliceFromFrame, wavSampleFrames } = require("../main/util/wav");
+  const wav = encodeWav(new Int16Array(100), 16000);
+  assert.strictEqual(wavSampleFrames(wavSliceFromFrame(wav, 5000)), 0);
+  assert.strictEqual(wavSampleFrames(wavSliceFromFrame(wav, -5)), 100);
+});

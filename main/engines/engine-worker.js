@@ -32,6 +32,7 @@ let recognizer = null; // sherpa-onnx OfflineRecognizer
 let sttModelId = null;
 
 let llama = null; // node-llama-cpp instance
+let llamaGpuMode; // undefined until first load; null = auto, false = CPU
 let llamaModel = null;
 let llamaContext = null;
 let llamaSession = null;
@@ -83,7 +84,9 @@ async function loadStt({ dir, sherpa, modelId }) {
         joiner: path.join(dir, sherpa.joiner),
       },
       tokens: path.join(dir, sherpa.tokens),
-      numThreads: Math.max(1, Math.min(4, require("node:os").cpus().length - 1)),
+      // Cap 8, not 4: decode is memory-bound and stops scaling there (~20%
+      // faster than 4 threads on an 8+-core desktop; more threads regress).
+      numThreads: Math.max(1, Math.min(8, require("node:os").cpus().length - 1)),
       provider: "cpu",
       modelType: sherpa.modelType || "nemo_transducer",
       debug: false,
@@ -124,14 +127,69 @@ async function loadCleanup({ modelPath, contextSize }) {
     throw new Error(`node-llama-cpp not available: ${err.message}`);
   }
   await disposeCleanup();
-  llama = llama || (await mod.getLlama());
-  llamaModel = await llama.loadModel({ modelPath });
-  llamaContext = await llamaModel.createContext({
-    contextSize: contextSize || DEFAULT_CONTEXT_SIZE,
+  // GPU auto-detect first, then a CPU retry: getLlama() happily picks a GPU
+  // whose free VRAM can't actually fit the model + context (a busy desktop
+  // GPU), and the failure only surfaces at loadModel/createContext. Without
+  // the retry that machine loses cleanup entirely (every dictation falls back
+  // to the raw transcript). EARHEART_LLAMA_GPU=off skips the GPU attempt.
+  const attempts =
+    process.env.EARHEART_LLAMA_GPU === "off" ? [false] : [null, false];
+  let lastErr = null;
+  for (const gpu of attempts) {
+    try {
+      if (!llama || llamaGpuMode !== gpu) {
+        llama = await mod.getLlama(gpu === false ? { gpu: false } : {});
+        llamaGpuMode = gpu;
+      }
+      llamaModel = await llama.loadModel({ modelPath });
+      llamaContext = await llamaModel.createContext({
+        contextSize: contextSize || DEFAULT_CONTEXT_SIZE,
+      });
+      llamaSession = null;
+      cleanupModelPath = modelPath;
+      return { ready: true };
+    } catch (err) {
+      lastErr = err;
+      await disposeCleanup();
+      if (gpu !== false) {
+        console.error(
+          `[engine-worker] cleanup load on GPU failed (${err.message}); retrying on CPU`
+        );
+        llama = null; // force a fresh CPU-only getLlama on the retry
+      }
+    }
+  }
+  throw lastErr;
+}
+
+// The cleanup session is single-instance mutable state (resetChatHistory +
+// prompt/preload must never interleave), but its callers overlap by design:
+// the pipeline cancels live-preview cleans and prefill-primes while decoding.
+// So every session op runs through this queue, and each gets an
+// AbortController registered while queued/running — "cancel-clean" aborts them
+// all, which both stops an in-flight generation (freeing the worker for the
+// final clean) and skips queued ops before they start.
+let cleanupQueue = Promise.resolve();
+const cleanupAborts = new Set();
+
+function queuedCleanupOp(fn) {
+  const ac = new AbortController();
+  cleanupAborts.add(ac);
+  const run = cleanupQueue.then(async () => {
+    try {
+      if (ac.signal.aborted) throw new Error("cleanup cancelled");
+      return await fn(ac.signal);
+    } finally {
+      cleanupAborts.delete(ac);
+    }
   });
-  llamaSession = null;
-  cleanupModelPath = modelPath;
-  return { ready: true };
+  cleanupQueue = run.catch(() => {});
+  return run;
+}
+
+async function cancelClean() {
+  for (const ac of cleanupAborts) ac.abort();
+  return { cancelled: cleanupAborts.size };
 }
 
 // Map a resolved cleanup sampling profile onto node-llama-cpp prompt options.
@@ -146,14 +204,13 @@ function samplingOptions(sampling) {
   return opts;
 }
 
-async function clean({ transcript, systemPrompt, sampling }, emitProgress) {
-  if (!llamaContext) throw new Error("Cleanup model not loaded");
-  const mod = await import("node-llama-cpp");
-  // No systemPrompt: tested against Gemma 1B, putting the cleanup rules in the
-  // chat system prompt makes the small model behave like an assistant and
-  // answer/expand the dictation instead of cleaning it. Inlining the rules and
-  // the transcript into a single user turn keeps it in "transform this text"
-  // mode and returns just the cleaned text. (See scripts/try-cleanup-prompts.)
+// Lazily create (or reset) the single chat session all cleanup ops share.
+// No systemPrompt: tested against Gemma 1B, putting the cleanup rules in the
+// chat system prompt makes the small model behave like an assistant and
+// answer/expand the dictation instead of cleaning it. Inlining the rules and
+// the transcript into a single user turn keeps it in "transform this text"
+// mode and returns just the cleaned text. (See scripts/try-cleanup-prompts.)
+function freshSession(mod) {
   if (!llamaSession) {
     llamaSession = new mod.LlamaChatSession({
       contextSequence: llamaContext.getSequence(),
@@ -161,22 +218,49 @@ async function clean({ transcript, systemPrompt, sampling }, emitProgress) {
   } else {
     llamaSession.resetChatHistory();
   }
-  // The transcript is labelled as data and followed by a cue, so the model
-  // continues with the cleaned text rather than a reply to its content.
-  const userTurn =
-    `${systemPrompt}\n\nTranscript:\n${transcript}\n\nCleaned transcript:`;
-  // Cleaned output tracks the input's length closely (punctuation in, fillers
-  // out), so generated-chars / transcript-chars is an honest progress ratio.
-  const total = Math.max(1, transcript.length);
-  let generated = 0;
-  const out = await llamaSession.prompt(userTurn, {
-    ...samplingOptions(sampling),
-    onTextChunk: (text) => {
-      generated += text.length;
-      if (emitProgress) emitProgress(Math.min(CLEAN_PROGRESS_CAP, generated / total));
-    },
+  return llamaSession;
+}
+
+async function clean({ transcript, systemPrompt, sampling }, emitProgress) {
+  if (!llamaContext) throw new Error("Cleanup model not loaded");
+  const mod = await import("node-llama-cpp");
+  return queuedCleanupOp(async (signal) => {
+    const session = freshSession(mod);
+    // The transcript is labelled as data and followed by a cue, so the model
+    // continues with the cleaned text rather than a reply to its content.
+    // Re-prompting with the same leading text re-uses the context's evaluated
+    // state (llama.cpp skips the shared token prefix), which is what makes the
+    // prefill-ahead of "prime-cleanup" pay off here.
+    const userTurn =
+      `${systemPrompt}\n\nTranscript:\n${transcript}\n\nCleaned transcript:`;
+    // Cleaned output tracks the input's length closely (punctuation in, fillers
+    // out), so generated-chars / transcript-chars is an honest progress ratio.
+    const total = Math.max(1, transcript.length);
+    let generated = 0;
+    const out = await session.prompt(userTurn, {
+      ...samplingOptions(sampling),
+      signal,
+      onTextChunk: (text) => {
+        generated += text.length;
+        if (emitProgress) emitProgress(Math.min(CLEAN_PROGRESS_CAP, generated / total));
+      },
+    });
+    return (out || "").trim();
   });
-  return (out || "").trim();
+}
+
+// Prefill-ahead: evaluate a known prompt prefix (static instructions, plus the
+// already-committed transcript when available) into the context without
+// generating anything, so the next clean() starts generating almost
+// immediately. Cancellable and best-effort like the live-preview cleans.
+async function primeCleanup({ text }) {
+  if (!llamaContext) throw new Error("Cleanup model not loaded");
+  const mod = await import("node-llama-cpp");
+  return queuedCleanupOp(async (signal) => {
+    const session = freshSession(mod);
+    await session.preloadPrompt(text || "", { signal });
+    return { primed: true };
+  });
 }
 
 async function disposeCleanup() {
@@ -235,6 +319,8 @@ const HANDLERS = {
   "unload-stt": disposeStt,
   "load-cleanup": loadCleanup,
   clean,
+  "prime-cleanup": primeCleanup,
+  "cancel-clean": cancelClean,
   "unload-cleanup": disposeCleanup,
 };
 

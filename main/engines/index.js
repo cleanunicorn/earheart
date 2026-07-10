@@ -112,6 +112,28 @@ async function ensureCleanup(modelId) {
   }
 }
 
+// Prefill-ahead: load the cleanup model if needed and evaluate the prompt
+// prefix — the static instructions plus whatever transcript prefix is already
+// known (the live preview's committed text) — into the worker's context, so
+// the next clean() only prefills what follows before generating. The prompt
+// built here MUST stay a strict string prefix of clean()'s user turn for the
+// KV reuse to hit. Best effort: callers fire-and-forget it.
+async function primeCleanup(cfg, transcriptPrefix = "") {
+  await ensureCleanup(cfg.builtin.model);
+  const { systemPrompt } = resolveCleanup(cfg);
+  return cleanupHost.request("prime-cleanup", {
+    text: `${systemPrompt}\n\nTranscript:\n${transcriptPrefix}`,
+  });
+}
+
+// Abort any in-flight or queued cancellable cleanup work (live-preview cleans,
+// primes) so the worker is free for the authoritative final clean. A no-op
+// when the worker has nothing loaded — never spawns a worker just to cancel.
+function cancelClean() {
+  if (loadedCleanup === null) return;
+  cleanupHost.request("cancel-clean").catch(() => {});
+}
+
 // Accepts a `signal` for parity with the HTTP cleanup client (see transcribe).
 // `onProgress` (0..1) relays the worker's token-streaming progress, so the
 // pipeline can drive a determinate bar while the model generates.
@@ -190,6 +212,8 @@ module.exports = {
   transcribe,
   ensureCleanup,
   clean,
+  primeCleanup,
+  cancelClean,
   stop,
   unloadIdle,
   registry,

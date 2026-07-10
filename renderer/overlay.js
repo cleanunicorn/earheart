@@ -263,27 +263,62 @@ function encodeWavRange(chunks, from, to) {
   return encodeWav([flat]);
 }
 
+// A chunk boundary is only committed when the trailing QUIET_WINDOW_SEC of
+// audio sits below QUIET_RMS — i.e. in a natural pause — because a boundary
+// that lands mid-word decodes that word wrong on both sides, and the committed
+// chunk texts are reused verbatim in the FINAL transcript (see main/
+// live-preview.js). The hard cap (2× the soft target) bounds the wait through
+// uninterrupted speech: worst case the boundary is forced mid-speech, which
+// costs a little accuracy on one word rather than unbounded re-decode cost.
+const QUIET_WINDOW_SEC = 0.3;
+const QUIET_RMS = 0.012;
+
+// RMS of the trailing `windowSamples` recorded samples.
+function trailingRms(chunks, windowSamples) {
+  let needed = windowSamples;
+  let sum = 0;
+  let count = 0;
+  for (let i = chunks.length - 1; i >= 0 && needed > 0; i--) {
+    const c = chunks[i];
+    const take = Math.min(needed, c.length);
+    for (let j = c.length - take; j < c.length; j++) sum += c[j] * c[j];
+    count += take;
+    needed -= take;
+  }
+  return count > 0 ? Math.sqrt(sum / count) : 0;
+}
+
 // Live preview, append-only and chunked: each tick we ship only the audio of the
 // CURRENT in-progress chunk (the samples since the last committed boundary), so
 // decode cost stays flat regardless of how long the dictation runs. Once that
-// chunk reaches `chunkSeconds`, we send it one last time marked `final` and
-// advance the boundary, freezing it into the committed transcript on the main
-// side and starting a fresh chunk.
+// chunk reaches `chunkSeconds` AND the dictation pauses (or the hard cap
+// forces it), we send it one last time marked `final` and advance the
+// boundary, freezing it into the committed transcript on the main side and
+// starting a fresh chunk.
+//
+// With `display` off, the chunking still runs — the committed chunk decodes
+// become the final transcript's prefix — but the in-progress ticks (pure
+// preview cosmetics) are skipped, so no per-tick decode cost is paid.
 function sendPartial() {
   if (!recording || !livePreview) return;
   const total = totalSamples(recording.chunks);
   const from = recording.committedSamples;
   if (total <= from) return; // nothing new recorded since the last commit
 
-  const chunkSamples = (livePreview.chunkSeconds || 5) * SAMPLE_RATE;
+  const chunkSamples = (livePreview.chunkSeconds || 10) * SAMPLE_RATE;
   const liveSamples = total - from;
-  const final = liveSamples >= chunkSamples;
+  const final =
+    liveSamples >= chunkSamples * 2 ||
+    (liveSamples >= chunkSamples &&
+      trailingRms(recording.chunks, Math.floor(QUIET_WINDOW_SEC * SAMPLE_RATE)) < QUIET_RMS);
+  if (!final && !livePreview.display) return;
 
   const wav = encodeWavRange(recording.chunks, from, total);
   earheart.send("audio:partial", {
     sid: recording.sid,
     seq: recording.seq,
     final,
+    fromSample: from,
     wav,
   });
 

@@ -14,6 +14,7 @@ const LISTEN = new Set([
   "overlay:hide",
   "models:progress",
   "updates:state",
+  "updates:prompt",
 ]);
 
 const SEND = new Set([
@@ -55,6 +56,8 @@ const INVOKE = new Set([
   "updates:install",
   "updates:cancel",
   "updates:skip",
+  "updates:dismiss",
+  "updates:remind-off",
 ]);
 
 contextBridge.exposeInMainWorld("earheart", {

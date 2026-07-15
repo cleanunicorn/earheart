@@ -57,21 +57,6 @@ let notifiedVersion = null;
 let pendingInfo = null; // parsed feed entry for `latest`
 let downloadedPath = null; // verified asset waiting to be installed
 
-// The overlay update prompt: a banner on the always-on-top card (an OS toast
-// alone proved far too easy to miss). `promptShowing` means the banner is up
-// and the overlay is pinned open for it; `promptPending` means it's queued —
-// an update found mid-dictation waits and attaches under the result card once
-// the text has landed, so the prompt never interrupts someone mid-sentence.
-// `promptSolo` means the card came up for the prompt alone (no dictation
-// behind it), so the renderer hides its recording controls.
-let promptShowing = false;
-let promptPending = false;
-let promptSolo = false;
-// The version the banner has already had its say about this run: dismissing it
-// (or starting another dictation) must not make it pop back on the next poll.
-let promptedVersion = null;
-let remindWasOn = true;
-
 const feedBase = () => process.env.EARHEART_UPDATE_FEED || feed.DEFAULT_FEED_BASE;
 const feedOverridden = () => Boolean(process.env.EARHEART_UPDATE_FEED);
 
@@ -83,15 +68,6 @@ function setState(patch) {
     /* windows may be gone during quit */
   }
   if (onStateChange) onStateChange(state);
-  // Keep a showing banner in step with the state machine: it narrates the
-  // download, the "restart to finish" hold and any failure. Only "idle" (the
-  // update went away — skipped, or no longer newer) takes it down; "checking"
-  // deliberately doesn't, so a background poll can't blank the banner the user
-  // is reading.
-  if (promptShowing) {
-    if (state.status === "idle") hidePrompt();
-    else sendPrompt();
-  }
 }
 
 function getState() {
@@ -126,12 +102,6 @@ function init(callbacks = {}) {
 
   sweepLeftovers().catch((err) => logger.warn(`update sweep failed: ${err.message}`));
 
-  remindWasOn = settings.get().updates.remind !== false;
-
-  // A prompt deferred because the user was mid-dictation surfaces once the
-  // pipeline returns to idle — on the result card they're already looking at.
-  dictation.onStateChange(onDictationState);
-
   // In dev only run automatic checks when a test feed is set, so `npm start`
   // stays network-free by default.
   if (installKind === "dev" && !feedOverridden()) return;
@@ -152,11 +122,6 @@ function disarmTimers() {
 }
 
 function onSettingsChanged() {
-  // Turning reminders back on re-arms the prompt for the version the user
-  // silenced, so the next check can surface it again.
-  const remindOn = settings.get().updates.remind !== false;
-  if (remindOn && !remindWasOn) promptedVersion = null;
-  remindWasOn = remindOn;
   if (installKind === "dev" && !feedOverridden()) return;
   armTimers();
 }
@@ -204,15 +169,10 @@ async function check({ manual = false } = {}) {
     }
     pendingInfo = info;
     setState({ status: "available", latest: info.version, error: null });
-    // A manual check is answered where it was asked (Settings shows the update
-    // inline) — no toast, and no card popping up over the window the user is
-    // already looking at.
-    if (manual) return;
-    if (notifiedVersion !== info.version) {
+    if (!manual && notifiedVersion !== info.version) {
       notifiedVersion = info.version;
       notifyAvailable(info.version);
     }
-    maybePrompt();
   } catch (err) {
     logger.warn(`update check failed: ${err.message}`);
     pendingInfo = null;
@@ -224,13 +184,12 @@ async function check({ manual = false } = {}) {
 }
 
 function notifyAvailable(version) {
-  if (settings.get().updates.remind === false) return;
   try {
     const note = new Notification({
       title: `Earheart ${version} is available`,
       body:
         state.method === "install"
-          ? "Update from the prompt on screen, the tray menu, or Settings → Advanced."
+          ? "Update from the tray menu or Settings → Advanced."
           : "Download it from the releases page (see Settings → Advanced).",
     });
     note.on("click", () => windows.openSettings());
@@ -238,87 +197,6 @@ function notifyAvailable(version) {
   } catch (err) {
     logger.warn(`update notification failed: ${err.message}`);
   }
-}
-
-// --- the overlay prompt ---------------------------------------------------
-
-function sendPrompt() {
-  windows.sendToOverlay("updates:prompt", {
-    version: state.latest || "",
-    current: state.current,
-    status: state.status,
-    method: state.method,
-    progress: state.progress,
-    error: state.error,
-    solo: promptSolo,
-  });
-}
-
-/** Put the banner up now, or queue it if the user is mid-dictation. */
-function maybePrompt() {
-  if (state.status !== "available" || !state.latest) return;
-  if (settings.get().updates.remind === false) return;
-  if (promptedVersion === state.latest) return;
-  promptedVersion = state.latest;
-  if (dictation.getState() !== "idle") {
-    // Mid-dictation: the card belongs to the words being spoken. Wait for the
-    // text to land and attach the prompt to the result they're already reading.
-    promptPending = true;
-    return;
-  }
-  showPrompt();
-}
-
-function showPrompt() {
-  promptPending = false;
-  promptShowing = true;
-  // Solo when nothing else is on the card: the overlay comes up for the prompt
-  // alone (this is what the user sees shortly after launch). Otherwise it
-  // attaches under a dictation that has just finished.
-  promptSolo = !windows.isOverlayVisible();
-  // Pin first: the pipeline's post-dictation auto-hide is already ticking, and
-  // it must not fade the card out from under the banner.
-  windows.setOverlayPinned(true);
-  if (promptSolo) windows.showOverlay();
-  sendPrompt();
-}
-
-function hidePrompt() {
-  promptPending = false;
-  if (!promptShowing) return;
-  promptShowing = false;
-  promptSolo = false;
-  windows.sendToOverlay("updates:prompt", null);
-  windows.setOverlayPinned(false);
-  // The card only existed for the prompt (or its dictation is long finished and
-  // its auto-hide fired while we held it open), so take it down. A dictation
-  // that's starting or running keeps it — that's whose card it is now.
-  if (dictation.getState() === "idle") windows.hideOverlay();
-}
-
-function onDictationState(next) {
-  // A new dictation takes the card back. The banner has had its say; the tray
-  // and Settings still carry the update.
-  if (next !== "idle") hidePrompt();
-  else if (promptPending) showPrompt();
-}
-
-/** "Later": gone for this run, asked again on the next launch. */
-function dismissPrompt() {
-  hidePrompt();
-}
-
-/**
- * "Don't remind me": no more banners, no more toasts. Checks keep running, so
- * the tray and Settings still offer the update — this silences the
- * interruption, it doesn't hide the update.
- */
-function stopReminding() {
-  const cfg = settings.get();
-  cfg.updates.remind = false;
-  settings.save(cfg);
-  remindWasOn = false;
-  hidePrompt();
 }
 
 /**
@@ -329,7 +207,6 @@ function stopReminding() {
 async function startUpdate() {
   if (state.method === "open-releases") {
     shell.openExternal(feed.RELEASES_PAGE);
-    hidePrompt(); // the browser has it from here
     return;
   }
   if (state.status === "ready") return installNow();
@@ -622,8 +499,6 @@ module.exports = {
   installNow,
   cancel,
   skipVersion,
-  dismissPrompt,
-  stopReminding,
   onSettingsChanged,
   dispose,
 };

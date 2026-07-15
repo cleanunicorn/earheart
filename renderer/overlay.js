@@ -14,16 +14,6 @@ const transcriptCleanEl = document.getElementById("transcript-clean");
 const transcriptRawEl = document.getElementById("transcript-raw");
 const progressEl = document.getElementById("progress");
 const progressFill = document.getElementById("progress-fill");
-const updateEl = document.getElementById("update");
-const updateTitle = document.getElementById("update-title");
-const updateNote = document.getElementById("update-note");
-const updateBar = document.getElementById("update-bar");
-const updateBarFill = document.getElementById("update-bar-fill");
-const updateNow = document.getElementById("update-now");
-const updateOuts = document.getElementById("update-outs");
-const updateSkip = document.getElementById("update-skip");
-const updateNever = document.getElementById("update-never");
-const updateClose = document.getElementById("update-close");
 
 let recording = null; // { sid, stream, source, recorder, chunks, startedAt, timerId, maxTimerId, partialTimerId }
 let generation = 0; // bumped on every start/teardown to invalidate stale awaits
@@ -715,91 +705,6 @@ earheart.on("pipeline:status", ({ status, detail }) => {
       break;
   }
 });
-
-// The update prompt. The main process decides WHEN it appears (never over a
-// dictation in flight) and holds the card open for it; the renderer just paints
-// the payload and reports the four exits back. A null payload takes it down.
-let updatePrompt = null;
-
-// Per status: what the main button says and which handler it calls; whether it
-// is the recommended action (amber) or just an escape hatch (Cancel, during a
-// download nobody needs talking into); and whether the two "stop bothering me"
-// exits still make sense — they don't once the update is already downloading.
-const UPDATE_ACTIONS = {
-  available: { channel: "updates:apply", primary: true, outs: true },
-  downloading: { label: "Cancel", channel: "updates:cancel", primary: false, outs: false },
-  ready: { label: "Restart now", channel: "updates:install", primary: true, outs: false },
-  installing: { label: "", channel: null, primary: false, outs: false },
-  error: { label: "Try again", channel: "updates:apply", primary: true, outs: true },
-};
-
-function updateText(p) {
-  const pct = Math.round((p.progress?.fraction || 0) * 100);
-  switch (p.status) {
-    case "downloading":
-      return [`Downloading ${p.version}…`, `${pct}% of the update`];
-    case "ready":
-      return [`Earheart ${p.version} is ready`, "Restart to finish the update."];
-    case "installing":
-      return ["Installing the update…", "Earheart will restart."];
-    case "error":
-      return ["Update failed", p.error || "Something went wrong."];
-    default:
-      return [
-        `Earheart ${p.version} is available`,
-        p.method === "install"
-          ? `You're on ${p.current}. It takes a few seconds.`
-          : "Open the releases page to download it.",
-      ];
-  }
-}
-
-function renderUpdatePrompt() {
-  const p = updatePrompt;
-  if (!p) {
-    updateEl.hidden = true;
-    card.removeAttribute("data-update");
-    syncOverlayHeight();
-    return;
-  }
-  card.dataset.update = p.solo ? "solo" : "attached";
-  const [title, note] = updateText(p);
-  updateTitle.textContent = title;
-  updateNote.textContent = note;
-
-  const action = UPDATE_ACTIONS[p.status] || UPDATE_ACTIONS.available;
-  updateNow.textContent =
-    action.label || (p.method === "install" ? "Update now" : "Open releases page");
-  updateNow.hidden = !action.channel;
-  updateNow.classList.toggle("primary", action.primary);
-  updateNow.classList.toggle("quiet", !action.primary);
-  updateOuts.hidden = !action.outs;
-  // Downloading is the one state the user can't just wave away: cancelling is
-  // the exit, and it's right there as the only button.
-  updateClose.hidden = p.status === "downloading" || p.status === "installing";
-
-  updateBar.hidden = p.status !== "downloading";
-  if (!updateBar.hidden) {
-    const pct = Math.max(0, Math.min(100, (p.progress?.fraction || 0) * 100));
-    updateBarFill.style.width = `${pct.toFixed(1)}%`;
-  }
-
-  updateEl.hidden = false;
-  syncOverlayHeight();
-}
-
-earheart.on("updates:prompt", (payload) => {
-  updatePrompt = payload || null;
-  renderUpdatePrompt();
-});
-
-updateNow.addEventListener("click", () => {
-  const action = UPDATE_ACTIONS[updatePrompt?.status] || UPDATE_ACTIONS.available;
-  if (action.channel) earheart.invoke(action.channel);
-});
-updateSkip.addEventListener("click", () => earheart.invoke("updates:skip"));
-updateNever.addEventListener("click", () => earheart.invoke("updates:remind-off"));
-updateClose.addEventListener("click", () => earheart.invoke("updates:dismiss"));
 
 earheart.on("overlay:show", () => {
   // The main process resets the window to the base card height on show; mirror

@@ -81,24 +81,5 @@ app.whenReady().then(async () => {
   await sleep(400);
   await shot(overlay, "overlay-done");
 
-  // The update prompt, in both the shapes the user meets it in: attached under
-  // a dictation that has just finished (main only ever raises it there, never
-  // mid-sentence), and on its own shortly after launch.
-  const update = {
-    version: "0.19.0",
-    current: "0.18.1",
-    method: "install",
-    status: "available",
-    progress: null,
-    error: null,
-  };
-  overlay.webContents.send("updates:prompt", { ...update, solo: false });
-  await sleep(400);
-  await shot(overlay, "overlay-update");
-
-  overlay.webContents.send("updates:prompt", { ...update, solo: true });
-  await sleep(400);
-  await shot(overlay, "overlay-update-solo");
-
   app.exit(0);
 });

@@ -20,7 +20,6 @@ let wizardWindow = null;
 let overlayCustomPosition = null; // set when the user drags the card
 let overlayDragOrigin = null; // { winX, winY, pointerX, pointerY }
 let overlayHideTimer = null;
-let overlayPinned = false; // update prompt holds the card on screen
 
 // Clamp a top-left position so the window stays on-screen. The height matters
 // for the bottom bound: a transcript-grown overlay is taller than OVERLAY_HEIGHT,
@@ -224,23 +223,7 @@ function showOverlay() {
   win.webContents.send("overlay:show");
 }
 
-// While pinned (an update prompt is showing on the card) hide requests are
-// dropped: the pipeline's post-dictation auto-hide must not take the prompt
-// down with it. Whoever unpins is responsible for hiding when appropriate.
-function setOverlayPinned(pinned) {
-  overlayPinned = Boolean(pinned);
-}
-
-// "Visible" for the update prompt's purposes: a card mid fade-out counts as
-// hidden, so a prompt arriving during the fade re-shows the window cleanly
-// instead of attaching to a disappearing card.
-function isOverlayVisible() {
-  const win = getOverlay();
-  return Boolean(win && win.isVisible() && !overlayHideTimer);
-}
-
 function hideOverlay() {
-  if (overlayPinned) return;
   const win = getOverlay();
   if (!win || !win.isVisible() || overlayHideTimer) return;
   // Let the card fade out before the window actually disappears.
@@ -355,8 +338,6 @@ module.exports = {
   destroyOverlay,
   showOverlay,
   hideOverlay,
-  setOverlayPinned,
-  isOverlayVisible,
   sendToOverlay,
   openSettings,
   sendToSettings,

@@ -177,7 +177,6 @@ function populate() {
 
   $("history-enabled").checked = current.history.enabled;
   $("updates-autocheck").checked = current.updates?.autoCheck !== false;
-  $("updates-remind").checked = current.updates?.remind !== false;
   $("max-seconds").value = current.audio.maxRecordingSeconds;
   $("idle-unload").value = current.engines?.idleUnloadMinutes ?? 2;
 
@@ -192,7 +191,6 @@ function collect() {
     updates: {
       ...current.updates,
       autoCheck: $("updates-autocheck").checked,
-      remind: $("updates-remind").checked,
     },
     output: {
       ...current.output,

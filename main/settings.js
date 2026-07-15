@@ -115,11 +115,6 @@ const DEFAULTS = {
     // Check GitHub releases on startup and twice a day. Manual "Check for
     // updates" in Settings works regardless of this toggle.
     autoCheck: true,
-    // Surface an available update where the user can't miss it: a prompt on the
-    // overlay card (plus a system notification). Turned off by the prompt's
-    // "Don't remind me" button — checks keep running and the tray and Settings
-    // keep offering the update, they just stop interrupting.
-    remind: true,
     // A version the user chose to skip: auto-checks stay quiet about it,
     // a manual check surfaces it again.
     skippedVersion: "",

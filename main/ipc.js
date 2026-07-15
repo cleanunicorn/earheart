@@ -347,16 +347,6 @@ function init({ applyHotkey, onSettingsChanged }) {
     updates.skipVersion();
     return { ok: true };
   });
-  // The overlay prompt's two other exits: "Later" (this run only) and
-  // "Don't remind me" (never again — see settings.updates.remind).
-  ipcMain.handle("updates:dismiss", () => {
-    updates.dismissPrompt();
-    return { ok: true };
-  });
-  ipcMain.handle("updates:remind-off", () => {
-    updates.stopReminding();
-    return { ok: true };
-  });
 }
 
 module.exports = { init };

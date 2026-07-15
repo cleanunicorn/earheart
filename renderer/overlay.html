@@ -19,6 +19,38 @@
            move-cursor on a focusable:false overlay, so a visible cue is needed).
            Decorative — the card itself handles the drag. -->
       <div id="grip" aria-hidden="true"></div>
+      <!-- Update prompt: the whole point of putting it here is that this card is
+           always-on-top and is the surface the user already looks at when they
+           dictate. Main pins the card open for it and only ever raises it
+           between dictations — never over words being spoken. -->
+      <div id="update" hidden role="alert">
+        <div id="update-head">
+          <span id="update-title"></span>
+          <button id="update-close" title="Later" aria-label="Dismiss">
+            <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
+              <path
+                d="M4 4l8 8M12 4l-8 8"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+        <div id="update-note"></div>
+        <div id="update-bar" hidden aria-hidden="true">
+          <div id="update-bar-fill"></div>
+        </div>
+        <div id="update-actions">
+          <button id="update-now" class="pill primary"></button>
+          <!-- Grouped so the two ways of saying no wrap to the next line
+               together, instead of one of them dangling under the primary. -->
+          <div id="update-outs">
+            <button id="update-skip" class="pill quiet">Skip this version</button>
+            <button id="update-never" class="pill quiet">Don't remind me</button>
+          </div>
+        </div>
+      </div>
       <!-- Live transcript: shown while recording when live preview is on. The
            cleaned text is the prominent line; the still-streaming raw tail trails
            it, faint, so the fast-but-jittery raw text and the calm cleaned text

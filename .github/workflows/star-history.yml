@@ -1,0 +1,39 @@
+name: Star history
+
+# Renders the repo's star-history chart to static SVGs and commits them to an
+# orphan `star-history` branch, so the README can embed a self-updating chart.
+#
+# Why this exists: as of 2026-06-30 GitHub restricted the stargazers API to a
+# repo's own admins/collaborators, which broke the classic third-party live
+# embed (api.star-history.com/image?...) for everyone. Running the render in
+# our own CI with our own token keeps the chart working and self-contained.
+#
+# One-time setup required before this can run:
+#   1. Create a fine-grained PAT scoped to this repo with
+#        - Metadata:  Read-only   (needed to read stargazers)
+#        - Contents:  Read/write  (needed to push SVGs to the orphan branch)
+#   2. Add it as a repository secret named STAR_HISTORY_TOKEN.
+# The default GITHUB_TOKEN can no longer read stargazers, so a PAT is required.
+
+on:
+  schedule:
+    # Weekly is plenty for a star chart; keep CI usage low.
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+# Least privilege: the action pushes with STAR_HISTORY_TOKEN, not GITHUB_TOKEN.
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # Third-party action pinned to a release tag. Prefer a full commit SHA
+      # here (repo convention) once you can verify it for v1.1.0.
+      - uses: carsteneu/mystarhistory@v1.1.0
+        with:
+          repos: ${{ github.repository }}
+          token: ${{ secrets.STAR_HISTORY_TOKEN }}
+          themes: light,dark

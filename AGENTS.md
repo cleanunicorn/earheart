@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Guidance for AI agents (and humans) contributing to **Earheart**. This project
-follows the **GitHub flow**: `master` is always releasable, all work happens on
+follows the **GitHub flow**: `main` is always releasable, all work happens on
 short-lived branches, and every change lands through a reviewed pull request.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for full setup, build, and architecture
@@ -9,22 +9,22 @@ details. This file is the operational checklist for *how to work* here.
 
 ## Golden rules
 
-1. **Never commit directly to `master`.** It is protected and is the release
+1. **Never commit directly to `main`.** It is protected and is the release
    branch — merging to it auto-publishes a release (see below). Always branch.
-2. **Never push to `master` or force-push a shared branch.**
+2. **Never push to `main` or force-push a shared branch.**
 3. **The PR title is load-bearing.** It drives the released version bump, so it
    must be a valid Conventional Commits string (see [PR titles](#pr-titles)).
-4. **Keep `master` green.** Run the checks locally before opening a PR.
+4. **Keep `main` green.** Run the checks locally before opening a PR.
 5. **Never lose the user's words.** A core design constraint of the app — if you
    touch the pipeline, preserve the raw-transcript fallbacks.
 
 ## The GitHub flow, step by step
 
-### 1. Start from an up-to-date `master`
+### 1. Start from an up-to-date `main`
 
 ```bash
-git checkout master
-git pull origin master
+git checkout main
+git pull origin main
 ```
 
 ### 2. Create a branch
@@ -93,10 +93,10 @@ CI wraps them with `xvfb-run`.
 
 ```bash
 git push -u origin fix/windows-autostart-readback
-gh pr create --base master --fill
+gh pr create --base main --fill
 ```
 
-Target **`master`**. Then set a valid title and a clear body (see below).
+Target **`main`**. Then set a valid title and a clear body (see below).
 
 ## PR titles
 
@@ -152,7 +152,7 @@ Keep it short and useful:
 
 ## What merging does (so you pick the right title)
 
-When a PR merges to `master`, [auto-release.yml](.github/workflows/auto-release.yml)
+When a PR merges to `main`, [auto-release.yml](.github/workflows/auto-release.yml)
 reads the PR title's prefix and, for a release-affecting type, bumps
 `package.json`, commits `release: vX.Y.Z`, tags it, and dispatches the
 multi-platform release builds. The release goes live only after all three

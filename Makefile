@@ -78,13 +78,13 @@ dist-win-docker: ## Cross-build Windows packages from Linux via Docker+Wine
 
 # ----- releasing -------------------------------------------------------------
 
-# Releases also happen automatically when a PR merges to master, sized by the
+# Releases also happen automatically when a PR merges to main, sized by the
 # PR title (see .github/workflows/auto-release.yml). This target is the manual
 # path: bump version, commit, tag, push — CI builds and publishes installers.
 .PHONY: release
 release: ## Cut a release: bump, tag, push (BUMP=patch|minor|major, default patch)
 	npm version $(or $(BUMP),patch)
-	git push origin master --follow-tags
+	git push origin main --follow-tags
 
 # ----- speech-to-text server (Python) ---------------------------------------
 

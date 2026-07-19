@@ -83,7 +83,7 @@ tag pushes (`v*`) — see [.github/workflows/release.yml](.github/workflows/rele
 
 ## Releasing
 
-Releases are cut **automatically when a PR merges to master**, sized by the
+Releases are cut **automatically when a PR merges to main**, sized by the
 conventional-commit prefix of the PR title
 ([.github/workflows/auto-release.yml](.github/workflows/auto-release.yml)):
 
@@ -94,7 +94,7 @@ conventional-commit prefix of the PR title
 | `fix: …`, `perf: …`, `refactor: …` | patch |
 | anything else (`chore:`, `docs:`, free-form, `[skip release]`) | none |
 
-The workflow bumps `package.json`, commits `release: vX.Y.Z` to master, tags
+The workflow bumps `package.json`, commits `release: vX.Y.Z` to main, tags
 it, and dispatches the release builds. Those builds create the GitHub release
 as a draft, each platform uploads its installers into it, and the release is
 flipped live only after all three platforms succeed — so a half-built release

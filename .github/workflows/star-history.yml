@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       # Third-party action pinned to a full commit SHA (repo convention) so a
       # moved tag can't swap the code out from under us.
-      - uses: carsteneu/mystarhistory@cc3b979b5ac3d71a5c9b15e05ec17ff82eb4316c # v1.1.0
+      - uses: carsteneu/mystarhistory@bbd9e5f318c4833232a5a60daeca2c18435d1fc6 # v1.2.2
         with:
           repos: ${{ github.repository }}
           token: ${{ secrets.STAR_HISTORY_TOKEN }}

@@ -1,6 +1,6 @@
 name: Auto release
 
-# Cuts a release automatically when a PR merges to master, sized by the
+# Cuts a release automatically when a PR merges to main, sized by the
 # conventional-commit prefix of the PR title:
 #
 #   feat!: / fix!: / any `type!:`  → major
@@ -8,14 +8,14 @@ name: Auto release
 #   fix: / perf: / refactor:       → patch
 #   anything else (chore:, docs:, ci:, free-form, "[skip release]") → no release
 #
-# The version bump lands as a commit on master plus a `v<version>` tag, and
+# The version bump lands as a commit on main plus a `v<version>` tag, and
 # the Release builds workflow is dispatched on that tag to build and publish
 # the installers.
 
 on:
   pull_request:
     types: [closed]
-    branches: [master]
+    branches: [main]
 
 permissions:
   contents: write
@@ -28,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: master
+          ref: main
 
       - name: Decide version bump from the PR title
         id: bump
@@ -59,7 +59,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           npm version "${{ steps.bump.outputs.bump }}" -m "release: v%s"
-          git push origin master --follow-tags
+          git push origin main --follow-tags
 
       - name: Trigger release builds
         if: steps.bump.outputs.bump != ''

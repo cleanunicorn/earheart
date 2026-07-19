@@ -7,7 +7,7 @@ body:
       value: |
         Earheart is intentionally small and hackable. Proposals that keep it
         lean — few runtime dependencies, private by default — are the easiest
-        to land. See [CONTRIBUTING.md](../blob/master/CONTRIBUTING.md) for the
+        to land. See [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) for the
         design constraints worth keeping.
 
   - type: textarea

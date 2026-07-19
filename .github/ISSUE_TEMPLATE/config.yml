@@ -4,8 +4,8 @@ contact_links:
     url: https://github.com/cleanunicorn/earheart/discussions
     about: Ask a question, share a setup, or float an idea before filing an issue.
   - name: STT server (stt-server)
-    url: https://github.com/cleanunicorn/earheart/blob/master/stt-server/README.md
+    url: https://github.com/cleanunicorn/earheart/blob/main/stt-server/README.md
     about: Options, GPU providers and models for the optional local Parakeet server.
   - name: Contributing guide
-    url: https://github.com/cleanunicorn/earheart/blob/master/CONTRIBUTING.md
+    url: https://github.com/cleanunicorn/earheart/blob/main/CONTRIBUTING.md
     about: Dev setup, architecture, and how releases are cut.

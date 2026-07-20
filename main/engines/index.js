@@ -97,6 +97,25 @@ async function transcribe(wav, cfg, signal, { onDecodeMs } = {}) {
 
 let loadedCleanup = null;
 
+// Windows on ARM (and macOS Rosetta) runs our x64 build as an emulated process.
+// STT (sherpa-onnx) tolerates that, but node-llama-cpp's GPU auto-probe faults
+// hard under emulation — a native crash the worker's try/catch can't catch, so
+// it takes the whole cleanup process down and every dictation falls back to the
+// raw transcript. That is the "transcription works but cleanup doesn't" report
+// on Snapdragon X machines. There is no in-process arm64 STT binary yet (so we
+// can't ship a native arm64 build without losing transcription); the fix that
+// keeps both halves working is to run cleanup on the CPU backend under
+// emulation. `app.runningUnderARM64Translation` is Electron's own signal for
+// exactly this — true only when an x64/x86 build runs on an arm64 host — and it
+// sees through the emulation that virtualizes env vars and GetNativeSystemInfo.
+function runningEmulated() {
+  try {
+    return app.runningUnderARM64Translation === true;
+  } catch {
+    return false;
+  }
+}
+
 // Load the cleanup model into the worker if it isn't already. Throws if the
 // model isn't downloaded yet — callers surface that (or fall back to HTTP).
 async function ensureCleanup(modelId) {
@@ -107,6 +126,9 @@ async function ensureCleanup(modelId) {
   if (loadedCleanup !== modelId) {
     await cleanupHost.request("load-cleanup", {
       modelPath: path.join(manager.modelDir(modelsDir(), model), model.gguf.file),
+      // Skip the GPU probe on an emulated (Windows-on-ARM / Rosetta) host so
+      // the load can't crash the worker; run cleanup on the CPU backend there.
+      cpuOnly: runningEmulated(),
     });
     loadedCleanup = modelId;
   }

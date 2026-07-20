@@ -18,7 +18,7 @@ const Module = require("node:module");
 // Load main/engines/index.js with `electron`, `./host`, and `./model-manager`
 // replaced by the supplied fakes, so the facade can be exercised without the
 // Electron runtime or the native engines. Returns the facade module.
-function loadFacadeWith({ host, manager: managerStub }) {
+function loadFacadeWith({ host, manager: managerStub, app: appExtra }) {
   const indexPath = require.resolve("../main/engines/index");
   const electronPath = require.resolve("electron", {
     paths: [path.dirname(indexPath)],
@@ -26,7 +26,7 @@ function loadFacadeWith({ host, manager: managerStub }) {
   const hostPath = require.resolve("../main/engines/host");
   const managerPath = require.resolve("../main/engines/model-manager");
   const stubs = {
-    [electronPath]: { app: { getPath: () => os.tmpdir() } },
+    [electronPath]: { app: { getPath: () => os.tmpdir(), ...appExtra } },
     [hostPath]: host,
     [managerPath]: managerStub,
   };
@@ -526,6 +526,44 @@ test("engines.clean forwards onProgress to the worker host request", async () =>
 
   // Without the options arg, clean() still works and passes no callback.
   assert.strictEqual(await facade.clean("hello", cfg), "cleaned");
+});
+
+test("engines cleanup load forces CPU-only under ARM64 emulation", async () => {
+  // On an emulated Windows-on-ARM (or Rosetta) host the GPU probe crashes the
+  // cleanup worker, so the facade must tell the worker to skip it. The signal
+  // is Electron's app.runningUnderARM64Translation; assert it rides along on
+  // the load-cleanup request and is absent (falsy) on a native host.
+  const managerStub = {
+    isInstalled: () => true,
+    modelDir: (base, model) => path.join(base, model.kind, model.id),
+  };
+  const cfg = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules" };
+
+  function loadCleanupPayload(appExtra) {
+    let payload = null;
+    const hostModule = {
+      createHost: () => ({
+        request: async (type, args) => {
+          if (type === "load-cleanup") {
+            payload = args;
+            return { ready: true };
+          }
+          if (type === "clean") return "ok";
+          throw new Error(`unexpected request: ${type}`);
+        },
+        stop() {},
+        onExit() {},
+      }),
+    };
+    const facade = loadFacadeWith({ host: hostModule, manager: managerStub, app: appExtra });
+    return facade.clean("hi", cfg).then(() => payload);
+  }
+
+  const emulated = await loadCleanupPayload({ runningUnderARM64Translation: true });
+  assert.strictEqual(emulated.cpuOnly, true, "emulated host must request CPU-only cleanup");
+
+  const native = await loadCleanupPayload({ runningUnderARM64Translation: false });
+  assert.strictEqual(native.cpuOnly, false, "native host keeps the GPU auto-probe");
 });
 
 test("engines.transcribe unwraps the worker reply and reports decode timing", async () => {

@@ -117,7 +117,7 @@ async function transcribe({ wav, language }) {
 
 /* ---------------- cleanup (node-llama-cpp / Gemma) ---------------- */
 
-async function loadCleanup({ modelPath, contextSize }) {
+async function loadCleanup({ modelPath, contextSize, cpuOnly }) {
   if (llamaModel && cleanupModelPath === modelPath) return { ready: true };
   // node-llama-cpp v3 is ESM-only; reach it via dynamic import from CommonJS.
   let mod;
@@ -131,9 +131,14 @@ async function loadCleanup({ modelPath, contextSize }) {
   // whose free VRAM can't actually fit the model + context (a busy desktop
   // GPU), and the failure only surfaces at loadModel/createContext. Without
   // the retry that machine loses cleanup entirely (every dictation falls back
-  // to the raw transcript). EARHEART_LLAMA_GPU=off skips the GPU attempt.
-  const attempts =
-    process.env.EARHEART_LLAMA_GPU === "off" ? [false] : [null, false];
+  // to the raw transcript).
+  //
+  // Skip the GPU attempt entirely when the caller asks for CPU-only. That's
+  // set on an emulated Windows-on-ARM / Rosetta host (see index.js), where the
+  // GPU probe faults hard enough to kill this process — an uncatchable crash
+  // the retry below can't rescue. EARHEART_LLAMA_GPU=off forces the same path.
+  const forceCpu = cpuOnly === true || process.env.EARHEART_LLAMA_GPU === "off";
+  const attempts = forceCpu ? [false] : [null, false];
   let lastErr = null;
   for (const gpu of attempts) {
     try {

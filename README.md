@@ -87,6 +87,9 @@ is just the version number (e.g. `0.8.0`).
 - **Most people:** `Earheart-Setup-<version>.exe` — the installer.
 - Don't want to install? `Earheart-<version>.exe` — a portable build you can
   run directly.
+- **Windows on ARM (Snapdragon X):** use the same x64 files above — Windows
+  runs them under built-in emulation, and both transcription and cleanup work.
+  There is no separate ARM installer yet.
 
 **🍎 macOS**
 

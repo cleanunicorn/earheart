@@ -29,10 +29,10 @@ jobs:
   render:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Third-party action pinned to a full commit SHA (repo convention) so a
       # moved tag can't swap the code out from under us.
-      - uses: carsteneu/mystarhistory@bbd9e5f318c4833232a5a60daeca2c18435d1fc6 # v1.2.2
+      - uses: carsteneu/mystarhistory@ec82d645a6df185f4d845b33691a6bcdd02f608a # v1.3.5
         with:
           repos: ${{ github.repository }}
           token: ${{ secrets.STAR_HISTORY_TOKEN }}

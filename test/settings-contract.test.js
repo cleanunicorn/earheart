@@ -19,6 +19,8 @@ const html = fs.readFileSync(path.join(RENDERER, "settings.html"), "utf8");
 const js = fs.readFileSync(path.join(RENDERER, "settings.js"), "utf8");
 const css = fs.readFileSync(path.join(RENDERER, "settings.css"), "utf8");
 const wizardCss = fs.readFileSync(path.join(RENDERER, "wizard.css"), "utf8");
+const wizardHtml = fs.readFileSync(path.join(RENDERER, "wizard.html"), "utf8");
+const wizardJs = fs.readFileSync(path.join(RENDERER, "wizard.js"), "utf8");
 
 const htmlIds = new Set([...html.matchAll(/id="([a-z0-9-]+)"/g)].map((m) => m[1]));
 const htmlNames = new Set([...html.matchAll(/name="([a-z0-9-]+)"/g)].map((m) => m[1]));
@@ -53,6 +55,27 @@ test("every id settings.js references exists in settings.html", () => {
 
   const missing = [...referenced].filter((id) => !htmlIds.has(id)).sort();
   assert.deepStrictEqual(missing, [], `settings.html is missing ids: ${missing.join(", ")}`);
+});
+
+test("every id wizard.js references exists in wizard.html", () => {
+  // wizard.js drives its UI by element id exactly like settings.js, but its
+  // ids were previously unguarded: a renamed id (e.g. step-position, which
+  // showStep dereferences before loadMicrophones/renderSummary/
+  // enterDownloadStep) throws and silently kills the rest of every step
+  // transition — including starting the model downloads on the finish step.
+  // wizard.js uses only plain string ids (no ${kind} templates, no
+  // bindTest/bindFetchModels indirection), so the plain scan suffices.
+  const wizardIds = new Set(
+    [...wizardHtml.matchAll(/id="([a-z0-9-]+)"/g)].map((m) => m[1])
+  );
+  const referenced = new Set();
+  for (const m of wizardJs.matchAll(/(?:\$|getElementById)\(\s*[`"]([a-z0-9-]+)[`"]\s*\)/g)) {
+    referenced.add(m[1]);
+  }
+  assert.ok(referenced.size > 15, `expected many referenced ids, got ${referenced.size}`);
+
+  const missing = [...referenced].filter((id) => !wizardIds.has(id)).sort();
+  assert.deepStrictEqual(missing, [], `wizard.html is missing ids: ${missing.join(", ")}`);
 });
 
 test("each tab's panel id (tab-<data-tab>) exists in settings.html", () => {

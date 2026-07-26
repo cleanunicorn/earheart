@@ -9,15 +9,33 @@
     <link rel="stylesheet" href="overlay.css" />
   </head>
   <body>
-    <!-- One unified card: the live transcript fills the top and grows freely;
-         a slim control row sits along the bottom. The whole card is the drag
-         surface and carries the data-status state. -->
+    <!--
+      THESIS: Dictation as a machine you can watch working — a miniature tape
+      transport writes your voice onto moving tape. Refuses the category's
+      pulsing-dot pill.
+      OWN-WORLD: Warm-black instrument faceplate; umber tape ribbon with
+      oxide-written waveform; aluminum reels; legended lamps (REC red, BUSY
+      amber, DONE green, inert warm grey); ivory silk-screen legends; machined
+      keys. Flat matte — glow comes only from lamps and backlit keys.
+      STORY: A glance says: lamp lit, reels turning, my words are being written
+      onto tape and appearing above; the backlit square key stops, eject
+      discards.
+      FIRST VIEWPORT: One low strip — lamp block, supply reel, tape window with
+      record head, take-up reel, counter cell, STOP, EJECT; the live transcript
+      grows upward above it.
+      FORM: Tape transport, candidate 4 of 7 (assigned), seed d2b6eb8d;
+      sweep-decay staging borrowed only as freshness-cooling transcript text.
+    -->
+    <!-- One unified faceplate: the live transcript fills the top and grows
+         freely; the transport row sits along the bottom. The whole card is the
+         drag surface and carries the data-status state. -->
     <!-- Initial state is "starting", matching what record:start shows: the card
          must never claim Listening… before the mic actually delivers audio. -->
     <div id="card" data-status="starting">
-      <!-- Grip handle: signifies the card is draggable (the OS ignores the CSS
-           move-cursor on a focusable:false overlay, so a visible cue is needed).
-           Decorative — the card itself handles the drag. -->
+      <!-- Drag rail: a knurled strip that signifies the card is draggable (the
+           OS ignores the CSS move-cursor on a focusable:false overlay, so a
+           visible cue is needed). Decorative — the card itself handles the
+           drag. -->
       <div id="grip" aria-hidden="true"></div>
       <!-- Update prompt: the whole point of putting it here is that this card is
            always-on-top and is the surface the user already looks at when they
@@ -52,9 +70,9 @@
         </div>
       </div>
       <!-- Live transcript: shown while recording when live preview is on. The
-           cleaned text is the prominent line; the still-streaming raw tail trails
-           it, faint, so the fast-but-jittery raw text and the calm cleaned text
-           don't fight. Hidden (and empty) when there's nothing to show. -->
+           cleaned text is the settled line; the still-streaming raw tail trails
+           it warm and bright — fresh words cool as cleanup catches up. Hidden
+           (and empty) when there's nothing to show. -->
       <div id="transcript" hidden>
         <!-- Only the cleaned line is a polite live region: it settles in calm
              chunks on pauses, a natural announce cadence. The raw tail updates
@@ -62,36 +80,77 @@
         <span id="transcript-clean" aria-live="polite"></span
         ><span id="transcript-raw" aria-hidden="true"></span>
       </div>
+      <!-- Transport row: lamp block, supply reel, tape window (the machine's
+           display), take-up reel, counter cell, and the transport keys. -->
       <div id="controls">
-        <div id="indicator"></div>
-        <canvas id="meter" width="120" height="36"></canvas>
-        <!-- Polite live region so a screen reader hears the post-recording
-             status (Transcribing… / Pasted / Failed) — the feedback that tells
-             the user whether their dictation landed. -->
-        <div id="message" aria-live="polite">
-          <span id="status-text">Starting mic…</span>
-          <span id="detail-text"></span>
-          <!-- Determinate progress for the transcribing/cleaning phases.
-               aria-hidden keeps the live region quiet: the status text already
-               announces the phase, the bar is purely visual. -->
+        <!-- Status lamp with its printed micro-legend (REC/BUSY/DONE…), set
+             from data-status in CSS. The legend is presentational: the status
+             live region below announces the real state. -->
+        <div id="lamp" aria-hidden="true">
+          <div id="indicator"></div>
+          <span id="lamp-legend"></span>
+        </div>
+        <svg id="reel-supply" class="reel" viewBox="0 0 30 30" width="30" height="30" aria-hidden="true">
+          <!-- wound tape pack -->
+          <circle cx="15" cy="15" r="10.8" fill="#3a2c1f" />
+          <!-- flange -->
+          <circle cx="15" cy="15" r="13" fill="none" stroke="currentColor" stroke-width="1.6" />
+          <!-- hub, with the windows that make rotation visible -->
+          <circle cx="15" cy="15" r="7.6" fill="currentColor" />
+          <g fill="#0f0c09">
+            <circle cx="15" cy="10.4" r="1.6" />
+            <circle cx="11" cy="17.3" r="1.6" />
+            <circle cx="19" cy="17.3" r="1.6" />
+          </g>
+        </svg>
+        <!-- The tape window is the hero: blank tape runs in from the supply
+             side, past the record head, and leaves written. It doubles as the
+             machine's text display for every non-recording phase. -->
+        <div id="tape-window">
+          <canvas id="meter" width="140" height="34" aria-hidden="true"></canvas>
+          <div id="head" aria-hidden="true"></div>
+          <!-- Polite live region so a screen reader hears the post-recording
+               status (Transcribing… / Pasted / Failed) — the feedback that tells
+               the user whether their dictation landed. -->
+          <div id="message" aria-live="polite">
+            <span id="status-text">Starting mic…</span>
+            <span id="detail-text"></span>
+          </div>
+          <!-- Determinate progress for the transcribing/cleaning phases: the
+               playhead reading the tape. Overlaid on the window, so showing it
+               never changes the card height. aria-hidden keeps the live region
+               quiet: the status text already announces the phase. -->
           <div id="progress" hidden aria-hidden="true">
             <div id="progress-fill"></div>
           </div>
         </div>
-        <span id="timer">0:00</span>
+        <svg id="reel-takeup" class="reel" viewBox="0 0 30 30" width="30" height="30" aria-hidden="true">
+          <!-- wound tape pack -->
+          <circle cx="15" cy="15" r="10.8" fill="#3a2c1f" />
+          <!-- flange -->
+          <circle cx="15" cy="15" r="13" fill="none" stroke="currentColor" stroke-width="1.6" />
+          <!-- hub, with the windows that make rotation visible -->
+          <circle cx="15" cy="15" r="7.6" fill="currentColor" />
+          <g fill="#0f0c09">
+            <circle cx="15" cy="10.4" r="1.6" />
+            <circle cx="11" cy="17.3" r="1.6" />
+            <circle cx="19" cy="17.3" r="1.6" />
+          </g>
+        </svg>
+        <!-- Mechanical counter: counts captured audio only (lit while the tape
+             is actually being written). -->
+        <div id="counter"><span id="timer">0:00</span></div>
         <button id="stop" title="Stop and transcribe" aria-label="Stop and transcribe">
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <rect x="3" y="3" width="10" height="10" rx="2.5" fill="currentColor" />
+            <rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor" />
           </svg>
         </button>
-        <button id="cancel" title="Cancel" aria-label="Cancel">
-          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-            <path
-              d="M4 4l8 8M12 4l-8 8"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-            />
+        <!-- Eject: cancel discards the take, like pulling the tape. The title
+             names the consequence, since the eject glyph alone doesn't. -->
+        <button id="cancel" title="Cancel — discard the recording" aria-label="Cancel">
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+            <path d="M8 3.2 L12.8 9 H3.2 Z" fill="currentColor" />
+            <rect x="3.2" y="10.8" width="9.6" height="2" rx="1" fill="currentColor" />
           </svg>
         </button>
       </div>

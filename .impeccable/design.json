@@ -1,0 +1,662 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-26T19:51:58+03:00",
+  "title": "Design System: Earheart",
+  "extensions": {
+    "colorMeta": {
+      "face": {
+        "role": "neutral",
+        "displayName": "Faceplate Black",
+        "canonical": "#1c1713",
+        "tonalRamp": [
+          "oklch(15% 0.02 70)",
+          "oklch(26% 0.02 70)",
+          "oklch(38% 0.02 70)",
+          "oklch(49% 0.02 70)",
+          "oklch(61% 0.02 70)",
+          "oklch(72% 0.02 70)",
+          "oklch(84% 0.02 70)",
+          "oklch(95% 0.02 70)"
+        ]
+      },
+      "face-edge": {
+        "role": "neutral",
+        "displayName": "Machine Edge",
+        "canonical": "rgba(255, 240, 214, 0.14)",
+        "tonalRamp": [
+          "oklch(15% 0.02 85)",
+          "oklch(26% 0.02 85)",
+          "oklch(38% 0.02 85)",
+          "oklch(49% 0.02 85)",
+          "oklch(61% 0.02 85)",
+          "oklch(72% 0.02 85)",
+          "oklch(84% 0.02 85)",
+          "oklch(95% 0.02 85)"
+        ]
+      },
+      "recess": {
+        "role": "neutral",
+        "displayName": "Recess Black",
+        "canonical": "#0f0c09",
+        "tonalRamp": [
+          "oklch(15% 0.015 75)",
+          "oklch(26% 0.015 75)",
+          "oklch(38% 0.015 75)",
+          "oklch(49% 0.015 75)",
+          "oklch(61% 0.015 75)",
+          "oklch(72% 0.015 75)",
+          "oklch(84% 0.015 75)",
+          "oklch(95% 0.015 75)"
+        ]
+      },
+      "ribbon": {
+        "role": "neutral",
+        "displayName": "Tape Umber",
+        "canonical": "#35291d",
+        "tonalRamp": [
+          "oklch(15% 0.035 65)",
+          "oklch(26% 0.035 65)",
+          "oklch(38% 0.035 65)",
+          "oklch(49% 0.035 65)",
+          "oklch(61% 0.035 65)",
+          "oklch(72% 0.035 65)",
+          "oklch(84% 0.035 65)",
+          "oklch(95% 0.035 65)"
+        ]
+      },
+      "oxide": {
+        "role": "primary",
+        "displayName": "Oxide",
+        "canonical": "#d29a5a",
+        "tonalRamp": [
+          "oklch(15% 0.09 65)",
+          "oklch(26% 0.09 65)",
+          "oklch(38% 0.09 65)",
+          "oklch(49% 0.09 65)",
+          "oklch(61% 0.09 65)",
+          "oklch(72% 0.09 65)",
+          "oklch(84% 0.09 65)",
+          "oklch(95% 0.09 65)"
+        ]
+      },
+      "ivory": {
+        "role": "neutral",
+        "displayName": "Silk-Screen Ivory",
+        "canonical": "#f2e9da",
+        "tonalRamp": [
+          "oklch(15% 0.02 85)",
+          "oklch(26% 0.02 85)",
+          "oklch(38% 0.02 85)",
+          "oklch(49% 0.02 85)",
+          "oklch(61% 0.02 85)",
+          "oklch(72% 0.02 85)",
+          "oklch(84% 0.02 85)",
+          "oklch(95% 0.02 85)"
+        ]
+      },
+      "ivory-dim": {
+        "role": "neutral",
+        "displayName": "Unlit Ivory",
+        "canonical": "#a89b88",
+        "tonalRamp": [
+          "oklch(15% 0.025 80)",
+          "oklch(26% 0.025 80)",
+          "oklch(38% 0.025 80)",
+          "oklch(49% 0.025 80)",
+          "oklch(61% 0.025 80)",
+          "oklch(72% 0.025 80)",
+          "oklch(84% 0.025 80)",
+          "oklch(95% 0.025 80)"
+        ]
+      },
+      "alu": {
+        "role": "neutral",
+        "displayName": "Reel Aluminum",
+        "canonical": "#b4a894",
+        "tonalRamp": [
+          "oklch(15% 0.025 85)",
+          "oklch(26% 0.025 85)",
+          "oklch(38% 0.025 85)",
+          "oklch(49% 0.025 85)",
+          "oklch(61% 0.025 85)",
+          "oklch(72% 0.025 85)",
+          "oklch(84% 0.025 85)",
+          "oklch(95% 0.025 85)"
+        ]
+      },
+      "key": {
+        "role": "neutral",
+        "displayName": "Key Cap",
+        "canonical": "#2a2118",
+        "tonalRamp": [
+          "oklch(15% 0.025 70)",
+          "oklch(26% 0.025 70)",
+          "oklch(38% 0.025 70)",
+          "oklch(49% 0.025 70)",
+          "oklch(61% 0.025 70)",
+          "oklch(72% 0.025 70)",
+          "oklch(84% 0.025 70)",
+          "oklch(95% 0.025 70)"
+        ]
+      },
+      "key-edge": {
+        "role": "neutral",
+        "displayName": "Key Edge",
+        "canonical": "rgba(255, 240, 214, 0.12)",
+        "tonalRamp": [
+          "oklch(15% 0.02 85)",
+          "oklch(26% 0.02 85)",
+          "oklch(38% 0.02 85)",
+          "oklch(49% 0.02 85)",
+          "oklch(61% 0.02 85)",
+          "oklch(72% 0.02 85)",
+          "oklch(84% 0.02 85)",
+          "oklch(95% 0.02 85)"
+        ]
+      },
+      "rec": {
+        "role": "primary",
+        "displayName": "Rec Lamp Red",
+        "canonical": "#ff4438",
+        "tonalRamp": [
+          "oklch(15% 0.2 28)",
+          "oklch(26% 0.2 28)",
+          "oklch(38% 0.2 28)",
+          "oklch(49% 0.2 28)",
+          "oklch(61% 0.2 28)",
+          "oklch(72% 0.2 28)",
+          "oklch(84% 0.2 28)",
+          "oklch(95% 0.2 28)"
+        ]
+      },
+      "busy": {
+        "role": "secondary",
+        "displayName": "Busy Lamp Amber",
+        "canonical": "#ffb03a",
+        "tonalRamp": [
+          "oklch(15% 0.15 75)",
+          "oklch(26% 0.15 75)",
+          "oklch(38% 0.15 75)",
+          "oklch(49% 0.15 75)",
+          "oklch(61% 0.15 75)",
+          "oklch(72% 0.15 75)",
+          "oklch(84% 0.15 75)",
+          "oklch(95% 0.15 75)"
+        ]
+      },
+      "done": {
+        "role": "secondary",
+        "displayName": "Done Lamp Green",
+        "canonical": "#59c98a",
+        "tonalRamp": [
+          "oklch(15% 0.12 155)",
+          "oklch(26% 0.12 155)",
+          "oklch(38% 0.12 155)",
+          "oklch(49% 0.12 155)",
+          "oklch(61% 0.12 155)",
+          "oklch(72% 0.12 155)",
+          "oklch(84% 0.12 155)",
+          "oklch(95% 0.12 155)"
+        ]
+      },
+      "inert": {
+        "role": "secondary",
+        "displayName": "Inert Warm Grey",
+        "canonical": "#9b9187",
+        "tonalRamp": [
+          "oklch(15% 0.015 80)",
+          "oklch(26% 0.015 80)",
+          "oklch(38% 0.015 80)",
+          "oklch(49% 0.015 80)",
+          "oklch(61% 0.015 80)",
+          "oklch(72% 0.015 80)",
+          "oklch(84% 0.015 80)",
+          "oklch(95% 0.015 80)"
+        ]
+      },
+      "raw-warm": {
+        "role": "primary",
+        "displayName": "Raw Warm",
+        "canonical": "#e7b57e",
+        "tonalRamp": [
+          "oklch(15% 0.09 70)",
+          "oklch(26% 0.09 70)",
+          "oklch(38% 0.09 70)",
+          "oklch(49% 0.09 70)",
+          "oklch(61% 0.09 70)",
+          "oklch(72% 0.09 70)",
+          "oklch(84% 0.09 70)",
+          "oklch(95% 0.09 70)"
+        ]
+      },
+      "rec-legend-lit": {
+        "role": "primary",
+        "displayName": "Lit REC Legend",
+        "canonical": "#ff958c",
+        "tonalRamp": [
+          "oklch(15% 0.11 25)",
+          "oklch(26% 0.11 25)",
+          "oklch(38% 0.11 25)",
+          "oklch(49% 0.11 25)",
+          "oklch(61% 0.11 25)",
+          "oklch(72% 0.11 25)",
+          "oklch(84% 0.11 25)",
+          "oklch(95% 0.11 25)"
+        ]
+      },
+      "busy-legend-lit": {
+        "role": "secondary",
+        "displayName": "Lit BUSY Legend",
+        "canonical": "#ffc76e",
+        "tonalRamp": [
+          "oklch(15% 0.12 75)",
+          "oklch(26% 0.12 75)",
+          "oklch(38% 0.12 75)",
+          "oklch(49% 0.12 75)",
+          "oklch(61% 0.12 75)",
+          "oklch(72% 0.12 75)",
+          "oklch(84% 0.12 75)",
+          "oklch(95% 0.12 75)"
+        ]
+      },
+      "done-legend-lit": {
+        "role": "secondary",
+        "displayName": "Lit DONE Legend",
+        "canonical": "#8fdcae",
+        "tonalRamp": [
+          "oklch(15% 0.09 155)",
+          "oklch(26% 0.09 155)",
+          "oklch(38% 0.09 155)",
+          "oklch(49% 0.09 155)",
+          "oklch(61% 0.09 155)",
+          "oklch(72% 0.09 155)",
+          "oklch(84% 0.09 155)",
+          "oklch(95% 0.09 155)"
+        ]
+      },
+      "stop-key-fill": {
+        "role": "primary",
+        "displayName": "Stop Key Backlight",
+        "canonical": "#3a1611",
+        "tonalRamp": [
+          "oklch(15% 0.06 28)",
+          "oklch(26% 0.06 28)",
+          "oklch(38% 0.06 28)",
+          "oklch(49% 0.06 28)",
+          "oklch(61% 0.06 28)",
+          "oklch(72% 0.06 28)",
+          "oklch(84% 0.06 28)",
+          "oklch(95% 0.06 28)"
+        ]
+      },
+      "stop-key-hover": {
+        "role": "primary",
+        "displayName": "Stop Key Backlight, hover",
+        "canonical": "#4a1b14",
+        "tonalRamp": [
+          "oklch(15% 0.07 28)",
+          "oklch(26% 0.07 28)",
+          "oklch(38% 0.07 28)",
+          "oklch(49% 0.07 28)",
+          "oklch(61% 0.07 28)",
+          "oklch(72% 0.07 28)",
+          "oklch(84% 0.07 28)",
+          "oklch(95% 0.07 28)"
+        ]
+      },
+      "stop-key-glyph": {
+        "role": "primary",
+        "displayName": "Stop Key Glyph",
+        "canonical": "#ffb4ac",
+        "tonalRamp": [
+          "oklch(15% 0.09 25)",
+          "oklch(26% 0.09 25)",
+          "oklch(38% 0.09 25)",
+          "oklch(49% 0.09 25)",
+          "oklch(61% 0.09 25)",
+          "oklch(72% 0.09 25)",
+          "oklch(84% 0.09 25)",
+          "oklch(95% 0.09 25)"
+        ]
+      },
+      "pill-ink": {
+        "role": "secondary",
+        "displayName": "Amber Pill Ink",
+        "canonical": "#241703",
+        "tonalRamp": [
+          "oklch(15% 0.04 70)",
+          "oklch(26% 0.04 70)",
+          "oklch(38% 0.04 70)",
+          "oklch(49% 0.04 70)",
+          "oklch(61% 0.04 70)",
+          "oklch(72% 0.04 70)",
+          "oklch(84% 0.04 70)",
+          "oklch(95% 0.04 70)"
+        ]
+      },
+      "busy-hover": {
+        "role": "secondary",
+        "displayName": "Busy Lamp Amber, hover",
+        "canonical": "#ffc262",
+        "tonalRamp": [
+          "oklch(15% 0.13 75)",
+          "oklch(26% 0.13 75)",
+          "oklch(38% 0.13 75)",
+          "oklch(49% 0.13 75)",
+          "oklch(61% 0.13 75)",
+          "oklch(72% 0.13 75)",
+          "oklch(84% 0.13 75)",
+          "oklch(95% 0.13 75)"
+        ]
+      },
+      "well-shade": {
+        "role": "neutral",
+        "displayName": "Well Shade",
+        "canonical": "rgba(0, 0, 0, 0.55)",
+        "tonalRamp": [
+          "oklch(15% 0.01 70)",
+          "oklch(26% 0.01 70)",
+          "oklch(38% 0.01 70)",
+          "oklch(49% 0.01 70)",
+          "oklch(61% 0.01 70)",
+          "oklch(72% 0.01 70)",
+          "oklch(84% 0.01 70)",
+          "oklch(95% 0.01 70)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "transcript": {
+        "displayName": "Transcript",
+        "purpose": "The live dictation filling the top of the card; settled text in Silk-Screen Ivory, streaming tail in Raw Warm."
+      },
+      "status": {
+        "displayName": "Status",
+        "purpose": "The machine display's line over the tape window, with a faint VFD warmth."
+      },
+      "detail": {
+        "displayName": "Detail",
+        "purpose": "Secondary status line in Unlit Ivory, ellipsized."
+      },
+      "note-title": {
+        "displayName": "Note Title",
+        "purpose": "The update service note's heading."
+      },
+      "note-body": {
+        "displayName": "Note Body",
+        "purpose": "The update service note's secondary line in Unlit Ivory."
+      },
+      "legend": {
+        "displayName": "Legend",
+        "purpose": "The printed micro-legend under the lamp (REC/BUSY/DONE/ERR) \u2014 the only uppercase in the world."
+      },
+      "counter": {
+        "displayName": "Counter",
+        "purpose": "The monospace take counter, tabular-nums; digits dim to 45% opacity outside recording."
+      }
+    },
+    "shadows": [
+      {
+        "name": "recessed-well",
+        "value": "inset 0 1px 3px rgba(0, 0, 0, 0.55)",
+        "purpose": "Wells sunk into the faceplate: the tape window and the counter cell."
+      },
+      {
+        "name": "machined-edge-card",
+        "value": "inset 0 1px 0 rgba(255, 240, 214, 0.05)",
+        "purpose": "The card's machined top edge \u2014 an inset highlight, not a cast shadow."
+      },
+      {
+        "name": "machined-edge-key",
+        "value": "inset 0 1px 0 rgba(255, 240, 214, 0.07)",
+        "purpose": "The inset top light on machined key caps."
+      },
+      {
+        "name": "lamp-bloom-rec",
+        "value": "0 0 9px 1px rgba(255, 68, 56, 0.5)",
+        "purpose": "The lit recording lamp's bloom \u2014 the material of a lit lamp, not elevation."
+      },
+      {
+        "name": "lamp-bloom-busy",
+        "value": "0 0 9px 1px rgba(255, 176, 58, 0.45)",
+        "purpose": "The working lamp's bloom."
+      },
+      {
+        "name": "lamp-bloom-done",
+        "value": "0 0 8px 1px rgba(89, 201, 138, 0.4)",
+        "purpose": "The delivered lamp's bloom."
+      },
+      {
+        "name": "service-lamp-bloom",
+        "value": "0 0 6px rgba(255, 176, 58, 0.6)",
+        "purpose": "The 7px amber service lamp on the update note."
+      },
+      {
+        "name": "key-backlight",
+        "value": "0 0 10px rgba(255, 68, 56, 0.35)",
+        "purpose": "The backlit STOP key while there's a take to stop; hover raises alpha to 0.5."
+      },
+      {
+        "name": "playhead-glow",
+        "value": "0 0 6px rgba(255, 176, 58, 0.8)",
+        "purpose": "The glowing playhead riding the progress fill's leading edge."
+      },
+      {
+        "name": "raw-warmth",
+        "value": "0 0 6px rgba(231, 181, 126, 0.25)",
+        "purpose": "Text-shadow warmth on the fresh raw transcript tail."
+      },
+      {
+        "name": "vfd-warmth",
+        "value": "0 0 8px rgba(255, 240, 214, 0.18)",
+        "purpose": "Text-shadow on the machine display's status line \u2014 display glass, not decoration."
+      }
+    ],
+    "motion": [
+      {
+        "name": "key-state",
+        "value": "0.12s ease",
+        "purpose": "Key and surface state changes: background, box-shadow, color."
+      },
+      {
+        "name": "key-travel",
+        "value": "0.08s ease",
+        "purpose": "The press: transform translateY(1px) scale(0.96)."
+      },
+      {
+        "name": "surface-fade",
+        "value": "0.15s ease",
+        "purpose": "Grip opacity and the written tape dimming to a backdrop."
+      },
+      {
+        "name": "progress-linear",
+        "value": "0.15s linear",
+        "purpose": "Progress fill width, tape-window playhead and update bar alike; completed bars hold 400ms then hide."
+      },
+      {
+        "name": "card-height",
+        "value": "0.18s ease",
+        "purpose": "The card eases its own height while the native window snaps."
+      },
+      {
+        "name": "card-enter",
+        "value": "0.2s ease",
+        "purpose": "Card entrance: opacity + 8px rise + 0.98 scale."
+      },
+      {
+        "name": "pulse-starting",
+        "value": "pulse 1s ease-in-out infinite",
+        "purpose": "The hollow REC ring while the mic warms up."
+      },
+      {
+        "name": "pulse-recording",
+        "value": "pulse 2s ease-in-out infinite",
+        "purpose": "The lit recording lamp."
+      },
+      {
+        "name": "pulse-busy",
+        "value": "pulse 1.4s ease-in-out infinite",
+        "purpose": "The amber working lamp."
+      },
+      {
+        "name": "spin-supply",
+        "value": "spin 2.3s linear infinite",
+        "purpose": "The supply reel while recording; paused (keeping its angle) otherwise."
+      },
+      {
+        "name": "spin-takeup",
+        "value": "spin 1.8s linear infinite",
+        "purpose": "The take-up reel turns a touch faster \u2014 the asymmetry that reads as a machine."
+      },
+      {
+        "name": "spin-processing",
+        "value": "spin 0.9s linear infinite",
+        "purpose": "Reels reading the tape back during transcribing/cleaning; delivering runs 1.4s."
+      },
+      {
+        "name": "tape-speed",
+        "value": "80ms per 2.5px column (~31px/s)",
+        "purpose": "The write clock: one oxide column per 80ms of captured audio, gliding between writes."
+      },
+      {
+        "name": "reduced-motion-collapse",
+        "value": "transition-duration 0.01ms; animation: none; tape steps without glide",
+        "purpose": "Under prefers-reduced-motion the tape still updates (state, not decoration) but all glide, pulse, and spin collapse."
+      }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Transport Key",
+      "kind": "button",
+      "refersTo": "transport-key",
+      "description": "A machined 34px key cap with inset top light and a ~42px invisible hit halo; the press travels.",
+      "html": "<button class=\"ds-key\" aria-label=\"Key\"><svg viewBox=\"0 0 16 16\" width=\"14\" height=\"14\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"10\" height=\"10\" rx=\"2\" fill=\"currentColor\"/></svg></button>",
+      "css": ".ds-key { position: relative; width: 34px; height: 34px; border-radius: 9px; border: 1px solid rgba(255, 240, 214, 0.12); cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; background: #2a2118; color: #f2e9da; box-shadow: inset 0 1px 0 rgba(255, 240, 214, 0.07); transition: background 0.12s ease, box-shadow 0.12s ease, color 0.12s ease, transform 0.08s ease; } .ds-key::before { content: \"\"; position: absolute; inset: -4px; border-radius: 12px; } .ds-key svg { display: block; } .ds-key:hover { background: #342a1e; } .ds-key:active { transform: translateY(1px) scale(0.96); } .ds-key:focus-visible { outline: 2px solid #f2e9da; outline-offset: 2px; }"
+    },
+    {
+      "name": "Backlit Stop Key",
+      "kind": "button",
+      "refersTo": "transport-key-stop",
+      "description": "The STOP key, backlit red while there's a take to stop \u2014 the machine telling you which key it expects.",
+      "html": "<button class=\"ds-key-stop\" title=\"Stop and transcribe\" aria-label=\"Stop and transcribe\"><svg viewBox=\"0 0 16 16\" width=\"14\" height=\"14\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"10\" height=\"10\" rx=\"2\" fill=\"currentColor\"/></svg></button>",
+      "css": ".ds-key-stop { position: relative; width: 34px; height: 34px; border-radius: 9px; border: 1px solid rgba(255, 68, 56, 0.5); cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; background: #3a1611; color: #ffb4ac; box-shadow: inset 0 1px 0 rgba(255, 240, 214, 0.06), 0 0 10px rgba(255, 68, 56, 0.35); transition: background 0.12s ease, box-shadow 0.12s ease, transform 0.08s ease; } .ds-key-stop::before { content: \"\"; position: absolute; inset: -4px; border-radius: 12px; } .ds-key-stop svg { display: block; } .ds-key-stop:hover { background: #4a1b14; box-shadow: inset 0 1px 0 rgba(255, 240, 214, 0.06), 0 0 10px rgba(255, 68, 56, 0.5); } .ds-key-stop:active { transform: translateY(1px) scale(0.96); } .ds-key-stop:focus-visible { outline: 2px solid #f2e9da; outline-offset: 2px; }"
+    },
+    {
+      "name": "Eject Key",
+      "kind": "button",
+      "refersTo": "transport-key",
+      "description": "Cancel discards the take, like pulling the tape; the glyph sits in Unlit Ivory, warming on hover, offset an extra 4px from STOP.",
+      "html": "<button class=\"ds-key-eject\" title=\"Cancel \u2014 discard the recording\" aria-label=\"Cancel\"><svg viewBox=\"0 0 16 16\" width=\"13\" height=\"13\" aria-hidden=\"true\"><path d=\"M8 3.2 L12.8 9 H3.2 Z\" fill=\"currentColor\"/><rect x=\"3.2\" y=\"10.8\" width=\"9.6\" height=\"2\" rx=\"1\" fill=\"currentColor\"/></svg></button>",
+      "css": ".ds-key-eject { position: relative; width: 34px; height: 34px; margin-left: 4px; border-radius: 9px; border: 1px solid rgba(255, 240, 214, 0.12); cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; background: #2a2118; color: #a89b88; box-shadow: inset 0 1px 0 rgba(255, 240, 214, 0.07); transition: background 0.12s ease, color 0.12s ease, transform 0.08s ease; } .ds-key-eject::before { content: \"\"; position: absolute; inset: -4px; border-radius: 12px; } .ds-key-eject svg { display: block; } .ds-key-eject:hover { background: #342a1e; color: #f2e9da; } .ds-key-eject:active { transform: translateY(1px) scale(0.96); } .ds-key-eject:focus-visible { outline: 2px solid #f2e9da; outline-offset: 2px; }"
+    },
+    {
+      "name": "Counter Cell",
+      "kind": "custom",
+      "refersTo": "counter-cell",
+      "description": "A recessed monospace counter that counts captured audio only; digits go unlit (45%) when not running.",
+      "html": "<div class=\"ds-counter\"><span class=\"ds-counter-digits\">0:07</span></div>",
+      "css": ".ds-counter { min-width: 52px; height: 30px; display: inline-flex; align-items: center; justify-content: center; background: #0f0c09; border-radius: 6px; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55); } .ds-counter-digits { font-family: ui-monospace, 'Cascadia Code', monospace; font-size: 13px; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; color: #f2e9da; }"
+    },
+    {
+      "name": "Tape Window",
+      "kind": "custom",
+      "refersTo": "tape-window",
+      "description": "The hero: a recessed well the umber ribbon runs through, oxide signal written at the fixed record head (40%) sliding toward the take-up reel.",
+      "html": "<div class=\"ds-tape-window\"><div class=\"ds-tape-ribbon\"></div><div class=\"ds-tape-signal\"></div><div class=\"ds-tape-head\"></div></div>",
+      "css": ".ds-tape-window { position: relative; width: 220px; height: 34px; background: #0f0c09; border-radius: 6px; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55); overflow: hidden; } .ds-tape-ribbon { position: absolute; left: 0; right: 0; top: 50%; height: 18px; transform: translateY(-50%); background: #35291d; box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.4), inset 0 -1px 0 rgba(0, 0, 0, 0.4); } .ds-tape-signal { position: absolute; left: 40%; right: 0; top: 6px; bottom: 6px; background: repeating-linear-gradient(90deg, rgba(210, 154, 90, 0.9) 0 1.5px, transparent 1.5px 2.5px); -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 20%, #000 80%, transparent 100%); mask-image: linear-gradient(180deg, transparent 0, #000 20%, #000 80%, transparent 100%); } .ds-tape-head { position: absolute; left: 40%; top: 2px; bottom: 2px; width: 1px; background: rgba(242, 233, 218, 0.45); } .ds-tape-head::before { content: \"\"; position: absolute; top: -2px; left: -2px; width: 5px; height: 6px; border-radius: 0 0 2px 2px; background: #b4a894; opacity: 0.8; }"
+    },
+    {
+      "name": "Lamp Block",
+      "kind": "custom",
+      "refersTo": "faceplate",
+      "description": "An 11px status lamp with its printed micro-legend; shown lit REC with bloom and pulse \u2014 the filled lamp means samples are flowing.",
+      "html": "<div class=\"ds-lamp\"><div class=\"ds-lamp-dot\"></div><span class=\"ds-lamp-legend\">REC</span></div>",
+      "css": ".ds-lamp { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; width: 30px; padding: 6px; background: #1c1713; border-radius: 6px; } .ds-lamp-dot { width: 11px; height: 11px; border-radius: 50%; background: #ff4438; box-shadow: 0 0 9px 1px rgba(255, 68, 56, 0.5); animation: ds-pulse 2s ease-in-out infinite; } .ds-lamp-legend { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 8px; font-weight: 700; letter-spacing: 0.08em; color: #ff958c; } @keyframes ds-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.82); } } @media (prefers-reduced-motion: reduce) { .ds-lamp-dot { animation: none; } }"
+    },
+    {
+      "name": "Update Service Note",
+      "kind": "card",
+      "refersTo": "update-note",
+      "description": "The machine talking about itself: an amber-washed note with a 7px service lamp, note text, and pill actions.",
+      "html": "<div class=\"ds-note\"><div class=\"ds-note-head\"><span class=\"ds-note-title\">Earheart 1.4.0 is available</span></div><div class=\"ds-note-body\">You're on 1.3.2. It takes a few seconds.</div><div class=\"ds-note-actions\"><button class=\"ds-pill ds-pill-primary\">Update now</button><button class=\"ds-pill ds-pill-quiet\">Skip this version</button><button class=\"ds-pill ds-pill-quiet\">Don't remind me</button></div></div>",
+      "css": ".ds-note { display: flex; flex-direction: column; gap: 6px; width: 300px; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255, 176, 58, 0.35); background: #1c1713 linear-gradient(rgba(255, 176, 58, 0.07), rgba(255, 176, 58, 0.07)); color: #f2e9da; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; } .ds-note-title { font-size: 13px; font-weight: 600; } .ds-note-title::before { content: \"\"; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #ffb03a; box-shadow: 0 0 6px rgba(255, 176, 58, 0.6); margin-right: 7px; } .ds-note-body { font-size: 11px; color: #a89b88; } .ds-note-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; } .ds-pill { height: 26px; padding: 0 10px; border: none; border-radius: 7px; cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit; transition: background 0.12s ease, color 0.12s ease; } .ds-pill-primary { background: #ffb03a; color: #241703; } .ds-pill-primary:hover { background: #ffc262; } .ds-pill-quiet { background: transparent; color: #a89b88; font-weight: 500; } .ds-pill-quiet:hover { background: rgba(255, 240, 214, 0.08); color: #f2e9da; } .ds-pill:focus-visible { outline: 2px solid #f2e9da; outline-offset: 2px; }"
+    },
+    {
+      "name": "Playhead Progress",
+      "kind": "custom",
+      "refersTo": "tape-window",
+      "description": "The machine reading the tape: a 3px track with an amber fill and a glowing playhead riding the leading edge; fills at 0.15s linear.",
+      "html": "<div class=\"ds-progress\"><div class=\"ds-progress-fill\" style=\"width: 62%\"></div></div>",
+      "css": ".ds-progress { width: 200px; height: 3px; border-radius: 2px; background: rgba(255, 240, 214, 0.12); overflow: hidden; position: relative; } .ds-progress-fill { position: relative; height: 100%; border-radius: 2px; background: #ffb03a; transition: width 0.15s linear; } .ds-progress-fill::after { content: \"\"; position: absolute; right: 0; top: -1px; bottom: -1px; width: 2px; background: #ffe3b0; box-shadow: 0 0 6px rgba(255, 176, 58, 0.8); }"
+    },
+    {
+      "name": "The Overlay Strip",
+      "kind": "custom",
+      "refersTo": "faceplate",
+      "description": "The signature: the whole tape transport \u2014 grip rail, lamp block, supply reel, tape window with record head, take-up reel, counter, backlit STOP, eject \u2014 on a solid faceplate with no cast shadow.",
+      "html": "<div class=\"ds-strip\"><div class=\"ds-strip-grip\"></div><div class=\"ds-strip-row\"><div class=\"ds-strip-lamp\"><div class=\"ds-strip-dot\"></div><span class=\"ds-strip-legend\">REC</span></div><svg class=\"ds-strip-reel\" viewBox=\"0 0 30 30\" width=\"30\" height=\"30\" aria-hidden=\"true\"><circle cx=\"15\" cy=\"15\" r=\"10.8\" fill=\"#3a2c1f\"/><circle cx=\"15\" cy=\"15\" r=\"13\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\"/><circle cx=\"15\" cy=\"15\" r=\"7.6\" fill=\"currentColor\"/><g fill=\"#0f0c09\"><circle cx=\"15\" cy=\"10.4\" r=\"1.6\"/><circle cx=\"11\" cy=\"17.3\" r=\"1.6\"/><circle cx=\"19\" cy=\"17.3\" r=\"1.6\"/></g></svg><div class=\"ds-strip-window\"><div class=\"ds-strip-ribbon\"></div><div class=\"ds-strip-signal\"></div><div class=\"ds-strip-head\"></div></div><svg class=\"ds-strip-reel ds-strip-reel-takeup\" viewBox=\"0 0 30 30\" width=\"30\" height=\"30\" aria-hidden=\"true\"><circle cx=\"15\" cy=\"15\" r=\"10.8\" fill=\"#3a2c1f\"/><circle cx=\"15\" cy=\"15\" r=\"13\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\"/><circle cx=\"15\" cy=\"15\" r=\"7.6\" fill=\"currentColor\"/><g fill=\"#0f0c09\"><circle cx=\"15\" cy=\"10.4\" r=\"1.6\"/><circle cx=\"11\" cy=\"17.3\" r=\"1.6\"/><circle cx=\"19\" cy=\"17.3\" r=\"1.6\"/></g></svg><div class=\"ds-strip-counter\">0:07</div><button class=\"ds-strip-stop\" aria-label=\"Stop and transcribe\"><svg viewBox=\"0 0 16 16\" width=\"14\" height=\"14\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"10\" height=\"10\" rx=\"2\" fill=\"currentColor\"/></svg></button><button class=\"ds-strip-eject\" aria-label=\"Cancel\"><svg viewBox=\"0 0 16 16\" width=\"13\" height=\"13\" aria-hidden=\"true\"><path d=\"M8 3.2 L12.8 9 H3.2 Z\" fill=\"currentColor\"/><rect x=\"3.2\" y=\"10.8\" width=\"9.6\" height=\"2\" rx=\"1\" fill=\"currentColor\"/></svg></button></div></div>",
+      "css": ".ds-strip { width: 436px; background: #1c1713; border: 1px solid rgba(255, 240, 214, 0.14); border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255, 240, 214, 0.05); color: #f2e9da; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; overflow: hidden; } .ds-strip-grip { width: 44px; height: 5px; margin: 7px auto 5px; border-radius: 2.5px; background: repeating-linear-gradient(90deg, rgba(255, 240, 214, 0.22) 0 1px, transparent 1px 3px); opacity: 0.75; transition: opacity 0.15s ease; } .ds-strip:hover .ds-strip-grip { opacity: 1; } .ds-strip-row { display: flex; align-items: center; gap: 8px; height: 46px; margin: 0 12px 6px; } .ds-strip-lamp { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 30px; flex-shrink: 0; } .ds-strip-dot { width: 11px; height: 11px; border-radius: 50%; background: #ff4438; box-shadow: 0 0 9px 1px rgba(255, 68, 56, 0.5); animation: ds-strip-pulse 2s ease-in-out infinite; } .ds-strip-legend { font-size: 8px; font-weight: 700; letter-spacing: 0.08em; color: #ff958c; } .ds-strip-reel { flex-shrink: 0; color: #b4a894; animation: ds-strip-spin 2.3s linear infinite; } .ds-strip-reel-takeup { animation-duration: 1.8s; } .ds-strip-window { position: relative; flex: 1; min-width: 0; height: 34px; background: #0f0c09; border-radius: 6px; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55); overflow: hidden; } .ds-strip-ribbon { position: absolute; left: 0; right: 0; top: 50%; height: 18px; transform: translateY(-50%); background: #35291d; box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.4), inset 0 -1px 0 rgba(0, 0, 0, 0.4); } .ds-strip-signal { position: absolute; left: 40%; right: 0; top: 6px; bottom: 6px; background: repeating-linear-gradient(90deg, rgba(210, 154, 90, 0.9) 0 1.5px, transparent 1.5px 2.5px); -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 20%, #000 80%, transparent 100%); mask-image: linear-gradient(180deg, transparent 0, #000 20%, #000 80%, transparent 100%); } .ds-strip-head { position: absolute; left: 40%; top: 2px; bottom: 2px; width: 1px; background: rgba(242, 233, 218, 0.45); } .ds-strip-head::before { content: \"\"; position: absolute; top: -2px; left: -2px; width: 5px; height: 6px; border-radius: 0 0 2px 2px; background: #b4a894; opacity: 0.8; } .ds-strip-counter { flex-shrink: 0; min-width: 52px; height: 30px; display: flex; align-items: center; justify-content: center; background: #0f0c09; border-radius: 6px; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55); font-family: ui-monospace, 'Cascadia Code', monospace; font-size: 13px; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; } .ds-strip-stop, .ds-strip-eject { position: relative; width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; transition: background 0.12s ease, box-shadow 0.12s ease, color 0.12s ease, transform 0.08s ease; } .ds-strip-stop { background: #3a1611; border: 1px solid rgba(255, 68, 56, 0.5); color: #ffb4ac; box-shadow: inset 0 1px 0 rgba(255, 240, 214, 0.06), 0 0 10px rgba(255, 68, 56, 0.35); } .ds-strip-stop:hover { background: #4a1b14; box-shadow: inset 0 1px 0 rgba(255, 240, 214, 0.06), 0 0 10px rgba(255, 68, 56, 0.5); } .ds-strip-eject { margin-left: 4px; background: #2a2118; border: 1px solid rgba(255, 240, 214, 0.12); color: #a89b88; box-shadow: inset 0 1px 0 rgba(255, 240, 214, 0.07); } .ds-strip-eject:hover { background: #342a1e; color: #f2e9da; } .ds-strip-stop:active, .ds-strip-eject:active { transform: translateY(1px) scale(0.96); } .ds-strip-stop:focus-visible, .ds-strip-eject:focus-visible { outline: 2px solid #f2e9da; outline-offset: 2px; } @keyframes ds-strip-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.82); } } @keyframes ds-strip-spin { to { transform: rotate(360deg); } } @media (prefers-reduced-motion: reduce) { .ds-strip-dot, .ds-strip-reel { animation: none; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Tape Transport",
+    "overview": "Earheart's overlay is a machine you can watch working: a miniature reel-to-reel lying along the bottom of the screen. Dictation is not a pulsing dot in a pill \u2014 it is signal being physically written onto moving tape. The world is a warm-black instrument faceplate with wells sunk into it: an umber tape ribbon carrying the oxide-written waveform past a fixed record head, aluminum reels whose hub windows make rotation visible, a mechanical counter, legended status lamps, and machined transport keys. A glance tells the whole story: lamp lit, reels turning, your words being written onto tape and appearing above; the backlit square key stops, eject discards.\n\nThe finish is flat matte throughout. The only glow in the world comes from things that are lit \u2014 status lamps, the backlit STOP key, the playhead \u2014 never from ambience. Depth is machined into the faceplate (inset wells, inset top highlights), never cast under it: the overlay window is transparent, and a drop shadow would band and halo against the desktop. Motion is mechanical physics, not decoration: reels spin at different speeds, keys travel when pressed, tape glides at a fixed write speed, and all of it collapses to instant state changes under prefers-reduced-motion. Text is quiet system UI silk-screened in ivory onto the faceplate; the machine's own numerals are monospace.\n\nConfirmed rejections, from the shipped overlay itself: no cast shadows on the transparent window; no translucent surface under text (the faceplate is solid so the written tape and the warm raw tail never depend on what shows through behind the overlay); no category-standard pulsing-dot pill.\n\nLegacy note: the settings window and setup wizard (renderer/settings.css, renderer/wizard.css) still ship the previous violet-black / rose \"On-Air Lamp\" system and have not yet migrated. New surfaces follow the Tape Transport world; settings and wizard carry the legacy system pending migration. Never blend the two worlds on one surface.",
+    "keyCharacteristics": [
+      "Interface as instrument: every state is a lamp, a reel speed, or a written trace \u2014 never an abstract spinner.",
+      "Warm-black and oxide materials; saturated color exists only in lamps.",
+      "Depth by inset: wells sink into the faceplate; nothing floats above it.",
+      "Glow means lit: lamp blooms and key backlight are the world's only shadows.",
+      "Honest state: the machine never claims to be listening before samples flow."
+    ],
+    "rules": [
+      {
+        "name": "The Lamp Vocabulary Rule",
+        "body": "Status colors are a fixed legended vocabulary: REC red = capturing, BUSY amber = working (or the machine talking about itself), DONE green = delivered, inert warm grey = idle or fault. Never repurpose a lamp color for decoration, and never invent a second color for a meaning that already has a lamp.",
+        "section": "colors"
+      },
+      {
+        "name": "The Oxide-Is-Material Rule",
+        "body": "The written trace is Oxide \u2014 muted, material, the take itself. Saturated red is reserved for the REC lamp and the backlit STOP key. If the tape glows lamp-red, the lamp means nothing.",
+        "section": "colors"
+      },
+      {
+        "name": "The Machine-Numerals Rule",
+        "body": "Anything the machine counts \u2014 the take counter \u2014 is monospace with font-variant-numeric: tabular-nums, seated in a recessed cell. Human words are never monospace.",
+        "section": "typography"
+      },
+      {
+        "name": "The Depth-Is-Inset Rule",
+        "body": "The overlay window is transparent, and soft shadows band and halo on transparent windows \u2014 so the card carries no drop shadow, ever. Depth is machined into the faceplate instead: wells recess (inset 0 1px 3px rgba(0,0,0,0.55)), edges catch light as inset top highlights, and the card's lift comes from its solid surface and hairline Machine Edge border. Every outward glow in the system is a lit thing, not elevation.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Keys-Stay-In-Their-Slots Rule",
+        "body": "A machine doesn't remove its keys. Keys that don't currently apply go unlit and inert \u2014 visibility/state, not display \u2014 so neighboring keys never jump.",
+        "section": "components"
+      },
+      {
+        "name": "The Filled-Lamp Contract",
+        "body": "The lit pulsing lamp + written tape + running counter mean \"audio is being captured right now.\" While the mic warms up the lamp is a hollow ring \u2014 the card only promises it's getting there. Never show the filled lamp before samples flow.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do keep the lamp vocabulary fixed: REC red capturing, BUSY amber working or self-referential, DONE green delivered, inert warm grey for idle/fault (The Lamp Vocabulary Rule).",
+      "Do express depth by inset \u2014 recessed wells (inset 0 1px 3px rgba(0,0,0,0.55)) and inset top lights \u2014 and reserve outward glow for lit things: lamp blooms, key backlight, the playhead.",
+      "Do keep motion mechanical and honest: 0.12s ease for key/surface states, 0.08s key travel, 0.15s linear progress, 0.18s card height, 0.2s card entrance; reels pause (keeping their angle) rather than reset; collapse everything under prefers-reduced-motion while still updating state.",
+      "Do paint 34px keys but offer ~42px hit areas (inset \u22124px pseudo-element), and isolate destructive keys with extra gap.",
+      "Do set machine numerals in monospace tabular-nums, and dim (never hide) readouts that aren't running.",
+      "Do keep the faceplate solid; text and tape must never depend on what shows through behind the transparent window."
+    ],
+    "donts": [
+      "Don't cast a shadow on the overlay card \u2014 soft shadows band and halo on transparent windows; depth is inset, never cast (The Depth-Is-Inset Rule).",
+      "Don't paint the written tape in lamp red \u2014 the trace is muted Oxide; saturated red belongs to the REC lamp and the backlit STOP key (The Oxide-Is-Material Rule).",
+      "Don't show the filled recording lamp before samples flow \u2014 warming up is a hollow ring (The Filled-Lamp Contract).",
+      "Don't remove keys that don't apply \u2014 unlit and inert in their slots, so the eject key never jumps (The Keys-Stay-In-Their-Slots Rule).",
+      "Don't blend worlds: settings/wizard carry the legacy On-Air Lamp system pending migration; new surfaces are Tape Transport only, and no surface mixes the two palettes.",
+      "Don't invite the user to talk before the mic is live \u2014 the card says \"Starting mic\u2026\" until the first samples arrive."
+    ]
+  }
+}

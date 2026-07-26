@@ -1,7 +1,38 @@
+/* Earheart recording overlay — "The Tape Transport". A miniature reel-to-reel
+   lying along the bottom of the screen: warm-black instrument faceplate, a tape
+   ribbon written with the dictation's signal, legended status lamps, machined
+   transport keys. Flat matte throughout; the only glow comes from lamps and
+   backlit keys, and the card carries NO drop shadow (soft shadows band/halo on
+   transparent windows — depth is inset, never cast). */
+
+:root {
+  --face: #1c1713; /* faceplate — warm black, solid so text never sits over the desktop */
+  --face-edge: rgba(255, 240, 214, 0.14); /* hairline machine edge */
+  --recess: #0f0c09; /* wells sunk into the faceplate: tape window, counter */
+  --ribbon: #35291d; /* the tape itself */
+  --oxide: #d29a5a; /* signal written onto the tape */
+  --ivory: #f2e9da; /* silk-screen legends + primary text */
+  --ivory-dim: #a89b88; /* unlit legends, secondary text (≥4.5:1 on --face) */
+  --alu: #b4a894; /* reel metal */
+  --key: #2a2118; /* machined key caps */
+  --key-edge: rgba(255, 240, 214, 0.12);
+  --rec: #ff4438; /* lamp: capturing */
+  --busy: #ffb03a; /* lamp: machine working / talking about itself */
+  --done: #59c98a; /* lamp: delivered */
+  --inert: #9b9187; /* lamp: idle/fault — warm, deliberately unalarming */
+  --raw-warm: #e7b57e; /* fresh, not-yet-settled transcript tail */
+}
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+/* The [hidden] attribute must always win, even over components that set their
+   own display (buttons, #message, .reel rows). */
+[hidden] {
+  display: none !important;
 }
 
 html,
@@ -25,20 +56,20 @@ body {
   height: 100vh;
 }
 
-/* #card: transcript (top) + control row (bottom). */
+/* #card: the faceplate. Transcript (top) grows freely; transport row (bottom). */
 #card {
   display: flex;
   flex-direction: column;
   margin: 12px;
-  border-radius: 22px;
-  /* Solid (not translucent) so the faint raw tail's contrast doesn't depend on
-     whatever app shows through behind the overlay, and so text never sits over a
-     see-through edge. Matches the settings window's --panel surface so the two
-     windows read as one product. */
-  background: rgb(32, 28, 44);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  color: #f3f1f7;
-  /* The card body is the drag handle; buttons reset this to a pointer below. */
+  border-radius: 12px;
+  /* Solid (not translucent) so the written tape and the warm raw tail never
+     depend on whatever app shows through behind the overlay. */
+  background: var(--face);
+  border: 1px solid var(--face-edge);
+  /* Machined top edge: an inset highlight, not a cast shadow. */
+  box-shadow: inset 0 1px 0 rgba(255, 240, 214, 0.05);
+  color: var(--ivory);
+  /* The card body is the drag handle; keys reset this to a pointer below. */
   cursor: move;
   overflow: hidden; /* keep children inside the rounded corners */
   /* Hidden until overlay:show, so the window can fade in instead of popping. */
@@ -62,45 +93,44 @@ body {
   transition: opacity 0.2s ease; /* no transform easing while dragging */
 }
 
-/* Grip handle: a short centered bar that signifies the card is draggable. The
+/* Drag rail: a short knurled strip that signifies the card is draggable. The
    card carries the actual drag, so this is purely a visual affordance. */
 #grip {
   flex-shrink: 0;
-  width: 32px;
-  height: 4px;
-  margin: 7px auto 0;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.18);
-  transition: background 0.15s ease;
+  width: 44px;
+  height: 5px;
+  margin: 7px auto 5px;
+  border-radius: 2.5px;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(255, 240, 214, 0.22) 0 1px,
+    transparent 1px 3px
+  );
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
 }
 
 #card:hover #grip {
-  background: rgba(255, 255, 255, 0.3);
+  opacity: 1;
 }
 
-/* Update prompt: sits at the top of the card, above the transcript and the
-   control row. An amber left edge marks it as the app talking about itself
-   rather than about the dictation (rose/green/amber-dot vocabulary below all
-   belong to the recording). */
+/* Update prompt: a service note pinned to the faceplate, above the transcript
+   and the transport row. Its amber service lamp marks it as the machine talking
+   about itself — the REC/DONE lamp vocabulary below belongs to the dictation. */
 #update {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin: 8px 12px 4px;
+  margin: 2px 12px 6px;
   padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 179, 71, 0.35);
-  border-left: 3px solid #ffb347;
-  background: rgba(255, 179, 71, 0.1);
-}
-
-#update[hidden] {
-  display: none;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 176, 58, 0.35);
+  background: rgba(255, 176, 58, 0.07);
 }
 
 /* Solo prompt: the card came up for the update alone, with no dictation behind
-   it, so the recording controls have nothing to say — hide them and let the
-   banner be the whole card. */
+   it, so the transport has nothing to say — hide it and let the note be the
+   whole card. */
 #card[data-update="solo"] #controls {
   display: none;
 }
@@ -119,34 +149,42 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* The amber service lamp. */
+#update-title::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--busy);
+  box-shadow: 0 0 6px rgba(255, 176, 58, 0.6);
+  margin-right: 7px;
+}
+
 #update-note {
   font-size: 11px;
-  color: #b8b3c4;
+  color: var(--ivory-dim);
   overflow-wrap: anywhere;
 }
 
-/* Reuses the #progress track/fill pattern from the control row. */
+/* Reuses the #progress track/fill pattern from the tape window. */
 #update-bar {
   height: 3px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 240, 214, 0.15);
   overflow: hidden;
-}
-
-#update-bar[hidden] {
-  display: none;
 }
 
 #update-bar-fill {
   height: 100%;
   width: 0;
   border-radius: 2px;
-  background: #ffb347;
+  background: var(--busy);
   transition: width 0.15s linear;
 }
 
-/* Wrap rather than squeeze: the card is only 360px wide, so on a narrow row the
-   secondary actions drop to a second line (the card grows to fit). */
+/* Wrap rather than squeeze: on a narrow row the secondary actions drop to a
+   second line (the card grows to fit). */
 #update-actions {
   display: flex;
   flex-wrap: wrap;
@@ -161,66 +199,68 @@ body {
   gap: 4px;
 }
 
-#update-outs[hidden] {
-  display: none;
-}
-
-/* Text buttons, not the 32px circles the control row uses. */
+/* Text buttons, not the machined transport keys below. */
 .pill {
   width: auto;
   height: 26px;
   padding: 0 10px;
-  border-radius: 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
   font-size: 12px;
   font-weight: 600;
   font-family: inherit;
 }
 
 .pill::before {
-  border-radius: 8px;
+  border-radius: 9px;
   inset: -2px;
 }
 
 .pill.primary {
-  background: #ffb347;
-  color: #2a2136;
+  background: var(--busy);
+  color: #241703;
 }
 
 .pill.primary:hover {
-  background: #ffc46b;
+  background: #ffc262;
 }
 
 .pill.quiet {
   background: transparent;
-  color: #b8b3c4;
+  color: var(--ivory-dim);
   font-weight: 500;
 }
 
 .pill.quiet:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #f3f1f7;
+  background: rgba(255, 240, 214, 0.08);
+  color: var(--ivory);
 }
 
 #update-close {
   width: 22px;
   height: 22px;
-  color: #b8b3c4;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ivory-dim);
   flex-shrink: 0;
 }
 
 #update-close:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: rgba(255, 240, 214, 0.1);
+  color: var(--ivory);
 }
 
 /* Live transcript: fills the top of the card and grows freely (no clip, no
-   scroll, no mask). Two layers inline: the cleaned text (prominent) and the
-   still-streaming raw tail (faint). */
+   scroll, no mask). Two layers inline: the settled cleaned text and the
+   still-streaming raw tail — fresh words warm, cooling as they settle. */
 #transcript {
-  /* Left/right inset matches the control row below so the text column and the
-     controls share one left edge. Smaller top pad because the grip handle above
-     already adds spacing; bottom frames the divider. */
-  padding: 8px 16px 12px;
+  /* Left/right inset matches the transport row below so the text column and
+     the machine share one left edge. */
+  padding: 6px 16px 10px;
   font-size: 15px;
   line-height: 1.5;
   /* Wrap long words instead of overflowing the card width. */
@@ -228,79 +268,122 @@ body {
   word-break: break-word;
 }
 
-#transcript[hidden] {
-  display: none;
-}
-
 #transcript-clean {
   font-weight: 500;
-  color: #f6f4fb;
+  color: var(--ivory);
 }
 
 #transcript-raw {
-  /* Subordinate to the cleaned line but still readable on the solid card. */
-  color: rgba(243, 241, 247, 0.62);
+  /* The freshly-written words: bright and warm off the head, subordinate to
+     the settled line only in weight, not legibility. */
+  color: var(--raw-warm);
+  text-shadow: 0 0 6px rgba(231, 181, 126, 0.25);
 }
 
-/* Control row: meter, status, timer, buttons. */
+/* A recessed seam above the transport only when the transcript is showing;
+   when the card is transport-only there's nothing to divide from. */
+#card[data-transcript] #transcript {
+  border-bottom: 1px solid rgba(255, 240, 214, 0.07);
+}
+
+/* Transport row: lamp, supply reel, tape window, take-up reel, counter, keys. */
 #controls {
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 56px;
-  padding: 0 16px;
+  gap: 8px;
+  height: 46px;
+  margin: 0 12px 6px;
   flex-shrink: 0;
 }
 
-/* A subtle top divider only when the transcript is showing above the controls;
-   when the card is controls-only there's nothing to divide from. */
-#card[data-transcript] #controls {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
+/* ---------- status lamp block ---------- */
 
-@media (prefers-reduced-motion: reduce) {
-  #card {
-    transition: opacity 0.2s ease;
-    transform: none;
-  }
+#lamp {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 30px;
+  flex-shrink: 0;
 }
 
 #indicator {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
-  flex-shrink: 0;
-  background: #ff5470;
+  background: var(--inert);
 }
 
-/* Mic warming up: a hollow ring, deliberately NOT the filled recording dot.
-   The visual contract is that the filled pulsing dot + waveform + timer mean
-   "audio is being captured right now"; until the first samples arrive the
+/* The printed micro-legend under the lamp; its text comes from data-status. */
+#lamp-legend {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--ivory-dim);
+}
+
+#lamp-legend::after {
+  content: "—";
+}
+
+/* Mic warming up: a hollow ring, deliberately NOT the lit recording lamp.
+   The visual contract is that the lit pulsing lamp + written tape + counter
+   mean "audio is being captured right now"; until the first samples arrive the
    card only promises that it's getting there. */
 [data-status="starting"] #indicator {
   background: transparent;
-  border: 2px solid #ff5470;
+  border: 2px solid var(--rec);
   animation: pulse 1s ease-in-out infinite;
 }
 
+[data-status="starting"] #lamp-legend::after,
+[data-status="recording"] #lamp-legend::after {
+  content: "REC";
+}
+
+[data-status="recording"] #lamp-legend::after {
+  color: #ff958c;
+}
+
 [data-status="recording"] #indicator {
+  background: var(--rec);
+  /* Lamp bloom: the material of a lit lamp, not elevation. */
+  box-shadow: 0 0 9px 1px rgba(255, 68, 56, 0.5);
   animation: pulse 2s ease-in-out infinite;
 }
 
 [data-status="transcribing"] #indicator,
 [data-status="cleaning"] #indicator,
 [data-status="delivering"] #indicator {
-  background: #ffb347;
+  background: var(--busy);
+  box-shadow: 0 0 9px 1px rgba(255, 176, 58, 0.45);
   animation: pulse 1.4s ease-in-out infinite;
 }
 
+[data-status="transcribing"] #lamp-legend::after,
+[data-status="cleaning"] #lamp-legend::after,
+[data-status="delivering"] #lamp-legend::after {
+  content: "BUSY";
+  color: #ffc76e;
+}
+
 [data-status="done"] #indicator {
-  background: #4ade80;
+  background: var(--done);
+  box-shadow: 0 0 8px 1px rgba(89, 201, 138, 0.4);
+}
+
+[data-status="done"] #lamp-legend::after {
+  content: "DONE";
+  color: #8fdcae;
 }
 
 [data-status="error"] #indicator,
 [data-status="empty"] #indicator {
-  background: #94a3b8;
+  background: var(--inert);
+}
+
+[data-status="error"] #lamp-legend::after {
+  content: "ERR";
 }
 
 @keyframes pulse {
@@ -311,175 +394,336 @@ body {
   }
   50% {
     opacity: 0.45;
-    transform: scale(0.78);
+    transform: scale(0.82);
   }
 }
 
-/* The waveform is the hero of the recording row: it flexes to fill all the space
-   between the pulse dot and the timer, so there's no dead gap. min-width:0 lets
-   it shrink below the canvas's intrinsic width; overlay.js keeps the canvas
-   backing store matched to this flexed box so the bars never stretch. */
-#meter {
-  flex: 1;
-  min-width: 0;
-  height: 36px;
+/* ---------- reels ---------- */
+
+.reel {
+  flex-shrink: 0;
+  color: var(--alu);
+  animation: spin 2.3s linear infinite;
+  /* Paused keeps the reel's angle, so the tape stops where it stopped. */
+  animation-play-state: paused;
 }
 
-/* The waveform and timer only mean something once audio flows, but Stop stays
-   available from the first instant of "starting" too: a user aborting a slow
-   mic warm-up must not lose the control they reach for by muscle memory. */
-#card:not([data-status="recording"]) #meter,
-#card:not([data-status="recording"]) #timer,
-#card:not([data-status="recording"]):not([data-status="starting"]) #stop {
-  display: none;
+/* The take-up reel turns a touch faster — the small asymmetry that makes the
+   transport read as a machine rather than a loop. */
+#reel-takeup {
+  animation-duration: 1.8s;
 }
+
+[data-status="recording"] .reel {
+  animation-play-state: running;
+}
+
+/* Processing: the machine reads the tape back, faster than it was written. */
+[data-status="transcribing"] .reel,
+[data-status="cleaning"] .reel {
+  animation-duration: 0.9s;
+  animation-play-state: running;
+}
+
+[data-status="delivering"] .reel {
+  animation-duration: 1.4s;
+  animation-play-state: running;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- tape window ---------- */
+
+/* The hero: a recessed well the tape runs through. Flexes to fill all the
+   space between the reels; min-width:0 lets it shrink below the canvas's
+   intrinsic width (overlay.js keeps the canvas backing store matched). */
+#tape-window {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  align-self: center;
+  background: var(--recess);
+  border-radius: 6px;
+  /* Recessed, not lifted: depth by inset. */
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+#meter {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transition: opacity 0.15s ease;
+}
+
+/* When the machine is speaking (any non-recording phase shows #message over
+   the window), the written tape dims to a backdrop. */
+#card:not([data-status="recording"]) #meter {
+  opacity: 0.22;
+}
+
+/* The record head: a fixed slit where the signal is written. Sits at the same
+   fraction of the window as the canvas's write position (overlay.js). */
+#head {
+  position: absolute;
+  left: 40%;
+  top: 2px;
+  bottom: 2px;
+  width: 1px;
+  background: rgba(242, 233, 218, 0.3);
+}
+
+/* The head shoe riding the top edge of the well. */
+#head::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  width: 5px;
+  height: 6px;
+  border-radius: 0 0 2px 2px;
+  background: var(--alu);
+  opacity: 0.8;
+}
+
+/* The slit brightens while the head is actually writing. */
+[data-status="recording"] #head {
+  background: rgba(242, 233, 218, 0.45);
+}
+
+/* Fade the head out when nothing is being written. */
+#card:not([data-status="recording"]):not([data-status="starting"]) #head {
+  opacity: 0.25;
+}
+
+/* ---------- machine display (status text over the tape window) ---------- */
 
 #message {
+  position: absolute;
+  inset: 0;
   display: none;
   flex-direction: column;
-  min-width: 0;
-  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0 8px;
+  text-align: center;
 }
 
+/* The display lights whenever the tape isn't being written (same rule the old
+   card used: status text belongs to every phase except recording). */
 #card:not([data-status="recording"]) #message {
   display: flex;
 }
 
 #status-text {
-  font-size: 13px;
+  max-width: 100%;
+  font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* A faint VFD warmth — display glass, not decoration. */
+  text-shadow: 0 0 8px rgba(255, 240, 214, 0.18);
 }
 
 #detail-text {
-  font-size: 11px;
-  color: #b8b3c4;
+  max-width: 100%;
+  font-size: 10.5px;
+  color: var(--ivory-dim);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Determinate progress under the status text (transcribing/cleaning). Same
-   track/fill pattern as the wizard's download bar; the fill reuses the amber
-   of the processing indicator dot. Slim enough to fit the fixed control row,
-   so showing it never changes the card height. */
-#progress {
-  height: 3px;
-  margin-top: 3px;
-  border-radius: 2px;
-  /* Same value as the #grip track: at 3px tall anything fainter disappears
-     against the card, and the unfilled remainder is what makes the fill read
-     as "X% of a whole" rather than a floating amber sliver. */
-  background: rgba(255, 255, 255, 0.18);
-  overflow: hidden;
-}
-
-#progress[hidden] {
+/* Hide the empty detail line so the status alone centers optically. */
+#detail-text:empty {
   display: none;
 }
 
-/* During the processing phases the hidden bar keeps its box (invisible track)
-   so the centered status text doesn't jump 3px when the first progress event
-   unhides it mid-read. Delivering is included so a completed bar's brief hold
-   (see overlay.js) can ride through "Typing…" without a collapse. Terminal
-   states (done/empty/error) collapse it entirely — remote engines and final
-   text never pay for space they won't use. */
-#card[data-status="transcribing"] #progress[hidden],
-#card[data-status="cleaning"] #progress[hidden],
-#card[data-status="delivering"] #progress[hidden] {
-  display: block;
-  visibility: hidden;
+/* ---------- playhead progress (transcribing/cleaning/delivering) ---------- */
+
+/* Overlaid along the bottom of the tape window: the machine reading the tape.
+   Absolute, so appearing never changes the card height. */
+#progress {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 3px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 240, 214, 0.12);
+  overflow: hidden;
 }
 
 #progress-fill {
+  position: relative;
   height: 100%;
   width: 0;
   border-radius: 2px;
-  background: #ffb347;
+  background: var(--busy);
   transition: width 0.15s linear;
 }
 
-/* Sits right after the waveform (no flex stretch), reading as its caption. The
-   waveform's flex:1 owns the leftover width, so the timer hugs the meter and the
-   Stop/Cancel buttons follow. */
+/* The playhead riding the fill's leading edge. */
+#progress-fill::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  background: #ffe3b0;
+  box-shadow: 0 0 6px rgba(255, 176, 58, 0.8);
+}
+
+/* ---------- counter ---------- */
+
+/* A recessed counter cell, part of the machine whether lit or not. */
+#counter {
+  flex-shrink: 0;
+  min-width: 52px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--recess);
+  border-radius: 6px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
 #timer {
+  font-family: ui-monospace, "Cascadia Code", monospace;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-  color: #b8b3c4;
-  flex-shrink: 0;
+  letter-spacing: 0.04em;
+  color: var(--ivory);
 }
+
+/* The counter counts captured audio; outside recording its digits go unlit —
+   still showing the take's length, but clearly not running. Dim enough to read
+   as off, bright enough that the take length stays readable at a glance. */
+#card:not([data-status="recording"]) #timer {
+  opacity: 0.45;
+}
+
+/* ---------- transport keys ---------- */
 
 button {
   position: relative;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--key-edge);
   flex-shrink: 0;
   cursor: pointer;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
+  background: var(--key);
+  color: var(--ivory);
+  /* Machined cap: inset top light, no cast shadow. */
+  box-shadow: inset 0 1px 0 rgba(255, 240, 214, 0.07);
   transition:
     background 0.12s ease,
-    transform 0.12s ease;
+    box-shadow 0.12s ease,
+    color 0.12s ease,
+    transform 0.08s ease;
 }
 
-/* `display: flex` above beats the UA's [hidden] rule (author sheet wins), so the
-   update prompt's per-status buttons need this to actually hide. */
-button[hidden] {
-  display: none;
-}
-
-/* Enlarge the clickable area to ~40px without changing the painted 32px circle,
+/* Enlarge the clickable area to ~42px without changing the painted 34px key,
    so the tightly-packed controls are easier to hit (and harder to mis-hit). */
 button::before {
   content: "";
   position: absolute;
   inset: -4px;
-  border-radius: 50%;
+  border-radius: 12px;
 }
 
 button svg {
   display: block;
 }
 
+button:hover {
+  background: #342a1e;
+}
+
+/* A key press travels. */
 button:active {
-  transform: scale(0.92);
+  transform: translateY(1px) scale(0.96);
 }
 
 /* Keyboard focus ring. The overlay is focusable:false so focus normally never
    lands here, but this is cheap insurance for AT or a future focusable context. */
 button:focus-visible {
-  outline: 2px solid #f6f4fb;
+  outline: 2px solid var(--ivory);
   outline-offset: 2px;
 }
 
+/* STOP: backlit while there's a take to stop — the machine telling you which
+   key it expects. Keeps its slot (visibility, not display) through the
+   processing phases so the eject key never jumps. */
 #stop {
-  background: #ff5470;
-  color: #fff;
-  /* An emphasis ring, not elevation — the only box-shadow in the UI. The card
-     deliberately has no drop shadow (soft shadows band/halo on transparent
-     windows), so don't "fix" that by adding one. */
-  box-shadow: 0 0 0 3px rgba(255, 84, 112, 0.25);
+  background: #3a1611;
+  border-color: rgba(255, 68, 56, 0.5);
+  color: #ffb4ac;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 214, 0.06),
+    0 0 10px rgba(255, 68, 56, 0.35);
 }
 
 #stop:hover {
-  background: #ff7088;
-  box-shadow: 0 0 0 3px rgba(255, 84, 112, 0.4);
+  background: #4a1b14;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 214, 0.06),
+    0 0 10px rgba(255, 68, 56, 0.5);
 }
 
+/* Outside a take there is nothing to stop: the key stays in its slot but goes
+   unlit and inert — a machine doesn't remove its keys. */
+#card:not([data-status="recording"]):not([data-status="starting"]) #stop {
+  background: var(--key);
+  border-color: var(--key-edge);
+  color: rgba(242, 233, 218, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 240, 214, 0.05);
+  pointer-events: none;
+}
+
+/* Extra gap before the destructive eject (discards the dictation) so it isn't
+   hit by reflex right next to stop. */
 #cancel {
-  /* Extra gap before the destructive cancel (discards the dictation) so it isn't
-     hit by reflex right next to stop. */
   margin-left: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #d6d2e0;
+  color: var(--ivory-dim);
 }
 
 #cancel:hover {
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff;
+  color: var(--ivory);
+}
+
+/* ---------- reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  #card {
+    transition: opacity 0.2s ease;
+    transform: none;
+  }
+  .reel,
+  #indicator {
+    animation: none !important;
+  }
+  /* The tape still updates (state, not decoration) but overlay.js stops the
+     glide; collapse everything else to effectively instant. */
+  #meter,
+  #progress-fill,
+  button,
+  #grip {
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -51,16 +51,20 @@ function wireHotkeyCapture(input, { apply, restore }) {
     // handler ends capture and restores the value).
     if (event.key === "Tab") return;
     event.preventDefault();
-    // Escape leaves capture without changing the binding (blur restores it).
+    // Ending capture keeps focus in the field (blur() would strand a
+    // keyboard user's Tab position at <body>); the blur listener still
+    // handles click-away.
     if (event.key === "Escape") {
-      input.blur();
+      // Leave capture without changing the binding.
+      input.classList.remove("capturing");
+      input.value = restore();
       return;
     }
     const accelerator = acceleratorFromEvent(event);
     if (accelerator) {
       apply(accelerator);
       input.classList.remove("capturing");
-      input.blur();
+      input.value = restore();
     }
   });
 }

@@ -269,20 +269,23 @@ select {
   cursor: pointer;
 }
 
-#hotkey {
+#hotkey,
+#pause-hotkey {
   cursor: pointer;
   font-family: ui-monospace, monospace;
   letter-spacing: 0.02em;
 }
 
-/* The hotkey is a click-to-capture field; once populated it looks like a static
-   value, so give it a button-like hover so it reads as changeable. */
-#hotkey:not(.capturing):hover {
+/* The hotkeys are click-to-capture fields; once populated they look like a
+   static value, so give them a button-like hover so they read as changeable. */
+#hotkey:not(.capturing):hover,
+#pause-hotkey:not(.capturing):hover {
   border-color: var(--muted);
   background: var(--elevate);
 }
 
-#hotkey.capturing {
+#hotkey.capturing,
+#pause-hotkey.capturing {
   border-color: var(--accent);
   background: var(--accent-soft);
   box-shadow: 0 0 0 3px var(--accent-soft);

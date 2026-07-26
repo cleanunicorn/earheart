@@ -50,6 +50,10 @@ OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
   bar tracks the finishing passes too — estimated from your machine's measured
   decode speed while transcribing (so it deliberately stops short of the end
   rather than overpromise), and following actual generation during cleanup.
+- **Pause and resume mid-dictation** — the overlay's pause key holds the take
+  (talk to someone, take a call) and resumes the same dictation; paused time
+  is never captured and never counts against the recording limit. Optionally
+  bind a global pause hotkey in Settings → General.
 - **Speech-to-text with NVIDIA Parakeet** — by default Parakeet TDT 0.6B v3
   (multilingual, 25 languages) runs **in-process** via sherpa-onnx / ONNX
   Runtime, faster than realtime on CPU and with no network hop. Or point
@@ -278,7 +282,7 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
   ```
 
   Earheart runs single-instance; a second invocation just toggles dictation in
-  the running app.
+  the running app. The same works for pause/resume with `earheart --pause`.
 
 ### macOS
 

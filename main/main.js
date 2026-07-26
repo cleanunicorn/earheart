@@ -27,6 +27,8 @@ if (!gotLock) {
   app.on("second-instance", (event, argv) => {
     if (argv.includes("--toggle")) {
       pipeline.toggle();
+    } else if (argv.includes("--pause")) {
+      pipeline.pauseToggle();
     } else {
       windows.openSettings();
     }
@@ -34,8 +36,19 @@ if (!gotLock) {
   main();
 }
 
-function applyHotkey(accelerator) {
-  return hotkeys.register(accelerator, () => pipeline.toggle());
+// Register both global hotkeys from settings. The record hotkey is required
+// (empty is a misconfiguration); the pause hotkey is optional (empty simply
+// leaves it unbound). Record registers first so a pause combo colliding with
+// it is the one that loses.
+function applyHotkeys(cfg) {
+  const record = hotkeys.register("record", cfg.hotkey, () => pipeline.toggle());
+  const pause = hotkeys.register("pause", cfg.pauseHotkey, () =>
+    pipeline.pauseToggle()
+  );
+  return {
+    hotkey: record.empty ? { ok: false, error: "No hotkey configured" } : record,
+    pauseHotkey: pause,
+  };
 }
 
 function main() {
@@ -69,7 +82,7 @@ function main() {
 
     pipeline.init();
     ipc.init({
-      applyHotkey,
+      applyHotkeys,
       onSettingsChanged: () => {
         tray.refresh();
         pipeline.onSettingsChanged();
@@ -82,9 +95,12 @@ function main() {
       updates.init({ onStateChange: () => tray.refresh() });
     }
 
-    const hotkeyResult = applyHotkey(cfg.hotkey);
-    if (!hotkeyResult.ok) {
-      logger.warn(hotkeyResult.error);
+    const hotkeyResults = applyHotkeys(cfg);
+    if (!hotkeyResults.hotkey.ok) {
+      logger.warn(hotkeyResults.hotkey.error);
+    }
+    if (!hotkeyResults.pauseHotkey.ok) {
+      logger.warn(hotkeyResults.pauseHotkey.error);
     }
 
     if (!startHidden && !isSmokeTest) {

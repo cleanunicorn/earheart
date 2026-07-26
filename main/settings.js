@@ -28,6 +28,11 @@ const DEFAULTS = {
   // Global hotkey (Electron accelerator format). Press once to start
   // recording, press again to stop and transcribe.
   hotkey: "CommandOrControl+Shift+Space",
+  // Optional pause/resume hotkey for a dictation in progress. Empty = not
+  // registered — deliberately unset by default, since a second global grab
+  // shadows some app's shortcut for somebody; the combo is the user's choice
+  // (Settings → General).
+  pauseHotkey: "",
   // Launch Earheart automatically at login (it lands in the tray, ready for
   // the hotkey). Pushed to the OS by main/autostart.js — a native login item
   // on Windows/macOS, an XDG autostart .desktop file on Linux — on save, and

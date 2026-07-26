@@ -61,43 +61,69 @@ function acceleratorFromEvent(event) {
   return parts.join("+");
 }
 
-const hotkeyInput = $("hotkey");
-function startHotkeyCapture() {
-  hotkeyInput.classList.add("capturing");
-  hotkeyInput.value = "Press keys…";
-}
-hotkeyInput.addEventListener("click", startHotkeyCapture);
-hotkeyInput.addEventListener("blur", () => {
-  hotkeyInput.classList.remove("capturing");
-  hotkeyInput.value = current?.hotkey || "";
-});
-hotkeyInput.addEventListener("keydown", (event) => {
-  // Keyboard users can't click, so Enter/Space on the focused field arms
-  // capture — matching what a mouse click does.
-  if (!hotkeyInput.classList.contains("capturing")) {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      startHotkeyCapture();
+// One capture wiring for both hotkey fields: `apply` stores a captured
+// accelerator, `restore` yields what blur should show.
+function wireHotkeyCapture(input, { apply, restore }) {
+  function startCapture() {
+    input.classList.add("capturing");
+    input.value = "Press keys…";
+  }
+  input.addEventListener("click", startCapture);
+  input.addEventListener("blur", () => {
+    input.classList.remove("capturing");
+    input.value = restore();
+  });
+  input.addEventListener("keydown", (event) => {
+    // Keyboard users can't click, so Enter/Space on the focused field arms
+    // capture — matching what a mouse click does.
+    if (!input.classList.contains("capturing")) {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        startCapture();
+      }
+      return;
     }
-    return;
-  }
-  event.preventDefault();
-  // Escape leaves capture without changing the binding (blur restores it).
-  if (event.key === "Escape") {
-    hotkeyInput.blur();
-    return;
-  }
-  const accelerator = acceleratorFromEvent(event);
-  if (accelerator) {
+    event.preventDefault();
+    // Escape leaves capture without changing the binding (blur restores it).
+    if (event.key === "Escape") {
+      input.blur();
+      return;
+    }
+    const accelerator = acceleratorFromEvent(event);
+    if (accelerator) {
+      apply(accelerator);
+      input.classList.remove("capturing");
+      input.blur();
+    }
+  });
+}
+
+const hotkeyInput = $("hotkey");
+wireHotkeyCapture(hotkeyInput, {
+  apply: (accelerator) => {
     current.hotkey = accelerator;
     hotkeyInput.value = accelerator;
-    hotkeyInput.classList.remove("capturing");
-    hotkeyInput.blur();
-  }
+  },
+  restore: () => current?.hotkey || "",
 });
 $("hotkey-clear").addEventListener("click", () => {
   current.hotkey = defaults.hotkey;
   hotkeyInput.value = defaults.hotkey;
+});
+
+// The pause hotkey is optional: Clear unbinds it entirely (empty = not
+// registered) rather than resetting to a default.
+const pauseHotkeyInput = $("pause-hotkey");
+wireHotkeyCapture(pauseHotkeyInput, {
+  apply: (accelerator) => {
+    current.pauseHotkey = accelerator;
+    pauseHotkeyInput.value = accelerator;
+  },
+  restore: () => current?.pauseHotkey || "",
+});
+$("pause-hotkey-clear").addEventListener("click", () => {
+  current.pauseHotkey = "";
+  pauseHotkeyInput.value = "";
 });
 
 /* ---------- microphone list ---------- */
@@ -141,6 +167,7 @@ async function loadMicrophones() {
 
 function populate() {
   hotkeyInput.value = current.hotkey;
+  pauseHotkeyInput.value = current.pauseHotkey || "";
   // Legacy settings expressed "paste & keep on clipboard" as paste mode with
   // clipboard restore turned off; show those as the explicit paste-copy mode.
   const mode =
@@ -181,13 +208,17 @@ function populate() {
   $("max-seconds").value = current.audio.maxRecordingSeconds;
   $("idle-unload").value = current.engines?.idleUnloadMinutes ?? 2;
 
-  if (platform !== "linux") $("wayland-note").style.display = "none";
+  if (platform !== "linux") {
+    $("wayland-note").style.display = "none";
+    $("pause-wayland-note").style.display = "none";
+  }
 }
 
 function collect() {
   return {
     ...current,
     hotkey: current.hotkey,
+    pauseHotkey: current.pauseHotkey || "",
     startOnBoot: $("start-on-boot").checked,
     updates: {
       ...current.updates,
@@ -538,7 +569,9 @@ const saveButton = $("save");
 saveButton.addEventListener("click", async () => {
   const save = $("save-status");
   const hotkeyStatus = $("hotkey-status");
+  const pauseHotkeyStatus = $("pause-hotkey-status");
   let result;
+  let pauseResult;
   // Acknowledge the click immediately and block a duplicate save while the
   // round-trip is in flight.
   saveButton.disabled = true;
@@ -548,11 +581,14 @@ saveButton.addEventListener("click", async () => {
     current = collect();
     result = await earheart.invoke("settings:save", current);
     current = result.settings;
-    if (result.hotkey.ok) {
+    // Older mains don't report a pause result; treat that as fine.
+    pauseResult = result.pauseHotkey ?? { ok: true };
+    if (result.hotkey.ok && pauseResult.ok) {
       // Clean save — close the window so the user doesn't have to dismiss it.
       save.textContent = "Saved";
       save.className = "status ok";
       hotkeyStatus.textContent = "";
+      pauseHotkeyStatus.textContent = "";
       earheart.invoke("settings:close");
       return;
     }
@@ -564,13 +600,15 @@ saveButton.addEventListener("click", async () => {
     saveButton.disabled = false;
     return;
   }
-  // The hotkey couldn't be registered: keep the window open so the error is
+  // A hotkey couldn't be registered: keep the window open so the error is
   // visible and the user can pick a combination that works.
   saveButton.disabled = false;
-  save.textContent = "Saved, but the hotkey could not be registered";
+  save.textContent = `Saved, but the ${result.hotkey.ok ? "pause hotkey" : "hotkey"} could not be registered`;
   save.className = "status err";
-  hotkeyStatus.textContent = result.hotkey.error;
+  hotkeyStatus.textContent = result.hotkey.ok ? "" : result.hotkey.error;
   hotkeyStatus.className = "status err";
+  pauseHotkeyStatus.textContent = pauseResult.ok ? "" : pauseResult.error;
+  pauseHotkeyStatus.className = "status err";
   setTimeout(() => {
     save.textContent = "";
   }, 4000);

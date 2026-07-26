@@ -4,6 +4,8 @@
 const SAMPLE_RATE = 16000;
 
 const card = document.getElementById("card");
+const stopBtn = document.getElementById("stop");
+const pauseBtn = document.getElementById("pause");
 const statusText = document.getElementById("status-text");
 const detailText = document.getElementById("detail-text");
 const timerEl = document.getElementById("timer");
@@ -99,13 +101,31 @@ let partialRaw = "";
 let partialClean = "";
 
 // The audio worklet posts levels far faster than the screen refreshes, so we
-// don't redraw the meter per message. Instead each frame eases the displayed
-// bars toward the latest levels on a requestAnimationFrame loop: fewer canvas
-// redraws (one per frame, not per audio chunk) and a slower, smoother glide.
+// don't redraw the tape per message. Instead each frame eases the displayed
+// head level toward the latest levels on a requestAnimationFrame loop: fewer
+// canvas redraws (one per frame, not per audio chunk) and a smoother write.
 let displayLevels = new Array(24).fill(0);
 let meterRaf = null;
 
-function meterFrame() {
+// The tape: the dictation's signal written onto the ribbon. One column is
+// written per TAPE_PUSH_MS of session time, newest at the record head
+// (TAPE_HEAD_X, matching #head in overlay.css), sliding toward the take-up
+// reel. History survives stop/processing — the frozen tape IS the take — and
+// resets when the next session starts.
+const TAPE_HEAD_X = 0.4; // fraction of the window where the head writes
+const TAPE_COL_PX = 2.5; // CSS px per written column
+const TAPE_PUSH_MS = 80; // ms of audio per column (≈31px/s tape speed)
+const TAPE_MAX_COLS = 600; // plenty to outrun any window width
+let tapeHistory = []; // newest first: tapeHistory[0] sits at the head
+let tapePushAt = 0; // rAF timestamp of the last written column
+
+// With reduced motion the tape updates in steps (state, not decoration): no
+// per-frame glide between writes. Snapshot at load, like the CSS media block.
+const REDUCED_MOTION = window.matchMedia(
+  "(prefers-reduced-motion: reduce)"
+).matches;
+
+function meterFrame(now) {
   let moved = false;
   for (let i = 0; i < levels.length; i++) {
     // Ease ~18% of the remaining distance per frame for a gentle ramp.
@@ -113,7 +133,21 @@ function meterFrame() {
     if (Math.abs(next - displayLevels[i]) > 0.0005) moved = true;
     displayLevels[i] = next;
   }
-  drawMeter();
+  // Write the tape while audio is actually being captured, sampling the eased
+  // head level so the written trace matches what the head shows. A paused
+  // take holds the tape entirely.
+  let frac = 0;
+  if (recording?.startedAt && !recording.pausedAt) {
+    if (tapePushAt === 0) tapePushAt = now;
+    while (now - tapePushAt >= TAPE_PUSH_MS) {
+      tapeHistory.unshift(displayLevels[displayLevels.length - 1]);
+      if (tapeHistory.length > TAPE_MAX_COLS) tapeHistory.pop();
+      tapePushAt += TAPE_PUSH_MS;
+      moved = true;
+    }
+    if (!REDUCED_MOTION) frac = (now - tapePushAt) / TAPE_PUSH_MS;
+  }
+  drawMeter(frac);
   // Keep animating while recording; once levels settle after stop, let it idle.
   if (recording || moved) {
     meterRaf = requestAnimationFrame(meterFrame);
@@ -149,6 +183,18 @@ const PROGRESS_HOLD_STATUSES = new Set(["transcribing", "cleaning", "delivering"
 
 function setStatus(status, title, detail) {
   card.dataset.status = status;
+  // The stop key only works while there's a take to stop (a paused take still
+  // counts). Disable it for keyboard and assistive tech too, not just
+  // visually — the unlit-key style and pointer-events guard live in
+  // overlay.css.
+  stopBtn.disabled =
+    status !== "recording" && status !== "starting" && status !== "paused";
+  // The pause key latches a live take and releases it; anywhere else it is
+  // inert. Its label follows the action it would perform.
+  pauseBtn.disabled = status !== "recording" && status !== "paused";
+  const pauseLabel = status === "paused" ? "Resume" : "Pause";
+  pauseBtn.title = pauseLabel;
+  pauseBtn.setAttribute("aria-label", pauseLabel);
   statusText.textContent = title;
   detailText.textContent = detail || "";
   // Every phase change retires the previous phase's bar. It stays hidden until
@@ -190,28 +236,68 @@ function resizeMeter() {
   }
 }
 
-function drawMeter() {
-  meterCtx.clearRect(0, 0, meter.width, meter.height);
-  const barWidth = meter.width / displayLevels.length;
-  // A muted rose, not the full #ff5470 accent: the saturated red is reserved for
-  // the primary (stop) button so it stays the one thing the eye lands on.
-  meterCtx.fillStyle = "rgba(255, 120, 140, 0.5)";
-  displayLevels.forEach((level, i) => {
-    const h = Math.max(2, Math.min(1, level * 6) * meter.height);
-    meterCtx.fillRect(
-      i * barWidth + 1,
-      (meter.height - h) / 2,
-      barWidth - 2,
-      h
-    );
-  });
+// The tape window: an umber ribbon crossing the recessed well, with the
+// dictation's signal written onto it as oxide columns. Blank tape runs in from
+// the supply side (left of the head); written signal slides out toward the
+// take-up reel. `frac` (0..1) is the sub-column scroll offset between writes,
+// so the ribbon glides instead of stepping. Muted oxide, not a lamp color: the
+// trace is material (the take itself), while saturated red stays reserved for
+// the REC lamp and the backlit stop key.
+function drawMeter(frac = 0) {
+  const w = meter.width;
+  const h = meter.height;
+  if (!w || !h) return;
+  const dpr = window.devicePixelRatio || 1;
+  const px = Math.max(1, Math.round(dpr));
+  meterCtx.clearRect(0, 0, w, h);
+  // The ribbon: a horizontal band with darkened edges.
+  const bandH = Math.max(8 * px, Math.round(h * 0.52));
+  const bandY = Math.round((h - bandH) / 2);
+  meterCtx.fillStyle = "#35291d";
+  meterCtx.fillRect(0, bandY, w, bandH);
+  meterCtx.fillStyle = "rgba(0, 0, 0, 0.4)";
+  meterCtx.fillRect(0, bandY, w, px);
+  meterCtx.fillRect(0, bandY + bandH - px, w, px);
+  // The written signal: mirrored oxide columns, newest at the head. Peaks may
+  // overshoot the ribbon — a hot signal rides over the band's edges. Columns
+  // ride at FLOAT coordinates: sub-pixel positions are what make the tape
+  // glide instead of ticking pixel by pixel (the canvas anti-aliases the
+  // edges, which at this scale reads as analog softness, not blur).
+  const colW = TAPE_COL_PX * dpr;
+  const gapW = colW * 0.28;
+  const headX = Math.round(w * TAPE_HEAD_X);
+  const maxAmp = h - 4 * px;
+  meterCtx.fillStyle = "rgba(210, 154, 90, 0.9)";
+  for (let i = 0; i < tapeHistory.length; i++) {
+    const x = headX + (i + frac) * colW;
+    if (x > w) break;
+    const amp = Math.max(2 * px, Math.min(1, tapeHistory[i] * 6) * maxAmp);
+    meterCtx.fillRect(x, (h - amp) / 2, colW - gapW, amp);
+  }
+  // The column being written right now: it extrudes from the head at the live
+  // level and freezes into tapeHistory on the next commit, so signal flows
+  // out of the head continuously instead of appearing in 80ms pops. (Under
+  // reduced motion frac stays 0 and the tape steps, as intended.)
+  if (recording?.startedAt && frac > 0) {
+    const live = displayLevels[displayLevels.length - 1];
+    const amp = Math.max(2 * px, Math.min(1, live * 6) * maxAmp);
+    meterCtx.fillRect(headX, (h - amp) / 2, Math.max(0, frac * colW - gapW), amp);
+  }
+}
+
+// Milliseconds of audio actually captured: wall time since the first samples,
+// minus every paused span (including one still open). The visible counter and
+// the max-duration cap both read this, so they can never disagree.
+function capturedMs(rec) {
+  return (rec.pausedAt ?? Date.now()) - rec.startedAt - rec.pausedMs;
 }
 
 function updateTimer() {
   // startedAt is set on the FIRST audio samples, not at setup: the timer
-  // counts captured audio, so it starts the moment "Listening…" appears.
+  // counts captured audio, so it starts the moment "Listening…" appears —
+  // and holds while the take is paused.
   if (!recording || !recording.startedAt) return;
-  const seconds = Math.floor((Date.now() - recording.startedAt) / 1000);
+  const seconds = Math.floor(capturedMs(recording) / 1000);
   timerEl.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
@@ -311,6 +397,9 @@ function trailingRms(chunks, windowSamples) {
 // preview cosmetics) are skipped, so no per-tick decode cost is paid.
 function sendPartial() {
   if (!recording || !livePreview) return;
+  // Paused: nothing new was recorded, so skip the tick entirely rather than
+  // re-decoding the same in-progress chunk on every interval.
+  if (recording.pausedAt) return;
   const total = totalSamples(recording.chunks);
   const from = recording.committedSamples;
   if (total <= from) return; // nothing new recorded since the last commit
@@ -420,7 +509,11 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
   clearTranscript();
   levels.fill(0);
   displayLevels.fill(0);
-  drawMeter(); // clear to a flat baseline; the rAF loop starts once mic is live
+  // A new take threads fresh tape: the previous session's written signal is
+  // cleared and the write clock re-anchors on the first frame of capture.
+  tapeHistory = [];
+  tapePushAt = 0;
+  drawMeter(); // repaint blank ribbon; the rAF loop starts once mic is live
   timerEl.textContent = "0:00";
 
   let streamPromise = null;
@@ -483,6 +576,9 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
       // The node is disconnected on teardown, but a message can already be in
       // flight; never let a stale session's samples leak into the current one.
       if (!recording || recording.recorder !== recorder) return;
+      // Paused: the track is muted at the source, and whatever still arrives
+      // is discarded — the capture stays contiguous and the meter freezes.
+      if (recording.pausedAt) return;
       chunks.push(event.data.samples);
       // Just record the level; the rAF meter loop reads `levels` each frame.
       levels.push(event.data.rms);
@@ -500,6 +596,11 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
       // Set by micLive() on the first samples; "Listening…" and the timer wait
       // for it. Until then the card still shows "Starting mic…".
       startedAt: null,
+      // Pause bookkeeping: pausedAt holds the timestamp while the take is
+      // paused; pausedMs accumulates completed paused spans. Both feed
+      // capturedMs(), which the counter and the max-duration cap share.
+      pausedAt: null,
+      pausedMs: 0,
       // Append-only live preview: `committedSamples` is the sample offset where
       // the current in-progress chunk starts; everything before it has been
       // frozen into committed chunks and need never be re-sent. `seq` counts
@@ -637,8 +738,47 @@ function cancelRecording() {
   }
 }
 
+// Pause/resume a live take: the transport holds — mic track muted, tape and
+// counter frozen, the paused span excluded from the max-duration cap — and
+// pressing pause again continues the SAME take, so the captured audio stays
+// contiguous across the gap. Only a take that is actually capturing
+// (startedAt set) can pause; stop and eject keep working from the paused
+// state, and the global hotkey still stops as usual.
+function togglePause() {
+  if (!recording || !recording.startedAt) return;
+  if (!recording.pausedAt) {
+    recording.pausedAt = Date.now();
+    // The cap counts captured audio: hold it while paused.
+    if (recording.maxTimerId) {
+      clearTimeout(recording.maxTimerId);
+      recording.maxTimerId = null;
+    }
+    // Mute at the track so nothing is even delivered; the onmessage guard
+    // discards any chunk already in flight.
+    recording.stream.getAudioTracks().forEach((track) => (track.enabled = false));
+    setStatus("paused", "Paused", "Pause again to resume");
+  } else {
+    recording.pausedMs += Date.now() - recording.pausedAt;
+    recording.pausedAt = null;
+    recording.stream.getAudioTracks().forEach((track) => (track.enabled = true));
+    const remainingMs = recording.maxSeconds * 1000 - capturedMs(recording);
+    if (remainingMs <= 0) {
+      // The take was already at the cap when it paused; finish it.
+      stopRecording();
+      return;
+    }
+    recording.maxTimerId = setTimeout(() => stopRecording(), remainingMs);
+    // Re-anchor the tape's write clock: the tape didn't move while paused,
+    // matching the capture — no gap is written for the gap.
+    tapePushAt = 0;
+    setStatus("recording", "Listening…");
+  }
+}
+
 earheart.on("record:start", startRecording);
 earheart.on("record:stop", stopRecording);
+// Pause hotkey / `earheart --pause`: same action as the pause key.
+earheart.on("record:pause-toggle", togglePause);
 earheart.on("record:cancel", () => {
   teardown();
   clearTranscript();
@@ -814,7 +954,8 @@ earheart.on("overlay:hide", () => card.classList.remove("visible"));
 // again on any later change (window/DPR/layout), so the bars are always crisp.
 new ResizeObserver(resizeMeter).observe(meter);
 
-document.getElementById("stop").addEventListener("click", stopRecording);
+stopBtn.addEventListener("click", stopRecording);
+pauseBtn.addEventListener("click", togglePause);
 document.getElementById("cancel").addEventListener("click", cancelRecording);
 
 // Click-and-drag anywhere on the card (except the buttons) moves the overlay.

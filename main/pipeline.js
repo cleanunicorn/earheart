@@ -236,6 +236,14 @@ function toggle() {
   // overlay and in the tray menu.
 }
 
+// Pause/resume the dictation in progress (pause hotkey / `earheart --pause`).
+// Only meaningful while recording; the overlay owns the actual pause state
+// and additionally no-ops while the mic is still warming, so a stray press
+// anywhere else does nothing.
+function pauseToggle() {
+  if (state === "recording") windows.sendToOverlay("record:pause-toggle");
+}
+
 function startRecording() {
   const cfg = settings.get();
   const sid = ++session;
@@ -430,4 +438,12 @@ function onSettingsChanged() {
   if (state === "idle") armIdleUnload();
 }
 
-module.exports = { init, toggle, cancel, getState, onStateChange, onSettingsChanged };
+module.exports = {
+  init,
+  toggle,
+  pauseToggle,
+  cancel,
+  getState,
+  onStateChange,
+  onSettingsChanged,
+};

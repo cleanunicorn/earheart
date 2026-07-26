@@ -10,9 +10,9 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/overlay-recording.png" width="340" alt="Earheart overlay showing a live transcript while recording" /><br/>
-  <img src="docs/screenshots/overlay-processing.png" width="340" alt="Earheart overlay showing a progress bar while the transcript is cleaned up" /><br/>
-  <img src="docs/screenshots/overlay-done.png" width="340" alt="Earheart overlay confirming the transcript was pasted" />
+  <img src="docs/screenshots/overlay-recording.png" width="500" alt="Earheart overlay showing a live transcript while recording" /><br/>
+  <img src="docs/screenshots/overlay-processing.png" width="400" alt="Earheart overlay showing a progress bar while the transcript is cleaned up" /><br/>
+  <img src="docs/screenshots/overlay-done.png" width="400" alt="Earheart overlay confirming the transcript was pasted" />
 </p>
 
 <p align="center">

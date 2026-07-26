@@ -34,7 +34,7 @@ function applyAutostart(cfg) {
   }
 }
 
-function init({ applyHotkey, onSettingsChanged }) {
+function init({ applyHotkeys, onSettingsChanged }) {
   // Register any models the user added from a custom Hugging Face URL so they
   // resolve for download and for loading into the cleanup worker after a
   // restart, exactly like the built-ins.
@@ -71,10 +71,14 @@ function init({ applyHotkey, onSettingsChanged }) {
 
   ipcMain.handle("settings:save", (event, next) => {
     const saved = settings.save(keepLiveOverlay(next));
-    const hotkeyResult = applyHotkey(saved.hotkey);
+    const hotkeyResults = applyHotkeys(saved);
     applyAutostart(saved);
     onSettingsChanged?.();
-    return { settings: saved, hotkey: hotkeyResult };
+    return {
+      settings: saved,
+      hotkey: hotkeyResults.hotkey,
+      pauseHotkey: hotkeyResults.pauseHotkey,
+    };
   });
 
   // The setup wizard saves its choices, then hands over to the settings
@@ -82,14 +86,18 @@ function init({ applyHotkey, onSettingsChanged }) {
   // hotkey can't be registered, the wizard stays open to let them fix it.
   ipcMain.handle("wizard:complete", (event, next) => {
     const saved = settings.save(keepLiveOverlay(next));
-    const hotkeyResult = applyHotkey(saved.hotkey);
+    const hotkeyResults = applyHotkeys(saved);
     applyAutostart(saved);
     onSettingsChanged?.();
-    if (hotkeyResult.ok) {
+    if (hotkeyResults.hotkey.ok) {
       windows.openSettings({ fromWizard: true });
       windows.closeWizard();
     }
-    return { settings: saved, hotkey: hotkeyResult };
+    return {
+      settings: saved,
+      hotkey: hotkeyResults.hotkey,
+      pauseHotkey: hotkeyResults.pauseHotkey,
+    };
   });
 
   // Close the settings window. The renderer calls this only after a clean save

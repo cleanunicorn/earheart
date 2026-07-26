@@ -777,6 +777,8 @@ function togglePause() {
 
 earheart.on("record:start", startRecording);
 earheart.on("record:stop", stopRecording);
+// Pause hotkey / `earheart --pause`: same action as the pause key.
+earheart.on("record:pause-toggle", togglePause);
 earheart.on("record:cancel", () => {
   teardown();
   clearTranscript();

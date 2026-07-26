@@ -204,10 +204,13 @@ app.whenReady().then(async () => {
     start(win, 6);
     await waitForStatus(win, "recording");
     await sleep(500);
-    await win.webContents.executeJavaScript("togglePause(); ''");
+    // Drive pause through the real channel (pause hotkey / `earheart --pause`
+    // land here), so the preload whitelist and the renderer handler are both
+    // exercised.
+    win.webContents.send("record:pause-toggle");
     await waitForStatus(win, "paused");
     await sleep(600);
-    await win.webContents.executeJavaScript("togglePause(); ''");
+    win.webContents.send("record:pause-toggle");
     await waitForStatus(win, "recording");
     await sleep(500);
     const captured6P = waitForMessage("audio:captured");

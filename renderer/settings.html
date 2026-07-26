@@ -55,6 +55,21 @@
           </div>
 
           <div class="field">
+            <label for="pause-hotkey">Pause hotkey</label>
+            <div class="row">
+              <input id="pause-hotkey" readonly placeholder="Not set — click, then press a key combination" />
+              <button id="pause-hotkey-clear" class="ghost">Clear</button>
+            </div>
+            <p class="hint">
+              Optional. While dictating, pauses and resumes the take without
+              ending it — same as the overlay's pause key.
+              <span id="pause-wayland-note">On Wayland, bind a system shortcut to
+              <code>earheart --pause</code> instead.</span>
+            </p>
+            <p id="pause-hotkey-status" class="status"></p>
+          </div>
+
+          <div class="field">
             <label for="mic-device">Microphone</label>
             <select id="mic-device">
               <option value="">System default</option>

@@ -27,7 +27,10 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb) =>
     cb(true)
   );
-  ipc.init({ applyHotkey: () => ({ ok: true }), onSettingsChanged: () => {} });
+  ipc.init({
+    applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
+    onSettingsChanged: () => {},
+  });
 
   // Setup wizard, welcome step (the demo animation needs a beat to settle).
   const wizard = windows.openWizard();

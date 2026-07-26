@@ -840,6 +840,9 @@ async function renderHistory() {
 }
 
 $("history-clear").addEventListener("click", async () => {
+  // Unlike a removed model, cleared history is gone for good — gate it the
+  // same way model removal already is.
+  if (!confirm("Clear all saved transcriptions? This can't be undone.")) return;
   await earheart.invoke("history:clear");
   renderHistory();
 });

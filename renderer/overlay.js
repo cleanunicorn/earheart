@@ -249,16 +249,29 @@ function drawMeter(frac = 0) {
   meterCtx.fillRect(0, bandY, w, px);
   meterCtx.fillRect(0, bandY + bandH - px, w, px);
   // The written signal: mirrored oxide columns, newest at the head. Peaks may
-  // overshoot the ribbon — a hot signal rides over the band's edges.
-  const colW = Math.max(2, Math.round(TAPE_COL_PX * dpr));
+  // overshoot the ribbon — a hot signal rides over the band's edges. Columns
+  // ride at FLOAT coordinates: sub-pixel positions are what make the tape
+  // glide instead of ticking pixel by pixel (the canvas anti-aliases the
+  // edges, which at this scale reads as analog softness, not blur).
+  const colW = TAPE_COL_PX * dpr;
+  const gapW = colW * 0.28;
   const headX = Math.round(w * TAPE_HEAD_X);
   const maxAmp = h - 4 * px;
   meterCtx.fillStyle = "rgba(210, 154, 90, 0.9)";
   for (let i = 0; i < tapeHistory.length; i++) {
-    const x = headX + Math.round((i + frac) * colW);
+    const x = headX + (i + frac) * colW;
     if (x > w) break;
     const amp = Math.max(2 * px, Math.min(1, tapeHistory[i] * 6) * maxAmp);
-    meterCtx.fillRect(x, Math.round((h - amp) / 2), colW - px, amp);
+    meterCtx.fillRect(x, (h - amp) / 2, colW - gapW, amp);
+  }
+  // The column being written right now: it extrudes from the head at the live
+  // level and freezes into tapeHistory on the next commit, so signal flows
+  // out of the head continuously instead of appearing in 80ms pops. (Under
+  // reduced motion frac stays 0 and the tape steps, as intended.)
+  if (recording?.startedAt && frac > 0) {
+    const live = displayLevels[displayLevels.length - 1];
+    const amp = Math.max(2 * px, Math.min(1, live * 6) * maxAmp);
+    meterCtx.fillRect(headX, (h - amp) / 2, Math.max(0, frac * colW - gapW), amp);
   }
 }
 

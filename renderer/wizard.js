@@ -30,6 +30,8 @@ function showStep(index) {
   [...dots.children].forEach((dot, i) =>
     dot.classList.toggle("active", i === stepIndex)
   );
+  // The lamp row is visual; this is what it says, for keyboard/AT users.
+  $("step-position").textContent = `Step ${stepIndex + 1} of ${steps.length}`;
   $("back").hidden = stepIndex === 0;
   $("next").textContent =
     stepIndex === 0
@@ -89,8 +91,25 @@ hotkeyInput.addEventListener("blur", () => {
   hotkeyInput.value = current?.hotkey || "";
 });
 hotkeyInput.addEventListener("keydown", (event) => {
-  if (!hotkeyInput.classList.contains("capturing")) return;
+  // Keyboard users can't click, so Enter/Space arms capture — the same
+  // wiring as the settings window.
+  if (!hotkeyInput.classList.contains("capturing")) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      hotkeyInput.classList.add("capturing");
+      hotkeyInput.value = "Press keys…";
+    }
+    return;
+  }
+  // Tab is never a hotkey and must keep working while capturing, or a
+  // keyboard user is trapped: let it move focus (blur ends capture).
+  if (event.key === "Tab") return;
   event.preventDefault();
+  // Escape leaves capture without changing the binding (blur restores it).
+  if (event.key === "Escape") {
+    hotkeyInput.blur();
+    return;
+  }
   const accelerator = acceleratorFromEvent(event);
   if (accelerator) {
     current.hotkey = accelerator;
@@ -251,6 +270,8 @@ function renderSummary() {
     dt.textContent = label;
     const dd = document.createElement("dd");
     dd.textContent = value;
+    // Accelerators are machine notation — mono here just like in Settings.
+    if (label === "Hotkey") dd.classList.add("accel");
     row.append(dt, dd);
     summary.appendChild(row);
   }

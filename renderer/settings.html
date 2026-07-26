@@ -10,6 +10,23 @@
     <link rel="stylesheet" href="settings.css" />
   </head>
   <body>
+    <!--
+      THESIS: Settings is the machine's service panel — one continuous faceplate
+      read top to bottom, every control visible; refuses the hidden-tab shuffle.
+      OWN-WORLD: Tape Transport, instrument-quiet: warm-black faceplate #1c1713,
+      machined panels with hairline ivory edges, inputs as recessed wells,
+      key-cap buttons, aluminum slugs; amber = the machine talking about itself
+      (index lamp, selection wash, backlit Save); REC red only while a hotkey
+      field is capturing; DONE-green / STOP-red status text; mono only for
+      machine values (accelerators, timestamps, version).
+      STORY: Open the panel, find the control from the printed index in
+      seconds, adjust, press the lit Save key; lamps confirm.
+      FIRST VIEWPORT: Nameplate header; left index with the General lamp lit;
+      Recording panel with hotkey wells fills the column; backlit Save in the
+      fixed footer.
+      FORM: Single scrolling service panel + sticky index — grounded candidate
+      3, seed d6f88d13; staging: default surface (x-ray challenger declined).
+    -->
     <header>
       <img src="../assets/icon.png" alt="" width="34" height="34" />
       <div>
@@ -18,15 +35,16 @@
       </div>
     </header>
 
-    <nav id="tabs" role="tablist" aria-label="Settings sections">
-      <button class="tab active" id="tabbtn-general" data-tab="general" role="tab" aria-selected="true" aria-controls="tab-general">General</button>
-      <button class="tab" id="tabbtn-stt" data-tab="stt" role="tab" aria-selected="false" aria-controls="tab-stt" tabindex="-1">Speech-to-text</button>
-      <button class="tab" id="tabbtn-cleanup" data-tab="cleanup" role="tab" aria-selected="false" aria-controls="tab-cleanup" tabindex="-1">Cleanup</button>
-      <button class="tab" id="tabbtn-history" data-tab="history" role="tab" aria-selected="false" aria-controls="tab-history" tabindex="-1">History</button>
-      <button class="tab" id="tabbtn-advanced" data-tab="advanced" role="tab" aria-selected="false" aria-controls="tab-advanced" tabindex="-1">Advanced</button>
-    </nav>
+    <div class="deck">
+      <nav id="tabs" aria-label="Settings sections">
+        <button class="tab active" id="tabbtn-general" data-tab="general" aria-current="true">General</button>
+        <button class="tab" id="tabbtn-stt" data-tab="stt">Speech-to-text</button>
+        <button class="tab" id="tabbtn-cleanup" data-tab="cleanup">Cleanup</button>
+        <button class="tab" id="tabbtn-history" data-tab="history">History</button>
+        <button class="tab" id="tabbtn-advanced" data-tab="advanced">Advanced</button>
+      </nav>
 
-    <main>
+      <main>
       <div id="wizard-banner" class="banner" hidden>
         <span>
           <strong>Setup complete.</strong> These settings were pre-configured by
@@ -36,7 +54,8 @@
       </div>
 
       <!-- General -->
-      <section id="tab-general" class="panel active" role="tabpanel" aria-labelledby="tabbtn-general">
+      <section id="tab-general" class="panel active" aria-labelledby="legend-general">
+        <h2 class="legend" id="legend-general">General</h2>
         <div class="card">
           <div class="card-title">Recording</div>
           <div class="field">
@@ -109,7 +128,8 @@
       </section>
 
       <!-- STT -->
-      <section id="tab-stt" class="panel" role="tabpanel" aria-labelledby="tabbtn-stt">
+      <section id="tab-stt" class="panel" aria-labelledby="legend-stt">
+        <h2 class="legend" id="legend-stt">Speech-to-text</h2>
         <div class="card">
           <div class="card-title">Transcription engine</div>
           <div class="field">
@@ -203,7 +223,8 @@
       </section>
 
       <!-- Cleanup -->
-      <section id="tab-cleanup" class="panel" role="tabpanel" aria-labelledby="tabbtn-cleanup">
+      <section id="tab-cleanup" class="panel" aria-labelledby="legend-cleanup">
+        <h2 class="legend" id="legend-cleanup">Cleanup</h2>
         <div class="card">
           <label class="toggle">
             <span class="toggle-text">
@@ -369,7 +390,8 @@
       </section>
 
       <!-- History -->
-      <section id="tab-history" class="panel" role="tabpanel" aria-labelledby="tabbtn-history">
+      <section id="tab-history" class="panel" aria-labelledby="legend-history">
+        <h2 class="legend" id="legend-history">History</h2>
         <div class="card">
           <label class="toggle">
             <span class="toggle-text">
@@ -387,7 +409,8 @@
       </section>
 
       <!-- Advanced -->
-      <section id="tab-advanced" class="panel" role="tabpanel" aria-labelledby="tabbtn-advanced">
+      <section id="tab-advanced" class="panel" aria-labelledby="legend-advanced">
+        <h2 class="legend" id="legend-advanced">Advanced</h2>
         <div class="card">
           <div class="card-title">Performance</div>
           <div class="grid-2">
@@ -472,7 +495,8 @@
           <p class="hint">Errors are written here — attach it when reporting a problem.</p>
         </div>
       </section>
-    </main>
+      </main>
+    </div>
 
     <footer>
       <span id="save-status" class="status"></span>

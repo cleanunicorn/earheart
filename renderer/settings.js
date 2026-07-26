@@ -8,30 +8,99 @@ let cleanupStyles = []; // [{ id, label, hint }] — the cleanup style slider st
 
 const $ = (id) => document.getElementById(id);
 
-/* ---------- tabs ---------- */
+/* ---------- section index ---------- */
 
-// The tabs are an ARIA tablist: exactly one tab is selected and in the tab
-// order (roving tabindex), and Left/Right arrows move between them.
+// Every section sits on one scrolling service panel; the index on the left
+// only navigates. Its lamp tracks the section under the read head (scroll
+// spy), and clicking an entry glides the panel to that section (the easing
+// comes from CSS scroll-behavior, which prefers-reduced-motion collapses).
+// Roving tabindex keeps the index a single tab stop; arrows move within it.
 const tabButtons = [...document.querySelectorAll(".tab")];
+const panels = [...document.querySelectorAll(".panel")];
+const panelHost = document.querySelector("main");
 
-function activateTab(name, { focus = false } = {}) {
+// Which index entry is lit — no scrolling. aria-current (not aria-selected):
+// the index is navigation within one page, not a tablist swapping panels.
+function markActiveTab(name) {
   for (const t of tabButtons) {
     const on = t.dataset.tab === name;
     t.classList.toggle("active", on);
-    t.setAttribute("aria-selected", on ? "true" : "false");
+    if (on) t.setAttribute("aria-current", "true");
+    else t.removeAttribute("aria-current");
     t.tabIndex = on ? 0 : -1;
-    if (on && focus) t.focus();
   }
-  document
-    .querySelectorAll(".panel")
-    .forEach((p) => p.classList.toggle("active", p.id === `tab-${name}`));
-  if (name === "history") renderHistory();
+  panels.forEach((p) => p.classList.toggle("active", p.id === `tab-${name}`));
 }
+
+// While a click-initiated glide is in flight, the spy would light every lamp
+// the scroll passes through; hold the chosen one until the scroll settles.
+let spyHeld = false;
+
+function activateTab(name, { focus = false } = {}) {
+  markActiveTab(name);
+  if (focus) tabButtons.find((t) => t.dataset.tab === name)?.focus();
+  const section = panels.find((p) => p.id === `tab-${name}`);
+  if (!section) return;
+  // Where this glide will land: the section's top under the 12px
+  // scroll-margin, clamped to the scrollable range. If we're already there,
+  // no scroll (and no scrollend to release the hold) will happen — so only
+  // hold the lamp when a glide is actually coming.
+  const target = Math.max(
+    0,
+    Math.min(
+      section.offsetTop - panelHost.offsetTop - 12,
+      panelHost.scrollHeight - panelHost.clientHeight
+    )
+  );
+  spyHeld = Math.abs(panelHost.scrollTop - target) > 1;
+  section.scrollIntoView({ block: "start" });
+}
+
+// The user scrolling over a held glide takes the lamp back immediately.
+panelHost.addEventListener("wheel", () => (spyHeld = false), { passive: true });
+panelHost.addEventListener("touchstart", () => (spyHeld = false), {
+  passive: true,
+});
+
+// The section whose top has passed the read line (a small offset under the
+// panel's top edge) is the current one; hitting the end of the scroll always
+// lights the last lamp, which could otherwise never reach the line.
+// Panel ids are `tab-<name>`; the index buttons carry the bare name.
+const sectionName = (panel) => panel.id.replace(/^tab-/, "");
+
+function spySections() {
+  if (spyHeld) return;
+  const fromTop = panelHost.scrollTop;
+  const atEnd =
+    fromTop + panelHost.clientHeight >= panelHost.scrollHeight - 4;
+  let name = panels[0] ? sectionName(panels[0]) : null;
+  if (atEnd) {
+    name = sectionName(panels[panels.length - 1]);
+  } else {
+    for (const p of panels) {
+      if (p.offsetTop - panelHost.offsetTop - 40 <= fromTop) {
+        name = sectionName(p);
+      }
+    }
+  }
+  if (name) markActiveTab(name);
+}
+
+panelHost.addEventListener("scroll", spySections, { passive: true });
+panelHost.addEventListener("scrollend", () => {
+  spyHeld = false;
+  spySections();
+});
 
 tabButtons.forEach((tab, i) => {
   tab.addEventListener("click", () => activateTab(tab.dataset.tab));
   tab.addEventListener("keydown", (event) => {
-    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    const step =
+      event.key === "ArrowRight" || event.key === "ArrowDown"
+        ? 1
+        : event.key === "ArrowLeft" || event.key === "ArrowUp"
+          ? -1
+          : 0;
     if (!step) return;
     event.preventDefault();
     const next = tabButtons[(i + step + tabButtons.length) % tabButtons.length];
@@ -83,6 +152,10 @@ function wireHotkeyCapture(input, { apply, restore }) {
       }
       return;
     }
+    // Tab is never a hotkey and must keep working while capturing, or a
+    // keyboard user is trapped in the field: let it move focus (the blur
+    // handler ends capture and restores the value).
+    if (event.key === "Tab") return;
     event.preventDefault();
     // Escape leaves capture without changing the binding (blur restores it).
     if (event.key === "Escape") {
@@ -815,9 +888,8 @@ $("history-clear").addEventListener("click", async () => {
   renderHistory();
 });
 
-earheart.on("history:changed", () => {
-  if ($("tab-history").classList.contains("active")) renderHistory();
-});
+// The History section is always on the panel now, so keep it live.
+earheart.on("history:changed", () => renderHistory());
 
 /* ---------- setup wizard ---------- */
 
@@ -996,5 +1068,6 @@ earheart.on("updates:state", renderUpdateState);
   populateModelSelect("stt");
   populateModelSelect("cleanup");
   populate();
+  renderHistory();
   loadMicrophones();
 })();

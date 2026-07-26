@@ -274,16 +274,20 @@ function openSettings({ fromWizard = false } = {}) {
     return settingsWindow;
   }
   settingsWindow = new BrowserWindow({
-    // Snug around the 620px content column (max-width in settings.css) plus its
-    // 28px side padding, so there's little left/right dead space.
-    width: 680,
-    // Sized so the roomier card-based General tab fits without scrolling; the
-    // longer tabs (Cleanup) still scroll, which is expected.
+    // Index rail (168px) + the content column (max-width 620px in
+    // settings.css) with its side padding; wide enough that grid-2 fields
+    // stay comfortable.
+    width: 760,
+    // The panel is one continuous scroll; this shows the whole General
+    // section (the most-visited controls) without scrolling.
     height: 780,
     minWidth: 560,
     minHeight: 480,
     title: "Earheart",
     autoHideMenuBar: true,
+    // Matches --face in settings.css so the window never flashes white
+    // before the stylesheet paints.
+    backgroundColor: "#1c1713",
     icon: path.join(__dirname, "..", "assets", "icon.png"),
     webPreferences: {
       preload: PRELOAD,
@@ -316,6 +320,8 @@ function openWizard() {
     minHeight: 560,
     title: "Welcome to Earheart",
     autoHideMenuBar: true,
+    // Matches --face in settings.css (the wizard layers on it).
+    backgroundColor: "#1c1713",
     icon: path.join(__dirname, "..", "assets", "icon.png"),
     webPreferences: {
       preload: PRELOAD,

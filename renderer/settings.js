@@ -29,7 +29,6 @@ function markActiveTab(name) {
     else t.removeAttribute("aria-current");
     t.tabIndex = on ? 0 : -1;
   }
-  panels.forEach((p) => p.classList.toggle("active", p.id === `tab-${name}`));
 }
 
 // While a click-initiated glide is in flight, the spy would light every lamp

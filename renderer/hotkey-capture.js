@@ -69,6 +69,9 @@ function wireHotkeyCapture(input, { apply, restore }) {
   });
 }
 
+// Only the pure mapping is exported for unit tests (transcript.js pattern);
+// MODIFIER_KEYS stays private, and wireHotkeyCapture's consumers are the
+// pages' classic-script globals, not require().
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { MODIFIER_KEYS, acceleratorFromEvent, wireHotkeyCapture };
+  module.exports = { acceleratorFromEvent };
 }

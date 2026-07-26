@@ -495,6 +495,15 @@ function renderManage(kind) {
   manage[kind] = ui;
 }
 
+// Terminal download outcomes announce through one persistent sr-only live
+// region: the visible per-row span is rebuilt by renderManage
+// (replaceChildren), and a live region's initial content on insertion is
+// not announced — so the row itself can never speak.
+function announceDownload(kind, modelId, message) {
+  const info = modelStatus?.[kind]?.find((m) => m.id === modelId);
+  $("model-dl-announce").textContent = `${info ? info.label : modelId}: ${message}`;
+}
+
 async function downloadModel(kind, modelId, ui) {
   // While the download runs, the same button cancels it (the wizard offers the
   // same escape; without it a multi-minute download in Settings is a one-way
@@ -511,6 +520,7 @@ async function downloadModel(kind, modelId, ui) {
   ui.btn.onclick = null;
   if (res.ok) {
     await refreshModels();
+    announceDownload(kind, modelId, "Downloaded ✓");
     return;
   }
   // Failed or cancelled: revert to a download affordance the user can retry.
@@ -520,6 +530,7 @@ async function downloadModel(kind, modelId, ui) {
   ui.btn.onclick = () => downloadModel(kind, modelId, ui);
   ui.status.textContent = res.cancelled ? "Cancelled" : res.error || "Download failed";
   ui.status.className = res.cancelled ? "status" : "status err";
+  announceDownload(kind, modelId, ui.status.textContent);
 }
 
 async function removeModel(kind, modelId) {

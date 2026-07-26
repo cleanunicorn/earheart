@@ -275,6 +275,15 @@ function checkAllDone() {
   $("next").textContent = allDone ? "Finish setup" : "Downloading…";
 }
 
+// Terminal download outcomes announce through one persistent sr-only live
+// region (like #step-position): a multi-minute first-run download would
+// otherwise end in silence for screen-reader users. Progress ticks stay
+// visual-only.
+function announceDownload(kind, modelId, message) {
+  const info = infoFor(kind, modelId);
+  $("dl-announce").textContent = `${info ? info.label : modelId}: ${message}`;
+}
+
 async function runDownload(kind, modelId) {
   const key = `${kind}:${modelId}`;
   const row = dlRows.get(key);
@@ -290,9 +299,11 @@ async function runDownload(kind, modelId) {
     row.status.textContent = "Ready ✓";
     row.status.className = "status ok";
     row.done = true;
+    announceDownload(kind, modelId, "Ready ✓");
   } else if (res.cancelled) {
     row.status.textContent = "Cancelled";
     row.status.className = "status";
+    announceDownload(kind, modelId, "Cancelled");
   } else if (res.error === "Already downloading") {
     // A fast re-entry (toggling the selection) can race the previous transfer's
     // teardown. The download is still progressing, so keep showing it as such
@@ -303,6 +314,7 @@ async function runDownload(kind, modelId) {
     row.status.textContent = res.error || "Download failed";
     row.status.className = "status err";
     row.retry.hidden = false;
+    announceDownload(kind, modelId, row.status.textContent);
   }
   checkAllDone();
 }
@@ -414,6 +426,9 @@ $("download-later").addEventListener("click", () => {
     row.status.textContent = "Skipped — download later in Settings";
     row.status.className = "status";
   }
+  // One summary announcement, not one per row.
+  $("dl-announce").textContent =
+    "Downloads skipped — you can fetch the models later from Settings.";
   checkAllDone();
 });
 

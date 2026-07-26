@@ -980,6 +980,19 @@ input[type="range"]:focus-visible {
   letter-spacing: normal;
 }
 
+/* Visually hidden, still read by AT (terminal download announcements — the
+   per-row status spans get rebuilt, so they can't be live regions). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* ---------- footer: the commit row ---------- */
 
 footer {

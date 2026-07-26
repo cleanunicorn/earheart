@@ -18,11 +18,11 @@
       amber, DONE green, inert warm grey); ivory silk-screen legends; machined
       keys. Flat matte — glow comes only from lamps and backlit keys.
       STORY: A glance says: lamp lit, reels turning, my words are being written
-      onto tape and appearing above; the backlit square key stops, eject
-      discards.
+      onto tape and appearing above; the backlit square key stops, pause holds
+      the tape, eject discards.
       FIRST VIEWPORT: One low strip — lamp block, supply reel, tape window with
-      record head, take-up reel, counter cell, STOP, EJECT; the live transcript
-      grows upward above it.
+      record head, take-up reel, counter cell, PAUSE, STOP, EJECT; the live
+      transcript grows upward above it.
       FORM: Tape transport, candidate 4 of 7 (assigned), seed d2b6eb8d;
       sweep-decay staging borrowed only as freshness-cooling transcript text.
     -->
@@ -140,6 +140,14 @@
         <!-- Mechanical counter: counts captured audio only (lit while the tape
              is actually being written). -->
         <div id="counter"><span id="timer">0:00</span></div>
+        <!-- Pause latches the transport: capture, tape, and counter hold, and
+             pressing it again resumes the same take. -->
+        <button id="pause" title="Pause" aria-label="Pause" disabled>
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+            <rect x="3.6" y="3" width="3.2" height="10" rx="1.2" fill="currentColor" />
+            <rect x="9.2" y="3" width="3.2" height="10" rx="1.2" fill="currentColor" />
+          </svg>
+        </button>
         <button id="stop" title="Stop and transcribe" aria-label="Stop and transcribe">
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
             <rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor" />

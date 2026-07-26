@@ -5,6 +5,7 @@ const SAMPLE_RATE = 16000;
 
 const card = document.getElementById("card");
 const stopBtn = document.getElementById("stop");
+const pauseBtn = document.getElementById("pause");
 const statusText = document.getElementById("status-text");
 const detailText = document.getElementById("detail-text");
 const timerEl = document.getElementById("timer");
@@ -133,9 +134,10 @@ function meterFrame(now) {
     displayLevels[i] = next;
   }
   // Write the tape while audio is actually being captured, sampling the eased
-  // head level so the written trace matches what the head shows.
+  // head level so the written trace matches what the head shows. A paused
+  // take holds the tape entirely.
   let frac = 0;
-  if (recording?.startedAt) {
+  if (recording?.startedAt && !recording.pausedAt) {
     if (tapePushAt === 0) tapePushAt = now;
     while (now - tapePushAt >= TAPE_PUSH_MS) {
       tapeHistory.unshift(displayLevels[displayLevels.length - 1]);
@@ -181,10 +183,18 @@ const PROGRESS_HOLD_STATUSES = new Set(["transcribing", "cleaning", "delivering"
 
 function setStatus(status, title, detail) {
   card.dataset.status = status;
-  // The stop key only works while there's a take to stop. Disable it for
-  // keyboard and assistive tech too, not just visually — the unlit-key style
-  // and pointer-events guard live in overlay.css.
-  stopBtn.disabled = status !== "recording" && status !== "starting";
+  // The stop key only works while there's a take to stop (a paused take still
+  // counts). Disable it for keyboard and assistive tech too, not just
+  // visually — the unlit-key style and pointer-events guard live in
+  // overlay.css.
+  stopBtn.disabled =
+    status !== "recording" && status !== "starting" && status !== "paused";
+  // The pause key latches a live take and releases it; anywhere else it is
+  // inert. Its label follows the action it would perform.
+  pauseBtn.disabled = status !== "recording" && status !== "paused";
+  const pauseLabel = status === "paused" ? "Resume" : "Pause";
+  pauseBtn.title = pauseLabel;
+  pauseBtn.setAttribute("aria-label", pauseLabel);
   statusText.textContent = title;
   detailText.textContent = detail || "";
   // Every phase change retires the previous phase's bar. It stays hidden until
@@ -275,11 +285,19 @@ function drawMeter(frac = 0) {
   }
 }
 
+// Milliseconds of audio actually captured: wall time since the first samples,
+// minus every paused span (including one still open). The visible counter and
+// the max-duration cap both read this, so they can never disagree.
+function capturedMs(rec) {
+  return (rec.pausedAt ?? Date.now()) - rec.startedAt - rec.pausedMs;
+}
+
 function updateTimer() {
   // startedAt is set on the FIRST audio samples, not at setup: the timer
-  // counts captured audio, so it starts the moment "Listening…" appears.
+  // counts captured audio, so it starts the moment "Listening…" appears —
+  // and holds while the take is paused.
   if (!recording || !recording.startedAt) return;
-  const seconds = Math.floor((Date.now() - recording.startedAt) / 1000);
+  const seconds = Math.floor(capturedMs(recording) / 1000);
   timerEl.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
@@ -379,6 +397,9 @@ function trailingRms(chunks, windowSamples) {
 // preview cosmetics) are skipped, so no per-tick decode cost is paid.
 function sendPartial() {
   if (!recording || !livePreview) return;
+  // Paused: nothing new was recorded, so skip the tick entirely rather than
+  // re-decoding the same in-progress chunk on every interval.
+  if (recording.pausedAt) return;
   const total = totalSamples(recording.chunks);
   const from = recording.committedSamples;
   if (total <= from) return; // nothing new recorded since the last commit
@@ -555,6 +576,9 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
       // The node is disconnected on teardown, but a message can already be in
       // flight; never let a stale session's samples leak into the current one.
       if (!recording || recording.recorder !== recorder) return;
+      // Paused: the track is muted at the source, and whatever still arrives
+      // is discarded — the capture stays contiguous and the meter freezes.
+      if (recording.pausedAt) return;
       chunks.push(event.data.samples);
       // Just record the level; the rAF meter loop reads `levels` each frame.
       levels.push(event.data.rms);
@@ -572,6 +596,11 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
       // Set by micLive() on the first samples; "Listening…" and the timer wait
       // for it. Until then the card still shows "Starting mic…".
       startedAt: null,
+      // Pause bookkeeping: pausedAt holds the timestamp while the take is
+      // paused; pausedMs accumulates completed paused spans. Both feed
+      // capturedMs(), which the counter and the max-duration cap share.
+      pausedAt: null,
+      pausedMs: 0,
       // Append-only live preview: `committedSamples` is the sample offset where
       // the current in-progress chunk starts; everything before it has been
       // frozen into committed chunks and need never be re-sent. `seq` counts
@@ -706,6 +735,43 @@ function cancelRecording() {
     earheart.send("record:cancelled", { sid });
   } else {
     earheart.send("pipeline:cancel");
+  }
+}
+
+// Pause/resume a live take: the transport holds — mic track muted, tape and
+// counter frozen, the paused span excluded from the max-duration cap — and
+// pressing pause again continues the SAME take, so the captured audio stays
+// contiguous across the gap. Only a take that is actually capturing
+// (startedAt set) can pause; stop and eject keep working from the paused
+// state, and the global hotkey still stops as usual.
+function togglePause() {
+  if (!recording || !recording.startedAt) return;
+  if (!recording.pausedAt) {
+    recording.pausedAt = Date.now();
+    // The cap counts captured audio: hold it while paused.
+    if (recording.maxTimerId) {
+      clearTimeout(recording.maxTimerId);
+      recording.maxTimerId = null;
+    }
+    // Mute at the track so nothing is even delivered; the onmessage guard
+    // discards any chunk already in flight.
+    recording.stream.getAudioTracks().forEach((track) => (track.enabled = false));
+    setStatus("paused", "Paused", "Pause again to resume");
+  } else {
+    recording.pausedMs += Date.now() - recording.pausedAt;
+    recording.pausedAt = null;
+    recording.stream.getAudioTracks().forEach((track) => (track.enabled = true));
+    const remainingMs = recording.maxSeconds * 1000 - capturedMs(recording);
+    if (remainingMs <= 0) {
+      // The take was already at the cap when it paused; finish it.
+      stopRecording();
+      return;
+    }
+    recording.maxTimerId = setTimeout(() => stopRecording(), remainingMs);
+    // Re-anchor the tape's write clock: the tape didn't move while paused,
+    // matching the capture — no gap is written for the gap.
+    tapePushAt = 0;
+    setStatus("recording", "Listening…");
   }
 }
 
@@ -887,6 +953,7 @@ earheart.on("overlay:hide", () => card.classList.remove("visible"));
 new ResizeObserver(resizeMeter).observe(meter);
 
 stopBtn.addEventListener("click", stopRecording);
+pauseBtn.addEventListener("click", togglePause);
 document.getElementById("cancel").addEventListener("click", cancelRecording);
 
 // Click-and-drag anywhere on the card (except the buttons) moves the overlay.

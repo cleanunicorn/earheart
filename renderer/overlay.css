@@ -377,6 +377,18 @@ body {
   color: #8fdcae;
 }
 
+/* Paused: armed to record but deliberately not capturing — a STEADY hollow
+   ring (the pulsing hollow ring means the mic is still warming), PAUSE
+   legend, reels and tape held where they stopped. */
+[data-status="paused"] #indicator {
+  background: transparent;
+  border: 2px solid var(--rec);
+}
+
+[data-status="paused"] #lamp-legend::after {
+  content: "PAUSE";
+}
+
 [data-status="error"] #indicator,
 [data-status="empty"] #indicator {
   background: var(--inert);
@@ -687,12 +699,40 @@ button:focus-visible {
 }
 
 /* Outside a take there is nothing to stop: the key stays in its slot but goes
-   unlit and inert — a machine doesn't remove its keys. */
-#card:not([data-status="recording"]):not([data-status="starting"]) #stop {
+   unlit and inert — a machine doesn't remove its keys. A paused take still
+   counts as a take, so stop stays backlit through it. */
+#card:not([data-status="recording"]):not([data-status="starting"]):not(
+    [data-status="paused"]
+  )
+  #stop {
   background: var(--key);
   border-color: var(--key-edge);
   color: rgba(242, 233, 218, 0.22);
   box-shadow: inset 0 1px 0 rgba(255, 240, 214, 0.05);
+  pointer-events: none;
+}
+
+/* PAUSE: quiet next to the backlit stop, and latched down while the transport
+   holds — sunk into the faceplate like the mechanical key it is. Inert (unlit)
+   whenever there is no live take to hold; overlay.js mirrors that with the
+   disabled attribute for keyboard and AT. */
+#pause {
+  color: var(--ivory-dim);
+}
+
+#pause:hover:not(:disabled) {
+  color: var(--ivory);
+}
+
+[data-status="paused"] #pause {
+  background: var(--recess);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.55);
+  color: var(--ivory);
+  transform: translateY(1px);
+}
+
+#pause:disabled {
+  color: rgba(242, 233, 218, 0.22);
   pointer-events: none;
 }
 

@@ -388,7 +388,7 @@
       },
       "legend": {
         "displayName": "Legend",
-        "purpose": "The printed micro-legend under the lamp (REC/BUSY/DONE/ERR) \u2014 the only uppercase in the world."
+        "purpose": "The printed micro-legend under the lamp (REC/BUSY/DONE/PAUSE/ERR) \u2014 the only uppercase in the world."
       },
       "counter": {
         "displayName": "Counter",

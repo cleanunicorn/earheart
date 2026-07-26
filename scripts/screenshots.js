@@ -73,6 +73,20 @@ app.whenReady().then(async () => {
   await sleep(400);
   await shot(overlay, "overlay-recording");
 
+  // Paused mid-take: the transport holds — latched pause key, steady hollow
+  // REC ring, frozen tape behind the machine display.
+  await overlay.webContents.executeJavaScript(`
+    setStatus("paused", "Paused", "Pause again to resume");
+    "";
+  `);
+  await sleep(400);
+  await shot(overlay, "overlay-paused");
+
+  await overlay.webContents.executeJavaScript(`
+    setStatus("recording", "Listening…");
+    "";
+  `);
+
   // Processing state with the playhead progress mid-read (the README's middle
   // hero shot). The transcript retires when processing starts, like the real
   // pipeline does.

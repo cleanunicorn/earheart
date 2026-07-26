@@ -258,7 +258,7 @@ monospace numerals — never by typeface.
 - **Note body / detail** (400, 11px / 10.5px): secondary lines in Unlit
   Ivory.
 - **Legend** (700, 8px, 0.08em, UPPERCASE): the printed micro-legend under
-  the lamp (REC/BUSY/DONE/ERR) — the only uppercase in the world.
+  the lamp (REC/BUSY/DONE/PAUSE/ERR) — the only uppercase in the world.
 - **Counter** (ui-monospace, 13px, 0.04em, tabular-nums): the take counter.
   Digits go to 45% opacity outside recording — still readable, clearly not
   running.
@@ -272,7 +272,7 @@ recessed cell. Human words are never monospace.
 ## Layout
 
 A fixed-size, frameless, transparent, bottom-anchored Electron window — the
-window is the layout. Base size 460×95px; the card sits inside a 12px margin
+window is the layout. Base size 500×95px; the card sits inside a 12px margin
 and grows *upward* as the transcript or update note fills it (the main
 process resizes the window instantly; the card eases its own height so
 content slides rather than pops).
@@ -281,7 +281,7 @@ Card anatomy, top to bottom: knurled drag rail (44×5px, centered) → optional
 update service note → live transcript → transport row. The transport row is a
 fixed 46px strip inset 12px, gapped 8px: lamp block (30px) → supply reel
 (30px) → tape window (flexes to fill — the hero owns all leftover width) →
-take-up reel → counter cell (min 52×30px) → STOP → eject, with an extra 4px
+take-up reel → counter cell (min 52×30px) → PAUSE → STOP → eject, with an extra 4px
 gap isolating the destructive eject. The transcript's 16px side padding
 shares one left edge with the machine below it. Update-note actions wrap to a
 second line rather than squeeze; when the update arrives with no dictation
@@ -333,9 +333,14 @@ the well's top edge. Keys paint 34px but offer a ~42px hit area via an inset
 - **Hover:** surface warms to #342a1e (0.12s ease).
 - **Press:** the key travels — `translateY(1px) scale(0.96)` at 0.08s.
 - **Focus:** 2px Silk-Screen Ivory outline, offset 2px.
+- **PAUSE (latching):** a quiet key in Unlit Ivory that latches a live take:
+  while paused it sits pressed — sunk into the faceplate (Recess Black fill,
+  deeper inset well, `translateY(1px)`) with an ivory glyph — and pressing it
+  again resumes the same take. Inert (unlit, disabled for AT) whenever there
+  is no live take to hold.
 - **STOP (backlit):** #3a1611 fill, rgba(255,68,56,0.5) border, #ffb4ac
-  glyph, red backlight glow — lit while there's a take to stop. Outside a
-  take it goes unlit and inert (glyph at 22% ivory, pointer-events off,
+  glyph, red backlight glow — lit while there's a take to stop (a paused
+  take still counts). Outside a take it goes unlit and inert (glyph at 22% ivory, pointer-events off,
   disabled for AT) but **stays in its slot**.
 - **Eject (cancel):** a standard key with the eject glyph in Unlit Ivory,
   warming to ivory on hover; offset an extra 4px from STOP so the
@@ -369,7 +374,9 @@ centered).
 An 11px round lamp over its printed micro-legend. Starting: hollow REC ring
 (2px Rec Lamp Red border, 1s pulse). Recording: filled Rec Lamp Red with
 bloom, 2s pulse. Working: Busy Lamp Amber with bloom, 1.4s pulse. Done: Done
-Lamp Green, steady. Error/empty: Inert Warm Grey, legend ERR/—.
+Lamp Green, steady. Error/empty: Inert Warm Grey, legend ERR/—. Paused: a
+STEADY hollow REC ring — armed but deliberately not capturing — with legend
+PAUSE; only the warming mic's hollow ring pulses.
 
 **The Filled-Lamp Contract.** The lit pulsing lamp + written tape + running
 counter mean "audio is being captured right now." While the mic warms up the
@@ -412,7 +419,7 @@ exits are grouped so they wrap together.
 
 ### The Overlay Strip (signature)
 
-The whole system in one 460px-wide strip: solid Faceplate Black card, 12px
+The whole system in one 500px-wide strip: solid Faceplate Black card, 12px
 radius, Machine Edge hairline, machined top light, no cast shadow, pinned to
 the bottom of the screen and never stealing focus. Knurled grip rail up top
 (the card is the drag surface; the rail is the cue), live transcript growing

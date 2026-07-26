@@ -197,6 +197,37 @@ app.whenReady().then(async () => {
       `wav=${stats5.seconds.toFixed(2)}s rms=${stats5.rms.toFixed(4)}`
     );
 
+    // ---- Session 6: pause holds capture; the paused span is excluded --------
+    // Speak ~0.5s, pause ~0.6s (the fake mic keeps producing tone — none of it
+    // may land in the capture), resume and speak ~0.5s more. The WAV must
+    // cover only the live spans, and the counter must agree with it.
+    start(win, 6);
+    await waitForStatus(win, "recording");
+    await sleep(500);
+    await win.webContents.executeJavaScript("togglePause(); ''");
+    await waitForStatus(win, "paused");
+    await sleep(600);
+    await win.webContents.executeJavaScript("togglePause(); ''");
+    await waitForStatus(win, "recording");
+    await sleep(500);
+    const captured6P = waitForMessage("audio:captured");
+    win.webContents.send("record:stop");
+    const captured6 = await captured6P;
+    const stats6 = wavStats(captured6.wav);
+    check(
+      "paused span is excluded from the capture",
+      captured6.sid === 6 && stats6.seconds > 0.75 && stats6.seconds < 1.35,
+      `wav=${stats6.seconds.toFixed(2)}s across ~1.0s live + 0.6s paused`
+    );
+    const timer6 = await win.webContents.executeJavaScript(
+      `document.getElementById("timer").textContent`
+    );
+    check(
+      "counter counts captured audio only",
+      timer6 === "0:00" || timer6 === "0:01",
+      `timer=${timer6}`
+    );
+
     check("no mic errors during the run", micErrors.length === 0, micErrors.join("; "));
 
     const failed = checks.filter((c) => !c.ok);

@@ -19,4 +19,8 @@ related_targets: ["renderer/overlay.css","renderer/overlay.js","main/windows.js"
 
 **Constraints:** transparent focusable:false window — no drop shadows, solid surfaces under text; strict local CSP (no external assets); plain JS, no new runtime deps; preserve all pipeline/IPC/drag/height-report behavior and existing status copy verbatim; honor prefers-reduced-motion; the tape is a metaphor for live capture only — nothing implies audio is stored (cancel ejects).
 
-**Unresolved:** whether settings/wizard later migrate to the deck's front-panel language (out of scope here); eject-glyph comprehension for cancel (flagged for finish review).
+**Added 2026-07-26 (user request):** a latching PAUSE transport key — capture, tape, and counter hold (mic track muted, samples discarded, paused span excluded from the max-duration cap); pressing it again resumes the same take, so the captured audio stays contiguous. Lamp shows a steady hollow REC ring with legend PAUSE; stop and eject keep working while paused. Window widened to 500px for the fourth key. Guarded by an overlay-smoke session asserting paused audio is excluded.
+
+**Resolved at finish review:** eject glyph kept for cancel; its tooltip names the consequence ("Cancel — discard the recording"), aria-label stays "Cancel". Stop key is truly disabled (not just unlit) outside starting/recording.
+
+**Unresolved:** whether settings/wizard later migrate to the deck's front-panel language (out of scope here; DESIGN.md marks them legacy pending migration).

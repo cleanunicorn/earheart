@@ -59,64 +59,15 @@ $("skip").addEventListener("click", () => {
   earheart.invoke("wizard:skip");
 });
 
-/* ---------- hotkey capture (same behavior as the settings window) ---------- */
-
-const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
-
-function acceleratorFromEvent(event) {
-  if (MODIFIER_KEYS.has(event.key)) return null;
-  const parts = [];
-  // On macOS, physical Ctrl must stay Ctrl — CommandOrControl would register Cmd.
-  if (event.ctrlKey) parts.push(platform === "darwin" ? "Control" : "CommandOrControl");
-  if (event.metaKey) parts.push(platform === "darwin" ? "Command" : "Super");
-  if (event.altKey) parts.push("Alt");
-  if (event.shiftKey) parts.push("Shift");
-  if (parts.length === 0) return null; // require at least one modifier
-
-  let key = event.key;
-  if (key === " ") key = "Space";
-  else if (key.length === 1) key = key.toUpperCase();
-  else if (key.startsWith("Arrow")) key = key.slice(5);
-  parts.push(key);
-  return parts.join("+");
-}
+/* ---------- hotkey capture (wiring shared via hotkey-capture.js) ---------- */
 
 const hotkeyInput = $("hotkey");
-hotkeyInput.addEventListener("click", () => {
-  hotkeyInput.classList.add("capturing");
-  hotkeyInput.value = "Press keys…";
-});
-hotkeyInput.addEventListener("blur", () => {
-  hotkeyInput.classList.remove("capturing");
-  hotkeyInput.value = current?.hotkey || "";
-});
-hotkeyInput.addEventListener("keydown", (event) => {
-  // Keyboard users can't click, so Enter/Space arms capture — the same
-  // wiring as the settings window.
-  if (!hotkeyInput.classList.contains("capturing")) {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      hotkeyInput.classList.add("capturing");
-      hotkeyInput.value = "Press keys…";
-    }
-    return;
-  }
-  // Tab is never a hotkey and must keep working while capturing, or a
-  // keyboard user is trapped: let it move focus (blur ends capture).
-  if (event.key === "Tab") return;
-  event.preventDefault();
-  // Escape leaves capture without changing the binding (blur restores it).
-  if (event.key === "Escape") {
-    hotkeyInput.blur();
-    return;
-  }
-  const accelerator = acceleratorFromEvent(event);
-  if (accelerator) {
+wireHotkeyCapture(hotkeyInput, {
+  apply: (accelerator) => {
     current.hotkey = accelerator;
     hotkeyInput.value = accelerator;
-    hotkeyInput.classList.remove("capturing");
-    hotkeyInput.blur();
-  }
+  },
+  restore: () => current?.hotkey || "",
 });
 $("hotkey-clear").addEventListener("click", () => {
   current.hotkey = defaults.hotkey;

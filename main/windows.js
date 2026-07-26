@@ -16,6 +16,9 @@ const OVERLAY_WIDTH = 500;
 const OVERLAY_HEIGHT = 95;
 // Matches the card's fade-out transition in overlay.css.
 const OVERLAY_FADE_MS = 200;
+// Matches --face in settings.css (the wizard layers on it), so neither
+// window flashes white before its stylesheet paints.
+const FACE_COLOR = "#1c1713";
 
 let overlayWindow = null;
 let settingsWindow = null;
@@ -285,9 +288,7 @@ function openSettings({ fromWizard = false } = {}) {
     minHeight: 480,
     title: "Earheart",
     autoHideMenuBar: true,
-    // Matches --face in settings.css so the window never flashes white
-    // before the stylesheet paints.
-    backgroundColor: "#1c1713",
+    backgroundColor: FACE_COLOR,
     icon: path.join(__dirname, "..", "assets", "icon.png"),
     webPreferences: {
       preload: PRELOAD,
@@ -320,8 +321,7 @@ function openWizard() {
     minHeight: 560,
     title: "Welcome to Earheart",
     autoHideMenuBar: true,
-    // Matches --face in settings.css (the wizard layers on it).
-    backgroundColor: "#1c1713",
+    backgroundColor: FACE_COLOR,
     icon: path.join(__dirname, "..", "assets", "icon.png"),
     webPreferences: {
       preload: PRELOAD,

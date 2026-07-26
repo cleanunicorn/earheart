@@ -801,6 +801,10 @@ button.danger:hover:not(:disabled) {
 .status {
   font-size: 13px;
   color: var(--ivory-dim);
+  /* Long unbroken errors (URLs, hostnames) wrap instead of dragging a
+     horizontal scrollbar onto the panel; `anywhere` also counts into flex
+     min-content sizing, so rows shrink it without min-width overrides. */
+  overflow-wrap: anywhere;
 }
 
 .status.ok {

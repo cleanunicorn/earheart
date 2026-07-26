@@ -628,7 +628,9 @@ opacity + 8px rise + 0.98 scale over 0.2s — because the window can't ease.
 
 The service panel's table of contents: a 168px rail of quiet text entries
 (13px/500, Unlit Ivory, 7px radius), each led by an unlit 7px lamp
-(rgba(255,240,214,0.14)). The section under the read head lights its lamp
+(rgba(255,240,214,0.4) — bright enough to clear the 3:1 UI-component bar on
+the faceplate, so the socket reads as present-but-off). The section under
+the read head lights its lamp
 amber with the service bloom and its label warms to ivory (`aria-current`,
 scroll spy); hover is a 4% ivory wash. Clicking glides the panel; while a
 click-initiated glide is in flight the chosen lamp holds so the spy doesn't
@@ -713,7 +715,8 @@ tabular timestamp row with a small copy key.
 
 The wizard is the service panel walking you through the machine. Steps center
 vertically in the fixed frame; step position is a row of 7px lamps in the
-footer — unlit stops in 16% ivory, the current one lit amber with bloom,
+footer — unlit stops in 40% ivory (the index's unlit-lamp tone), the current
+one lit amber with bloom,
 spoken as "Step N of 7" via an sr-only counterpart. The welcome demo is three
 panels: machined `kbd` key caps (6px radius, 2px bottom edge, mono 11px) →
 **the mini deck**, a miniature of the real recording strip on an 8px-radius

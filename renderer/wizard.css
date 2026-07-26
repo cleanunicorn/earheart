@@ -57,7 +57,8 @@ footer {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: rgba(255, 240, 214, 0.16);
+  /* 40% ivory, matching the settings index's unlit lamps (≥3:1 on --face). */
+  background: rgba(255, 240, 214, 0.4);
 }
 
 .dot.active {

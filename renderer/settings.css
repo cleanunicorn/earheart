@@ -152,13 +152,14 @@ nav#tabs {
 
 /* Each index entry carries an unlit lamp; the active section's lamp lights
    amber — the machine talking about itself, same as the overlay's service
-   lamp. */
+   lamp. 40% ivory: dimmer alphas composite under the 3:1 UI-component bar
+   on the faceplate, leaving the unlit sockets invisible. */
 .tab::before {
   content: "";
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: rgba(255, 240, 214, 0.14);
+  background: rgba(255, 240, 214, 0.4);
   flex-shrink: 0;
   transition: background 0.12s ease, box-shadow 0.12s ease;
 }

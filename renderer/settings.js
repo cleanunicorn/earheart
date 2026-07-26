@@ -107,6 +107,11 @@ tabButtons.forEach((tab, i) => {
   });
 });
 
+// Seat the roving tabindex before any interaction: without this, every index
+// button is its own Tab stop until the first click or scroll runs
+// markActiveTab (native buttons default to tabIndex 0).
+markActiveTab("general");
+
 /* ---------- hotkey capture ---------- */
 
 const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);

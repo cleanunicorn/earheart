@@ -35,7 +35,12 @@ function markActiveTab(name) {
 // the scroll passes through; hold the chosen one until the scroll settles.
 let spyHeld = false;
 
-function activateTab(name, { focus = false } = {}) {
+// `focus` keeps focus on the index button (arrow-key roving); `focusSection`
+// commits focus into the section itself (click/Enter activation) so the next
+// Tab continues from the jumped-to section instead of the top of the page —
+// all sections are always in the DOM now, so without this the index saves
+// keyboard users nothing.
+function activateTab(name, { focus = false, focusSection = false } = {}) {
   markActiveTab(name);
   if (focus) tabButtons.find((t) => t.dataset.tab === name)?.focus();
   const section = panels.find((p) => p.id === `tab-${name}`);
@@ -53,6 +58,11 @@ function activateTab(name, { focus = false } = {}) {
   );
   spyHeld = Math.abs(panelHost.scrollTop - target) > 1;
   section.scrollIntoView({ block: "start" });
+  // preventScroll: the glide above owns the motion; focus() must not fight
+  // it with its own instant scroll.
+  if (focusSection) {
+    section.querySelector(".legend")?.focus({ preventScroll: true });
+  }
 }
 
 // The user scrolling over a held glide takes the lamp back immediately.
@@ -92,7 +102,10 @@ panelHost.addEventListener("scrollend", () => {
 });
 
 tabButtons.forEach((tab, i) => {
-  tab.addEventListener("click", () => activateTab(tab.dataset.tab));
+  // Click covers Enter/Space on the focused button too (native semantics).
+  tab.addEventListener("click", () =>
+    activateTab(tab.dataset.tab, { focusSection: true })
+  );
   tab.addEventListener("keydown", (event) => {
     const step =
       event.key === "ArrowRight" || event.key === "ArrowDown"

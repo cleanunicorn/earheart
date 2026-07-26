@@ -226,6 +226,14 @@ main {
   background: var(--seam);
 }
 
+/* Index activation moves focus here (tabindex=-1); show a ring only for
+   keyboard-driven activation. */
+.legend:focus-visible {
+  outline: 2px solid var(--ivory);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
 /* ---------- cards: machined group panels ---------- */
 
 .card {

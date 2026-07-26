@@ -70,7 +70,7 @@
               global keys — instead, bind a system keyboard shortcut to
               <code>earheart --toggle</code>.</span>
             </p>
-            <p id="hotkey-status" class="status"></p>
+            <p id="hotkey-status" class="status" aria-live="polite"></p>
           </div>
 
           <div class="field">
@@ -85,7 +85,7 @@
               <span id="pause-wayland-note">On Wayland, bind a system shortcut to
               <code>earheart --pause</code> instead.</span>
             </p>
-            <p id="pause-hotkey-status" class="status"></p>
+            <p id="pause-hotkey-status" class="status" aria-live="polite"></p>
           </div>
 
           <div class="field">
@@ -162,7 +162,7 @@
                 placeholder="csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2" />
               <div class="row">
                 <button id="stt-hf-find" class="ghost" type="button">Find versions</button>
-                <span id="stt-hf-result" class="status"></span>
+                <span id="stt-hf-result" class="status" aria-live="polite"></span>
               </div>
               <div class="row" id="stt-hf-pick" hidden>
                 <select id="stt-hf-variant"></select>
@@ -199,11 +199,11 @@
             </div>
             <div class="row">
               <button id="stt-fetch-models" class="ghost" type="button">Fetch models</button>
-              <span id="stt-fetch-result" class="status"></span>
+              <span id="stt-fetch-result" class="status" aria-live="polite"></span>
             </div>
             <div class="row">
               <button id="stt-test">Test connection</button>
-              <span id="stt-test-result" class="status"></span>
+              <span id="stt-test-result" class="status" aria-live="polite"></span>
             </div>
           </div>
         </div>
@@ -271,7 +271,7 @@
                   placeholder="unsloth/gemma-3-1b-it-GGUF" />
                 <div class="row">
                   <button id="cleanup-hf-find" class="ghost" type="button">Find versions</button>
-                  <span id="cleanup-hf-result" class="status"></span>
+                  <span id="cleanup-hf-result" class="status" aria-live="polite"></span>
                 </div>
                 <div class="row" id="cleanup-hf-pick" hidden>
                   <select id="cleanup-hf-variant"></select>
@@ -301,7 +301,7 @@
                 <datalist id="cleanup-model-list"></datalist>
                 <div class="row">
                   <button id="cleanup-fetch-models" class="ghost" type="button">Fetch models</button>
-                  <span id="cleanup-fetch-result" class="status"></span>
+                  <span id="cleanup-fetch-result" class="status" aria-live="polite"></span>
                 </div>
               </div>
             </div>
@@ -383,7 +383,7 @@
             </div>
             <div class="row" id="cleanup-test-row">
               <button id="cleanup-test">Test connection</button>
-              <span id="cleanup-test-result" class="status"></span>
+              <span id="cleanup-test-result" class="status" aria-live="polite"></span>
             </div>
           </div>
         </div>
@@ -434,7 +434,7 @@
           <div class="card-title">Auto-paste permission</div>
           <div class="row">
             <button id="accessibility-fix" class="ghost">Fix auto-paste permission…</button>
-            <span id="accessibility-status" class="status"></span>
+            <span id="accessibility-status" class="status" aria-live="polite"></span>
           </div>
           <p class="hint">
             Auto-paste types into the focused app, which macOS allows only with
@@ -475,7 +475,7 @@
           <div class="row">
             <button id="update-action" class="ghost">Check for updates</button>
             <button id="update-skip" class="ghost" hidden>Skip this version</button>
-            <span id="update-status" class="status"></span>
+            <span id="update-status" class="status" aria-live="polite"></span>
           </div>
           <p class="hint" id="update-hint">
             Updates are downloaded from the GitHub release and verified before installing.
@@ -490,7 +490,7 @@
           </p>
           <div class="row">
             <button id="open-logs" class="ghost">Open error log</button>
-            <span id="open-logs-result" class="status"></span>
+            <span id="open-logs-result" class="status" aria-live="polite"></span>
           </div>
           <p class="hint">Errors are written here — attach it when reporting a problem.</p>
         </div>
@@ -499,7 +499,7 @@
     </div>
 
     <footer>
-      <span id="save-status" class="status"></span>
+      <span id="save-status" class="status" aria-live="polite"></span>
       <button id="save" class="primary">Save</button>
     </footer>
 

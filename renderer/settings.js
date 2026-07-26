@@ -936,6 +936,9 @@ function renderUpdateState(u) {
   $("update-skip").hidden = !(u.status === "available" && u.method === "install");
   action.disabled = u.status === "checking" || u.status === "installing";
   status.className = "status";
+  // One-shot outcomes announce; the ~1%-step download ticks must not spam
+  // the screen-reader queue.
+  status.setAttribute("aria-live", u.status === "downloading" ? "off" : "polite");
 
   switch (u.status) {
     case "checking":

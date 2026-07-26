@@ -251,6 +251,36 @@ kbd {
   100% { width: 18ch; opacity: 0; }
 }
 
+/* ---------- compact window: the demo stacks ---------- */
+
+/* At the enforced 560px window floor the three-across demo can't fit (the
+   typing animation's widest phase overflows the row; permanently so under
+   reduced motion). Stack it and compact the cards so the welcome step stays
+   close to composed — a small vertical scroll may remain at the exact
+   floor, which the panel already supports. */
+@media (max-width: 599px) {
+  .demo {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .demo-card {
+    padding: 8px 10px;
+  }
+
+  .demo-visual {
+    min-height: 32px;
+  }
+
+  .demo-caption {
+    margin-top: 4px;
+  }
+
+  .demo-arrow {
+    transform: rotate(90deg);
+  }
+}
+
 /* ---------- summary on the last step ---------- */
 
 #summary {

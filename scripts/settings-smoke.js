@@ -104,17 +104,25 @@ app.whenReady().then(async () => {
     check("active index entry carries aria-current", spy.current === "true");
 
     // 3. Index navigation: clicking General relights immediately (the lamp
-    // is synchronous; the glide follows).
+    // and the focus move are synchronous; the glide follows).
     const clicked = JSON.parse(
       await js(`
         (() => {
           document.getElementById("tabbtn-general").click();
           const active = document.querySelector(".tab.active");
-          return JSON.stringify({ tab: active ? active.dataset.tab : null });
+          return JSON.stringify({
+            tab: active ? active.dataset.tab : null,
+            focus: document.activeElement ? document.activeElement.id : null,
+          });
         })();
       `)
     );
     check("clicking the index relights its lamp", clicked.tab === "general");
+    check(
+      "clicking the index moves focus into the section's legend",
+      clicked.focus === "legend-general",
+      `activeElement=${clicked.focus}`
+    );
 
     // The glide is asynchronous; wait for it to settle, then assert the
     // panel came back near the top (threshold, not 0 — scroll-margin leaves

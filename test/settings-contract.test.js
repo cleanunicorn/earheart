@@ -138,6 +138,23 @@ test("every radio/checkbox group name settings.js uses exists in settings.html",
   assert.deepStrictEqual(missing, [], `settings.html is missing radio groups: ${missing.join(", ")}`);
 });
 
+test("hotkey-capture.js loads before each page's own script", () => {
+  // Both pages call wireHotkeyCapture at top level; if the shared script's
+  // tag is dropped or reordered, the page script throws a ReferenceError
+  // that silently kills everything after the index wiring — and the smoke
+  // checks only exercise code registered before that point.
+  for (const [name, source, page] of [
+    ["settings.html", html, "settings.js"],
+    ["wizard.html", wizardHtml, "wizard.js"],
+  ]) {
+    const shared = source.indexOf('src="hotkey-capture.js"');
+    const own = source.indexOf(`src="${page}"`);
+    assert.notStrictEqual(shared, -1, `${name} must load hotkey-capture.js`);
+    assert.notStrictEqual(own, -1, `${name} must load ${page}`);
+    assert.ok(shared < own, `${name} must load hotkey-capture.js before ${page}`);
+  }
+});
+
 test("settings.html uses no inline style attributes (blocked by the CSP)", () => {
   // The window's Content-Security-Policy is `style-src 'self'`, which forbids
   // inline style="…" attributes. Any such attribute would be silently dropped.

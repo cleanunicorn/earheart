@@ -87,6 +87,49 @@ test("each tab's panel id (tab-<data-tab>) exists in settings.html", () => {
   assert.deepStrictEqual(missing, [], `missing tab panels: ${missing.map((t) => `tab-${t}`).join(", ")}`);
 });
 
+test("every panel section has a matching index button (data-tab)", () => {
+  // The existing test checks nav→panel; this is the reverse. spySections
+  // derives the active name from the .panel sections themselves, so a
+  // section added without an index button would scroll fine but never light
+  // a lamp — the index would silently skip it.
+  const dataTabs = new Set([...html.matchAll(/data-tab="([a-z]+)"/g)].map((m) => m[1]));
+  const panelIds = [...html.matchAll(/<section id="tab-([a-z]+)"[^>]*class="panel/g)].map(
+    (m) => m[1]
+  );
+  assert.ok(panelIds.length >= 5, `expected the five sections, got ${panelIds.length}`);
+  const orphans = panelIds.filter((p) => !dataTabs.has(p)).sort();
+  assert.deepStrictEqual(orphans, [], `sections without an index button: ${orphans.join(", ")}`);
+});
+
+test("each section's aria-labelledby points at its own existing legend", () => {
+  // The legend headings carry the sections' accessible names; nothing at
+  // runtime throws when the pairing breaks, so pin it here.
+  const pairs = [...html.matchAll(/<section id="tab-([a-z]+)"[^>]*aria-labelledby="([a-z0-9-]+)"/g)];
+  assert.ok(pairs.length >= 5, `expected five labelled sections, got ${pairs.length}`);
+  const broken = pairs
+    .filter(([, name, ref]) => ref !== `legend-${name}` || !htmlIds.has(ref))
+    .map(([, name, ref]) => `tab-${name}→${ref}`);
+  assert.deepStrictEqual(broken, [], `mislabelled sections: ${broken.join(", ")}`);
+});
+
+test("the always-visible History section stays live (no active-tab guard)", () => {
+  // Every section renders at once now, so renderHistory must run at init and
+  // unconditionally on history:changed — a re-added "only when the History
+  // tab is active" guard (the old model's shape) would leave the list stale
+  // for the whole session. Pins the call sites, not renderHistory itself.
+  const normalized = js.replace(/\s+/g, " ");
+  assert.match(
+    normalized,
+    /earheart\.on\("history:changed", \(\) => \{? ?renderHistory\(\)/,
+    "history:changed must call renderHistory unconditionally"
+  );
+  const init = js.slice(js.lastIndexOf("(async () =>"));
+  assert.ok(
+    init.includes("renderHistory();"),
+    "the init IIFE must render history once at load"
+  );
+});
+
 test("every radio/checkbox group name settings.js uses exists in settings.html", () => {
   const referenced = new Set([...js.matchAll(/name="([a-z-]+)"/g)].map((m) => m[1]));
   assert.ok(referenced.size >= 3, "expected the output-mode/stt-engine/cleanup-engine groups");

@@ -42,6 +42,11 @@
   --busy-wash: rgba(255, 176, 58, 0.07); /* amber service wash (selection) */
   --busy-line: rgba(255, 176, 58, 0.35);
   --mono: ui-monospace, "Cascadia Code", monospace;
+
+  /* Machined materials, shared by every panel and well. The key-cap top
+     light reuses --seam (the same 7% ivory). */
+  --edge-light: inset 0 1px 0 rgba(255, 240, 214, 0.05);
+  --well-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
 }
 
 * {
@@ -82,7 +87,7 @@ header {
   flex-shrink: 0;
   border-bottom: 1px solid var(--seam);
   /* Machined top edge: an inset highlight, not a cast shadow. */
-  box-shadow: inset 0 1px 0 rgba(255, 240, 214, 0.05);
+  box-shadow: var(--edge-light);
 }
 
 header img {
@@ -241,7 +246,7 @@ main {
   border: 1px solid var(--panel-edge);
   border-radius: 12px;
   /* Machined, not floating: inset top light, no cast shadow. */
-  box-shadow: inset 0 1px 0 rgba(255, 240, 214, 0.05);
+  box-shadow: var(--edge-light);
   padding: 16px 18px;
   margin-bottom: 12px;
 }
@@ -297,7 +302,7 @@ textarea {
   border: 1px solid var(--well-edge);
   border-radius: 6px;
   /* Sunk into the faceplate, not sitting on it. */
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--well-shadow);
   padding: 9px 11px;
   font-size: 13px;
   font-family: inherit;
@@ -330,7 +335,7 @@ textarea:focus {
   outline: none;
   border-color: var(--oxide);
   box-shadow:
-    inset 0 1px 3px rgba(0, 0, 0, 0.55),
+    var(--well-shadow),
     0 0 0 3px rgba(210, 154, 90, 0.22);
 }
 
@@ -368,7 +373,7 @@ select {
   border-color: rgba(255, 68, 56, 0.55);
   background: rgba(255, 68, 56, 0.07);
   box-shadow:
-    inset 0 1px 3px rgba(0, 0, 0, 0.55),
+    var(--well-shadow),
     0 0 0 3px rgba(255, 68, 56, 0.16);
 }
 
@@ -412,7 +417,7 @@ select {
   display: flex;
   background: var(--recess);
   border: 1px solid var(--panel-edge);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--well-shadow);
   border-radius: 9px;
   padding: 3px;
   gap: 3px;
@@ -454,7 +459,7 @@ select {
 .segmented label:has(input:checked) {
   background: var(--key);
   border-color: var(--key-edge);
-  box-shadow: inset 0 1px 0 rgba(255, 240, 214, 0.07);
+  box-shadow: inset 0 1px 0 var(--seam);
   color: var(--ivory);
 }
 
@@ -574,7 +579,7 @@ input.switch {
   border-radius: 11px;
   border: 1px solid var(--well-edge);
   background: var(--recess);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--well-shadow);
   cursor: pointer;
   transition:
     background 0.16s ease,
@@ -701,7 +706,7 @@ button {
   color: var(--ivory);
   border-radius: 9px;
   /* Machined cap: inset top light, no cast shadow. */
-  box-shadow: inset 0 1px 0 rgba(255, 240, 214, 0.07);
+  box-shadow: inset 0 1px 0 var(--seam);
   padding: 8px 14px;
   font-size: 13px;
   font-weight: 500;

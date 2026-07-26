@@ -361,10 +361,13 @@ select {
 }
 
 /* Click-to-capture fields; once populated they look like a static value, so
-   give them a hover that reads as changeable. */
+   give them a hover that reads as changeable. The wash needs 10% here —
+   the recessed well starts so dark that the 4-5% used on lighter surfaces
+   composites imperceptibly. */
 #hotkey:not(.capturing):hover,
 #pause-hotkey:not(.capturing):hover {
   border-color: var(--ivory-dim);
+  background: rgba(255, 240, 214, 0.1);
 }
 
 /* Armed and capturing keys: the field borrows the REC vocabulary — it is
@@ -548,6 +551,12 @@ select {
   justify-content: space-between;
   gap: 16px;
   cursor: pointer;
+}
+
+/* Stacked toggle rows (the Updates card) separate by whitespace like fields
+   do — without this the first row's description runs into the next label. */
+.toggle + .toggle {
+  margin-top: 16px;
 }
 
 .toggle-text {

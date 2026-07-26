@@ -656,8 +656,9 @@ cards, summary, and value cards are the same panel at 10px radius.
 - **Selects:** self-drawn Unlit Ivory caret (inline SVG data URI, hex kept in
   sync with #a89b88), `appearance: none`.
 - **Hotkey capture:** accelerator fields are mono machine values; populated
-  fields hint changeability with a Well Edge→Unlit Ivory hover; while armed
-  they go REC — red border, red wash, red halo — because the field is
+  fields hint changeability with a Well Edge→Unlit Ivory hover plus a 10%
+  ivory wash (the recess is too dark for the 4-5% wash to register); while
+  armed they go REC — red border, red wash, red halo — because the field is
   literally recording your key press.
 - **Textareas (machine instructions):** mono 13px/1.55, vertical resize only.
 

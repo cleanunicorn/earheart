@@ -16,6 +16,9 @@ const OVERLAY_WIDTH = 500;
 const OVERLAY_HEIGHT = 95;
 // Matches the card's fade-out transition in overlay.css.
 const OVERLAY_FADE_MS = 200;
+// Matches --face in settings.css (the wizard layers on it), so neither
+// window flashes white before its stylesheet paints.
+const FACE_COLOR = "#1c1713";
 
 let overlayWindow = null;
 let settingsWindow = null;
@@ -274,16 +277,18 @@ function openSettings({ fromWizard = false } = {}) {
     return settingsWindow;
   }
   settingsWindow = new BrowserWindow({
-    // Snug around the 620px content column (max-width in settings.css) plus its
-    // 28px side padding, so there's little left/right dead space.
-    width: 680,
-    // Sized so the roomier card-based General tab fits without scrolling; the
-    // longer tabs (Cleanup) still scroll, which is expected.
+    // Index rail (168px) + the content column (max-width 620px in
+    // settings.css) with its side padding; wide enough that grid-2 fields
+    // stay comfortable.
+    width: 760,
+    // The panel is one continuous scroll; this shows the whole General
+    // section (the most-visited controls) without scrolling.
     height: 780,
     minWidth: 560,
     minHeight: 480,
     title: "Earheart",
     autoHideMenuBar: true,
+    backgroundColor: FACE_COLOR,
     icon: path.join(__dirname, "..", "assets", "icon.png"),
     webPreferences: {
       preload: PRELOAD,
@@ -316,6 +321,7 @@ function openWizard() {
     minHeight: 560,
     title: "Welcome to Earheart",
     autoHideMenuBar: true,
+    backgroundColor: FACE_COLOR,
     icon: path.join(__dirname, "..", "assets", "icon.png"),
     webPreferences: {
       preload: PRELOAD,

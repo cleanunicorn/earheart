@@ -23,4 +23,4 @@ related_targets: ["renderer/overlay.css","renderer/overlay.js","main/windows.js"
 
 **Resolved at finish review:** eject glyph kept for cancel; its tooltip names the consequence ("Cancel — discard the recording"), aria-label stays "Cancel". Stop key is truly disabled (not just unlit) outside starting/recording.
 
-**Unresolved:** whether settings/wizard later migrate to the deck's front-panel language (out of scope here; DESIGN.md marks them legacy pending migration).
+**Resolved 2026-07-27:** settings/wizard migrated to the deck's front-panel language as "the service panel" (see `.impeccable/surfaces/renderer-settings-html.md`); the On-Air Lamp system is fully retired.

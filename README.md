@@ -244,8 +244,8 @@ the wizard:
   <img src="docs/screenshots/settings.png" width="640" alt="Earheart settings window" />
 </p>
 
-A mis-aimed paste never loses your words: the History tab keeps recent
-transcriptions in a local file (you can turn this off).
+A mis-aimed paste never loses your words: the History section in Settings
+keeps recent transcriptions in a local file (you can turn this off).
 
 ## Using other services
 

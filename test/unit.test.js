@@ -13,6 +13,7 @@ const { resolveCleanup } = require("../main/cleanup-styles");
 const autostart = require("../main/autostart");
 const { listRemoteModels } = require("../main/services/models-remote");
 const { reconcileTranscript } = require("../renderer/transcript");
+const { acceleratorFromEvent } = require("../renderer/hotkey-capture");
 
 test("encodeWav produces a valid RIFF header", () => {
   const samples = new Int16Array([0, 1000, -1000, 32767, -32768]);
@@ -634,4 +635,37 @@ test("wavSliceFromFrame clamps a past-the-end offset to an empty wav", () => {
   const wav = encodeWav(new Int16Array(100), 16000);
   assert.strictEqual(wavSampleFrames(wavSliceFromFrame(wav, 5000)), 0);
   assert.strictEqual(wavSampleFrames(wavSliceFromFrame(wav, -5)), 100);
+});
+
+// acceleratorFromEvent reads the page-global `platform` (classic-script
+// sharing in the renderer); tests provide it via global and reset after.
+test("acceleratorFromEvent maps modifiers per platform and names keys", () => {
+  const ev = (o) => ({ ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...o });
+  try {
+    global.platform = "linux";
+    assert.strictEqual(acceleratorFromEvent(ev({ key: "k", ctrlKey: true })), "CommandOrControl+K");
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: " ", ctrlKey: true, shiftKey: true })),
+      "CommandOrControl+Shift+Space"
+    );
+    assert.strictEqual(acceleratorFromEvent(ev({ key: "ArrowUp", ctrlKey: true })), "CommandOrControl+Up");
+    assert.strictEqual(acceleratorFromEvent(ev({ key: "k", metaKey: true })), "Super+K");
+    assert.strictEqual(acceleratorFromEvent(ev({ key: "k" })), null, "requires a modifier");
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "Control", ctrlKey: true })),
+      null,
+      "a modifier alone is not a hotkey"
+    );
+    // macOS: physical Ctrl stays Ctrl (CommandOrControl would register Cmd),
+    // and Meta is the Command key.
+    global.platform = "darwin";
+    assert.strictEqual(acceleratorFromEvent(ev({ key: "k", ctrlKey: true })), "Control+K");
+    assert.strictEqual(acceleratorFromEvent(ev({ key: "k", metaKey: true })), "Command+K");
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "p", ctrlKey: true, altKey: true })),
+      "Control+Alt+P"
+    );
+  } finally {
+    delete global.platform;
+  }
 });

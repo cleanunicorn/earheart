@@ -8,30 +8,111 @@ let cleanupStyles = []; // [{ id, label, hint }] — the cleanup style slider st
 
 const $ = (id) => document.getElementById(id);
 
-/* ---------- tabs ---------- */
+/* ---------- section index ---------- */
 
-// The tabs are an ARIA tablist: exactly one tab is selected and in the tab
-// order (roving tabindex), and Left/Right arrows move between them.
+// Every section sits on one scrolling service panel; the index on the left
+// only navigates. Its lamp tracks the section under the read head (scroll
+// spy), and clicking an entry glides the panel to that section (the easing
+// comes from CSS scroll-behavior, which prefers-reduced-motion collapses).
+// Roving tabindex keeps the index a single tab stop; arrows move within it.
 const tabButtons = [...document.querySelectorAll(".tab")];
+const panels = [...document.querySelectorAll(".panel")];
+const panelHost = document.querySelector("main");
 
-function activateTab(name, { focus = false } = {}) {
+// Which index entry is lit — no scrolling. aria-current (not aria-selected):
+// the index is navigation within one page, not a tablist swapping panels.
+function markActiveTab(name) {
   for (const t of tabButtons) {
     const on = t.dataset.tab === name;
     t.classList.toggle("active", on);
-    t.setAttribute("aria-selected", on ? "true" : "false");
+    if (on) t.setAttribute("aria-current", "true");
+    else t.removeAttribute("aria-current");
     t.tabIndex = on ? 0 : -1;
-    if (on && focus) t.focus();
   }
-  document
-    .querySelectorAll(".panel")
-    .forEach((p) => p.classList.toggle("active", p.id === `tab-${name}`));
-  if (name === "history") renderHistory();
 }
 
+// While a click-initiated glide is in flight, the spy would light every lamp
+// the scroll passes through; hold the chosen one until the scroll settles.
+let spyHeld = false;
+
+// `focus` keeps focus on the index button (arrow-key roving); `focusSection`
+// commits focus into the section itself (click/Enter activation) so the next
+// Tab continues from the jumped-to section instead of the top of the page —
+// all sections are always in the DOM now, so without this the index saves
+// keyboard users nothing.
+function activateTab(name, { focus = false, focusSection = false } = {}) {
+  markActiveTab(name);
+  if (focus) tabButtons.find((t) => t.dataset.tab === name)?.focus();
+  const section = panels.find((p) => p.id === `tab-${name}`);
+  if (!section) return;
+  // Where this glide will land: the section's top under the 12px
+  // scroll-margin, clamped to the scrollable range. If we're already there,
+  // no scroll (and no scrollend to release the hold) will happen — so only
+  // hold the lamp when a glide is actually coming.
+  const target = Math.max(
+    0,
+    Math.min(
+      section.offsetTop - panelHost.offsetTop - 12,
+      panelHost.scrollHeight - panelHost.clientHeight
+    )
+  );
+  spyHeld = Math.abs(panelHost.scrollTop - target) > 1;
+  section.scrollIntoView({ block: "start" });
+  // preventScroll: the glide above owns the motion; focus() must not fight
+  // it with its own instant scroll.
+  if (focusSection) {
+    section.querySelector(".legend")?.focus({ preventScroll: true });
+  }
+}
+
+// The user scrolling over a held glide takes the lamp back immediately.
+panelHost.addEventListener("wheel", () => (spyHeld = false), { passive: true });
+panelHost.addEventListener("touchstart", () => (spyHeld = false), {
+  passive: true,
+});
+
+// The section whose top has passed the read line (a small offset under the
+// panel's top edge) is the current one; hitting the end of the scroll always
+// lights the last lamp, which could otherwise never reach the line.
+// Panel ids are `tab-<name>`; the index buttons carry the bare name.
+const sectionName = (panel) => panel.id.replace(/^tab-/, "");
+
+function spySections() {
+  if (spyHeld) return;
+  const fromTop = panelHost.scrollTop;
+  const atEnd =
+    fromTop + panelHost.clientHeight >= panelHost.scrollHeight - 4;
+  let name = panels[0] ? sectionName(panels[0]) : null;
+  if (atEnd) {
+    name = sectionName(panels[panels.length - 1]);
+  } else {
+    for (const p of panels) {
+      if (p.offsetTop - panelHost.offsetTop - 40 <= fromTop) {
+        name = sectionName(p);
+      }
+    }
+  }
+  if (name) markActiveTab(name);
+}
+
+panelHost.addEventListener("scroll", spySections, { passive: true });
+panelHost.addEventListener("scrollend", () => {
+  spyHeld = false;
+  spySections();
+});
+
 tabButtons.forEach((tab, i) => {
-  tab.addEventListener("click", () => activateTab(tab.dataset.tab));
+  // Click covers Enter/Space on the focused button too (native semantics).
+  tab.addEventListener("click", () =>
+    activateTab(tab.dataset.tab, { focusSection: true })
+  );
   tab.addEventListener("keydown", (event) => {
-    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    const step =
+      event.key === "ArrowRight" || event.key === "ArrowDown"
+        ? 1
+        : event.key === "ArrowLeft" || event.key === "ArrowUp"
+          ? -1
+          : 0;
     if (!step) return;
     event.preventDefault();
     const next = tabButtons[(i + step + tabButtons.length) % tabButtons.length];
@@ -39,64 +120,12 @@ tabButtons.forEach((tab, i) => {
   });
 });
 
-/* ---------- hotkey capture ---------- */
+// Seat the roving tabindex before any interaction: without this, every index
+// button is its own Tab stop until the first click or scroll runs
+// markActiveTab (native buttons default to tabIndex 0).
+markActiveTab("general");
 
-const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
-
-function acceleratorFromEvent(event) {
-  if (MODIFIER_KEYS.has(event.key)) return null;
-  const parts = [];
-  // On macOS, physical Ctrl must stay Ctrl — CommandOrControl would register Cmd.
-  if (event.ctrlKey) parts.push(platform === "darwin" ? "Control" : "CommandOrControl");
-  if (event.metaKey) parts.push(platform === "darwin" ? "Command" : "Super");
-  if (event.altKey) parts.push("Alt");
-  if (event.shiftKey) parts.push("Shift");
-  if (parts.length === 0) return null; // require at least one modifier
-
-  let key = event.key;
-  if (key === " ") key = "Space";
-  else if (key.length === 1) key = key.toUpperCase();
-  else if (key.startsWith("Arrow")) key = key.slice(5);
-  parts.push(key);
-  return parts.join("+");
-}
-
-// One capture wiring for both hotkey fields: `apply` stores a captured
-// accelerator, `restore` yields what blur should show.
-function wireHotkeyCapture(input, { apply, restore }) {
-  function startCapture() {
-    input.classList.add("capturing");
-    input.value = "Press keys…";
-  }
-  input.addEventListener("click", startCapture);
-  input.addEventListener("blur", () => {
-    input.classList.remove("capturing");
-    input.value = restore();
-  });
-  input.addEventListener("keydown", (event) => {
-    // Keyboard users can't click, so Enter/Space on the focused field arms
-    // capture — matching what a mouse click does.
-    if (!input.classList.contains("capturing")) {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        startCapture();
-      }
-      return;
-    }
-    event.preventDefault();
-    // Escape leaves capture without changing the binding (blur restores it).
-    if (event.key === "Escape") {
-      input.blur();
-      return;
-    }
-    const accelerator = acceleratorFromEvent(event);
-    if (accelerator) {
-      apply(accelerator);
-      input.classList.remove("capturing");
-      input.blur();
-    }
-  });
-}
+/* ---------- hotkey capture (wiring shared via hotkey-capture.js) ---------- */
 
 const hotkeyInput = $("hotkey");
 wireHotkeyCapture(hotkeyInput, {
@@ -466,6 +495,15 @@ function renderManage(kind) {
   manage[kind] = ui;
 }
 
+// Terminal download outcomes announce through one persistent sr-only live
+// region: the visible per-row span is rebuilt by renderManage
+// (replaceChildren), and a live region's initial content on insertion is
+// not announced — so the row itself can never speak.
+function announceDownload(kind, modelId, message) {
+  const info = modelStatus?.[kind]?.find((m) => m.id === modelId);
+  $("model-dl-announce").textContent = `${info ? info.label : modelId}: ${message}`;
+}
+
 async function downloadModel(kind, modelId, ui) {
   // While the download runs, the same button cancels it (the wizard offers the
   // same escape; without it a multi-minute download in Settings is a one-way
@@ -482,6 +520,7 @@ async function downloadModel(kind, modelId, ui) {
   ui.btn.onclick = null;
   if (res.ok) {
     await refreshModels();
+    announceDownload(kind, modelId, "Downloaded ✓");
     return;
   }
   // Failed or cancelled: revert to a download affordance the user can retry.
@@ -491,6 +530,7 @@ async function downloadModel(kind, modelId, ui) {
   ui.btn.onclick = () => downloadModel(kind, modelId, ui);
   ui.status.textContent = res.cancelled ? "Cancelled" : res.error || "Download failed";
   ui.status.className = res.cancelled ? "status" : "status err";
+  announceDownload(kind, modelId, ui.status.textContent);
 }
 
 async function removeModel(kind, modelId) {
@@ -811,13 +851,15 @@ async function renderHistory() {
 }
 
 $("history-clear").addEventListener("click", async () => {
+  // Unlike a removed model, cleared history is gone for good — gate it the
+  // same way model removal already is.
+  if (!confirm("Clear all saved transcriptions? This can't be undone.")) return;
   await earheart.invoke("history:clear");
   renderHistory();
 });
 
-earheart.on("history:changed", () => {
-  if ($("tab-history").classList.contains("active")) renderHistory();
-});
+// The History section is always on the panel now, so keep it live.
+earheart.on("history:changed", () => renderHistory());
 
 /* ---------- setup wizard ---------- */
 
@@ -908,6 +950,9 @@ function renderUpdateState(u) {
   $("update-skip").hidden = !(u.status === "available" && u.method === "install");
   action.disabled = u.status === "checking" || u.status === "installing";
   status.className = "status";
+  // One-shot outcomes announce; the ~1%-step download ticks must not spam
+  // the screen-reader queue.
+  status.setAttribute("aria-live", u.status === "downloading" ? "off" : "polite");
 
   switch (u.status) {
     case "checking":
@@ -996,5 +1041,6 @@ earheart.on("updates:state", renderUpdateState);
   populateModelSelect("stt");
   populateModelSelect("cleanup");
   populate();
+  renderHistory();
   loadMicrophones();
 })();

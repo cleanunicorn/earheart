@@ -30,6 +30,8 @@ function showStep(index) {
   [...dots.children].forEach((dot, i) =>
     dot.classList.toggle("active", i === stepIndex)
   );
+  // The lamp row is visual; this is what it says, for keyboard/AT users.
+  $("step-position").textContent = `Step ${stepIndex + 1} of ${steps.length}`;
   $("back").hidden = stepIndex === 0;
   $("next").textContent =
     stepIndex === 0
@@ -57,47 +59,15 @@ $("skip").addEventListener("click", () => {
   earheart.invoke("wizard:skip");
 });
 
-/* ---------- hotkey capture (same behavior as the settings window) ---------- */
-
-const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
-
-function acceleratorFromEvent(event) {
-  if (MODIFIER_KEYS.has(event.key)) return null;
-  const parts = [];
-  // On macOS, physical Ctrl must stay Ctrl — CommandOrControl would register Cmd.
-  if (event.ctrlKey) parts.push(platform === "darwin" ? "Control" : "CommandOrControl");
-  if (event.metaKey) parts.push(platform === "darwin" ? "Command" : "Super");
-  if (event.altKey) parts.push("Alt");
-  if (event.shiftKey) parts.push("Shift");
-  if (parts.length === 0) return null; // require at least one modifier
-
-  let key = event.key;
-  if (key === " ") key = "Space";
-  else if (key.length === 1) key = key.toUpperCase();
-  else if (key.startsWith("Arrow")) key = key.slice(5);
-  parts.push(key);
-  return parts.join("+");
-}
+/* ---------- hotkey capture (wiring shared via hotkey-capture.js) ---------- */
 
 const hotkeyInput = $("hotkey");
-hotkeyInput.addEventListener("click", () => {
-  hotkeyInput.classList.add("capturing");
-  hotkeyInput.value = "Press keys…";
-});
-hotkeyInput.addEventListener("blur", () => {
-  hotkeyInput.classList.remove("capturing");
-  hotkeyInput.value = current?.hotkey || "";
-});
-hotkeyInput.addEventListener("keydown", (event) => {
-  if (!hotkeyInput.classList.contains("capturing")) return;
-  event.preventDefault();
-  const accelerator = acceleratorFromEvent(event);
-  if (accelerator) {
+wireHotkeyCapture(hotkeyInput, {
+  apply: (accelerator) => {
     current.hotkey = accelerator;
     hotkeyInput.value = accelerator;
-    hotkeyInput.classList.remove("capturing");
-    hotkeyInput.blur();
-  }
+  },
+  restore: () => current?.hotkey || "",
 });
 $("hotkey-clear").addEventListener("click", () => {
   current.hotkey = defaults.hotkey;
@@ -251,6 +221,8 @@ function renderSummary() {
     dt.textContent = label;
     const dd = document.createElement("dd");
     dd.textContent = value;
+    // Accelerators are machine notation — mono here just like in Settings.
+    if (label === "Hotkey") dd.classList.add("accel");
     row.append(dt, dd);
     summary.appendChild(row);
   }
@@ -303,6 +275,15 @@ function checkAllDone() {
   $("next").textContent = allDone ? "Finish setup" : "Downloading…";
 }
 
+// Terminal download outcomes announce through one persistent sr-only live
+// region (like #step-position): a multi-minute first-run download would
+// otherwise end in silence for screen-reader users. Progress ticks stay
+// visual-only.
+function announceDownload(kind, modelId, message) {
+  const info = infoFor(kind, modelId);
+  $("dl-announce").textContent = `${info ? info.label : modelId}: ${message}`;
+}
+
 async function runDownload(kind, modelId) {
   const key = `${kind}:${modelId}`;
   const row = dlRows.get(key);
@@ -318,9 +299,11 @@ async function runDownload(kind, modelId) {
     row.status.textContent = "Ready ✓";
     row.status.className = "status ok";
     row.done = true;
+    announceDownload(kind, modelId, "Ready ✓");
   } else if (res.cancelled) {
     row.status.textContent = "Cancelled";
     row.status.className = "status";
+    announceDownload(kind, modelId, "Cancelled");
   } else if (res.error === "Already downloading") {
     // A fast re-entry (toggling the selection) can race the previous transfer's
     // teardown. The download is still progressing, so keep showing it as such
@@ -331,6 +314,7 @@ async function runDownload(kind, modelId) {
     row.status.textContent = res.error || "Download failed";
     row.status.className = "status err";
     row.retry.hidden = false;
+    announceDownload(kind, modelId, row.status.textContent);
   }
   checkAllDone();
 }
@@ -442,6 +426,9 @@ $("download-later").addEventListener("click", () => {
     row.status.textContent = "Skipped — download later in Settings";
     row.status.className = "status";
   }
+  // One summary announcement, not one per row.
+  $("dl-announce").textContent =
+    "Downloads skipped — you can fetch the models later from Settings.";
   checkAllDone();
 });
 

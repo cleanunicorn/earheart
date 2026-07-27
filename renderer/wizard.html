@@ -40,9 +40,11 @@
           <div class="demo-arrow">→</div>
           <div class="demo-card">
             <div class="demo-visual">
-              <span class="mini-pill">
-                <span class="mini-dot"></span>
-                <span class="mini-bars"><i></i><i></i><i></i><i></i><i></i></span>
+              <span class="mini-deck" aria-hidden="true">
+                <span class="mini-lamp"></span>
+                <span class="mini-reel"></span>
+                <span class="mini-tape"><i></i><i></i><i></i><i></i><i></i></span>
+                <span class="mini-reel mini-takeup"></span>
                 <span class="mini-timer">0:03</span>
                 <span class="mini-stop">■</span>
               </span>
@@ -84,7 +86,7 @@
             to grab global keys — instead, bind a system keyboard shortcut to
             <code>earheart --toggle</code>.</span>
           </p>
-          <p id="hotkey-status" class="status"></p>
+          <p id="hotkey-status" class="status" aria-live="polite"></p>
         </div>
       </section>
 
@@ -220,19 +222,22 @@
           <button id="download-later" class="ghost">Download later (from Settings)</button>
         </div>
 
-        <p id="finish-status" class="status"></p>
+        <p id="finish-status" class="status" aria-live="polite"></p>
       </section>
     </main>
 
     <footer>
       <button id="skip" class="ghost">Skip setup</button>
-      <div class="dots" id="dots"></div>
+      <div class="dots" id="dots" aria-hidden="true"></div>
+      <span id="step-position" class="sr-only" aria-live="polite"></span>
+      <span id="dl-announce" class="sr-only" aria-live="polite"></span>
       <div class="nav row">
         <button id="back" class="ghost">Back</button>
         <button id="next" class="primary">Get started</button>
       </div>
     </footer>
 
+    <script src="hotkey-capture.js"></script>
     <script src="wizard.js"></script>
   </body>
 </html>

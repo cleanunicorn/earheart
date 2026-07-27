@@ -1,13 +1,15 @@
-// Guards the contract between the settings renderer script and its markup, and
-// the settings/wizard shared-stylesheet coupling.
+// Guards the contract between the settings/wizard renderer scripts and their
+// markup, and the settings/wizard shared-stylesheet and shared-script coupling.
 //
-// settings.js drives the UI entirely by element id and radio-group name, so a
-// markup redesign that drops or renames an element breaks the window silently
-// (the script throws at runtime, not at load). wizard.html layers wizard.css on
-// top of settings.css and reuses its :root tokens, so a token rename breaks the
-// wizard just as silently. These tests parse the files as text — no DOM, no
-// Electron — and assert those contracts hold, so a regression fails here instead
-// of in the app.
+// settings.js and wizard.js drive the UI entirely by element id and
+// radio-group name, so a markup redesign that drops or renames an element
+// breaks the window silently (the script throws at runtime, not at load).
+// wizard.html layers wizard.css on top of settings.css and reuses its :root
+// tokens, so a token rename breaks the wizard just as silently — and both
+// pages load hotkey-capture.js before their own script, so a dropped or
+// reordered tag kills them just as quietly. These tests parse the files as
+// text — no DOM, no Electron — and assert those contracts hold, so a
+// regression fails here instead of in the app.
 
 const { test } = require("node:test");
 const assert = require("node:assert");

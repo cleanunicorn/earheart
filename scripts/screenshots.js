@@ -39,7 +39,7 @@ app.whenReady().then(async () => {
   await shot(wizard, "wizard");
   windows.closeWizard();
 
-  // Settings window, General tab.
+  // Settings window, General section (the default view).
   const settings = windows.openSettings();
   await new Promise((r) => settings.webContents.once("did-finish-load", r));
   await sleep(1200);

@@ -136,6 +136,7 @@ main/                    Electron main process
 renderer/                overlay (mic capture → 16 kHz WAV, live transcript
                          preview), settings UI, first-run wizard
   transcript.js          pure two-layer (raw/cleaned) reconcile helper
+  hotkey-capture.js      shared classic-script hotkey capture (settings + wizard)
 stt-server/              Python: FastAPI + onnx-asr Parakeet server (optional)
 ```
 

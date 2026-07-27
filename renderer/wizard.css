@@ -269,7 +269,9 @@ kbd {
   }
 
   .demo-visual {
-    min-height: 32px;
+    /* Matches .mini-deck's fixed height so all three stacked cards render
+       the same height. */
+    min-height: 36px;
   }
 
   .demo-caption {

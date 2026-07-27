@@ -266,7 +266,7 @@ main {
 /* Fields stack within a panel, separated by whitespace only (the panel
    already frames the group). */
 .field {
-  margin-bottom: 15px;
+  margin-bottom: 16px;
 }
 
 .field:last-child {
@@ -744,9 +744,12 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
-/* A disabled key reads as inert — never brightening, never travelling. */
+/* A disabled key reads as inert — never brightening, never travelling.
+   0.6, not fainter: most disabled moments here are in-flight actions
+   ("Checking…", "Testing…") the user is actively watching, and the label
+   must stay readable while it waits. */
 button:disabled {
-  opacity: 0.45;
+  opacity: 0.6;
   cursor: default;
 }
 
@@ -813,6 +816,18 @@ button.danger:hover:not(:disabled) {
 
 .status.err {
   color: var(--err-text);
+}
+
+/* The update outcome sits on its own line under the keys: packed into the
+   centered flex row, a wrapped multi-line error floats the buttons beside
+   its middle line. Hidden while empty so the card keeps its rhythm. */
+#update-status {
+  display: block;
+  margin-top: 6px;
+}
+
+#update-status:empty {
+  display: none;
 }
 
 /* ---------- setup-complete banner: a service note ---------- */

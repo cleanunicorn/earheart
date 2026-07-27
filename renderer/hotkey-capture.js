@@ -31,11 +31,12 @@ function wireHotkeyCapture(input, { apply, restore }) {
     input.classList.add("capturing");
     input.value = "Press keys…";
   }
-  input.addEventListener("click", startCapture);
-  input.addEventListener("blur", () => {
+  function endCapture() {
     input.classList.remove("capturing");
     input.value = restore();
-  });
+  }
+  input.addEventListener("click", startCapture);
+  input.addEventListener("blur", endCapture);
   input.addEventListener("keydown", (event) => {
     // Keyboard users can't click, so Enter/Space on the focused field arms
     // capture — matching what a mouse click does.
@@ -56,15 +57,13 @@ function wireHotkeyCapture(input, { apply, restore }) {
     // handles click-away.
     if (event.key === "Escape") {
       // Leave capture without changing the binding.
-      input.classList.remove("capturing");
-      input.value = restore();
+      endCapture();
       return;
     }
     const accelerator = acceleratorFromEvent(event);
     if (accelerator) {
       apply(accelerator);
-      input.classList.remove("capturing");
-      input.value = restore();
+      endCapture();
     }
   });
 }

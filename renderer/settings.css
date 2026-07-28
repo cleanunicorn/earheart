@@ -206,8 +206,12 @@ main {
   margin: 10px 0 0 24px;
 }
 
+/* .lead frames a whole step or section; .hint explains one field. They share a
+   colour and now sit only 1px apart, so weight carries the distinction — the
+   same lever that separates the h1 and h2 above them. */
 .lead {
   color: var(--muted);
+  font-weight: 500;
   margin-bottom: 16px;
   line-height: 1.55;
   max-width: 62ch;

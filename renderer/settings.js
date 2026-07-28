@@ -907,6 +907,11 @@ function renderUpdateState(u) {
   $("update-bar").hidden = u.status !== "downloading";
   $("update-skip").hidden = !(u.status === "available" && u.method === "install");
   action.disabled = u.status === "checking" || u.status === "installing";
+  // Weight follows what the button actually does: filled while it installs or
+  // restarts, quiet while it is only offering to check. The overlay's update
+  // pill promotes itself the same way.
+  action.classList.toggle("primary", u.status === "available" || u.status === "ready");
+  action.classList.toggle("ghost", !(u.status === "available" || u.status === "ready"));
   status.className = "status";
 
   switch (u.status) {

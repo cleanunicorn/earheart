@@ -87,7 +87,7 @@ footer {
 .demo-caption {
   text-align: center;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 12px;
   margin-top: 10px;
 }
 
@@ -249,7 +249,7 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 /* ---------- model download progress (final step) ---------- */

@@ -21,17 +21,12 @@
   margin-bottom: 10px;
 }
 
-/* settings.css top-anchors main, which suits a scrolling settings panel but
-   leaves the wizard's short steps stranded above a large gap, with the footer
-   reading as detached rather than as the step's conclusion. Centre the active
-   step instead. `safe center` matters: plain `center` in a scroll container
-   pushes overflow past the top edge where it can't be reached, which would
-   strand the taller steps (cleanup, model downloads). */
-main {
-  display: flex;
-  flex-direction: column;
-  justify-content: safe center;
-}
+/* main stays top-anchored, inherited from settings.css. Centring the active
+   step balances the short ones but makes the heading jump between steps —
+   measured across this wizard it swings from 19px of top gap on the cleanup
+   step to 184px on the microphone step. In a Next/Back flow the user's eye
+   returns to the same place each time, so a steady heading position is worth
+   more than per-step vertical balance. */
 
 /* Footer: settings.css right-aligns it; the wizard needs skip / dots / nav. */
 footer {

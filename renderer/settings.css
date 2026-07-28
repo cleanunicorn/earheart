@@ -614,6 +614,14 @@ button:disabled {
   filter: none;
 }
 
+/* Same for a held select — the model picker locks while its download runs, and
+   without this it keeps its pointer cursor and full contrast while ignoring
+   clicks. */
+select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 button.primary {
   /* Darker accent so #fff text clears WCAG AA (the raw --accent is too light). */
   background: var(--accent-strong);

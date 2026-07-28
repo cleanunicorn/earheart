@@ -8,6 +8,19 @@ let cleanupStyles = []; // [{ id, label, hint }] — the cleanup style slider st
 
 const $ = (id) => document.getElementById(id);
 
+// Hold a button while its action is in flight: every async control on this
+// screen goes inert and says what it is doing, so a slow round-trip never looks
+// like a click that did nothing. Returns the undo, for a finally block.
+function holdButton(button, pendingLabel) {
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = pendingLabel;
+  return () => {
+    button.disabled = false;
+    button.textContent = label;
+  };
+}
+
 /* ---------- tabs ---------- */
 
 // The tabs are an ARIA tablist: exactly one tab is selected and in the tab
@@ -446,7 +459,7 @@ function renderManage(kind) {
     // For a custom model "Remove" also forgets its definition, since there's no
     // curated reason to keep an un-downloaded custom entry around.
     btn.onclick = () =>
-      info.custom ? removeCustomModel(modelId) : removeModel(kind, modelId);
+      info.custom ? removeCustomModel(modelId, btn) : removeModel(kind, modelId, btn);
   } else {
     status.textContent = "Not downloaded";
     btn.textContent = "Download";
@@ -459,7 +472,7 @@ function renderManage(kind) {
     const forget = document.createElement("button");
     forget.textContent = "Remove from list";
     forget.className = "ghost danger";
-    forget.onclick = () => removeCustomModel(modelId);
+    forget.onclick = () => removeCustomModel(modelId, forget);
     row.append(forget);
   }
   container.append(note, bar, row);
@@ -493,24 +506,34 @@ async function downloadModel(kind, modelId, ui) {
   ui.status.className = res.cancelled ? "status" : "status err";
 }
 
-async function removeModel(kind, modelId) {
+async function removeModel(kind, modelId, button) {
   const info = modelStatus[kind].find((m) => m.id === modelId);
   const label = info ? info.label : modelId;
   if (!confirm(`Remove ${label}? You'll need to download it again to use it.`)) {
     return;
   }
-  await earheart.invoke("models:remove", { kind, modelId });
-  await refreshModels();
+  const release = holdButton(button, "Removing…");
+  try {
+    await earheart.invoke("models:remove", { kind, modelId });
+    await refreshModels();
+  } finally {
+    release();
+  }
 }
 
 // Remove a custom model entirely: its files (if downloaded) and its definition.
-async function removeCustomModel(modelId) {
+async function removeCustomModel(modelId, button) {
   const info = [...modelStatus.stt, ...modelStatus.cleanup].find((m) => m.id === modelId);
   const label = info ? info.label : modelId;
   if (!confirm(`Remove ${label} from your models?`)) return;
-  const res = await earheart.invoke("models:remove-custom", { modelId });
-  if (res.ok) current.customModels = res.customModels;
-  await refreshModels();
+  const release = holdButton(button, "Removing…");
+  try {
+    const res = await earheart.invoke("models:remove-custom", { modelId });
+    if (res.ok) current.customModels = res.customModels;
+    await refreshModels();
+  } finally {
+    release();
+  }
 }
 
 // Re-pull model status and rebuild the dropdowns (custom models may have been
@@ -814,8 +837,13 @@ $("history-clear").addEventListener("click", async () => {
   // Irreversible, and the transcripts are the only copy the app keeps —
   // confirm first, as removing a model does.
   if (!confirm("Clear all saved transcriptions? This can't be undone.")) return;
-  await earheart.invoke("history:clear");
-  renderHistory();
+  const release = holdButton($("history-clear"), "Clearing…");
+  try {
+    await earheart.invoke("history:clear");
+    renderHistory();
+  } finally {
+    release();
+  }
 });
 
 earheart.on("history:changed", () => {
@@ -832,12 +860,9 @@ $("open-wizard").addEventListener("click", () => {
 
 $("open-logs").addEventListener("click", async () => {
   const el = $("open-logs-result");
-  const button = $("open-logs");
-  const label = button.textContent;
   // Handing off to the OS can take a moment; acknowledge the click the way
   // every other async action here does rather than sitting silent.
-  button.disabled = true;
-  button.textContent = "Opening…";
+  const release = holdButton($("open-logs"), "Opening…");
   try {
     const result = await earheart.invoke("logs:open");
     if (result.ok) {
@@ -849,8 +874,7 @@ $("open-logs").addEventListener("click", async () => {
       el.className = "status err";
     }
   } finally {
-    button.disabled = false;
-    button.textContent = label;
+    release();
   }
 });
 

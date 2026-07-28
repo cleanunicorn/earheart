@@ -542,8 +542,8 @@ input.switch:focus-visible {
 /* .hint carries real instructions, not just captions — the Accessibility
    permission steps, the dictionary rules, what top-k and min-p do. It sat a
    step below the 14px body it explains, which is backwards for the copy with
-   the most reading in it. 13px is the step already used by field labels and
-   controls; one-line captions stay at 12px (.muted, .status). */
+   the most reading in it. 13px is the step shared by field labels, .option-text
+   and .status; .muted's 12px is the surface's one smaller step. */
 .hint {
   color: var(--muted);
   font-size: 13px;

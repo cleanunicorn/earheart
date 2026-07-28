@@ -522,6 +522,23 @@ async function downloadModel(kind, modelId, ui) {
   ui.status.className = res.cancelled ? "status" : "status err";
 }
 
+// The removal itself already succeeded by the time this runs, so a failed
+// refresh must not read as a failed removal: without this, holdButton's release
+// restores the button to "Remove" and the row still claims the model is
+// installed.
+async function refreshRemovedModels(button) {
+  try {
+    await refreshModels();
+  } catch (err) {
+    const row = button.closest(".dl-item, .row") || button.parentElement;
+    const status = row && row.querySelector(".status");
+    if (status) {
+      status.textContent = "Removed — reopen this tab to refresh the list";
+      status.className = "status err";
+    }
+  }
+}
+
 async function removeModel(kind, modelId, button) {
   const info = modelStatus[kind].find((m) => m.id === modelId);
   const label = info ? info.label : modelId;
@@ -531,7 +548,7 @@ async function removeModel(kind, modelId, button) {
   const release = holdButton(button, "Removing…");
   try {
     await earheart.invoke("models:remove", { kind, modelId });
-    await refreshModels();
+    await refreshRemovedModels(button);
   } finally {
     release();
   }
@@ -546,7 +563,7 @@ async function removeCustomModel(modelId, button, sibling) {
   try {
     const res = await earheart.invoke("models:remove-custom", { modelId });
     if (res.ok) current.customModels = res.customModels;
-    await refreshModels();
+    await refreshRemovedModels(button);
   } finally {
     release();
   }

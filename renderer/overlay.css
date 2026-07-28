@@ -254,6 +254,14 @@ body {
   color: var(--ivory);
 }
 
+/* The note's dismiss is painted smaller than a transport key, so the shared
+   -4px halo leaves it at ~30px against the keys' ~42px. Widen its own halo to
+   ~36px — as close to the keys as fits without spilling past the note's edge. */
+#update-close::before {
+  inset: -7px;
+  border-radius: 12px;
+}
+
 /* Live transcript: fills the top of the card and grows freely (no clip, no
    scroll, no mask). Two layers inline: the settled cleaned text and the
    still-streaming raw tail — fresh words warm, cooling as they settle. */
@@ -622,7 +630,7 @@ body {
    still showing the take's length, but clearly not running. Dim enough to read
    as off, bright enough that the take length stays readable at a glance. */
 #card:not([data-status="recording"]) #timer {
-  opacity: 0.45;
+  opacity: 0.55;
 }
 
 /* ---------- transport keys ---------- */
@@ -762,6 +770,7 @@ button:focus-visible {
      glide; collapse everything else to effectively instant. */
   #meter,
   #progress-fill,
+  #update-bar-fill,
   button,
   #grip {
     transition-duration: 0.01ms !important;

@@ -195,6 +195,10 @@ function setStatus(status, title, detail) {
   const pauseLabel = status === "paused" ? "Resume" : "Pause";
   pauseBtn.title = pauseLabel;
   pauseBtn.setAttribute("aria-label", pauseLabel);
+  // Pause latches, so it is a toggle: sighted users see the key sitting
+  // pressed, and aria-pressed is how that same held state reaches assistive
+  // tech.
+  pauseBtn.setAttribute("aria-pressed", String(status === "paused"));
   statusText.textContent = title;
   detailText.textContent = detail || "";
   // Every phase change retires the previous phase's bar. It stays hidden until

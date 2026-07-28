@@ -811,6 +811,9 @@ async function renderHistory() {
 }
 
 $("history-clear").addEventListener("click", async () => {
+  // Irreversible, and the transcripts are the only copy the app keeps —
+  // confirm first, as removing a model does.
+  if (!confirm("Clear all saved transcriptions? This can't be undone.")) return;
   await earheart.invoke("history:clear");
   renderHistory();
 });

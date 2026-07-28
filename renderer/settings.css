@@ -761,8 +761,15 @@ input[type="range"]:focus-visible {
 
 /* ---------- history ---------- */
 
+/* The title shares this row with Clear history, so the row carries the
+   card-title gap rather than the title itself — otherwise its bottom margin
+   would push it off centre against the button. */
 .history-head {
-  margin-bottom: 10px;
+  margin-bottom: 14px;
+}
+
+.history-head .card-title {
+  margin-bottom: 0;
 }
 
 #history-list {

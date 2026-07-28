@@ -16,6 +16,18 @@
   margin-bottom: 10px;
 }
 
+/* settings.css top-anchors main, which suits a scrolling settings panel but
+   leaves the wizard's short steps stranded above a large gap, with the footer
+   reading as detached rather than as the step's conclusion. Centre the active
+   step instead. `safe center` matters: plain `center` in a scroll container
+   pushes overflow past the top edge where it can't be reached, which would
+   strand the taller steps (cleanup, model downloads). */
+main {
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+}
+
 /* Footer: settings.css right-aligns it; the wizard needs skip / dots / nav. */
 footer {
   justify-content: space-between;

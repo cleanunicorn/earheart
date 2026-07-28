@@ -16,7 +16,11 @@
   --accent: #ff5470; /* brand accent: focus, selection, toggles, slider */
   --accent-strong: #d92a54; /* darker accent for the filled primary — #fff hits AA */
   --accent-soft: rgba(255, 84, 112, 0.13);
-  --accent-line: rgba(255, 84, 112, 0.42);
+  /* Selected-row boundary. 0.7 alpha, not 0.42: below that the line composites
+     to under 2:1 on --panel and --bg and stops reading as a boundary at all.
+     Kept translucent so a selected row still differs from a focused one, which
+     rings in solid --accent. */
+  --accent-line: rgba(255, 84, 112, 0.7);
   --ok: #4ade80;
   --err: #fb7185;
   --r-sm: 8px;

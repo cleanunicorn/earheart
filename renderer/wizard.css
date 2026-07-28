@@ -101,73 +101,64 @@ kbd {
   font-size: 11px;
 }
 
-/* Step 2: a miniature of the real recording pill (see overlay.css) */
-.mini-pill {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  height: 34px;
-  padding: 0 9px 0 11px;
-  border-radius: 17px;
-  background: rgba(22, 20, 28, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
-}
-
-.mini-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: demo-pulse 1.2s ease-in-out infinite;
-}
-
-.mini-bars {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 16px;
-}
-
-.mini-bars i {
-  width: 3px;
-  border-radius: 2px;
-  background: #b8b3c4;
-  animation: demo-bar 1s ease-in-out infinite;
-}
-
-.mini-bars i:nth-child(1) { animation-delay: 0s; }
-.mini-bars i:nth-child(2) { animation-delay: 0.15s; }
-.mini-bars i:nth-child(3) { animation-delay: 0.3s; }
-.mini-bars i:nth-child(4) { animation-delay: 0.45s; }
-.mini-bars i:nth-child(5) { animation-delay: 0.6s; }
-
-.mini-timer {
-  font-size: 10px;
+/* Step 2: a miniature of the shipped overlay — the whole drawing lives in
+   wizard.html, since its colours and proportions are illustration geometry
+   copied from the real deck rather than tokens of this surface. All that is
+   left here is the motion, matched to the machine: the lamp pulses at the
+   recording rate, the take-up reel turns a touch faster than the supply reel
+   (the asymmetry that makes it read as a machine, not a loop), and the written
+   signal glides toward the take-up at the deck's own tape speed. The global
+   reduced-motion block at the end of settings.css collapses all of it. */
+.mini-counter {
   font-variant-numeric: tabular-nums;
-  color: #b8b3c4;
 }
 
-.mini-stop {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  font-size: 7px;
+.mini-bloom {
+  opacity: 0.3;
+  animation: mini-lamp 2s ease-in-out infinite;
 }
 
-@keyframes demo-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.45; transform: scale(0.78); }
+.mini-reel {
+  transform-origin: 0 0;
+  animation: mini-spin linear infinite;
 }
 
-@keyframes demo-bar {
-  0%, 100% { height: 4px; }
-  50% { height: 16px; }
+.mini-reel-supply {
+  animation-duration: 2.3s;
+}
+
+.mini-reel-takeup {
+  animation-duration: 1.8s;
+}
+
+/* One 36px column period per loop, at the deck's ~31px/s write speed. */
+.mini-signal {
+  animation: mini-tape 1.16s linear infinite;
+}
+
+@keyframes mini-lamp {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.08;
+  }
+}
+
+@keyframes mini-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes mini-tape {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(36px);
+  }
 }
 
 /* Step 3: text typing itself out */

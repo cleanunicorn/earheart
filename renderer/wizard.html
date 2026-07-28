@@ -40,12 +40,133 @@
           <div class="demo-arrow">→</div>
           <div class="demo-card">
             <div class="demo-visual">
-              <span class="mini-pill">
-                <span class="mini-dot"></span>
-                <span class="mini-bars"><i></i><i></i><i></i><i></i><i></i></span>
-                <span class="mini-timer">0:03</span>
-                <span class="mini-stop">■</span>
-              </span>
+              <!--
+                A miniature of the real overlay (renderer/overlay.html): REC
+                lamp, reels, the oxide signal written onto tape past the record
+                head, the take counter and the backlit stop key. It depicts the
+                Tape Transport surface, so it is drawn in that world's colours
+                on purpose — they are geometry inside one illustration, never
+                tokens for wizard chrome.
+              -->
+              <svg
+                class="mini-deck"
+                viewBox="0 0 146 38"
+                width="146"
+                height="38"
+                role="img"
+                aria-label="The Earheart overlay, recording: the lamp is lit and your voice is being written onto tape."
+              >
+                <defs>
+                  <!-- Tape is blank until it passes the head; only the written
+                       side of the window shows signal. -->
+                  <clipPath id="mini-written">
+                    <rect x="55.4" y="9" width="21.6" height="20" />
+                  </clipPath>
+                  <g id="mini-reel-art">
+                    <circle r="5.4" fill="#3a2c1f" />
+                    <circle r="6.5" fill="none" stroke="#b4a894" stroke-width="0.9" />
+                    <circle r="3.8" fill="#b4a894" />
+                    <g fill="#0f0c09">
+                      <circle cx="0" cy="-2.3" r="0.8" />
+                      <circle cx="-2" cy="1.15" r="0.8" />
+                      <circle cx="2" cy="1.15" r="0.8" />
+                    </g>
+                  </g>
+                </defs>
+
+                <!-- faceplate: solid, hairline edge, no cast shadow -->
+                <rect
+                  x="0.5"
+                  y="0.5"
+                  width="145"
+                  height="37"
+                  rx="6"
+                  fill="#1c1713"
+                  stroke="rgba(255, 240, 214, 0.14)"
+                />
+
+                <!-- lamp block over its printed legend -->
+                <circle class="mini-bloom" cx="12" cy="14" r="5.5" fill="#ff4438" />
+                <circle cx="12" cy="14" r="3.2" fill="#ff4438" />
+                <text
+                  x="12"
+                  y="25.5"
+                  text-anchor="middle"
+                  fill="#ff958c"
+                  font-size="6"
+                  font-weight="700"
+                  letter-spacing="0.5"
+                >
+                  REC
+                </text>
+
+                <!-- supply reel (slower) -->
+                <g transform="translate(30, 19)">
+                  <g class="mini-reel mini-reel-supply"><use href="#mini-reel-art" /></g>
+                </g>
+
+                <!-- the tape window: the hero -->
+                <rect x="41" y="9" width="36" height="20" rx="3" fill="#0f0c09" />
+                <rect x="41" y="11" width="36" height="16" fill="#35291d" />
+                <g clip-path="url(#mini-written)">
+                  <g class="mini-signal" fill="rgba(210, 154, 90, 0.9)">
+                    <rect x="19.4" y="16" width="1.6" height="6" rx="0.8" />
+                    <rect x="22.4" y="14" width="1.6" height="10" rx="0.8" />
+                    <rect x="25.4" y="11" width="1.6" height="16" rx="0.8" />
+                    <rect x="28.4" y="13" width="1.6" height="12" rx="0.8" />
+                    <rect x="31.4" y="10" width="1.6" height="18" rx="0.8" />
+                    <rect x="34.4" y="15" width="1.6" height="8" rx="0.8" />
+                    <rect x="37.4" y="12" width="1.6" height="14" rx="0.8" />
+                    <rect x="40.4" y="9.5" width="1.6" height="19" rx="0.8" />
+                    <rect x="43.4" y="14" width="1.6" height="10" rx="0.8" />
+                    <rect x="46.4" y="12" width="1.6" height="14" rx="0.8" />
+                    <rect x="49.4" y="15" width="1.6" height="8" rx="0.8" />
+                    <rect x="52.4" y="13" width="1.6" height="12" rx="0.8" />
+                    <rect x="55.4" y="16" width="1.6" height="6" rx="0.8" />
+                    <rect x="58.4" y="14" width="1.6" height="10" rx="0.8" />
+                    <rect x="61.4" y="11" width="1.6" height="16" rx="0.8" />
+                    <rect x="64.4" y="13" width="1.6" height="12" rx="0.8" />
+                    <rect x="67.4" y="10" width="1.6" height="18" rx="0.8" />
+                    <rect x="70.4" y="15" width="1.6" height="8" rx="0.8" />
+                    <rect x="73.4" y="12" width="1.6" height="14" rx="0.8" />
+                    <rect x="76.4" y="9.5" width="1.6" height="19" rx="0.8" />
+                  </g>
+                </g>
+                <!-- record head: ivory slit under an aluminium shoe -->
+                <rect x="54.2" y="8.4" width="2.5" height="3" rx="0.6" fill="#b4a894" />
+                <rect x="55.1" y="9" width="0.8" height="20" fill="#f2e9da" />
+
+                <!-- take-up reel (turns a touch faster) -->
+                <g transform="translate(88, 19)">
+                  <g class="mini-reel mini-reel-takeup"><use href="#mini-reel-art" /></g>
+                </g>
+
+                <!-- counter cell, sunk into the faceplate -->
+                <rect x="99" y="11" width="22" height="16" rx="3" fill="#0f0c09" />
+                <text
+                  class="mini-counter"
+                  x="110"
+                  y="22.3"
+                  text-anchor="middle"
+                  fill="#f2e9da"
+                  font-family="ui-monospace, monospace"
+                  font-size="8.5"
+                >
+                  0:03
+                </text>
+
+                <!-- the backlit stop key: the machine naming the key it expects -->
+                <rect
+                  x="124"
+                  y="11"
+                  width="16"
+                  height="16"
+                  rx="4"
+                  fill="#3a1611"
+                  stroke="rgba(255, 68, 56, 0.5)"
+                />
+                <rect x="129" y="16" width="6" height="6" rx="1.5" fill="#ffb4ac" />
+              </svg>
             </div>
             <p class="demo-caption"><strong>2.</strong> Speak, press it again</p>
           </div>

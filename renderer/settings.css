@@ -611,7 +611,10 @@ button.primary {
   border-color: var(--accent-strong);
   color: #fff;
   font-weight: 600;
-  padding: 9px 22px;
+  /* Wider than the base button, but the same height: a primary sits beside a
+     ghost in the wizard footer and in the updates row, and a 1px difference in
+     vertical padding broke their shared top and bottom edges. */
+  padding: 8px 22px;
 }
 
 button.primary:hover:not(:disabled) {

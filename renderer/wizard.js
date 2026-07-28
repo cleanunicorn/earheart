@@ -303,6 +303,8 @@ function checkAllDone() {
   // A failed or cancelled row is settled but not done, so "Downloading…" would
   // claim work is still happening while the step actually waits on the user.
   const transferring = rows.some((r) => r.active);
+  // Nothing left to defer once every row is settled.
+  $("download-later-row").hidden = allDone;
   $("next").disabled = !allDone;
   $("next").textContent = allDone
     ? "Finish setup"

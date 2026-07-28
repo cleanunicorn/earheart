@@ -440,6 +440,14 @@ select {
   cursor: pointer;
 }
 
+/* Two toggles in one card are two independent switches, but with no gap the
+   second one's title butts straight onto the first one's description and the
+   pair reads as a single block of copy. Separate them on the card's rhythm;
+   a lone toggle is :last-child and keeps its snug fit. */
+.toggle:not(:last-child) {
+  margin-bottom: 16px;
+}
+
 .toggle-text {
   display: flex;
   flex-direction: column;

@@ -770,6 +770,7 @@ button:focus-visible {
      glide; collapse everything else to effectively instant. */
   #meter,
   #progress-fill,
+  #update-bar-fill,
   button,
   #grip {
     transition-duration: 0.01ms !important;

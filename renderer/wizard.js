@@ -343,9 +343,11 @@ async function runDownload(kind, modelId) {
     // Ask again rather than waiting on the call that holds the lock: main keys
     // downloads globally, so that call may belong to a row this step has since
     // rebuilt — or to the settings window — and would never settle this row.
-    // The identity check drops the poll if the step rebuilt underneath us.
+    // Drop the poll if the step rebuilt underneath us, or if the row settled
+    // meanwhile: "Download later" marks it done, and re-entering runDownload
+    // would restart the transfer the user just deferred.
     setTimeout(() => {
-      if (dlRows.get(key) === row) runDownload(kind, modelId);
+      if (dlRows.get(key) === row && !row.done) runDownload(kind, modelId);
     }, 800);
   } else {
     row.status.textContent = res.error || "Download failed";

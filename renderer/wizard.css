@@ -11,8 +11,13 @@
   display: block;
 }
 
+/* The header's h1 persists above the active step, so the two headings are
+   always on screen together. They sit only 1px apart, so weight has to carry
+   the level: without this the h2 fell back to the UA's bold and outweighed the
+   h1's 650. */
 .step h2 {
   font-size: 16px;
+  font-weight: 600;
   margin-bottom: 10px;
 }
 

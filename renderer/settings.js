@@ -506,8 +506,14 @@ async function downloadModel(kind, modelId, ui) {
   ui.btn.className = "ghost";
   ui.btn.onclick = onCancel;
 
-  const res = await earheart.invoke("models:download", { kind, modelId });
-  select.disabled = false;
+  let res;
+  try {
+    res = await earheart.invoke("models:download", { kind, modelId });
+  } finally {
+    // Release the picker even if the invoke rejects — otherwise the only way
+    // back to a usable model list is reopening the window.
+    select.disabled = false;
+  }
   ui.btn.onclick = null;
   if (res.ok) {
     await refreshModels();

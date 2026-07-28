@@ -449,25 +449,27 @@ $("download-later").addEventListener("click", () => {
 
 async function finish() {
   const status = $("finish-status");
-  const next = $("next");
+  // Hold the whole nav for the round-trip, not just Next: stepping back or
+  // skipping mid-save would run showStep, which re-enables Next behind the
+  // save that is still in flight.
+  const nav = [$("next"), $("back"), $("skip")];
   status.textContent = "Saving…";
   status.className = "status";
-  // Hold the button for the round-trip so a second click can't fire a second
-  // save, the way the settings screen guards its own save.
-  next.disabled = true;
+  nav.forEach((button) => (button.disabled = true));
   let result;
   try {
     result = await earheart.invoke("wizard:complete", collect());
   } catch (err) {
     status.textContent = `Could not save: ${err.message}`;
     status.className = "status err";
-    next.disabled = false;
+    nav.forEach((button) => (button.disabled = false));
     return;
   }
   current = result.settings;
   if (!result.hotkey.ok) {
     // Stay in the wizard so the user can pick a combination that registers.
     status.textContent = "";
+    nav.forEach((button) => (button.disabled = false));
     showStep(steps.findIndex((s) => s.id === "step-hotkey"));
     const hotkeyStatus = $("hotkey-status");
     hotkeyStatus.textContent = `${result.hotkey.error} — choose a different combination, then finish setup again.`;

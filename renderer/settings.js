@@ -10,14 +10,19 @@ const $ = (id) => document.getElementById(id);
 
 // Hold a button while its action is in flight: every async control on this
 // screen goes inert and says what it is doing, so a slow round-trip never looks
-// like a click that did nothing. Returns the undo, for a finally block.
-function holdButton(button, pendingLabel) {
+// like a click that did nothing. Pass any siblings that would race the same
+// row — holding only the clicked button still lets its neighbour fire. Returns
+// the undo, for a finally block.
+function holdButton(button, pendingLabel, ...siblings) {
   const label = button.textContent;
   button.disabled = true;
   button.textContent = pendingLabel;
+  const held = siblings.filter(Boolean);
+  held.forEach((el) => (el.disabled = true));
   return () => {
     button.disabled = false;
     button.textContent = label;
+    held.forEach((el) => (el.disabled = false));
   };
 }
 
@@ -472,7 +477,9 @@ function renderManage(kind) {
     const forget = document.createElement("button");
     forget.textContent = "Remove from list";
     forget.className = "ghost danger";
-    forget.onclick = () => removeCustomModel(modelId, forget);
+    // btn is this row's Download; removing the definition out from under an
+    // in-flight fetch of it would race, so each holds the other.
+    forget.onclick = () => removeCustomModel(modelId, forget, btn);
     row.append(forget);
   }
   container.append(note, bar, row);
@@ -531,11 +538,11 @@ async function removeModel(kind, modelId, button) {
 }
 
 // Remove a custom model entirely: its files (if downloaded) and its definition.
-async function removeCustomModel(modelId, button) {
+async function removeCustomModel(modelId, button, sibling) {
   const info = [...modelStatus.stt, ...modelStatus.cleanup].find((m) => m.id === modelId);
   const label = info ? info.label : modelId;
   if (!confirm(`Remove ${label} from your models?`)) return;
-  const release = holdButton(button, "Removing…");
+  const release = holdButton(button, "Removing…", sibling);
   try {
     const res = await earheart.invoke("models:remove-custom", { modelId });
     if (res.ok) current.customModels = res.customModels;

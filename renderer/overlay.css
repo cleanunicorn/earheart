@@ -622,7 +622,7 @@ body {
    still showing the take's length, but clearly not running. Dim enough to read
    as off, bright enough that the take length stays readable at a glance. */
 #card:not([data-status="recording"]) #timer {
-  opacity: 0.45;
+  opacity: 0.55;
 }
 
 /* ---------- transport keys ---------- */

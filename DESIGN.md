@@ -260,8 +260,8 @@ monospace numerals — never by typeface.
 - **Legend** (700, 8px, 0.08em, UPPERCASE): the printed micro-legend under
   the lamp (REC/BUSY/DONE/PAUSE/ERR) — the only uppercase in the world.
 - **Counter** (ui-monospace, 13px, 0.04em, tabular-nums): the take counter.
-  Digits go to 45% opacity outside recording — still readable, clearly not
-  running.
+  Digits go to 55% opacity outside recording — still readable (5.4:1 on
+  Recess Black, clearing AA), clearly not running.
 
 ### Named Rules
 
@@ -397,7 +397,7 @@ tape stops where it stopped.
 
 A recessed cell (min 52×30px, 6px radius, Recess Black, inset well shadow)
 holding the monospace take counter. It counts *captured* audio only — it
-starts with the first samples, and its digits go unlit (45% opacity) outside
+starts with the first samples, and its digits go unlit (55% opacity) outside
 recording.
 
 ### Playhead progress

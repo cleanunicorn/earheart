@@ -832,14 +832,25 @@ $("open-wizard").addEventListener("click", () => {
 
 $("open-logs").addEventListener("click", async () => {
   const el = $("open-logs-result");
-  const result = await earheart.invoke("logs:open");
-  if (result.ok) {
-    el.textContent = result.path;
-    el.className = "status";
-  } else {
-    // Opening can fail (no default handler for .log); still show where it is.
-    el.textContent = result.path ? `Couldn't open it — find it at ${result.path}` : result.error;
-    el.className = "status err";
+  const button = $("open-logs");
+  const label = button.textContent;
+  // Handing off to the OS can take a moment; acknowledge the click the way
+  // every other async action here does rather than sitting silent.
+  button.disabled = true;
+  button.textContent = "Opening…";
+  try {
+    const result = await earheart.invoke("logs:open");
+    if (result.ok) {
+      el.textContent = result.path;
+      el.className = "status";
+    } else {
+      // Opening can fail (no default handler for .log); still show where it is.
+      el.textContent = result.path ? `Couldn't open it — find it at ${result.path}` : result.error;
+      el.className = "status err";
+    }
+  } finally {
+    button.disabled = false;
+    button.textContent = label;
   }
 });
 

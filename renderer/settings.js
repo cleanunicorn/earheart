@@ -483,6 +483,14 @@ async function downloadModel(kind, modelId, ui) {
   // While the download runs, the same button cancels it (the wizard offers the
   // same escape; without it a multi-minute download in Settings is a one-way
   // trip). models:cancel aborts the in-flight transfer in the main process.
+  //
+  // Hold the model picker for the duration: changing it re-runs renderManage,
+  // which rebuilds this row from the static installed flag and so throws away
+  // the live bar and Cancel button. Clicking Download on the rebuilt row then
+  // hits main's "Already downloading" guard and paints a red error over a
+  // transfer that is in fact succeeding.
+  const select = $(`${kind}-builtin-model`);
+  select.disabled = true;
   ui.bar.hidden = false;
   ui.status.textContent = "Downloading…";
   ui.status.className = "status";
@@ -492,6 +500,7 @@ async function downloadModel(kind, modelId, ui) {
   ui.btn.onclick = onCancel;
 
   const res = await earheart.invoke("models:download", { kind, modelId });
+  select.disabled = false;
   ui.btn.onclick = null;
   if (res.ok) {
     await refreshModels();

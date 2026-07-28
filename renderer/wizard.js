@@ -340,6 +340,13 @@ async function runDownload(kind, modelId) {
     row.active = true;
     row.status.textContent = "Downloading…";
     row.status.className = "status";
+    // Ask again rather than waiting on the call that holds the lock: main keys
+    // downloads globally, so that call may belong to a row this step has since
+    // rebuilt — or to the settings window — and would never settle this row.
+    // The identity check drops the poll if the step rebuilt underneath us.
+    setTimeout(() => {
+      if (dlRows.get(key) === row) runDownload(kind, modelId);
+    }, 800);
   } else {
     row.status.textContent = res.error || "Download failed";
     row.status.className = "status err";

@@ -403,6 +403,14 @@ select {
   border-color: var(--accent-line);
 }
 
+/* Highlight the whole row on keyboard focus, as .segmented does — hover and
+   checked already act on the row, so focus shouldn't be the one state that
+   lands only on the 16px native control. */
+.option:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .option input {
   accent-color: var(--accent);
   width: 16px;

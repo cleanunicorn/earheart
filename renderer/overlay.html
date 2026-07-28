@@ -45,12 +45,27 @@
         <div id="update-head">
           <span id="update-title"></span>
           <button id="update-close" title="Later" aria-label="Dismiss">
+            <!-- Filled bars, not a stroked path: every other glyph on the
+                 faceplate is a solid shape, and a hairline X read as a
+                 different material next to the machined keys. -->
             <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
-              <path
-                d="M4 4l8 8M12 4l-8 8"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
+              <rect
+                x="6.7"
+                y="2"
+                width="2.6"
+                height="12"
+                rx="1.3"
+                fill="currentColor"
+                transform="rotate(45 8 8)"
+              />
+              <rect
+                x="6.7"
+                y="2"
+                width="2.6"
+                height="12"
+                rx="1.3"
+                fill="currentColor"
+                transform="rotate(-45 8 8)"
               />
             </svg>
           </button>

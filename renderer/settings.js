@@ -478,8 +478,10 @@ function renderManage(kind) {
     forget.textContent = "Remove from list";
     forget.className = "ghost danger";
     // btn is this row's Download; removing the definition out from under an
-    // in-flight fetch of it would race, so each holds the other.
+    // in-flight fetch of it would race, so each holds the other — downloadModel
+    // holds this button through ui.forget.
     forget.onclick = () => removeCustomModel(modelId, forget, btn);
+    ui.forget = forget;
     row.append(forget);
   }
   container.append(note, bar, row);
@@ -498,6 +500,10 @@ async function downloadModel(kind, modelId, ui) {
   // transfer that is in fact succeeding.
   const select = $(`${kind}-builtin-model`);
   select.disabled = true;
+  // Same for a custom model's "Remove from list": main keeps streaming the file
+  // even after its definition is gone, so deleting mid-transfer leaves bytes on
+  // disk with no row left to find them by.
+  if (ui.forget) ui.forget.disabled = true;
   ui.bar.hidden = false;
   ui.status.textContent = "Downloading…";
   ui.status.className = "status";
@@ -510,9 +516,10 @@ async function downloadModel(kind, modelId, ui) {
   try {
     res = await earheart.invoke("models:download", { kind, modelId });
   } finally {
-    // Release the picker even if the invoke rejects — otherwise the only way
-    // back to a usable model list is reopening the window.
+    // Release these even if the invoke rejects — otherwise the only way back to
+    // a usable model list is reopening the window.
     select.disabled = false;
+    if (ui.forget) ui.forget.disabled = false;
   }
   ui.btn.onclick = null;
   if (res.ok) {

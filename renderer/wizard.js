@@ -449,14 +449,19 @@ $("download-later").addEventListener("click", () => {
 
 async function finish() {
   const status = $("finish-status");
+  const next = $("next");
   status.textContent = "Saving…";
   status.className = "status";
+  // Hold the button for the round-trip so a second click can't fire a second
+  // save, the way the settings screen guards its own save.
+  next.disabled = true;
   let result;
   try {
     result = await earheart.invoke("wizard:complete", collect());
   } catch (err) {
     status.textContent = `Could not save: ${err.message}`;
     status.className = "status err";
+    next.disabled = false;
     return;
   }
   current = result.settings;

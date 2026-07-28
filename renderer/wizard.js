@@ -298,21 +298,31 @@ function progressLabel({ received, total, fraction }) {
 }
 
 function checkAllDone() {
-  const allDone = [...dlRows.values()].every((r) => r.done);
+  const rows = [...dlRows.values()];
+  const allDone = rows.every((r) => r.done);
+  // A failed or cancelled row is settled but not done, so "Downloading…" would
+  // claim work is still happening while the step actually waits on the user.
+  const transferring = rows.some((r) => r.active);
   $("next").disabled = !allDone;
-  $("next").textContent = allDone ? "Finish setup" : "Downloading…";
+  $("next").textContent = allDone
+    ? "Finish setup"
+    : transferring
+      ? "Downloading…"
+      : "Retry to continue";
 }
 
 async function runDownload(kind, modelId) {
   const key = `${kind}:${modelId}`;
   const row = dlRows.get(key);
   row.done = false;
+  row.active = true;
   row.retry.hidden = true;
   row.status.textContent = "Downloading…";
   row.status.className = "status";
   checkAllDone();
 
   const res = await earheart.invoke("models:download", { kind, modelId });
+  row.active = false;
   if (res.ok) {
     setFill(row, 1);
     row.status.textContent = "Ready ✓";
@@ -325,6 +335,7 @@ async function runDownload(kind, modelId) {
     // A fast re-entry (toggling the selection) can race the previous transfer's
     // teardown. The download is still progressing, so keep showing it as such
     // rather than a hard error; progress events continue to update the row.
+    row.active = true;
     row.status.textContent = "Downloading…";
     row.status.className = "status";
   } else {

@@ -1108,8 +1108,8 @@ footer {
   ::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
-    /* Infinite animations (the wizard's lamp/reels/signal/typing) must go
-       still, not spin at ~100k iterations a second. */
+    /* Infinite animations (the wizard's lamp/signal/typing) must go still,
+       not run at ~100k iterations a second. */
     animation-iteration-count: 1 !important;
   }
 

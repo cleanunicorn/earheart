@@ -1,9 +1,15 @@
-/* Earheart recording overlay — "The Tape Transport". A miniature reel-to-reel
-   lying along the bottom of the screen: warm-black instrument faceplate, a tape
-   ribbon written with the dictation's signal, legended status lamps, machined
+/* Earheart recording overlay — "The Tape Transport". A tape deck lying along
+   the bottom of the screen: warm-black instrument faceplate, a tape ribbon
+   written with the dictation's signal, legended status lamps, machined
    transport keys. Flat matte throughout; the only glow comes from lamps and
    backlit keys, and the card carries NO drop shadow (soft shadows band/halo on
-   transparent windows — depth is inset, never cast). */
+   transparent windows — depth is inset, never cast).
+
+   Every part of the transport row reports state. Purely representational
+   hardware — the spinning reels, the record-head slit and its shoe — was
+   deliberately removed: it said nothing the lamp, the tape and the counter
+   weren't already saying, and it was taking width away from the one element
+   that carries real information. */
 
 :root {
   --face: #1c1713; /* faceplate — warm black, solid so text never sits over the desktop */
@@ -13,7 +19,6 @@
   --oxide: #d29a5a; /* signal written onto the tape */
   --ivory: #f2e9da; /* silk-screen legends + primary text */
   --ivory-dim: #a89b88; /* unlit legends, secondary text (≥4.5:1 on --face) */
-  --alu: #b4a894; /* reel metal */
   --key: #2a2118; /* machined key caps */
   --key-edge: rgba(255, 240, 214, 0.12);
   --rec: #ff4438; /* lamp: capturing */
@@ -30,7 +35,7 @@
 }
 
 /* The [hidden] attribute must always win, even over components that set their
-   own display (buttons, #message, .reel rows). */
+   own display (buttons, #message). */
 [hidden] {
   display: none !important;
 }
@@ -294,7 +299,7 @@ body {
   border-bottom: 1px solid rgba(255, 240, 214, 0.07);
 }
 
-/* Transport row: lamp, supply reel, tape window, take-up reel, counter, keys. */
+/* Transport row: lamp, tape window, counter, keys. */
 #controls {
   display: flex;
   align-items: center;
@@ -387,7 +392,7 @@ body {
 
 /* Paused: armed to record but deliberately not capturing — a STEADY hollow
    ring (the pulsing hollow ring means the mic is still warming), PAUSE
-   legend, reels and tape held where they stopped. */
+   legend, tape held where it stopped. */
 [data-status="paused"] #indicator {
   background: transparent;
   border: 2px solid var(--rec);
@@ -418,49 +423,12 @@ body {
   }
 }
 
-/* ---------- reels ---------- */
-
-.reel {
-  flex-shrink: 0;
-  color: var(--alu);
-  animation: spin 2.3s linear infinite;
-  /* Paused keeps the reel's angle, so the tape stops where it stopped. */
-  animation-play-state: paused;
-}
-
-/* The take-up reel turns a touch faster — the small asymmetry that makes the
-   transport read as a machine rather than a loop. */
-#reel-takeup {
-  animation-duration: 1.8s;
-}
-
-[data-status="recording"] .reel {
-  animation-play-state: running;
-}
-
-/* Processing: the machine reads the tape back, faster than it was written. */
-[data-status="transcribing"] .reel,
-[data-status="cleaning"] .reel {
-  animation-duration: 0.9s;
-  animation-play-state: running;
-}
-
-[data-status="delivering"] .reel {
-  animation-duration: 1.4s;
-  animation-play-state: running;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 /* ---------- tape window ---------- */
 
 /* The hero: a recessed well the tape runs through. Flexes to fill all the
-   space between the reels; min-width:0 lets it shrink below the canvas's
-   intrinsic width (overlay.js keeps the canvas backing store matched). */
+   space between the lamp and the counter; min-width:0 lets it shrink below the
+   canvas's intrinsic width (overlay.js keeps the canvas backing store
+   matched). */
 #tape-window {
   position: relative;
   flex: 1;
@@ -486,40 +454,6 @@ body {
    the window), the written tape dims to a backdrop. */
 #card:not([data-status="recording"]) #meter {
   opacity: 0.22;
-}
-
-/* The record head: a fixed slit where the signal is written. Sits at the same
-   fraction of the window as the canvas's write position (overlay.js). */
-#head {
-  position: absolute;
-  left: 40%;
-  top: 2px;
-  bottom: 2px;
-  width: 1px;
-  background: rgba(242, 233, 218, 0.3);
-}
-
-/* The head shoe riding the top edge of the well. */
-#head::before {
-  content: "";
-  position: absolute;
-  top: -2px;
-  left: -2px;
-  width: 5px;
-  height: 6px;
-  border-radius: 0 0 2px 2px;
-  background: var(--alu);
-  opacity: 0.8;
-}
-
-/* The slit brightens while the head is actually writing. */
-[data-status="recording"] #head {
-  background: rgba(242, 233, 218, 0.45);
-}
-
-/* Fade the head out when nothing is being written. */
-#card:not([data-status="recording"]):not([data-status="starting"]) #head {
-  opacity: 0.25;
 }
 
 /* ---------- machine display (status text over the tape window) ---------- */
@@ -762,7 +696,6 @@ button:focus-visible {
     transition: opacity 0.2s ease;
     transform: none;
   }
-  .reel,
   #indicator {
     animation: none !important;
   }

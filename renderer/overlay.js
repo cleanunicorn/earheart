@@ -108,11 +108,10 @@ let displayLevels = new Array(24).fill(0);
 let meterRaf = null;
 
 // The tape: the dictation's signal written onto the ribbon. One column is
-// written per TAPE_PUSH_MS of session time, newest at the record head
-// (TAPE_HEAD_X, matching #head in overlay.css), sliding toward the take-up
-// reel. History survives stop/processing — the frozen tape IS the take — and
-// resets when the next session starts.
-const TAPE_HEAD_X = 0.4; // fraction of the window where the head writes
+// written per TAPE_PUSH_MS of session time, newest flush at the window's right
+// edge and carried left as the tape moves, so the whole window shows the
+// take's most recent history. History survives stop/processing — the frozen
+// tape IS the take — and resets when the next session starts.
 const TAPE_COL_PX = 2.5; // CSS px per written column
 const TAPE_PUSH_MS = 80; // ms of audio per column (≈31px/s tape speed)
 const TAPE_MAX_COLS = 600; // plenty to outrun any window width
@@ -241,12 +240,13 @@ function resizeMeter() {
 }
 
 // The tape window: an umber ribbon crossing the recessed well, with the
-// dictation's signal written onto it as oxide columns. Blank tape runs in from
-// the supply side (left of the head); written signal slides out toward the
-// take-up reel. `frac` (0..1) is the sub-column scroll offset between writes,
-// so the ribbon glides instead of stepping. Muted oxide, not a lamp color: the
-// trace is material (the take itself), while saturated red stays reserved for
-// the REC lamp and the backlit stop key.
+// dictation's signal written onto it as oxide columns. The newest column is
+// written flush at the right edge and the tape carries it left, so the window
+// is filled with history rather than reserving a blank run-in. `frac` (0..1)
+// is the sub-column scroll offset between writes, so the ribbon glides instead
+// of stepping. Muted oxide, not a lamp color: the trace is material (the take
+// itself), while saturated red stays reserved for the REC lamp and the backlit
+// stop key.
 function drawMeter(frac = 0) {
   const w = meter.width;
   const h = meter.height;
@@ -262,30 +262,35 @@ function drawMeter(frac = 0) {
   meterCtx.fillStyle = "rgba(0, 0, 0, 0.4)";
   meterCtx.fillRect(0, bandY, w, px);
   meterCtx.fillRect(0, bandY + bandH - px, w, px);
-  // The written signal: mirrored oxide columns, newest at the head. Peaks may
-  // overshoot the ribbon — a hot signal rides over the band's edges. Columns
-  // ride at FLOAT coordinates: sub-pixel positions are what make the tape
-  // glide instead of ticking pixel by pixel (the canvas anti-aliases the
-  // edges, which at this scale reads as analog softness, not blur).
+  // The written signal: mirrored oxide columns, newest flush right and older
+  // ones running left off the window. Peaks may overshoot the ribbon — a hot
+  // signal rides over the band's edges. Columns ride at FLOAT coordinates:
+  // sub-pixel positions are what make the tape glide instead of ticking pixel
+  // by pixel (the canvas anti-aliases the edges, which at this scale reads as
+  // analog softness, not blur).
   const colW = TAPE_COL_PX * dpr;
   const gapW = colW * 0.28;
-  const headX = Math.round(w * TAPE_HEAD_X);
+  const barW = colW - gapW;
   const maxAmp = h - 4 * px;
   meterCtx.fillStyle = "rgba(210, 154, 90, 0.9)";
   for (let i = 0; i < tapeHistory.length; i++) {
-    const x = headX + (i + frac) * colW;
-    if (x > w) break;
+    // The inter-column gap sits on each bar's LEFT, so column 0's right edge
+    // lands exactly on w — which is where the live column below hands off.
+    const x = w - (i + 1 + frac) * colW + gapW;
+    if (x + barW < 0) break;
     const amp = Math.max(2 * px, Math.min(1, tapeHistory[i] * 6) * maxAmp);
-    meterCtx.fillRect(x, (h - amp) / 2, colW - gapW, amp);
+    meterCtx.fillRect(x, (h - amp) / 2, barW, amp);
   }
-  // The column being written right now: it extrudes from the head at the live
-  // level and freezes into tapeHistory on the next commit, so signal flows
-  // out of the head continuously instead of appearing in 80ms pops. (Under
-  // reduced motion frac stays 0 and the tape steps, as intended.)
+  // The column being written right now: it grows leftward from the right edge
+  // at the live level and freezes into tapeHistory on the next commit, so
+  // signal flows onto the tape continuously instead of appearing in 80ms pops.
+  // At frac → 1 it exactly fills the slot column 0 takes after the commit.
+  // (Under reduced motion frac stays 0 and the tape steps, as intended.)
   if (recording?.startedAt && frac > 0) {
     const live = displayLevels[displayLevels.length - 1];
     const amp = Math.max(2 * px, Math.min(1, live * 6) * maxAmp);
-    meterCtx.fillRect(headX, (h - amp) / 2, Math.max(0, frac * colW - gapW), amp);
+    const liveW = Math.max(0, frac * colW - gapW);
+    meterCtx.fillRect(w - liveW, (h - amp) / 2, liveW, amp);
   }
 }
 

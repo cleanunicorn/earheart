@@ -227,15 +227,21 @@ components:
 
 **Creative North Star: "The Tape Transport"**
 
-Earheart's overlay is a machine you can watch working: a miniature reel-to-reel
-lying along the bottom of the screen. Dictation is not a pulsing dot in a
-pill — it is signal being physically written onto moving tape. The world is a
-warm-black instrument faceplate with wells sunk into it: an umber tape ribbon
-carrying the oxide-written waveform past a fixed record head, aluminum reels
-whose hub windows make rotation visible, a mechanical counter, legended status
-lamps, and machined transport keys. A glance tells the whole story: lamp lit,
-reels turning, your words being written onto tape and appearing above; the
-backlit square key stops, eject discards.
+Earheart's overlay is a machine you can watch working: a tape deck lying along
+the bottom of the screen. Dictation is not a pulsing dot in a pill — it is
+signal being physically written onto moving tape. The world is a warm-black
+instrument faceplate with wells sunk into it: an umber tape ribbon carrying
+the oxide-written waveform, a mechanical counter, legended status lamps, and
+machined transport keys. A glance tells the whole story: lamp lit, your words
+being written onto tape and appearing above; the backlit square key stops,
+eject discards.
+
+**The machine has no parts that don't report.** The transport once carried
+spinning aluminum reels and a record-head marker — faithful to the metaphor,
+mute about the state. They were removed: the lamp, the tape and the counter
+already said everything the reels gestured at, and the width they occupied
+belonged to the one element carrying real information. The metaphor earns its
+place by making state legible, and stops exactly where it stops doing that.
 
 The Tape Transport now covers **every surface**. The settings window and the
 setup wizard are "the service panel": the same machine opened up for
@@ -250,8 +256,8 @@ things that are lit — status lamps, the backlit STOP and Save keys, the
 playhead — never from ambience. Depth is machined into the faceplate (inset
 wells, inset top highlights), never cast under it: the overlay window is
 transparent, and a drop shadow would band and halo against the desktop.
-Motion is mechanical physics, not decoration: reels spin at different speeds,
-keys travel when pressed, tape glides at a fixed write speed, the service
+Motion is mechanical physics, not decoration: keys travel when pressed, tape
+glides at a fixed write speed carrying the signal left, the service
 panel glides tape-style to indexed sections, and all of it collapses to
 instant state changes under `prefers-reduced-motion`. Text is quiet system UI
 silk-screened in ivory onto the faceplate; the machine's own numerals and
@@ -266,8 +272,8 @@ panel).
 
 **Key Characteristics:**
 
-- Interface as instrument: every state is a lamp, a reel speed, or a written
-  trace — never an abstract spinner.
+- Interface as instrument: every state is a lamp, a written trace, or a
+  counter — never an abstract spinner, and never a part that only decorates.
 - Warm-black and oxide materials; saturated color exists only in lamps.
 - Depth by inset: wells sink into the faceplate; nothing floats above it.
 - Glow means lit: lamp blooms and key backlights are the world's only shadows.
@@ -322,8 +328,7 @@ The machine's materials, dark to light:
 
 - **Recess Black** (#0f0c09): wells sunk into the faceplate — the tape
   window, the counter cell, every service-panel input, the segmented track,
-  radio/checkbox sockets, switch channels, history takes, and model trays —
-  and the reel hub windows.
+  radio/checkbox sockets, switch channels, history takes, and model trays.
 - **Faceplate Black** (#1c1713): the card and every window itself; warm
   black, solid so text never sits over the desktop. Settings and wizard
   windows paint it as their native background.
@@ -333,19 +338,18 @@ The machine's materials, dark to light:
 - **Key Cap** (#2a2118): machined transport keys and service-panel buttons
   (hover **Key Hover** #342a1e), edged in **Key Edge**
   (rgba(255,240,214,0.12)).
-- **Tape Umber** (#35291d): the ribbon the signal is written onto (the wound
-  tape packs on the reels are the close sibling #3a2c1f); also the service
-  panel's scrollbar thumb.
+- **Tape Umber** (#35291d): the ribbon the signal is written onto; also the
+  service panel's scrollbar thumb.
 - **Well Edge** (#776a58): the recessed input's boundary against the panel —
   holds ≥3:1 for the WCAG 1.4.11 UI-component bar.
 - **Unlit Ivory** (#a89b88): unlit legends, secondary text, hints, and
   placeholders (used at full color, never via opacity); holds ≥4.5:1 on
   Faceplate Black.
-- **Reel Aluminum** (#b4a894): reel flanges and hubs, the record head's shoe,
-  the switch slug, and the fader knob.
+- **Machined Aluminum** (#b4a894, `--alu`): the switch slug and the fader
+  knob — the machine's moving metal parts.
 - **Silk-Screen Ivory** (#f2e9da): primary text and legends, printed onto the
   faceplate; also the hairline **Machine Edge** (rgba(255,240,214,0.14)) and
-  every warm-white translucent detail (grip knurling, seams, head slit).
+  every warm-white translucent detail (grip knurling, seams).
 
 ### Named Rules
 
@@ -438,9 +442,9 @@ own height so content slides rather than pops).
 
 Card anatomy, top to bottom: knurled drag rail (44×5px, centered) → optional
 update service note → live transcript → transport row. The transport row is a
-fixed 46px strip inset 12px, gapped 8px: lamp block (30px) → supply reel
-(30px) → tape window (flexes to fill — the hero owns all leftover width) →
-take-up reel → counter cell (min 52×30px) → PAUSE → STOP → eject, with an
+fixed 46px strip inset 12px, gapped 8px: lamp block (30px) → tape window
+(flexes to fill — the hero owns all leftover width, ~216px at the default
+500px overlay) → counter cell (min 52×30px) → PAUSE → STOP → eject, with an
 extra 4px gap isolating the destructive eject. The transcript's 16px side
 padding shares one left edge with the machine below it. Update-note actions
 wrap to a second line rather than squeeze; when the update arrives with no
@@ -512,13 +516,12 @@ keys' invisible hit halo), 8px for the wizard's miniature faceplate, 7px for
 text pills and segment caps, 6px for recessed wells (inputs, history takes,
 trays, `kbd` caps), 4px for sub-wells (download tracks, checkbox sockets,
 `code` chips, the mini stop key), 2–2.5px for tracks and the grip rail, 1px
-for the mini deck's signal bars. Circles mean *rotation and light*: reels,
-hub windows, the 11px status lamp, 7px index/service/step lamps, 16px radio
-sockets, and the aluminum switch slug and fader knob. Borders are 1px
-warm-white hairlines (Machine Edge, Panel Edge, Key Edge, Seam) except the
-solid Well Edge that must clear 3:1; the record head is a 1px ivory slit with
-a 5×6px aluminum shoe riding the well's top edge. Keys paint 34px but offer a
-~42px hit area via an inset −4px pseudo-element.
+for the mini deck's signal bars. Circles mean *light and travel*: the 11px
+status lamp, 7px index/service/step lamps, 16px radio sockets, and the
+aluminum switch slug and fader knob. Borders are 1px warm-white hairlines
+(Machine Edge, Panel Edge, Key Edge, Seam) except the solid Well Edge that
+must clear 3:1. Keys paint 34px but offer a ~42px hit area via an inset −4px
+pseudo-element.
 
 ## Components
 
@@ -555,11 +558,13 @@ Keys that don't currently apply go unlit and inert — `visibility`/state, not
 ### Tape window (the hero)
 
 A recessed well (34px tall, 6px radius) that flexes to fill the space between
-the reels. Inside it: the Tape Umber ribbon (canvas, darkened edges), the
-oxide-written signal sliding from the fixed record head (at 40% of the
-window's width, matching `TAPE_HEAD_X`) toward the take-up reel — one column
-per 80ms of captured audio (≈31px/s tape speed), 2.5px per column, mirrored
-amplitude, peaks allowed to overshoot the ribbon. The frozen tape *is* the
+the lamp and the counter. Inside it: the Tape Umber ribbon (canvas, darkened
+edges) and the oxide-written signal — one column per 80ms of captured audio
+(≈31px/s tape speed), 2.5px per column, mirrored amplitude, peaks allowed to
+overshoot the ribbon. The newest column is written flush at the window's right
+edge and the tape carries it left, so the well is filled edge to edge with the
+take's recent history (~7s at the default width) instead of reserving a blank
+run-in. The frozen tape *is* the
 take: history survives stop and processing, and fresh tape threads only when
 the next session starts. During non-recording phases the written tape dims to
 22% and the well doubles as the machine's text display (status + detail,
@@ -578,16 +583,6 @@ PAUSE; only the warming mic's hollow ring pulses.
 counter mean "audio is being captured right now." While the mic warms up the
 lamp is a hollow ring — the card only promises it's getting there. Never show
 the filled lamp before samples flow.
-
-### Reels
-
-30px SVG reels in Reel Aluminum: wound tape pack (#3a2c1f), 1.6px flange
-ring, solid hub with three Recess Black windows that make rotation visible.
-The take-up reel turns a touch faster than the supply reel (1.8s vs 2.3s per
-revolution) — the small asymmetry that makes it read as a machine, not a
-loop. Processing plays the reels back faster (0.9s; delivering 1.4s), and
-`animation-play-state: paused` (not `none`) keeps each reel's angle so the
-tape stops where it stopped.
 
 ### Counter cell
 
@@ -691,7 +686,7 @@ cards, summary, and value cards are the same panel at 10px radius.
 - **Checkboxes:** the same socket squared off (4px radius, 2px-radius amber
   core).
 - **Slide switch:** a 40×22px recessed channel (11px capsule) with a 16px
-  Reel Aluminum slug; engaging it lights the channel amber and the slug takes
+  Machined Aluminum slug; engaging it lights the channel amber and the slug takes
   the lit pill's dark #241703, sliding 18px at 0.16s ease.
 - **Fader (range):** the light-track grammar — a 4px track in 15% ivory under
   a 16px aluminum knob; the live readout beside it is the bright element
@@ -721,10 +716,11 @@ one lit amber with bloom,
 spoken as "Step N of 7" via an sr-only counterpart. The welcome demo is three
 panels: machined `kbd` key caps (6px radius, 2px bottom edge, mono 11px) →
 **the mini deck**, a miniature of the real recording strip on an 8px-radius
-faceplate (36px tall): pulsing 6px REC lamp, two dashed-ring aluminum reels
-turning at the real transport's 2.3s/1.8s asymmetry, five 2.5px oxide signal
-bars (1px radius) rising and falling, a 10px mono timer, and a 16px backlit
-mini stop key (4px radius) → text typing itself out behind a 1px Oxide caret
+faceplate (36px tall): pulsing 6px REC lamp, thirteen 2.5px oxide signal bars
+(1px radius) rising and falling across the width the deck's parts leave it —
+offsets on a 7-bar cycle so it reads as signal rather than a sweep — a 10px
+mono timer, and a 16px backlit mini stop key (4px radius) → text typing
+itself out behind a 1px Oxide caret
 (4s steps loop). The summary panel lists choices as seam-divided rows,
 accelerators in mono.
 
@@ -741,8 +737,8 @@ accelerators in mono.
   the playhead, the focus halo.
 - **Do** keep motion mechanical and honest: 0.12s ease for key/surface
   states, 0.08s key travel, 0.15s linear progress, 0.16s switch slide,
-  0.18s card height, 0.2s card entrance; reels pause (keeping their angle)
-  rather than reset; under `prefers-reduced-motion` collapse transitions to
+  0.18s card height, 0.2s card entrance; a paused take holds the tape where
+  it stopped rather than resetting it; under `prefers-reduced-motion` collapse transitions to
   instant, stop infinite animations still (`animation-iteration-count: 1`,
   or `animation-play-state`/`none` in the overlay), and make the panel glide
   an instant jump — while still updating state.

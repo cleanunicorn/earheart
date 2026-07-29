@@ -32,8 +32,8 @@ amber-backlit Save key, silk-screened uppercase section legends (10px/700/0.1em
 hotkey-capture fields, amber service wash for selection, DONE-green/STOP-red
 status text, machine values (accelerators, timestamps, version) in 13px/11px
 mono. The wizard reuses all of it; its welcome demo is a miniature of the real
-tape deck (lamp, dashed-ring reels, oxide signal, backlit mini stop), and its
-step dots are lamps.
+tape deck (lamp, oxide signal, counter, backlit mini stop), and its step dots
+are lamps.
 
 **Memorable moment:** the printed index lamp sliding section to section as the
 panel glides — and the wizard's miniature deck already recording.
@@ -42,10 +42,16 @@ panel glides — and the wizard's miniature deck already recording.
 radio-group name (contract-tested); CSP forbids inline styles; `[hidden]` must
 win; all copy preserved verbatim; keyboard-first (roving-tabindex index, arrows
 both axes, ivory focus rings); prefers-reduced-motion collapses glide, lamps,
-reels; windows paint `#1c1713` before load (windows.js backgroundColor).
+signal; windows paint `#1c1713` before load (windows.js backgroundColor).
 
 **Resolved at finish:** progress fills use the world's `width 0.15s linear`;
 sliders use the light-track grammar (a dark recessed channel vanishes at 4-8px
 heights); em-dash-heavy copy is the product's incumbent voice, kept.
+
+**Amended 2026-07-29 (user request):** the wizard's miniature deck drops its
+two dashed-ring reels to match the real transport (see
+`renderer-overlay-html.md`); the oxide signal takes the freed width, so the
+miniature keeps its size and the tape dominates it the way it dominates the
+overlay.
 
 **Unresolved:** none for this surface; tray menu remains unstyled platform UI.

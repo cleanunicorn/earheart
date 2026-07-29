@@ -28,6 +28,21 @@ app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// How far the delivered WAV may fall short of the wall-clock window it should
+// cover. The gap is audio-thread scheduling: the worklet posts 128-sample
+// quanta (8ms at 16kHz), and the last few can still be in flight when stop
+// lands. 150ms (~19 quanta) is the real contract — a capture path that drops
+// audio misses by far more than this.
+//
+// macOS CI runners are the exception: they are shared and their audio thread
+// gets descheduled hard enough to lose ~230ms of a 1.2s window (observed on
+// GitHub Actions macos-latest, PR #56), which trips a 150ms bound on a build
+// with nothing wrong with it. Give darwin 350ms — still ~1.5x the worst
+// shortfall we've measured, and still nowhere near what a broken capture path
+// would produce. Widened only where the flake lives: the other duration bounds
+// in this file already carry 200-250ms of slack.
+const WAV_LAG_ALLOWANCE_SEC = process.platform === "darwin" ? 0.35 : 0.15;
+
 const checks = [];
 function check(name, ok, detail) {
   checks.push({ name, ok });
@@ -149,8 +164,8 @@ app.whenReady().then(async () => {
     check("stop delivers the capture for the right session", captured1.sid === 1);
     check(
       "wav covers everything since Listening… appeared",
-      stats1.seconds >= (stoppedAt - liveAt) / 1000 - 0.15,
-      `wav=${stats1.seconds.toFixed(2)}s, ui-live window=${((stoppedAt - liveAt) / 1000).toFixed(2)}s`
+      stats1.seconds >= (stoppedAt - liveAt) / 1000 - WAV_LAG_ALLOWANCE_SEC,
+      `wav=${stats1.seconds.toFixed(2)}s, ui-live window=${((stoppedAt - liveAt) / 1000).toFixed(2)}s, allowance=${WAV_LAG_ALLOWANCE_SEC}s`
     );
     check("captured audio is not silence", stats1.rms > 0.001, `rms=${stats1.rms.toFixed(4)}`);
 

@@ -55,7 +55,9 @@ app.whenReady().then(async () => {
   await sleep(800);
 
   await overlay.webContents.executeJavaScript(`
-    // Stage a written tape: a speech-like burst pattern, newest at the head.
+    // Stage a written tape: a speech-like burst pattern, newest at the right
+    // edge. 120 columns × 2.5px overruns the window, so the well shows the
+    // filled-edge-to-edge state a take reaches after ~7s.
     tapeHistory = Array.from({ length: 120 }, (_, i) =>
       0.02 + 0.13 * Math.abs(Math.sin(i * 0.7 + 1)) * (0.4 + ((i * 7919) % 13) / 13)
     );

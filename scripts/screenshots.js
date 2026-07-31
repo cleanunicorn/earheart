@@ -46,8 +46,8 @@ app.whenReady().then(async () => {
   await shot(settings, "settings");
   settings.close();
 
-  // Overlay transport: staged recording and done states. setStatus/levels/
-  // tapeHistory/drawMeter/timerEl are top-level bindings in overlay.js,
+  // Overlay: staged recording and done states. setStatus/levels/
+  // waveHistory/drawMeter/timerEl are top-level bindings in overlay.js,
   // reachable from executeJavaScript.
   const overlay = windows.createOverlay();
   await new Promise((r) => overlay.webContents.once("did-finish-load", r));
@@ -55,10 +55,10 @@ app.whenReady().then(async () => {
   await sleep(800);
 
   await overlay.webContents.executeJavaScript(`
-    // Stage a written tape: a speech-like burst pattern, newest at the right
-    // edge. 120 columns × 2.5px overruns the window, so the well shows the
+    // Stage a written waveform: a speech-like burst pattern, newest at the
+    // right edge. 120 columns × 2.5px overruns the area, so it shows the
     // filled-edge-to-edge state a take reaches after ~7s.
-    tapeHistory = Array.from({ length: 120 }, (_, i) =>
+    waveHistory = Array.from({ length: 120 }, (_, i) =>
       0.02 + 0.13 * Math.abs(Math.sin(i * 0.7 + 1)) * (0.4 + ((i * 7919) % 13) / 13)
     );
     levels = levels.map((_, i) =>
@@ -78,10 +78,10 @@ app.whenReady().then(async () => {
   await sleep(400);
   await shot(overlay, "overlay-recording");
 
-  // Paused mid-take: the transport holds — latched pause key, steady hollow
-  // REC ring, frozen tape behind the machine display.
+  // Paused mid-take: everything holds — held pause key showing the resume
+  // glyph, steady hollow status ring, frozen waveform.
   await overlay.webContents.executeJavaScript(`
-    setStatus("paused", "Paused", "Pause again to resume");
+    setStatus("paused", "Paused", "Press play to resume");
     "";
   `);
   await sleep(400);

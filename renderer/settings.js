@@ -10,7 +10,7 @@ const $ = (id) => document.getElementById(id);
 
 /* ---------- section index ---------- */
 
-// Every section sits on one scrolling service panel; the index on the left
+// Every section sits on one scrolling page; the index on the left
 // only navigates. Its lamp tracks the section under the read head (scroll
 // spy), and clicking an entry glides the panel to that section (the easing
 // comes from CSS scroll-behavior, which prefers-reduced-motion collapses).

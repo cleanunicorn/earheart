@@ -9,17 +9,17 @@ const logger = require("./util/logger");
 const PRELOAD = path.join(__dirname, "..", "preload.js");
 const RENDERER = path.join(__dirname, "..", "renderer");
 
-// Wide enough for the transport row (lamp, tape window, counter,
-// pause/stop/eject keys) to keep a generous tape window.
+// Wide enough for the control row (status word, waveform, timer,
+// pause/done/discard keys) to keep a generous waveform.
 const OVERLAY_WIDTH = 500;
-// Base card: drag rail (~17px) + 46px transport row + 6px bottom margin +
+// Base card: grip (~14px) + 44px control row + 8px bottom margin +
 // 2px border, plus 12px window margin top/bottom.
 const OVERLAY_HEIGHT = 95;
 // Matches the card's fade-out transition in overlay.css.
 const OVERLAY_FADE_MS = 200;
-// Matches --face in settings.css (the wizard layers on it), so neither
+// Matches --ink in settings.css (the wizard layers on it), so neither
 // window flashes white before its stylesheet paints.
-const FACE_COLOR = "#1c1713";
+const INK_COLOR = "#18181b";
 
 let overlayWindow = null;
 let settingsWindow = null;
@@ -318,7 +318,7 @@ function openSettings({ fromWizard = false } = {}) {
     minHeight: 480,
     title: "Earheart",
     autoHideMenuBar: true,
-    backgroundColor: FACE_COLOR,
+    backgroundColor: INK_COLOR,
     icon: path.join(__dirname, "..", "assets", "icon.png"),
     webPreferences: {
       preload: PRELOAD,
@@ -351,7 +351,7 @@ function openWizard() {
     minHeight: 560,
     title: "Welcome to Earheart",
     autoHideMenuBar: true,
-    backgroundColor: FACE_COLOR,
+    backgroundColor: INK_COLOR,
     icon: path.join(__dirname, "..", "assets", "icon.png"),
     webPreferences: {
       preload: PRELOAD,

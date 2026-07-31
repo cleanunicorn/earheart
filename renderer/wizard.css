@@ -1,7 +1,8 @@
-/* Setup wizard — layered on top of settings.css, which provides the Tape
-   Transport palette, form controls and header/footer chrome. The wizard's own
-   pieces follow the same grammar: machined panels, recessed wells, lamps for
-   position, and a miniature of the real recording deck in the welcome demo. */
+/* Setup wizard — layered on top of settings.css, which provides the quiet
+   transcription bar's palette, form controls and header/footer chrome. The
+   wizard's own pieces follow the same grammar: quiet white-wash cards, plain
+   controls, step dots, and a miniature of the real dictation bar in the
+   welcome demo. */
 
 /* Steps center vertically in the fixed frame: auto margins collapse to zero
    when a tall step needs to scroll, so short steps (welcome) sit composed
@@ -34,7 +35,7 @@ footer {
   justify-content: space-between;
 }
 
-/* Visually hidden, still read by AT (the lamp row's spoken counterpart). */
+/* Visually hidden, still read by AT (the dot row's spoken counterpart). */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -46,8 +47,7 @@ footer {
   white-space: nowrap;
 }
 
-/* Step position as a row of lamps: unlit stops, the current one lit amber —
-   the machine talking about its own progress. */
+/* Step position as a row of dots: quiet stops, the current one white. */
 .dots {
   display: flex;
   gap: 7px;
@@ -57,13 +57,12 @@ footer {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  /* 40% ivory, matching the settings index's unlit lamps (≥3:1 on --face). */
-  background: rgba(255, 240, 214, 0.4);
+  /* Bright enough to clear the 3:1 UI-component bar on the ink. */
+  background: rgba(255, 255, 255, 0.35);
 }
 
 .dot.active {
-  background: var(--busy);
-  box-shadow: 0 0 6px rgba(255, 176, 58, 0.6);
+  background: var(--text);
 }
 
 /* ---------- "how it works" demo on the welcome step ---------- */
@@ -79,10 +78,9 @@ footer {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--panel);
-  border: 1px solid var(--panel-edge);
-  border-radius: 10px;
-  box-shadow: var(--edge-light);
+  background: var(--wash-faint);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
   padding: 14px 10px 12px;
 }
 
@@ -96,18 +94,18 @@ footer {
 
 .demo-caption {
   text-align: center;
-  color: var(--ivory-dim);
+  color: var(--text-dim);
   font-size: 11px;
   margin-top: 10px;
 }
 
 .demo-arrow {
   align-self: center;
-  color: var(--ivory-dim);
+  color: var(--text-dim);
   font-size: 16px;
 }
 
-/* Step 1: the hotkey — machined key caps with a heavier base edge. */
+/* Step 1: the hotkey — key caps with a heavier base edge. */
 .keys {
   display: flex;
   align-items: center;
@@ -115,93 +113,90 @@ footer {
 }
 
 kbd {
-  background: var(--key);
-  border: 1px solid var(--key-edge);
+  background: var(--wash);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-bottom-width: 2px;
   border-radius: 6px;
-  box-shadow: inset 0 1px 0 var(--seam);
   padding: 4px 7px;
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--ivory);
+  color: var(--text);
 }
 
-/* Step 2: a miniature of the real recording deck (see overlay.css) — lit REC
-   lamp, the signal written in oxide across the width of the deck, counter,
-   backlit stop key. Like the real transport, it carries no parts that don't
-   report something. */
-.mini-deck {
+/* Step 2: a miniature of the real dictation bar (see overlay.css) — pulsing
+   coral capture dot, the live coral waveform, the timer, and the filled
+   white Done key. Like the real bar, it carries no parts that don't report
+   something. */
+.mini-bar {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 36px;
-  padding: 0 9px;
-  border-radius: 8px;
-  background: var(--face);
-  border: 1px solid var(--face-edge);
-  box-shadow: var(--edge-light);
+  padding: 0 10px;
+  border-radius: 18px;
+  background: var(--ink);
+  border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
-.mini-lamp {
+.mini-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--rec);
-  box-shadow: 0 0 5px rgba(255, 68, 56, 0.55);
+  background: var(--accent);
+  box-shadow: 0 0 5px rgba(251, 77, 92, 0.5);
   animation: mini-pulse 2s ease-in-out infinite;
 }
 
-.mini-tape {
+.mini-wave {
   display: flex;
   align-items: center;
   gap: 2px;
   height: 14px;
 }
 
-.mini-tape i {
+.mini-wave i {
   width: 2.5px;
-  border-radius: 1px;
-  background: rgba(210, 154, 90, 0.9);
+  border-radius: 1.25px;
+  background: var(--accent);
   animation: mini-signal 1s ease-in-out infinite;
 }
 
 /* Offsets on a 7-bar cycle rather than one rule per bar: the sequence is
-   deliberately non-monotonic so the tape reads as signal, not as a wave
-   sweeping politely across the deck — and the bar count can change without
-   the rules having to. */
-.mini-tape i:nth-child(7n + 1) { animation-delay: 0s; }
-.mini-tape i:nth-child(7n + 2) { animation-delay: 0.28s; }
-.mini-tape i:nth-child(7n + 3) { animation-delay: 0.11s; }
-.mini-tape i:nth-child(7n + 4) { animation-delay: 0.63s; }
-.mini-tape i:nth-child(7n + 5) { animation-delay: 0.4s; }
-.mini-tape i:nth-child(7n + 6) { animation-delay: 0.78s; }
-.mini-tape i:nth-child(7n + 7) { animation-delay: 0.19s; }
+   deliberately non-monotonic so it reads as a voice, not as a wave sweeping
+   politely across the bar — and the bar count can change without the rules
+   having to. */
+.mini-wave i:nth-child(7n + 1) { animation-delay: 0s; }
+.mini-wave i:nth-child(7n + 2) { animation-delay: 0.28s; }
+.mini-wave i:nth-child(7n + 3) { animation-delay: 0.11s; }
+.mini-wave i:nth-child(7n + 4) { animation-delay: 0.63s; }
+.mini-wave i:nth-child(7n + 5) { animation-delay: 0.4s; }
+.mini-wave i:nth-child(7n + 6) { animation-delay: 0.78s; }
+.mini-wave i:nth-child(7n + 7) { animation-delay: 0.19s; }
 
 .mini-timer {
   font-family: var(--mono);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
-  color: var(--ivory);
+  color: var(--text);
 }
 
-.mini-stop {
+.mini-done {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 16px;
   height: 16px;
-  border-radius: 4px;
-  background: #3a1611;
-  border: 1px solid rgba(255, 68, 56, 0.5);
-  box-shadow: 0 0 6px rgba(255, 68, 56, 0.35);
-  color: #ffb4ac;
-  font-size: 6px;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--ink);
+  font-size: 9px;
+  font-weight: 700;
 }
 
 @keyframes mini-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.45; transform: scale(0.82); }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 
 @keyframes mini-signal {
@@ -209,8 +204,7 @@ kbd {
   50% { height: 13px; }
 }
 
-/* Step 3: text typing itself out; the caret carries the oxide of a signal
-   being written. */
+/* Step 3: text typing itself out behind a plain caret. */
 .typed {
   font-size: 12px;
 }
@@ -221,7 +215,7 @@ kbd {
   white-space: nowrap;
   vertical-align: bottom;
   max-width: 18ch;
-  border-right: 1px solid var(--oxide);
+  border-right: 1px solid var(--text);
   animation: demo-type 4s steps(18) infinite;
 }
 
@@ -237,7 +231,7 @@ kbd {
    typing animation's widest phase overflows the row; permanently so under
    reduced motion). Stack it and compact the cards so the welcome step stays
    close to composed — a small vertical scroll may remain at the exact
-   floor, which the panel already supports. */
+   floor, which the page already supports. */
 @media (max-width: 599px) {
   .demo {
     flex-direction: column;
@@ -249,7 +243,7 @@ kbd {
   }
 
   .demo-visual {
-    /* Matches .mini-deck's fixed height so all three stacked cards render
+    /* Matches .mini-bar's fixed height so all three stacked cards render
        the same height. */
     min-height: 36px;
   }
@@ -266,10 +260,9 @@ kbd {
 /* ---------- summary on the last step ---------- */
 
 #summary {
-  background: var(--panel);
-  border: 1px solid var(--panel-edge);
-  border-radius: 10px;
-  box-shadow: var(--edge-light);
+  background: var(--wash-faint);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
   padding: 6px 14px;
 }
 
@@ -286,7 +279,7 @@ kbd {
 }
 
 #summary dt {
-  color: var(--ivory-dim);
+  color: var(--text-dim);
   flex-shrink: 0;
 }
 
@@ -307,10 +300,9 @@ kbd {
 /* ---------- value cards (built-in engine selling points) ---------- */
 
 .value-card {
-  background: var(--panel);
-  border: 1px solid var(--panel-edge);
-  border-radius: 10px;
-  box-shadow: var(--edge-light);
+  background: var(--wash-faint);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
   padding: 14px 16px;
   margin-top: 12px;
 }
@@ -329,15 +321,27 @@ kbd {
   font-size: 12px;
 }
 
+/* Neutral markers, not emoji — the world speaks one color. */
+.value-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.value-list li::before {
+  content: "–";
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
 /* ---------- model download progress (final step) ---------- */
 /* The bars themselves (.dl-bar/.dl-fill) come from settings.css — the same
-   recessed track, amber fill and glowing playhead the settings window uses. */
+   hairline track and white fill the settings window uses. */
 
 .dl-item {
-  background: var(--panel);
-  border: 1px solid var(--panel-edge);
-  border-radius: 10px;
-  box-shadow: var(--edge-light);
+  background: var(--wash-faint);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
   padding: 12px 14px;
   margin-bottom: 12px;
 }

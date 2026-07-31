@@ -101,25 +101,27 @@ let partialRaw = "";
 let partialClean = "";
 
 // The audio worklet posts levels far faster than the screen refreshes, so we
-// don't redraw the tape per message. Instead each frame eases the displayed
+// don't redraw the wave per message. Instead each frame eases the displayed
 // head level toward the latest levels on a requestAnimationFrame loop: fewer
 // canvas redraws (one per frame, not per audio chunk) and a smoother write.
 let displayLevels = new Array(24).fill(0);
 let meterRaf = null;
 
-// The tape: the dictation's signal written onto the ribbon. One column is
-// written per TAPE_PUSH_MS of session time, newest flush at the window's right
-// edge and carried left as the tape moves, so the whole window shows the
-// take's most recent history. History survives stop/processing — the frozen
-// tape IS the take — and resets when the next session starts.
-const TAPE_COL_PX = 2.5; // CSS px per written column
-const TAPE_PUSH_MS = 80; // ms of audio per column (≈31px/s tape speed)
-const TAPE_MAX_COLS = 600; // plenty to outrun any window width
-let tapeHistory = []; // newest first: tapeHistory[0] sits at the head
-let tapePushAt = 0; // rAF timestamp of the last written column
+// The waveform: the dictation's voice drawn as it lands. One column is
+// written per WAVE_PUSH_MS of session time, newest flush at the area's right
+// edge and carried left, so the whole area shows the take's most recent
+// history. History survives stop/processing — the frozen waveform IS the
+// take — and resets when the next session starts.
+const WAVE_COL_PX = 2.5; // CSS px per written column
+const WAVE_PUSH_MS = 80; // ms of audio per column (≈31px/s scroll speed)
+const WAVE_MAX_COLS = 600; // plenty to outrun any window width
+// The accent — kept in sync with --accent in overlay.css.
+const WAVE_COLOR = "#fb4d5c";
+let waveHistory = []; // newest first: waveHistory[0] sits at the right edge
+let wavePushAt = 0; // rAF timestamp of the last written column
 
-// With reduced motion the tape updates in steps (state, not decoration): no
-// per-frame glide between writes. Snapshot at load, like the CSS media block.
+// With reduced motion the waveform updates in steps (state, not decoration):
+// no per-frame glide between writes. Snapshot at load, like the CSS media block.
 const REDUCED_MOTION = window.matchMedia(
   "(prefers-reduced-motion: reduce)"
 ).matches;
@@ -132,19 +134,19 @@ function meterFrame(now) {
     if (Math.abs(next - displayLevels[i]) > 0.0005) moved = true;
     displayLevels[i] = next;
   }
-  // Write the tape while audio is actually being captured, sampling the eased
-  // head level so the written trace matches what the head shows. A paused
-  // take holds the tape entirely.
+  // Write the waveform while audio is actually being captured, sampling the
+  // eased head level so the drawn trace matches what was heard. A paused take
+  // holds the waveform entirely.
   let frac = 0;
   if (recording?.startedAt && !recording.pausedAt) {
-    if (tapePushAt === 0) tapePushAt = now;
-    while (now - tapePushAt >= TAPE_PUSH_MS) {
-      tapeHistory.unshift(displayLevels[displayLevels.length - 1]);
-      if (tapeHistory.length > TAPE_MAX_COLS) tapeHistory.pop();
-      tapePushAt += TAPE_PUSH_MS;
+    if (wavePushAt === 0) wavePushAt = now;
+    while (now - wavePushAt >= WAVE_PUSH_MS) {
+      waveHistory.unshift(displayLevels[displayLevels.length - 1]);
+      if (waveHistory.length > WAVE_MAX_COLS) waveHistory.pop();
+      wavePushAt += WAVE_PUSH_MS;
       moved = true;
     }
-    if (!REDUCED_MOTION) frac = (now - tapePushAt) / TAPE_PUSH_MS;
+    if (!REDUCED_MOTION) frac = (now - wavePushAt) / WAVE_PUSH_MS;
   }
   drawMeter(frac);
   // Keep animating while recording; once levels settle after stop, let it idle.
@@ -176,8 +178,8 @@ let progressHideTimer = null;
 // completed bar mid-hold can ride through them without a collapse. Terminal
 // statuses (done/empty/error) are absent on purpose: there the box isn't
 // reserved, so the hold must end WITH the status swap — expiring 400ms later
-// would shift the final text mid-read (and park an amber bar under a green
-// dot).
+// would shift the final text mid-read (and park a leftover progress bar under
+// the green done dot).
 const PROGRESS_HOLD_STATUSES = new Set(["transcribing", "cleaning", "delivering"]);
 
 function setStatus(status, title, detail) {
@@ -200,6 +202,9 @@ function setStatus(status, title, detail) {
   pauseBtn.setAttribute("aria-pressed", String(status === "paused"));
   statusText.textContent = title;
   detailText.textContent = detail || "";
+  // The wave area steps back when a detail line (paste preview, error message,
+  // hint) needs its space — see #card[data-detail] in overlay.css.
+  card.toggleAttribute("data-detail", Boolean(detail));
   // Every phase change retires the previous phase's bar. It stays hidden until
   // the new phase's first pipeline:progress event, so phases that report no
   // progress (remote engines, near-instant steps) never flash an empty track.
@@ -239,14 +244,14 @@ function resizeMeter() {
   }
 }
 
-// The tape window: an umber ribbon crossing the recessed well, with the
-// dictation's signal written onto it as oxide columns. The newest column is
-// written flush at the right edge and the tape carries it left, so the window
-// is filled with history rather than reserving a blank run-in. `frac` (0..1)
-// is the sub-column scroll offset between writes, so the ribbon glides instead
-// of stepping. Muted oxide, not a lamp color: the trace is material (the take
-// itself), while saturated red stays reserved for the REC lamp and the backlit
-// stop key.
+// The waveform: mirrored rounded coral bars on the bare surface — the voice
+// drawn as it lands. The newest column is written flush at the right edge and
+// carried left, so the area is filled with history rather than reserving a
+// blank run-in. `frac` (0..1) is the sub-column scroll offset between writes,
+// so the wave glides instead of stepping. Columns ride at FLOAT coordinates:
+// sub-pixel positions are what make the glide smooth (the canvas anti-aliases
+// the edges, which at this scale reads as softness, not blur). Quiet spans
+// bottom out at round dots, so silence draws itself as a dotted baseline.
 function drawMeter(frac = 0) {
   const w = meter.width;
   const h = meter.height;
@@ -254,43 +259,36 @@ function drawMeter(frac = 0) {
   const dpr = window.devicePixelRatio || 1;
   const px = Math.max(1, Math.round(dpr));
   meterCtx.clearRect(0, 0, w, h);
-  // The ribbon: a horizontal band with darkened edges.
-  const bandH = Math.max(8 * px, Math.round(h * 0.52));
-  const bandY = Math.round((h - bandH) / 2);
-  meterCtx.fillStyle = "#35291d";
-  meterCtx.fillRect(0, bandY, w, bandH);
-  meterCtx.fillStyle = "rgba(0, 0, 0, 0.4)";
-  meterCtx.fillRect(0, bandY, w, px);
-  meterCtx.fillRect(0, bandY + bandH - px, w, px);
-  // The written signal: mirrored oxide columns, newest flush right and older
-  // ones running left off the window. Peaks may overshoot the ribbon — a hot
-  // signal rides over the band's edges. Columns ride at FLOAT coordinates:
-  // sub-pixel positions are what make the tape glide instead of ticking pixel
-  // by pixel (the canvas anti-aliases the edges, which at this scale reads as
-  // analog softness, not blur).
-  const colW = TAPE_COL_PX * dpr;
-  const gapW = colW * 0.28;
+  const colW = WAVE_COL_PX * dpr;
+  const gapW = colW * 0.32;
   const barW = colW - gapW;
-  const maxAmp = h - 4 * px;
-  meterCtx.fillStyle = "rgba(210, 154, 90, 0.9)";
-  for (let i = 0; i < tapeHistory.length; i++) {
+  const maxAmp = h - 2 * px;
+  meterCtx.fillStyle = WAVE_COLOR;
+  for (let i = 0; i < waveHistory.length; i++) {
     // The inter-column gap sits on each bar's LEFT, so column 0's right edge
     // lands exactly on w — which is where the live column below hands off.
     const x = w - (i + 1 + frac) * colW + gapW;
     if (x + barW < 0) break;
-    const amp = Math.max(2 * px, Math.min(1, tapeHistory[i] * 6) * maxAmp);
-    meterCtx.fillRect(x, (h - amp) / 2, barW, amp);
+    const amp = Math.max(barW, Math.min(1, waveHistory[i] * 6) * maxAmp);
+    meterCtx.beginPath();
+    meterCtx.roundRect(x, (h - amp) / 2, barW, amp, barW / 2);
+    meterCtx.fill();
   }
   // The column being written right now: it grows leftward from the right edge
-  // at the live level and freezes into tapeHistory on the next commit, so
-  // signal flows onto the tape continuously instead of appearing in 80ms pops.
-  // At frac → 1 it exactly fills the slot column 0 takes after the commit.
-  // (Under reduced motion frac stays 0 and the tape steps, as intended.)
+  // at the live level and freezes into waveHistory on the next commit, so the
+  // voice flows onto the screen continuously instead of appearing in 80ms
+  // pops. At frac → 1 it exactly fills the slot column 0 takes after the
+  // commit. (Under reduced motion frac stays 0 and the wave steps, as
+  // intended.)
   if (recording?.startedAt && frac > 0) {
     const live = displayLevels[displayLevels.length - 1];
-    const amp = Math.max(2 * px, Math.min(1, live * 6) * maxAmp);
+    const amp = Math.max(barW, Math.min(1, live * 6) * maxAmp);
     const liveW = Math.max(0, frac * colW - gapW);
-    meterCtx.fillRect(w - liveW, (h - amp) / 2, liveW, amp);
+    if (liveW > 0) {
+      meterCtx.beginPath();
+      meterCtx.roundRect(w - liveW, (h - amp) / 2, liveW, amp, Math.min(liveW, barW) / 2);
+      meterCtx.fill();
+    }
   }
 }
 
@@ -518,11 +516,11 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
   clearTranscript();
   levels.fill(0);
   displayLevels.fill(0);
-  // A new take threads fresh tape: the previous session's written signal is
+  // A new take starts a fresh waveform: the previous session's trace is
   // cleared and the write clock re-anchors on the first frame of capture.
-  tapeHistory = [];
-  tapePushAt = 0;
-  drawMeter(); // repaint blank ribbon; the rAF loop starts once mic is live
+  waveHistory = [];
+  wavePushAt = 0;
+  drawMeter(); // repaint blank; the rAF loop starts once mic is live
   timerEl.textContent = "0:00";
 
   let streamPromise = null;
@@ -747,11 +745,11 @@ function cancelRecording() {
   }
 }
 
-// Pause/resume a live take: the transport holds — mic track muted, tape and
-// counter frozen, the paused span excluded from the max-duration cap — and
+// Pause/resume a live take: everything holds — mic track muted, waveform and
+// timer frozen, the paused span excluded from the max-duration cap — and
 // pressing pause again continues the SAME take, so the captured audio stays
 // contiguous across the gap. Only a take that is actually capturing
-// (startedAt set) can pause; stop and eject keep working from the paused
+// (startedAt set) can pause; Done and Discard keep working from the paused
 // state, and the global hotkey still stops as usual.
 function togglePause() {
   if (!recording || !recording.startedAt) return;
@@ -765,7 +763,7 @@ function togglePause() {
     // Mute at the track so nothing is even delivered; the onmessage guard
     // discards any chunk already in flight.
     recording.stream.getAudioTracks().forEach((track) => (track.enabled = false));
-    setStatus("paused", "Paused", "Pause again to resume");
+    setStatus("paused", "Paused", "Press play to resume");
   } else {
     recording.pausedMs += Date.now() - recording.pausedAt;
     recording.pausedAt = null;
@@ -777,9 +775,9 @@ function togglePause() {
       return;
     }
     recording.maxTimerId = setTimeout(() => stopRecording(), remainingMs);
-    // Re-anchor the tape's write clock: the tape didn't move while paused,
+    // Re-anchor the waveform's write clock: the wave didn't move while paused,
     // matching the capture — no gap is written for the gap.
-    tapePushAt = 0;
+    wavePushAt = 0;
     setStatus("recording", "Listening…");
   }
 }
@@ -871,7 +869,7 @@ earheart.on("pipeline:status", ({ status, detail }) => {
 let updatePrompt = null;
 
 // Per status: what the main button says and which handler it calls; whether it
-// is the recommended action (amber) or just an escape hatch (Cancel, during a
+// is the recommended action (filled white) or just an escape hatch (Cancel, during a
 // download nobody needs talking into); and whether the two "stop bothering me"
 // exits still make sense — they don't once the update is already downloading.
 const UPDATE_ACTIONS = {

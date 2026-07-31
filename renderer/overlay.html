@@ -10,34 +10,31 @@
   </head>
   <body>
     <!--
-      THESIS: Dictation as a machine you can watch working — a miniature tape
-      transport writes your voice onto moving tape. Refuses the category's
-      pulsing-dot pill.
-      OWN-WORLD: Warm-black instrument faceplate; umber tape ribbon with
-      oxide-written waveform; legended lamps (REC red, BUSY amber, DONE green,
-      inert warm grey); ivory silk-screen legends; machined keys. Flat matte —
-      glow comes only from lamps and backlit keys.
-      STORY: A glance says: lamp lit, my words are being written onto tape and
-      appearing above; the backlit square key stops, pause holds the tape,
-      eject discards.
-      FIRST VIEWPORT: One low strip — lamp block, tape window, counter cell,
-      PAUSE, STOP, EJECT; the live transcript grows upward above it.
-      FORM: Tape transport, candidate 4 of 7 (assigned), seed d2b6eb8d;
-      sweep-decay staging borrowed only as freshness-cooling transcript text.
-      Every element on the strip reports state; nothing is here to decorate —
-      the spinning reels and the record-head marker were removed for exactly
-      that reason, and the tape now fills the window it was sharing with them.
+      THESIS: A transcription bar that needs no manual — the live words ARE the
+      interface, and every control is a glyph the whole world already reads.
+      Refuses the hardware metaphor (tape, lamps, legends, eject) outright.
+      OWN-WORLD: Solid neutral near-black bar, hairline edges, white/gray text;
+      one coral accent (#fb4d5c, from the app icon's waveform-heart) that means
+      "Earheart is working with your voice" — the capture dot, the live
+      waveform, progress fills. Green/red exist only as tiny status dots.
+      Circular ghost keys; one filled white Done key.
+      STORY: A glance says: coral pulse + moving waveform + words appearing —
+      it hears me. Check finishes and types the text, X discards, pause holds.
+      FIRST VIEWPORT: One slim bar: status dot + word, live waveform, timer,
+      pause, Done (white), discard; the live transcript grows upward above.
+      FORM: Category canon (the clean minimal dictation bar), played straight —
+      standing exit taken by the user; craft bar: Wispr Flow / superwhisper.
     -->
-    <!-- One unified faceplate: the live transcript fills the top and grows
-         freely; the transport row sits along the bottom. The whole card is the
-         drag surface and carries the data-status state. -->
+    <!-- One solid bar: the live transcript fills the top and grows freely; the
+         control row sits along the bottom. The whole card is the drag surface
+         and carries the data-status state. -->
     <!-- Initial state is "starting", matching what record:start shows: the card
          must never claim Listening… before the mic actually delivers audio. -->
     <div id="card" data-status="starting">
-      <!-- Drag rail: a knurled strip that signifies the card is draggable (the
-           OS ignores the CSS move-cursor on a focusable:false overlay, so a
-           visible cue is needed). Decorative — the card itself handles the
-           drag. -->
+      <!-- Drag handle: the sheet-grabber bar that signifies the card is
+           draggable (the OS ignores the CSS move-cursor on a focusable:false
+           overlay, so a visible cue is needed). Decorative — the card itself
+           handles the drag. -->
       <div id="grip" aria-hidden="true"></div>
       <!-- Update prompt: the whole point of putting it here is that this card is
            always-on-top and is the surface the user already looks at when they
@@ -47,27 +44,13 @@
         <div id="update-head">
           <span id="update-title"></span>
           <button id="update-close" title="Later" aria-label="Dismiss">
-            <!-- Filled bars, not a stroked path: every other glyph on the
-                 faceplate is a solid shape, and a hairline X read as a
-                 different material next to the machined keys. -->
             <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
-              <rect
-                x="6.7"
-                y="2"
-                width="2.6"
-                height="12"
-                rx="1.3"
-                fill="currentColor"
-                transform="rotate(45 8 8)"
-              />
-              <rect
-                x="6.7"
-                y="2"
-                width="2.6"
-                height="12"
-                rx="1.3"
-                fill="currentColor"
-                transform="rotate(-45 8 8)"
+              <path
+                d="M4.2 4.2 L11.8 11.8 M11.8 4.2 L4.2 11.8"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                fill="none"
               />
             </svg>
           </button>
@@ -88,8 +71,8 @@
       </div>
       <!-- Live transcript: shown while recording when live preview is on. The
            cleaned text is the settled line; the still-streaming raw tail trails
-           it warm and bright — fresh words cool as cleanup catches up. Hidden
-           (and empty) when there's nothing to show. -->
+           it dimmed — fresh words brighten to white as cleanup settles them.
+           Hidden (and empty) when there's nothing to show. -->
       <div id="transcript" hidden>
         <!-- Only the cleaned line is a polite live region: it settles in calm
              chunks on pauses, a natural announce cadence. The raw tail updates
@@ -97,59 +80,81 @@
         <span id="transcript-clean" aria-live="polite"></span
         ><span id="transcript-raw" aria-hidden="true"></span>
       </div>
-      <!-- Transport row: lamp block, tape window (the machine's display),
-           counter cell, and the transport keys. -->
+      <!-- Control row: status word, live waveform, timer, and the three keys
+           everyone already knows — pause, done, discard. -->
       <div id="controls">
-        <!-- Status lamp with its printed micro-legend (REC/BUSY/DONE…), set
-             from data-status in CSS. The legend is presentational: the status
-             live region below announces the real state. -->
-        <div id="lamp" aria-hidden="true">
-          <div id="indicator"></div>
-          <span id="lamp-legend"></span>
+        <!-- The state, said in one word next to its dot: Listening / Paused /
+             Transcribing… / Pasted. Announced politely so assistive tech hears
+             every state change without the timer's chatter. -->
+        <div id="status" aria-live="polite" aria-atomic="true">
+          <span id="status-dot" aria-hidden="true"></span>
+          <span id="status-text">Starting mic…</span>
         </div>
-        <!-- The tape window is the hero: the signal is written at the right
-             edge and the tape carries it left, so the window is filled edge to
-             edge with the take's recent history. It doubles as the machine's
-             text display for every non-recording phase. -->
-        <div id="tape-window">
-          <canvas id="meter" width="216" height="34" aria-hidden="true"></canvas>
-          <!-- Polite live region so a screen reader hears the post-recording
-               status (Transcribing… / Pasted / Failed) — the feedback that tells
-               the user whether their dictation landed. -->
-          <div id="message" aria-live="polite">
-            <span id="status-text">Starting mic…</span>
-            <span id="detail-text"></span>
-          </div>
-          <!-- Determinate progress for the transcribing/cleaning phases: the
-               playhead reading the tape. Overlaid on the window, so showing it
-               never changes the card height. aria-hidden keeps the live region
-               quiet: the status text already announces the phase. -->
+        <!-- The live waveform is the proof of hearing: your voice drawn as it
+             lands, newest at the right edge, carried left. Outside recording it
+             dims to a ghost of the take and the detail line (paste preview,
+             error, hint) takes the space. -->
+        <div id="wave">
+          <canvas id="meter" width="216" height="32" aria-hidden="true"></canvas>
+          <!-- Polite live region so a screen reader hears the post-dictation
+               detail (the pasted preview, an error message) — the feedback that
+               tells the user whether their dictation landed. -->
+          <span id="detail-text" aria-live="polite"></span>
+          <!-- Determinate progress for the transcribing/cleaning phases.
+               Overlaid on the wave area, so showing it never changes the card
+               height. aria-hidden keeps the live region quiet: the status text
+               already announces the phase. -->
           <div id="progress" hidden aria-hidden="true">
             <div id="progress-fill"></div>
           </div>
         </div>
-        <!-- Mechanical counter: counts captured audio only (lit while the tape
-             is actually being written). -->
-        <div id="counter"><span id="timer">0:00</span></div>
-        <!-- Pause latches the transport: capture, tape, and counter hold, and
-             pressing it again resumes the same take. -->
+        <!-- Counts captured audio only — it runs exactly while you are being
+             heard, and holds while paused. -->
+        <span id="timer">0:00</span>
+        <!-- Pause holds the dictation: capture and timer freeze, and pressing
+             it again resumes the same dictation. While paused it shows the
+             resume (play) glyph. -->
         <button id="pause" title="Pause" aria-label="Pause" aria-pressed="false" disabled>
-          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-            <rect x="3.6" y="3" width="3.2" height="10" rx="1.2" fill="currentColor" />
-            <rect x="9.2" y="3" width="3.2" height="10" rx="1.2" fill="currentColor" />
+          <svg class="icon-pause" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path
+              d="M5.6 4.2 V11.8 M10.4 4.2 V11.8"
+              stroke="currentColor"
+              stroke-width="2.4"
+              stroke-linecap="round"
+              fill="none"
+            />
+          </svg>
+          <svg class="icon-resume" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path
+              d="M6 3.9v8.2c0 .78.86 1.25 1.52.84l6.56-4.1a.99.99 0 0 0 0-1.68L7.52 3.06C6.86 2.65 6 3.12 6 3.9Z"
+              fill="currentColor"
+            />
           </svg>
         </button>
-        <button id="stop" title="Stop and transcribe" aria-label="Stop and transcribe">
+        <!-- Done: the one filled key — finish the dictation and let Earheart
+             transcribe and deliver the text. -->
+        <button id="stop" title="Done — transcribe and insert" aria-label="Done — transcribe and insert">
+          <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+            <path
+              d="M3.4 8.6 L6.7 11.8 L12.6 4.6"
+              stroke="currentColor"
+              stroke-width="2.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              fill="none"
+            />
+          </svg>
+        </button>
+        <!-- Discard: a plain X — cancel the dictation, nothing gets typed. -->
+        <button id="cancel" title="Discard — nothing is typed" aria-label="Discard dictation">
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor" />
-          </svg>
-        </button>
-        <!-- Eject: cancel discards the take, like pulling the tape. The title
-             names the consequence, since the eject glyph alone doesn't. -->
-        <button id="cancel" title="Cancel — discard the recording" aria-label="Cancel">
-          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-            <path d="M8 3.2 L12.8 9 H3.2 Z" fill="currentColor" />
-            <rect x="3.2" y="10.8" width="9.6" height="2" rx="1" fill="currentColor" />
+            <path
+              d="M4.3 4.3 L11.7 11.7 M11.7 4.3 L4.3 11.7"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              fill="none"
+            />
           </svg>
         </button>
       </div>

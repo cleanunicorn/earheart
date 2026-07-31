@@ -1,9 +1,10 @@
-/* Earheart settings — "The Tape Transport" service panel. One continuous
-   warm-black faceplate read top to bottom: a sticky printed index on the left
-   (lit lamp = you are here), machined panels for each group, inputs sunk into
-   the faceplate as recessed wells, key-cap buttons, and the amber-backlit Save
-   key. Depth is inset, never cast; the only glow comes from lit things (lamps,
-   the Save backlight, the capture-armed hotkey field, the download playhead).
+/* Earheart settings — the quiet transcription bar's settings window. One
+   continuous near-black page read top to bottom: a sticky index on the left,
+   quiet white-wash cards for each group, plain solid inputs, fully-rounded
+   pill buttons, and one filled white Save — the same "the key action is the
+   white thing" grammar as the overlay's Done key. Flat throughout: hairline
+   edges and washes, no shadows, no glows. Coral appears in exactly one place:
+   a hotkey field that is literally capturing your key press.
 
    The wizard layers on top of this file, so the shared primitives (tokens,
    header, footer, .field, .choice, .hint, .lead, buttons, .status, .dl-bar)
@@ -13,40 +14,22 @@
 :root {
   color-scheme: dark; /* native selects, spinners and dialogs render dark */
 
-  /* The machine's materials (shared with the overlay — see DESIGN.md). */
-  --face: #1c1713; /* faceplate — the window itself */
-  --face-edge: rgba(255, 240, 214, 0.14); /* hairline machine edge */
-  --recess: #0f0c09; /* wells sunk into the faceplate: inputs, tracks */
-  --ribbon: #35291d; /* tape umber — scrollbar thumb, quiet fills */
-  --oxide: #d29a5a; /* written signal — focus borders, the caret */
-  --ivory: #f2e9da; /* silk-screen: primary text and legends */
-  --ivory-dim: #a89b88; /* unlit legends, secondary text (≥4.5:1 on --face) */
-  --alu: #b4a894; /* aluminum — switch thumbs, slider knob */
-  --key: #2a2118; /* machined key caps */
-  --key-hover: #342a1e;
-  --key-edge: rgba(255, 240, 214, 0.12);
-  --rec: #ff4438; /* lamp: capturing — the armed hotkey field */
-  --busy: #ffb03a; /* lamp: the machine working / talking about itself —
-                      selection, the active index lamp, Save, progress */
-  --busy-hover: #ffc262;
-  --done: #59c98a; /* lamp: delivered */
-  --inert: #9b9187; /* lamp: idle/fault — warm, unalarming */
+  /* The bar's materials (shared with the overlay — see DESIGN.md). */
+  --ink: #18181b; /* the window itself — solid near-black */
+  --edge: rgba(255, 255, 255, 0.1); /* card and panel hairlines */
+  --seam: rgba(255, 255, 255, 0.08); /* dividers between regions */
+  --text: #f4f4f5; /* primary text */
+  --text-dim: #a1a1aa; /* secondary text, hints (≥4.5:1 on --ink) */
+  --wash: rgba(255, 255, 255, 0.08); /* hover fills */
+  --wash-faint: rgba(255, 255, 255, 0.04); /* card fills, quiet hovers */
+  --accent: #fb4d5c; /* the voice — here only while a hotkey field captures */
+  --ok: #34d399; /* status text: success */
+  --err: #f87171; /* status text: fault; destructive hover */
 
-  /* Service-panel derivatives (settings/wizard only). */
-  --panel: #221b15; /* a machined group panel, a shade off the faceplate */
-  --panel-edge: rgba(255, 240, 214, 0.1); /* panel hairline */
-  --seam: rgba(255, 240, 214, 0.07); /* recessed seams between regions */
-  --well-edge: #776a58; /* input boundary — ≥3:1 on --panel (WCAG 1.4.11) */
-  --ok-text: #8fdcae; /* lit DONE legend tone, for status text */
-  --err-text: #ffb4ac; /* the STOP key's glyph tone, for fault text */
-  --busy-wash: rgba(255, 176, 58, 0.07); /* amber service wash (selection) */
-  --busy-line: rgba(255, 176, 58, 0.35);
+  /* Settings-window derivatives. */
+  --field: #101013; /* input fill — a step below the ink */
+  --field-edge: #6b6b74; /* input boundary — ≥3:1 on --ink (WCAG 1.4.11) */
   --mono: ui-monospace, "Cascadia Code", monospace;
-
-  /* Machined materials, shared by every panel and well. The key-cap top
-     light reuses --seam (the same 7% ivory). */
-  --edge-light: inset 0 1px 0 rgba(255, 240, 214, 0.05);
-  --well-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
 }
 
 * {
@@ -67,8 +50,8 @@ body {
     -apple-system,
     "Segoe UI",
     sans-serif;
-  background: var(--face);
-  color: var(--ivory);
+  background: var(--ink);
+  color: var(--text);
   font-size: 14px;
   line-height: 1.45;
   display: flex;
@@ -77,7 +60,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ---------- header: the nameplate ---------- */
+/* ---------- header ---------- */
 
 header {
   display: flex;
@@ -86,8 +69,6 @@ header {
   padding: 16px 24px 13px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--seam);
-  /* Machined top edge: an inset highlight, not a cast shadow. */
-  box-shadow: var(--edge-light);
 }
 
 header img {
@@ -101,12 +82,12 @@ header h1 {
 }
 
 header p {
-  color: var(--ivory-dim);
+  color: var(--text-dim);
   font-size: 12px;
   margin-top: 1px;
 }
 
-/* ---------- deck: index rail + scrolling service panel ---------- */
+/* ---------- deck: index rail + scrolling page ---------- */
 
 .deck {
   flex: 1;
@@ -114,8 +95,8 @@ header p {
   min-height: 0; /* let the two columns scroll instead of growing the body */
 }
 
-/* The printed section index. It sits outside the scroll area, so it is
-   "sticky" by construction; its lamp marks the section under the read head. */
+/* The section index. It sits outside the scroll area, so it is "sticky" by
+   construction; the entry under the read head takes the wash. */
 nav#tabs {
   display: flex;
   flex-direction: column;
@@ -126,20 +107,18 @@ nav#tabs {
   overflow-y: auto;
   border-right: 1px solid var(--seam);
   scrollbar-width: thin;
-  scrollbar-color: var(--ribbon) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
 
 .tab {
   display: flex;
   align-items: center;
-  gap: 9px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 8px 12px;
   background: none;
   border: none;
-  box-shadow: none;
-  border-radius: 7px;
-  color: var(--ivory-dim);
+  border-radius: 8px;
+  color: var(--text-dim);
   font-size: 13px;
   font-weight: 500;
   font-family: inherit;
@@ -150,36 +129,19 @@ nav#tabs {
     background 0.12s ease;
 }
 
-/* Each index entry carries an unlit lamp; the active section's lamp lights
-   amber — the machine talking about itself, same as the overlay's service
-   lamp. 40% ivory: dimmer alphas composite under the 3:1 UI-component bar
-   on the faceplate, leaving the unlit sockets invisible. */
-.tab::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: rgba(255, 240, 214, 0.4);
-  flex-shrink: 0;
-  transition: background 0.12s ease, box-shadow 0.12s ease;
-}
-
 .tab:hover {
-  color: var(--ivory);
-  background: rgba(255, 240, 214, 0.04);
+  color: var(--text);
+  background: var(--wash-faint);
 }
 
+/* You are here: the wash plus bright text — no markers, no dots. */
 .tab.active {
-  color: var(--ivory);
-}
-
-.tab.active::before {
-  background: var(--busy);
-  box-shadow: 0 0 6px rgba(255, 176, 58, 0.6);
+  color: var(--text);
+  background: var(--wash);
 }
 
 .tab:focus-visible {
-  outline: 2px solid var(--ivory);
+  outline: 2px solid var(--text);
   outline-offset: -2px;
 }
 
@@ -191,19 +153,19 @@ main {
   overflow-y: auto;
   padding: 20px 24px 32px;
   scrollbar-width: thin;
-  scrollbar-color: var(--ribbon) transparent;
-  /* The index and the panel glide, tape-style; the browser handles the
-     easing. Collapsed under prefers-reduced-motion below. */
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  /* Index clicks glide the page; the browser handles the easing. Collapsed
+     under prefers-reduced-motion below. */
   scroll-behavior: smooth;
 }
 
-/* All sections are visible at once — the page is one service panel; the
-   .active class only tracks which section the index lamp points at. */
+/* All sections are visible at once — the page is one column; the .active
+   class only tracks which section the index points at. */
 .panel {
   display: block;
   max-width: 620px;
   margin: 0 0 30px;
-  /* Anchored scrolls land with the legend clear of the panel edge. */
+  /* Anchored scrolls land with the heading clear of the edge. */
   scroll-margin-top: 12px;
 }
 
@@ -211,17 +173,14 @@ main {
   margin-bottom: 0;
 }
 
-/* The silk-screened section legend: printed capitals over a machined seam —
-   the service panel's only uppercase besides lamp legends. */
+/* Section heading: quiet sentence case running into a hairline. */
 .legend {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ivory-dim);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
   margin-bottom: 10px;
 }
 
@@ -235,19 +194,17 @@ main {
 /* Index activation moves focus here (tabindex=-1); show a ring only for
    keyboard-driven activation. */
 .legend:focus-visible {
-  outline: 2px solid var(--ivory);
+  outline: 2px solid var(--text);
   outline-offset: 3px;
   border-radius: 2px;
 }
 
-/* ---------- cards: machined group panels ---------- */
+/* ---------- cards: quiet group panels ---------- */
 
 .card {
-  background: var(--panel);
-  border: 1px solid var(--panel-edge);
+  background: var(--wash-faint);
+  border: 1px solid var(--edge);
   border-radius: 12px;
-  /* Machined, not floating: inset top light, no cast shadow. */
-  box-shadow: var(--edge-light);
   padding: 16px 18px;
   margin-bottom: 12px;
 }
@@ -259,12 +216,12 @@ main {
 .card-title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--ivory);
+  color: var(--text);
   margin-bottom: 13px;
 }
 
-/* Fields stack within a panel, separated by whitespace only (the panel
-   already frames the group). */
+/* Fields stack within a card, separated by whitespace only (the card already
+   frames the group). */
 .field {
   margin-bottom: 16px;
 }
@@ -281,13 +238,13 @@ main {
 }
 
 .lead {
-  color: var(--ivory-dim);
+  color: var(--text-dim);
   margin-bottom: 16px;
   line-height: 1.55;
   max-width: 62ch;
 }
 
-/* ---------- inputs: recessed wells ---------- */
+/* ---------- inputs ---------- */
 
 input[type="text"],
 input[type="password"],
@@ -296,14 +253,12 @@ input:not([type]),
 select,
 textarea {
   width: 100%;
-  background: var(--recess);
-  color: var(--ivory);
-  /* The well's boundary is its main cue against the panel — --well-edge
+  background: var(--field);
+  color: var(--text);
+  /* The boundary is the input's main cue against the card — --field-edge
      clears the 3:1 UI-component bar. */
-  border: 1px solid var(--well-edge);
-  border-radius: 6px;
-  /* Sunk into the faceplate, not sitting on it. */
-  box-shadow: var(--well-shadow);
+  border: 1px solid var(--field-edge);
+  border-radius: 8px;
   padding: 9px 11px;
   font-size: 13px;
   font-family: inherit;
@@ -315,8 +270,8 @@ textarea {
 
 input::placeholder,
 textarea::placeholder {
-  /* Full --ivory-dim (≈7:1 on --recess) — no opacity. */
-  color: var(--ivory-dim);
+  /* Full --text-dim (≥4.5:1 on --field) — no opacity. */
+  color: var(--text-dim);
 }
 
 /* Prompt and dictionary are machine instructions — data, so monospace. */
@@ -328,30 +283,28 @@ textarea {
   margin-bottom: 8px;
 }
 
-/* Focus: the slot the machine is writing into — the well's edge takes the
-   oxide of a written signal. (Keys and toggles get the ivory ring instead.) */
+/* Focus: the edge brightens to white with a soft ring — the same "this is
+   the active thing" white the whole system speaks. */
 input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: var(--oxide);
-  box-shadow:
-    var(--well-shadow),
-    0 0 0 3px rgba(210, 154, 90, 0.22);
+  border-color: var(--text);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
 }
 
 select {
   appearance: none;
   /* Self-drawn caret: a CSS var can't be interpolated into a data: URI, so the
-     stroke hex is a hardcoded copy of --ivory-dim (#a89b88) — keep in sync. */
-  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="%23a89b88" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+     stroke hex is a hardcoded copy of --text-dim (#a1a1aa) — keep in sync. */
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="%23a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>');
   background-repeat: no-repeat;
   background-position: right 12px center;
   padding-right: 34px;
   cursor: pointer;
 }
 
-/* Hotkey accelerators are machine notation — the counter tier: 13px mono. */
+/* Hotkey accelerators are machine notation: mono. */
 #hotkey,
 #pause-hotkey {
   cursor: pointer;
@@ -360,25 +313,33 @@ select {
   letter-spacing: 0.02em;
 }
 
-/* Click-to-capture fields; once populated they look like a static value, so
-   give them a hover that reads as changeable. The wash needs 10% here —
-   the recessed well starts so dark that the 4-5% used on lighter surfaces
-   composites imperceptibly. */
-#hotkey:not(.capturing):hover,
-#pause-hotkey:not(.capturing):hover {
-  border-color: var(--ivory-dim);
-  background: rgba(255, 240, 214, 0.1);
+/* Their placeholders are prose ("click, then press…"), not machine values —
+   they read in the body face, not the accelerator mono. */
+#hotkey::placeholder,
+#pause-hotkey::placeholder {
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  letter-spacing: normal;
 }
 
-/* Armed and capturing keys: the field borrows the REC vocabulary — it is
-   literally recording your key press. */
+/* Click-to-capture fields; once populated they look like a static value, so
+   give them a hover that reads as changeable. */
+#hotkey:not(.capturing):hover,
+#pause-hotkey:not(.capturing):hover {
+  border-color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Armed and capturing: the one coral moment on this window — the field is
+   literally capturing your key press, so it wears the capture grammar. */
 #hotkey.capturing,
 #pause-hotkey.capturing {
-  border-color: rgba(255, 68, 56, 0.55);
-  background: rgba(255, 68, 56, 0.07);
-  box-shadow:
-    var(--well-shadow),
-    0 0 0 3px rgba(255, 68, 56, 0.16);
+  border-color: rgba(251, 77, 92, 0.55);
+  background: rgba(251, 77, 92, 0.07);
+  box-shadow: 0 0 0 3px rgba(251, 77, 92, 0.16);
 }
 
 /* ---------- layout helpers ---------- */
@@ -412,17 +373,15 @@ select {
 }
 
 /* ---------- segmented control (Built-in / External engine choice) ----------
-   A selector switch: a recessed track holding two key caps; the engaged
-   segment sits as a machined cap, the other stays sunk and unlit. The real
-   radio is stretched invisibly over each label so the whole segment is the
-   click target. */
+   A pill track holding two pill segments; the chosen one takes the wash and
+   brightens. The real radio is stretched invisibly over each label so the
+   whole segment is the click target. */
 
 .segmented {
   display: flex;
-  background: var(--recess);
-  border: 1px solid var(--panel-edge);
-  box-shadow: var(--well-shadow);
-  border-radius: 9px;
+  background: var(--field);
+  border: 1px solid var(--edge);
+  border-radius: 999px;
   padding: 3px;
   gap: 3px;
 }
@@ -434,10 +393,9 @@ select {
   align-items: center;
   justify-content: center;
   padding: 7px 12px;
-  border-radius: 7px;
-  border: 1px solid transparent;
+  border-radius: 999px;
   cursor: pointer;
-  color: var(--ivory-dim);
+  color: var(--text-dim);
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
@@ -447,7 +405,7 @@ select {
 }
 
 .segmented label:hover {
-  color: var(--ivory);
+  color: var(--text);
 }
 
 .segmented input {
@@ -461,19 +419,17 @@ select {
 }
 
 .segmented label:has(input:checked) {
-  background: var(--key);
-  border-color: var(--key-edge);
-  box-shadow: inset 0 1px 0 var(--seam);
-  color: var(--ivory);
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text);
 }
 
 /* The overlaid radio is invisible, so surface keyboard focus on the label. */
 .segmented label:has(input:focus-visible) {
-  outline: 2px solid var(--ivory);
+  outline: 2px solid var(--text);
   outline-offset: 2px;
 }
 
-/* ---------- option rows (radio wells, e.g. output mode) ---------- */
+/* ---------- option rows (radios, e.g. output mode) ---------- */
 
 .options {
   display: flex;
@@ -486,7 +442,7 @@ select {
   align-items: center;
   gap: 11px;
   padding: 10px 12px;
-  border-radius: 9px;
+  border-radius: 10px;
   border: 1px solid transparent;
   cursor: pointer;
   transition:
@@ -495,17 +451,17 @@ select {
 }
 
 .option:hover {
-  background: rgba(255, 240, 214, 0.04);
+  background: var(--wash-faint);
 }
 
-/* The chosen route gets the amber service wash — the same grammar as the
-   overlay's update note: the machine marking its own configuration. */
+/* The chosen route: wash plus a brightened edge — chosen is white, like
+   everything chosen in this system. */
 .option:has(input:checked) {
-  background: var(--busy-wash);
-  border-color: var(--busy-line);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
-/* Radios are lamps in wells: a recessed socket, lit amber when selected. */
+/* Plain radios: a ring that fills with a white core when chosen. */
 .option input {
   appearance: none;
   -webkit-appearance: none;
@@ -513,16 +469,15 @@ select {
   height: 16px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: var(--recess);
-  border: 1px solid var(--well-edge);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.55);
+  background: transparent;
+  border: 1px solid var(--field-edge);
   cursor: pointer;
   transition: border-color 0.12s ease;
   position: relative;
 }
 
 .option input:checked {
-  border-color: var(--busy-line);
+  border-color: var(--text);
 }
 
 .option input:checked::after {
@@ -530,12 +485,11 @@ select {
   position: absolute;
   inset: 3px;
   border-radius: 50%;
-  background: var(--busy);
-  box-shadow: 0 0 5px rgba(255, 176, 58, 0.55);
+  background: var(--text);
 }
 
 .option input:focus-visible {
-  outline: 2px solid var(--ivory);
+  outline: 2px solid var(--text);
   outline-offset: 2px;
 }
 
@@ -573,12 +527,13 @@ select {
 
 .toggle-text .d {
   font-size: 12px;
-  color: var(--ivory-dim);
+  color: var(--text-dim);
   line-height: 1.5;
 }
 
-/* A machined slide switch: recessed channel, aluminum slug; engaging it
-   lights the channel amber and the slug takes the dark of the lit pill. */
+/* The switch: engaging it fills the track white and the knob goes ink — the
+   filled-white "this is on" grammar. The knob's brightness is the off-state's
+   3:1 cue against the ink. */
 input.switch {
   appearance: none;
   -webkit-appearance: none;
@@ -587,9 +542,8 @@ input.switch {
   height: 22px;
   flex-shrink: 0;
   border-radius: 11px;
-  border: 1px solid var(--well-edge);
-  background: var(--recess);
-  box-shadow: var(--well-shadow);
+  border: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.1);
   cursor: pointer;
   transition:
     background 0.16s ease,
@@ -604,25 +558,24 @@ input.switch::after {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: var(--alu);
+  background: var(--text-dim);
   transition:
     transform 0.16s ease,
     background 0.16s ease;
 }
 
 input.switch:checked {
-  background: var(--busy);
-  border-color: var(--busy);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+  background: var(--text);
+  border-color: var(--text);
 }
 
 input.switch:checked::after {
   transform: translateX(18px);
-  background: #241703;
+  background: var(--ink);
 }
 
 input.switch:focus-visible {
-  outline: 2px solid var(--ivory);
+  outline: 2px solid var(--text);
   outline-offset: 2px;
 }
 
@@ -637,7 +590,7 @@ input.switch:focus-visible {
   font-weight: 400 !important;
 }
 
-/* The wizard's checkbox: a square socket, lit amber when engaged. */
+/* A plain checkbox: fills white with an ink check when engaged. */
 .choice input {
   appearance: none;
   -webkit-appearance: none;
@@ -645,40 +598,61 @@ input.switch:focus-visible {
   height: 16px;
   flex-shrink: 0;
   border-radius: 4px;
-  background: var(--recess);
-  border: 1px solid var(--well-edge);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.55);
+  background: transparent;
+  border: 1px solid var(--field-edge);
   cursor: pointer;
   position: relative;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
 }
 
 .choice input:checked {
-  border-color: var(--busy-line);
+  background: var(--text);
+  border-color: var(--text);
 }
 
 .choice input:checked::after {
   content: "";
   position: absolute;
-  inset: 3px;
-  border-radius: 2px;
-  background: var(--busy);
-  box-shadow: 0 0 5px rgba(255, 176, 58, 0.55);
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 
-.choice input[type="radio"],
-.choice input[type="radio"]:checked::after {
+.choice input[type="radio"] {
   border-radius: 50%;
 }
 
+.choice input[type="radio"]:checked {
+  background: transparent;
+  border-color: var(--text);
+}
+
+.choice input[type="radio"]:checked::after {
+  left: 3px;
+  top: 3px;
+  width: 8px;
+  height: 8px;
+  border: none;
+  border-radius: 50%;
+  background: var(--text);
+  transform: none;
+}
+
 .choice input:focus-visible {
-  outline: 2px solid var(--ivory);
+  outline: 2px solid var(--text);
   outline-offset: 2px;
 }
 
 /* ---------- text bits ---------- */
 
 .hint {
-  color: var(--ivory-dim);
+  color: var(--text-dim);
   font-size: 12px;
   margin-top: 7px;
   line-height: 1.55;
@@ -687,14 +661,14 @@ input.switch:focus-visible {
 }
 
 .muted {
-  color: var(--ivory-dim);
+  color: var(--text-dim);
   font-weight: 400;
   font-size: 12px;
 }
 
 code {
-  background: var(--recess);
-  border: 1px solid rgba(255, 240, 214, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 4px;
   padding: 1px 5px;
   font-size: 12px;
@@ -705,18 +679,16 @@ code {
 #version {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
-  color: var(--ivory);
+  color: var(--text);
 }
 
-/* ---------- buttons: machined key caps ---------- */
+/* ---------- buttons: quiet pills ---------- */
 
 button {
-  background: var(--key);
-  border: 1px solid var(--key-edge);
-  color: var(--ivory);
-  border-radius: 9px;
-  /* Machined cap: inset top light, no cast shadow. */
-  box-shadow: inset 0 1px 0 var(--seam);
+  background: var(--wash);
+  border: none;
+  color: var(--text);
+  border-radius: 999px;
   padding: 8px 14px;
   font-size: 13px;
   font-weight: 500;
@@ -731,20 +703,19 @@ button {
 }
 
 button:hover:not(:disabled) {
-  background: var(--key-hover);
+  background: rgba(255, 255, 255, 0.14);
 }
 
-/* A key press travels. */
 button:active:not(:disabled) {
-  transform: translateY(1px) scale(0.98);
+  transform: scale(0.97);
 }
 
 button:focus-visible {
-  outline: 2px solid var(--ivory);
+  outline: 2px solid var(--text);
   outline-offset: 2px;
 }
 
-/* A disabled key reads as inert — never brightening, never travelling.
+/* A disabled button reads as inert — never brightening, never pressing.
    0.6, not fainter: most disabled moments here are in-flight actions
    ("Checking…", "Testing…") the user is actively watching, and the label
    must stay readable while it waits. */
@@ -753,72 +724,59 @@ button:disabled {
   cursor: default;
 }
 
-/* Save: the backlit key — lit amber like the machine's "this is the key I
-   expect" grammar (the overlay's STOP backlight, in the self-referential
-   amber). */
+/* Save: the one filled white pill — the same "this is the key action"
+   grammar as the overlay's Done key. */
 button.primary {
-  background: var(--busy);
-  border-color: var(--busy);
-  color: #241703;
+  background: var(--text);
+  color: var(--ink);
   font-weight: 600;
   padding: 9px 20px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.25),
-    0 0 10px rgba(255, 176, 58, 0.25);
 }
 
 button.primary:hover:not(:disabled) {
-  background: var(--busy-hover);
-  border-color: var(--busy-hover);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.25),
-    0 0 12px rgba(255, 176, 58, 0.4);
+  background: #ffffff;
 }
 
-/* Quiet keys: unlit — an edge and a label, warming on hover. */
+/* Quiet pills: an edge and a label, brightening on hover. */
 button.ghost {
   background: transparent;
-  border-color: var(--key-edge);
-  box-shadow: none;
-  color: var(--ivory-dim);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--text-dim);
 }
 
 button.ghost:hover:not(:disabled) {
-  background: rgba(255, 240, 214, 0.05);
-  color: var(--ivory);
+  background: var(--wash-faint);
+  color: var(--text);
 }
 
-/* Destructive keys borrow the STOP key's tint. */
-button.danger {
-  color: var(--err-text);
-}
-
+/* Destructive pills: gray until you mean it — red names the consequence on
+   hover only (the overlay discard key's grammar). */
 button.danger:hover:not(:disabled) {
-  background: rgba(255, 68, 56, 0.09);
-  border-color: rgba(255, 68, 56, 0.4);
-  color: var(--err-text);
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.4);
+  color: var(--err);
 }
 
-/* ---------- status text: the lamp vocabulary, in words ---------- */
+/* ---------- status text ---------- */
 
 .status {
   font-size: 13px;
-  color: var(--ivory-dim);
+  color: var(--text-dim);
   /* Long unbroken errors (URLs, hostnames) wrap instead of dragging a
-     horizontal scrollbar onto the panel; `anywhere` also counts into flex
+     horizontal scrollbar onto the page; `anywhere` also counts into flex
      min-content sizing, so rows shrink it without min-width overrides. */
   overflow-wrap: anywhere;
 }
 
 .status.ok {
-  color: var(--ok-text);
+  color: var(--ok);
 }
 
 .status.err {
-  color: var(--err-text);
+  color: var(--err);
 }
 
-/* The update outcome sits on its own line under the keys: packed into the
+/* The update outcome sits on its own line under the buttons: packed into the
    centered flex row, a wrapped multi-line error floats the buttons beside
    its middle line. Hidden while empty so the card keeps its rhythm. */
 #update-status {
@@ -830,8 +788,9 @@ button.danger:hover:not(:disabled) {
   display: none;
 }
 
-/* ---------- setup-complete banner: a service note ---------- */
+/* ---------- setup-complete banner ---------- */
 
+/* The overlay's update-panel grammar: a quiet white-wash note. */
 .banner {
   display: flex;
   align-items: center;
@@ -839,24 +798,12 @@ button.danger:hover:not(:disabled) {
   gap: 14px;
   max-width: 620px;
   margin: 0 0 20px;
-  background: var(--busy-wash);
-  border: 1px solid var(--busy-line);
-  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
   padding: 11px 14px;
   font-size: 13px;
   line-height: 1.5;
-}
-
-/* The amber service lamp — the machine talking about itself. */
-.banner > span::before {
-  content: "";
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--busy);
-  box-shadow: 0 0 6px rgba(255, 176, 58, 0.6);
-  margin-right: 8px;
 }
 
 /* ---------- disabled cleanup blocks ---------- */
@@ -873,17 +820,13 @@ button.danger:hover:not(:disabled) {
   margin-top: 12px;
 }
 
-/* The style slider is a fader: the machine's light track (the overlay's
-   progress-track grammar) under an aluminum knob. A dark recessed channel
-   disappears against the panel at this height, so the track is the one that
-   reads. */
+/* The style slider: a hairline light track under a white knob. */
 input[type="range"] {
   width: 100%;
   height: 16px;
   appearance: none;
   -webkit-appearance: none;
   background: transparent;
-  box-shadow: none;
   border: none;
   cursor: pointer;
   padding: 0;
@@ -892,12 +835,12 @@ input[type="range"] {
 input[type="range"]::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 240, 214, 0.15);
+  background: rgba(255, 255, 255, 0.15);
 }
 input[type="range"]::-moz-range-track {
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 240, 214, 0.15);
+  background: rgba(255, 255, 255, 0.15);
 }
 
 input[type="range"]::-webkit-slider-thumb {
@@ -906,15 +849,15 @@ input[type="range"]::-webkit-slider-thumb {
   height: 16px;
   margin-top: -6px; /* centre the knob on the 4px track */
   border-radius: 50%;
-  background: var(--alu);
-  border: 1px solid rgba(0, 0, 0, 0.4);
+  background: var(--text);
+  border: none;
 }
 input[type="range"]::-moz-range-thumb {
   width: 16px;
   height: 16px;
-  border: 1px solid rgba(0, 0, 0, 0.4);
+  border: none;
   border-radius: 50%;
-  background: var(--alu);
+  background: var(--text);
 }
 
 /* The global input:focus rule doesn't reach a range (no border to recolour);
@@ -924,7 +867,7 @@ input[type="range"]:focus {
   box-shadow: none;
 }
 input[type="range"]:focus-visible {
-  outline: 2px solid var(--ivory);
+  outline: 2px solid var(--text);
   outline-offset: 3px;
 }
 
@@ -934,11 +877,11 @@ input[type="range"]:focus-visible {
 
 /* The live readout is the field's primary feedback — the bright element. */
 #cleanup-style-label {
-  color: var(--ivory);
+  color: var(--text);
   font-size: 14px;
 }
 
-/* ---------- history: the archived takes ---------- */
+/* ---------- history ---------- */
 
 .history-head {
   margin-bottom: 10px;
@@ -950,13 +893,12 @@ input[type="range"]:focus-visible {
   max-width: 620px;
 }
 
-/* Each transcription is a take: a recessed window with the words on top and
-   the machine's own numerals below. */
+/* Each transcription: a quiet card with the words on top and the timestamp
+   row below. */
 #history-list li {
-  background: var(--recess);
-  border: 1px solid rgba(255, 240, 214, 0.08);
-  border-radius: 6px;
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45);
+  background: var(--wash-faint);
+  border: 1px solid var(--seam);
+  border-radius: 10px;
   padding: 11px 13px;
   margin-bottom: 8px;
 }
@@ -976,7 +918,7 @@ input[type="range"]:focus-visible {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: var(--ivory-dim);
+  color: var(--text-dim);
   font-size: 11px;
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
@@ -1022,13 +964,12 @@ footer {
 
 /* ---------- built-in model management ---------- */
 
-/* A service tray sunk into the panel: the model's note, its download
-   progress, and its keys. */
+/* A darker inset tray inside the card: the model's note, its download
+   progress, and its buttons. */
 .model-manage {
-  background: var(--recess);
-  border: 1px solid rgba(255, 240, 214, 0.08);
-  border-radius: 6px;
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
   padding: 12px 14px;
   margin-top: 12px;
 }
@@ -1042,38 +983,27 @@ footer {
   margin-bottom: 11px;
 }
 
-/* Download progress: the playhead grammar from the overlay — a recessed
-   track, amber fill, glowing tip riding the leading edge. */
+/* Download progress: the overlay's track/fill grammar. White, not coral —
+   a download is the app talking about itself, not the voice (One Voice
+   Rule). */
 .dl-bar {
-  height: 7px;
-  border-radius: 4px;
-  background: rgba(255, 240, 214, 0.1);
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
   overflow: hidden;
   margin-bottom: 11px;
 }
 
 .dl-fill {
-  position: relative;
   height: 100%;
   width: 0;
-  border-radius: 4px;
-  background: var(--busy);
+  border-radius: 3px;
+  background: var(--text);
   /* The world's documented progress motion (overlay #progress-fill). */
   transition: width 0.15s linear;
 }
 
-.dl-fill::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  top: -1px;
-  bottom: -1px;
-  width: 2px;
-  background: #ffe3b0;
-  box-shadow: 0 0 6px rgba(255, 176, 58, 0.8);
-}
-
-/* ---------- compact window: the index docks above the panel ---------- */
+/* ---------- compact window: the index docks above the page ---------- */
 
 @media (max-width: 599px) {
   .deck {
@@ -1108,7 +1038,7 @@ footer {
   ::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
-    /* Infinite animations (the wizard's lamp/signal/typing) must go still,
+    /* Infinite animations (the wizard's demo dot/wave/typing) must go still,
        not run at ~100k iterations a second. */
     animation-iteration-count: 1 !important;
   }

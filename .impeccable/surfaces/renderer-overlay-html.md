@@ -23,4 +23,6 @@ related_targets: ["renderer/overlay.css","renderer/overlay.js","main/windows.js"
 
 **Carried over from the prior direction (still true):** latching PAUSE key with paused-span-excluded capture (guarded by overlay-smoke); global pause hotkey over `record:pause-toggle`; update prompt raised only between dictations, solo variant hides the control row.
 
-**Unresolved / follow-up:** settings window + setup wizard still wear the retired Tape Transport "service panel" style — migrating them to the quiet-bar language is the agreed next pass (user chose "overlay first").
+**Resolved 2026-07-31:** settings window + setup wizard migrated to the quiet-bar language in the same pass — see `renderer-settings-html.md`.
+
+**Unresolved:** none for this surface.

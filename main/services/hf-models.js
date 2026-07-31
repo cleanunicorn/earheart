@@ -328,12 +328,31 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, { signal } = {})
         "not single-file ONNX models"
     );
   }
+  // Which of the three roles the repo has at all, before worrying about
+  // precisions or the symbol table. A repo missing one outright is a different
+  // kind of model, and saying so beats complaining about a missing tokens.txt.
+  const missing = ["encoder", "decoder", "joiner"].filter(
+    (part) => !onnx.some((f) => componentOf(f.name) === part)
+  );
+  if (missing.length) {
+    // Encoder and decoder but no joiner is the encoder-decoder (seq2seq) shape
+    // — Whisper and its distillations — which sherpa runs from a different
+    // model config than the transducer one the engine wires up.
+    const seq2seq = missing.length === 1 && missing[0] === "joiner";
+    throw new Error(
+      `Found ${onnx.length} .onnx file${onnx.length === 1 ? "" : "s"} ` +
+        `(${samplePaths(onnx)}), but no ${missing.join(" or ")} — ` +
+        (seq2seq ? "this looks like an encoder-decoder model (Whisper and similar), " +
+          "not a transducer. " : "") +
+        "Earheart can only run sherpa-onnx transducer bundles (encoder, decoder and joiner " +
+        ".onnx plus tokens.txt)"
+    );
+  }
   const tokens = byDepth.find((f) => f.name === "tokens.txt");
   if (!tokens) {
     throw new Error(
-      `Found ${onnx.length} transducer .onnx file${onnx.length === 1 ? "" : "s"} ` +
-        `(${samplePaths(onnx)}), but no tokens.txt — sherpa-onnx needs the bundle's symbol ` +
-        "table, so this doesn't look like a sherpa-onnx model repo"
+      "Found the encoder, decoder and joiner .onnx files, but no tokens.txt — sherpa-onnx " +
+        "needs the bundle's symbol table, so this doesn't look like a sherpa-onnx model repo"
     );
   }
 
@@ -396,18 +415,14 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, { signal } = {})
       },
     });
   }
+  // All three roles are present by here, so the only way to reach this is a
+  // precision that never lines up (e.g. an fp16 encoder whose joiner ships
+  // int8-only, with no fp32 of either to fall back to).
   if (variants.length === 0) {
-    const missing = ["encoder", "decoder", "joiner"].filter(
-      (part) => !onnx.some((f) => componentOf(f.name) === part)
-    );
-    // With all three roles present this can only be a precision that never
-    // lines up (e.g. an fp16 encoder whose joiner ships int8-only).
-    const why = missing.length
-      ? `no ${missing.join(" or ")} alongside ${samplePaths(onnx)}`
-      : `encoder, decoder and joiner never share a precision (${samplePaths(onnx)})`;
     throw new Error(
-      `Could not find a complete transducer in this repository — ${why}. Earheart can only ` +
-        "run sherpa-onnx transducer bundles"
+      "Could not find a complete transducer in this repository — encoder, decoder and joiner " +
+        `never share a precision (${samplePaths(onnx)}). Earheart can only run sherpa-onnx ` +
+        "transducer bundles"
     );
   }
   // Best-first by precision rank, then smallest download, so variants[0] is the

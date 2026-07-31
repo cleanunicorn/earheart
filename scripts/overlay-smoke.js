@@ -130,6 +130,39 @@ app.whenReady().then(async () => {
       win.webContents.once("did-finish-load", resolve)
     );
 
+    // Show the window the production way: showOverlay() positions it, shows
+    // it without focus, and sends overlay:show — which the card answers by
+    // adding .visible. This must happen before the wave-clock checks below:
+    // a hidden window's frame clock collapses to ~1fps, freezing the
+    // requestAnimationFrame loop the waveform is written from.
+    windows.showOverlay();
+    const visibleDeadline = Date.now() + 5000;
+    let cardVisible = false;
+    while (!cardVisible && Date.now() < visibleDeadline) {
+      cardVisible = await win.webContents.executeJavaScript(
+        `document.getElementById("card").classList.contains("visible")`
+      );
+      if (!cardVisible) await sleep(10);
+    }
+    check("overlay:show makes the card visible", cardVisible);
+
+    // One snapshot of the key/detail state the CSS+JS contract promises for a
+    // given moment; read computed display (never #meter opacity — that is
+    // mid-transition whenever it is read synchronously).
+    const uiState = () =>
+      win.webContents.executeJavaScript(`({
+        pauseDisplay: getComputedStyle(document.querySelector("#pause .icon-pause")).display,
+        resumeDisplay: getComputedStyle(document.querySelector("#pause .icon-resume")).display,
+        ariaPressed: document.getElementById("pause").getAttribute("aria-pressed"),
+        dataDetail: document.getElementById("card").hasAttribute("data-detail"),
+        detailDisplay: getComputedStyle(document.getElementById("detail-text")).display,
+        stopDisabled: document.getElementById("stop").disabled,
+        pauseDisabled: document.getElementById("pause").disabled,
+      })`);
+
+    const waveColumns = () =>
+      win.webContents.executeJavaScript("waveHistory.length");
+
     // ---- Session 1: status order, and capture aligned with the UI ----------
     // Record every data-status transition from inside the page, so the order
     // is exact rather than sampled by polling.
@@ -218,16 +251,79 @@ app.whenReady().then(async () => {
     // cover only the live spans, and the timer must agree with it.
     start(win, 6);
     await waitForStatus(win, "recording");
+    const wave0 = await waveColumns();
     await sleep(500);
+    // The waveform is the bar's proof of hearing: while live, the canvas must
+    // actually carry paint (a drawMeter throw would kill the rAF loop
+    // silently and leave a dead bar with every IPC check still green).
+    const litPixels = await win.webContents.executeJavaScript(`(() => {
+      const c = document.getElementById("meter");
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      let n = 0;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+      return n;
+    })()`);
+    check("waveform paints while recording", litPixels > 0, `lit=${litPixels}`);
     // Drive pause through the real channel (pause hotkey / `earheart --pause`
     // land here), so the preload whitelist and the renderer handler are both
     // exercised.
     win.webContents.send("record:pause-toggle");
     await waitForStatus(win, "paused");
+    const wave1 = await waveColumns();
+    check(
+      "waveform write clock runs while live",
+      wave1 - wave0 >= 3 && wave1 - wave0 <= 10,
+      `columns=${wave1 - wave0} over ~500ms (one per 80ms expected; 0 means the frame clock is not running)`
+    );
+    // The paused key must SAY it resumes: play glyph shown, pause glyph
+    // hidden, aria-pressed latched — and the hint's detail line takes the
+    // wave area (data-detail), while stop/pause both stay usable.
+    const pausedUi = await uiState();
+    check(
+      "paused key shows the resume glyph and latches aria-pressed",
+      pausedUi.resumeDisplay === "block" &&
+        pausedUi.pauseDisplay === "none" &&
+        pausedUi.ariaPressed === "true",
+      `resume=${pausedUi.resumeDisplay} pause=${pausedUi.pauseDisplay} aria-pressed=${pausedUi.ariaPressed}`
+    );
+    check(
+      "paused hint takes the detail line (data-detail set)",
+      pausedUi.dataDetail === true && pausedUi.detailDisplay === "block",
+      `data-detail=${pausedUi.dataDetail} detail display=${pausedUi.detailDisplay}`
+    );
+    check(
+      "stop and pause stay usable while paused",
+      pausedUi.stopDisabled === false && pausedUi.pauseDisabled === false
+    );
     await sleep(600);
+    const wave2 = await waveColumns();
+    check(
+      "waveform holds while paused",
+      wave2 === wave1,
+      `columns grew ${wave2 - wave1} across a 600ms pause`
+    );
     win.webContents.send("record:pause-toggle");
     await waitForStatus(win, "recording");
+    // Resume must clear the latch and the detail line in lockstep — a
+    // data-detail left set would dim the waveform to 7% for the rest of the
+    // app's lifetime.
+    const resumedUi = await uiState();
+    check(
+      "resume restores the pause glyph and clears the detail line",
+      resumedUi.pauseDisplay === "block" &&
+        resumedUi.resumeDisplay === "none" &&
+        resumedUi.ariaPressed === "false" &&
+        resumedUi.dataDetail === false &&
+        resumedUi.detailDisplay === "none",
+      `pause=${resumedUi.pauseDisplay} resume=${resumedUi.resumeDisplay} aria-pressed=${resumedUi.ariaPressed} data-detail=${resumedUi.dataDetail}`
+    );
     await sleep(500);
+    const wave3 = await waveColumns();
+    check(
+      "waveform write clock resumes with the take",
+      wave3 - wave2 >= 3,
+      `columns=${wave3 - wave2} over ~500ms resumed`
+    );
     const captured6P = waitForMessage("audio:captured");
     win.webContents.send("record:stop");
     const captured6 = await captured6P;
@@ -244,6 +340,21 @@ app.whenReady().then(async () => {
       "timer counts captured audio only",
       timer6 === "0:00" || timer6 === "0:01",
       `timer=${timer6}`
+    );
+
+    // ---- Terminal state: the keys go inert once the dictation lands --------
+    // Done is the bar's only filled key; a regression in setStatus's
+    // enablement branch would leave it lit and clickable after delivery.
+    win.webContents.send("pipeline:status", {
+      status: "done",
+      detail: { preview: "staged preview" },
+    });
+    await waitForStatus(win, "done");
+    const doneUi = await uiState();
+    check(
+      "Done and pause go inert once the dictation is delivered",
+      doneUi.stopDisabled === true && doneUi.pauseDisabled === true,
+      `stop.disabled=${doneUi.stopDisabled} pause.disabled=${doneUi.pauseDisabled}`
     );
 
     check("no mic errors during the run", micErrors.length === 0, micErrors.join("; "));

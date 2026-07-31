@@ -1,7 +1,7 @@
 {
   "name": "earheart",
   "version": "0.23.0",
-  "description": "Private, hotkey-driven voice dictation for your desktop. Speech-to-text with NVIDIA Parakeet, cleanup with any OpenAI-compatible LLM.",
+  "description": "Talk to your coding agents. Hotkey-driven voice dictation that speaks your prompt into Claude Code, Codex, Cursor — or any app you're typing in. Fully local: NVIDIA Parakeet speech-to-text and on-device LLM cleanup, no cloud.",
   "main": "main/main.js",
   "license": "MIT",
   "engines": {

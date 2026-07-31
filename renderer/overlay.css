@@ -589,6 +589,12 @@ button:focus-visible {
   #status-dot {
     animation: none !important;
   }
+  /* With the pulse stilled, warming and paused would render as identical
+     hollow rings. A dimmer ring keeps "not capturing yet" readable without
+     motion; paused stays the full-strength ring. */
+  [data-status="starting"] #status-dot {
+    opacity: 0.55;
+  }
   /* The waveform still updates (state, not decoration) but overlay.js stops
      the glide; collapse everything else to effectively instant. */
   #meter,

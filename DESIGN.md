@@ -531,7 +531,10 @@ corners anywhere.
 - **Named rule — The Filled Dot Contract.** The filled pulsing coral dot +
   moving waveform + running timer together mean "audio is captured right
   now." Mic warm-up is a pulsing hollow coral ring; paused is a steady hollow
-  coral ring. Never show the filled dot before samples actually flow.
+  coral ring. Never show the filled dot before samples actually flow. Under
+  `prefers-reduced-motion` the pulse can't carry the warming/paused
+  distinction, so the warming ring dims to 55% opacity instead — dimmer =
+  "not capturing yet", full = paused.
 
 ### Status text (settings/wizard)
 - 13px Dim Text lines beside or under their action; `.ok` in Delivered Green,
@@ -589,8 +592,9 @@ corners anywhere.
   1.2s working, 1s warming; the demo wave cycles 1s, the demo typing 4s.
 - Settings index clicks glide via `scroll-behavior: smooth`.
 - `prefers-reduced-motion`: on the overlay, pulses stop and transitions
-  collapse to ~instant; the waveform still updates (it is state, not
-  decoration) but stops gliding. On settings/wizard, all transitions and
+  collapse to ~instant (the warming ring substitutes a 55%-opacity dim for
+  its pulse, per the Filled Dot Contract); the waveform still updates (it is
+  state, not decoration) but stops gliding. On settings/wizard, all transitions and
   animations collapse to 0.01ms, infinite demo animations are forced to a
   single iteration (they go still, not fast), and the scroll glide becomes a
   jump.

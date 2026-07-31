@@ -184,6 +184,9 @@ kbd {
   color: var(--text);
 }
 
+/* The real Done key's glyph in miniature — a text ✓ at this size renders as
+   a smudge, so it is the same SVG path as the overlay's key, stroked heavier
+   (3.2 in a 16 viewBox at 9px ≈ the key's 2.25px optical weight). */
 .mini-done {
   display: flex;
   align-items: center;
@@ -193,8 +196,10 @@ kbd {
   border-radius: 50%;
   background: var(--text);
   color: var(--ink);
-  font-size: 9px;
-  font-weight: 700;
+}
+
+.mini-done svg {
+  display: block;
 }
 
 @keyframes mini-pulse {

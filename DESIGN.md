@@ -304,14 +304,15 @@ interface; window chrome never exceeds 16px.
 - **Body** (500, 15px, 1.5): the live transcript — settled cleaned text in
   Primary Text; the still-streaming raw tail in Dim Text, brightening as it
   settles. The largest type anywhere.
-- **Window Title** (650, 16px, -0.01em): the settings header h1 and wizard
-  step h2 — the framed windows' largest chrome text.
+- **Window Title** (650, 16px, -0.01em): the settings header h1, wizard
+  step h2, and settings section headings (`.legend`) — the framed windows'
+  largest chrome text; on the settings page it is what makes a section
+  outrank the card titles inside it.
 - **Settings Body** (400, 14px, 1.45): the settings/wizard base text — leads,
   option copy, history text at 13px within it. Running copy holds a ~62ch
   measure.
-- **Title / Section** (600, 13px): the update prompt's headline; settings
-  section headings (`.legend`) and card titles — quiet sentence case, the
-  legend running into a hairline.
+- **Title** (600, 13px): the update prompt's headline and settings card
+  titles — quiet sentence case.
 - **Label** (550, 12.5px overlay / 13px settings field labels): the overlay's
   one-word status; settings field labels. Pill labels are 12–13px
   (600 primary / 500 quiet).
@@ -468,7 +469,8 @@ corners anywhere.
   Docks horizontally with a bottom seam below 600px.
 
 ### Section headings
-- **Legend:** 13px/600 sentence case running into a 1px seam hairline
+- **Legend:** 16px/650 sentence case (the Window Title token) running into a
+  1px seam hairline
   (`::after` flex line); `scroll-margin-top: 12px` so anchored scrolls land
   clear of the edge; focusable (tabindex -1) with a keyboard-only ring.
 

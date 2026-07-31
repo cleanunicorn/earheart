@@ -174,13 +174,16 @@ main {
   margin-bottom: 0;
 }
 
-/* Section heading: quiet sentence case running into a hairline. */
+/* Section heading: quiet sentence case running into a hairline. Window-title
+   rank (16px/650) — the card titles and field labels below it step down
+   13/600 → 13/550, so the three nesting levels actually read as three. */
 .legend {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   color: var(--text);
   margin-bottom: 10px;
 }

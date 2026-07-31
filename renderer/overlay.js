@@ -116,6 +116,7 @@ let meterRaf = null;
 const WAVE_COL_PX = 2.5; // CSS px per written column
 const WAVE_PUSH_MS = 80; // ms of audio per column (≈31px/s scroll speed)
 const WAVE_MAX_COLS = 600; // plenty to outrun any window width
+const WAVE_GAIN = 6; // level → amplitude gain, shared by both paint sites
 // The accent — kept in sync with --accent in overlay.css.
 const WAVE_COLOR = "#fb4d5c";
 let waveHistory = []; // newest first: waveHistory[0] sits at the right edge
@@ -277,15 +278,21 @@ function drawMeter(frac = 0) {
   const barW = colW - gapW;
   const maxAmp = h - 2 * px;
   meterCtx.fillStyle = WAVE_COLOR;
+  // One painter for both sites below. The amp floor closes over barW (never
+  // the bar's own width): the growing live column must keep the full-height
+  // minimum, or its floor would shrink on every sub-column frame.
+  const paintBar = (x, width, level) => {
+    const amp = Math.max(barW, Math.min(1, level * WAVE_GAIN) * maxAmp);
+    meterCtx.beginPath();
+    meterCtx.roundRect(x, (h - amp) / 2, width, amp, Math.min(width, barW) / 2);
+    meterCtx.fill();
+  };
   for (let i = 0; i < waveHistory.length; i++) {
     // The inter-column gap sits on each bar's LEFT, so column 0's right edge
     // lands exactly on w — which is where the live column below hands off.
     const x = w - (i + 1 + frac) * colW + gapW;
     if (x + barW < 0) break;
-    const amp = Math.max(barW, Math.min(1, waveHistory[i] * 6) * maxAmp);
-    meterCtx.beginPath();
-    meterCtx.roundRect(x, (h - amp) / 2, barW, amp, barW / 2);
-    meterCtx.fill();
+    paintBar(x, barW, waveHistory[i]);
   }
   // The column being written right now: it grows leftward from the right edge
   // at the live level and freezes into waveHistory on the next commit, so the
@@ -294,14 +301,8 @@ function drawMeter(frac = 0) {
   // commit. (Under reduced motion frac stays 0 and the wave steps, as
   // intended.)
   if (recording?.startedAt && frac > 0) {
-    const live = displayLevels[displayLevels.length - 1];
-    const amp = Math.max(barW, Math.min(1, live * 6) * maxAmp);
     const liveW = Math.max(0, frac * colW - gapW);
-    if (liveW > 0) {
-      meterCtx.beginPath();
-      meterCtx.roundRect(w - liveW, (h - amp) / 2, liveW, amp, Math.min(liveW, barW) / 2);
-      meterCtx.fill();
-    }
+    if (liveW > 0) paintBar(w - liveW, liveW, displayLevels[displayLevels.length - 1]);
   }
 }
 

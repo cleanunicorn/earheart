@@ -11,7 +11,7 @@ const $ = (id) => document.getElementById(id);
 /* ---------- section index ---------- */
 
 // Every section sits on one scrolling page; the index on the left
-// only navigates. Its lamp tracks the section under the read head (scroll
+// only navigates. Its highlight tracks the section currently in view (scroll
 // spy), and clicking an entry glides the panel to that section (the easing
 // comes from CSS scroll-behavior, which prefers-reduced-motion collapses).
 // Roving tabindex keeps the index a single tab stop; arrows move within it.
@@ -31,8 +31,8 @@ function markActiveTab(name) {
   }
 }
 
-// While a click-initiated glide is in flight, the spy would light every lamp
-// the scroll passes through; hold the chosen one until the scroll settles.
+// While a click-initiated glide is in flight, the spy would highlight every
+// entry the scroll passes through; hold the chosen one until the scroll settles.
 let spyHeld = false;
 
 // `focus` keeps focus on the index button (arrow-key roving); `focusSection`
@@ -48,7 +48,7 @@ function activateTab(name, { focus = false, focusSection = false } = {}) {
   // Where this glide will land: the section's top under the 12px
   // scroll-margin, clamped to the scrollable range. If we're already there,
   // no scroll (and no scrollend to release the hold) will happen — so only
-  // hold the lamp when a glide is actually coming.
+  // hold the highlight when a glide is actually coming.
   const target = Math.max(
     0,
     Math.min(
@@ -65,7 +65,7 @@ function activateTab(name, { focus = false, focusSection = false } = {}) {
   }
 }
 
-// The user scrolling over a held glide takes the lamp back immediately.
+// The user scrolling over a held glide takes the highlight back immediately.
 panelHost.addEventListener("wheel", () => (spyHeld = false), { passive: true });
 panelHost.addEventListener("touchstart", () => (spyHeld = false), {
   passive: true,
@@ -73,7 +73,7 @@ panelHost.addEventListener("touchstart", () => (spyHeld = false), {
 
 // The section whose top has passed the read line (a small offset under the
 // panel's top edge) is the current one; hitting the end of the scroll always
-// lights the last lamp, which could otherwise never reach the line.
+// highlights the last entry, which could otherwise never reach the line.
 // Panel ids are `tab-<name>`; the index buttons carry the bare name.
 const sectionName = (panel) => panel.id.replace(/^tab-/, "");
 

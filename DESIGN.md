@@ -360,7 +360,7 @@ deck: a 168px sticky index rail on the left (outside the scroll area, seam on
 its right) beside one scrolling column of sections capped at 620px
 (`.panel { max-width: 620px }`), then a fixed footer commit row (seam above,
 right-aligned, white Save pill). The index is a scroll spy with roving
-tabindex: the entry under the read head takes the wash; clicking glides the
+tabindex: the entry currently in view takes the wash; clicking glides the
 page (`scroll-behavior: smooth`) and moves focus to the section legend. Below
 600px the index docks horizontally above the page.
 

@@ -92,8 +92,8 @@ test("each tab's panel id (tab-<data-tab>) exists in settings.html", () => {
 test("every panel section has a matching index button (data-tab)", () => {
   // The existing test checks nav→panel; this is the reverse. spySections
   // derives the active name from the .panel sections themselves, so a
-  // section added without an index button would scroll fine but never light
-  // a lamp — the index would silently skip it.
+  // section added without an index button would scroll fine but never take
+  // the index highlight — the index would silently skip it.
   const dataTabs = new Set([...html.matchAll(/data-tab="([a-z]+)"/g)].map((m) => m[1]));
   const panelIds = [...html.matchAll(/<section id="tab-([a-z]+)"[^>]*class="panel/g)].map(
     (m) => m[1]

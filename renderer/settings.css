@@ -97,7 +97,7 @@ header p {
 }
 
 /* The section index. It sits outside the scroll area, so it is "sticky" by
-   construction; the entry under the read head takes the wash. */
+   construction; the entry currently in view takes the wash. */
 nav#tabs {
   display: flex;
   flex-direction: column;

@@ -293,7 +293,7 @@ function drawMeter(frac = 0) {
 }
 
 // Milliseconds of audio actually captured: wall time since the first samples,
-// minus every paused span (including one still open). The visible counter and
+// minus every paused span (including one still open). The visible timer and
 // the max-duration cap both read this, so they can never disagree.
 function capturedMs(rec) {
   return (rec.pausedAt ?? Date.now()) - rec.startedAt - rec.pausedMs;
@@ -605,7 +605,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
       startedAt: null,
       // Pause bookkeeping: pausedAt holds the timestamp while the take is
       // paused; pausedMs accumulates completed paused spans. Both feed
-      // capturedMs(), which the counter and the max-duration cap share.
+      // capturedMs(), which the timer and the max-duration cap share.
       pausedAt: null,
       pausedMs: 0,
       // Append-only live preview: `committedSamples` is the sample offset where

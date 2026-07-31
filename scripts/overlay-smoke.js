@@ -215,7 +215,7 @@ app.whenReady().then(async () => {
     // ---- Session 6: pause holds capture; the paused span is excluded --------
     // Speak ~0.5s, pause ~0.6s (the fake mic keeps producing tone — none of it
     // may land in the capture), resume and speak ~0.5s more. The WAV must
-    // cover only the live spans, and the counter must agree with it.
+    // cover only the live spans, and the timer must agree with it.
     start(win, 6);
     await waitForStatus(win, "recording");
     await sleep(500);
@@ -241,7 +241,7 @@ app.whenReady().then(async () => {
       `document.getElementById("timer").textContent`
     );
     check(
-      "counter counts captured audio only",
+      "timer counts captured audio only",
       timer6 === "0:00" || timer6 === "0:01",
       `timer=${timer6}`
     );

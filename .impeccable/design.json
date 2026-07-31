@@ -96,7 +96,7 @@
       "name": "Sticky Index",
       "kind": "nav",
       "refersTo": "tab",
-      "description": "The settings section index: quiet 8px-radius text entries; the one under the read head takes the wash — no markers, no dots.",
+      "description": "The settings section index: quiet 8px-radius text entries; the one currently in view takes the wash — no markers, no dots.",
       "html": "<nav class=\"ds-index\" aria-label=\"Settings sections\"><button class=\"ds-index-tab ds-index-active\" aria-current=\"true\">General</button><button class=\"ds-index-tab\">Speech-to-text</button><button class=\"ds-index-tab\">Cleanup</button><button class=\"ds-index-tab\">History</button></nav>",
       "css": ".ds-index { display: flex; flex-direction: column; gap: 2px; width: 168px; background: #18181b; padding: 14px 10px; border-right: 1px solid rgba(255, 255, 255, 0.08); } .ds-index-tab { display: flex; align-items: center; width: 100%; padding: 8px 12px; background: none; border: none; border-radius: 8px; color: #a1a1aa; font-size: 13px; font-weight: 500; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; text-align: left; cursor: pointer; transition: color 0.12s ease, background 0.12s ease; } .ds-index-tab:hover { color: #f4f4f5; background: rgba(255, 255, 255, 0.04); } .ds-index-active { color: #f4f4f5; background: rgba(255, 255, 255, 0.08); } .ds-index-tab:focus-visible { outline: 2px solid #f4f4f5; outline-offset: -2px; }"
     },

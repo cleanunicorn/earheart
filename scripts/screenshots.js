@@ -67,7 +67,7 @@ app.whenReady().then(async () => {
     drawMeter();
     timerEl.textContent = "0:07";
     setStatus("recording", "Listening…");
-    // The live transcript mid-dictation: settled cleaned text plus the warm
+    // The live transcript mid-dictation: settled cleaned text plus the dimmed
     // still-streaming raw tail (the README's hero moment).
     partialClean = "Let's meet tomorrow at ten to review the draft.";
     partialRaw =
@@ -92,7 +92,7 @@ app.whenReady().then(async () => {
     "";
   `);
 
-  // Processing state with the playhead progress mid-read (the README's middle
+  // Processing state with the dictation progress fill mid-run (the README's middle
   // hero shot). The transcript retires when processing starts, like the real
   // pipeline does.
   await overlay.webContents.executeJavaScript(`

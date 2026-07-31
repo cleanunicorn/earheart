@@ -5,8 +5,10 @@
 <h1 align="center">Earheart</h1>
 
 <p align="center">
-  Private, hotkey-driven voice dictation for Windows, macOS and Linux.<br/>
-  Press a key, speak, press again — your words appear where you type.
+  Talk to your AI agents. Private, hotkey-driven voice dictation for
+  Windows, macOS and Linux.<br/>
+  Press a key, speak, press again — your prompt lands in Claude Code, Codex,
+  Cursor, or wherever you type.
 </p>
 
 <p align="center">
@@ -21,10 +23,14 @@
 
 ---
 
-Earheart records your voice when you press a global hotkey, transcribes it
-with a speech-to-text service, optionally cleans the transcript up with a
+You talk to your computer all day now — prompting Claude Code in a terminal,
+steering Codex through a refactor, thinking out loud at Cursor. Those prompts
+are long, conversational prose, and saying them is much faster than typing
+them. Earheart records your voice when you press a global hotkey, transcribes
+it with a speech-to-text service, optionally cleans the rambling up with a
 language model, and then **pastes the result into whatever app you're typing
-in** (or just copies it to your clipboard).
+in** — an agent's chat box, a terminal, an email — or just copies it to your
+clipboard.
 
 Out of the box both steps run **inside the app, on your computer** — no
 separate program, no Python, no account. The setup wizard downloads a small
@@ -41,6 +47,32 @@ OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
   [Ollama](https://ollama.com)/llama.cpp model yourself.
 - **Mix and match**: local STT with a hosted LLM for cleanup, or any other
   combination. Switching is just a base URL in Settings.
+
+## Made for talking to agents
+
+AI agents changed what "typing" means. Instead of code, you mostly write
+prose — long, descriptive instructions, many times an hour. That is exactly
+the kind of text dictation is best at:
+
+- **Speaking beats typing for prompts.** A good agent prompt is a paragraph,
+  not a keyword, and most people speak far faster than they type. Talking
+  through what you want also tends to produce more context — which agents
+  reward.
+- **Cleanup turns rambling into a prompt.** The built-in LLM pass strips
+  filler words and false starts, so a thought spoken out loud lands as a
+  clear instruction. The cleanup prompt is fully editable — tune it to how
+  you brief your agent.
+- **Works with every agent out of the box.** Earheart pastes into whatever
+  has focus, so Claude Code, Codex CLI, Cursor, Windsurf, Aider, the Claude
+  and ChatGPT desktop apps, and any web chat all work today — no plugin, no
+  integration, no setup per tool.
+- **Your prompts stay private.** Prompts to coding agents are full of
+  proprietary code and product context. With the default on-device engines,
+  nothing you say ever leaves your machine.
+
+Deeper agent integration — an MCP server so agents can ask you to speak,
+agent-tuned cleanup presets, terminal-aware pasting — is planned: see the
+[issues labeled `agents`](https://github.com/cleanunicorn/earheart/issues?q=is%3Aissue+state%3Aopen+label%3Aagents).
 
 ## Features
 
@@ -230,7 +262,8 @@ OpenAI).
 
 ## Using Earheart
 
-1. Put your cursor wherever you want text — an email, an editor, a chat box.
+1. Put your cursor wherever you want text — a Claude Code or Codex prompt, an
+   editor, an email, a chat box.
 2. Press the hotkey (default `Ctrl/Cmd+Shift+Space`). A small pill appears at
    the bottom of the screen showing your mic level; it never steals focus.
 3. Speak, then press the hotkey again. Earheart transcribes, optionally cleans

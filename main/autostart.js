@@ -39,7 +39,7 @@ function linuxDesktopEntry(command = linuxLaunchCommand()) {
     "[Desktop Entry]",
     "Type=Application",
     "Name=Earheart",
-    "Comment=Private, hotkey-driven voice dictation",
+    "Comment=Voice dictation for talking to your AI agents — private, hotkey-driven",
     `Exec=${command}`,
     "Icon=earheart",
     "Terminal=false",

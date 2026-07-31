@@ -8,39 +8,53 @@ web
 
 ## Users
 
-**Primary: developers & power users.** Keyboard-centric technical users who live
-in editors, terminals, chat, and docs. Comfortable with endpoints, self-hosting,
-and Ollama — but they still expect the out-of-box path to require zero setup.
-Their needs win when design decisions conflict.
+**Primary: people who talk to AI agents.** Developers and power users who
+spend their day prompting coding agents — Claude Code, Codex CLI, Cursor,
+Windsurf, Aider — plus chat assistants. Their "typing" is now mostly prose:
+long, descriptive instructions, many times an hour, often full of proprietary
+code context. They are keyboard-centric and comfortable with endpoints,
+self-hosting, and Ollama — but they still expect the out-of-box path to
+require zero setup. Their needs win when design decisions conflict.
 
 **Served audience: motor/RSI users.** People who type all day and feel it, or
 cannot type comfortably at all. For them dictation is relief or necessity, so
 minimal-interaction flows and reliability matter above all (confirmed
 commitment; see Accessibility & Inclusion).
 
-Situation for both: mid-task inside someone else's app — an editor, an email, a
-chat box. The job: turn speech into clean text exactly where the cursor is,
-faster than typing, without giving up privacy.
+Situation for both: mid-task inside someone else's app — an agent's prompt
+box, a terminal, an editor, an email. The job: turn speech into clean text
+exactly where the cursor is, faster than typing, without giving up privacy.
 
 ## Product Purpose
 
 Earheart is private, hotkey-driven voice dictation for Windows, macOS, and
-Linux. Press a global hotkey, speak, press again — speech is transcribed
-(NVIDIA Parakeet), optionally cleaned up by a small LLM (punctuation, filler
-words, false starts), and pasted into whatever app has focus, or copied to the
+Linux — built for talking to AI agents. Press a global hotkey, speak, press
+again — speech is transcribed (NVIDIA Parakeet), optionally cleaned up by a
+small LLM (punctuation, filler words, false starts), and pasted into whatever
+app has focus — an agent's chat box, a terminal, any app — or copied to the
 clipboard.
 
-**Success:** become the go-to open-source dictation app — the name people reach
-for instead of paid cloud tools. Stars, downloads, and contributors are the
+**Success:** become the way people talk to their agents — the open-source
+dictation app developers reach for to prompt Claude, Codex, and friends
+instead of paid cloud tools. Stars, downloads, and contributors are the
 scoreboard.
 
 ## Positioning
+
+**Audience focus (confirmed): voice for the agent era.** Earheart is pitched
+at people who prompt AI agents all day. Agents turned typing into prose —
+long, conversational instructions — which is exactly what dictation is best
+at, and because it pastes into whatever has focus it works with every agent
+today (Claude Code, Codex CLI, Cursor, web chats) with no plugin or per-tool
+setup.
 
 **Lead claim (confirmed): private by default, zero setup.** Both engines run
 in-process out of the box — no cloud, no account, no separate program, no
 Python, nothing ever leaves the machine — and it still takes zero
 configuration. The first-run wizard downloads two small models and everything
-after runs locally, faster than realtime on CPU.
+after runs locally, faster than realtime on CPU. Privacy is a sharpened claim
+for the agent audience: prompts to coding agents carry proprietary code and
+product context.
 
 Supporting truths (real, but not the lead):
 

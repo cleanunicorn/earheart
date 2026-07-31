@@ -426,7 +426,10 @@ corners anywhere.
   a live take: transparent with a Faint Text glyph, but it stays in its slot.
 - **Discard (`#cancel`):** a plain X, gray until you mean it; hover applies
   the Destructive Hover Exception (Failed Red glyph + red wash). Carries a 4px
-  extra left margin so it isn't hit by reflex next to Done.
+  extra left margin so it isn't hit by reflex next to Done. Its label follows
+  the action it would perform: "Discard" during a take, "Dismiss" in the
+  terminal states, where the take is already settled and the key only takes
+  the card down.
 - **Pause:** latching (`aria-pressed`); while paused it holds the Hover Wash
   fill and swaps to the play glyph.
 - **Focus:** `outline: 2px solid` Primary Text, 2px offset — the universal

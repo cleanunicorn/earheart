@@ -6,6 +6,7 @@ const SAMPLE_RATE = 16000;
 const card = document.getElementById("card");
 const stopBtn = document.getElementById("stop");
 const pauseBtn = document.getElementById("pause");
+const cancelBtn = document.getElementById("cancel");
 const statusText = document.getElementById("status-text");
 const detailText = document.getElementById("detail-text");
 const timerEl = document.getElementById("timer");
@@ -200,6 +201,13 @@ function setStatus(status, title, detail) {
   // pressed, and aria-pressed is how that same held state reaches assistive
   // tech.
   pauseBtn.setAttribute("aria-pressed", String(status === "paused"));
+  // The X key's label follows the action it would perform, like pause above.
+  // During a take it discards the dictation; in the terminal states the take
+  // is already settled — delivered or failed — and the key only takes the
+  // card down, so promising "nothing is typed" after "Pasted" would be false.
+  const terminal = status === "done" || status === "empty" || status === "error";
+  cancelBtn.title = terminal ? "Dismiss" : "Discard — nothing is typed";
+  cancelBtn.setAttribute("aria-label", terminal ? "Dismiss" : "Discard dictation");
   statusText.textContent = title;
   detailText.textContent = detail || "";
   // The detail line is one ellipsized row, and for errors the actionable half
@@ -968,7 +976,7 @@ new ResizeObserver(resizeMeter).observe(meter);
 
 stopBtn.addEventListener("click", stopRecording);
 pauseBtn.addEventListener("click", togglePause);
-document.getElementById("cancel").addEventListener("click", cancelRecording);
+cancelBtn.addEventListener("click", cancelRecording);
 
 // Click-and-drag anywhere on the card (except the buttons) moves the overlay.
 // The window itself is moved by the main process from the streamed screen

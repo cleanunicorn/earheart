@@ -6,7 +6,7 @@
 // Two discoverers, one per model kind:
 //   - listGgufQuants   cleanup GGUFs for node-llama-cpp, grouped by quantization
 //   - listSttVariants  sherpa-onnx transducer bundles (encoder/decoder/joiner
-//                      .onnx + tokens.txt), grouped by precision (int8/fp16/fp32)
+//                      .onnx + tokens.txt), grouped by precision (int8/fp16/…)
 // Both return the same shape ({ repo, commit, recommended, variants }) so the
 // IPC layer and the settings UI treat the two kinds identically.
 //
@@ -236,23 +236,69 @@ function buildCleanupModel(repoFull, variant) {
 // Repos often ship several precisions of the same model side by side
 // ("encoder.onnx" and "encoder.int8.onnx"), so group the files by precision
 // the way GGUF repos group by quantization.
+//
+// Layouts vary. sherpa's own bundles keep everything at the top level and put
+// the precision in the file name; the onnx-community/* conversions nest their
+// weights under "onnx/" and use a suffix ("encoder_model_fp16.onnx"); others
+// use a directory per precision ("int8/encoder.onnx"). So we consider .onnx
+// files at any depth and read the precision off the whole path.
 
-const STT_PRECISIONS = ["int8", "fp16", "fp32"]; // recommended-first (int8 = smallest, fastest)
+const ONNX_RE = /\.onnx$/i;
 
-function precisionOf(name) {
-  if (/(^|[.\-_])int8[.\-_]/i.test(name)) return "int8";
-  if (/(^|[.\-_])(fp16|half)[.\-_]/i.test(name)) return "fp16";
+// Precision/quantization labels seen in the wild, matched as whole
+// "/", "." , "-" or "_"-delimited path segments. Beyond sherpa's own int8/fp16,
+// this covers the transformers.js-style quantizations the onnx-community
+// conversions ship, so files that differ only by quantization don't collapse
+// into one entry (and get an accurate label instead of a wrong "fp32").
+const PRECISION_TOKENS = new Set([
+  "int8", "uint8", "uint8f16", "q4", "q4f16", "q8", "q8f16",
+  "bnb4", "quantized", "fp16", "half", "fp32",
+]);
+const PRECISION_ALIASES = { half: "fp16" };
+
+// Recommended-first. int8 is what sherpa's bundles ship and what the built-in
+// Parakeet models use. Labels missing here (q4, uint8, bnb4 …) are still
+// offered, they just never become the default — sherpa's transducer runtime
+// usually can't load them.
+const PRECISION_RANK = ["int8", "quantized", "q8", "uint8", "fp16", "fp32"];
+
+function precisionOf(filePath) {
+  const segments = filePath.replace(ONNX_RE, "").toLowerCase().split(/[/.\-_]+/);
+  // Last match wins, so the file name beats the directory it sits in.
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (PRECISION_TOKENS.has(segments[i])) {
+      return PRECISION_ALIASES[segments[i]] || segments[i];
+    }
+  }
   return "fp32";
 }
 
+function precisionPriority(label) {
+  const i = PRECISION_RANK.indexOf(label);
+  return i === -1 ? PRECISION_RANK.length : i;
+}
+
+// Deliberately reads the role off the file name and not the full path: the
+// download manager writes every file of a variant into one flat directory, and
+// distinct role names are what keeps those on-disk names from colliding.
 function componentOf(name) {
-  if (!/\.onnx$/i.test(name)) return null;
+  if (!ONNX_RE.test(name)) return null;
   const m = name.match(/encoder|decoder|joiner/i);
   return m ? m[0].toLowerCase() : null;
 }
 
+function dirOf(filePath) {
+  return filePath.slice(0, filePath.lastIndexOf("/") + 1);
+}
+
+// Name a few of the files we did find, so "this isn't a transducer bundle"
+// never reads as "your repo is empty" when it plainly isn't.
+function samplePaths(files, limit = 3) {
+  return files.slice(0, limit).map((f) => f.path).join(", ") + (files.length > limit ? ", …" : "");
+}
+
 /**
- * List the transducer precisions (int8 / fp16 / fp32) available in a
+ * List the transducer precisions (int8 / fp16 / fp32 / …) available in a
  * sherpa-onnx model repo. Same return shape as listGgufQuants; each variant
  * additionally carries the `sherpa` file map the engine wires together.
  * @returns {Promise<{repo,commit,recommended,variants:Array<{label,totalBytes,files,sherpa}>}>}
@@ -266,19 +312,35 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, { signal } = {})
     (a, b) => a.path.split("/").length - b.path.split("/").length
   );
 
+  const allOnnx = byDepth.filter((f) => ONNX_RE.test(f.name));
+  if (allOnnx.length === 0) {
+    throw new Error(
+      "No .onnx files found in this repository — Earheart needs a sherpa-onnx transducer " +
+        "bundle (encoder, decoder and joiner .onnx plus tokens.txt)"
+    );
+  }
   const onnx = byDepth.filter((f) => componentOf(f.name));
   if (onnx.length === 0) {
-    throw new Error("No ONNX model files found in this repository");
+    throw new Error(
+      `Found ${allOnnx.length} .onnx file${allOnnx.length === 1 ? "" : "s"} ` +
+        `(${samplePaths(allOnnx)}), but none of them is a transducer encoder, decoder or ` +
+        "joiner — Earheart can only run sherpa-onnx transducer bundles for speech-to-text, " +
+        "not single-file ONNX models"
+    );
   }
   const tokens = byDepth.find((f) => f.name === "tokens.txt");
   if (!tokens) {
-    throw new Error("No tokens.txt found — this doesn't look like a sherpa-onnx model repo");
+    throw new Error(
+      `Found ${onnx.length} transducer .onnx file${onnx.length === 1 ? "" : "s"} ` +
+        `(${samplePaths(onnx)}), but no tokens.txt — sherpa-onnx needs the bundle's symbol ` +
+        "table, so this doesn't look like a sherpa-onnx model repo"
+    );
   }
 
   // First (shallowest) file per component+precision.
   const component = new Map(); // "encoder:int8" -> file
   for (const f of onnx) {
-    const key = `${componentOf(f.name)}:${precisionOf(f.name)}`;
+    const key = `${componentOf(f.name)}:${precisionOf(f.path)}`;
     if (!component.has(key)) component.set(key, f);
   }
   // Quantized bundles often keep the small decoder/joiner at full precision;
@@ -296,8 +358,12 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, { signal } = {})
     url: resolveUrl(owner, repo, commit, f.path),
   });
 
+  // One variant per precision that actually has an encoder, rather than a fixed
+  // int8/fp16/fp32 list, so repos shipping other quantizations still show up.
+  const precisions = [...new Set(onnx.map((f) => precisionOf(f.path)))];
+
   const variants = [];
-  for (const precision of STT_PRECISIONS) {
+  for (const precision of precisions) {
     const encoder = component.get(`encoder:${precision}`);
     if (!encoder) continue;
     const decoder = pick("decoder", precision);
@@ -305,12 +371,16 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, { signal } = {})
     if (!decoder || !joiner) continue;
     const parts = [encoder, decoder, joiner];
     // External-data sidecars (e.g. the fp32 Parakeet's "encoder.weights") must
-    // sit next to their .onnx for the loader to find them.
-    const stems = parts.map((f) => f.name.replace(/\.onnx$/i, ""));
+    // sit next to their .onnx for the loader to find them. Match within the
+    // .onnx's own directory so a nested layout can't pull in a same-named
+    // sidecar belonging to a different copy of the model.
     const sidecars = byDepth.filter(
       (f) =>
         /\.(weights|data|onnx_data)$/i.test(f.name) &&
-        stems.some((stem) => f.name.startsWith(stem))
+        parts.some(
+          (p) =>
+            dirOf(f.path) === dirOf(p.path) && f.name.startsWith(p.name.replace(ONNX_RE, ""))
+        )
     );
     const all = [...parts, ...sidecars, tokens];
     variants.push({
@@ -327,10 +397,25 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, { signal } = {})
     });
   }
   if (variants.length === 0) {
+    const missing = ["encoder", "decoder", "joiner"].filter(
+      (part) => !onnx.some((f) => componentOf(f.name) === part)
+    );
+    // With all three roles present this can only be a precision that never
+    // lines up (e.g. an fp16 encoder whose joiner ships int8-only).
+    const why = missing.length
+      ? `no ${missing.join(" or ")} alongside ${samplePaths(onnx)}`
+      : `encoder, decoder and joiner never share a precision (${samplePaths(onnx)})`;
     throw new Error(
-      "Could not find a complete transducer (encoder, decoder, joiner) — Earheart can only run sherpa-onnx transducer bundles"
+      `Could not find a complete transducer in this repository — ${why}. Earheart can only ` +
+        "run sherpa-onnx transducer bundles"
     );
   }
+  // Best-first by precision rank, then smallest download, so variants[0] is the
+  // recommended default and unranked quantizations sort last.
+  variants.sort(
+    (a, b) =>
+      precisionPriority(a.label) - precisionPriority(b.label) || a.totalBytes - b.totalBytes
+  );
 
   return { repo: `${owner}/${repo}`, commit, recommended: recommendedVariant(variants), variants };
 }

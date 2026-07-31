@@ -22,6 +22,7 @@
   --text-dim: #a1a1aa; /* secondary text, hints (≥4.5:1 on --ink) */
   --wash: rgba(255, 255, 255, 0.08); /* hover fills */
   --wash-faint: rgba(255, 255, 255, 0.04); /* card fills, quiet hovers */
+  --track: rgba(255, 255, 255, 0.12); /* empty download track fills */
   --accent: #fb4d5c; /* the voice — here only while a hotkey field captures */
   --ok: #34d399; /* status text: success */
   --err: #f87171; /* status text: fault; destructive hover */
@@ -989,7 +990,7 @@ footer {
 .dl-bar {
   height: 6px;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--track);
   overflow: hidden;
   margin-bottom: 11px;
 }

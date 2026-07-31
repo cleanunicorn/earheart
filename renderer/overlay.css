@@ -18,6 +18,7 @@
   --text-dim: #a1a1aa; /* secondary text, raw tail, idle icons (≥4.5:1 on --ink) */
   --text-faint: rgba(255, 255, 255, 0.28); /* disabled key glyphs */
   --wash: rgba(255, 255, 255, 0.08); /* hover wash on ghost keys */
+  --track: rgba(255, 255, 255, 0.12); /* empty progress/download track fills */
   --accent: #fb4d5c; /* the voice: capture dot, waveform, progress.
                         Kept in sync with WAVE_COLOR in overlay.js. */
   --ok: #34d399; /* status dot: delivered */
@@ -150,23 +151,12 @@ body {
   overflow-wrap: anywhere;
 }
 
-/* Reuses the #progress track/fill pattern from the wave area. */
-#update-bar {
-  height: 3px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.12);
-  overflow: hidden;
-}
-
+/* The download bar reuses the dictation progress's track/fill grammar — the
+   shared rules live with #progress in the wave section; only the fill color
+   differs (white, not coral: an update download is the app talking about
+   itself, same grammar as the filled white primary pill). */
 #update-bar-fill {
-  height: 100%;
-  width: 0;
-  border-radius: 2px;
-  /* White, not coral: the accent is reserved for the dictation itself, and an
-     update download is the app talking about itself — same grammar as the
-     filled white primary pill. */
   background: var(--text);
-  transition: width 0.15s linear;
 }
 
 /* Wrap rather than squeeze: on a narrow row the secondary actions drop to a
@@ -432,6 +422,16 @@ body {
 
 /* ---------- progress (transcribing/cleaning/delivering) ---------- */
 
+/* One track grammar for the bar's two progress strips: the dictation
+   progress here and the update download bar above. */
+#progress,
+#update-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+
 /* Overlaid along the bottom of the wave area. Absolute, so appearing never
    changes the card height. */
 #progress {
@@ -439,18 +439,19 @@ body {
   left: 0;
   right: 0;
   bottom: 1px;
-  height: 3px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.12);
-  overflow: hidden;
 }
 
-#progress-fill {
+#progress-fill,
+#update-bar-fill {
   height: 100%;
   width: 0;
   border-radius: 2px;
-  background: var(--accent);
   transition: width 0.15s linear;
+}
+
+/* Dictation progress fills coral — the voice being processed. */
+#progress-fill {
+  background: var(--accent);
 }
 
 /* ---------- timer ---------- */

@@ -69,6 +69,7 @@ typography:
     letterSpacing: "0.02em"
 rounded:
   hairline: "2px"
+  track: "3px"
   chip: "4px"
   input: "8px"
   icon: "9px"

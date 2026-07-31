@@ -350,7 +350,37 @@ test("listSttVariants rejects repos that are not transducer bundles", async () =
   ]);
   await assert.rejects(
     listSttVariants({ owner: "u", repo: "r" }, incomplete),
-    /complete transducer/
+    /no decoder or joiner/
+  );
+});
+
+test("listSttVariants names the encoder-decoder shape instead of blaming tokens.txt", async () => {
+  // distil-whisper/distil-large-v3: a real speech-to-text model, but seq2seq —
+  // encoder + decoder, no joiner, and its vocabulary lives in tokenizer.json.
+  // The missing joiner is the reason it can't run, so lead with that rather
+  // than the missing tokens.txt the user would hit first.
+  const fetchImpl = stubFetch([
+    ["/tree/", { body: [
+      { type: "file", path: "onnx/encoder_model.onnx", size: 646_473 },
+      { type: "file", path: "onnx/encoder_model.onnx_data", size: 2_547_875_840 },
+      { type: "file", path: "onnx/decoder_model.onnx", size: 477_847_873 },
+      { type: "file", path: "onnx/decoder_model_merged.onnx", size: 477_928_888 },
+      { type: "file", path: "tokenizer.json", size: 2_480_617 },
+    ] }],
+    ["/api/models/", { body: { sha: "c" } }],
+  ]);
+
+  await assert.rejects(
+    listSttVariants({ owner: "distil-whisper", repo: "distil-large-v3" }, fetchImpl),
+    (err) => {
+      assert.match(err.message, /no joiner/);
+      assert.match(err.message, /encoder-decoder model/);
+      assert.doesNotMatch(err.message, /tokens\.txt — /); // not diagnosed as a missing symbol table
+      // The .onnx_data external-data file isn't itself an .onnx, so it doesn't
+      // inflate the count.
+      assert.match(err.message, /Found 3 \.onnx files/);
+      return true;
+    }
   );
 });
 

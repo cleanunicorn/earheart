@@ -4,6 +4,7 @@
 const { BrowserWindow, ipcMain, screen } = require("electron");
 const path = require("node:path");
 const settings = require("./settings");
+const logger = require("./util/logger");
 
 const PRELOAD = path.join(__dirname, "..", "preload.js");
 const RENDERER = path.join(__dirname, "..", "renderer");
@@ -173,6 +174,9 @@ function createOverlay() {
     },
   });
   overlayWindow.setAlwaysOnTop(true, "screen-saver");
+  // macOS/Linux only — documented as a no-op on Windows, where a window's virtual
+  // desktop is fixed at creation and there is no public API to pin it to all of
+  // them. showOverlay() re-asserts topmost instead; see raiseWithinTopmostBand.
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlayWindow.loadFile(path.join(RENDERER, "overlay.html"));
   overlayWindow.webContents.on("render-process-gone", () => {
@@ -201,6 +205,29 @@ function destroyOverlay() {
   overlayWindow = null;
 }
 
+// On Windows, "always on top" is a *band* (HWND_TOPMOST), not a single bit: every
+// window that enters that band is inserted above the ones already in it. Our card
+// spends most of its life hidden, and showInactive() deliberately doesn't activate
+// it — so anything that went topmost while we were hidden (a media popup, a call
+// window, a launcher, a game bar) stays above us when we come back, and the card
+// paints underneath it. Clicks meant for Stop/Cancel then land on that other
+// window, which is why the buttons feel dead while the card is plainly visible.
+// Windows-only: macOS and Linux honour the level set at creation.
+function raiseWithinTopmostBand(win) {
+  if (process.platform !== "win32") return;
+  if (!win.isAlwaysOnTop()) {
+    // Reordering within the band is expected; losing the style itself is not, and
+    // means something cleared it out from under us. Worth knowing about.
+    logger.warn("overlay lost its always-on-top style; re-applying");
+  }
+  // HWND_NOTOPMOST then HWND_TOPMOST: leaving the band and re-entering is what
+  // puts us back on top of it. moveTop() alone only reorders within the band and
+  // is not always honoured for a window shown inactive.
+  win.setAlwaysOnTop(false);
+  win.setAlwaysOnTop(true, "screen-saver");
+  win.moveTop();
+}
+
 function showOverlay() {
   const win = getOverlay();
   if (!win) return;
@@ -227,6 +254,9 @@ function showOverlay() {
   const [w, h] = win.getSize();
   win.setSize(w, h + 1);
   win.setSize(w, h);
+  // Only now that the window is actually on screen: re-entering the topmost band
+  // puts the card above whatever went topmost while it was hidden.
+  raiseWithinTopmostBand(win);
   win.webContents.send("overlay:show");
 }
 

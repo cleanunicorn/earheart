@@ -197,7 +197,8 @@ setup wizard (`renderer/wizard.*`, which layers on `settings.css`) all speak
 this language; the framed windows extend the bar's grammar with white-wash
 cards, solid inputs, and pill buttons, documented below. The main process
 paints framed windows in Bar Ink before load (`INK_COLOR` in
-`main/windows.js`), which must stay in sync with `--ink`. The retired Tape
+`main/windows.js`), which must stay in sync with `--ink` — the one name the
+value carries in both `overlay.css` and `settings.css`. The retired Tape
 Transport and On-Air Lamp systems survive only as historical notes.
 
 **Key Characteristics:**

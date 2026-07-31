@@ -10,11 +10,12 @@
    overlay. */
 
 :root {
-  --bg: #18181b; /* the bar — solid, never translucent */
+  --ink: #18181b; /* the bar — solid, never translucent; one name across
+                     overlay.css, settings.css and INK_COLOR in windows.js */
   --edge: rgba(255, 255, 255, 0.1); /* hairline card + panel edges */
   --text: #f4f4f5; /* primary text */
   --text-mid: #d4d4d8; /* the status word */
-  --text-dim: #a1a1aa; /* secondary text, raw tail, idle icons (≥4.5:1 on --bg) */
+  --text-dim: #a1a1aa; /* secondary text, raw tail, idle icons (≥4.5:1 on --ink) */
   --text-faint: rgba(255, 255, 255, 0.28); /* disabled key glyphs */
   --wash: rgba(255, 255, 255, 0.08); /* hover wash on ghost keys */
   --accent: #fb4d5c; /* the voice: capture dot, waveform, progress.
@@ -65,7 +66,7 @@ body {
   border-radius: 16px;
   /* Solid (not translucent) so the words and the waveform never depend on
      whatever app shows through behind the overlay. */
-  background: var(--bg);
+  background: var(--ink);
   border: 1px solid var(--edge);
   color: var(--text);
   /* The card body is the drag handle; keys reset this to a pointer below. */
@@ -205,7 +206,7 @@ body {
 
 .pill.primary {
   background: var(--text);
-  color: var(--bg);
+  color: var(--ink);
 }
 
 .pill.primary:hover {
@@ -525,12 +526,12 @@ button:focus-visible {
    phases (disabled, faded) so the discard key never jumps. */
 #stop {
   background: var(--text);
-  color: var(--bg);
+  color: var(--ink);
 }
 
 #stop:hover {
   background: #ffffff;
-  color: var(--bg);
+  color: var(--ink);
 }
 
 /* Outside a dictation there is nothing to finish: the key stays in its slot

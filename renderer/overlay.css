@@ -177,13 +177,13 @@ body {
 
 /* Text pills — the update note's actions. The filled white pill is the same
    "this is the key action" grammar as the Done key below. */
+/* (The button base below already supplies border: none and a transparent
+   background; pills only override the circle's geometry and type.) */
 .pill {
   width: auto;
   height: 26px;
   padding: 0 11px;
-  border: none;
   border-radius: 13px;
-  background: transparent;
   font-size: 12px;
   font-weight: 600;
   font-family: inherit;
@@ -217,9 +217,7 @@ body {
 #update-close {
   width: 22px;
   height: 22px;
-  border: none;
   border-radius: 50%;
-  background: transparent;
   color: var(--text-dim);
   flex-shrink: 0;
 }
@@ -352,6 +350,8 @@ body {
   background: var(--err);
 }
 
+/* Same value the base rule already gives — kept as a deliberate restatement
+   so every terminal status reads explicitly alongside done/error above. */
 [data-status="empty"] #status-dot {
   background: var(--idle);
 }

@@ -37,10 +37,11 @@ test("overlay.css keeps the [hidden]-always-wins rule", () => {
   // overlay.js toggles the update prompt, its bar, its action pills and the
   // transcript through the hidden attribute; components that set their own
   // display (flex rows, the pills) would override it without this rule.
-  assert.match(
-    css,
-    /\[hidden\]\s*\{\s*display:\s*none\s*!important;\s*\}/,
-    "overlay.css must keep [hidden] { display: none !important; }"
+  // Same normalized match as settings-contract's version of this test.
+  const flat = css.replace(/\s+/g, " ");
+  assert.ok(
+    flat.includes("[hidden] { display: none !important"),
+    "overlay.css must keep [hidden] { display: none !important }"
   );
 });
 
@@ -48,17 +49,34 @@ test("every var() overlay.css uses is defined in its own :root", () => {
   // overlay.css has its OWN token set (it only partially overlaps
   // settings.css's — --ink is shared, --idle/--text-mid/--text-faint are
   // overlay-only), so check it against itself, not the settings tokens.
+  // Regexes mirror settings-contract's: digits allowed in token names, and
+  // `var(--x` without requiring the closing paren so fallbacks still match.
   const rootBlock = css.match(/:root\s*\{([\s\S]*?)\}/);
   assert.ok(rootBlock, "overlay.css must define a :root block");
   const defined = new Set(
-    [...rootBlock[1].matchAll(/(--[a-z-]+)\s*:/g)].map((m) => m[1])
+    [...rootBlock[1].matchAll(/(--[a-z0-9-]+)\s*:/g)].map((m) => m[1])
   );
-  const used = new Set([...css.matchAll(/var\((--[a-z-]+)\)/g)].map((m) => m[1]));
+  const used = new Set([...css.matchAll(/var\((--[a-z0-9-]+)/g)].map((m) => m[1]));
   const undefinedVars = [...used].filter((v) => !defined.has(v)).sort();
   assert.deepStrictEqual(
     undefinedVars,
     [],
     `overlay.css uses undefined tokens: ${undefinedVars.join(", ")}`
+  );
+});
+
+test("reduced motion keeps the warming/paused dot distinction", () => {
+  // Under prefers-reduced-motion the status dot's pulse is stilled, and the
+  // pulse is the only thing separating "warming up" from "paused" (both are
+  // hollow coral rings). The 55%-opacity substitute is that contract's only
+  // survivor without motion — a future edit to the reduce block must not
+  // silently drop it.
+  const reduce = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*)\}/);
+  assert.ok(reduce, "overlay.css must keep a prefers-reduced-motion block");
+  const flat = reduce[1].replace(/\s+/g, " ");
+  assert.ok(
+    flat.includes('[data-status="starting"] #status-dot { opacity: 0.55'),
+    "the reduce block must dim the warming dot so it stays distinct from paused"
   );
 });
 

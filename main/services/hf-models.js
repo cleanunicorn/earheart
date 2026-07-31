@@ -228,11 +228,17 @@ function buildCleanupModel(repoFull, variant) {
   };
 }
 
-/* ---------------- STT: sherpa-onnx transducer bundles ---------------- */
+/* ---------------- STT: sherpa-onnx model bundles ---------------- */
 
-// The in-process STT engine runs sherpa-onnx offline transducers: an
-// encoder/decoder/joiner .onnx trio plus a tokens.txt — the shape of the
-// csukuangfj/sherpa-onnx-* bundles the built-in Parakeet models come from.
+// The in-process STT engine runs two sherpa-onnx offline model families:
+//   - transducer  encoder/decoder/joiner .onnx + tokens.txt — the shape of the
+//                 csukuangfj/sherpa-onnx-* bundles the built-in Parakeet
+//                 models come from
+//   - whisper     encoder/decoder .onnx + tokens.txt, no joiner — the
+//                 csukuangfj/sherpa-onnx-whisper-* exports
+// A missing joiner is what tells them apart; the engine picks the matching
+// sherpa model config from the `sherpa` map each variant carries.
+//
 // Repos often ship several precisions of the same model side by side
 // ("encoder.onnx" and "encoder.int8.onnx"), so group the files by precision
 // the way GGUF repos group by quantization.
@@ -291,16 +297,43 @@ function dirOf(filePath) {
   return filePath.slice(0, filePath.lastIndexOf("/") + 1);
 }
 
-// Name a few of the files we did find, so "this isn't a transducer bundle"
-// never reads as "your repo is empty" when it plainly isn't.
+// sherpa's Whisper exports prefix every file of a bundle with the model name
+// ("tiny.en-encoder.onnx", "tiny.en-tokens.txt"), so the symbol table can only
+// be matched by that shared prefix rather than a fixed "tokens.txt".
+const TOKENS_RE = /(^|[-_.])tokens\.txt$/i;
+
+function bundlePrefix(name) {
+  const m = name.match(/^(.*?)[-_.]?(?:encoder|decoder|joiner)/i);
+  return m ? m[1].toLowerCase() : "";
+}
+
+function tokensPrefix(name) {
+  return name.replace(/[-_.]?tokens\.txt$/i, "").toLowerCase();
+}
+
+// The symbol table belonging to a given encoder: same prefix first, then an
+// unprefixed tokens.txt, then whatever the repo has. Candidates arrive
+// shallowest-first, so the fallbacks stay deterministic.
+function tokensFor(candidates, encoder) {
+  const prefix = bundlePrefix(encoder.name);
+  return (
+    candidates.find((f) => tokensPrefix(f.name) === prefix) ||
+    candidates.find((f) => tokensPrefix(f.name) === "") ||
+    candidates[0]
+  );
+}
+
+// Name a few of the files we did find, so "this isn't a model Earheart can
+// run" never reads as "your repo is empty" when it plainly isn't.
 function samplePaths(files, limit = 3) {
   return files.slice(0, limit).map((f) => f.path).join(", ") + (files.length > limit ? ", …" : "");
 }
 
 /**
- * List the transducer precisions (int8 / fp16 / fp32 / …) available in a
- * sherpa-onnx model repo. Same return shape as listGgufQuants; each variant
- * additionally carries the `sherpa` file map the engine wires together.
+ * List the precisions (int8 / fp16 / fp32 / …) available in a sherpa-onnx
+ * transducer or Whisper repo. Same return shape as listGgufQuants; each variant
+ * additionally carries the `sherpa` file map the engine wires together — with a
+ * `joiner` for transducers and without one for Whisper.
  * @returns {Promise<{repo,commit,recommended,variants:Array<{label,totalBytes,files,sherpa}>}>}
  */
 async function listSttVariants({ owner, repo, ref }, fetchImpl, { signal } = {}) {
@@ -316,24 +349,45 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, { signal } = {})
   if (allOnnx.length === 0) {
     throw new Error(
       "No .onnx files found in this repository — Earheart needs a sherpa-onnx transducer " +
-        "bundle (encoder, decoder and joiner .onnx plus tokens.txt)"
+        "bundle (encoder, decoder, joiner) or Whisper export (encoder, decoder), plus tokens.txt"
     );
   }
   const onnx = byDepth.filter((f) => componentOf(f.name));
   if (onnx.length === 0) {
     throw new Error(
       `Found ${allOnnx.length} .onnx file${allOnnx.length === 1 ? "" : "s"} ` +
-        `(${samplePaths(allOnnx)}), but none of them is a transducer encoder, decoder or ` +
-        "joiner — Earheart can only run sherpa-onnx transducer bundles for speech-to-text, " +
-        "not single-file ONNX models"
+        `(${samplePaths(allOnnx)}), but none of them is an encoder, decoder or joiner — ` +
+        "Earheart can only run sherpa-onnx transducer bundles and Whisper exports for " +
+        "speech-to-text, not single-file ONNX models"
     );
   }
-  const tokens = byDepth.find((f) => f.name === "tokens.txt");
-  if (!tokens) {
+  // Which roles the repo has at all, before worrying about precisions or the
+  // symbol table. Encoder + decoder with no joiner is the encoder-decoder
+  // (seq2seq) shape sherpa loads as Whisper; anything else is a model family
+  // the engine has no config for, and saying which part is missing beats
+  // complaining about a tokens.txt that was never the real problem.
+  const has = (part) => onnx.some((f) => componentOf(f.name) === part);
+  const family = has("joiner") ? "transducer" : "whisper";
+  const missing = ["encoder", "decoder", ...(family === "transducer" ? ["joiner"] : [])].filter(
+    (part) => !has(part)
+  );
+  if (missing.length) {
     throw new Error(
-      `Found ${onnx.length} transducer .onnx file${onnx.length === 1 ? "" : "s"} ` +
-        `(${samplePaths(onnx)}), but no tokens.txt — sherpa-onnx needs the bundle's symbol ` +
-        "table, so this doesn't look like a sherpa-onnx model repo"
+      `Found ${onnx.length} .onnx file${onnx.length === 1 ? "" : "s"} ` +
+        `(${samplePaths(onnx)}), but no ${missing.join(" or ")} — Earheart can only run ` +
+        "sherpa-onnx transducer bundles (encoder, decoder, joiner) and Whisper exports " +
+        "(encoder, decoder), plus tokens.txt"
+    );
+  }
+  // sherpa's Whisper exports name it "<model>-tokens.txt"; transducer bundles
+  // use a plain "tokens.txt". Match either, and pair one to each encoder below.
+  const tokensFiles = byDepth.filter((f) => TOKENS_RE.test(f.name));
+  if (tokensFiles.length === 0) {
+    throw new Error(
+      `Found the ${family === "whisper" ? "encoder and decoder" : "encoder, decoder and joiner"} ` +
+        ".onnx files, but no tokens.txt — sherpa-onnx needs the bundle's symbol table. " +
+        "Hugging Face / optimum ONNX exports keep the vocabulary in tokenizer.json instead; " +
+        "look for a sherpa-onnx conversion of the same model (csukuangfj/sherpa-onnx-…)"
     );
   }
 
@@ -348,9 +402,15 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, { signal } = {})
   const pick = (part, precision) =>
     component.get(`${part}:${precision}`) || component.get(`${part}:fp32`);
 
-  // sherpa-onnx needs to know the transducer flavor; the NeMo bundles (the
-  // Parakeet family this feature targets) say so in their repo names.
-  const modelType = /nemo|parakeet/i.test(`${owner}/${repo}`) ? "nemo_transducer" : "transducer";
+  // sherpa-onnx needs to know the model flavor; for transducers the NeMo
+  // bundles (the Parakeet family this feature targets) say so in their repo
+  // names.
+  const modelType =
+    family === "whisper"
+      ? "whisper"
+      : /nemo|parakeet/i.test(`${owner}/${repo}`)
+        ? "nemo_transducer"
+        : "transducer";
 
   const toFile = (f) => ({
     name: f.name,
@@ -367,9 +427,10 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, { signal } = {})
     const encoder = component.get(`encoder:${precision}`);
     if (!encoder) continue;
     const decoder = pick("decoder", precision);
-    const joiner = pick("joiner", precision);
-    if (!decoder || !joiner) continue;
-    const parts = [encoder, decoder, joiner];
+    if (!decoder) continue;
+    const joiner = family === "transducer" ? pick("joiner", precision) : null;
+    if (family === "transducer" && !joiner) continue;
+    const parts = joiner ? [encoder, decoder, joiner] : [encoder, decoder];
     // External-data sidecars (e.g. the fp32 Parakeet's "encoder.weights") must
     // sit next to their .onnx for the loader to find them. Match within the
     // .onnx's own directory so a nested layout can't pull in a same-named
@@ -382,6 +443,7 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, { signal } = {})
             dirOf(f.path) === dirOf(p.path) && f.name.startsWith(p.name.replace(ONNX_RE, ""))
         )
     );
+    const tokens = tokensFor(tokensFiles, encoder);
     const all = [...parts, ...sidecars, tokens];
     variants.push({
       label: precision,
@@ -390,24 +452,22 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, { signal } = {})
       sherpa: {
         encoder: encoder.name,
         decoder: decoder.name,
-        joiner: joiner.name,
+        // Omitted for Whisper — its absence is what selects the engine's
+        // whisper model config over the transducer one.
+        ...(joiner ? { joiner: joiner.name } : {}),
         tokens: tokens.name,
         modelType,
       },
     });
   }
+  // Every role the family needs is present by here, so the only way to reach
+  // this is a precision that never lines up (e.g. an fp16 encoder whose joiner
+  // ships int8-only, with no fp32 of either to fall back to).
   if (variants.length === 0) {
-    const missing = ["encoder", "decoder", "joiner"].filter(
-      (part) => !onnx.some((f) => componentOf(f.name) === part)
-    );
-    // With all three roles present this can only be a precision that never
-    // lines up (e.g. an fp16 encoder whose joiner ships int8-only).
-    const why = missing.length
-      ? `no ${missing.join(" or ")} alongside ${samplePaths(onnx)}`
-      : `encoder, decoder and joiner never share a precision (${samplePaths(onnx)})`;
+    const roles = family === "whisper" ? "encoder and decoder" : "encoder, decoder and joiner";
     throw new Error(
-      `Could not find a complete transducer in this repository — ${why}. Earheart can only ` +
-        "run sherpa-onnx transducer bundles"
+      `Could not assemble a complete model from this repository — ${roles} never share a ` +
+        `precision (${samplePaths(onnx)})`
     );
   }
   // Best-first by precision rank, then smallest download, so variants[0] is the

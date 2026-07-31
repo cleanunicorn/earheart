@@ -75,20 +75,24 @@ async function loadStt({ dir, sherpa, modelId }) {
   // Drop the previous recognizer before swapping models (the cleanup engine
   // does the same via disposeCleanup).
   await disposeStt();
+  const encoder = path.join(dir, sherpa.encoder);
+  const decoder = path.join(dir, sherpa.decoder);
+  // Two model families, told apart by the joiner: a transducer has one, an
+  // encoder-decoder (Whisper) doesn't. sherpa reads whichever sub-config is
+  // set, so pass exactly one.
+  const family = sherpa.joiner
+    ? { transducer: { encoder, decoder, joiner: path.join(dir, sherpa.joiner) } }
+    : { whisper: { encoder, decoder } };
   recognizer = new sherpaOnnx.OfflineRecognizer({
     featConfig: { sampleRate: SAMPLE_RATE, featureDim: FEATURE_DIM },
     modelConfig: {
-      transducer: {
-        encoder: path.join(dir, sherpa.encoder),
-        decoder: path.join(dir, sherpa.decoder),
-        joiner: path.join(dir, sherpa.joiner),
-      },
+      ...family,
       tokens: path.join(dir, sherpa.tokens),
       // Cap 8, not 4: decode is memory-bound and stops scaling there (~20%
       // faster than 4 threads on an 8+-core desktop; more threads regress).
       numThreads: Math.max(1, Math.min(8, require("node:os").cpus().length - 1)),
       provider: "cpu",
-      modelType: sherpa.modelType || "nemo_transducer",
+      modelType: sherpa.modelType || (sherpa.joiner ? "nemo_transducer" : "whisper"),
       debug: false,
     },
   });

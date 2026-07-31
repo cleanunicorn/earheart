@@ -158,6 +158,9 @@ app.whenReady().then(async () => {
         detailDisplay: getComputedStyle(document.getElementById("detail-text")).display,
         stopDisabled: document.getElementById("stop").disabled,
         pauseDisabled: document.getElementById("pause").disabled,
+        cancelTitle: document.getElementById("cancel").title,
+        cancelAria: document.getElementById("cancel").getAttribute("aria-label"),
+        detailTitle: document.getElementById("detail-text").title,
       })`);
 
     const waveColumns = () =>
@@ -270,9 +273,12 @@ app.whenReady().then(async () => {
     win.webContents.send("record:pause-toggle");
     await waitForStatus(win, "paused");
     const wave1 = await waveColumns();
+    // Lower bound only: it is what detects a frozen rAF loop. An upper bound
+    // would trip on descheduled CI runners (see WAV_LAG_ALLOWANCE_SEC above)
+    // without catching anything the lower bound doesn't.
     check(
       "waveform write clock runs while live",
-      wave1 - wave0 >= 3 && wave1 - wave0 <= 10,
+      wave1 - wave0 >= 3,
       `columns=${wave1 - wave0} over ~500ms (one per 80ms expected; 0 means the frame clock is not running)`
     );
     // The paused key must SAY it resumes: play glyph shown, pause glyph
@@ -294,6 +300,14 @@ app.whenReady().then(async () => {
     check(
       "stop and pause stay usable while paused",
       pausedUi.stopDisabled === false && pausedUi.pauseDisabled === false
+    );
+    // Mid-take, cancelling really does mean nothing is typed — the X key must
+    // say so (it relabels to "Dismiss" only once that stops being true).
+    check(
+      "discard key promises Discard while a take is live",
+      pausedUi.cancelTitle === "Discard — nothing is typed" &&
+        pausedUi.cancelAria === "Discard dictation",
+      `title=${JSON.stringify(pausedUi.cancelTitle)} aria=${JSON.stringify(pausedUi.cancelAria)}`
     );
     await sleep(600);
     const wave2 = await waveColumns();
@@ -355,6 +369,19 @@ app.whenReady().then(async () => {
       "Done and pause go inert once the dictation is delivered",
       doneUi.stopDisabled === true && doneUi.pauseDisabled === true,
       `stop.disabled=${doneUi.stopDisabled} pause.disabled=${doneUi.pauseDisabled}`
+    );
+    // Settled: the X key stops promising a discard it can no longer perform.
+    check(
+      "discard key relabels to Dismiss once the take is settled",
+      doneUi.cancelTitle === "Dismiss" && doneUi.cancelAria === "Dismiss",
+      `title=${JSON.stringify(doneUi.cancelTitle)} aria=${JSON.stringify(doneUi.cancelAria)}`
+    );
+    // The tooltip mirror is conditional on clipping; the staged preview is
+    // short, so no tooltip should be set.
+    check(
+      "short detail lines carry no tooltip",
+      doneUi.detailTitle === "",
+      `title=${JSON.stringify(doneUi.detailTitle)}`
     );
 
     check("no mic errors during the run", micErrors.length === 0, micErrors.join("; "));

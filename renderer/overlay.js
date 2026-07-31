@@ -203,19 +203,27 @@ function setStatus(status, title, detail) {
   // tech.
   pauseBtn.setAttribute("aria-pressed", String(status === "paused"));
   // The X key's label follows the action it would perform, like pause above.
-  // During a take it discards the dictation; in the terminal states the take
-  // is already settled — delivered or failed — and the key only takes the
-  // card down, so promising "nothing is typed" after "Pasted" would be false.
-  const terminal = status === "done" || status === "empty" || status === "error";
-  cancelBtn.title = terminal ? "Dismiss" : "Discard — nothing is typed";
-  cancelBtn.setAttribute("aria-label", terminal ? "Dismiss" : "Discard dictation");
+  // It reads "Dismiss" once nothing can be discarded anymore: in the terminal
+  // states the take is settled, and during delivery the paste is already in
+  // flight — pipeline:cancel cannot un-type it. Everywhere earlier the
+  // promise holds: cancelling before delivery really means nothing is typed.
+  const settled =
+    status === "delivering" ||
+    status === "done" ||
+    status === "empty" ||
+    status === "error";
+  cancelBtn.title = settled ? "Dismiss" : "Discard — nothing is typed";
+  cancelBtn.setAttribute("aria-label", settled ? "Dismiss" : "Discard dictation");
   statusText.textContent = title;
   detailText.textContent = detail || "";
   // The detail line is one ellipsized row, and for errors the actionable half
   // ("…check the input device in Settings") is exactly the part that gets cut
-  // — mirror the full text into the tooltip so hovering recovers it. Screen
-  // readers already get the whole string from the live region.
-  detailText.title = detail || "";
+  // — mirror the full text into the tooltip so hovering recovers it, but only
+  // when the line is actually clipped: short hints shouldn't pop a tooltip
+  // duplicating text already fully on screen. Screen readers get the whole
+  // string from the live region either way.
+  detailText.title =
+    detail && detailText.scrollWidth > detailText.clientWidth ? detail : "";
   // The wave area steps back when a detail line (paste preview, error message,
   // hint) needs its space — see #card[data-detail] in overlay.css.
   card.toggleAttribute("data-detail", Boolean(detail));

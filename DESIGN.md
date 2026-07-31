@@ -69,7 +69,7 @@ typography:
     letterSpacing: "0.02em"
 rounded:
   hairline: "2px"
-  track: "3px"
+  download-bar: "3px"
   chip: "4px"
   input: "8px"
   icon: "9px"
@@ -429,9 +429,9 @@ corners anywhere.
   the Destructive Hover Exception (Failed Red glyph + red wash). Carries a
   10px extra left margin — the clear gap between its hit halo and Done's —
   so it isn't hit by reflex next to Done. Its label follows
-  the action it would perform: "Discard" during a take, "Dismiss" in the
-  terminal states, where the take is already settled and the key only takes
-  the card down.
+  the action it would perform: "Discard" while cancelling still means nothing
+  is typed, "Dismiss" from delivery onward — during the paste and in the
+  terminal states — where the take can no longer be discarded.
 - **Pause:** latching (`aria-pressed`); while paused it holds the Hover Wash
   fill and swaps to the play glyph.
 - **Focus:** `outline: 2px solid` Primary Text, 2px offset — the universal
@@ -448,8 +448,10 @@ corners anywhere.
 
 ### Pill buttons — settings/wizard (three tiers + danger)
 - **Shape:** fully rounded (999px), 8px 14px padding, 13px/500 text; active
-  presses to `scale(0.97)`; disabled holds opacity 0.6 (in-flight labels like
-  "Checking…" stay readable).
+  presses to `scale(0.97)`; disabled holds opacity 0.6 — except ghost pills,
+  which hold full opacity with a Seam edge instead, because their labels are
+  almost always in-flight ("Checking…", "Restarting…") and 0.6 over Dim Text
+  would drop them below AA.
 - **Primary (Save / Get started):** the one filled white pill per window —
   Primary Text fill, Bar Ink label, weight 600, 9px 20px padding, pure white
   on hover. The overlay Done key's grammar on a framed window.
@@ -464,8 +466,9 @@ corners anywhere.
 ### Sticky index (settings navigation)
 - 168px rail outside the scroll area; entries are 8px-radius text buttons
   (13px/500, Dim Text) that wash faintly on hover; the active entry takes
-  Hover Wash + Primary Text — no markers, no dots. Scroll spy tracks the read
-  head; roving tabindex; clicks glide the page and focus the section legend.
+  Hover Wash + Primary Text — no markers, no dots. Scroll spy tracks the section
+  currently in view; roving tabindex; clicks glide the page and focus the
+  section legend.
   Docks horizontally with a bottom seam below 600px.
 
 ### Section headings
@@ -597,8 +600,8 @@ corners anywhere.
 - `prefers-reduced-motion`: on the overlay, pulses stop and transitions
   collapse to ~instant (the warming ring substitutes a 55%-opacity dim for
   its pulse, per the Filled Dot Contract); the waveform still updates (it is
-  state, not decoration) but stops gliding. On settings/wizard, all transitions and
-  animations collapse to 0.01ms, infinite demo animations are forced to a
+  state, not decoration) but stops gliding. On settings/wizard, all
+  transitions and animations collapse to 0.01ms, infinite demo animations are forced to a
   single iteration (they go still, not fast), and the scroll glide becomes a
   jump.
 

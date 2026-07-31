@@ -104,10 +104,11 @@ nav#tabs {
   gap: 2px;
   width: 168px;
   flex-shrink: 0;
-  /* 12px top + .tab's 8px = 20px, matching main's top padding so the first
-     entry's baseline lines up with the section heading beside it; 12px left
-     + .tab's 12px = 24px, flush with the header and content column inset. */
-  padding: 12px 10px 18px 12px;
+  /* 15px top puts the first 13px entry's BASELINE on the 16px section
+     heading's beside it (box tops alone would sit 3px apart across the two
+     sizes); 12px left + .tab's 12px = 24px, flush with the header and
+     content column inset. */
+  padding: 15px 10px 18px 12px;
   overflow-y: auto;
   border-right: 1px solid var(--seam);
   scrollbar-width: thin;
@@ -758,11 +759,11 @@ button.ghost:hover:not(:disabled) {
 
 /* Disabled ghosts are usually mid-action ("Checking…", "Restarting…") — the
    one moment the user is actively reading the label, so it must NOT fade
-   below AA like the generic 0.6 would take --text-dim. Full opacity, dim
-   text, and a dimmer seam edge carry the inert read instead. */
+   below AA like the generic 0.6 would take --text-dim. Full opacity keeps
+   the label readable; the inert read comes from the dimmer seam edge, the
+   default cursor, and the suppressed hover. */
 button.ghost:disabled {
   opacity: 1;
-  color: var(--text-dim);
   border-color: var(--seam);
 }
 

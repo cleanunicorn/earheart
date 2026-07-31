@@ -203,28 +203,18 @@ body {
   background: #ffffff;
 }
 
+/* Quiet pills and the dismiss key ride the button base for color and hover
+   (the base already supplies transparent ground, Dim Text, and the wash+
+   brighten hover); only real overrides remain below. */
 .pill.quiet {
-  background: transparent;
-  color: var(--text-dim);
   font-weight: 500;
-}
-
-.pill.quiet:hover {
-  background: var(--wash);
-  color: var(--text);
 }
 
 #update-close {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  color: var(--text-dim);
   flex-shrink: 0;
-}
-
-#update-close:hover {
-  background: var(--wash);
-  color: var(--text);
 }
 
 /* The note's dismiss is painted smaller than a control key, so the shared

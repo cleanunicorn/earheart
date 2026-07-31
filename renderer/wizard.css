@@ -193,8 +193,9 @@ kbd {
 }
 
 /* The real Done key's glyph in miniature — a text ✓ at this size renders as
-   a smudge, so it is the same SVG path as the overlay's key, stroked heavier
-   (3.2 in a 16 viewBox at 9px ≈ the key's 2.25px optical weight). */
+   a smudge, so it is the same SVG path as the overlay's key. 3.2 at 9px
+   renders ~1.8px — proportionally heavier than the key's 2.25px-on-32px, so
+   the check still reads at miniature scale. */
 .mini-done {
   display: flex;
   align-items: center;

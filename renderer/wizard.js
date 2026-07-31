@@ -30,7 +30,7 @@ function showStep(index) {
   [...dots.children].forEach((dot, i) =>
     dot.classList.toggle("active", i === stepIndex)
   );
-  // The lamp row is visual; this is what it says, for keyboard/AT users.
+  // The step-dot row is visual; this is what it says, for keyboard/AT users.
   $("step-position").textContent = `Step ${stepIndex + 1} of ${steps.length}`;
   $("back").hidden = stepIndex === 0;
   $("next").textContent =

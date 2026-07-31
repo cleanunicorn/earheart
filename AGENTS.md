@@ -170,6 +170,8 @@ main/                Electron main process (pipeline, hotkeys, settings, tray, w
   engines/           in-process STT + cleanup (utilityProcess workers, native addons)
   output/deliver.js  clipboard + per-OS paste injection
 renderer/            overlay (mic → 16 kHz WAV, live preview), settings, wizard
+DESIGN.md            the UI design system — read before changing renderer CSS
+PRODUCT.md           product truth: users, positioning, principles
 stt-server/          optional Python FastAPI Parakeet server
 scripts/             icons, screenshots, engine smoke test
 .github/workflows/   ci, pr-title, auto-release, release

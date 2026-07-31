@@ -1,4 +1,4 @@
-// Drives the real settings window and verifies the service-panel contract —
+// Drives the real settings window and verifies the settings-page contract —
 // the interaction model text-parsing tests can't reach:
 //
 //   1. The panel is one continuous scroll: every section renders at once
@@ -6,7 +6,7 @@
 //      display:none-swapped.
 //   2. The scroll spy works: scrolling to the bottom lights the last index
 //      entry (Advanced) with .active + aria-current.
-//   3. The index navigates: clicking General relights its lamp immediately
+//   3. The index navigates: clicking General re-highlights its entry immediately
 //      and glides the panel back to the top.
 //   4. The roving tabindex is seated at load: exactly one index button is a
 //      Tab stop before any interaction.
@@ -103,8 +103,8 @@ app.whenReady().then(async () => {
     check("scroll spy lights the last section", spy.tab === "advanced", `active=${spy.tab}`);
     check("active index entry carries aria-current", spy.current === "true");
 
-    // 3. Index navigation: clicking General relights immediately (the lamp
-    // and the focus move are synchronous; the glide follows).
+    // 3. Index navigation: clicking General re-highlights immediately (the
+    // highlight and the focus move are synchronous; the glide follows).
     const clicked = JSON.parse(
       await js(`
         (() => {
@@ -117,7 +117,7 @@ app.whenReady().then(async () => {
         })();
       `)
     );
-    check("clicking the index relights its lamp", clicked.tab === "general");
+    check("clicking the index re-highlights its entry", clicked.tab === "general");
     check(
       "clicking the index moves focus into the section's legend",
       clicked.focus === "legend-general",

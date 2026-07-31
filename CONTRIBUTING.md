@@ -164,6 +164,12 @@ Design constraints worth keeping:
 - **Never lose the user's words.** If cleanup fails, deliver the raw
   transcript; if paste fails, fall back to the clipboard; history keeps the
   text either way.
+- **The UI has a design system.** [DESIGN.md](DESIGN.md) is derived from the
+  shipped CSS and governs the overlay, settings and wizard: one coral accent
+  reserved for the voice, filled-white for the primary action, no drop
+  shadows, and two hardcoded values that must stay in sync (`WAVE_COLOR` ↔
+  `--accent`, `INK_COLOR` ↔ `--ink`). Read it before changing any renderer
+  CSS.
 
 ## README screenshots
 

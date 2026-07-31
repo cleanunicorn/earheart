@@ -74,13 +74,21 @@ footer {
   margin: 22px 0;
 }
 
+/* The wizard's four card surfaces share one skin (settings.css's .card
+   grammar); each rule below keeps only its own layout. */
+.demo-card,
+#summary,
+.value-card,
+.dl-item {
+  background: var(--wash-faint);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+}
+
 .demo-card {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--wash-faint);
-  border: 1px solid var(--edge);
-  border-radius: 12px;
   padding: 14px 10px 12px;
 }
 
@@ -161,17 +169,20 @@ kbd {
   animation: mini-signal 1s ease-in-out infinite;
 }
 
-/* Offsets on a 7-bar cycle rather than one rule per bar: the sequence is
-   deliberately non-monotonic so it reads as a voice, not as a wave sweeping
-   politely across the bar — and the bar count can change without the rules
-   having to. */
-.mini-wave i:nth-child(7n + 1) { animation-delay: 0s; }
-.mini-wave i:nth-child(7n + 2) { animation-delay: 0.28s; }
-.mini-wave i:nth-child(7n + 3) { animation-delay: 0.11s; }
-.mini-wave i:nth-child(7n + 4) { animation-delay: 0.63s; }
-.mini-wave i:nth-child(7n + 5) { animation-delay: 0.4s; }
-.mini-wave i:nth-child(7n + 6) { animation-delay: 0.78s; }
-.mini-wave i:nth-child(7n + 7) { animation-delay: 0.19s; }
+/* Offsets and STATIC heights on a 7-bar cycle rather than one rule per bar:
+   the sequence is deliberately non-monotonic so it reads as a voice, not as
+   a wave sweeping politely across the bar — and the bar count can change
+   without the rules having to. The static heights are what the bars fall
+   back to under prefers-reduced-motion (settings.css stills the animation
+   with no fill mode); without them the demo waveform would collapse to
+   nothing exactly when motion is off. */
+.mini-wave i:nth-child(7n + 1) { animation-delay: 0s;    height: 6px; }
+.mini-wave i:nth-child(7n + 2) { animation-delay: 0.28s; height: 11px; }
+.mini-wave i:nth-child(7n + 3) { animation-delay: 0.11s; height: 5px; }
+.mini-wave i:nth-child(7n + 4) { animation-delay: 0.63s; height: 13px; }
+.mini-wave i:nth-child(7n + 5) { animation-delay: 0.4s;  height: 8px; }
+.mini-wave i:nth-child(7n + 6) { animation-delay: 0.78s; height: 12px; }
+.mini-wave i:nth-child(7n + 7) { animation-delay: 0.19s; height: 7px; }
 
 .mini-timer {
   font-family: var(--mono);
@@ -181,6 +192,10 @@ kbd {
   color: var(--text);
 }
 
+/* The real Done key's glyph in miniature — a text ✓ at this size renders as
+   a smudge, so it is the same SVG path as the overlay's key. 3.2 at 9px
+   renders ~1.8px — proportionally heavier than the key's 2.25px-on-32px, so
+   the check still reads at miniature scale. */
 .mini-done {
   display: flex;
   align-items: center;
@@ -190,8 +205,10 @@ kbd {
   border-radius: 50%;
   background: var(--text);
   color: var(--ink);
-  font-size: 9px;
-  font-weight: 700;
+}
+
+.mini-done svg {
+  display: block;
 }
 
 @keyframes mini-pulse {
@@ -260,9 +277,6 @@ kbd {
 /* ---------- summary on the last step ---------- */
 
 #summary {
-  background: var(--wash-faint);
-  border: 1px solid var(--edge);
-  border-radius: 12px;
   padding: 6px 14px;
 }
 
@@ -300,9 +314,6 @@ kbd {
 /* ---------- value cards (built-in engine selling points) ---------- */
 
 .value-card {
-  background: var(--wash-faint);
-  border: 1px solid var(--edge);
-  border-radius: 12px;
   padding: 14px 16px;
   margin-top: 12px;
 }
@@ -339,9 +350,6 @@ kbd {
    hairline track and white fill the settings window uses. */
 
 .dl-item {
-  background: var(--wash-faint);
-  border: 1px solid var(--edge);
-  border-radius: 12px;
   padding: 12px 14px;
   margin-bottom: 12px;
 }

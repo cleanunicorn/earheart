@@ -12,8 +12,13 @@ const RENDERER = path.join(__dirname, "..", "renderer");
 // Wide enough for the control row (status word, waveform, timer,
 // pause/done/discard keys) to keep a generous waveform.
 const OVERLAY_WIDTH = 500;
-// Base card: grip (~14px) + 44px control row + 8px bottom margin +
-// 2px border, plus 12px window margin top/bottom.
+// A deliberate floor a few px above the base card, not its measured height:
+// the card (grip ~14px + 44px control row + 8px bottom margin + 2px border,
+// plus 12px window margin top/bottom) reports ~90px via overlay:resize and is
+// floored back up to this. The slack is transparent window above a
+// bottom-anchored card — invisible — and keeping the old value means saved
+// dragged positions (bottom-anchored against it, see overlayCustomPosition)
+// don't jump on upgrade.
 const OVERLAY_HEIGHT = 95;
 // Matches the card's fade-out transition in overlay.css.
 const OVERLAY_FADE_MS = 200;

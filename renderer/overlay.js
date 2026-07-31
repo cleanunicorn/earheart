@@ -6,6 +6,7 @@ const SAMPLE_RATE = 16000;
 const card = document.getElementById("card");
 const stopBtn = document.getElementById("stop");
 const pauseBtn = document.getElementById("pause");
+const cancelBtn = document.getElementById("cancel");
 const statusText = document.getElementById("status-text");
 const detailText = document.getElementById("detail-text");
 const timerEl = document.getElementById("timer");
@@ -115,6 +116,7 @@ let meterRaf = null;
 const WAVE_COL_PX = 2.5; // CSS px per written column
 const WAVE_PUSH_MS = 80; // ms of audio per column (≈31px/s scroll speed)
 const WAVE_MAX_COLS = 600; // plenty to outrun any window width
+const WAVE_GAIN = 6; // level → amplitude gain, shared by both paint sites
 // The accent — kept in sync with --accent in overlay.css.
 const WAVE_COLOR = "#fb4d5c";
 let waveHistory = []; // newest first: waveHistory[0] sits at the right edge
@@ -200,8 +202,28 @@ function setStatus(status, title, detail) {
   // pressed, and aria-pressed is how that same held state reaches assistive
   // tech.
   pauseBtn.setAttribute("aria-pressed", String(status === "paused"));
+  // The X key's label follows the action it would perform, like pause above.
+  // It reads "Dismiss" once nothing can be discarded anymore: in the terminal
+  // states the take is settled, and during delivery the paste is already in
+  // flight — pipeline:cancel cannot un-type it. Everywhere earlier the
+  // promise holds: cancelling before delivery really means nothing is typed.
+  const settled =
+    status === "delivering" ||
+    status === "done" ||
+    status === "empty" ||
+    status === "error";
+  cancelBtn.title = settled ? "Dismiss" : "Discard — nothing is typed";
+  cancelBtn.setAttribute("aria-label", settled ? "Dismiss" : "Discard dictation");
   statusText.textContent = title;
   detailText.textContent = detail || "";
+  // The detail line is one ellipsized row, and for errors the actionable half
+  // ("…check the input device in Settings") is exactly the part that gets cut
+  // — mirror the full text into the tooltip so hovering recovers it, but only
+  // when the line is actually clipped: short hints shouldn't pop a tooltip
+  // duplicating text already fully on screen. Screen readers get the whole
+  // string from the live region either way.
+  detailText.title =
+    detail && detailText.scrollWidth > detailText.clientWidth ? detail : "";
   // The wave area steps back when a detail line (paste preview, error message,
   // hint) needs its space — see #card[data-detail] in overlay.css.
   card.toggleAttribute("data-detail", Boolean(detail));
@@ -264,15 +286,21 @@ function drawMeter(frac = 0) {
   const barW = colW - gapW;
   const maxAmp = h - 2 * px;
   meterCtx.fillStyle = WAVE_COLOR;
+  // One painter for both sites below. The amp floor closes over barW (never
+  // the bar's own width): the growing live column must keep the full-height
+  // minimum, or its floor would shrink on every sub-column frame.
+  const paintBar = (x, width, level) => {
+    const amp = Math.max(barW, Math.min(1, level * WAVE_GAIN) * maxAmp);
+    meterCtx.beginPath();
+    meterCtx.roundRect(x, (h - amp) / 2, width, amp, Math.min(width, barW) / 2);
+    meterCtx.fill();
+  };
   for (let i = 0; i < waveHistory.length; i++) {
     // The inter-column gap sits on each bar's LEFT, so column 0's right edge
     // lands exactly on w — which is where the live column below hands off.
     const x = w - (i + 1 + frac) * colW + gapW;
     if (x + barW < 0) break;
-    const amp = Math.max(barW, Math.min(1, waveHistory[i] * 6) * maxAmp);
-    meterCtx.beginPath();
-    meterCtx.roundRect(x, (h - amp) / 2, barW, amp, barW / 2);
-    meterCtx.fill();
+    paintBar(x, barW, waveHistory[i]);
   }
   // The column being written right now: it grows leftward from the right edge
   // at the live level and freezes into waveHistory on the next commit, so the
@@ -281,19 +309,13 @@ function drawMeter(frac = 0) {
   // commit. (Under reduced motion frac stays 0 and the wave steps, as
   // intended.)
   if (recording?.startedAt && frac > 0) {
-    const live = displayLevels[displayLevels.length - 1];
-    const amp = Math.max(barW, Math.min(1, live * 6) * maxAmp);
     const liveW = Math.max(0, frac * colW - gapW);
-    if (liveW > 0) {
-      meterCtx.beginPath();
-      meterCtx.roundRect(w - liveW, (h - amp) / 2, liveW, amp, Math.min(liveW, barW) / 2);
-      meterCtx.fill();
-    }
+    if (liveW > 0) paintBar(w - liveW, liveW, displayLevels[displayLevels.length - 1]);
   }
 }
 
 // Milliseconds of audio actually captured: wall time since the first samples,
-// minus every paused span (including one still open). The visible counter and
+// minus every paused span (including one still open). The visible timer and
 // the max-duration cap both read this, so they can never disagree.
 function capturedMs(rec) {
   return (rec.pausedAt ?? Date.now()) - rec.startedAt - rec.pausedMs;
@@ -605,7 +627,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
       startedAt: null,
       // Pause bookkeeping: pausedAt holds the timestamp while the take is
       // paused; pausedMs accumulates completed paused spans. Both feed
-      // capturedMs(), which the counter and the max-duration cap share.
+      // capturedMs(), which the timer and the max-duration cap share.
       pausedAt: null,
       pausedMs: 0,
       // Append-only live preview: `committedSamples` is the sample offset where
@@ -963,7 +985,7 @@ new ResizeObserver(resizeMeter).observe(meter);
 
 stopBtn.addEventListener("click", stopRecording);
 pauseBtn.addEventListener("click", togglePause);
-document.getElementById("cancel").addEventListener("click", cancelRecording);
+cancelBtn.addEventListener("click", cancelRecording);
 
 // Click-and-drag anywhere on the card (except the buttons) moves the overlay.
 // The window itself is moved by the main process from the streamed screen

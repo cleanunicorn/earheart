@@ -62,15 +62,16 @@ OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
 ## Features
 
 - **Global hotkey** (default `Ctrl/Cmd+Shift+Space`): press to start, press to
-  stop. A small overlay shows recording level and progress without stealing
-  focus from the app you're dictating into. With the built-in engines, a slim
-  bar tracks the finishing passes too — estimated from your machine's measured
-  decode speed while transcribing (so it deliberately stops short of the end
-  rather than overpromise), and following actual generation during cleanup.
+  stop. A small overlay draws your voice live and shows progress without
+  stealing focus from the app you're dictating into. With the built-in
+  engines, a slim bar tracks the finishing passes too — estimated from your
+  machine's measured decode speed while transcribing (so it deliberately
+  stops short of the end rather than overpromise), and following actual
+  generation during cleanup.
 - **Pause and resume mid-dictation** — the overlay's pause key holds the take
   (talk to someone, take a call) and resumes the same dictation; paused time
-  is never captured and never counts against the recording limit. Optionally
-  bind a global pause hotkey in Settings → General.
+  is never captured and never counts against the max dictation length.
+  Optionally bind a global pause hotkey in Settings → General.
 - **Speech-to-text with NVIDIA Parakeet** — by default Parakeet TDT 0.6B v3
   (multilingual, 25 languages) runs **in-process** via sherpa-onnx / ONNX
   Runtime, faster than realtime on CPU and with no network hop. Or point
@@ -254,10 +255,12 @@ OpenAI).
 ## Using Earheart
 
 1. Put your cursor wherever you want text — an email, an editor, a chat box.
-2. Press the hotkey (default `Ctrl/Cmd+Shift+Space`). A small pill appears at
-   the bottom of the screen showing your mic level; it never steals focus.
-3. Speak, then press the hotkey again. Earheart transcribes, optionally cleans
-   up, and pastes the result right where you were typing.
+2. Press the hotkey (default `Ctrl/Cmd+Shift+Space`). A slim bar appears at
+   the bottom of the screen — a status dot and word, your voice drawn live,
+   and a timer; it never steals focus.
+3. Speak, then press the hotkey again (or the bar's ✓ key). Earheart
+   transcribes, optionally cleans up, and pastes the result right where you
+   were typing. The ✕ key discards the dictation — nothing is typed.
 
 Earheart lives in your system tray. From the tray menu you can start a
 dictation, open the transcription history, or change any choice you made in

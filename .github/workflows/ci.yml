@@ -47,7 +47,7 @@ jobs:
       - name: Overlay capture sync
         if: runner.os != 'Linux'
         run: npx electron scripts/overlay-smoke.js --no-sandbox
-      # Drive the real settings window and verify the service-panel contract:
+      # Drive the real settings window and verify the settings-page contract:
       # one continuous scroll, the scroll-spy index, and the seated roving
       # tabindex.
       - name: Settings panel smoke (headless)

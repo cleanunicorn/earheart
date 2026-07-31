@@ -46,9 +46,9 @@ app.whenReady().then(async () => {
   await shot(settings, "settings");
   settings.close();
 
-  // Overlay: staged recording and done states. setStatus/levels/
-  // waveHistory/drawMeter/timerEl are top-level bindings in overlay.js,
-  // reachable from executeJavaScript.
+  // Overlay: staged recording and done states. setStatus/waveHistory/
+  // drawMeter/timerEl are top-level bindings in overlay.js, reachable from
+  // executeJavaScript.
   const overlay = windows.createOverlay();
   await new Promise((r) => overlay.webContents.once("did-finish-load", r));
   windows.showOverlay();
@@ -61,13 +61,10 @@ app.whenReady().then(async () => {
     waveHistory = Array.from({ length: 120 }, (_, i) =>
       0.02 + 0.13 * Math.abs(Math.sin(i * 0.7 + 1)) * (0.4 + ((i * 7919) % 13) / 13)
     );
-    levels = levels.map((_, i) =>
-      0.02 + 0.13 * Math.abs(Math.sin(i * 0.7 + 1)) * (0.4 + ((i * 7919) % 13) / 13)
-    );
     drawMeter();
     timerEl.textContent = "0:07";
     setStatus("recording", "Listening…");
-    // The live transcript mid-dictation: settled cleaned text plus the warm
+    // The live transcript mid-dictation: settled cleaned text plus the dimmed
     // still-streaming raw tail (the README's hero moment).
     partialClean = "Let's meet tomorrow at ten to review the draft.";
     partialRaw =
@@ -92,8 +89,8 @@ app.whenReady().then(async () => {
     "";
   `);
 
-  // Processing state with the playhead progress mid-read (the README's middle
-  // hero shot). The transcript retires when processing starts, like the real
+  // Processing state with the dictation progress fill mid-run (the README's
+  // middle hero shot). The transcript retires when processing starts, like the real
   // pipeline does.
   await overlay.webContents.executeJavaScript(`
     clearTranscript();

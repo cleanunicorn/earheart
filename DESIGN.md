@@ -69,6 +69,7 @@ typography:
     letterSpacing: "0.02em"
 rounded:
   hairline: "2px"
+  download-bar: "3px"
   chip: "4px"
   input: "8px"
   icon: "9px"
@@ -197,7 +198,8 @@ setup wizard (`renderer/wizard.*`, which layers on `settings.css`) all speak
 this language; the framed windows extend the bar's grammar with white-wash
 cards, solid inputs, and pill buttons, documented below. The main process
 paints framed windows in Bar Ink before load (`INK_COLOR` in
-`main/windows.js`), which must stay in sync with `--ink`. The retired Tape
+`main/windows.js`), which must stay in sync with `--ink` — the one name the
+value carries in both `overlay.css` and `settings.css`. The retired Tape
 Transport and On-Air Lamp systems survive only as historical notes.
 
 **Key Characteristics:**
@@ -302,14 +304,15 @@ interface; window chrome never exceeds 16px.
 - **Body** (500, 15px, 1.5): the live transcript — settled cleaned text in
   Primary Text; the still-streaming raw tail in Dim Text, brightening as it
   settles. The largest type anywhere.
-- **Window Title** (650, 16px, -0.01em): the settings header h1 and wizard
-  step h2 — the framed windows' largest chrome text.
+- **Window Title** (650, 16px, -0.01em): the settings header h1, wizard
+  step h2, and settings section headings (`.legend`) — the framed windows'
+  largest chrome text; on the settings page it is what makes a section
+  outrank the card titles inside it.
 - **Settings Body** (400, 14px, 1.45): the settings/wizard base text — leads,
   option copy, history text at 13px within it. Running copy holds a ~62ch
   measure.
-- **Title / Section** (600, 13px): the update prompt's headline; settings
-  section headings (`.legend`) and card titles — quiet sentence case, the
-  legend running into a hairline.
+- **Title** (600, 13px): the update prompt's headline and settings card
+  titles — quiet sentence case.
 - **Label** (550, 12.5px overlay / 13px settings field labels): the overlay's
   one-word status; settings field labels. Pill labels are 12–13px
   (600 primary / 500 quiet).
@@ -343,7 +346,7 @@ Three surfaces, one world:
 window, 12px margin all around. The card is a column: grip, optional update
 panel, transcript (grows freely upward — no clip, no scroll, no mask), then
 the 44px control row. The control row reads left to right: status dot + word,
-waveform (flexes to fill), timer, pause, Done, discard — with a 4px extra gap
+waveform (flexes to fill), timer, pause, Done, discard — with a 10px extra gap
 isolating discard from Done. The transcript's 16px side padding aligns its
 text column with the control row's left edge. Overlays that appear mid-flow
 (the progress bar over the wave area) are absolutely positioned so they never
@@ -358,7 +361,7 @@ deck: a 168px sticky index rail on the left (outside the scroll area, seam on
 its right) beside one scrolling column of sections capped at 620px
 (`.panel { max-width: 620px }`), then a fixed footer commit row (seam above,
 right-aligned, white Save pill). The index is a scroll spy with roving
-tabindex: the entry under the read head takes the wash; clicking glides the
+tabindex: the entry currently in view takes the wash; clicking glides the
 page (`scroll-behavior: smooth`) and moves focus to the section legend. Below
 600px the index docks horizontally above the page.
 
@@ -423,8 +426,12 @@ corners anywhere.
   pure white on hover; the single strongest thing on the bar. Disabled outside
   a live take: transparent with a Faint Text glyph, but it stays in its slot.
 - **Discard (`#cancel`):** a plain X, gray until you mean it; hover applies
-  the Destructive Hover Exception (Failed Red glyph + red wash). Carries a 4px
-  extra left margin so it isn't hit by reflex next to Done.
+  the Destructive Hover Exception (Failed Red glyph + red wash). Carries a
+  10px extra left margin — the clear gap between its hit halo and Done's —
+  so it isn't hit by reflex next to Done. Its label follows
+  the action it would perform: "Discard" while cancelling still means nothing
+  is typed, "Dismiss" from delivery onward — during the paste and in the
+  terminal states — where the take can no longer be discarded.
 - **Pause:** latching (`aria-pressed`); while paused it holds the Hover Wash
   fill and swaps to the play glyph.
 - **Focus:** `outline: 2px solid` Primary Text, 2px offset — the universal
@@ -441,8 +448,10 @@ corners anywhere.
 
 ### Pill buttons — settings/wizard (three tiers + danger)
 - **Shape:** fully rounded (999px), 8px 14px padding, 13px/500 text; active
-  presses to `scale(0.97)`; disabled holds opacity 0.6 (in-flight labels like
-  "Checking…" stay readable).
+  presses to `scale(0.97)`; disabled holds opacity 0.6 — except ghost pills,
+  which hold full opacity with a Seam edge instead, because their labels are
+  almost always in-flight ("Checking…", "Restarting…") and 0.6 over Dim Text
+  would drop them below AA.
 - **Primary (Save / Get started):** the one filled white pill per window —
   Primary Text fill, Bar Ink label, weight 600, 9px 20px padding, pure white
   on hover. The overlay Done key's grammar on a framed window.
@@ -457,12 +466,14 @@ corners anywhere.
 ### Sticky index (settings navigation)
 - 168px rail outside the scroll area; entries are 8px-radius text buttons
   (13px/500, Dim Text) that wash faintly on hover; the active entry takes
-  Hover Wash + Primary Text — no markers, no dots. Scroll spy tracks the read
-  head; roving tabindex; clicks glide the page and focus the section legend.
+  Hover Wash + Primary Text — no markers, no dots. Scroll spy tracks the section
+  currently in view; roving tabindex; clicks glide the page and focus the
+  section legend.
   Docks horizontally with a bottom seam below 600px.
 
 ### Section headings
-- **Legend:** 13px/600 sentence case running into a 1px seam hairline
+- **Legend:** 16px/650 sentence case (the Window Title token) running into a
+  1px seam hairline
   (`::after` flex line); `scroll-margin-top: 12px` so anchored scrolls land
   clear of the edge; focusable (tabindex -1) with a keyboard-only ring.
 
@@ -526,7 +537,10 @@ corners anywhere.
 - **Named rule — The Filled Dot Contract.** The filled pulsing coral dot +
   moving waveform + running timer together mean "audio is captured right
   now." Mic warm-up is a pulsing hollow coral ring; paused is a steady hollow
-  coral ring. Never show the filled dot before samples actually flow.
+  coral ring. Never show the filled dot before samples actually flow. Under
+  `prefers-reduced-motion` the pulse can't carry the warming/paused
+  distinction, so the warming ring dims to 55% opacity instead — dimmer =
+  "not capturing yet", full = paused.
 
 ### Status text (settings/wizard)
 - 13px Dim Text lines beside or under their action; `.ok` in Delivered Green,
@@ -584,10 +598,11 @@ corners anywhere.
   1.2s working, 1s warming; the demo wave cycles 1s, the demo typing 4s.
 - Settings index clicks glide via `scroll-behavior: smooth`.
 - `prefers-reduced-motion`: on the overlay, pulses stop and transitions
-  collapse to ~instant; the waveform still updates (it is state, not
-  decoration) but stops gliding. On settings/wizard, all transitions and
-  animations collapse to 0.01ms, infinite demo animations are forced to a
-  single iteration (they go still, not fast), and the scroll glide becomes a
+  collapse to ~instant (the warming ring substitutes a 55%-opacity dim for
+  its pulse, per the Filled Dot Contract); the waveform still updates (it is
+  state, not decoration) but stops gliding. On settings/wizard, all
+  transitions and animations collapse to 0.01ms, infinite demo animations
+  are forced to a single iteration (they go still, not fast), and the scroll glide becomes a
   jump.
 
 ## Do's and Don'ts
@@ -606,8 +621,8 @@ corners anywhere.
 - **Do** keep keys in their slots across all states — disable and fade, never
   remove or reflow.
 - **Do** honor the Filled Dot Contract: filled pulsing coral dot only while
-  samples flow; pulsing hollow ring for warm-up; steady hollow ring for
-  paused.
+  samples flow; pulsing hollow ring for warm-up (a 55%-dim ring when reduced
+  motion stills the pulse); steady hollow ring for paused.
 - **Do** extend hit areas invisibly (`::before` halos to ~42px; radios and
   segments stretched over their whole row) instead of enlarging painted
   controls.

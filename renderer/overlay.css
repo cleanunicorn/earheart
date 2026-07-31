@@ -10,13 +10,15 @@
    overlay. */
 
 :root {
-  --bg: #18181b; /* the bar — solid, never translucent */
+  --ink: #18181b; /* the bar — solid, never translucent; one name across
+                     overlay.css, settings.css and INK_COLOR in windows.js */
   --edge: rgba(255, 255, 255, 0.1); /* hairline card + panel edges */
   --text: #f4f4f5; /* primary text */
   --text-mid: #d4d4d8; /* the status word */
-  --text-dim: #a1a1aa; /* secondary text, raw tail, idle icons (≥4.5:1 on --bg) */
+  --text-dim: #a1a1aa; /* secondary text, raw tail, idle icons (≥4.5:1 on --ink) */
   --text-faint: rgba(255, 255, 255, 0.28); /* disabled key glyphs */
   --wash: rgba(255, 255, 255, 0.08); /* hover wash on ghost keys */
+  --track: rgba(255, 255, 255, 0.12); /* empty progress/download track fills */
   --accent: #fb4d5c; /* the voice: capture dot, waveform, progress.
                         Kept in sync with WAVE_COLOR in overlay.js. */
   --ok: #34d399; /* status dot: delivered */
@@ -65,7 +67,7 @@ body {
   border-radius: 16px;
   /* Solid (not translucent) so the words and the waveform never depend on
      whatever app shows through behind the overlay. */
-  background: var(--bg);
+  background: var(--ink);
   border: 1px solid var(--edge);
   color: var(--text);
   /* The card body is the drag handle; keys reset this to a pointer below. */
@@ -149,23 +151,12 @@ body {
   overflow-wrap: anywhere;
 }
 
-/* Reuses the #progress track/fill pattern from the wave area. */
-#update-bar {
-  height: 3px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.12);
-  overflow: hidden;
-}
-
+/* The download bar reuses the dictation progress's track/fill grammar — the
+   shared rules live with #progress in the wave section; only the fill color
+   differs (white, not coral: an update download is the app talking about
+   itself, same grammar as the filled white primary pill). */
 #update-bar-fill {
-  height: 100%;
-  width: 0;
-  border-radius: 2px;
-  /* White, not coral: the accent is reserved for the dictation itself, and an
-     update download is the app talking about itself — same grammar as the
-     filled white primary pill. */
   background: var(--text);
-  transition: width 0.15s linear;
 }
 
 /* Wrap rather than squeeze: on a narrow row the secondary actions drop to a
@@ -186,13 +177,13 @@ body {
 
 /* Text pills — the update note's actions. The filled white pill is the same
    "this is the key action" grammar as the Done key below. */
+/* (The button base below already supplies border: none and a transparent
+   background; pills only override the circle's geometry and type.) */
 .pill {
   width: auto;
   height: 26px;
   padding: 0 11px;
-  border: none;
   border-radius: 13px;
-  background: transparent;
   font-size: 12px;
   font-weight: 600;
   font-family: inherit;
@@ -205,37 +196,25 @@ body {
 
 .pill.primary {
   background: var(--text);
-  color: var(--bg);
+  color: var(--ink);
 }
 
 .pill.primary:hover {
   background: #ffffff;
 }
 
+/* Quiet pills and the dismiss key ride the button base for color and hover
+   (the base already supplies transparent ground, Dim Text, and the wash+
+   brighten hover); only real overrides remain below. */
 .pill.quiet {
-  background: transparent;
-  color: var(--text-dim);
   font-weight: 500;
-}
-
-.pill.quiet:hover {
-  background: var(--wash);
-  color: var(--text);
 }
 
 #update-close {
   width: 22px;
   height: 22px;
-  border: none;
   border-radius: 50%;
-  background: transparent;
-  color: var(--text-dim);
   flex-shrink: 0;
-}
-
-#update-close:hover {
-  background: var(--wash);
-  color: var(--text);
 }
 
 /* The note's dismiss is painted smaller than a control key, so the shared
@@ -361,6 +340,8 @@ body {
   background: var(--err);
 }
 
+/* Same value the base rule already gives — kept as a deliberate restatement
+   so every terminal status reads explicitly alongside done/error above. */
 [data-status="empty"] #status-dot {
   background: var(--idle);
 }
@@ -431,6 +412,16 @@ body {
 
 /* ---------- progress (transcribing/cleaning/delivering) ---------- */
 
+/* One track grammar for the bar's two progress strips: the dictation
+   progress here and the update download bar above. */
+#progress,
+#update-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+
 /* Overlaid along the bottom of the wave area. Absolute, so appearing never
    changes the card height. */
 #progress {
@@ -438,18 +429,19 @@ body {
   left: 0;
   right: 0;
   bottom: 1px;
-  height: 3px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.12);
-  overflow: hidden;
 }
 
-#progress-fill {
+#progress-fill,
+#update-bar-fill {
   height: 100%;
   width: 0;
   border-radius: 2px;
-  background: var(--accent);
   transition: width 0.15s linear;
+}
+
+/* Dictation progress fills coral — the voice being processed. */
+#progress-fill {
+  background: var(--accent);
 }
 
 /* ---------- timer ---------- */
@@ -525,12 +517,12 @@ button:focus-visible {
    phases (disabled, faded) so the discard key never jumps. */
 #stop {
   background: var(--text);
-  color: var(--bg);
+  color: var(--ink);
 }
 
 #stop:hover {
   background: #ffffff;
-  color: var(--bg);
+  color: var(--ink);
 }
 
 /* Outside a dictation there is nothing to finish: the key stays in its slot
@@ -567,9 +559,11 @@ button:focus-visible {
 }
 
 /* Discard: gray until you mean it — the hover names it destructive. Extra gap
-   so it isn't hit by reflex right next to Done. */
+   so it isn't hit by reflex right next to Done: with the ~42px hit halos the
+   clear gap between Done's and this key's hit areas is margin-left — the
+   margin is the whole safety margin for an unrecoverable action. */
 #cancel {
-  margin-left: 4px;
+  margin-left: 10px;
 }
 
 #cancel:hover {
@@ -586,6 +580,12 @@ button:focus-visible {
   }
   #status-dot {
     animation: none !important;
+  }
+  /* With the pulse stilled, warming and paused would render as identical
+     hollow rings. A dimmer ring keeps "not capturing yet" readable without
+     motion; paused stays the full-strength ring. */
+  [data-status="starting"] #status-dot {
+    opacity: 0.55;
   }
   /* The waveform still updates (state, not decoration) but overlay.js stops
      the glide; collapse everything else to effectively instant. */

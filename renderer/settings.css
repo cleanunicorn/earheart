@@ -22,6 +22,7 @@
   --text-dim: #a1a1aa; /* secondary text, hints (≥4.5:1 on --ink) */
   --wash: rgba(255, 255, 255, 0.08); /* hover fills */
   --wash-faint: rgba(255, 255, 255, 0.04); /* card fills, quiet hovers */
+  --track: rgba(255, 255, 255, 0.12); /* empty download track fills */
   --accent: #fb4d5c; /* the voice — here only while a hotkey field captures */
   --ok: #34d399; /* status text: success */
   --err: #f87171; /* status text: fault; destructive hover */
@@ -96,14 +97,18 @@ header p {
 }
 
 /* The section index. It sits outside the scroll area, so it is "sticky" by
-   construction; the entry under the read head takes the wash. */
+   construction; the entry currently in view takes the wash. */
 nav#tabs {
   display: flex;
   flex-direction: column;
   gap: 2px;
   width: 168px;
   flex-shrink: 0;
-  padding: 18px 10px 18px 14px;
+  /* 15px top puts the first 13px entry's BASELINE on the 16px section
+     heading's beside it (box tops alone would sit 3px apart across the two
+     sizes); 12px left + .tab's 12px = 24px, flush with the header and
+     content column inset. */
+  padding: 15px 10px 18px 12px;
   overflow-y: auto;
   border-right: 1px solid var(--seam);
   scrollbar-width: thin;
@@ -173,13 +178,16 @@ main {
   margin-bottom: 0;
 }
 
-/* Section heading: quiet sentence case running into a hairline. */
+/* Section heading: quiet sentence case running into a hairline. Window-title
+   rank (16px/650) — the card titles and field labels below it step down
+   13/600 → 13/550, so the three nesting levels actually read as three. */
 .legend {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   color: var(--text);
   margin-bottom: 10px;
 }
@@ -749,6 +757,16 @@ button.ghost:hover:not(:disabled) {
   color: var(--text);
 }
 
+/* Disabled ghosts are usually mid-action ("Checking…", "Restarting…") — the
+   one moment the user is actively reading the label, so it must NOT fade
+   below AA like the generic 0.6 would take --text-dim. Full opacity keeps
+   the label readable; the inert read comes from the dimmer seam edge, the
+   default cursor, and the suppressed hover. */
+button.ghost:disabled {
+  opacity: 1;
+  border-color: var(--seam);
+}
+
 /* Destructive pills: gray until you mean it — red names the consequence on
    hover only (the overlay discard key's grammar). */
 button.danger:hover:not(:disabled) {
@@ -989,7 +1007,7 @@ footer {
 .dl-bar {
   height: 6px;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--track);
   overflow: hidden;
   margin-bottom: 11px;
 }

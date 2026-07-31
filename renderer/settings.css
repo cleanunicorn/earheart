@@ -104,7 +104,10 @@ nav#tabs {
   gap: 2px;
   width: 168px;
   flex-shrink: 0;
-  padding: 18px 10px 18px 14px;
+  /* 12px top + .tab's 8px = 20px, matching main's top padding so the first
+     entry's baseline lines up with the section heading beside it; 12px left
+     + .tab's 12px = 24px, flush with the header and content column inset. */
+  padding: 12px 10px 18px 12px;
   overflow-y: auto;
   border-right: 1px solid var(--seam);
   scrollbar-width: thin;
@@ -751,6 +754,16 @@ button.ghost {
 button.ghost:hover:not(:disabled) {
   background: var(--wash-faint);
   color: var(--text);
+}
+
+/* Disabled ghosts are usually mid-action ("Checking…", "Restarting…") — the
+   one moment the user is actively reading the label, so it must NOT fade
+   below AA like the generic 0.6 would take --text-dim. Full opacity, dim
+   text, and a dimmer seam edge carry the inert read instead. */
+button.ghost:disabled {
+  opacity: 1;
+  color: var(--text-dim);
+  border-color: var(--seam);
 }
 
 /* Destructive pills: gray until you mean it — red names the consequence on

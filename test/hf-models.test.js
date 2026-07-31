@@ -249,12 +249,87 @@ test("listSttVariants uses the generic transducer type for non-NeMo repos", asyn
   assert.strictEqual(out.variants[0].sherpa.modelType, "transducer");
 });
 
+test("listSttVariants finds nested onnx/ weights and labels their quantizations", async () => {
+  // The onnx-community/* conversion layout: weights under "onnx/", precision as
+  // a file-name suffix rather than sherpa's ".int8." infix.
+  const fetchImpl = stubFetch([
+    ["/tree/", { body: [
+      { type: "file", path: "onnx/encoder_model.onnx", size: 40 },
+      { type: "file", path: "onnx/encoder_model_fp16.onnx", size: 20 },
+      { type: "file", path: "onnx/encoder_model_q4.onnx", size: 10 },
+      { type: "file", path: "onnx/decoder_model.onnx", size: 12 },
+      { type: "file", path: "onnx/joiner_model.onnx", size: 6 },
+      { type: "file", path: "tokens.txt", size: 1 },
+    ] }],
+    ["/api/models/", { body: { sha: "c" } }],
+  ]);
+
+  const out = await listSttVariants({ owner: "onnx-community", repo: "zipformer-ONNX" }, fetchImpl);
+  // fp16 outranks fp32; q4 is offered but never recommended.
+  assert.deepStrictEqual(out.variants.map((v) => v.label), ["fp16", "fp32", "q4"]);
+  assert.strictEqual(out.recommended, "fp16");
+  // Nested paths still resolve, and the decoder/joiner fall back to fp32.
+  assert.deepStrictEqual(out.variants[0].files.map((f) => f.name), [
+    "encoder_model_fp16.onnx", "decoder_model.onnx", "joiner_model.onnx", "tokens.txt",
+  ]);
+  assert.strictEqual(
+    out.variants[0].files[0].url,
+    "https://huggingface.co/onnx-community/zipformer-ONNX/resolve/c/onnx/encoder_model_fp16.onnx"
+  );
+});
+
+test("listSttVariants reads the precision from a per-precision directory", async () => {
+  const fetchImpl = stubFetch([
+    ["/tree/", { body: [
+      { type: "file", path: "int8/encoder.onnx", size: 6 },
+      { type: "file", path: "int8/decoder.onnx", size: 2 },
+      { type: "file", path: "int8/joiner.onnx", size: 1 },
+      { type: "file", path: "encoder.onnx", size: 60 },
+      { type: "file", path: "decoder.onnx", size: 20 },
+      { type: "file", path: "joiner.onnx", size: 10 },
+      { type: "file", path: "tokens.txt", size: 1 },
+    ] }],
+    ["/api/models/", { body: { sha: "c" } }],
+  ]);
+
+  const out = await listSttVariants({ owner: "u", repo: "zipformer-en" }, fetchImpl);
+  assert.deepStrictEqual(out.variants.map((v) => v.label), ["int8", "fp32"]);
+  assert.strictEqual(out.variants[0].totalBytes, 10);
+  assert.strictEqual(out.variants[1].totalBytes, 91);
+});
+
+test("listSttVariants says what it found when a repo has ONNX but no transducer", async () => {
+  // onnx-community/Kokoro-82M-v1.0-ONNX: eight real .onnx files, none of them a
+  // transducer part. Claiming the repo has no ONNX files sent users hunting for
+  // a bug in the listing instead of reading "wrong kind of model".
+  const kokoro = stubFetch([
+    ["/tree/", { body: [
+      { type: "file", path: "onnx/model.onnx", size: 325_532_232 },
+      { type: "file", path: "onnx/model_fp16.onnx", size: 163_234_740 },
+      { type: "file", path: "onnx/model_q4.onnx", size: 305_215_966 },
+      { type: "file", path: "onnx/model_quantized.onnx", size: 92_361_116 },
+      { type: "file", path: "voices/af_bella.bin", size: 522_240 },
+    ] }],
+    ["/api/models/", { body: { sha: "c" } }],
+  ]);
+  await assert.rejects(
+    listSttVariants({ owner: "onnx-community", repo: "Kokoro-82M-v1.0-ONNX" }, kokoro),
+    (err) => {
+      assert.match(err.message, /Found 4 \.onnx files/);
+      assert.match(err.message, /onnx\/model\.onnx/); // names them, doesn't deny them
+      assert.match(err.message, /transducer/);
+      assert.doesNotMatch(err.message, /No .onnx files/);
+      return true;
+    }
+  );
+});
+
 test("listSttVariants rejects repos that are not transducer bundles", async () => {
   const noOnnx = stubFetch([
     ["/tree/", { body: [{ type: "file", path: "model.gguf", size: 1 }] }],
     ["/api/models/", { body: { sha: "c" } }],
   ]);
-  await assert.rejects(listSttVariants({ owner: "u", repo: "r" }, noOnnx), /No ONNX/);
+  await assert.rejects(listSttVariants({ owner: "u", repo: "r" }, noOnnx), /No \.onnx files/);
 
   const noTokens = stubFetch([
     ["/tree/", { body: [

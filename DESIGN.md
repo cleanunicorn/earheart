@@ -345,7 +345,7 @@ Three surfaces, one world:
 window, 12px margin all around. The card is a column: grip, optional update
 panel, transcript (grows freely upward — no clip, no scroll, no mask), then
 the 44px control row. The control row reads left to right: status dot + word,
-waveform (flexes to fill), timer, pause, Done, discard — with a 4px extra gap
+waveform (flexes to fill), timer, pause, Done, discard — with a 10px extra gap
 isolating discard from Done. The transcript's 16px side padding aligns its
 text column with the control row's left edge. Overlays that appear mid-flow
 (the progress bar over the wave area) are absolutely positioned so they never
@@ -425,8 +425,9 @@ corners anywhere.
   pure white on hover; the single strongest thing on the bar. Disabled outside
   a live take: transparent with a Faint Text glyph, but it stays in its slot.
 - **Discard (`#cancel`):** a plain X, gray until you mean it; hover applies
-  the Destructive Hover Exception (Failed Red glyph + red wash). Carries a 4px
-  extra left margin so it isn't hit by reflex next to Done. Its label follows
+  the Destructive Hover Exception (Failed Red glyph + red wash). Carries a
+  10px extra left margin — the clear gap between its hit halo and Done's —
+  so it isn't hit by reflex next to Done. Its label follows
   the action it would perform: "Discard" during a take, "Dismiss" in the
   terminal states, where the take is already settled and the key only takes
   the card down.

@@ -569,9 +569,11 @@ button:focus-visible {
 }
 
 /* Discard: gray until you mean it — the hover names it destructive. Extra gap
-   so it isn't hit by reflex right next to Done. */
+   so it isn't hit by reflex right next to Done: with the ~42px hit halos the
+   clear gap between Done's and this key's hit areas is margin-left — the
+   margin is the whole safety margin for an unrecoverable action. */
 #cancel {
-  margin-left: 4px;
+  margin-left: 10px;
 }
 
 #cancel:hover {

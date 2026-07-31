@@ -193,7 +193,9 @@ test("every CSS variable used by settings.css and wizard.css is defined in :root
 test("shared classes the wizard relies on still exist in settings.css", () => {
   // wizard.html reuses these settings.css primitives; renaming one silently
   // breaks the wizard's chrome. Cheap tripwire that each selector still appears.
-  const shared = [".field", ".row", ".hint", ".status", ".lead", ".choice", "button.primary", "button.ghost", "code"];
+  // .capturing is toggled by hotkey-capture.js (which the wizard also loads)
+  // and styled only here — the one visual cue that a hotkey field is armed.
+  const shared = [".field", ".row", ".hint", ".status", ".lead", ".choice", "button.primary", "button.ghost", "code", ".capturing"];
   const missing = shared.filter((sel) => !css.includes(sel)).sort();
   assert.deepStrictEqual(missing, [], `settings.css no longer defines: ${missing.join(", ")}`);
 });

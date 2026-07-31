@@ -202,6 +202,11 @@ function setStatus(status, title, detail) {
   pauseBtn.setAttribute("aria-pressed", String(status === "paused"));
   statusText.textContent = title;
   detailText.textContent = detail || "";
+  // The detail line is one ellipsized row, and for errors the actionable half
+  // ("…check the input device in Settings") is exactly the part that gets cut
+  // — mirror the full text into the tooltip so hovering recovers it. Screen
+  // readers already get the whole string from the live region.
+  detailText.title = detail || "";
   // The wave area steps back when a detail line (paste preview, error message,
   // hint) needs its space — see #card[data-detail] in overlay.css.
   card.toggleAttribute("data-detail", Boolean(detail));

@@ -89,8 +89,8 @@ app.whenReady().then(async () => {
     "";
   `);
 
-  // Processing state with the dictation progress fill mid-run (the README's middle
-  // hero shot). The transcript retires when processing starts, like the real
+  // Processing state with the dictation progress fill mid-run (the README's
+  // middle hero shot). The transcript retires when processing starts, like the real
   // pipeline does.
   await overlay.webContents.executeJavaScript(`
     clearTranscript();

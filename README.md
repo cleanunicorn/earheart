@@ -63,9 +63,9 @@ OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
 
 - **Global hotkey** (default `Ctrl/Cmd+Shift+Space`): press to start, press to
   stop. A small overlay draws your voice live and shows progress without
-  stealing focus from the app you're dictating into. With the built-in engines, a slim
-  bar tracks the finishing passes too — estimated from your machine's measured
-  decode speed while transcribing (so it deliberately stops short of the end
+  stealing focus from the app you're dictating into. With the built-in
+  engines, a slim bar tracks the finishing passes too — estimated from your
+  machine's measured decode speed while transcribing (so it deliberately stops short of the end
   rather than overpromise), and following actual generation during cleanup.
 - **Pause and resume mid-dictation** — the overlay's pause key holds the take
   (talk to someone, take a call) and resumes the same dictation; paused time

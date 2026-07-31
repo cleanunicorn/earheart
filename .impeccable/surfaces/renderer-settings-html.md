@@ -19,39 +19,50 @@ keyboard-first operation, and scannability outrank expression.
 **Audience & job:** developers and power users configuring engines/endpoints;
 motor/RSI users needing forgiving targets and no fiddly interactions.
 
-**Chosen direction (committed 2026-07-26, seed d6f88d13, migrates both surfaces
-off the retired On-Air Lamp system):** **The service panel** — one continuous
-Tape Transport faceplate read top to bottom (no hidden tab panels), with a
-sticky printed index on the left whose amber lamp tracks the section under the
-read head (scroll spy; glide on click, collapsed under reduced motion; the
-index docks horizontally under 600px). Instrument-quiet grammar: machined group
-panels (hairline ivory edge + inset top light, never cast shadows), inputs as
-recessed wells, key-cap buttons with press travel, aluminum switch slugs, the
-amber-backlit Save key, silk-screened uppercase section legends (10px/700/0.1em
-— the only uppercase besides lamp legends), REC-red armed state on
-hotkey-capture fields, amber service wash for selection, DONE-green/STOP-red
-status text, machine values (accelerators, timestamps, version) in 13px/11px
-mono. The wizard reuses all of it; its welcome demo is a miniature of the real
-tape deck (lamp, oxide signal, counter, backlit mini stop), and its step dots
-are lamps.
+**Chosen direction (committed 2026-07-31, migrates both surfaces off the
+retired Tape Transport "service panel"):** **The Quiet Transcription Bar on a
+framed window** — the overlay's committed world (see DESIGN.md) applied to the
+settings page and wizard. Structure carried over intact from the prior
+direction (it was never the problem): one continuous scrolling page with a
+sticky index on the left (scroll spy, glide on click, docks horizontally under
+600px), fixed footer commit row; wizard steps centered in a fixed frame.
+Material language replaced wholesale: solid near-black ink #18181b, white-wash
+cards (white 0.04–0.05) with hairline edges, sentence-case section headings
+running into a hairline, plain solid inputs (#101013, 3:1 boundary #6b6b74),
+fully-rounded pill buttons, one filled white Save (the overlay's Done-key
+grammar). **Chosen things are white**: the active index entry's wash, selected
+option rows, radio cores, checkbox fills, engaged switch tracks, the selected
+segment. Downloads and update bars fill white (One Voice Rule — the app
+talking about itself). Green/red only as status text (`.status.ok/.err`) and
+the destructive hover (danger buttons). Mono only for machine values:
+accelerators, timestamps, version, and the dictionary/prompt textareas.
 
-**Memorable moment:** the printed index lamp sliding section to section as the
-panel glides — and the wizard's miniature deck already recording.
+**The Capture Exception:** coral #fb4d5c appears on this window exactly once —
+a hotkey field mid-capture (border + wash + ring), because the field is
+literally capturing your key press. The one moment settings itself records.
 
-**Constraints:** settings.js/wizard.js drive everything by element id and
-radio-group name (contract-tested); CSP forbids inline styles; `[hidden]` must
-win; all copy preserved verbatim; keyboard-first (roving-tabindex index, arrows
-both axes, ivory focus rings); prefers-reduced-motion collapses glide, lamps,
-signal; windows paint `#1c1713` before load (windows.js backgroundColor).
+**Wizard demo:** the welcome step's miniature is now a mini quiet bar
+(`.mini-bar`: pulsing coral dot, coral wave bars, mono timer, filled white ✓)
+— a true preview of the real overlay. Step dots are white when active
+(`.dot.active`), 35% white otherwise.
 
-**Resolved at finish:** progress fills use the world's `width 0.15s linear`;
-sliders use the light-track grammar (a dark recessed channel vanishes at 4-8px
-heights); em-dash-heavy copy is the product's incumbent voice, kept.
+**Memorable moment:** the wizard's mini bar already dictating — the exact bar
+you're about to meet — and the index wash sliding section to section.
 
-**Amended 2026-07-29 (user request):** the wizard's miniature deck drops its
-two dashed-ring reels to match the real transport (see
-`renderer-overlay-html.md`); the oxide signal takes the freed width, so the
-miniature keeps its size and the tape dominates it the way it dominates the
-overlay.
+**Constraints:** settings.js/wizard.js drive everything by element id, class
+name (.capturing, .active, .disabled, .status ok/err, .dl-*, .ghost, .danger,
+.dot, .accel) and radio-group name (contract-tested); CSP forbids inline
+styles; `[hidden]` must win; keyboard-first (roving-tabindex index, visible
+focus rings — 2px white); prefers-reduced-motion collapses glide/pulses;
+windows paint `#18181b` before load (INK_COLOR in windows.js, kept in sync
+with `--ink`).
 
-**Unresolved:** none for this surface; tray menu remains unstyled platform UI.
+**Copy (2026-07-31):** dictation-forward language — "start dictating", "Max
+dictation length (s)", card title "Dictation", "the dictation bar". Everything
+else preserved verbatim.
+
+**Resolved earlier, still true:** progress fills use `width 0.15s linear`;
+sliders are a light track under a white knob; em-dash-heavy copy is the
+product's incumbent voice, kept; tray menu remains unstyled platform UI.
+
+**Unresolved:** none for this surface.

@@ -1,775 +1,636 @@
 ---
 name: Earheart
-description: Private, hotkey-driven voice dictation for the desktop
+description: The quiet transcription bar — live words as the interface, one coral voice.
 colors:
-  face: "#1c1713"
-  face-edge: "rgba(255, 240, 214, 0.14)"
-  recess: "#0f0c09"
-  ribbon: "#35291d"
-  oxide: "#d29a5a"
-  ivory: "#f2e9da"
-  ivory-dim: "#a89b88"
-  alu: "#b4a894"
-  key: "#2a2118"
-  key-hover: "#342a1e"
-  key-edge: "rgba(255, 240, 214, 0.12)"
-  panel: "#221b15"
-  panel-edge: "rgba(255, 240, 214, 0.1)"
-  seam: "rgba(255, 240, 214, 0.07)"
-  well-edge: "#776a58"
-  rec: "#ff4438"
-  busy: "#ffb03a"
-  busy-hover: "#ffc262"
-  busy-wash: "rgba(255, 176, 58, 0.07)"
-  busy-line: "rgba(255, 176, 58, 0.35)"
-  done: "#59c98a"
-  ok-text: "#8fdcae"
-  err-text: "#ffb4ac"
-  inert: "#9b9187"
-  raw-warm: "#e7b57e"
+  bar-ink: "#18181b"
+  coral-voice: "#fb4d5c"
+  text-primary: "#f4f4f5"
+  text-status: "#d4d4d8"
+  text-dim: "#a1a1aa"
+  text-faint: "rgba(255, 255, 255, 0.28)"
+  hairline-edge: "rgba(255, 255, 255, 0.1)"
+  seam: "rgba(255, 255, 255, 0.08)"
+  hover-wash: "rgba(255, 255, 255, 0.08)"
+  wash-faint: "rgba(255, 255, 255, 0.04)"
+  track: "rgba(255, 255, 255, 0.12)"
+  field: "#101013"
+  field-edge: "#6b6b74"
+  tray: "rgba(0, 0, 0, 0.25)"
+  delivered-green: "#34d399"
+  failed-red: "#f87171"
+  idle-gray: "#71717a"
 typography:
-  transcript:
+  body:
     fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
     fontSize: "15px"
     fontWeight: 500
     lineHeight: 1.5
-  status:
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
-    fontSize: "12px"
-    fontWeight: 600
-  detail:
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
-    fontSize: "10.5px"
-    fontWeight: 400
-  note-title:
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
-    fontSize: "13px"
-    fontWeight: 600
-  note-body:
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
-    fontSize: "11px"
-    fontWeight: 400
-  legend:
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
-    fontSize: "8px"
-    fontWeight: 700
-    letterSpacing: "0.08em"
-  counter:
-    fontFamily: "ui-monospace, 'Cascadia Code', monospace"
-    fontSize: "13px"
-    fontWeight: 400
-    letterSpacing: "0.04em"
-  panel-title:
+  window-title:
     fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
     fontSize: "16px"
     fontWeight: 650
     letterSpacing: "-0.01em"
-  reading:
+  settings-body:
     fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
     fontSize: "14px"
     fontWeight: 400
     lineHeight: 1.45
-  control:
+  title:
     fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
     fontSize: "13px"
-    fontWeight: 500
-  machine-value:
-    fontFamily: "ui-monospace, 'Cascadia Code', monospace"
-    fontSize: "13px"
-    fontWeight: 400
-    letterSpacing: "0.02em"
+    fontWeight: 600
+  label:
+    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "12.5px"
+    fontWeight: 550
   hint:
     fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
     fontSize: "12px"
     fontWeight: 400
     lineHeight: 1.55
-  meta-mono:
+  caption:
+    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "11.5px"
+    fontWeight: 400
+  mono-value:
+    fontFamily: "ui-monospace, 'Cascadia Code', monospace"
+    fontSize: "13px"
+    fontWeight: 400
+    letterSpacing: "0.02em"
+  timer:
+    fontFamily: "ui-monospace, 'Cascadia Code', monospace"
+    fontSize: "12px"
+    fontWeight: 400
+    letterSpacing: "0.03em"
+  history-meta:
     fontFamily: "ui-monospace, 'Cascadia Code', monospace"
     fontSize: "11px"
     fontWeight: 400
     letterSpacing: "0.02em"
-  silk-legend:
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
-    fontSize: "10px"
-    fontWeight: 700
-    letterSpacing: "0.1em"
 rounded:
-  bar: "1px"
-  track: "2px"
-  sub-well: "4px"
-  well: "6px"
-  pill: "7px"
-  mini-face: "8px"
-  key: "9px"
-  note: "10px"
+  hairline: "2px"
+  chip: "4px"
+  input: "8px"
+  icon: "9px"
+  row: "10px"
   capsule: "11px"
-  card: "12px"
+  panel: "12px"
+  pill: "13px"
+  card: "16px"
+  mini-bar: "18px"
+  full: "999px"
+  key: "50%"
 spacing:
-  xs: "4px"
-  sm: "6px"
-  md: "8px"
-  lg: "12px"
-  xl: "16px"
-  xxl: "24px"
+  hairline-gap: "4px"
+  tight: "6px"
+  gap: "8px"
+  row-gap: "10px"
+  inset: "12px"
+  text-inset: "16px"
 components:
-  faceplate:
-    backgroundColor: "{colors.face}"
-    textColor: "{colors.ivory}"
-    rounded: "{rounded.card}"
-  transport-key:
-    backgroundColor: "{colors.key}"
-    textColor: "{colors.ivory}"
+  key-ghost:
+    backgroundColor: "transparent"
+    textColor: "{colors.text-dim}"
     rounded: "{rounded.key}"
-    size: "34px"
-  transport-key-hover:
-    backgroundColor: "{colors.key-hover}"
-    textColor: "{colors.ivory}"
+    size: "32px"
+  key-ghost-hover:
+    backgroundColor: "{colors.hover-wash}"
+    textColor: "{colors.text-primary}"
+  key-done:
+    backgroundColor: "{colors.text-primary}"
+    textColor: "{colors.bar-ink}"
     rounded: "{rounded.key}"
-    size: "34px"
-  transport-key-stop:
-    backgroundColor: "#3a1611"
-    textColor: "{colors.err-text}"
-    rounded: "{rounded.key}"
-    size: "34px"
-  transport-key-stop-hover:
-    backgroundColor: "#4a1b14"
-    textColor: "{colors.err-text}"
-    rounded: "{rounded.key}"
-    size: "34px"
-  counter-cell:
-    backgroundColor: "{colors.recess}"
-    textColor: "{colors.ivory}"
-    rounded: "{rounded.well}"
-    height: "30px"
-    width: "52px"
-  tape-window:
-    backgroundColor: "{colors.recess}"
-    rounded: "{rounded.well}"
-    height: "34px"
+    size: "32px"
+  key-done-hover:
+    backgroundColor: "#ffffff"
+  key-done-disabled:
+    backgroundColor: "transparent"
+    textColor: "{colors.text-faint}"
+  key-discard-hover:
+    backgroundColor: "rgba(248, 113, 113, 0.12)"
+    textColor: "{colors.failed-red}"
   pill-primary:
-    backgroundColor: "{colors.busy}"
-    textColor: "#241703"
+    backgroundColor: "{colors.text-primary}"
+    textColor: "{colors.bar-ink}"
     rounded: "{rounded.pill}"
     height: "26px"
-    padding: "0 10px"
-  pill-primary-hover:
-    backgroundColor: "{colors.busy-hover}"
-    textColor: "#241703"
-    rounded: "{rounded.pill}"
-    height: "26px"
-    padding: "0 10px"
+    padding: "0 11px"
   pill-quiet:
     backgroundColor: "transparent"
-    textColor: "{colors.ivory-dim}"
+    textColor: "{colors.text-dim}"
     rounded: "{rounded.pill}"
     height: "26px"
-    padding: "0 10px"
-  update-note:
-    backgroundColor: "{colors.busy-wash}"
-    textColor: "{colors.ivory}"
-    rounded: "{rounded.note}"
+    padding: "0 11px"
+  update-panel:
+    backgroundColor: "rgba(255, 255, 255, 0.05)"
+    rounded: "{rounded.panel}"
     padding: "10px 12px"
-  group-panel:
-    backgroundColor: "{colors.panel}"
-    textColor: "{colors.ivory}"
+  card:
+    backgroundColor: "{colors.bar-ink}"
+    textColor: "{colors.text-primary}"
     rounded: "{rounded.card}"
+  card-wash:
+    backgroundColor: "{colors.wash-faint}"
+    textColor: "{colors.text-primary}"
+    rounded: "{rounded.panel}"
     padding: "16px 18px"
-  input-well:
-    backgroundColor: "{colors.recess}"
-    textColor: "{colors.ivory}"
-    rounded: "{rounded.well}"
+  input:
+    backgroundColor: "{colors.field}"
+    textColor: "{colors.text-primary}"
+    rounded: "{rounded.input}"
     padding: "9px 11px"
-  key-button:
-    backgroundColor: "{colors.key}"
-    textColor: "{colors.ivory}"
-    rounded: "{rounded.key}"
+  button-standard:
+    backgroundColor: "{colors.hover-wash}"
+    textColor: "{colors.text-primary}"
+    rounded: "{rounded.full}"
     padding: "8px 14px"
-  key-button-hover:
-    backgroundColor: "{colors.key-hover}"
-    textColor: "{colors.ivory}"
-    rounded: "{rounded.key}"
-    padding: "8px 14px"
-  save-key:
-    backgroundColor: "{colors.busy}"
-    textColor: "#241703"
-    rounded: "{rounded.key}"
+  button-standard-hover:
+    backgroundColor: "rgba(255, 255, 255, 0.14)"
+  button-primary:
+    backgroundColor: "{colors.text-primary}"
+    textColor: "{colors.bar-ink}"
+    rounded: "{rounded.full}"
     padding: "9px 20px"
-  save-key-hover:
-    backgroundColor: "{colors.busy-hover}"
-    textColor: "#241703"
-    rounded: "{rounded.key}"
-    padding: "9px 20px"
-  ghost-key:
+  button-primary-hover:
+    backgroundColor: "#ffffff"
+  button-ghost:
     backgroundColor: "transparent"
-    textColor: "{colors.ivory-dim}"
-    rounded: "{rounded.key}"
+    textColor: "{colors.text-dim}"
+    rounded: "{rounded.full}"
     padding: "8px 14px"
-  switch:
-    backgroundColor: "{colors.recess}"
-    rounded: "{rounded.capsule}"
-    width: "40px"
-    height: "22px"
-  switch-on:
-    backgroundColor: "{colors.busy}"
-    rounded: "{rounded.capsule}"
-    width: "40px"
-    height: "22px"
-  history-take:
-    backgroundColor: "{colors.recess}"
-    textColor: "{colors.ivory}"
-    rounded: "{rounded.well}"
-    padding: "11px 13px"
+  tab:
+    backgroundColor: "transparent"
+    textColor: "{colors.text-dim}"
+    rounded: "{rounded.input}"
+    padding: "8px 12px"
+  tab-active:
+    backgroundColor: "{colors.hover-wash}"
+    textColor: "{colors.text-primary}"
 ---
 
 # Design System: Earheart
 
 ## Overview
 
-**Creative North Star: "The Tape Transport"**
+**Creative North Star: "The Quiet Transcription Bar"**
 
-Earheart's overlay is a machine you can watch working: a tape deck lying along
-the bottom of the screen. Dictation is not a pulsing dot in a pill — it is
-signal being physically written onto moving tape. The world is a warm-black
-instrument faceplate with wells sunk into it: an umber tape ribbon carrying
-the oxide-written waveform, a mechanical counter, legended status lamps, and
-machined transport keys. A glance tells the whole story: lamp lit, your words
-being written onto tape and appearing above; the backlit square key stops,
-eject discards.
+Earheart is a clean minimal dictation bar played straight — the category canon
+of Wispr Flow and superwhisper, held to craft-bar standard. The live words ARE
+the interface: a solid near-black strip pinned low on the screen,
+hairline-edged, with the transcript growing upward above a single control row.
+Every control is a glyph the whole world already reads (pause, check, X);
+nothing on the bar needs a manual, a legend, or a label.
 
-**The machine has no parts that don't report.** The transport once carried
-spinning aluminum reels and a record-head marker — faithful to the metaphor,
-mute about the state. They were removed: the lamp, the tape and the counter
-already said everything the reels gestured at, and the width they occupied
-belonged to the one element carrying real information. The metaphor earns its
-place by making state legible, and stops exactly where it stops doing that.
+One color speaks: a coral accent lifted from the app icon's waveform-heart,
+and it means exactly one thing — "Earheart is working with your voice." The
+capture dot, the live waveform, and the dictation progress fill wear it;
+beyond the bar it appears only in two sanctioned capture moments (see The
+Capture Exception). Everything else is white and gray on near-black, with
+green and red confined to miniature status signals. The world explicitly
+refuses the hardware metaphor: no tape, no lamps, no legends, no eject. The
+previous "Tape Transport" service-panel system and the earlier violet/rose
+"On-Air Lamp" system are both fully retired; neither may resurface.
 
-The Tape Transport now covers **every surface**. The settings window and the
-setup wizard are "the service panel": the same machine opened up for
-maintenance — one continuous scrolling faceplate with a sticky printed index
-(its amber lamp marks the section under the read head), machined group panels,
-inputs sunk in as recessed wells, key-cap buttons, aluminum switch slugs, and
-an amber-backlit Save key. The earlier violet/rose "On-Air Lamp" system is
-fully retired and exists nowhere in the product.
-
-The finish is flat matte throughout. The only glow in the world comes from
-things that are lit — status lamps, the backlit STOP and Save keys, the
-playhead — never from ambience. Depth is machined into the faceplate (inset
-wells, inset top highlights), never cast under it: the overlay window is
-transparent, and a drop shadow would band and halo against the desktop.
-Motion is mechanical physics, not decoration: keys travel when pressed, tape
-glides at a fixed write speed carrying the signal left, the service
-panel glides tape-style to indexed sections, and all of it collapses to
-instant state changes under `prefers-reduced-motion`. Text is quiet system UI
-silk-screened in ivory onto the faceplate; the machine's own numerals and
-notation are monospace.
-
-Confirmed rejections, from the shipped surfaces themselves: no cast shadows on
-the transparent overlay window; no translucent surface under text (the
-faceplate is solid so the written tape and the warm raw tail never depend on
-what shows through behind the overlay); no category-standard pulsing-dot
-pill; no hidden-tab shuffle in settings (every control lives on one visible
-panel).
+**Scope note:** the world now covers every surface. The overlay
+(`renderer/overlay.*`), the settings window (`renderer/settings.*`), and the
+setup wizard (`renderer/wizard.*`, which layers on `settings.css`) all speak
+this language; the framed windows extend the bar's grammar with white-wash
+cards, solid inputs, and pill buttons, documented below. The main process
+paints framed windows in Bar Ink before load (`INK_COLOR` in
+`main/windows.js`), which must stay in sync with `--ink`. The retired Tape
+Transport and On-Air Lamp systems survive only as historical notes.
 
 **Key Characteristics:**
-
-- Interface as instrument: every state is a lamp, a written trace, or a
-  counter — never an abstract spinner, and never a part that only decorates.
-- Warm-black and oxide materials; saturated color exists only in lamps.
-- Depth by inset: wells sink into the faceplate; nothing floats above it.
-- Glow means lit: lamp blooms and key backlights are the world's only shadows.
-- Honest state: the machine never claims to be listening before samples flow.
-- One world everywhere: the overlay is the machine running; settings and
-  wizard are the same machine on the service bench.
+- Solid neutral near-black surfaces; nothing translucent under text
+- One coral accent, reserved exclusively for the voice being heard or captured
+- Universally-read glyphs in circular ghost keys; one filled white Done key
+- Chosen things are white: washes, radio cores, switch tracks, the Save pill
+- Hairline edges and subtle white washes instead of shadows
+- The live transcript is the hero; chrome stays quiet around it
 
 ## Colors
 
-A warm-black machine built from browns, umbers, and ivory, with saturated
-color reserved for four legended lamps.
+A single-accent dark-neutral palette: near-black ink, four steps of white/gray
+text, a small family of white washes and hairlines, one coral voice, and
+green/red kept miniature.
 
 ### Primary
-
-- **Rec Lamp Red** (#ff4438): the recording lamp — lit and pulsing only while
-  audio is actually being captured, and as the tint of the backlit STOP key
-  (fill #3a1611, glyph #ffb4ac, border rgba(255,68,56,0.5)). The lit REC
-  legend reads in #ff958c. On the service panel, a hotkey-capture field that
-  is literally recording your key press borrows this vocabulary: red border
-  rgba(255,68,56,0.55), red wash rgba(255,68,56,0.07), red focus halo.
-- **Oxide** (#d29a5a): the signal written onto the tape, drawn at
-  rgba(210,154,90,0.9) on the ribbon. Material, not a lamp: deliberately
-  muted so the saturated red stays reserved. On the service panel it is the
-  focus color of a well being written into (focus border + halo
-  rgba(210,154,90,0.22)) and the wizard demo's typing caret.
-- **Raw Warm** (#e7b57e): the freshly-written, not-yet-settled transcript
-  tail — bright and warm off the head, cooling to ivory as cleanup settles it.
-  Carries a faint warmth glow (text-shadow rgba(231,181,126,0.25)).
-
-### Secondary
-
-The remaining lamps of the fixed status vocabulary:
-
-- **Busy Lamp Amber** (#ffb03a): the machine working — transcribing,
-  cleaning, delivering — and the machine talking about itself: the update
-  note's lamp and pills (hover #ffc262), and across the service panel the
-  active index lamp, the selected option's wash, the lit radio/checkbox
-  sockets, the engaged switch channel, download fills, wizard step lamps, and
-  the backlit Save key. Lit BUSY legend reads in #ffc76e. The self-reference
-  wash is **Busy Wash** (rgba(255,176,58,0.07)) edged by **Busy Line**
-  (rgba(255,176,58,0.35)).
-- **Done Lamp Green** (#59c98a): delivered. Its lit-legend tone **OK Text**
-  (#8fdcae) is the service panel's success status text.
-- **Inert Warm Grey** (#9b9187): idle, error, or empty — a warm, deliberately
-  unalarming unlit lamp.
-- **Err Text** (#ffb4ac): the STOP key's glyph tone, reused as the service
-  panel's fault status text and the tint of danger keys.
+- **Coral Voice** (`coral-voice`): the app's one expressive color, from the
+  icon's waveform-heart. On the overlay it appears only where the user's voice
+  is live or being processed: the capture dot (filled) and warming/paused ring
+  (hollow), the canvas waveform, and the dictation progress fill. The value is
+  duplicated as `WAVE_COLOR` in `overlay.js` and must be kept in sync with
+  `--accent` in `overlay.css`. Off the overlay it appears only under The
+  Capture Exception below.
 
 ### Neutral
+- **Bar Ink** (`bar-ink`): every surface — the overlay bar (solid, never
+  translucent) and the framed settings/wizard windows, painted before load via
+  `INK_COLOR` in `main/windows.js`. Also the glyph/label color on filled-white
+  elements.
+- **Primary Text** (`text-primary`): settled transcript text, active timer,
+  headings and labels, the filled Done key / Save pill, white download fills,
+  switch-on tracks, chosen radio cores.
+- **Status Text** (`text-status`): the overlay's one-word status next to its
+  dot.
+- **Dim Text** (`text-dim`): secondary text, hints, the streaming raw tail,
+  idle key glyphs, quiet pills, index entries at rest, placeholders. Chosen to
+  hold ≥4.5:1 on Bar Ink.
+- **Faint Text** (`text-faint`): disabled key glyphs only.
+- **Hairline Edge** (`hairline-edge`): card and panel borders.
+- **Seam** (`seam`, white 0.08): dividers between regions — header/footer
+  borders, the index rail's edge, the legend's trailing hairline, history-card
+  borders, the overlay's transcript/controls divider.
+- **Hover Wash** (`hover-wash`, white 0.08): ghost-key and quiet-pill hover
+  fill, standard pill-button fill, the index's active wash, the held (paused)
+  pause key.
+- **Faint Wash** (`wash-faint`, white 0.04): card fills, quiet hovers — the
+  settings window's card material (cards sit at 0.04–0.05 with a hairline
+  edge).
+- **Track** (`track`): empty progress/download track fills.
+- **Field** (`field`, #101013): input fill — a deliberate step below the ink
+  so fields read as wells.
+- **Field Edge** (`field-edge`, #6b6b74): the input boundary, chosen to clear
+  the 3:1 UI-component contrast bar on the ink (WCAG 1.4.11).
+- **Tray** (`tray`, black 0.25): the darker inset model-management trays
+  inside cards.
 
-The machine's materials, dark to light:
-
-- **Recess Black** (#0f0c09): wells sunk into the faceplate — the tape
-  window, the counter cell, every service-panel input, the segmented track,
-  radio/checkbox sockets, switch channels, history takes, and model trays.
-- **Faceplate Black** (#1c1713): the card and every window itself; warm
-  black, solid so text never sits over the desktop. Settings and wizard
-  windows paint it as their native background.
-- **Panel** (#221b15): a machined group panel, one shade off the faceplate;
-  edged in **Panel Edge** (rgba(255,240,214,0.1)) and separated from
-  neighboring regions by recessed **Seam** hairlines (rgba(255,240,214,0.07)).
-- **Key Cap** (#2a2118): machined transport keys and service-panel buttons
-  (hover **Key Hover** #342a1e), edged in **Key Edge**
-  (rgba(255,240,214,0.12)).
-- **Tape Umber** (#35291d): the ribbon the signal is written onto; also the
-  service panel's scrollbar thumb.
-- **Well Edge** (#776a58): the recessed input's boundary against the panel —
-  holds ≥3:1 for the WCAG 1.4.11 UI-component bar.
-- **Unlit Ivory** (#a89b88): unlit legends, secondary text, hints, and
-  placeholders (used at full color, never via opacity); holds ≥4.5:1 on
-  Faceplate Black.
-- **Machined Aluminum** (#b4a894, `--alu`): the switch slug and the fader
-  knob — the machine's moving metal parts.
-- **Silk-Screen Ivory** (#f2e9da): primary text and legends, printed onto the
-  faceplate; also the hairline **Machine Edge** (rgba(255,240,214,0.14)) and
-  every warm-white translucent detail (grip knurling, seams).
+### Status hues
+- **Delivered Green** (`delivered-green`): the overlay's "done / pasted"
+  status dot; success status text on settings (`.status.ok`).
+- **Failed Red** (`failed-red`): the overlay's "error" status dot; fault
+  status text on settings (`.status.err`); and the Destructive Hover
+  Exception.
+- **Idle Gray** (`idle-gray`): the idle / nothing-heard status dot.
 
 ### Named Rules
+**The One Voice Rule.** Coral is spent only on the dictation itself — the
+capture dot, the waveform, the dictation progress fill. When the app talks
+about itself (the update prompt, model downloads), it uses the neutral white
+grammar: filled white primary pill, white download-bar fill. Never spend coral
+on non-voice surfaces.
 
-**The Lamp Vocabulary Rule.** Status colors are a fixed legended vocabulary:
-REC red = capturing, BUSY amber = working (or the machine talking about
-itself), DONE green = delivered, inert warm grey = idle or fault. Never
-repurpose a lamp color for decoration, and never invent a second color for a
-meaning that already has a lamp.
+**The Capture Exception.** On the settings window coral appears exactly once:
+a hotkey field mid-capture (`.capturing` — coral border
+rgba(251, 77, 92, 0.55), coral wash rgba(251, 77, 92, 0.07), 0-blur coral
+ring rgba(251, 77, 92, 0.16)), because the field is literally capturing the
+user's key press. The wizard's mini-bar demo is the only other sanctioned
+non-overlay coral: it is a depiction of the real bar, not a new use. No third
+use exists.
 
-**The Service-Amber Rule.** On the service panel, amber always means "the
-machine marking its own configuration": the you-are-here index lamp, the
-selected option's Busy Wash + Busy Line, lit sockets, engaged switches, the
-backlit Save. REC red appears on the service panel only while a hotkey field
-is actually capturing a key press — the one moment settings itself records.
-
-**The Oxide-Is-Material Rule.** The written trace is Oxide — muted, material,
-the take itself. Saturated red is reserved for the REC lamp and the backlit
-STOP key. If the tape glows lamp-red, the lamp means nothing.
+**The Tiny Dot Rule.** Green and red stay miniature: 8px status dots on the
+overlay, single lines of 13px status text on settings/wizard (`.status.ok` /
+`.status.err`) — never fills, washes, or large surfaces. One deliberate
+carve-out: the Destructive Hover Exception. Destructive controls (the
+overlay's discard key, `button.danger` pills) are gray at rest and take
+Failed Red text plus a red wash (rgba(248, 113, 113, 0.12), pills add a
+rgba(248, 113, 113, 0.4) border) on hover only — red names the consequence at
+the moment of intent, never at rest.
 
 ## Typography
 
-**Display Font:** none — the machine has no display tier.
 **Body Font:** system-ui (with -apple-system, "Segoe UI", sans-serif)
-**Label/Mono Font:** ui-monospace (with "Cascadia Code", monospace)
+**Mono Font:** ui-monospace (with "Cascadia Code", monospace) — machine
+values only
 
-**Character:** silk-screen printing on an instrument: small, quiet system UI
-in ivory, with personality carried by weight, tracking, and the machine's own
-monospace numerals and notation — never by typeface.
+**Character:** invisible craftsmanship. The native system stack at small,
+confident sizes; weight and gray-steps carry the hierarchy, not size jumps.
+The transcript is the largest type in the system because the words are the
+interface; window chrome never exceeds 16px.
 
 ### Hierarchy
-
-The overlay's tiers:
-
-- **Transcript** (500, 15px, 1.5): the live dictation filling the top of the
-  card — the largest running text in the product because it *is* the product.
-  Settled text in Silk-Screen Ivory; the streaming tail in Raw Warm,
-  subordinate only in weight, not legibility. Long words wrap
-  (`overflow-wrap: anywhere`) rather than overflow.
-- **Status** (600, 12px): the machine display's line over the tape window
-  ("Transcribing…", "Pasted"), with a faint VFD warmth
-  (text-shadow rgba(255,240,214,0.18)). Single line, ellipsized.
-- **Note title** (600, 13px): the update service note's heading.
-- **Note body / detail** (400, 11px / 10.5px): secondary lines in Unlit
-  Ivory.
-- **Legend** (700, 8px, 0.08em, UPPERCASE): the printed micro-legend under
-  the lamp (REC/BUSY/DONE/PAUSE/ERR).
-- **Counter** (ui-monospace, 13px, 0.04em, tabular-nums): the take counter.
-  Digits go to 55% opacity outside recording — still readable (5.4:1 on
-  Recess Black, clearing AA), clearly not running.
-
-The service panel's tiers (settings + wizard):
-
-- **Panel title** (650, 16px, −0.01em): the nameplate heading and wizard step
-  titles — the largest type in the product, and still only 16px.
-- **Reading** (400, 14px, 1.45): the panel's base body size — leads and the
-  fader's live readout. Running copy holds a ~62ch measure.
-- **Control** (500–600, 13px): field labels, card titles (600), index
-  entries, buttons, option/toggle text, status lines, history text.
-- **Machine value** (ui-monospace, 13px, 0.02em): hotkey accelerator fields —
-  the counter tier applied to notation. The version readout is the same tier
-  with tabular-nums.
-- **Hint** (400, 12px, 1.55): explanatory copy under fields, toggle
-  descriptions, inline `code` chips (mono, 12px), all in Unlit Ivory.
-- **Meta mono** (ui-monospace, 11px, 0.02em, tabular-nums): history take
-  timestamps — the machine's own record of when.
-- **Silk-screen legend** (700, 10px, 0.1em, UPPERCASE): the printed section
-  legends over machined seams — with the lamp legends, the only uppercase in
-  the world.
+- **Body** (500, 15px, 1.5): the live transcript — settled cleaned text in
+  Primary Text; the still-streaming raw tail in Dim Text, brightening as it
+  settles. The largest type anywhere.
+- **Window Title** (650, 16px, -0.01em): the settings header h1 and wizard
+  step h2 — the framed windows' largest chrome text.
+- **Settings Body** (400, 14px, 1.45): the settings/wizard base text — leads,
+  option copy, history text at 13px within it. Running copy holds a ~62ch
+  measure.
+- **Title / Section** (600, 13px): the update prompt's headline; settings
+  section headings (`.legend`) and card titles — quiet sentence case, the
+  legend running into a hairline.
+- **Label** (550, 12.5px overlay / 13px settings field labels): the overlay's
+  one-word status; settings field labels. Pill labels are 12–13px
+  (600 primary / 500 quiet).
+- **Hint** (400, 12px, 1.55): settings hints, descriptions, toggle
+  descriptions, muted text, in Dim Text.
+- **Caption** (400, 11.5px): the overlay's detail line and update note, single
+  line with ellipsis.
+- **Mono values** (400, 13px mono, 0.02em): hotkey accelerators, textareas
+  (prompt, dictionary). The version readout is mono with tabular-nums.
+- **Timer** (400, 12px mono, tabular-nums, 0.03em): captured-audio time; Dim
+  Text at rest, Primary Text while recording.
+- **History meta** (400, 11px mono, tabular-nums, 0.02em): timestamp rows
+  under history entries.
 
 ### Named Rules
+**The Pending Text Rule.** Streaming, not-yet-settled words render in Dim Text
+and brighten to Primary Text when cleanup settles them — the universal
+"pending" signal, done with color alone, no italics or spinners.
 
-**The Machine-Numerals Rule.** Anything the machine counts or records — the
-take counter, the version readout, history timestamps — is monospace with
-`font-variant-numeric: tabular-nums`. Human words are never monospace, with
-one named exception below.
-
-**The Machine-Instructions Exception.** The dictionary and system-prompt
-textareas are data, not prose — exact-spelling terms and model instructions
-the machine consumes verbatim — so they are set in mono (13px, 1.55), as are
-hotkey accelerators and `kbd` caps. If a human reads it as a sentence, it's
-sans; if the machine executes it, it's mono.
+**The Machine Values Rule.** Monospace is for machine notation only:
+accelerators, timestamps, the version numeral, dictionary and prompt
+textareas, `code` and `kbd`. Prose is never mono — the hotkey fields' prose
+placeholders ("Click, then press…") explicitly render in the body face even
+though the field itself is mono.
 
 ## Layout
 
-**The overlay** is a fixed-size, frameless, transparent, bottom-anchored
-Electron window — the window is the layout. Base size 500×95px; the card sits
-inside a 12px margin and grows *upward* as the transcript or update note
-fills it (the main process resizes the window instantly; the card eases its
-own height so content slides rather than pops).
+Three surfaces, one world:
 
-Card anatomy, top to bottom: knurled drag rail (44×5px, centered) → optional
-update service note → live transcript → transport row. The transport row is a
-fixed 46px strip inset 12px, gapped 8px: lamp block (30px) → tape window
-(flexes to fill — the hero owns all leftover width, ~216px at the default
-500px overlay) → counter cell (min 52×30px) → PAUSE → STOP → eject, with an
-extra 4px gap isolating the destructive eject. The transcript's 16px side
-padding shares one left edge with the machine below it. Update-note actions
-wrap to a second line rather than squeeze; when the update arrives with no
-dictation behind it, the transport row hides and the note is the whole card.
+**The overlay bar.** One slim bar pinned to the bottom edge of a transparent
+window, 12px margin all around. The card is a column: grip, optional update
+panel, transcript (grows freely upward — no clip, no scroll, no mask), then
+the 44px control row. The control row reads left to right: status dot + word,
+waveform (flexes to fill), timer, pause, Done, discard — with a 4px extra gap
+isolating discard from Done. The transcript's 16px side padding aligns its
+text column with the control row's left edge. Overlays that appear mid-flow
+(the progress bar over the wave area) are absolutely positioned so they never
+change the card height; when the transcript actually grows, the card eases its
+own height (0.18s). On narrow widths the update panel's actions wrap to a
+second line, with the two "no" pills grouped so they wrap together.
 
-**The service panel** (settings, 760×780, min 560×480) and **the wizard**
-(620×680, min 560×560) are solid native windows painted Faceplate Black
-(`backgroundColor: #1c1713`) with `color-scheme: dark` so native selects and
-dialogs render dark. Settings anatomy: nameplate header (icon + title +
-one-line pitch, seam below, machined top light) → the deck: a 168px printed
-index rail on the left (sticky by construction — it sits outside the scroll
-area) beside one scrolling column holding every section at once, content
-capped at 620px with 24px gutters → a fixed footer commit row (seam above,
-Save right-aligned). Sections are legend + machined panels; fields stack
-inside a panel separated by whitespace only (the panel already frames the
-group). Two-column moments use a simple 1fr/1fr grid, 12px gap. Below 600px
-wide, the index docks horizontally above the panel. Clicking an index entry
-glides the panel to the section (`scroll-behavior: smooth`, 12px
-scroll-margin); the scroll spy lights the lamp of the section under the read
-head. The wizard reuses the same frame with steps centered vertically in the
-fixed window, the step-lamp row in the footer between Skip and the nav keys.
+**The settings window** (760×780 default, 560×480 minimum, framed, solid Bar
+Ink). One continuous page read top to bottom — every control visible, no
+hidden-tab shuffle. Header (icon + 16px title + tagline, seam below), then a
+deck: a 168px sticky index rail on the left (outside the scroll area, seam on
+its right) beside one scrolling column of sections capped at 620px
+(`.panel { max-width: 620px }`), then a fixed footer commit row (seam above,
+right-aligned, white Save pill). The index is a scroll spy with roving
+tabindex: the entry under the read head takes the wash; clicking glides the
+page (`scroll-behavior: smooth`) and moves focus to the section legend. Below
+600px the index docks horizontally above the page.
 
-Spacing rhythm: 4 / 6 / 8 / 12 / 16 / 24px.
+**The setup wizard** (620×680, 560×560 minimum). Layers on `settings.css`:
+same header and materials. Steps (max-width 640px) center vertically in the
+fixed frame via auto margins that collapse when a tall step scrolls. The
+footer is the wizard's nav row: Skip on the left, step dots centered,
+Back/Next on the right — Next/Get started is the filled white pill. Below
+600px the welcome demo stacks vertically.
 
 ## Elevation & Depth
 
-**The Depth-Is-Inset Rule.** The overlay window is transparent, and soft
-shadows band and halo on transparent windows — so the card carries **no drop
-shadow, ever**, and the solid service panel keeps the same physics for
-coherence: panels are machined into the faceplate, not floated over it. Depth
-is inset everywhere — wells recess (`inset 0 1px 3px rgba(0,0,0,0.55)`),
-edges catch light as inset top highlights, and lift comes from solid surfaces
-and hairline edges. Every outward glow in the system is a *lit thing*, not
-elevation.
+Flat by necessity and by conviction. The overlay window is transparent and
+focusable:false, so surfaces carry **no drop shadows** — soft shadows band and
+halo on transparent windows — and the framed windows keep the same flatness by
+conviction. Depth is conveyed by hairline edges, white washes (0.04–0.14 alpha
+fills), and one step of solid layering: inputs sink to Field (#101013), model
+trays sink to Tray (black 0.25), cards rise on Faint Wash. Every surface under
+text is opaque or sits on the solid ink.
 
-### Shadow Vocabulary
+### Named Rules
+**The No Surface Shadow Rule.** No blurred or offset `box-shadow` on any
+surface, card, key, or pill — ever. Two device classes are explicitly *not*
+elevation and are sanctioned: (1) the recording dot's coral bloom
+(`box-shadow: 0 0 6px rgba(251, 77, 92, 0.45)`; its wizard-demo miniature
+uses `0 0 5px rgba(251, 77, 92, 0.5)`) — a light-emission cue on a tiny dot;
+and (2) 0-blur box-shadow spreads used as rings — the input focus ring
+(`0 0 0 3px rgba(255, 255, 255, 0.1)`) and the hotkey capture ring
+(`0 0 0 3px rgba(251, 77, 92, 0.16)`). Zero-blur spreads are
+outline-equivalents that hug the border; they cast nothing. True drop shadows
+remain banned everywhere.
 
-- **Recessed well** (`box-shadow: inset 0 1px 3px rgba(0,0,0,0.55)`): the
-  tape window, counter cell, every service-panel input, the segmented track,
-  and switch channels, sunk into the faceplate.
-- **Recessed sub-well** (`inset 0 1px 3px rgba(0,0,0,0.45)`): the shallower
-  sink of history takes and model trays — wells inside a panel, and sockets
-  (`inset 0 1px 2px rgba(0,0,0,0.55)`) for 16px radios and checkboxes.
-- **Machined edge** (`inset 0 1px 0 rgba(255,240,214,0.05–0.07)`): the inset
-  top light on the card, every panel, and every key cap.
-- **Lamp bloom** (`0 0 9px 1px` in the lamp's color at 0.4–0.5 alpha; the
-  7px service/index/step lamps `0 0 6px rgba(255,176,58,0.6)`; lit sockets
-  `0 0 5px rgba(255,176,58,0.55)`): the material of a lit lamp.
-- **Key backlight — STOP** (`0 0 10px rgba(255,68,56,0.35)`, hover 0.5): the
-  STOP key while there's a take to stop — the machine telling you which key
-  it expects.
-- **Key backlight — Save** (`inset 0 1px 0 rgba(255,255,255,0.25), 0 0 10px
-  rgba(255,176,58,0.25)`, hover 12px/0.4): the same "this is the key I
-  expect" grammar in the self-referential amber.
-- **Playhead glow** (`0 0 6px rgba(255,176,58,0.8)`): the 2px #ffe3b0
-  playhead riding a progress fill's leading edge — overlay and download bars
-  alike.
-- **Focus halo** (`0 0 0 3px rgba(210,154,90,0.22)` on wells; capturing
-  fields swap to `rgba(255,68,56,0.16)`): a written-signal glow, layered over
-  the well's inset. Keys, toggles, and tabs use the 2px ivory outline
-  instead.
+**The Solid Ground Rule.** Text never sits on translucency over the desktop.
+The bar is solid Bar Ink; framed windows are painted Bar Ink before load;
+in-window washes are safe because the solid ink is beneath them.
 
 ## Shapes
 
-Machined rectangles on a tight radius scale: 12px for the faceplate card and
-group panels, 11px for the switch capsule (height/2), 10px for service notes,
-banners, and wizard cards, 9px for key caps and option rows (12px on the
-keys' invisible hit halo), 8px for the wizard's miniature faceplate, 7px for
-text pills and segment caps, 6px for recessed wells (inputs, history takes,
-trays, `kbd` caps), 4px for sub-wells (download tracks, checkbox sockets,
-`code` chips, the mini stop key), 2–2.5px for tracks and the grip rail, 1px
-for the mini deck's signal bars. Circles mean *light and travel*: the 11px
-status lamp, 7px index/service/step lamps, 16px radio sockets, and the
-aluminum switch slug and fader knob. Borders are 1px warm-white hairlines
-(Machine Edge, Panel Edge, Key Edge, Seam) except the solid Well Edge that
-must clear 3:1. Keys paint 34px but offer a ~42px hit area via an inset −4px
-pseudo-element.
+Soft-rounded rectangles, perfect circles, and full pills. The radius scale as
+built: 2px hairline rounds (progress tracks, grip), 8px (inputs, selects,
+textareas, index entries, model trays), 10px (option rows, history cards),
+12px (cards, banners, the overlay's update panel, wizard summary / value /
+download cards), 13px-on-26px overlay pills, 16px overlay card
+(`overflow: hidden` keeps children inside the corners), 18px the wizard's
+mini-bar demo, and fully-rounded 999px pills (settings buttons, the segmented
+control). All overlay keys are 32px circles whose clickable area extends to
+~42px via an invisible `::before` halo (inset -5px) — the hit area grows, the
+painted key does not. Borders are 1px hairlines only (the demo `kbd` keycaps'
+2px bottom edge is the lone weighted edge); no decorative borders, no square
+corners anywhere.
 
 ## Components
 
-### Transport keys
+### Keys (overlay circular icon buttons)
+- **Character:** quiet glyphs everyone already reads; state changes are color
+  and fill, never position.
+- **Shape:** 32px circle, ~42px invisible hit halo (`::before`, inset -5px).
+- **Ghost (pause, discard):** transparent with Dim Text glyph; hover fills
+  Hover Wash and brightens the glyph to Primary Text; active presses to
+  `scale(0.92)`.
+- **Done (`#stop`):** the one filled key — Primary Text fill, Bar Ink glyph,
+  pure white on hover; the single strongest thing on the bar. Disabled outside
+  a live take: transparent with a Faint Text glyph, but it stays in its slot.
+- **Discard (`#cancel`):** a plain X, gray until you mean it; hover applies
+  the Destructive Hover Exception (Failed Red glyph + red wash). Carries a 4px
+  extra left margin so it isn't hit by reflex next to Done.
+- **Pause:** latching (`aria-pressed`); while paused it holds the Hover Wash
+  fill and swaps to the play glyph.
+- **Focus:** `outline: 2px solid` Primary Text, 2px offset — the universal
+  focus treatment across all three surfaces.
+- **Named rule — The Keys Keep Their Slots Rule.** Keys disable and fade but
+  never leave the row; the row never reflows and no key ever jumps under the
+  cursor.
 
-- **Shape:** machined caps, 34×34px, 9px radius, Key Cap fill, Key Edge
-  border, inset top light; glyphs are inline SVG in currentColor.
-- **Hover:** surface warms to Key Hover #342a1e (0.12s ease).
-- **Press:** the key travels — `translateY(1px) scale(0.96)` at 0.08s.
-- **Focus:** 2px Silk-Screen Ivory outline, offset 2px.
-- **PAUSE (latching):** a quiet key in Unlit Ivory that latches a live take:
-  while paused it sits pressed — sunk into the faceplate (Recess Black fill,
-  deeper inset well, `translateY(1px)`) with an ivory glyph — and pressing it
-  again resumes the same take. Inert (unlit, disabled for AT) whenever there
-  is no live take to hold.
-- **STOP (backlit):** #3a1611 fill, rgba(255,68,56,0.5) border, #ffb4ac
-  glyph, red backlight glow — lit while there's a take to stop (a paused
-  take still counts). Outside a take it goes unlit and inert (glyph at 22%
-  ivory, pointer-events off, disabled for AT) but **stays in its slot**.
-- **Eject (cancel):** a standard key with the eject glyph in Unlit Ivory,
-  warming to ivory on hover; offset an extra 4px from STOP so the
-  destructive discard is never hit by reflex.
+### Pills — overlay (update-prompt text actions)
+- **Shape:** fully rounded, 26px tall, 0 11px padding, 12px text.
+- **Primary:** filled Primary Text with a Bar Ink label; pure white on hover.
+- **Quiet:** transparent with a Dim Text label (weight 500); hover wash +
+  brighten, same as ghost keys.
 
-**The Keys-Stay-In-Their-Slots Rule.** A machine doesn't remove its keys.
-Keys that don't currently apply go unlit and inert — `visibility`/state, not
-`display` — so neighboring keys never jump.
+### Pill buttons — settings/wizard (three tiers + danger)
+- **Shape:** fully rounded (999px), 8px 14px padding, 13px/500 text; active
+  presses to `scale(0.97)`; disabled holds opacity 0.6 (in-flight labels like
+  "Checking…" stay readable).
+- **Primary (Save / Get started):** the one filled white pill per window —
+  Primary Text fill, Bar Ink label, weight 600, 9px 20px padding, pure white
+  on hover. The overlay Done key's grammar on a framed window.
+- **Standard:** Hover Wash fill (white 0.08), brightening to white 0.14 on
+  hover.
+- **Ghost:** transparent, 1px rgba(255, 255, 255, 0.14) edge, Dim Text label;
+  hover takes Faint Wash + bright text.
+- **Danger:** a ghost/standard pill that is gray at rest; hover applies the
+  Destructive Hover Exception (red text, rgba(248, 113, 113, 0.12) wash,
+  rgba(248, 113, 113, 0.4) border).
 
-### Pills (service-note actions)
+### Sticky index (settings navigation)
+- 168px rail outside the scroll area; entries are 8px-radius text buttons
+  (13px/500, Dim Text) that wash faintly on hover; the active entry takes
+  Hover Wash + Primary Text — no markers, no dots. Scroll spy tracks the read
+  head; roving tabindex; clicks glide the page and focus the section legend.
+  Docks horizontally with a bottom seam below 600px.
 
-- **Style:** 26px-tall text buttons, 7px radius, 12px/600; primary filled
-  Busy Lamp Amber with dark #241703 text (hover Busy Hover #ffc262); quiet
-  variants transparent with Unlit Ivory text, hovering to an 8% ivory wash.
+### Section headings
+- **Legend:** 13px/600 sentence case running into a 1px seam hairline
+  (`::after` flex line); `scroll-margin-top: 12px` so anchored scrolls land
+  clear of the edge; focusable (tabindex -1) with a keyboard-only ring.
 
-### Tape window (the hero)
+### Cards / Containers
+- **White-wash cards:** Faint Wash fill (white 0.04; the overlay update panel
+  and setup banner sit at 0.05) + 1px Hairline Edge, 12px radius, 16px 18px
+  padding, 13px/600 card titles. Fields inside separate by whitespace only.
+- **Banner:** the overlay's update-panel grammar on the settings page — white
+  0.05 wash, hairline edge, 12px radius, 11px 14px padding, message left /
+  ghost pill right.
+- **History cards:** Faint Wash + seam border, 10px radius, 11px 13px padding;
+  13px pre-wrapped text above an 11px mono meta row (timestamp left, small
+  copy pill right).
+- **Model trays:** a darker inset inside a card — Tray fill (black 0.25),
+  1px rgba(255, 255, 255, 0.07) edge, 8px radius, 12px 14px padding; holds
+  the model note, its download bar, and its buttons.
+- **Wizard summary / value / download cards:** Faint Wash + hairline edge,
+  12px radius; the summary is a dl of seam-divided rows with mono accelerator
+  values; value lists use neutral "–" markers in Dim Text (never emoji — the
+  world speaks one color).
 
-A recessed well (34px tall, 6px radius) that flexes to fill the space between
-the lamp and the counter. Inside it: the Tape Umber ribbon (canvas, darkened
-edges) and the oxide-written signal — one column per 80ms of captured audio
-(≈31px/s tape speed), 2.5px per column, mirrored amplitude, peaks allowed to
-overshoot the ribbon. The newest column is written flush at the window's right
-edge and the tape carries it left, so the well is filled edge to edge with the
-take's recent history (~7s at the default width) instead of reserving a blank
-run-in. The frozen tape *is* the
-take: history survives stop and processing, and fresh tape threads only when
-the next session starts. During non-recording phases the written tape dims to
-22% and the well doubles as the machine's text display (status + detail,
-centered).
+### Inputs / Fields
+- **Style:** solid Field fill (#101013), 1px Field Edge boundary (#6b6b74 —
+  the 3:1 cue against the card), 8px radius, 9px 11px padding, 13px text;
+  placeholders in full Dim Text (no opacity). Selects draw their own Dim Text
+  caret (hardcoded #a1a1aa in the data URI — keep in sync).
+- **Focus:** border brightens to Primary Text white plus the 0-blur ring
+  (`box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1)`) — the "active thing is
+  white" grammar; no default outline.
+- **Textareas** (prompt, dictionary): mono 13px, vertical resize.
+- **Hotkey capture fields:** readonly, mono, click-to-capture; hover hints
+  changeability (Dim Text border + white 0.06 fill); while capturing they wear
+  The Capture Exception's coral border/wash/ring.
 
-### Lamp block
+### Segmented control (engine choice)
+- A Field-filled pill track (999px, 3px padding, hairline edge) holding pill
+  segments; real radios stretched invisibly over each label so the whole
+  segment is the target. Chosen segment takes a white 0.14 wash + Primary
+  Text; keyboard focus surfaces as a ring on the label.
 
-An 11px round lamp over its printed micro-legend. Starting: hollow REC ring
-(2px Rec Lamp Red border, 1s pulse). Recording: filled Rec Lamp Red with
-bloom, 2s pulse. Working: Busy Lamp Amber with bloom, 1.4s pulse. Done: Done
-Lamp Green, steady. Error/empty: Inert Warm Grey, legend ERR/—. Paused: a
-STEADY hollow REC ring — armed but deliberately not capturing — with legend
-PAUSE; only the warming mic's hollow ring pulses.
+### Option rows (radios)
+- 10px-radius rows, transparent border at rest, Faint Wash on hover; the
+  chosen row takes a white 0.07 wash + brightened rgba(255, 255, 255, 0.22)
+  edge — chosen is white, like everything chosen in this system. Custom 16px
+  radios: Field Edge ring that gains a white core (`inset: 3px`) when chosen.
 
-**The Filled-Lamp Contract.** The lit pulsing lamp + written tape + running
-counter mean "audio is being captured right now." While the mic warms up the
-lamp is a hollow ring — the card only promises it's getting there. Never show
-the filled lamp before samples flow.
+### Switches & checkboxes
+- **Switch:** 40×22px track, white 0.1 fill + hairline edge off, Dim Text
+  knob; checked fills the track solid white and the knob goes Bar Ink — the
+  filled-white "this is on" grammar. 0.16s ease.
+- **Checkbox (`.choice`):** 16px, 4px radius, Field Edge ring; checked fills
+  white with an ink check.
+- **Slider:** a 4px hairline light track (white 0.15, 2px radius) under a
+  16px solid white knob; keyboard-only focus ring. The live readout label is
+  the bright element (14px Primary Text).
 
-### Counter cell
+### Status dot + word (overlay)
+- An 8px dot beside one 12.5px word; the dot's fill and motion carry the state
+  contract, the word names it. Working states pulse the dot in Dim Text gray;
+  done / error / idle are steady Delivered Green / Failed Red / Idle Gray.
+- **Named rule — The Filled Dot Contract.** The filled pulsing coral dot +
+  moving waveform + running timer together mean "audio is captured right
+  now." Mic warm-up is a pulsing hollow coral ring; paused is a steady hollow
+  coral ring. Never show the filled dot before samples actually flow.
 
-A recessed cell (min 52×30px, 6px radius, Recess Black, inset well shadow)
-holding the monospace take counter. It counts *captured* audio only — it
-starts with the first samples, and its digits go unlit (55% opacity) outside
-recording.
+### Status text (settings/wizard)
+- 13px Dim Text lines beside or under their action; `.ok` in Delivered Green,
+  `.err` in Failed Red; long unbroken errors wrap (`overflow-wrap: anywhere`).
 
-### Playhead progress
+### Waveform (signature component)
+- A live canvas amplitude trace in Coral Voice — the proof of hearing. Columns
+  are 2.5px wide, one per 80ms of audio (~31px/s), newest at the right edge,
+  gliding left at sub-pixel float coordinates. The backing store tracks the
+  CSS box × devicePixelRatio so bars stay crisp at any width.
+- Outside capture it dims to a ghost of the take (opacity 0.25); when the
+  detail line needs the space it steps back to 0.07.
+- `WAVE_COLOR` in `overlay.js` must equal `--accent` in `overlay.css`.
 
-Overlaid along the bottom of the tape window (absolute — appearing never
-changes card height): a 3px track in 12% ivory, Busy Lamp Amber fill easing
-width at 0.15s linear, with the glowing #ffe3b0 playhead riding the leading
-edge. A completed bar holds at 100% for 400ms — the phase's closing
-statement — then hides. The update note and the service panel's download
-bars reuse the same track/fill/playhead grammar.
+### Progress fills
+- Overlay: 3px hairline tracks (Track fill, 2px radius); dictation progress
+  fills Coral Voice, the update download fills white. Settings/wizard
+  download and update bars (`.dl-bar`): 6px tracks (white 0.12, 3px radius)
+  with solid white fills — always white, never coral (One Voice Rule). All
+  fills ease `width 0.15s linear`, driven from JS.
+- The overlay's dictation progress overlays the bottom of the wave area
+  absolutely, so appearing never changes card height.
 
-### Update service note
+### Update panel (overlay)
+- A quiet in-card note: 12px radius, white 0.05-alpha fill, hairline edge,
+  10px 12px padding. Entirely neutral-white grammar — no coral. In solo mode
+  the control row hides and the note is the whole card.
 
-The machine talking about itself: a note pinned to the faceplate above the
-transcript, 10px radius, amber-washed (Busy Wash fill, Busy Line border), led
-by a 7px amber service lamp with bloom. Its amber marks it as
-self-referential — the REC/DONE vocabulary below belongs to the dictation.
-Actions are pills; the two "stop bothering me" exits are grouped so they wrap
-together. The settings window's setup-complete banner is the same note
-grammar, with a ghost key to dismiss.
+### Wizard step dots
+- 7px circles, white 0.35 at rest (clearing the 3:1 UI bar on the ink), solid
+  white when active; centered in the footer with an sr-only spoken
+  counterpart.
 
-### The Overlay Strip (signature)
+### Wizard demo (welcome step)
+- Three Faint Wash demo cards with 11px captions: `kbd` keycaps (wash fill,
+  6px radius, 2px bottom edge, 11px mono); the **mini quiet bar** — an
+  18px-radius miniature of the real bar (ink fill, 0.14 hairline) with pulsing
+  6px coral dot (5px bloom), animated coral wave bars on a deliberately
+  non-monotonic 7-bar delay cycle, 10px mono timer, and a 16px filled white
+  Done circle — the sanctioned demonstration coral; and a typing line behind
+  a plain 1px white caret. All demo animations go still under reduced motion.
 
-The whole system in one 500px-wide strip: solid Faceplate Black card, 12px
-radius, Machine Edge hairline, machined top light, no cast shadow, pinned to
-the bottom of the screen and never stealing focus. Knurled grip rail up top
-(the card is the drag surface; the rail is the cue), live transcript growing
-upward, and the transport row along the bottom. It enters by its own fade —
-opacity + 8px rise + 0.98 scale over 0.2s — because the window can't ease.
+### Grip (overlay)
+- The sheet-grabber convention: 36×4px, 2px radius, white at 0.16 alpha,
+  brightening to 0.28 on card hover. Decorative — the whole card drags.
 
-### Printed index (settings navigation)
-
-The service panel's table of contents: a 168px rail of quiet text entries
-(13px/500, Unlit Ivory, 7px radius), each led by an unlit 7px lamp
-(rgba(255,240,214,0.4) — bright enough to clear the 3:1 UI-component bar on
-the faceplate, so the socket reads as present-but-off). The section under
-the read head lights its lamp
-amber with the service bloom and its label warms to ivory (`aria-current`,
-scroll spy); hover is a 4% ivory wash. Clicking glides the panel; while a
-click-initiated glide is in flight the chosen lamp holds so the spy doesn't
-strobe through passing sections. Compact windows dock the rail horizontally
-above the panel.
-
-### Machined group panels
-
-Each settings group is a panel bolted to the faceplate: Panel fill (#221b15),
-1px Panel Edge hairline, 12px radius, inset top light, **no cast shadow**,
-16×18px padding, 13px/600 card title. Sections open with the silk-screened
-legend (10px/700/0.1em uppercase) running into a 1px Seam. The wizard's demo
-cards, summary, and value cards are the same panel at 10px radius.
-
-### Input wells
-
-- **Style:** every text input, select, and textarea is a recessed well —
-  Recess Black fill, 1px Well Edge border (#776a58, ≥3:1), 6px radius,
-  `inset 0 1px 3px rgba(0,0,0,0.55)`, 9×11px padding, 13px text; placeholders
-  in full Unlit Ivory (never opacity).
-- **Focus:** the well's edge takes Oxide plus the written-signal halo
-  (`0 0 0 3px rgba(210,154,90,0.22)`) — the slot the machine is writing into.
-- **Selects:** self-drawn Unlit Ivory caret (inline SVG data URI, hex kept in
-  sync with #a89b88), `appearance: none`.
-- **Hotkey capture:** accelerator fields are mono machine values; populated
-  fields hint changeability with a Well Edge→Unlit Ivory hover plus a 10%
-  ivory wash (the recess is too dark for the 4-5% wash to register); while
-  armed they go REC — red border, red wash, red halo — because the field is
-  literally recording your key press.
-- **Textareas (machine instructions):** mono 13px/1.55, vertical resize only.
-
-### Key-cap buttons (service panel)
-
-- **Standard:** the transport key grammar as a text button — Key Cap fill,
-  Key Edge border, 9px radius, inset top light, 13px/500, 8×14px padding;
-  hover Key Hover, press travels `translateY(1px) scale(0.98)` at 0.08s,
-  focus 2px ivory outline. Disabled keys go inert at 45% opacity — never
-  brightening, never travelling.
-- **Save (backlit primary):** filled Busy Lamp Amber with #241703 text,
-  600 weight, 9×20px padding, amber backlight (hover Busy Hover, glow up) —
-  the machine's "this is the key I expect."
-- **Ghost:** transparent with Key Edge border and Unlit Ivory text, warming
-  to a 5% ivory wash.
-- **Danger:** a standard key whose text is Err Text; hover takes a red wash
-  (rgba(255,68,56,0.09)) and red border — the STOP key's tint.
-
-### Selection controls
-
-- **Segmented selector:** a recessed track (Recess Black, 9px radius, well
-  inset, 3px padding) holding flat segments; the engaged segment becomes a
-  machined key cap (Key Cap fill, Key Edge, inset light), the other stays
-  sunk and unlit. The real radio stretches invisibly over the whole segment;
-  keyboard focus surfaces on the label.
-- **Option rows:** 9px-radius rows that take the amber service wash when
-  chosen (Busy Wash fill, Busy Line border); their radios are lamps in
-  wells — 16px recessed sockets that light a glowing amber core when
-  selected.
-- **Checkboxes:** the same socket squared off (4px radius, 2px-radius amber
-  core).
-- **Slide switch:** a 40×22px recessed channel (11px capsule) with a 16px
-  Machined Aluminum slug; engaging it lights the channel amber and the slug takes
-  the lit pill's dark #241703, sliding 18px at 0.16s ease.
-- **Fader (range):** the light-track grammar — a 4px track in 15% ivory under
-  a 16px aluminum knob; the live readout beside it is the bright element
-  (14px ivory). Keyboard focus is the ivory outline at 3px offset.
-
-### Download bars
-
-The playhead grammar at service-panel scale: a 7px track (4px radius, 10%
-ivory) whose Busy Lamp Amber fill eases width at 0.15s linear with the
-glowing #ffe3b0 tip riding the leading edge. Model trays (`.model-manage`)
-are recessed sub-wells holding the note, the bar, and the keys; the wizard's
-download items wrap the same bars in panels.
-
-### History takes
-
-Each transcription is a take: a recessed sub-well (Recess Black, 6px radius,
-`inset 0 1px 3px rgba(0,0,0,0.45)`, 11×13px padding) with the words on top
-(13px/1.5, pre-wrap) and the machine's own numerals below — an 11px mono
-tabular timestamp row with a small copy key.
-
-### Wizard chrome
-
-The wizard is the service panel walking you through the machine. Steps center
-vertically in the fixed frame; step position is a row of 7px lamps in the
-footer — unlit stops in 40% ivory (the index's unlit-lamp tone), the current
-one lit amber with bloom,
-spoken as "Step N of 7" via an sr-only counterpart. The welcome demo is three
-panels: machined `kbd` key caps (6px radius, 2px bottom edge, mono 11px) →
-**the mini deck**, a miniature of the real recording strip on an 8px-radius
-faceplate (36px tall): pulsing 6px REC lamp, thirteen 2.5px oxide signal bars
-(1px radius) rising and falling across the width the deck's parts leave it —
-offsets on a 7-bar cycle so it reads as signal rather than a sweep — a 10px
-mono timer, and a 16px backlit mini stop key (4px radius) → text typing
-itself out behind a 1px Oxide caret
-(4s steps loop). The summary panel lists choices as seam-divided rows,
-accelerators in mono.
+### Motion
+- Overlay card entrance: opacity + `translateY(8px) scale(0.98)` → identity,
+  0.2s ease; height changes ease 0.18s.
+- State changes everywhere: 0.12s ease (keys, pills, tabs, inputs, options);
+  switches 0.16s; active presses 0.08s (`scale(0.92)` keys, `scale(0.97)`
+  pills).
+- Progress fills: `width 0.15s linear` (the incumbent shipped mechanism).
+- Dot pulses: opacity 1 → 0.45 — 2s recording (and the wizard's mini-dot),
+  1.2s working, 1s warming; the demo wave cycles 1s, the demo typing 4s.
+- Settings index clicks glide via `scroll-behavior: smooth`.
+- `prefers-reduced-motion`: on the overlay, pulses stop and transitions
+  collapse to ~instant; the waveform still updates (it is state, not
+  decoration) but stops gliding. On settings/wizard, all transitions and
+  animations collapse to 0.01ms, infinite demo animations are forced to a
+  single iteration (they go still, not fast), and the scroll glide becomes a
+  jump.
 
 ## Do's and Don'ts
 
 ### Do:
-
-- **Do** keep the lamp vocabulary fixed: REC red capturing, BUSY amber
-  working or self-referential, DONE green delivered, inert warm grey for
-  idle/fault (The Lamp Vocabulary Rule).
-- **Do** express depth by inset — recessed wells (`inset 0 1px 3px
-  rgba(0,0,0,0.55)`, sub-wells 0.45) and inset top lights — and reserve
-  outward glow for lit things: lamp blooms, the STOP and Save backlights,
-  the playhead, the focus halo.
-- **Do** keep motion mechanical and honest: 0.12s ease for key/surface
-  states, 0.08s key travel, 0.15s linear progress, 0.16s switch slide,
-  0.18s card height, 0.2s card entrance; a paused take holds the tape where
-  it stopped rather than resetting it; under `prefers-reduced-motion` collapse transitions to
-  instant, stop infinite animations still (`animation-iteration-count: 1`,
-  or `animation-play-state`/`none` in the overlay), and make the panel glide
-  an instant jump — while still updating state.
-- **Do** paint 34px keys but offer ~42px hit areas (inset −4px
-  pseudo-element), and isolate destructive keys with extra gap.
-- **Do** set machine numerals and machine notation in monospace —
-  tabular-nums for anything counted — and dim (never hide) readouts that
-  aren't running.
-- **Do** keep the faceplate solid; text and tape must never depend on what
-  shows through behind the transparent window, and the service panel's
-  windows paint #1c1713 natively with `color-scheme: dark`.
-- **Do** keep every control visible on the service panel — one scrolling
-  faceplate with a printed index; the index navigates, it never hides.
+- **Do** keep every surface under text solid; every window is opaque Bar Ink
+  (#18181b) — the overlay by its own paint, framed windows via `INK_COLOR` in
+  `main/windows.js`, kept in sync with `--ink`.
+- **Do** reserve Coral Voice (#fb4d5c) for the dictation itself — capture dot,
+  waveform, dictation progress — plus only the two Capture Exception moments
+  (a hotkey field mid-capture; the wizard's mini-bar demo). Keep `WAVE_COLOR`
+  in `overlay.js` in sync with `--accent`.
+- **Do** use the filled-white grammar (Done key, Save / Get started pill,
+  switch-on track, radio core, download fill) for the single strongest action,
+  the chosen state, or the app talking about itself.
+- **Do** keep keys in their slots across all states — disable and fade, never
+  remove or reflow.
+- **Do** honor the Filled Dot Contract: filled pulsing coral dot only while
+  samples flow; pulsing hollow ring for warm-up; steady hollow ring for
+  paused.
+- **Do** extend hit areas invisibly (`::before` halos to ~42px; radios and
+  segments stretched over their whole row) instead of enlarging painted
+  controls.
+- **Do** set machine values in mono (accelerators, timestamps, version,
+  dictionary/prompt textareas) and keep prose — including the hotkey fields'
+  placeholders — in the body face.
 
 ### Don't:
-
-- **Don't** cast a shadow anywhere — soft shadows band and halo on the
-  transparent overlay, and the service panel keeps the same physics: panels
-  are machined in, never floated (The Depth-Is-Inset Rule).
-- **Don't** paint the written tape in lamp red — the trace is muted Oxide;
-  saturated red belongs to the REC lamp, the backlit STOP key, and a hotkey
-  field mid-capture (The Oxide-Is-Material Rule).
-- **Don't** show the filled recording lamp before samples flow — warming up
-  is a hollow ring (The Filled-Lamp Contract).
-- **Don't** remove keys that don't apply — unlit and inert in their slots,
-  so the eject key never jumps (The Keys-Stay-In-Their-Slots Rule).
-- **Don't** reintroduce the retired violet/rose "On-Air Lamp" palette — it
-  exists nowhere in the product; every surface is Tape Transport.
-- **Don't** set human prose in monospace — mono is for what the machine
-  counts or executes: counters, timestamps, accelerators, version numbers,
-  and the dictionary/prompt instruction wells (The Machine-Instructions
-  Exception).
-- **Don't** invite the user to talk before the mic is live — the card says
-  "Starting mic…" until the first samples arrive.
+- **Don't** put blurred or offset drop shadows on any surface, key, or pill;
+  the sanctioned exceptions are the recording dot's coral bloom (and its
+  wizard-demo miniature) and 0-blur focus/capture rings, which are
+  outline-equivalents, not elevation.
+- **Don't** use green or red beyond miniature status signals (8px overlay
+  dots, one-line settings status text) — except the Destructive Hover
+  Exception on the discard key and `button.danger` pills, red on hover only.
+- **Don't** reintroduce the hardware metaphor: no tape reels, lamps, legends,
+  labels-under-keys, or eject glyphs; the retired Tape Transport and On-Air
+  Lamp systems are historical notes only and may not resurface on any
+  surface.
+- **Don't** spend coral outside the voice and the two Capture Exception
+  moments; a third non-overlay coral use is a defect, not a precedent.
+- **Don't** make chrome text larger than the transcript (15px) on the bar, or
+  larger than the 16px window title on framed windows; the words stay the
+  biggest thing in the system.
+- **Don't** hide sections behind tabs on the settings page; the page is one
+  scrolling column and the index is a map, not a shuffle.

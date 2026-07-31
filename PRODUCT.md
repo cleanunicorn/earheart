@@ -55,7 +55,7 @@ Supporting truths (real, but not the lead):
 ## Operating Context
 
 - Lives in the system tray. UI surfaces: a low always-on-top overlay strip at
-  the bottom of the screen (status lamp, level meter, live transcript,
+  the bottom of the screen (status dot, live waveform, live transcript,
   progress — never steals focus), a settings window, a first-run wizard, and
   the tray menu.
 - Used mid-task inside other applications; the overlay must never interrupt or

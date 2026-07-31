@@ -176,7 +176,7 @@
       "Do reserve Coral Voice (#fb4d5c) for the dictation itself — capture dot, waveform, dictation progress — plus only the two Capture Exception moments (a hotkey field mid-capture; the wizard's mini-bar demo). Keep WAVE_COLOR in overlay.js in sync with --accent.",
       "Do use the filled-white grammar (Done key, Save / Get started pill, switch-on track, radio core, download fill) for the single strongest action, the chosen state, or the app talking about itself.",
       "Do keep keys in their slots across all states — disable and fade, never remove or reflow.",
-      "Do honor the Filled Dot Contract: filled pulsing coral dot only while samples flow; pulsing hollow ring for warm-up; steady hollow ring for paused (a 55%-dim ring when reduced motion stills the pulse).",
+      "Do honor the Filled Dot Contract: filled pulsing coral dot only while samples flow; pulsing hollow ring for warm-up (a 55%-dim ring when reduced motion stills the pulse); steady hollow ring for paused.",
       "Do extend hit areas invisibly (::before halos to ~42px; radios and segments stretched over their whole row) instead of enlarging painted controls.",
       "Do set machine values in mono (accelerators, timestamps, version, dictionary/prompt textareas) and keep prose — including the hotkey fields' placeholders — in the body face."
     ],

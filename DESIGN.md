@@ -601,8 +601,8 @@ corners anywhere.
   collapse to ~instant (the warming ring substitutes a 55%-opacity dim for
   its pulse, per the Filled Dot Contract); the waveform still updates (it is
   state, not decoration) but stops gliding. On settings/wizard, all
-  transitions and animations collapse to 0.01ms, infinite demo animations are forced to a
-  single iteration (they go still, not fast), and the scroll glide becomes a
+  transitions and animations collapse to 0.01ms, infinite demo animations
+  are forced to a single iteration (they go still, not fast), and the scroll glide becomes a
   jump.
 
 ## Do's and Don'ts
@@ -621,8 +621,8 @@ corners anywhere.
 - **Do** keep keys in their slots across all states — disable and fade, never
   remove or reflow.
 - **Do** honor the Filled Dot Contract: filled pulsing coral dot only while
-  samples flow; pulsing hollow ring for warm-up; steady hollow ring for
-  paused.
+  samples flow; pulsing hollow ring for warm-up (a 55%-dim ring when reduced
+  motion stills the pulse); steady hollow ring for paused.
 - **Do** extend hit areas invisibly (`::before` halos to ~42px; radios and
   segments stretched over their whole row) instead of enlarging painted
   controls.

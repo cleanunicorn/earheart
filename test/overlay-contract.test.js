@@ -37,10 +37,10 @@ test("overlay.css keeps the [hidden]-always-wins rule", () => {
   // overlay.js toggles the update prompt, its bar, its action pills and the
   // transcript through the hidden attribute; components that set their own
   // display (flex rows, the pills) would override it without this rule.
-  // Same normalized match as settings-contract's version of this test.
-  const flat = css.replace(/\s+/g, " ");
-  assert.ok(
-    flat.includes("[hidden] { display: none !important"),
+  // Identical whitespace-tolerant match to settings-contract's version.
+  assert.match(
+    css.replace(/\s+/g, " "),
+    /\[hidden\]\s*\{\s*display:\s*none\s*!important/,
     "overlay.css must keep [hidden] { display: none !important }"
   );
 });
@@ -71,7 +71,11 @@ test("reduced motion keeps the warming/paused dot distinction", () => {
   // hollow coral rings). The 55%-opacity substitute is that contract's only
   // survivor without motion — a future edit to the reduce block must not
   // silently drop it.
-  const reduce = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*)\}/);
+  // Non-greedy to the block's own column-0 closing brace, so a rule added
+  // AFTER the media query can't smuggle the assertion outside the block.
+  const reduce = css.match(
+    /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/
+  );
   assert.ok(reduce, "overlay.css must keep a prefers-reduced-motion block");
   const flat = reduce[1].replace(/\s+/g, " ");
   assert.ok(

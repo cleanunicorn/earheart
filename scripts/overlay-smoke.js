@@ -383,6 +383,24 @@ app.whenReady().then(async () => {
       doneUi.detailTitle === "",
       `title=${JSON.stringify(doneUi.detailTitle)}`
     );
+    // And the positive half: a long error detail MUST clip and carry the full
+    // text as its tooltip — the empty-branch check alone would also pass if
+    // the mirror were entirely broken.
+    const longMsg =
+      "Microphone did not deliver audio in time — check the input device in " +
+      "Settings, then unplug and replug it, restart the audio service, and " +
+      "try again closer to the microphone";
+    win.webContents.send("pipeline:status", {
+      status: "error",
+      detail: { message: longMsg },
+    });
+    await waitForStatus(win, "error");
+    const errUi = await uiState();
+    check(
+      "clipped error details carry the full text as a tooltip",
+      errUi.detailTitle === longMsg,
+      `title length=${errUi.detailTitle.length}, expected ${longMsg.length}`
+    );
 
     check("no mic errors during the run", micErrors.length === 0, micErrors.join("; "));
 

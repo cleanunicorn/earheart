@@ -5,8 +5,10 @@
 <h1 align="center">Earheart</h1>
 
 <p align="center">
-  Private, hotkey-driven voice dictation for Windows, macOS and Linux.<br/>
-  Press a key, speak, press again — your words appear where you type.
+  <b>Talk to your coding agents.</b><br/>
+  Press a hotkey, speak your prompt, press again — it lands in Claude Code,
+  Codex, Cursor, or whatever else has focus.<br/>
+  Fully local. No cloud, no account, nothing leaves your machine.
 </p>
 
 <p align="center">
@@ -21,16 +23,31 @@
 
 ---
 
-Earheart records your voice when you press a global hotkey, transcribes it
-with a speech-to-text service, optionally cleans the transcript up with a
-language model, and then **pastes the result into whatever app you're typing
-in** (or just copies it to your clipboard).
+Working with an agent is a conversation, but you type it like a form. The
+prompts that actually work are long — context, constraints, the three things
+you already tried, the "no, not like that." Typing all of that is the slow part
+of the loop, and the reason people send a one-liner instead and then spend four
+turns correcting it.
 
-Out of the box both steps run **inside the app, on your computer** — no
-separate program, no Python, no account. The setup wizard downloads a small
+Earheart turns that part into talking. Press a global hotkey, say what you
+want, press it again: your speech is transcribed on-device (NVIDIA Parakeet),
+tidied up on-device (a small Gemma model drops the *ums*, false starts and
+backtracking), and **pasted straight into whatever app has focus** — the
+terminal running Claude Code, the Codex composer, Cursor's chat box, a GitHub
+issue, an email.
+
+**Nothing leaves your machine**, which matters more for agent prompts than for
+ordinary dictation: what you say to an agent is your own code, your file
+layout, your architecture, your unshipped work. Out of the box both models run
+**inside the app, on your computer** — no separate program, no Python, no
+account, no telemetry. The setup wizard downloads a small
 [Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) speech model and
 a small [Gemma](https://huggingface.co/google) cleanup model (with a progress
-bar) and runs them in-process. Nothing ever leaves your machine.
+bar) and runs them in-process.
+
+It is still a general-purpose dictation app — the hotkey works the same in your
+email client, your notes and your browser. Agents are just where it earns its
+keep. See [Talking to agents](#talking-to-agents) for the practical setup.
 
 Prefer to point Earheart elsewhere? Both steps are also **modular,
 OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
@@ -64,9 +81,15 @@ OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
   settling in behind the raw words on pauses. The final transcript on stop is
   unchanged. Toggle it under Settings → Speech-to-text.
 - **LLM cleanup (on by default)** — punctuation, filler-word removal, false
-  starts. By default a small Gemma model runs **in-process**; or point cleanup
-  at any OpenAI-compatible chat API. The prompt is fully editable. If cleanup
-  fails, the raw transcript is delivered instead — your words are never lost.
+  starts, so a rambled prompt arrives as something an agent can actually read.
+  By default a small Gemma model runs **in-process**; or point cleanup at any
+  OpenAI-compatible chat API. If cleanup fails, the raw transcript is delivered
+  instead — your words are never lost.
+- **Cleanup styles and a personal dictionary** — one slider picks how far
+  cleanup may stray from your exact words (**Verbatim** → **Clean** →
+  **Polished**), and the prompt underneath is fully editable. The dictionary in
+  Settings → Cleanup fixes the terms speech-to-text always mangles: your repo
+  and product names, `pnpm`, `kubectl`, `useEffect`, colleagues' names.
 - **Auto-paste, clipboard, or both** — paste straight into the focused app
   (with clipboard restore), paste *and* keep the transcript on the clipboard,
   or clipboard-only if you prefer to paste yourself.
@@ -246,6 +269,44 @@ the wizard:
 
 A mis-aimed paste never loses your words: the History section in Settings
 keeps recent transcriptions in a local file (you can turn this off).
+
+## Talking to agents
+
+Earheart pastes into the focused window, so it works with any agent you can
+type into — no integration, no plugin, no API key. Put the cursor in the
+agent's input, hold the thought, press the hotkey, and say the whole prompt
+including the parts you'd normally leave out because typing them is tedious.
+
+| Where you're prompting | What to know |
+| --- | --- |
+| **Claude Code / Codex CLI** (terminal) | Paste lands in the TUI input like any paste. On Linux, auto-paste needs `xdotool`/`wtype` — see [Platform notes](#linux). |
+| **Cursor, VS Code, JetBrains chat** | Nothing special — click the chat box and dictate. |
+| **claude.ai, ChatGPT, agent web UIs** | Same. The overlay never steals focus, so the composer keeps it. |
+| **Anywhere via a shortcut** | Bind a system shortcut, mouse button or foot pedal to `earheart --toggle` instead of using the built-in hotkey. |
+
+Three settings are worth a minute for agent work:
+
+- **Cleanup style** (Settings → Cleanup). **Clean** — the default — is the
+  right one for prompts: it removes the *ums* and the restarts but keeps your
+  wording and your intent. Switch to **Verbatim** when you're dictating exact
+  strings, commands or code and want nothing touched. Avoid **Polished** for
+  prompts; smoothing prose is not what you want done to an instruction.
+- **Dictionary** (Settings → Cleanup). Speech-to-text has never heard of your
+  repo. Add the words you say fifty times a day — service names, `pnpm`,
+  `kubectl`, `PostgreSQL`, `useEffect`, your teammates' names — and near-misses
+  get corrected to the exact spelling.
+- **Cleanup prompt** (Settings → Cleanup). Editable. Agent prompts are not
+  prose, and you can say so — e.g. tell it to keep file paths, flags and
+  identifiers exactly as spoken and never to answer the transcript. (The
+  default prompt already forbids acting on the transcript's content: your
+  dictation is text to clean, never instructions to follow.)
+
+**What it doesn't do yet.** You still press Enter yourself — Earheart pastes,
+it doesn't submit. The agent can't ask *you* a question by voice, and it can't
+talk back. Those are the next things we're building; the ideas are filed as
+issues under the
+[`agents`](https://github.com/cleanunicorn/earheart/issues?q=is%3Aissue+label%3Aagents)
+label, and opinions on them are welcome.
 
 ## Using other services
 

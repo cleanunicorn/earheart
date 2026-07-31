@@ -37,7 +37,7 @@ linux:
     - deb
   category: Utility
   icon: assets/icon.png
-  synopsis: Private, hotkey-driven voice dictation
+  synopsis: Voice dictation for coding agents — private and fully local
   desktop:
     entry:
       StartupWMClass: earheart

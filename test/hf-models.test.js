@@ -348,17 +348,96 @@ test("listSttVariants rejects repos that are not transducer bundles", async () =
     ] }],
     ["/api/models/", { body: { sha: "c" } }],
   ]);
-  await assert.rejects(
-    listSttVariants({ owner: "u", repo: "r" }, incomplete),
-    /no decoder or joiner/
-  );
+  await assert.rejects(listSttVariants({ owner: "u", repo: "r" }, incomplete), /no decoder/);
 });
 
-test("listSttVariants names the encoder-decoder shape instead of blaming tokens.txt", async () => {
-  // distil-whisper/distil-large-v3: a real speech-to-text model, but seq2seq —
-  // encoder + decoder, no joiner, and its vocabulary lives in tokenizer.json.
-  // The missing joiner is the reason it can't run, so lead with that rather
-  // than the missing tokens.txt the user would hit first.
+/* ---------------- STT: sherpa-onnx Whisper exports ---------------- */
+
+test("listSttVariants finds a Whisper export and omits the joiner", async () => {
+  // csukuangfj/sherpa-onnx-whisper-tiny.en: encoder + decoder, no joiner, and
+  // every file prefixed with the model name — including the symbol table.
+  const fetchImpl = stubFetch([
+    ["/tree/", { body: [
+      { type: "file", path: "tiny.en-encoder.int8.onnx", size: 12_937_772 },
+      { type: "file", path: "tiny.en-encoder.onnx", size: 37_647_080 },
+      { type: "file", path: "tiny.en-decoder.int8.onnx", size: 89_853_865 },
+      { type: "file", path: "tiny.en-decoder.onnx", size: 114_504_265 },
+      { type: "file", path: "tiny.en-tokens.txt", size: 835_554 },
+      { type: "file", path: "test_wavs/0.wav", size: 212_044 },
+    ] }],
+    ["/api/models/", { body: { sha: "whispercommit" } }],
+  ]);
+
+  const out = await listSttVariants(
+    { owner: "csukuangfj", repo: "sherpa-onnx-whisper-tiny.en" },
+    fetchImpl
+  );
+  assert.deepStrictEqual(out.variants.map((v) => v.label), ["int8", "fp32"]);
+  assert.strictEqual(out.recommended, "int8");
+  const int8 = out.variants[0];
+  assert.deepStrictEqual(int8.files.map((f) => f.name), [
+    "tiny.en-encoder.int8.onnx", "tiny.en-decoder.int8.onnx", "tiny.en-tokens.txt",
+  ]);
+  // No joiner key at all: its absence is what selects the whisper model config.
+  assert.deepStrictEqual(int8.sherpa, {
+    encoder: "tiny.en-encoder.int8.onnx",
+    decoder: "tiny.en-decoder.int8.onnx",
+    tokens: "tiny.en-tokens.txt",
+    modelType: "whisper",
+  });
+  assert.strictEqual("joiner" in int8.sherpa, false);
+});
+
+test("listSttVariants pairs a prefixed tokens file with its own bundle", async () => {
+  // A repo carrying two exports side by side: each variant must take the
+  // symbol table sharing its prefix, not whichever sorted first.
+  const fetchImpl = stubFetch([
+    ["/tree/", { body: [
+      { type: "file", path: "base.en-encoder.onnx", size: 95 },
+      { type: "file", path: "base.en-decoder.onnx", size: 196 },
+      { type: "file", path: "base.en-tokens.txt", size: 8 },
+      { type: "file", path: "small.en-encoder.int8.onnx", size: 112 },
+      { type: "file", path: "small.en-decoder.int8.onnx", size: 262 },
+      { type: "file", path: "small.en-tokens.txt", size: 9 },
+    ] }],
+    ["/api/models/", { body: { sha: "c" } }],
+  ]);
+
+  const out = await listSttVariants({ owner: "u", repo: "sherpa-onnx-whisper-pair" }, fetchImpl);
+  const byLabel = Object.fromEntries(out.variants.map((v) => [v.label, v.sherpa]));
+  assert.strictEqual(byLabel.int8.tokens, "small.en-tokens.txt");
+  assert.strictEqual(byLabel.fp32.tokens, "base.en-tokens.txt");
+});
+
+test("listSttVariants keeps Whisper external-data weights with the fp32 variant", async () => {
+  // csukuangfj/sherpa-onnx-whisper-turbo: a 735 KB fp32 encoder whose weights
+  // live in a 2.6 GB sidecar, next to a self-contained int8 encoder.
+  const fetchImpl = stubFetch([
+    ["/tree/", { body: [
+      { type: "file", path: "turbo-encoder.onnx", size: 735_920 },
+      { type: "file", path: "turbo-encoder.weights", size: 2_600_325_120 },
+      { type: "file", path: "turbo-encoder.int8.onnx", size: 674_716_297 },
+      { type: "file", path: "turbo-decoder.onnx", size: 636_209_532 },
+      { type: "file", path: "turbo-decoder.int8.onnx", size: 361_080_764 },
+      { type: "file", path: "turbo-tokens.txt", size: 816_730 },
+    ] }],
+    ["/api/models/", { body: { sha: "c" } }],
+  ]);
+
+  const out = await listSttVariants({ owner: "csukuangfj", repo: "sherpa-onnx-whisper-turbo" }, fetchImpl);
+  const [int8, fp32] = out.variants;
+  assert.deepStrictEqual(int8.files.map((f) => f.name), [
+    "turbo-encoder.int8.onnx", "turbo-decoder.int8.onnx", "turbo-tokens.txt",
+  ]);
+  assert.deepStrictEqual(fp32.files.map((f) => f.name), [
+    "turbo-encoder.onnx", "turbo-decoder.onnx", "turbo-encoder.weights", "turbo-tokens.txt",
+  ]);
+});
+
+test("listSttVariants points optimum ONNX exports at a sherpa conversion", async () => {
+  // distil-whisper/distil-large-v3 is a real STT model in the right family, but
+  // the Hugging Face export keeps its vocabulary in tokenizer.json, so the
+  // missing symbol table — not the missing joiner — is what blocks it.
   const fetchImpl = stubFetch([
     ["/tree/", { body: [
       { type: "file", path: "onnx/encoder_model.onnx", size: 646_473 },
@@ -373,12 +452,9 @@ test("listSttVariants names the encoder-decoder shape instead of blaming tokens.
   await assert.rejects(
     listSttVariants({ owner: "distil-whisper", repo: "distil-large-v3" }, fetchImpl),
     (err) => {
-      assert.match(err.message, /no joiner/);
-      assert.match(err.message, /encoder-decoder model/);
-      assert.doesNotMatch(err.message, /tokens\.txt — /); // not diagnosed as a missing symbol table
-      // The .onnx_data external-data file isn't itself an .onnx, so it doesn't
-      // inflate the count.
-      assert.match(err.message, /Found 3 \.onnx files/);
+      assert.match(err.message, /encoder and decoder \.onnx files, but no tokens\.txt/);
+      assert.match(err.message, /tokenizer\.json/);
+      assert.match(err.message, /sherpa-onnx-…/); // names the way out
       return true;
     }
   );

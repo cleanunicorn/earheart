@@ -1,6 +1,6 @@
 {
   "name": "earheart",
-  "version": "0.23.1",
+  "version": "0.24.0",
   "description": "Talk to your coding agents. Hotkey-driven voice dictation that speaks your prompt into Claude Code, Codex, Cursor — or any app you're typing in. Fully local: NVIDIA Parakeet speech-to-text and on-device LLM cleanup, no cloud.",
   "main": "main/main.js",
   "license": "MIT",

@@ -115,7 +115,11 @@ function init({ applyHotkeys, onSettingsChanged }) {
     const logPath = logger.getLogPath();
     if (!logPath) return { ok: false, error: "No log file yet." };
     const error = await shell.openPath(logPath); // "" on success
-    return error ? { ok: false, error, path: logPath } : { ok: true, path: logPath };
+    if (!error) return { ok: true, path: logPath };
+    // Opening fails when .log has no default app (common on Windows); reveal
+    // the file in the OS file manager instead, which needs no association.
+    shell.showItemInFolder(logPath);
+    return { ok: true, path: logPath, revealed: true };
   });
 
   // Settings → Advanced: re-run the setup wizard on demand. The wizard

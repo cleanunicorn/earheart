@@ -871,13 +871,20 @@ $("open-wizard").addEventListener("click", () => {
 
 $("open-logs").addEventListener("click", async () => {
   const el = $("open-logs-result");
-  const result = await earheart.invoke("logs:open");
-  if (result.ok) {
-    el.textContent = result.path;
-    el.className = "status";
-  } else {
-    // Opening can fail (no default handler for .log); still show where it is.
-    el.textContent = result.path ? `Couldn't open it — find it at ${result.path}` : result.error;
+  try {
+    const result = await earheart.invoke("logs:open");
+    if (result.ok) {
+      el.textContent = result.revealed ? `Opened its folder — ${result.path}` : result.path;
+      el.className = "status";
+    } else {
+      // Opening can fail (no default handler for .log); still show where it is.
+      el.textContent = result.path ? `Couldn't open it — find it at ${result.path}` : result.error;
+      el.className = "status err";
+    }
+  } catch (err) {
+    // A bridge-level throw (e.g. a channel missing from the preload allowlist)
+    // must surface here, not die as an unhandled rejection.
+    el.textContent = `Couldn't open the log: ${err.message}`;
     el.className = "status err";
   }
 });

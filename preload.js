@@ -59,6 +59,7 @@ const INVOKE = new Set([
   "updates:skip",
   "updates:dismiss",
   "updates:remind-off",
+  "logs:open",
 ]);
 
 contextBridge.exposeInMainWorld("earheart", {

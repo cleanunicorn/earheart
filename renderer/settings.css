@@ -925,11 +925,21 @@ input[type="range"]:focus-visible {
   margin-bottom: 0;
 }
 
+/* Long dictations preview at 3 lines; the card's Show more button lifts the
+   clamp by toggling li.expanded. */
 #history-list .text {
   line-height: 1.5;
   font-size: 13px;
   white-space: pre-wrap;
   word-break: break-word;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+#history-list li.expanded .text {
+  -webkit-line-clamp: unset;
 }
 
 #history-list .meta {
@@ -944,7 +954,13 @@ input[type="range"]:focus-visible {
   margin-top: 9px;
 }
 
-#history-list .copy {
+#history-list .actions {
+  display: flex;
+  gap: 6px;
+}
+
+#history-list .copy,
+#history-list .more {
   padding: 3px 11px;
   font-size: 12px;
   font-family:
@@ -953,6 +969,12 @@ input[type="range"]:focus-visible {
     "Segoe UI",
     sans-serif;
   letter-spacing: normal;
+}
+
+/* Sits under the cards, so it shares their measure. */
+.history-pager {
+  max-width: 620px;
+  margin-top: 10px;
 }
 
 /* Visually hidden, still read by AT (terminal download announcements — the

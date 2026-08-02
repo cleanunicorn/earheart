@@ -817,17 +817,33 @@ bindAddCustomModel("cleanup");
 
 /* ---------- history ---------- */
 
+const HISTORY_PAGE_SIZE = 5;
+let historyPage = 0; // 0 = the newest page
+
 async function renderHistory() {
   const items = await earheart.invoke("history:list");
   const list = $("history-list");
+  const pager = $("history-pager");
   list.replaceChildren();
+
+  const pages = Math.max(1, Math.ceil(items.length / HISTORY_PAGE_SIZE));
+  historyPage = Math.min(historyPage, pages - 1); // clamp after clear/shrink
+  pager.hidden = pages <= 1;
+
   if (items.length === 0) {
     const li = document.createElement("li");
     li.innerHTML = '<span class="muted">No transcriptions yet.</span>';
     list.appendChild(li);
     return;
   }
-  for (const item of items) {
+
+  const start = historyPage * HISTORY_PAGE_SIZE;
+  const slice = items.slice(start, start + HISTORY_PAGE_SIZE);
+  $("history-range").textContent = `${start + 1}–${start + slice.length} of ${items.length}`;
+  $("history-newer").disabled = historyPage === 0;
+  $("history-older").disabled = historyPage >= pages - 1;
+
+  for (const item of slice) {
     const li = document.createElement("li");
     const text = document.createElement("div");
     text.className = "text";
@@ -836,6 +852,8 @@ async function renderHistory() {
     meta.className = "meta";
     const when = document.createElement("span");
     when.textContent = `${new Date(item.at).toLocaleString()}${item.cleaned ? " · cleaned" : ""}`;
+    const actions = document.createElement("span");
+    actions.className = "actions";
     const copy = document.createElement("button");
     copy.className = "copy";
     copy.textContent = "Copy";
@@ -844,11 +862,36 @@ async function renderHistory() {
       copy.textContent = "Copied";
       setTimeout(() => (copy.textContent = "Copy"), 1200);
     });
-    meta.append(when, copy);
+    actions.append(copy);
+    meta.append(when, actions);
     li.append(text, meta);
     list.appendChild(li);
+    // The card is laid out as soon as it is attached (the History section is
+    // always visible), so overflow past the 3-line clamp is measurable here.
+    if (text.scrollHeight > text.clientHeight + 1) {
+      const more = document.createElement("button");
+      more.className = "more";
+      more.textContent = "Show more";
+      more.setAttribute("aria-expanded", "false");
+      more.addEventListener("click", () => {
+        const open = li.classList.toggle("expanded");
+        more.textContent = open ? "Show less" : "Show more";
+        more.setAttribute("aria-expanded", String(open));
+      });
+      actions.prepend(more);
+    }
   }
 }
+
+$("history-newer").addEventListener("click", () => {
+  historyPage -= 1;
+  renderHistory();
+});
+
+$("history-older").addEventListener("click", () => {
+  historyPage += 1;
+  renderHistory();
+});
 
 $("history-clear").addEventListener("click", async () => {
   // Unlike a removed model, cleared history is gone for good — gate it the
@@ -858,8 +901,9 @@ $("history-clear").addEventListener("click", async () => {
   renderHistory();
 });
 
-// The History section is always on the panel now, so keep it live.
-earheart.on("history:changed", () => renderHistory());
+// The History section is always on the panel now, so keep it live. A new
+// dictation snaps back to the newest page so it is immediately visible.
+earheart.on("history:changed", () => { historyPage = 0; renderHistory(); });
 
 /* ---------- setup wizard ---------- */
 

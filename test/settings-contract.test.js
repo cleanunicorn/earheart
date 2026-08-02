@@ -120,10 +120,12 @@ test("the always-visible History section stays live (no active-tab guard)", () =
   // tab is active" guard (the old model's shape) would leave the list stale
   // for the whole session. Pins the call sites, not renderHistory itself.
   const normalized = js.replace(/\s+/g, " ");
+  // The reset-to-newest is part of the pinned contract: a fresh dictation
+  // must always land on the visible page, wherever the pager was left.
   assert.match(
     normalized,
-    /earheart\.on\("history:changed", \(\) => \{? ?renderHistory\(\)/,
-    "history:changed must call renderHistory unconditionally"
+    /earheart\.on\("history:changed", \(\) => \{ historyPage = 0; renderHistory\(\)/,
+    "history:changed must reset to the newest page and rerender unconditionally"
   );
   const init = js.slice(js.lastIndexOf("(async () =>"));
   assert.ok(

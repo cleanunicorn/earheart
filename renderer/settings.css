@@ -366,9 +366,11 @@ select {
   gap: 12px;
 }
 
-/* The custom fields are .field inside a .grid-2 whose own gap should be the
-   only spacing; grid margins aren't absorbed by gap. */
-#cleanup-custom-fields > .field {
+/* The custom sampling and Performance fields are .field inside a .grid-2
+   whose own gap should be the only spacing; grid margins aren't absorbed by
+   gap. */
+#cleanup-custom-fields > .field,
+#tab-advanced .grid-2 > .field {
   margin-bottom: 0;
 }
 
@@ -937,6 +939,19 @@ input[type="range"]:focus-visible {
   letter-spacing: normal;
 }
 
+/* Newer / range / Older, aligned with the list's width. The range readout is
+   a machine numeral like the timestamps above it. */
+#history-pager {
+  max-width: 620px;
+  margin-top: 12px;
+}
+
+#history-range {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
 /* Visually hidden, still read by AT (terminal download announcements — the
    per-row status spans get rebuilt, so they can't be live regions). */
 .sr-only {
@@ -988,7 +1003,7 @@ footer {
    Rule). */
 .dl-bar {
   height: 6px;
-  border-radius: 3px;
+  border-radius: 2px;
   background: rgba(255, 255, 255, 0.12);
   overflow: hidden;
   margin-bottom: 11px;
@@ -997,7 +1012,7 @@ footer {
 .dl-fill {
   height: 100%;
   width: 0;
-  border-radius: 3px;
+  border-radius: 2px;
   background: var(--text);
   /* The world's documented progress motion (overlay #progress-fill). */
   transition: width 0.15s linear;

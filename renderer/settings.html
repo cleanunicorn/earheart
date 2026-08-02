@@ -337,27 +337,50 @@
 
               <div id="cleanup-style-custom">
                 <p class="hint">
-                  Lower values keep the model closer to the most likely wording;
-                  higher values let it vary more. <code>top-k</code> and
-                  <code>min-p</code> apply to the built-in engine only — external
-                  services receive temperature and <code>top-p</code>.
+                  Direct control of sampling — how the model picks each next
+                  word. Unlike a preset, no editing instruction is added to the
+                  prompt: the system prompt below runs exactly as written, so if
+                  you want a particular editing style (keep every word, polish
+                  freely), state it there. <code>top-k</code> and
+                  <code>min-p</code> reach the built-in engine only — external
+                  services receive just temperature and <code>top-p</code>.
                 </p>
                 <div class="grid-2" id="cleanup-custom-fields">
                   <div class="field">
                     <label for="cleanup-temperature">Temperature <span class="muted">(0–2)</span></label>
                     <input id="cleanup-temperature" type="number" min="0" max="2" step="0.05" />
+                    <p class="hint">
+                      How adventurous each word choice is. 0 always takes the
+                      most likely word — same input, same output; higher values
+                      vary more. The presets stay between 0 and 0.4.
+                    </p>
                   </div>
                   <div class="field">
                     <label for="cleanup-top-p">top-p <span class="muted">(0–1)</span></label>
                     <input id="cleanup-top-p" type="number" min="0" max="1" step="0.05" />
+                    <p class="hint">
+                      Considers only the most likely words whose chances add up
+                      to this share. 1 = no limit; 0.9 cuts off the unlikely
+                      tail. Lower is stricter.
+                    </p>
                   </div>
                   <div class="field">
                     <label for="cleanup-top-k">top-k <span class="muted">(0 = off)</span></label>
                     <input id="cleanup-top-k" type="number" min="0" max="200" step="1" />
+                    <p class="hint">
+                      Considers only the K most likely words at each step — 40
+                      means choose among the top 40. Lower is stricter.
+                    </p>
                   </div>
                   <div class="field">
                     <label for="cleanup-min-p">min-p <span class="muted">(0 = off)</span></label>
                     <input id="cleanup-min-p" type="number" min="0" max="1" step="0.01" />
+                    <p class="hint">
+                      Drops words less likely than this fraction of the single
+                      best word — 0.05 discards anything under 5% as likely as
+                      the favorite. Unlike the others, <em>higher</em> is
+                      stricter.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -410,6 +433,11 @@
           <button id="history-clear" class="ghost danger">Clear history</button>
         </div>
         <ul id="history-list"></ul>
+        <div class="row space-between" id="history-pager" hidden>
+          <button id="history-newer" class="ghost" type="button">Newer</button>
+          <span id="history-range" class="muted" aria-live="polite"></span>
+          <button id="history-older" class="ghost" type="button">Older</button>
+        </div>
       </section>
 
       <!-- Advanced -->
@@ -421,17 +449,22 @@
             <div class="field">
               <label for="max-seconds">Max dictation length (s)</label>
               <input id="max-seconds" type="number" min="10" max="3600" step="10" />
+              <p class="hint">
+                Safety stop: a take that runs this long ends and transcribes on
+                its own, in case the stop key never comes.
+              </p>
             </div>
             <div class="field">
               <label for="idle-unload">Unload models after idle (min)</label>
               <input id="idle-unload" type="number" min="0" max="240" step="1" />
+              <p class="hint">
+                Built-in models stay in memory for fast repeat dictations, then
+                unload after this many idle minutes to free ~1.5 GB or more.
+                0 keeps them loaded for the whole session. External services
+                aren't affected.
+              </p>
             </div>
           </div>
-          <p class="hint">
-            Built-in models stay in memory for fast repeat dictations, then unload after this
-            many idle minutes to free memory (~1.5 GB or more). Set to 0 to keep them loaded
-            for the whole session. Only affects in-app models, not external services.
-          </p>
         </div>
 
         <div class="card" id="accessibility-field" hidden>

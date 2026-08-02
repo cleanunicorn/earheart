@@ -817,17 +817,43 @@ bindAddCustomModel("cleanup");
 
 /* ---------- history ---------- */
 
+// History can hold up to 100 entries; rendering them all would stretch the
+// settings page out of proportion. Show one page at a time, newest first,
+// with Newer/Older controls that only appear once there is a second page.
+const HISTORY_PAGE_SIZE = 10;
+let historyItems = [];
+let historyPage = 0; // 0 = the newest page
+
 async function renderHistory() {
-  const items = await earheart.invoke("history:list");
+  historyItems = await earheart.invoke("history:list");
+  renderHistoryPage();
+}
+
+function renderHistoryPage() {
   const list = $("history-list");
+  const pages = Math.max(1, Math.ceil(historyItems.length / HISTORY_PAGE_SIZE));
+  // New entries arriving (or Clear) can shrink the list under the current
+  // page; clamp instead of showing an empty page.
+  historyPage = Math.min(historyPage, pages - 1);
+  const start = historyPage * HISTORY_PAGE_SIZE;
+  const end = Math.min(start + HISTORY_PAGE_SIZE, historyItems.length);
+
+  const pager = $("history-pager");
+  pager.hidden = pages <= 1;
+  $("history-newer").disabled = historyPage === 0;
+  $("history-older").disabled = historyPage >= pages - 1;
+  $("history-range").textContent = pager.hidden
+    ? ""
+    : `${start + 1}–${end} of ${historyItems.length}`;
+
   list.replaceChildren();
-  if (items.length === 0) {
+  if (historyItems.length === 0) {
     const li = document.createElement("li");
     li.innerHTML = '<span class="muted">No transcriptions yet.</span>';
     list.appendChild(li);
     return;
   }
-  for (const item of items) {
+  for (const item of historyItems.slice(start, end)) {
     const li = document.createElement("li");
     const text = document.createElement("div");
     text.className = "text";
@@ -849,6 +875,15 @@ async function renderHistory() {
     list.appendChild(li);
   }
 }
+
+$("history-newer").addEventListener("click", () => {
+  historyPage = Math.max(0, historyPage - 1);
+  renderHistoryPage();
+});
+$("history-older").addEventListener("click", () => {
+  historyPage += 1;
+  renderHistoryPage();
+});
 
 $("history-clear").addEventListener("click", async () => {
   // Unlike a removed model, cleared history is gone for good — gate it the
@@ -873,10 +908,18 @@ $("open-logs").addEventListener("click", async () => {
   const el = $("open-logs-result");
   const result = await earheart.invoke("logs:open");
   if (result.ok) {
-    el.textContent = result.path;
+    // Main falls back when the OS has no app for .log files (common on
+    // Windows): "revealed" = file selected in the file manager, "folder" =
+    // opened the logs directory because no log exists yet.
+    el.textContent =
+      result.action === "revealed"
+        ? "Opened its folder — no app is set up for .log files"
+        : result.action === "folder"
+          ? "Nothing logged yet — opened the logs folder"
+          : result.path;
     el.className = "status";
   } else {
-    // Opening can fail (no default handler for .log); still show where it is.
+    // Everything failed; at least show where the file lives.
     el.textContent = result.path ? `Couldn't open it — find it at ${result.path}` : result.error;
     el.className = "status err";
   }

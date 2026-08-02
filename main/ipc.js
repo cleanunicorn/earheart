@@ -1,6 +1,8 @@
 // IPC handlers backing the settings window and the setup wizard.
 
 const { ipcMain, app, shell } = require("electron");
+const fs = require("node:fs");
+const path = require("node:path");
 const settings = require("./settings");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
@@ -109,13 +111,30 @@ function init({ applyHotkeys, onSettingsChanged }) {
   });
 
   // Settings → About: open the error log in the OS default handler so the user
-  // can read or attach it when something goes wrong. Returns the path (or an
-  // error) so the UI can show where it lives even if opening fails.
+  // can read or attach it when something goes wrong. openPath needs a default
+  // app for .log files, which Windows often lacks — it then resolves with an
+  // error string and nothing opens. Fall back to selecting the file in the OS
+  // file manager, which needs no file association; `action` tells the UI which
+  // outcome to describe. Returns the path either way so the UI can show where
+  // the file lives even if everything fails.
   ipcMain.handle("logs:open", async () => {
     const logPath = logger.getLogPath();
     if (!logPath) return { ok: false, error: "No log file yet." };
-    const error = await shell.openPath(logPath); // "" on success
-    return error ? { ok: false, error, path: logPath } : { ok: true, path: logPath };
+    if (!fs.existsSync(logPath)) {
+      // Nothing logged yet: the file doesn't exist, so open its folder.
+      const error = await shell.openPath(path.dirname(logPath)); // "" on success
+      return error
+        ? { ok: false, error, path: logPath }
+        : { ok: true, path: logPath, action: "folder" };
+    }
+    const error = await shell.openPath(logPath);
+    if (!error) return { ok: true, path: logPath, action: "opened" };
+    try {
+      shell.showItemInFolder(logPath);
+      return { ok: true, path: logPath, action: "revealed" };
+    } catch {
+      return { ok: false, error, path: logPath };
+    }
   });
 
   // Settings → Advanced: re-run the setup wizard on demand. The wizard

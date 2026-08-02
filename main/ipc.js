@@ -55,9 +55,15 @@ function init({ applyHotkeys, onSettingsChanged }) {
       defaults: settings.DEFAULTS,
       platform: process.platform,
       version: app.getVersion(),
-      // Drives the cleanup style slider (id/label/hint per stop), so the UI
-      // copy stays in lockstep with the presets the engines actually use.
-      cleanupStyles: CLEANUP_STYLES.map(({ id, label, hint }) => ({ id, label, hint })),
+      // Drives the cleanup style slider (id/label/hint per stop) and the
+      // "Start from preset" seed values, so the UI copy and numbers stay in
+      // lockstep with the presets the engines actually use.
+      cleanupStyles: CLEANUP_STYLES.map(({ id, label, hint, sampling }) => ({
+        id,
+        label,
+        hint,
+        sampling,
+      })),
     };
   });
 

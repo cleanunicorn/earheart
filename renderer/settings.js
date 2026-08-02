@@ -363,6 +363,11 @@ function renderStyleLabel() {
   if (!style) return;
   $("cleanup-style-label").textContent = style.label;
   $("cleanup-style-hint").textContent = style.hint;
+  // Without this the slider announces bare "0/1/2" to screen readers.
+  $("cleanup-style").setAttribute("aria-valuetext", `${style.label} — ${style.hint}`);
+  // The custom pane's seed button tracks the slider's last position, which
+  // persists while the preset pane is hidden.
+  $("cleanup-custom-from-preset").textContent = `Start from preset: ${style.label}`;
 }
 
 // Show only the active mode's controls; `hidden` also removes the inactive
@@ -384,13 +389,16 @@ function num(id, min, max, fallback) {
 function collectCleanupStyle() {
   const idx = parseInt($("cleanup-style").value, 10) || 0;
   const style = styleMode() === "custom" ? "custom" : cleanupStyles[idx]?.id || "clean";
+  // A blanked field falls back to its saved value, not a neutral constant —
+  // clearing a box must never silently change behaviour on save.
+  const cur = current.cleanup.custom || {};
   return {
     style,
     custom: {
-      temperature: num("cleanup-temperature", 0, 2, 0.2),
-      topP: num("cleanup-top-p", 0, 1, 1),
-      topK: Math.round(num("cleanup-top-k", 0, 1000, 0)),
-      minP: num("cleanup-min-p", 0, 1, 0),
+      temperature: num("cleanup-temperature", 0, 2, cur.temperature ?? 0.2),
+      topP: num("cleanup-top-p", 0, 1, cur.topP ?? 1),
+      topK: Math.round(num("cleanup-top-k", 0, 200, cur.topK ?? 0)),
+      minP: num("cleanup-min-p", 0, 1, cur.minP ?? 0),
     },
   };
 }
@@ -399,6 +407,18 @@ $("cleanup-style").addEventListener("input", renderStyleLabel);
 document
   .querySelectorAll('input[name="cleanup-style-mode"]')
   .forEach((r) => r.addEventListener("change", syncStyleMode));
+
+// Seed the custom fields from the preset the slider points at, so tweaking
+// can start from a known-good profile instead of whatever was last saved.
+$("cleanup-custom-from-preset").addEventListener("click", () => {
+  const idx = parseInt($("cleanup-style").value, 10) || 0;
+  const sampling = cleanupStyles[idx]?.sampling;
+  if (!sampling) return;
+  $("cleanup-temperature").value = sampling.temperature;
+  $("cleanup-top-p").value = sampling.topP;
+  $("cleanup-top-k").value = sampling.topK;
+  $("cleanup-min-p").value = sampling.minP;
+});
 
 /* ---------- built-in engines + model management ---------- */
 

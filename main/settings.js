@@ -87,11 +87,11 @@ const DEFAULTS = {
     // How close the cleanup stays to the spoken words. A named style
     // ("verbatim" | "clean" | "polished") picks a prompt directive + sampling
     // profile from main/cleanup-styles.js; "custom" uses the raw `custom`
-    // numbers below instead. The settings UI surfaces this as one slider plus
-    // an Advanced disclosure.
+    // numbers below instead. The settings UI surfaces this as a Preset/Custom
+    // segmented control: Preset shows the slider, Custom the sampling fields.
     style: DEFAULT_STYLE,
     // Raw sampling values for the "custom" style. Seeded with the default
-    // style's profile so opening Advanced shows sensible starting numbers.
+    // style's profile so Custom values shows sensible starting numbers.
     custom: { ...styleById(DEFAULT_STYLE).sampling },
     timeoutMs: 60000,
     systemPrompt: DEFAULT_CLEANUP_PROMPT,

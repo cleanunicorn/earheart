@@ -149,6 +149,8 @@ function renderStyleLabel() {
   if (!style) return;
   $("cleanup-style-label").textContent = style.label;
   $("cleanup-style-hint").textContent = style.hint;
+  // Without this the slider announces bare "0/1/2" to screen readers.
+  $("cleanup-style").setAttribute("aria-valuetext", `${style.label} — ${style.hint}`);
 }
 
 $("cleanup-style").addEventListener("input", renderStyleLabel);

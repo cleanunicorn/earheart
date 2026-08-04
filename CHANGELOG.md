@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.25.0 — 2026-08-04
+
+- Tell you what's new before and after you update (#89)
+
 ## v0.24.1 — 2026-08-04
 
 - Settle the three settings residuals from #83

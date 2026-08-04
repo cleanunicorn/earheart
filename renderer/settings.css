@@ -374,9 +374,11 @@ select {
   gap: 12px;
 }
 
-/* The custom fields are .field inside a .grid-2 whose own gap should be the
-   only spacing; grid margins aren't absorbed by gap. */
-#cleanup-custom-fields > .field {
+/* The custom sampling and Performance fields are .field inside a .grid-2
+   whose own gap should be the only spacing; grid margins aren't absorbed by
+   gap, so the non-last field would push its row taller than its neighbour. */
+#cleanup-custom-fields > .field,
+#tab-advanced .grid-2 > .field {
   margin-bottom: 0;
 }
 
@@ -1028,7 +1030,9 @@ footer {
    Rule). */
 .dl-bar {
   height: 6px;
-  border-radius: 3px;
+  /* The 2px hairline round the radius scale reserves for progress tracks
+     (DESIGN.md § Shapes), same as the overlay's #progress and #update-bar. */
+  border-radius: 2px;
   background: var(--track);
   overflow: hidden;
   margin-bottom: 11px;
@@ -1037,7 +1041,7 @@ footer {
 .dl-fill {
   height: 100%;
   width: 0;
-  border-radius: 3px;
+  border-radius: 2px;
   background: var(--text);
   /* The world's documented progress motion (overlay #progress-fill). */
   transition: width 0.15s linear;

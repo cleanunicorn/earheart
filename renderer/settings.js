@@ -938,7 +938,15 @@ $("open-logs").addEventListener("click", async () => {
   try {
     const result = await earheart.invoke("logs:open");
     if (result.ok) {
-      el.textContent = result.revealed ? `Opened its folder — ${result.path}` : result.path;
+      // Main falls back when the OS has no app for .log files (common on
+      // Windows): "revealed" = the file selected in the file manager,
+      // "folder" = the logs directory, because nothing has faulted yet.
+      el.textContent =
+        result.action === "revealed"
+          ? "Opened its folder — no app is set up for .log files"
+          : result.action === "folder"
+            ? "Nothing logged yet — opened the logs folder"
+            : result.path;
       el.className = "status";
     } else {
       // Opening can fail (no default handler for .log); still show where it is.

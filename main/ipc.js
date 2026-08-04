@@ -1,6 +1,8 @@
 // IPC handlers backing the settings window and the setup wizard.
 
 const { ipcMain, app, shell } = require("electron");
+const fs = require("node:fs");
+const path = require("node:path");
 const settings = require("./settings");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
@@ -115,17 +117,31 @@ function init({ applyHotkeys, onSettingsChanged }) {
   });
 
   // Settings → About: open the error log in the OS default handler so the user
-  // can read or attach it when something goes wrong. Returns the path (or an
-  // error) so the UI can show where it lives even if opening fails.
+  // can read or attach it when something goes wrong. `action` names which of
+  // the three outcomes happened so the UI can describe it; the path comes back
+  // either way, so even total failure still tells the user where to look.
   ipcMain.handle("logs:open", async () => {
     const logPath = logger.getLogPath();
     if (!logPath) return { ok: false, error: "No log file yet." };
-    const error = await shell.openPath(logPath); // "" on success
-    if (!error) return { ok: true, path: logPath };
+    // The logger resolves the path at startup but only creates the file on the
+    // first write, so a clean install that has never faulted has no file to
+    // open or reveal — open the logs folder instead.
+    if (!fs.existsSync(logPath)) {
+      const error = await shell.openPath(path.dirname(logPath)); // "" on success
+      return error
+        ? { ok: false, error, path: logPath }
+        : { ok: true, path: logPath, action: "folder" };
+    }
+    const error = await shell.openPath(logPath);
+    if (!error) return { ok: true, path: logPath, action: "opened" };
     // Opening fails when .log has no default app (common on Windows); reveal
     // the file in the OS file manager instead, which needs no association.
-    shell.showItemInFolder(logPath);
-    return { ok: true, path: logPath, revealed: true };
+    try {
+      shell.showItemInFolder(logPath);
+      return { ok: true, path: logPath, action: "revealed" };
+    } catch {
+      return { ok: false, error, path: logPath };
+    }
   });
 
   // Settings → Advanced: re-run the setup wizard on demand. The wizard

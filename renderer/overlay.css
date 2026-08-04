@@ -151,6 +151,42 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* What the version brings. Same size and colour as the note it sits under —
+   this is the same voice continuing, not a new section — with the marker
+   dimmed so the words carry the line. */
+#update-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+#update-notes li {
+  display: flex;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+
+#update-notes li::before {
+  content: "•";
+  color: var(--text-faint);
+  flex: none;
+}
+
+/* The tail of a truncated list is a pointer, not a change — one step quieter,
+   and no marker, so it doesn't read as another item. */
+#update-notes li.more {
+  color: var(--text-faint);
+}
+
+#update-notes li.more::before {
+  content: "";
+}
+
 /* The download bar reuses the dictation progress's track/fill grammar — the
    shared rules live with #progress in the wave section; only the fill color
    differs (white, not coral: an update download is the app talking about

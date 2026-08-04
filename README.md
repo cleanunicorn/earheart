@@ -167,7 +167,10 @@ wizard downloads the speech and cleanup models for you.
 
 Earheart checks GitHub releases for a new version on startup and twice a day
 (toggle under Settings → Advanced → Updates) and shows a notification plus an
-**Update to vX.Y.Z** entry in the tray menu when one is out. One click
+**Update to vX.Y.Z** entry in the tray menu when one is out. It tells you what
+you'd be getting: the prompt on the dictation bar lists the top changes (every
+version between yours and the new one — Settings → Advanced shows the full
+list), and after it updates itself the bar says what changed. One click
 downloads the release, verifies its checksum and reinstalls in place:
 
 - **Windows (installed):** the new installer runs silently and the app

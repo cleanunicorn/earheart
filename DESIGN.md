@@ -568,6 +568,13 @@ corners anywhere.
 - A quiet in-card note: 12px radius, white 0.05-alpha fill, hairline edge,
   10px 12px padding. Entirely neutral-white grammar — no coral. In solo mode
   the control row hides and the note is the whole card.
+- **What's-new list:** up to three Caption-weight bullets under the note,
+  3px apart, markers in Text Faint so the words carry the line; a fourth,
+  markerless Text Faint line counts what didn't fit and points at Settings.
+  Shown while the update is still a decision (and on the what's-new card after
+  an update lands); it steps aside once the download starts, when the progress
+  line is the only news left. Settings mirrors it in full, one quiet 600/12px
+  version heading per release.
 
 ### Wizard step dots
 - 7px circles, white 0.35 at rest (clearing the 3:1 UI bar on the ink), solid

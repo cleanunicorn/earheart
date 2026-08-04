@@ -30,6 +30,7 @@ const { pipeline: streamPipeline } = require("node:stream/promises");
 const { Readable, Transform } = require("node:stream");
 
 const feed = require("./services/update-feed");
+const releaseNotes = require("./services/release-notes");
 const settings = require("./settings");
 const windows = require("./windows");
 const dictation = require("./pipeline");
@@ -37,6 +38,10 @@ const logger = require("./util/logger");
 
 const CHECK_DELAY_MS = 10_000;
 const CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000;
+// The "what's new" card after an update lands: shown a beat after launch, once
+// the app has settled and the tray icon is up, so it reads as Earheart
+// introducing itself rather than something that beat the app to the screen.
+const WHATSNEW_DELAY_MS = 4_000;
 
 let state = {
   status: "idle", // idle | checking | available | downloading | ready | installing | error
@@ -46,6 +51,11 @@ let state = {
   error: null,
   method: "none", // install | open-releases | none
   hint: null,
+  // What the user would get by updating: one entry per version between theirs
+  // and `latest`, newest first — [{ version, date, items: [string] }]. Empty
+  // when there's no update, or when the notes couldn't be fetched (they're a
+  // nicety; a missing release-notes.json never blocks an update).
+  notes: [],
 };
 
 let installKind = "dev";
@@ -67,6 +77,16 @@ let downloadedPath = null; // verified asset waiting to be installed
 let promptShowing = false;
 let promptPending = false;
 let promptSolo = false;
+// Which of the two things the banner is saying: "update" (there's a newer
+// version — the state machine above drives it) or "whatsnew" (this app just
+// updated itself; here's what changed). They share the card, the pinning and
+// the never-over-a-dictation rule; only the text and the buttons differ.
+let promptKind = "update";
+// Notes for the version we're now running, when this launch is the first after
+// an update. Read from the CHANGELOG.md inside our own bundle, so the card
+// works with no network at all.
+let whatsNew = [];
+let whatsNewTimer = null;
 // The version the banner has already had its say about this run: dismissing it
 // (or starting another dictation) must not make it pop back on the next poll.
 let promptedVersion = null;
@@ -88,7 +108,7 @@ function setState(patch) {
   // update went away — skipped, or no longer newer) takes it down; "checking"
   // deliberately doesn't, so a background poll can't blank the banner the user
   // is reading.
-  if (promptShowing) {
+  if (promptShowing && promptKind === "update") {
     if (state.status === "idle") hidePrompt();
     else sendPrompt();
   }
@@ -132,10 +152,68 @@ function init(callbacks = {}) {
   // pipeline returns to idle — on the result card they're already looking at.
   dictation.onStateChange(onDictationState);
 
+  armWhatsNew();
+
   // In dev only run automatic checks when a test feed is set, so `npm start`
   // stays network-free by default.
   if (installKind === "dev" && !feedOverridden()) return;
   armTimers();
+}
+
+// --- "what's new", after the update has landed ----------------------------
+
+/** The changelog packaged with this build (works inside the asar). */
+function localNotes() {
+  try {
+    return releaseNotes.displayEntries(
+      releaseNotes.parseChangelog(
+        fs.readFileSync(path.join(app.getAppPath(), "CHANGELOG.md"), "utf8")
+      )
+    );
+  } catch (err) {
+    logger.info(`no packaged changelog to read: ${err.message}`);
+    return [];
+  }
+}
+
+/**
+ * First launch on a new version: work out what changed since the version that
+ * ran last, and queue the card. The version we're running is recorded either
+ * way, so this happens once per update and never again — and a fresh install
+ * (nothing recorded yet) gets nothing, because "what's new" means nothing to
+ * someone who has never seen the old one.
+ */
+function armWhatsNew() {
+  // Never be the thing that creates the settings file: its absence is what
+  // main.js reads as "fresh install, show the wizard", and writing one here
+  // would send someone who quit mid-wizard straight past it next launch. A
+  // fresh install has no previous version to compare against anyway — the
+  // wizard's own save starts the record.
+  if (settings.isFirstRun()) return;
+
+  const cfg = settings.get();
+  const seen = cfg.updates.lastSeenVersion || "";
+  const current = state.current;
+  if (seen !== current) {
+    cfg.updates.lastSeenVersion = current;
+    settings.save(cfg);
+  }
+  if (!seen || feed.compareVersions(current, seen) <= 0) return;
+  // "Don't remind me" is a request to stop being interrupted about versions;
+  // this is one of those interruptions. Nothing is lost — the same notes are
+  // in the release on GitHub.
+  if (cfg.updates.remind === false) return;
+
+  whatsNew = releaseNotes.notesBetween(localNotes(), seen, current);
+  if (!whatsNew.length) return;
+  logger.info(`updated ${seen} → ${current}; ${whatsNew.length} version(s) of notes to show`);
+  whatsNewTimer = setTimeout(() => {
+    whatsNewTimer = null;
+    // An update prompt has the better claim on the card; this one has waited
+    // this long and its moment has passed.
+    if (promptShowing || promptPending) return;
+    raisePrompt("whatsnew");
+  }, WHATSNEW_DELAY_MS);
 }
 
 function armTimers() {
@@ -163,6 +241,8 @@ function onSettingsChanged() {
 
 function dispose() {
   disarmTimers();
+  if (whatsNewTimer) clearTimeout(whatsNewTimer);
+  whatsNewTimer = null;
   if (downloadController) downloadController.abort();
 }
 
@@ -192,18 +272,22 @@ async function check({ manual = false } = {}) {
     const info = feed.parseLatestYml(await fetchText(url));
     if (feed.compareVersions(info.version, state.current) <= 0) {
       pendingInfo = null;
-      setState({ status: "idle", latest: null, progress: null });
+      setState({ status: "idle", latest: null, progress: null, notes: [] });
       return;
     }
     const skipped = settings.get().updates.skippedVersion;
     if (!manual && skipped && feed.compareVersions(info.version, skipped) === 0) {
       logger.info(`update ${info.version} available but skipped by user`);
       pendingInfo = null;
-      setState({ status: "idle", latest: null });
+      setState({ status: "idle", latest: null, notes: [] });
       return;
     }
     pendingInfo = info;
-    setState({ status: "available", latest: info.version, error: null });
+    // Fetched before the state lands so the prompt and Settings can say what
+    // the new version actually brings the first time they paint it, rather
+    // than growing a list a moment later.
+    const notes = await fetchNotes(info.version);
+    setState({ status: "available", latest: info.version, error: null, notes });
     // A manual check is answered where it was asked (Settings shows the update
     // inline) — no toast, and no card popping up over the window the user is
     // already looking at.
@@ -223,15 +307,37 @@ async function check({ manual = false } = {}) {
   }
 }
 
+/**
+ * What the user would get by updating: every version between theirs and the
+ * one on offer, from the release-notes.json CI publishes next to latest*.yml.
+ * Optional by design — a feed without it (or an unreachable one) just means no
+ * notes, never a failed check.
+ */
+async function fetchNotes(latest) {
+  try {
+    const url = `${feedBase().replace(/\/$/, "")}/release-notes.json`;
+    const entries = releaseNotes.parseFeed(await fetchText(url));
+    return releaseNotes.notesBetween(entries, state.current, latest);
+  } catch (err) {
+    logger.info(`no release notes for ${latest}: ${err.message}`);
+    return [];
+  }
+}
+
 function notifyAvailable(version) {
   if (settings.get().updates.remind === false) return;
   try {
+    // Lead with what the version actually brings when we know it — "there's an
+    // update" is a chore, "this is what you get" is news. The where-to-update
+    // line stays as the fallback (and lives on the prompt and in Settings).
+    const headline = state.notes[0] && state.notes[0].items[0];
     const note = new Notification({
       title: `Earheart ${version} is available`,
       body:
-        state.method === "install"
+        headline ||
+        (state.method === "install"
           ? "Update from the prompt on screen, the tray menu, or Settings → Advanced."
-          : "Download it from the releases page (see Settings → Advanced).",
+          : "Download it from the releases page (see Settings → Advanced)."),
     });
     note.on("click", () => windows.openSettings());
     note.show();
@@ -242,16 +348,28 @@ function notifyAvailable(version) {
 
 // --- the overlay prompt ---------------------------------------------------
 
+// The card has room for a few lines, not a changelog: the top few bullets, and
+// a count of what didn't fit (Settings has the rest).
+const PROMPT_NOTES = 3;
+
 function sendPrompt() {
+  const notes = summarizeFor(promptKind);
   windows.sendToOverlay("updates:prompt", {
-    version: state.latest || "",
+    kind: promptKind,
+    version: (promptKind === "whatsnew" ? state.current : state.latest) || "",
     current: state.current,
     status: state.status,
     method: state.method,
     progress: state.progress,
     error: state.error,
     solo: promptSolo,
+    notes: notes.items,
+    notesMore: notes.more,
   });
+}
+
+function summarizeFor(kind) {
+  return releaseNotes.summarize(kind === "whatsnew" ? whatsNew : state.notes, PROMPT_NOTES);
 }
 
 /** Put the banner up now, or queue it if the user is mid-dictation. */
@@ -260,6 +378,15 @@ function maybePrompt() {
   if (settings.get().updates.remind === false) return;
   if (promptedVersion === state.latest) return;
   promptedVersion = state.latest;
+  raisePrompt("update");
+}
+
+/** Raise a banner of either kind, or queue it if the user is mid-dictation. */
+function raisePrompt(kind) {
+  // An update supersedes a what's-new card that's still up: one is news about
+  // the version they're running, the other is a decision to make.
+  if (promptShowing && promptKind !== kind) hidePrompt();
+  promptKind = kind;
   if (dictation.getState() !== "idle") {
     // Mid-dictation: the card belongs to the words being spoken. Wait for the
     // text to land and attach the prompt to the result they're already reading.

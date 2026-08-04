@@ -128,6 +128,12 @@ const DEFAULTS = {
     // A version the user chose to skip: auto-checks stay quiet about it,
     // a manual check surfaces it again.
     skippedVersion: "",
+    // The version that ran last. Written on every launch; when it turns out to
+    // be older than the version now running, the app shows what changed (from
+    // the CHANGELOG.md in its own bundle) and then moves on. Empty on a fresh
+    // install — there's no "what's new" for someone who has never seen the old
+    // version.
+    lastSeenVersion: "",
   },
   // Where the user last dragged the recording overlay: `{ x, y }` screen
   // coordinates of the base-height card's top-left corner. Empty until the

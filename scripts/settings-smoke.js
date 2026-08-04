@@ -131,6 +131,62 @@ app.whenReady().then(async () => {
     const top = await js(`document.querySelector("main").scrollTop`);
     check("clicking the index glides the panel back", top < 60, `scrollTop=${top}`);
 
+    // 5. The update card carries the full release notes — the list the
+    //    overlay prompt only summarises, and the reason "see Settings" on that
+    //    prompt is a promise and not a dead end. Version by version, as text:
+    //    the notes are fetched off the network, so they never become markup.
+    win.webContents.send("updates:state", {
+      status: "available",
+      current: "0.24.1",
+      latest: "0.26.0",
+      progress: null,
+      error: null,
+      method: "install",
+      hint: null,
+      notes: [
+        { version: "0.26.0", date: "2026-08-10", items: ["Newer thing", "<b>Not markup</b>"] },
+        { version: "0.25.0", date: "2026-08-04", items: ["Older thing"] },
+      ],
+    });
+    await sleep(100);
+    const notes = JSON.parse(
+      await js(`
+        (() => {
+          const box = document.getElementById("update-notes");
+          return JSON.stringify({
+            hidden: box.hidden,
+            heads: [...box.querySelectorAll(".notes-head")].map((h) => h.textContent),
+            items: [...box.querySelectorAll("ul.notes li")].map((li) => li.textContent),
+            markup: box.innerHTML.includes("<b>"),
+          });
+        })()
+      `)
+    );
+    check(
+      "the update card lists every version's changes",
+      notes.hidden === false &&
+        notes.heads.length === 2 &&
+        notes.heads[0] === "v0.26.0 — 2026-08-10" &&
+        notes.items.length === 3,
+      `heads=${JSON.stringify(notes.heads)} items=${JSON.stringify(notes.items)}`
+    );
+    check("release notes render as text, never markup", notes.markup === false);
+
+    // Up to date again: the list goes with the update it described.
+    win.webContents.send("updates:state", {
+      status: "idle",
+      current: "0.24.1",
+      latest: null,
+      progress: null,
+      error: null,
+      method: "install",
+      hint: null,
+      notes: [],
+    });
+    await sleep(100);
+    const cleared = await js(`document.getElementById("update-notes").hidden`);
+    check("the notes clear when the update does", cleared === true, `hidden=${cleared}`);
+
     const failed = checks.filter((c) => !c.ok);
     console.log(
       `[settings-smoke] ${checks.length - failed.length}/${checks.length} checks passed`

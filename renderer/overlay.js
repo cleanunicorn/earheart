@@ -20,6 +20,7 @@ const progressFill = document.getElementById("progress-fill");
 const updateEl = document.getElementById("update");
 const updateTitle = document.getElementById("update-title");
 const updateNote = document.getElementById("update-note");
+const updateNotes = document.getElementById("update-notes");
 const updateBar = document.getElementById("update-bar");
 const updateBarFill = document.getElementById("update-bar-fill");
 const updateNow = document.getElementById("update-now");
@@ -888,6 +889,10 @@ earheart.on("pipeline:status", ({ status, detail }) => {
 // The update prompt. The main process decides WHEN it appears (never over a
 // dictation in flight) and holds the card open for it; the renderer just paints
 // the payload and reports the four exits back. A null payload takes it down.
+//
+// Two kinds share this panel: kind "update" (a newer version is out — the
+// payload's status drives the buttons below) and kind "whatsnew" (the app has
+// just updated itself; here's what changed, with nothing to decide).
 let updatePrompt = null;
 
 // Per status: what the main button says and which handler it calls; whether it
@@ -902,8 +907,27 @@ const UPDATE_ACTIONS = {
   error: { label: "Try again", channel: "updates:apply", primary: true, outs: true },
 };
 
+// The what's-new card asks for nothing, so it gets one way out and no
+// "stop bothering me" exits — there's nothing left to bother anyone about.
+const WHATSNEW_ACTION = {
+  label: "Got it",
+  channel: "updates:dismiss",
+  primary: true,
+  outs: false,
+};
+
+function actionFor(p) {
+  if (p.kind === "whatsnew") return WHATSNEW_ACTION;
+  return UPDATE_ACTIONS[p.status] || UPDATE_ACTIONS.available;
+}
+
 function updateText(p) {
   const pct = Math.round((p.progress?.fraction || 0) * 100);
+  if (p.kind === "whatsnew") {
+    // No second line: the bullets below are the whole message, and a card that
+    // interrupts nothing should be as short as it can be.
+    return [`What's new in Earheart ${p.version}`, ""];
+  }
   switch (p.status) {
     case "downloading":
       return [`Downloading ${p.version}…`, `${pct}% of the update`];
@@ -923,6 +947,29 @@ function updateText(p) {
   }
 }
 
+// The bullets, as text nodes only — this list is the one thing on the card
+// that comes from a file off the network, so it never becomes markup.
+// Only worth showing while there's still a decision to make: once the download
+// is running the changes are already bought, and the progress line is the news.
+function renderUpdateNotes(p) {
+  const show = p.kind === "whatsnew" || p.status === "available";
+  const items = show ? p.notes || [] : [];
+  updateNotes.replaceChildren(
+    ...items.map((text) => {
+      const li = document.createElement("li");
+      li.textContent = text;
+      return li;
+    })
+  );
+  if (items.length && p.notesMore > 0) {
+    const li = document.createElement("li");
+    li.className = "more";
+    li.textContent = `and ${p.notesMore} more change${p.notesMore === 1 ? "" : "s"} — see Settings`;
+    updateNotes.append(li);
+  }
+  updateNotes.hidden = !items.length;
+}
+
 function renderUpdatePrompt() {
   const p = updatePrompt;
   if (!p) {
@@ -935,8 +982,10 @@ function renderUpdatePrompt() {
   const [title, note] = updateText(p);
   updateTitle.textContent = title;
   updateNote.textContent = note;
+  updateNote.hidden = !note;
+  renderUpdateNotes(p);
 
-  const action = UPDATE_ACTIONS[p.status] || UPDATE_ACTIONS.available;
+  const action = actionFor(p);
   updateNow.textContent =
     action.label || (p.method === "install" ? "Update now" : "Open releases page");
   updateNow.hidden = !action.channel;
@@ -963,7 +1012,7 @@ earheart.on("updates:prompt", (payload) => {
 });
 
 updateNow.addEventListener("click", () => {
-  const action = UPDATE_ACTIONS[updatePrompt?.status] || UPDATE_ACTIONS.available;
+  const action = actionFor(updatePrompt || {});
   if (action.channel) earheart.invoke(action.channel);
 });
 updateSkip.addEventListener("click", () => earheart.invoke("updates:skip"));

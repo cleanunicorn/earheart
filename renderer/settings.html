@@ -533,6 +533,10 @@
             <button id="update-skip" class="ghost" hidden>Skip this version</button>
           </div>
           <span id="update-status" class="status" aria-live="polite"></span>
+          <!-- Everything the update brings, version by version — the full list
+               the overlay prompt only has room to summarise. Filled from the
+               release notes published with each version. -->
+          <div id="update-notes" hidden></div>
           <p class="hint" id="update-hint">
             Updates are downloaded from the GitHub release and verified before installing.
           </p>

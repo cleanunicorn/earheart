@@ -808,6 +808,46 @@ button.danger:hover:not(:disabled) {
   display: none;
 }
 
+/* What the waiting update brings, version by version. Hint-weight copy — this
+   is explanation, not a control — at the hint's measure, with each version's
+   number as its own quiet heading so a two-release jump reads as two releases.
+   The list is the last thing in the card, above the standing hint. */
+#update-notes {
+  margin-top: 10px;
+  max-width: 62ch;
+}
+
+.notes-head {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 10px;
+}
+
+.notes-head:first-child {
+  margin-top: 0;
+}
+
+ul.notes {
+  list-style: none;
+  margin-top: 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+ul.notes li {
+  display: flex;
+  gap: 7px;
+  overflow-wrap: anywhere;
+}
+
+ul.notes li::before {
+  content: "•";
+  color: var(--field-edge);
+  flex: none;
+}
+
 /* ---------- setup-complete banner ---------- */
 
 /* The overlay's update-panel grammar: a quiet white-wash note. */

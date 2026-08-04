@@ -79,6 +79,24 @@ test("every channel the renderers listen on is in the preload LISTEN allowlist",
   assert.deepStrictEqual(missing, [], `preload LISTEN is missing: ${missing.join(", ")}`);
 });
 
+// logs:open answers with an `action` naming which of its three fallbacks ran,
+// and the renderer switches on that string to phrase the status line. The two
+// sides are joined by nothing but the literal, so renaming one silently drops
+// the other back to its default branch. `action:` appears nowhere else in
+// main, so a file-wide scan is the whole set.
+test("every logs:open action the renderer branches on is one main can return", () => {
+  const emitted = channels(main, /action:\s*"([a-z]+)"/g);
+  assert.deepStrictEqual(
+    [...emitted].sort(),
+    ["folder", "opened", "revealed"],
+    "logs:open should return exactly the three documented outcomes",
+  );
+  // "opened" needs no branch — it falls through to printing the bare path.
+  const compared = channels(renderer, /result\.action\s*===\s*"([a-z]+)"/g);
+  const unknown = [...compared].filter((a) => !emitted.has(a)).sort();
+  assert.deepStrictEqual(unknown, [], `renderer tests actions main never sends: ${unknown.join(", ")}`);
+});
+
 test("every channel the renderers send is in SEND and has an ipcMain.on", () => {
   const sent = channels(renderer, /earheart\.send\(\s*"([a-z:-]+)"/g);
   assert.ok(sent.size > 5, `expected many sent channels, got ${sent.size}`);

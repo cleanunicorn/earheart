@@ -99,16 +99,44 @@ conventional-commit prefix of the PR title
 | `fix: …`, `perf: …`, `refactor: …` | patch |
 | anything else (`chore:`, `docs:`, free-form, `[skip release]`) | none |
 
-The workflow bumps `package.json`, commits `release: vX.Y.Z` to main, tags
-it, and dispatches the release builds. Those builds create the GitHub release
-as a draft, each platform uploads its installers into it, and the release is
-flipped live only after all three platforms succeed — so a half-built release
-is never published.
+The workflow bumps `package.json`, writes the PR title into `CHANGELOG.md`,
+commits both as `release: vX.Y.Z` to main, tags it, and dispatches the release
+builds. Those builds create the GitHub release as a draft, each platform
+uploads its installers into it, and the release is flipped live only after all
+three platforms succeed — so a half-built release is never published.
+
+**Your PR title is the release note.** It's what the app shows people — in the
+update prompt before they update, and in the "what's new" card after. Write it
+for them, not for the log: `feat: paginate the settings history list`, not
+`feat: pagination`.
 
 To cut a release manually instead:
 
 ```bash
-make release BUMP=minor    # patch | minor | major (default patch)
+make release BUMP=minor NOTE="fix: stop the tray menu flickering"
+```
+
+`NOTE` is the changelog line (it defaults to the last commit subject, which is
+rarely what you want to publish).
+
+### Release notes
+
+`CHANGELOG.md` is generated, not hand-written — one entry per version, from the
+PR that cut it. Two things read it:
+
+- `scripts/release-notes.js` turns it into the `release-notes.json` asset
+  uploaded next to `latest*.yml`, which the in-app updater fetches to show
+  what a pending update brings (every version between yours and the new one).
+- The file ships inside the app, so after updating itself Earheart can show
+  what changed with no network at all.
+
+Both go through [main/services/release-notes.js](main/services/release-notes.js)
+— the shared, unit-tested module that keeps the written and the read shape the
+same. To see the whole thing without publishing anything:
+
+```bash
+node scripts/release-notes.js --out /tmp/feed/release-notes.json
+EARHEART_UPDATE_FEED=file:///tmp/feed npm start
 ```
 
 ## Architecture
@@ -122,6 +150,9 @@ main/                    Electron main process
   history.js             local transcription history
   tray.js                tray icon + menu
   windows.js             overlay + settings + setup wizard windows
+  updates.js             in-app updater: check, download, verify, install
+  services/update-feed.js     latest*.yml parsing + install-kind detection
+  services/release-notes.js   what's-new: CHANGELOG.md ⇄ release-notes.json
   services/stt.js        OpenAI-compatible transcription client
   services/cleanup.js    OpenAI-compatible chat client
   services/models-remote.js   list a remote service's models (Settings)

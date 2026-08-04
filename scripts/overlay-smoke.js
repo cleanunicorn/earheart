@@ -402,6 +402,104 @@ app.whenReady().then(async () => {
       `title length=${errUi.detailTitle.length}, expected ${longMsg.length}`
     );
 
+    // ---- The update panel's two kinds -------------------------------------
+    // Both are painted from an IPC payload the main process builds, so a
+    // renderer that dropped the notes list (or the what's-new branch) shows a
+    // version number with nothing to say — exactly the gap this feature
+    // exists to close. Read as text: the bullets must never become markup,
+    // since they arrive from a file fetched off the network.
+    const promptState = () =>
+      win.webContents.executeJavaScript(`({
+        title: document.getElementById("update-title").textContent,
+        noteHidden: document.getElementById("update-note").hidden,
+        notesHidden: document.getElementById("update-notes").hidden,
+        notes: [...document.querySelectorAll("#update-notes li")].map((li) => li.textContent),
+        html: document.getElementById("update-notes").innerHTML,
+        action: document.getElementById("update-now").textContent,
+        outsHidden: document.getElementById("update-outs").hidden,
+      })`);
+
+    win.webContents.send("updates:prompt", {
+      kind: "update",
+      version: "9.9.9",
+      current: "9.9.8",
+      status: "available",
+      method: "install",
+      progress: null,
+      error: null,
+      solo: true,
+      notes: ["Paginate the history list", "<b>Not markup</b>"],
+      notesMore: 2,
+    });
+    await sleep(50);
+    const availablePrompt = await promptState();
+    check(
+      "an available update lists what it brings",
+      availablePrompt.notesHidden === false &&
+        availablePrompt.notes[0] === "Paginate the history list" &&
+        availablePrompt.notes[1] === "<b>Not markup</b>" &&
+        availablePrompt.notes[2] === "and 2 more changes — see Settings",
+      `notes=${JSON.stringify(availablePrompt.notes)}`
+    );
+    check(
+      "release notes are rendered as text, never markup",
+      !availablePrompt.html.includes("<b>"),
+      `html=${JSON.stringify(availablePrompt.html.slice(0, 80))}`
+    );
+
+    // Downloading: the changes are already bought, so the list steps aside for
+    // the progress line.
+    win.webContents.send("updates:prompt", {
+      kind: "update",
+      version: "9.9.9",
+      current: "9.9.8",
+      status: "downloading",
+      method: "install",
+      progress: { received: 1, total: 2, fraction: 0.5 },
+      error: null,
+      solo: true,
+      notes: ["Paginate the history list"],
+      notesMore: 0,
+    });
+    await sleep(50);
+    const downloadingPrompt = await promptState();
+    check(
+      "the notes step aside once the download starts",
+      downloadingPrompt.notesHidden === true,
+      `notesHidden=${downloadingPrompt.notesHidden}`
+    );
+
+    // What's-new: the card after an update landed — bullets, one way out, and
+    // no "stop reminding me" exits, because it is not asking for anything.
+    win.webContents.send("updates:prompt", {
+      kind: "whatsnew",
+      version: "9.9.9",
+      current: "9.9.9",
+      status: "idle",
+      method: "install",
+      progress: null,
+      error: null,
+      solo: true,
+      notes: ["Tell people what's new"],
+      notesMore: 0,
+    });
+    await sleep(50);
+    const whatsNewPrompt = await promptState();
+    check(
+      "the what's-new card names the version it just installed",
+      whatsNewPrompt.title === "What's new in Earheart 9.9.9" &&
+        whatsNewPrompt.notes[0] === "Tell people what's new",
+      `title=${JSON.stringify(whatsNewPrompt.title)} notes=${JSON.stringify(whatsNewPrompt.notes)}`
+    );
+    check(
+      "the what's-new card offers one way out and no reminder exits",
+      whatsNewPrompt.action === "Got it" &&
+        whatsNewPrompt.outsHidden === true &&
+        whatsNewPrompt.noteHidden === true,
+      `action=${JSON.stringify(whatsNewPrompt.action)} outsHidden=${whatsNewPrompt.outsHidden}`
+    );
+    win.webContents.send("updates:prompt", null);
+
     check("no mic errors during the run", micErrors.length === 0, micErrors.join("; "));
 
     const failed = checks.filter((c) => !c.ok);

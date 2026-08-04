@@ -1021,10 +1021,35 @@ $("wizard-banner-dismiss").addEventListener("click", () => {
 // Last state pushed from main; drives what the action button does on click.
 let updateState = null;
 
+// The changes waiting in the update, version by version, so the decision is
+// made on what's in it. Built as text nodes: the notes are published with the
+// release and fetched over the network, so they never become markup. Kept up
+// until the update is gone (unlike the overlay's summary, which steps aside
+// once the download starts) — this is the page you come to to read them.
+function renderUpdateNotes(entries) {
+  const box = $("update-notes");
+  const blocks = (entries || []).flatMap((entry) => {
+    const head = document.createElement("div");
+    head.className = "notes-head";
+    head.textContent = entry.date ? `v${entry.version} — ${entry.date}` : `v${entry.version}`;
+    const list = document.createElement("ul");
+    list.className = "notes";
+    for (const text of entry.items) {
+      const li = document.createElement("li");
+      li.textContent = text;
+      list.append(li);
+    }
+    return [head, list];
+  });
+  box.replaceChildren(...blocks);
+  box.hidden = !blocks.length;
+}
+
 function renderUpdateState(u) {
   updateState = u;
   const action = $("update-action");
   const status = $("update-status");
+  renderUpdateNotes(u.status === "idle" ? [] : u.notes);
   $("update-bar").hidden = u.status !== "downloading";
   $("update-skip").hidden = !(u.status === "available" && u.method === "install");
   action.disabled = u.status === "checking" || u.status === "installing";

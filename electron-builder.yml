@@ -18,6 +18,9 @@ files:
   - preload.js
   - assets/**/*
   - package.json
+  # Shipped so the app can show what changed right after it updates itself,
+  # without asking the network for notes it already carries.
+  - CHANGELOG.md
 
 # The in-process engines ship native addons (.node) and shared libraries
 # (.so/.dylib/.dll) that the OS loader must read from real files on disk, not

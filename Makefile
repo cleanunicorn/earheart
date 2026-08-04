@@ -86,8 +86,16 @@ dist-win-docker: ## Cross-build Windows packages from Linux via Docker+Wine
 # PR title (see .github/workflows/auto-release.yml). This target is the manual
 # path: bump version, commit, tag, push — CI builds and publishes installers.
 .PHONY: release
-release: ## Cut a release: bump, tag, push (BUMP=patch|minor|major, default patch)
-	npm version $(or $(BUMP),patch)
+release: ## Cut a release: bump, changelog, tag, push (BUMP=patch|minor|major, default patch; NOTE="what changed")
+	npm version $(or $(BUMP),patch) --no-git-tag-version
+	node scripts/changelog.js \
+		--version "$$(node -p 'require("./package.json").version')" \
+		--title "$(or $(NOTE),$(shell git log -1 --format=%s))" \
+		--date "$$(date -u +%F)"
+	git add package.json package-lock.json CHANGELOG.md
+	git commit -m "release: v$$(node -p 'require("./package.json").version')"
+	git tag -a "v$$(node -p 'require("./package.json").version')" \
+		-m "v$$(node -p 'require("./package.json").version')"
 	git push origin main --follow-tags
 
 # ----- speech-to-text server (Python) ---------------------------------------

@@ -26,7 +26,9 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      # No checkout: `gh` works over the API with GH_TOKEN, not the working tree.
+      # Checked out for CHANGELOG.md — the release-notes asset below is built
+      # from the tagged tree. `gh` itself works over the API with GH_TOKEN.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Create the draft release if it does not exist
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -52,6 +54,18 @@ jobs:
           else
             gh release create "$tag" --draft --title "$tag" --generate-notes
           fi
+
+      # The in-app updater's "what's new": uploaded next to latest*.yml so the
+      # app fetches it from the same feed base it already reads the version
+      # from (releases/latest/download/…), including an EARHEART_UPDATE_FEED
+      # test feed. --clobber so a re-run replaces it rather than failing.
+      - name: Publish the release notes the updater reads
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          node scripts/release-notes.js --out release-notes.json
+          gh release upload "${GITHUB_REF_NAME}" release-notes.json --clobber
 
   build:
     needs: create-release

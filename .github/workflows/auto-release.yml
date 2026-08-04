@@ -53,12 +53,28 @@ jobs:
           echo "bump=$bump" >> "$GITHUB_OUTPUT"
           echo "PR title: $TITLE → bump: ${bump:-none}"
 
-      - name: Bump version, commit and tag
+      - name: Bump version, record the changelog, commit and tag
         if: steps.bump.outputs.bump != ''
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          npm version "${{ steps.bump.outputs.bump }}" -m "release: v%s"
+          # --no-git-tag-version so the changelog entry can ride along in the
+          # same release commit: `npm version` refuses to run with anything
+          # else staged, and it must not tag before CHANGELOG.md is written.
+          npm version "${{ steps.bump.outputs.bump }}" --no-git-tag-version
+          version="$(node -p 'require("./package.json").version')"
+          # This PR *is* the release (one merged PR per version, see the bump
+          # rules above), so its title is the release note. The app shows this
+          # entry — from the published release-notes.json before updating, and
+          # from the copy inside its own bundle right after.
+          node scripts/changelog.js \
+            --version "$version" --title "$TITLE" --pr "$PR" --date "$(date -u +%F)"
+          git add package.json package-lock.json CHANGELOG.md
+          git commit -m "release: v$version"
+          git tag -a "v$version" -m "v$version"
           git push origin main --follow-tags
 
       - name: Trigger release builds

@@ -52,6 +52,10 @@ function parseRepoInput(input) {
     throw new Error("URL must point to a model repo, e.g. huggingface.co/owner/model");
   }
   const [owner, repo] = parts;
+  const SAFE_SEGMENT = /^[\w.-]+$/;
+  if (!SAFE_SEGMENT.test(owner) || !SAFE_SEGMENT.test(repo)) {
+    throw new Error("Invalid owner or repository name in URL");
+  }
   let ref;
   if (["tree", "blob", "resolve"].includes(parts[2]) && parts[3]) {
     ref = decodeURIComponent(parts[3]);

@@ -229,6 +229,14 @@ function populate() {
   syncEngine("stt");
   syncEngine("cleanup");
 
+  const reviewMode = current.review?.mode || "off";
+  (
+    document.querySelector(`input[name="review-mode"][value="${reviewMode}"]`) ||
+    document.querySelector('input[name="review-mode"][value="off"]')
+  ).checked = true;
+  $("review-min-chars").value = current.review?.minChars ?? 400;
+  syncReviewMode();
+
   $("start-on-boot").checked = !!current.startOnBoot;
 
   $("history-enabled").checked = current.history.enabled;
@@ -261,6 +269,15 @@ function collect() {
       // that was the only way to keep the transcript on the clipboard; the
       // explicit paste-copy mode replaces it, so plain paste always restores.
       restoreClipboard: true,
+    },
+    review: {
+      ...current.review,
+      mode:
+        document.querySelector('input[name="review-mode"]:checked')?.value ||
+        "off",
+      // Preserved even while the mode is "off"/"always" so flipping back to
+      // "length" keeps the user's threshold.
+      minChars: Math.max(0, parseInt($("review-min-chars").value, 10) || 400),
     },
     stt: {
       ...current.stt,
@@ -322,6 +339,20 @@ function syncCleanupEnabled() {
   fields.inert = !on;
 }
 $("cleanup-enabled").addEventListener("change", syncCleanupEnabled);
+
+// The character threshold only means something in "length" mode; same
+// dim+inert treatment as the cleanup fields so keyboard focus matches.
+function syncReviewMode() {
+  const mode =
+    document.querySelector('input[name="review-mode"]:checked')?.value || "off";
+  const field = $("review-threshold-field");
+  const on = mode === "length";
+  field.classList.toggle("disabled", !on);
+  field.inert = !on;
+}
+for (const radio of document.querySelectorAll('input[name="review-mode"]')) {
+  radio.addEventListener("change", syncReviewMode);
+}
 
 /* ---------- cleanup style: preset slider vs custom sampling ---------- */
 

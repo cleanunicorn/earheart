@@ -5,6 +5,29 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 
 const { captureSpec, restoreSpec } = require("../main/output/focus");
+const { needsReview } = require("../main/util/review");
+const { deepMerge, DEFAULTS } = require("../main/settings");
+
+test("needsReview truth table", () => {
+  assert.strictEqual(needsReview({ mode: "off" }, "hello"), false);
+  assert.strictEqual(needsReview({ mode: "always" }, "hello"), true);
+  // Boundary: minChars counts as long enough.
+  assert.strictEqual(needsReview({ mode: "length", minChars: 5 }, "1234"), false);
+  assert.strictEqual(needsReview({ mode: "length", minChars: 5 }, "12345"), true);
+  // Missing threshold falls back to the 400 default.
+  assert.strictEqual(needsReview({ mode: "length" }, "x".repeat(399)), false);
+  assert.strictEqual(needsReview({ mode: "length" }, "x".repeat(400)), true);
+  // Degenerate inputs never review.
+  assert.strictEqual(needsReview(undefined, "hello"), false);
+  assert.strictEqual(needsReview({ mode: "banana" }, "hello"), false);
+  assert.strictEqual(needsReview({ mode: "always" }, ""), false);
+});
+
+test("review defaults to off with a 400-char threshold", () => {
+  const cfg = deepMerge(DEFAULTS, {});
+  assert.strictEqual(cfg.review.mode, "off");
+  assert.strictEqual(cfg.review.minChars, 400);
+});
 
 test("captureSpec darwin queries the frontmost process via System Events", () => {
   const spec = captureSpec("darwin", false);

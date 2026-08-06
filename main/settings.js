@@ -68,6 +68,16 @@ const DEFAULTS = {
     restoreClipboard: true, // after pasting in "paste" mode, restore clipboard
     pasteDelayMs: 150, // wait before simulating the paste keystroke
   },
+  review: {
+    // Review before send: hold the cleaned transcript on the overlay for a
+    // keyboard-driven edit pass before it is pasted. "off" preserves the
+    // zero-friction default; "always" reviews every dictation; "length" only
+    // reviews dictations of at least `minChars` characters (long agent
+    // prompts are where a mis-heard identifier costs real work). `minChars`
+    // is kept across mode switches so toggling modes doesn't lose it.
+    mode: "off", // "off" | "always" | "length"
+    minChars: 400,
+  },
   stt: {
     // "builtin" = run Parakeet in-process (no setup, default for new users),
     // "remote"  = any OpenAI-compatible transcription endpoint.

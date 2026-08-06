@@ -128,6 +128,39 @@
         </div>
 
         <div class="card">
+          <div class="card-title">Review before send</div>
+          <div class="field">
+            <div class="options">
+              <label class="option">
+                <input type="radio" name="review-mode" value="off" />
+                <span class="option-text">Off — paste immediately</span>
+              </label>
+              <label class="option">
+                <input type="radio" name="review-mode" value="always" />
+                <span class="option-text">Always review</span>
+              </label>
+              <label class="option">
+                <input type="radio" name="review-mode" value="length" />
+                <span class="option-text">Only long dictations</span>
+              </label>
+            </div>
+            <div id="review-threshold-field" class="field">
+              <label for="review-min-chars">Review from</label>
+              <div class="row">
+                <input id="review-min-chars" type="number" min="0" step="50" />
+                <span class="hint">characters</span>
+              </div>
+            </div>
+            <p class="hint">
+              Holds the cleaned transcript on the overlay so you can fix a word
+              or check the raw take before it reaches the app — useful for long
+              agent prompts. The overlay briefly borrows keyboard focus and
+              hands it back when you send.
+            </p>
+          </div>
+        </div>
+
+        <div class="card">
           <label class="toggle">
             <span class="toggle-text">
               <span class="t">Start Earheart when I log in</span>

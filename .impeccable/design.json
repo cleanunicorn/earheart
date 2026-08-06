@@ -1,54 +1,292 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-07-31T00:00:00Z",
+  "generatedAt": "2026-08-06T00:00:00Z",
   "title": "Design System: Earheart",
   "extensions": {
     "colorMeta": {
-      "bar-ink": { "role": "neutral", "displayName": "Bar Ink", "canonical": "#18181b", "tonalRamp": ["oklch(15% 0.006 286)", "oklch(25% 0.006 286)", "oklch(37% 0.006 286)", "oklch(49% 0.006 286)", "oklch(61% 0.006 286)", "oklch(73% 0.006 286)", "oklch(85% 0.006 286)", "oklch(95% 0.006 286)"] },
-      "coral-voice": { "role": "primary", "displayName": "Coral Voice", "canonical": "#fb4d5c", "tonalRamp": ["oklch(15% 0.19 18)", "oklch(27% 0.19 18)", "oklch(39% 0.19 18)", "oklch(51% 0.19 18)", "oklch(63% 0.19 18)", "oklch(75% 0.15 18)", "oklch(86% 0.09 18)", "oklch(95% 0.04 18)"] },
-      "text-primary": { "role": "neutral", "displayName": "Primary Text", "canonical": "#f4f4f5", "tonalRamp": ["oklch(15% 0.002 286)", "oklch(27% 0.002 286)", "oklch(39% 0.002 286)", "oklch(51% 0.002 286)", "oklch(63% 0.002 286)", "oklch(75% 0.002 286)", "oklch(87% 0.002 286)", "oklch(96% 0.002 286)"] },
-      "text-status": { "role": "neutral", "displayName": "Status Text", "canonical": "#d4d4d8", "tonalRamp": ["oklch(15% 0.005 286)", "oklch(27% 0.005 286)", "oklch(39% 0.005 286)", "oklch(51% 0.005 286)", "oklch(63% 0.005 286)", "oklch(75% 0.005 286)", "oklch(87% 0.005 286)", "oklch(95% 0.005 286)"] },
-      "text-dim": { "role": "neutral", "displayName": "Dim Text", "canonical": "#a1a1aa", "tonalRamp": ["oklch(15% 0.01 286)", "oklch(27% 0.01 286)", "oklch(39% 0.01 286)", "oklch(51% 0.01 286)", "oklch(63% 0.01 286)", "oklch(75% 0.01 286)", "oklch(87% 0.01 286)", "oklch(95% 0.01 286)"] },
-      "text-faint": { "role": "neutral", "displayName": "Faint Text", "canonical": "rgba(255, 255, 255, 0.28)" },
-      "hairline-edge": { "role": "neutral", "displayName": "Hairline Edge", "canonical": "rgba(255, 255, 255, 0.1)" },
-      "seam": { "role": "neutral", "displayName": "Seam", "canonical": "rgba(255, 255, 255, 0.08)" },
-      "hover-wash": { "role": "neutral", "displayName": "Hover Wash", "canonical": "rgba(255, 255, 255, 0.08)" },
-      "wash-faint": { "role": "neutral", "displayName": "Faint Wash", "canonical": "rgba(255, 255, 255, 0.04)" },
-      "track": { "role": "neutral", "displayName": "Track", "canonical": "rgba(255, 255, 255, 0.12)" },
-      "field": { "role": "neutral", "displayName": "Field", "canonical": "#101013", "tonalRamp": ["oklch(13% 0.008 286)", "oklch(24% 0.008 286)", "oklch(36% 0.008 286)", "oklch(48% 0.008 286)", "oklch(60% 0.008 286)", "oklch(72% 0.008 286)", "oklch(84% 0.008 286)", "oklch(95% 0.008 286)"] },
-      "field-edge": { "role": "neutral", "displayName": "Field Edge", "canonical": "#6b6b74", "tonalRamp": ["oklch(15% 0.012 286)", "oklch(27% 0.012 286)", "oklch(39% 0.012 286)", "oklch(51% 0.012 286)", "oklch(63% 0.012 286)", "oklch(75% 0.012 286)", "oklch(87% 0.012 286)", "oklch(95% 0.012 286)"] },
-      "tray": { "role": "neutral", "displayName": "Tray", "canonical": "rgba(0, 0, 0, 0.25)" },
-      "delivered-green": { "role": "tertiary", "displayName": "Delivered Green", "canonical": "#34d399", "tonalRamp": ["oklch(15% 0.11 163)", "oklch(27% 0.11 163)", "oklch(39% 0.11 163)", "oklch(51% 0.11 163)", "oklch(63% 0.11 163)", "oklch(75% 0.11 163)", "oklch(87% 0.09 163)", "oklch(95% 0.05 163)"] },
-      "failed-red": { "role": "tertiary", "displayName": "Failed Red", "canonical": "#f87171", "tonalRamp": ["oklch(15% 0.12 22)", "oklch(27% 0.12 22)", "oklch(39% 0.12 22)", "oklch(51% 0.12 22)", "oklch(63% 0.12 22)", "oklch(75% 0.12 22)", "oklch(87% 0.08 22)", "oklch(95% 0.04 22)"] },
-      "idle-gray": { "role": "neutral", "displayName": "Idle Gray", "canonical": "#71717a", "tonalRamp": ["oklch(15% 0.01 286)", "oklch(27% 0.01 286)", "oklch(39% 0.01 286)", "oklch(51% 0.01 286)", "oklch(63% 0.01 286)", "oklch(75% 0.01 286)", "oklch(87% 0.01 286)", "oklch(95% 0.01 286)"] }
+      "bar-ink": {
+        "role": "neutral",
+        "displayName": "Bar Ink",
+        "canonical": "#18181b",
+        "tonalRamp": [
+          "oklch(15% 0.006 286)",
+          "oklch(25% 0.006 286)",
+          "oklch(37% 0.006 286)",
+          "oklch(49% 0.006 286)",
+          "oklch(61% 0.006 286)",
+          "oklch(73% 0.006 286)",
+          "oklch(85% 0.006 286)",
+          "oklch(95% 0.006 286)"
+        ]
+      },
+      "coral-voice": {
+        "role": "primary",
+        "displayName": "Coral Voice",
+        "canonical": "#fb4d5c",
+        "tonalRamp": [
+          "oklch(15% 0.19 18)",
+          "oklch(27% 0.19 18)",
+          "oklch(39% 0.19 18)",
+          "oklch(51% 0.19 18)",
+          "oklch(63% 0.19 18)",
+          "oklch(75% 0.15 18)",
+          "oklch(86% 0.09 18)",
+          "oklch(95% 0.04 18)"
+        ]
+      },
+      "text-primary": {
+        "role": "neutral",
+        "displayName": "Primary Text",
+        "canonical": "#f4f4f5",
+        "tonalRamp": [
+          "oklch(15% 0.002 286)",
+          "oklch(27% 0.002 286)",
+          "oklch(39% 0.002 286)",
+          "oklch(51% 0.002 286)",
+          "oklch(63% 0.002 286)",
+          "oklch(75% 0.002 286)",
+          "oklch(87% 0.002 286)",
+          "oklch(96% 0.002 286)"
+        ]
+      },
+      "text-status": {
+        "role": "neutral",
+        "displayName": "Status Text",
+        "canonical": "#d4d4d8",
+        "tonalRamp": [
+          "oklch(15% 0.005 286)",
+          "oklch(27% 0.005 286)",
+          "oklch(39% 0.005 286)",
+          "oklch(51% 0.005 286)",
+          "oklch(63% 0.005 286)",
+          "oklch(75% 0.005 286)",
+          "oklch(87% 0.005 286)",
+          "oklch(95% 0.005 286)"
+        ]
+      },
+      "text-dim": {
+        "role": "neutral",
+        "displayName": "Dim Text",
+        "canonical": "#a1a1aa",
+        "tonalRamp": [
+          "oklch(15% 0.01 286)",
+          "oklch(27% 0.01 286)",
+          "oklch(39% 0.01 286)",
+          "oklch(51% 0.01 286)",
+          "oklch(63% 0.01 286)",
+          "oklch(75% 0.01 286)",
+          "oklch(87% 0.01 286)",
+          "oklch(95% 0.01 286)"
+        ]
+      },
+      "text-faint": {
+        "role": "neutral",
+        "displayName": "Faint Text",
+        "canonical": "rgba(255, 255, 255, 0.28)"
+      },
+      "hairline-edge": {
+        "role": "neutral",
+        "displayName": "Hairline Edge",
+        "canonical": "rgba(255, 255, 255, 0.1)"
+      },
+      "seam": {
+        "role": "neutral",
+        "displayName": "Seam",
+        "canonical": "rgba(255, 255, 255, 0.08)"
+      },
+      "hover-wash": {
+        "role": "neutral",
+        "displayName": "Hover Wash",
+        "canonical": "rgba(255, 255, 255, 0.08)"
+      },
+      "wash-faint": {
+        "role": "neutral",
+        "displayName": "Faint Wash",
+        "canonical": "rgba(255, 255, 255, 0.04)"
+      },
+      "track": {
+        "role": "neutral",
+        "displayName": "Track",
+        "canonical": "rgba(255, 255, 255, 0.12)"
+      },
+      "field": {
+        "role": "neutral",
+        "displayName": "Field",
+        "canonical": "#101013",
+        "tonalRamp": [
+          "oklch(13% 0.008 286)",
+          "oklch(24% 0.008 286)",
+          "oklch(36% 0.008 286)",
+          "oklch(48% 0.008 286)",
+          "oklch(60% 0.008 286)",
+          "oklch(72% 0.008 286)",
+          "oklch(84% 0.008 286)",
+          "oklch(95% 0.008 286)"
+        ]
+      },
+      "field-edge": {
+        "role": "neutral",
+        "displayName": "Field Edge",
+        "canonical": "#6b6b74",
+        "tonalRamp": [
+          "oklch(15% 0.012 286)",
+          "oklch(27% 0.012 286)",
+          "oklch(39% 0.012 286)",
+          "oklch(51% 0.012 286)",
+          "oklch(63% 0.012 286)",
+          "oklch(75% 0.012 286)",
+          "oklch(87% 0.012 286)",
+          "oklch(95% 0.012 286)"
+        ]
+      },
+      "tray": {
+        "role": "neutral",
+        "displayName": "Tray",
+        "canonical": "rgba(0, 0, 0, 0.25)"
+      },
+      "delivered-green": {
+        "role": "tertiary",
+        "displayName": "Delivered Green",
+        "canonical": "#34d399",
+        "tonalRamp": [
+          "oklch(15% 0.11 163)",
+          "oklch(27% 0.11 163)",
+          "oklch(39% 0.11 163)",
+          "oklch(51% 0.11 163)",
+          "oklch(63% 0.11 163)",
+          "oklch(75% 0.11 163)",
+          "oklch(87% 0.09 163)",
+          "oklch(95% 0.05 163)"
+        ]
+      },
+      "failed-red": {
+        "role": "tertiary",
+        "displayName": "Failed Red",
+        "canonical": "#f87171",
+        "tonalRamp": [
+          "oklch(15% 0.12 22)",
+          "oklch(27% 0.12 22)",
+          "oklch(39% 0.12 22)",
+          "oklch(51% 0.12 22)",
+          "oklch(63% 0.12 22)",
+          "oklch(75% 0.12 22)",
+          "oklch(87% 0.08 22)",
+          "oklch(95% 0.04 22)"
+        ]
+      },
+      "idle-gray": {
+        "role": "neutral",
+        "displayName": "Idle Gray",
+        "canonical": "#71717a",
+        "tonalRamp": [
+          "oklch(15% 0.01 286)",
+          "oklch(27% 0.01 286)",
+          "oklch(39% 0.01 286)",
+          "oklch(51% 0.01 286)",
+          "oklch(63% 0.01 286)",
+          "oklch(75% 0.01 286)",
+          "oklch(87% 0.01 286)",
+          "oklch(95% 0.01 286)"
+        ]
+      }
     },
     "typographyMeta": {
-      "body": { "displayName": "Transcript Body", "purpose": "The live transcript — the largest type in the system; the words are the interface." },
-      "window-title": { "displayName": "Window Title", "purpose": "Settings header h1, wizard step h2, and settings section legends — the framed windows' largest chrome text." },
-      "settings-body": { "displayName": "Settings Body", "purpose": "The settings/wizard base text: leads, option copy, running prose at a ~62ch measure." },
-      "title": { "displayName": "Section Title", "purpose": "The update prompt's headline and settings card titles — sentence case." },
-      "label": { "displayName": "Status Label", "purpose": "The overlay's one-word status; settings field labels at 13px/550; pill labels at 12-13px." },
-      "hint": { "displayName": "Hint", "purpose": "Settings hints, descriptions, and muted text in Dim Text." },
-      "caption": { "displayName": "Detail Caption", "purpose": "Single-line overlay detail (paste preview, error, hint) and the update note; ellipsized." },
-      "mono-value": { "displayName": "Machine Value Mono", "purpose": "Accelerators, prompt/dictionary textareas, the tabular version numeral — machine notation only, never prose." },
-      "timer": { "displayName": "Timer Mono", "purpose": "Captured-audio time in tabular figures so digits never jitter." },
-      "history-meta": { "displayName": "History Meta Mono", "purpose": "Timestamp rows under history entries, tabular-nums." }
+      "body": {
+        "displayName": "Transcript Body",
+        "purpose": "The live transcript — the largest type in the system; the words are the interface."
+      },
+      "window-title": {
+        "displayName": "Window Title",
+        "purpose": "Settings header h1, wizard step h2, and settings section legends — the framed windows' largest chrome text."
+      },
+      "settings-body": {
+        "displayName": "Settings Body",
+        "purpose": "The settings/wizard base text: leads, option copy, running prose at a ~62ch measure."
+      },
+      "title": {
+        "displayName": "Section Title",
+        "purpose": "The update prompt's headline and settings card titles — sentence case."
+      },
+      "label": {
+        "displayName": "Status Label",
+        "purpose": "The overlay's one-word status; settings field labels at 13px/550; pill labels at 12-13px."
+      },
+      "hint": {
+        "displayName": "Hint",
+        "purpose": "Settings hints, descriptions, and muted text in Dim Text."
+      },
+      "caption": {
+        "displayName": "Detail Caption",
+        "purpose": "Single-line overlay detail (paste preview, error, hint) and the update note; ellipsized."
+      },
+      "mono-value": {
+        "displayName": "Machine Value Mono",
+        "purpose": "Accelerators, prompt/dictionary textareas, the tabular version numeral — machine notation only, never prose."
+      },
+      "timer": {
+        "displayName": "Timer Mono",
+        "purpose": "Captured-audio time in tabular figures so digits never jitter."
+      },
+      "history-meta": {
+        "displayName": "History Meta Mono",
+        "purpose": "Timestamp rows under history entries, tabular-nums."
+      }
     },
     "shadows": [
-      { "name": "capture-bloom", "value": "0 0 6px rgba(251, 77, 92, 0.45)", "purpose": "The recording dot's coral bloom, so the capture dot reads lit, not printed. Its wizard-demo miniature is 0 0 5px rgba(251, 77, 92, 0.5). Never surface elevation." },
-      { "name": "focus-ring", "value": "0 0 0 3px rgba(255, 255, 255, 0.1)", "purpose": "Input focus ring — a 0-blur spread that is an outline-equivalent, not elevation; paired with the border brightening to white." },
-      { "name": "capture-ring", "value": "0 0 0 3px rgba(251, 77, 92, 0.16)", "purpose": "The hotkey field's mid-capture coral ring (The Capture Exception) — 0-blur, outline-equivalent, sanctioned." }
+      {
+        "name": "capture-bloom",
+        "value": "0 0 6px rgba(251, 77, 92, 0.45)",
+        "purpose": "The recording dot's coral bloom, so the capture dot reads lit, not printed. Its wizard-demo miniature is 0 0 5px rgba(251, 77, 92, 0.5). Never surface elevation."
+      },
+      {
+        "name": "focus-ring",
+        "value": "0 0 0 3px rgba(255, 255, 255, 0.1)",
+        "purpose": "Input focus ring — a 0-blur spread that is an outline-equivalent, not elevation; paired with the border brightening to white."
+      },
+      {
+        "name": "capture-ring",
+        "value": "0 0 0 3px rgba(251, 77, 92, 0.16)",
+        "purpose": "The hotkey field's mid-capture coral ring (The Capture Exception) — 0-blur, outline-equivalent, sanctioned."
+      }
     ],
     "motion": [
-      { "name": "card-enter", "value": "opacity 0.2s ease, transform 0.2s ease", "purpose": "Overlay card fade/rise-in from translateY(8px) scale(0.98)." },
-      { "name": "card-height", "value": "height 0.18s ease", "purpose": "The overlay card eases its own height so the transcript slides into new space instead of popping." },
-      { "name": "state-change", "value": "background 0.12s ease, color 0.12s ease, border-color 0.12s ease", "purpose": "The universal state transition: keys, pills, tabs, inputs, options. Switches use 0.16s; active presses 0.08s (scale 0.92 keys / 0.97 pills)." },
-      { "name": "progress-fill", "value": "width 0.15s linear", "purpose": "All progress and download fills ease width linearly, driven from JS (incumbent shipped mechanism)." },
-      { "name": "pulse", "value": "opacity 1 → 0.45 keyframes; 2s recording / 1.2s working / 1s warming", "purpose": "Status-dot breathing (the wizard mini-dot matches 2s); goes still under prefers-reduced-motion." },
-      { "name": "scroll-glide", "value": "scroll-behavior: smooth", "purpose": "Settings index clicks glide the page; becomes a jump under prefers-reduced-motion. Reduced motion also collapses all settings/wizard transitions to 0.01ms and forces infinite demo animations to one iteration." }
+      {
+        "name": "card-enter",
+        "value": "opacity 0.2s ease, transform 0.2s ease",
+        "purpose": "Overlay card fade/rise-in from translateY(8px) scale(0.98)."
+      },
+      {
+        "name": "card-height",
+        "value": "height 0.18s ease",
+        "purpose": "The overlay card eases its own height so the transcript slides into new space instead of popping."
+      },
+      {
+        "name": "state-change",
+        "value": "background 0.12s ease, color 0.12s ease, border-color 0.12s ease",
+        "purpose": "The universal state transition: keys, pills, tabs, inputs, options. Switches use 0.16s; active presses 0.08s (scale 0.92 keys / 0.97 pills)."
+      },
+      {
+        "name": "progress-fill",
+        "value": "width 0.15s linear",
+        "purpose": "All progress and download fills ease width linearly, driven from JS (incumbent shipped mechanism)."
+      },
+      {
+        "name": "pulse",
+        "value": "opacity 1 → 0.45 keyframes; 2s recording / 1.2s working / 1s warming",
+        "purpose": "Status-dot breathing (the wizard mini-dot matches 2s); goes still under prefers-reduced-motion."
+      },
+      {
+        "name": "scroll-glide",
+        "value": "scroll-behavior: smooth",
+        "purpose": "Settings index clicks glide the page; becomes a jump under prefers-reduced-motion. Reduced motion also collapses all settings/wizard transitions to 0.01ms and forces infinite demo animations to one iteration."
+      }
     ],
     "breakpoints": [
-      { "name": "compact", "value": "600px", "purpose": "Below this the settings index docks horizontally above the page and the wizard demo stacks vertically." }
+      {
+        "name": "compact",
+        "value": "600px",
+        "purpose": "Below this the settings index docks horizontally above the page and the wizard demo stacks vertically."
+      }
     ]
   },
   "components": [
@@ -147,11 +385,19 @@
       "description": "The quiet in-card note the app uses to talk about itself — entirely neutral-white grammar, no coral; the same grammar as the settings banner. Carries the what's-new list: Caption-weight bullets in Text Dim with Text Faint markers, closed by a markerless Text Faint line counting what didn't fit.",
       "html": "<div class=\"ds-update\"><div class=\"ds-update-head\"><span class=\"ds-update-title\">Earheart 0.23.0 is available</span></div><div class=\"ds-update-note\">You're on 0.22.0. It takes a few seconds.</div><ul class=\"ds-update-notes\"><li>Paginate the settings history list</li><li>Revive the dead Open error log button</li><li class=\"more\">and 2 more changes — see Settings</li></ul><div class=\"ds-update-actions\"><button class=\"ds-update-primary\">Update now</button><button class=\"ds-update-quiet\">Skip this version</button></div></div>",
       "css": ".ds-update { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1); background: #1f1f23; max-width: 320px; } .ds-update-title { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 13px; font-weight: 600; color: #f4f4f5; } .ds-update-note { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 11.5px; color: #a1a1aa; } .ds-update-notes { display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0; list-style: none; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 11.5px; color: #a1a1aa; } .ds-update-notes li { display: flex; gap: 6px; } .ds-update-notes li::before { content: \"•\"; color: #71717a; flex: none; } .ds-update-notes li.more { color: #71717a; } .ds-update-notes li.more::before { content: \"\"; } .ds-update-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; } .ds-update-primary { height: 26px; padding: 0 11px; border: none; border-radius: 13px; background: #f4f4f5; color: #18181b; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.12s ease; } .ds-update-primary:hover { background: #ffffff; } .ds-update-quiet { height: 26px; padding: 0 11px; border: none; border-radius: 13px; background: transparent; color: #a1a1aa; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer; transition: background 0.12s ease, color 0.12s ease; } .ds-update-quiet:hover { background: rgba(255, 255, 255, 0.08); color: #f4f4f5; }"
+    },
+    {
+      "name": "Review Panel",
+      "kind": "card",
+      "refersTo": "review-panel",
+      "description": "The review-before-send stop: the update panel's quiet neutral grammar with a real editable field on darker ground. Head row (600/13px title, tabular Caption char count in Text Faint, quiet Raw pill), the textarea with the universal 2px focus ring, filled white Send beside quiet Copy/Discard, and the key map taught on the panel itself in Text Faint. The overlay's one sanctioned focus borrow, always repaid.",
+      "html": "<div class=\"ds-review\"><div class=\"ds-review-head\"><span class=\"ds-review-title\">Review before send</span><span class=\"ds-review-count\">412 chars</span><button class=\"ds-review-raw\">Raw</button></div><textarea class=\"ds-review-text\" rows=\"3\">Fix the bug in main/pipeline.js where the session id is not invalidated on cancel.</textarea><div class=\"ds-review-actions\"><button class=\"ds-review-send\">Send</button><button class=\"ds-review-quiet\">Copy</button><button class=\"ds-review-quiet\">Discard</button></div><div class=\"ds-review-keys\">ctrl+↵ send · ctrl+shift+C copy · ctrl+R raw · esc discard</div></div>",
+      "css": ".ds-review { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1); background: #1f1f23; max-width: 340px; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; } .ds-review-head { display: flex; align-items: center; gap: 8px; } .ds-review-title { flex: 1; font-size: 13px; font-weight: 600; color: #f4f4f5; } .ds-review-count { font-size: 11px; color: #71717a; font-variant-numeric: tabular-nums; } .ds-review-raw { height: 26px; padding: 0 11px; border: none; border-radius: 13px; background: transparent; color: #a1a1aa; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer; transition: background 0.12s ease, color 0.12s ease; } .ds-review-raw:hover { background: rgba(255, 255, 255, 0.08); color: #f4f4f5; } .ds-review-text { width: 100%; min-height: 60px; padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; background: rgba(0, 0, 0, 0.28); color: #f4f4f5; font-family: inherit; font-size: 13px; line-height: 1.5; resize: none; } .ds-review-text:focus-visible { outline: 2px solid #f4f4f5; outline-offset: 2px; } .ds-review-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; } .ds-review-send { height: 26px; padding: 0 11px; border: none; border-radius: 13px; background: #f4f4f5; color: #18181b; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.12s ease; } .ds-review-send:hover { background: #ffffff; } .ds-review-quiet { height: 26px; padding: 0 11px; border: none; border-radius: 13px; background: transparent; color: #a1a1aa; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer; transition: background 0.12s ease, color 0.12s ease; } .ds-review-quiet:hover { background: rgba(255, 255, 255, 0.08); color: #f4f4f5; } .ds-review-keys { font-size: 10.5px; color: #71717a; letter-spacing: 0.02em; }"
     }
   ],
   "narrative": {
     "northStar": "The Quiet Transcription Bar",
-    "overview": "Earheart is a clean minimal dictation bar played straight — the category canon of Wispr Flow and superwhisper, held to craft-bar standard. The live words ARE the interface: a solid near-black strip pinned low on the screen, hairline-edged, with the transcript growing upward above a single control row. Every control is a glyph the whole world already reads (pause, check, X); nothing on the bar needs a manual, a legend, or a label.\n\nOne color speaks: a coral accent lifted from the app icon's waveform-heart, and it means exactly one thing — \"Earheart is working with your voice.\" The capture dot, the live waveform, and the dictation progress fill wear it; beyond the bar it appears only in two sanctioned capture moments (see The Capture Exception). Everything else is white and gray on near-black, with green and red confined to miniature status signals. The world explicitly refuses the hardware metaphor: no tape, no lamps, no legends, no eject. The previous \"Tape Transport\" service-panel system and the earlier violet/rose \"On-Air Lamp\" system are both fully retired; neither may resurface.\n\nScope note: the world now covers every surface. The overlay (renderer/overlay.*), the settings window (renderer/settings.*), and the setup wizard (renderer/wizard.*, which layers on settings.css) all speak this language; the framed windows extend the bar's grammar with white-wash cards, solid inputs, and pill buttons. The main process paints framed windows in Bar Ink before load (INK_COLOR in main/windows.js), which must stay in sync with --ink \u2014 the one name the value carries in both overlay.css and settings.css. The retired Tape Transport and On-Air Lamp systems survive only as historical notes.",
+    "overview": "Earheart is a clean minimal dictation bar played straight — the category canon of Wispr Flow and superwhisper, held to craft-bar standard. The live words ARE the interface: a solid near-black strip pinned low on the screen, hairline-edged, with the transcript growing upward above a single control row. Every control is a glyph the whole world already reads (pause, check, X); nothing on the bar needs a manual, a legend, or a label.\n\nOne color speaks: a coral accent lifted from the app icon's waveform-heart, and it means exactly one thing — \"Earheart is working with your voice.\" The capture dot, the live waveform, and the dictation progress fill wear it; beyond the bar it appears only in two sanctioned capture moments (see The Capture Exception). Everything else is white and gray on near-black, with green and red confined to miniature status signals. The world explicitly refuses the hardware metaphor: no tape, no lamps, no legends, no eject. The previous \"Tape Transport\" service-panel system and the earlier violet/rose \"On-Air Lamp\" system are both fully retired; neither may resurface.\n\nScope note: the world now covers every surface. The overlay (renderer/overlay.*), the settings window (renderer/settings.*), and the setup wizard (renderer/wizard.*, which layers on settings.css) all speak this language; the framed windows extend the bar's grammar with white-wash cards, solid inputs, and pill buttons. The main process paints framed windows in Bar Ink before load (INK_COLOR in main/windows.js), which must stay in sync with --ink — the one name the value carries in both overlay.css and settings.css. The retired Tape Transport and On-Air Lamp systems survive only as historical notes.",
     "keyCharacteristics": [
       "Solid neutral near-black surfaces; nothing translucent under text",
       "One coral accent, reserved exclusively for the voice being heard or captured",
@@ -161,15 +407,56 @@
       "The live transcript is the hero; chrome stays quiet around it"
     ],
     "rules": [
-      { "name": "The One Voice Rule", "body": "Coral is spent only on the dictation itself — the capture dot, the waveform, the dictation progress fill. When the app talks about itself (the update prompt, model downloads), it uses the neutral white grammar: filled white primary pill, white download-bar fill. Never spend coral on non-voice surfaces.", "section": "colors" },
-      { "name": "The Capture Exception", "body": "On the settings window coral appears exactly once: a hotkey field mid-capture (.capturing — coral border rgba(251, 77, 92, 0.55), coral wash rgba(251, 77, 92, 0.07), 0-blur coral ring rgba(251, 77, 92, 0.16)), because the field is literally capturing the user's key press. The wizard's mini-bar demo is the only other sanctioned non-overlay coral: it is a depiction of the real bar, not a new use. No third use exists.", "section": "colors" },
-      { "name": "The Tiny Dot Rule", "body": "Green and red stay miniature: 8px status dots on the overlay, single lines of 13px status text on settings/wizard (.status.ok / .status.err) — never fills, washes, or large surfaces. One deliberate carve-out: the Destructive Hover Exception. Destructive controls (the overlay's discard key, button.danger pills) are gray at rest and take Failed Red text plus a red wash (rgba(248, 113, 113, 0.12), pills add a rgba(248, 113, 113, 0.4) border) on hover only — red names the consequence at the moment of intent, never at rest.", "section": "colors" },
-      { "name": "The Pending Text Rule", "body": "Streaming, not-yet-settled words render in Dim Text and brighten to Primary Text when cleanup settles them — the universal \"pending\" signal, done with color alone, no italics or spinners.", "section": "typography" },
-      { "name": "The Machine Values Rule", "body": "Monospace is for machine notation only: accelerators, timestamps, the version numeral, dictionary and prompt textareas, code and kbd. Prose is never mono — the hotkey fields' prose placeholders (\"Click, then press…\") explicitly render in the body face even though the field itself is mono.", "section": "typography" },
-      { "name": "The No Surface Shadow Rule", "body": "No blurred or offset box-shadow on any surface, card, key, or pill — ever. Two device classes are explicitly not elevation and are sanctioned: (1) the recording dot's coral bloom (box-shadow: 0 0 6px rgba(251, 77, 92, 0.45); its wizard-demo miniature uses 0 0 5px rgba(251, 77, 92, 0.5)) — a light-emission cue on a tiny dot; and (2) 0-blur box-shadow spreads used as rings — the input focus ring (0 0 0 3px rgba(255, 255, 255, 0.1)) and the hotkey capture ring (0 0 0 3px rgba(251, 77, 92, 0.16)). Zero-blur spreads are outline-equivalents that hug the border; they cast nothing. True drop shadows remain banned everywhere.", "section": "elevation" },
-      { "name": "The Solid Ground Rule", "body": "Text never sits on translucency over the desktop. The bar is solid Bar Ink; framed windows are painted Bar Ink before load; in-window washes are safe because the solid ink is beneath them.", "section": "elevation" },
-      { "name": "The Keys Keep Their Slots Rule", "body": "Keys disable and fade but never leave the row; the row never reflows and no key ever jumps under the cursor.", "section": "components" },
-      { "name": "The Filled Dot Contract", "body": "The filled pulsing coral dot + moving waveform + running timer together mean \"audio is captured right now.\" Mic warm-up is a pulsing hollow coral ring; paused is a steady hollow coral ring. Never show the filled dot before samples actually flow. Under prefers-reduced-motion the warming ring dims to 55% opacity instead of pulsing \u2014 dimmer = not capturing yet, full = paused.", "section": "components" }
+      {
+        "name": "The One Voice Rule",
+        "body": "Coral is spent only on the dictation itself — the capture dot, the waveform, the dictation progress fill. When the app talks about itself (the update prompt, model downloads), it uses the neutral white grammar: filled white primary pill, white download-bar fill. Never spend coral on non-voice surfaces.",
+        "section": "colors"
+      },
+      {
+        "name": "The Capture Exception",
+        "body": "On the settings window coral appears exactly once: a hotkey field mid-capture (.capturing — coral border rgba(251, 77, 92, 0.55), coral wash rgba(251, 77, 92, 0.07), 0-blur coral ring rgba(251, 77, 92, 0.16)), because the field is literally capturing the user's key press. The wizard's mini-bar demo is the only other sanctioned non-overlay coral: it is a depiction of the real bar, not a new use. No third use exists.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tiny Dot Rule",
+        "body": "Green and red stay miniature: 8px status dots on the overlay, single lines of 13px status text on settings/wizard (.status.ok / .status.err) — never fills, washes, or large surfaces. One deliberate carve-out: the Destructive Hover Exception. Destructive controls (the overlay's discard key, button.danger pills) are gray at rest and take Failed Red text plus a red wash (rgba(248, 113, 113, 0.12), pills add a rgba(248, 113, 113, 0.4) border) on hover only — red names the consequence at the moment of intent, never at rest.",
+        "section": "colors"
+      },
+      {
+        "name": "The Pending Text Rule",
+        "body": "Streaming, not-yet-settled words render in Dim Text and brighten to Primary Text when cleanup settles them — the universal \"pending\" signal, done with color alone, no italics or spinners.",
+        "section": "typography"
+      },
+      {
+        "name": "The Machine Values Rule",
+        "body": "Monospace is for machine notation only: accelerators, timestamps, the version numeral, dictionary and prompt textareas, code and kbd. Prose is never mono — the hotkey fields' prose placeholders (\"Click, then press…\") explicitly render in the body face even though the field itself is mono.",
+        "section": "typography"
+      },
+      {
+        "name": "The No Surface Shadow Rule",
+        "body": "No blurred or offset box-shadow on any surface, card, key, or pill — ever. Two device classes are explicitly not elevation and are sanctioned: (1) the recording dot's coral bloom (box-shadow: 0 0 6px rgba(251, 77, 92, 0.45); its wizard-demo miniature uses 0 0 5px rgba(251, 77, 92, 0.5)) — a light-emission cue on a tiny dot; and (2) 0-blur box-shadow spreads used as rings — the input focus ring (0 0 0 3px rgba(255, 255, 255, 0.1)) and the hotkey capture ring (0 0 0 3px rgba(251, 77, 92, 0.16)). Zero-blur spreads are outline-equivalents that hug the border; they cast nothing. True drop shadows remain banned everywhere.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Solid Ground Rule",
+        "body": "Text never sits on translucency over the desktop. The bar is solid Bar Ink; framed windows are painted Bar Ink before load; in-window washes are safe because the solid ink is beneath them.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Keys Keep Their Slots Rule",
+        "body": "Keys disable and fade but never leave the row; the row never reflows and no key ever jumps under the cursor.",
+        "section": "components"
+      },
+      {
+        "name": "The Filled Dot Contract",
+        "body": "The filled pulsing coral dot + moving waveform + running timer together mean \"audio is captured right now.\" Mic warm-up is a pulsing hollow coral ring; paused is a steady hollow coral ring. Never show the filled dot before samples actually flow. Under prefers-reduced-motion the warming ring dims to 55% opacity instead of pulsing — dimmer = not capturing yet, full = paused.",
+        "section": "components"
+      },
+      {
+        "name": "The Focus Borrow Rule",
+        "body": "The review panel is the overlay's one sanctioned focus borrow: capture the target window before taking focus, repay it on every exit (send, copy, discard, cancel) so the paste lands in the app the user came from.",
+        "section": "components"
+      }
     ],
     "dos": [
       "Do keep every surface under text solid; every window is opaque Bar Ink (#18181b) — the overlay by its own paint, framed windows via INK_COLOR in main/windows.js, kept in sync with --ink.",

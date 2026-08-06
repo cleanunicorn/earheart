@@ -14,8 +14,7 @@
 //             tools exist we degrade to clipboard-only and tell the caller.
 
 const { clipboard, systemPreferences, shell } = require("electron");
-const { execFile } = require("node:child_process");
-const fs = require("node:fs");
+const { execFileAsync, commandExists, isWayland } = require("../util/exec");
 
 // Deep link to System Settings ▸ Privacy & Security ▸ Accessibility. The URL is
 // unchanged across the old System Preferences and the new System Settings, so it
@@ -23,35 +22,8 @@ const fs = require("node:fs");
 const ACCESSIBILITY_PANE_URL =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
 
-function execFileAsync(cmd, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    execFile(cmd, args, { timeout: 10000, ...options }, (err, stdout, stderr) => {
-      if (err) reject(new Error(stderr?.trim() || err.message));
-      else resolve(stdout);
-    });
-  });
-}
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function commandExists(cmd) {
-  const dirs = (process.env.PATH || "").split(":");
-  return dirs.some((dir) => {
-    try {
-      fs.accessSync(`${dir}/${cmd}`, fs.constants.X_OK);
-      return true;
-    } catch {
-      return false;
-    }
-  });
-}
-
-function isWayland() {
-  return (
-    process.env.XDG_SESSION_TYPE === "wayland" || !!process.env.WAYLAND_DISPLAY
-  );
 }
 
 async function simulatePasteLinux() {

@@ -47,7 +47,8 @@ bar) and runs them in-process.
 
 It is still a general-purpose dictation app — the hotkey works the same in your
 email client, your notes and your browser. Agents are just where it earns its
-keep. See [Talking to agents](#talking-to-agents) for the practical setup.
+keep. See [Talking to agents](#talking-to-agents) for the practical setup, and
+[docs/agents.md](docs/agents.md) for a recipe per tool.
 
 Prefer to point Earheart elsewhere? Both steps are also **modular,
 OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
@@ -282,6 +283,9 @@ Earheart pastes into the focused window, so it works with any agent you can
 type into — no integration, no plugin, no API key. Put the cursor in the
 agent's input, hold the thought, press the hotkey, and say the whole prompt
 including the parts you'd normally leave out because typing them is tedious.
+
+Per-tool setup recipes — terminal newlines, Wayland hotkeys, hotkeys that don't
+collide with your editor — live in **[docs/agents.md](docs/agents.md)**.
 
 | Where you're prompting | What to know |
 | --- | --- |

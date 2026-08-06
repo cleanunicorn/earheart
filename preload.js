@@ -16,6 +16,7 @@ const LISTEN = new Set([
   "models:progress",
   "updates:state",
   "updates:prompt",
+  "review:request-send",
 ]);
 
 const SEND = new Set([
@@ -28,6 +29,9 @@ const SEND = new Set([
   "overlay:drag",
   "overlay:drag-end",
   "overlay:resize",
+  "review:send",
+  "review:copy",
+  "review:discard",
 ]);
 
 const INVOKE = new Set([

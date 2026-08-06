@@ -73,6 +73,40 @@
           </div>
         </div>
       </div>
+      <!-- Review before send (opt-in): the cleaned transcript parks here for a
+           keyboard edit pass before anything is pasted. The one moment the
+           overlay borrows keyboard focus — main captured the target window
+           first and hands focus back on every exit. Solo like the update
+           prompt: the control row has nothing to say while reviewing. -->
+      <div id="review" hidden>
+        <div id="review-head">
+          <span id="review-title">Review before send</span>
+          <span id="review-count" aria-hidden="true"></span>
+          <!-- Raw is the ground truth: cleanup occasionally "fixes" a
+               technical term into a real word. Toggles a read-only view of
+               the uncleaned transcript. -->
+          <button id="review-raw-toggle" class="pill quiet" aria-pressed="false">
+            Raw
+          </button>
+        </div>
+        <textarea
+          id="review-text"
+          spellcheck="false"
+          rows="4"
+          aria-label="Transcript to review before sending"
+        ></textarea>
+        <div id="review-rawview" tabindex="-1" hidden></div>
+        <div id="review-actions">
+          <button id="review-send" class="pill primary" title="Paste into the app you dictated from">
+            Send
+          </button>
+          <button id="review-copy" class="pill quiet">Copy</button>
+          <button id="review-discard" class="pill quiet">Discard</button>
+        </div>
+        <!-- The key map, visible: keyboard-first means the keys are taught on
+             the surface itself, not in a manual. Filled in per-platform. -->
+        <div id="review-keys" aria-hidden="true"></div>
+      </div>
       <!-- Live transcript: shown while recording when live preview is on. The
            cleaned text is the settled line; the still-streaming raw tail trails
            it dimmed — fresh words brighten to white as cleanup settles them.

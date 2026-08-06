@@ -2,8 +2,15 @@
 //
 // State machine:
 //   idle ──hotkey──▶ recording ──hotkey──▶ processing ──▶ idle
+//                        │                     │  ▲
+//                        │              (gate) ▼  │ (send/copy)
+//                        │                  reviewing
 //                        │                     │
-//                        └──cancel──▶ idle ◀───┘ (error/cancel)
+//                        └──cancel──▶ idle ◀───┘ (error/cancel/discard)
+//
+// The reviewing state is the opt-in review-before-send stop: the cleaned
+// transcript parks on the overlay for a keyboard edit pass, then a send/copy
+// re-enters processing to deliver, or a discard drops back to idle.
 //
 // Recording happens in the overlay renderer (it owns the microphone); the
 // captured WAV arrives here over IPC and the rest runs in the main process.
@@ -12,22 +19,29 @@
 // messages. Events from a torn-down session (late cancels, slow renderers)
 // are ignored instead of corrupting the current one.
 
-const { app, ipcMain, Notification } = require("electron");
+const { app, clipboard, ipcMain, Notification } = require("electron");
 const path = require("node:path");
 const windows = require("./windows");
 const settings = require("./settings");
 const route = require("./services/route");
 const engines = require("./engines");
 const { deliver } = require("./output/deliver");
+const { captureTarget, restoreTarget } = require("./output/focus");
+const { needsReview } = require("./util/review");
 const history = require("./history");
 const { createLivePreview } = require("./live-preview");
 const { createPersistedRtfEstimator } = require("./util/rtf");
 const { wavDurationSec, wavSliceFromFrame } = require("./util/wav");
 const logger = require("./util/logger");
 
-let state = "idle"; // idle | recording | processing
+let state = "idle"; // idle | recording | processing | reviewing
 let session = 0; // current dictation session id
 let abortController = null;
+// The dictation parked on the overlay for review. `target` is the focus
+// token of the window the user dictated into (see main/output/focus.js);
+// `text` is the cleaned transcript as it was offered, so history can record
+// whether the user edited it before sending.
+let pendingReview = null; // { sid, raw, text, cleaned, target }
 const stateListeners = new Set();
 
 // Live preview (the streaming partial transcript shown while recording) lives in
@@ -231,6 +245,12 @@ function toggle() {
     startRecording();
   } else if (state === "recording") {
     stopRecording();
+  } else if (state === "reviewing") {
+    // The hotkey's grammar is "advance the pipeline", and during review the
+    // next step is sending. It is also the only key that still works after
+    // the user clicked away to another app mid-review. The renderer owns the
+    // edited text, so ask it to send rather than sending main's stale copy.
+    windows.sendToOverlay("review:request-send", { sid: session });
   }
   // While processing, the hotkey is ignored; cancel is available on the
   // overlay and in the tray menu.
@@ -310,8 +330,137 @@ function cancel() {
     // The abort only mutes the reply; the cleanup worker would keep generating
     // for nothing (and delay the next dictation's clean). Stop it too.
     engines.cancelClean();
+  } else if (state === "reviewing") {
+    // Tray/CLI cancel can't see the renderer's edits, so the parked (main-
+    // side) text is what history keeps; the focus borrow is repaid so the
+    // user lands back where they were dictating.
+    flushReview();
+    windows.leaveReviewFocus();
+    if (pendingReviewTarget) restoreTarget(pendingReviewTarget);
+    pendingReviewTarget = null;
   }
   setState("idle");
+  windows.hideOverlay();
+}
+
+// Write a parked review to history as discarded and clear it. Called from
+// cancel() and from before-quit — a two-minute dictation must survive both.
+// Remembers the focus token aside so cancel() can still repay the borrow.
+let pendingReviewTarget = null;
+function flushReview() {
+  if (!pendingReview) return;
+  const review = pendingReview;
+  pendingReview = null;
+  pendingReviewTarget = review.target;
+  windows.setReviewPinned(false);
+  const cfg = settings.get();
+  if (cfg.history.enabled) {
+    history.add(
+      {
+        raw: review.raw,
+        text: review.text,
+        cleaned: review.cleaned,
+        reviewed: true,
+        edited: false,
+        delivered: "discarded",
+      },
+      cfg.history
+    );
+    windows.sendToSettings("history:changed");
+  }
+}
+
+// Send or copy the reviewed text: leave the borrowed focus, give the captured
+// target window its focus back, and only then deliver — in that order, so the
+// simulated paste keystroke cannot land in our own (now unfocusable) window.
+async function finishReview(sid, finalText, mode) {
+  if (sid !== session || state !== "reviewing" || !pendingReview) return;
+  const review = pendingReview;
+  pendingReview = null;
+  windows.setReviewPinned(false);
+  setState("processing");
+  const cfg = settings.get();
+  const text = finalText || review.text;
+  const edited = text !== review.text;
+  try {
+    await windows.leaveReviewFocus();
+    let result;
+    if (mode === "send") {
+      await restoreTarget(review.target);
+      overlayStatus("delivering");
+      // Wayland can't re-activate the target explicitly; give the compositor
+      // a longer beat to return focus on its own before the keystroke fires.
+      const output =
+        review.target?.kind === "wayland"
+          ? { ...cfg.output, pasteDelayMs: Math.max(cfg.output.pasteDelayMs ?? 150, 300) }
+          : cfg.output;
+      result = await deliver(text, output);
+    } else {
+      // Copy: the user keeps the text and pastes it themselves; still hand
+      // focus back so they land where they were working.
+      clipboard.writeText(text);
+      restoreTarget(review.target);
+      result = { method: "clipboard" };
+    }
+    if (sid !== session) return;
+    if (cfg.history.enabled) {
+      history.add(
+        {
+          raw: review.raw,
+          text,
+          cleaned: review.cleaned,
+          reviewed: true,
+          edited,
+          delivered: result.method,
+        },
+        cfg.history
+      );
+      windows.sendToSettings("history:changed");
+    }
+    overlayStatus("done", {
+      preview: text.length > 120 ? `${text.slice(0, 120)}…` : text,
+      method: result.method,
+      note: result.note,
+    });
+    hideOverlaySoon(sid, result.note ? 4000 : 1600);
+  } catch (err) {
+    if (sid !== session) return;
+    logger.error("review delivery failed:", err);
+    overlayStatus("error", { message: String(err.message).slice(0, 200) });
+    hideOverlaySoon(sid, 5000);
+  } finally {
+    if (session === sid) setState("idle");
+  }
+}
+
+// Esc from the review panel: nothing is pasted, but the words are kept
+// (history's whole purpose is that a transcript is never lost) — with the
+// renderer's edits, which travel with the discard message.
+async function discardReview(sid, editedText) {
+  if (sid !== session || state !== "reviewing" || !pendingReview) return;
+  const review = pendingReview;
+  pendingReview = null;
+  windows.setReviewPinned(false);
+  const cfg = settings.get();
+  const text = editedText || review.text;
+  if (cfg.history.enabled) {
+    history.add(
+      {
+        raw: review.raw,
+        text,
+        cleaned: review.cleaned,
+        reviewed: true,
+        edited: text !== review.text,
+        delivered: "discarded",
+      },
+      cfg.history
+    );
+    windows.sendToSettings("history:changed");
+  }
+  await windows.leaveReviewFocus();
+  // Esc means "back to work": return focus to where the user was dictating.
+  restoreTarget(review.target);
+  if (session === sid) setState("idle");
   windows.hideOverlay();
 }
 
@@ -332,6 +481,9 @@ async function process(sid, wavArrayBuffer) {
   const { signal } = controller;
   const wav = Buffer.from(wavArrayBuffer);
   const stale = () => session !== sid || signal.aborted;
+  // Set when this dictation parks on the review panel: the finally below must
+  // then leave the reviewing state alone instead of clobbering it to idle.
+  let enteredReview = false;
 
   const builtinCleanup = cfg.cleanup.enabled && cfg.cleanup.engine === "builtin";
   if (builtinCleanup) {
@@ -378,6 +530,20 @@ async function process(sid, wavArrayBuffer) {
       if (stale()) return;
     }
 
+    if (needsReview(cfg.review, text)) {
+      // Remember the window the user dictated into BEFORE the overlay borrows
+      // focus — from here on, "the focused app" would be us.
+      const target = await captureTarget();
+      if (stale()) return;
+      pendingReview = { sid, raw, text, cleaned, target };
+      enteredReview = true;
+      setState("reviewing");
+      windows.setReviewPinned(true); // auto-hide must not take the panel down
+      windows.enterReviewFocus();
+      overlayStatus("review", { sid, text, raw });
+      return; // review:send / review:discard IPC picks the session back up
+    }
+
     overlayStatus("delivering");
     const result = await deliver(text, cfg.output, signal);
     if (stale()) return;
@@ -399,7 +565,7 @@ async function process(sid, wavArrayBuffer) {
     hideOverlaySoon(sid, 5000);
   } finally {
     if (abortController === controller) abortController = null;
-    if (session === sid) setState("idle");
+    if (session === sid && !enteredReview) setState("idle");
   }
 }
 
@@ -429,6 +595,18 @@ function init() {
   });
 
   ipcMain.on("pipeline:cancel", () => cancel());
+
+  // Review panel exits. The renderer sends its (possibly edited) textarea
+  // content with each one; the sid guards inside drop stale sessions.
+  ipcMain.on("review:send", (event, { sid, text } = {}) => {
+    finishReview(sid, String(text ?? ""), "send");
+  });
+  ipcMain.on("review:copy", (event, { sid, text } = {}) => {
+    finishReview(sid, String(text ?? ""), "copy");
+  });
+  ipcMain.on("review:discard", (event, { sid, text } = {}) => {
+    discardReview(sid, String(text ?? ""));
+  });
 }
 
 // Re-arm the idle-unload timer with the latest setting (e.g. the user changed
@@ -446,4 +624,5 @@ module.exports = {
   getState,
   onStateChange,
   onSettingsChanged,
+  flushReview,
 };

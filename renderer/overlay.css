@@ -261,6 +261,105 @@ body {
   border-radius: 50%;
 }
 
+/* Review before send: the same quiet panel grammar as the update prompt —
+   neutral white on hairline, the accent stays reserved for dictation. The
+   card is solo while reviewing: the control row has nothing to say. */
+#review {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 12px 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+#card[data-review="solo"] #controls {
+  display: none;
+}
+
+#review-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#review-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#review-count {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The editable transcript. A real field on the quiet panel: darker ground so
+   the editable surface reads as one, the universal focus treatment on top. */
+#review-text {
+  width: 100%;
+  min-height: 72px;
+  padding: 8px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: none;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+#review-text:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+/* The raw transcript, read-only: same box as the textarea so the flip reads
+   as the same surface showing its ground truth, dimmed because it is a
+   reference, not the draft. */
+#review-rawview {
+  width: 100%;
+  min-height: 72px;
+  max-height: 40vh;
+  padding: 8px 10px;
+  border: 1px dashed var(--edge);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+#review-rawview:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+#review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+/* The key map teaches itself, one step quieter than the actions. */
+#review-keys {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+}
+
 /* Live transcript: fills the top of the card and grows freely (no clip, no
    scroll, no mask). Two layers inline: the settled cleaned text and the
    still-streaming raw tail — fresh words dimmed, brightening as they settle. */

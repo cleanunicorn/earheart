@@ -902,7 +902,9 @@ async function renderHistory() {
     const meta = document.createElement("div");
     meta.className = "meta";
     const when = document.createElement("span");
-    when.textContent = `${new Date(item.at).toLocaleString()}${item.cleaned ? " · cleaned" : ""}`;
+    // "discarded" marks a reviewed transcript the user chose not to send —
+    // kept anyway, because history's promise is that words are never lost.
+    when.textContent = `${new Date(item.at).toLocaleString()}${item.cleaned ? " · cleaned" : ""}${item.delivered === "discarded" ? " · discarded" : ""}`;
     const actions = document.createElement("span");
     actions.className = "actions";
     const copy = document.createElement("button");

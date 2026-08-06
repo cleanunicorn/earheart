@@ -29,8 +29,12 @@ function buildMenu(app) {
           ? "Stop & transcribe"
           : state === "processing"
             ? "Processing…"
-            : "Start dictation",
+            : state === "reviewing"
+              ? "Send to app"
+              : "Start dictation",
       enabled: state !== "processing",
+      // During review, toggle() routes to send — same "advance the pipeline"
+      // grammar as the record hotkey.
       click: () => pipeline.toggle(),
     },
     {
@@ -121,7 +125,9 @@ function refresh(app = appRef) {
       ? "Earheart — recording"
       : state === "processing"
         ? "Earheart — processing"
-        : "Earheart — ready"
+        : state === "reviewing"
+          ? "Earheart — reviewing"
+          : "Earheart — ready"
   );
   tray.setContextMenu(buildMenu(app));
 }

@@ -127,6 +127,8 @@ function main() {
   // every window to close and the overlay refuses; electron#5891). Destroy
   // it first so quitting from the tray actually exits.
   app.on("before-quit", () => {
+    // Quitting mid-review must not lose the words: park them in history.
+    pipeline.flushReview();
     windows.destroyOverlay();
   });
 

@@ -28,6 +28,15 @@ const updateOuts = document.getElementById("update-outs");
 const updateSkip = document.getElementById("update-skip");
 const updateNever = document.getElementById("update-never");
 const updateClose = document.getElementById("update-close");
+const reviewEl = document.getElementById("review");
+const reviewText = document.getElementById("review-text");
+const reviewRawView = document.getElementById("review-rawview");
+const reviewCount = document.getElementById("review-count");
+const reviewRawToggle = document.getElementById("review-raw-toggle");
+const reviewSend = document.getElementById("review-send");
+const reviewCopy = document.getElementById("review-copy");
+const reviewDiscard = document.getElementById("review-discard");
+const reviewKeys = document.getElementById("review-keys");
 
 let recording = null; // { sid, stream, source, recorder, chunks, startedAt, timerId, maxTimerId, partialTimerId }
 let generation = 0; // bumped on every start/teardown to invalidate stale awaits
@@ -856,7 +865,13 @@ earheart.on("pipeline:status", ({ status, detail }) => {
   // reports a post-recording status, retire the transcript so it doesn't linger
   // alongside the control row's own status/preview.
   clearTranscript();
+  // Any status that isn't the review offer takes the review panel down — the
+  // pipeline has moved on (delivering after a send, or a new dictation).
+  if (status !== "review") exitReview();
   switch (status) {
+    case "review":
+      startReview(detail);
+      break;
     case "transcribing":
       setStatus("transcribing", "Transcribing…");
       break;
@@ -884,6 +899,127 @@ earheart.on("pipeline:status", ({ status, detail }) => {
       setStatus("error", "Failed", detail?.message);
       break;
   }
+});
+
+/* ---------- review before send ---------- */
+
+// The review panel: the pipeline parks the cleaned transcript here (status
+// "review") instead of pasting, the user edits it in a real textarea — the
+// one moment this window holds keyboard focus — and one of three exits sends
+// the result back over IPC. Main owns everything after that.
+let review = null; // { sid, raw, showingRaw } while the panel is up
+
+// The overlay has no menu, so these chords are ours alone. Shown on the
+// panel itself (keyboard-first means the surface teaches its own keys).
+const REVIEW_KEY_HINTS =
+  navigator.platform.toUpperCase().includes("MAC")
+    ? "⌘↵ send · ⌘⇧C copy · ⌘R raw · esc discard"
+    : "ctrl+↵ send · ctrl+shift+C copy · ctrl+R raw · esc discard";
+
+function startReview({ sid, text, raw } = {}) {
+  review = { sid, raw: raw || "", showingRaw: false };
+  setStatus("review", "Review");
+  reviewText.value = text || "";
+  reviewRawView.textContent = "";
+  reviewRawView.hidden = true;
+  reviewText.hidden = false;
+  reviewRawToggle.setAttribute("aria-pressed", "false");
+  reviewKeys.textContent = REVIEW_KEY_HINTS;
+  syncReviewCount();
+  card.dataset.review = "solo"; // hides the control row, like the update prompt
+  reviewEl.hidden = false;
+  autoGrowReviewText();
+  syncOverlayHeight();
+  reviewText.focus();
+  // Caret at the end: the likely edit is near where dictation trailed off,
+  // and select-all would make the first keystroke destroy the transcript.
+  reviewText.setSelectionRange(reviewText.value.length, reviewText.value.length);
+}
+
+function exitReview() {
+  if (!review) return;
+  review = null;
+  reviewEl.hidden = true;
+  card.removeAttribute("data-review");
+  syncOverlayHeight();
+}
+
+function syncReviewCount() {
+  reviewCount.textContent = `${reviewText.value.length} chars`;
+}
+
+// The textarea grows with its content (capped so a huge prompt scrolls inside
+// instead of filling the screen); the window then grows upward around the
+// card via the existing overlay:resize path.
+function autoGrowReviewText() {
+  reviewText.style.height = "";
+  const cap = Math.round(window.screen.availHeight * 0.4);
+  reviewText.style.height = `${Math.min(reviewText.scrollHeight, cap)}px`;
+}
+
+function doReviewSend() {
+  if (!review) return;
+  earheart.send("review:send", { sid: review.sid, text: reviewText.value });
+}
+
+function doReviewCopy() {
+  if (!review) return;
+  earheart.send("review:copy", { sid: review.sid, text: reviewText.value });
+}
+
+function doReviewDiscard() {
+  if (!review) return;
+  earheart.send("review:discard", { sid: review.sid, text: reviewText.value });
+}
+
+// Raw is a read-only peek, not an alternate draft: flipping back always
+// returns to the (possibly edited) cleaned text in the textarea.
+function toggleReviewRaw() {
+  if (!review) return;
+  review.showingRaw = !review.showingRaw;
+  reviewRawToggle.setAttribute("aria-pressed", String(review.showingRaw));
+  reviewRawView.textContent = review.raw;
+  reviewRawView.hidden = !review.showingRaw;
+  reviewText.hidden = review.showingRaw;
+  syncOverlayHeight();
+  (review.showingRaw ? reviewRawView : reviewText).focus();
+}
+
+// One listener catches the chords whether focus sits in the textarea or on
+// the raw view. Plain Enter stays a newline; plain Ctrl/Cmd+C stays native
+// copy-selection.
+reviewEl.addEventListener("keydown", (event) => {
+  const mod = event.metaKey || event.ctrlKey;
+  if (event.key === "Enter" && mod) {
+    event.preventDefault();
+    doReviewSend();
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    doReviewDiscard();
+  } else if (mod && event.shiftKey && event.code === "KeyC") {
+    event.preventDefault();
+    doReviewCopy();
+  } else if (mod && !event.shiftKey && event.code === "KeyR") {
+    event.preventDefault();
+    toggleReviewRaw();
+  }
+});
+
+reviewText.addEventListener("input", () => {
+  syncReviewCount();
+  autoGrowReviewText();
+  syncOverlayHeight();
+});
+
+reviewSend.addEventListener("click", doReviewSend);
+reviewCopy.addEventListener("click", doReviewCopy);
+reviewDiscard.addEventListener("click", doReviewDiscard);
+reviewRawToggle.addEventListener("click", toggleReviewRaw);
+
+// The global record hotkey during review means send — main asks (it can't
+// read the textarea), the renderer answers with the edited text.
+earheart.on("review:request-send", ({ sid } = {}) => {
+  if (review?.sid === sid) doReviewSend();
 });
 
 // The update prompt. The main process decides WHEN it appears (never over a

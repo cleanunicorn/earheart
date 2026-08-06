@@ -1,7 +1,7 @@
 // Window management: the recording overlay (a small always-on-top card that
 // also owns the microphone) and the settings window.
 
-const { BrowserWindow, ipcMain, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, screen } = require("electron");
 const path = require("node:path");
 const settings = require("./settings");
 const logger = require("./util/logger");
@@ -33,6 +33,7 @@ let overlayCustomPosition = null; // set when the user drags the card
 let overlayDragOrigin = null; // { winX, winY, pointerX, pointerY }
 let overlayHideTimer = null;
 let overlayPinned = false; // update prompt holds the card on screen
+let reviewPinned = false; // review-before-send holds the card on screen
 
 // Clamp a top-left position so the window stays on-screen. The height matters
 // for the bottom bound: a transcript-grown overlay is taller than OVERLAY_HEIGHT,
@@ -272,6 +273,41 @@ function setOverlayPinned(pinned) {
   overlayPinned = Boolean(pinned);
 }
 
+// A second, independent pin for the review-before-send panel: the update
+// prompt's unpin (updates.js) must not take down a live review, and vice
+// versa. Whoever unpins is responsible for hiding when appropriate.
+function setReviewPinned(pinned) {
+  reviewPinned = Boolean(pinned);
+}
+
+// The one deliberate exception to "the overlay never steals focus": the
+// review-before-send panel needs real keyboard focus for its textarea. The
+// caller has already captured the target window (main/output/focus.js), so
+// this borrow is repaid by leaveReviewFocus + restoreTarget on the way out.
+function enterReviewFocus() {
+  const win = getOverlay();
+  if (!win) return;
+  win.setFocusable(true);
+  // A tray app has no active window on macOS, so focusing the overlay alone
+  // doesn't make Earheart the active application — the keystrokes would still
+  // land in the previous app.
+  if (process.platform === "darwin") app.focus({ steal: true });
+  win.focus();
+  raiseWithinTopmostBand(win);
+}
+
+// Give focus up again, in an order that guarantees the upcoming simulated
+// paste cannot land in our own window: release key focus, then make the
+// window unfocusable so nothing hands focus back, then let the OS settle
+// before the caller re-activates the captured target.
+async function leaveReviewFocus() {
+  const win = getOverlay();
+  if (!win) return;
+  win.blur();
+  win.setFocusable(false);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+}
+
 // "Visible" for the update prompt's purposes: a card mid fade-out counts as
 // hidden, so a prompt arriving during the fade re-shows the window cleanly
 // instead of attaching to a disappearing card.
@@ -281,7 +317,7 @@ function isOverlayVisible() {
 }
 
 function hideOverlay() {
-  if (overlayPinned) return;
+  if (overlayPinned || reviewPinned) return;
   const win = getOverlay();
   if (!win || !win.isVisible() || overlayHideTimer) return;
   // Let the card fade out before the window actually disappears.
@@ -400,6 +436,9 @@ module.exports = {
   showOverlay,
   hideOverlay,
   setOverlayPinned,
+  setReviewPinned,
+  enterReviewFocus,
+  leaveReviewFocus,
   isOverlayVisible,
   sendToOverlay,
   openSettings,

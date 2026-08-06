@@ -576,6 +576,33 @@ corners anywhere.
   line is the only news left. Settings mirrors it in full, one quiet 600/12px
   version heading per release.
 
+### Review panel (overlay)
+- The update panel's grammar, reused wholesale: 12px radius, white 0.05-alpha
+  fill, hairline edge, 10px 12px padding, entirely neutral-white — no coral
+  (the accent stays reserved for the dictation itself). Always solo: the
+  control row hides and the panel is the whole card.
+- **The editable field:** the cleaned transcript in a real textarea on a
+  darker ground (black 0.28, hairline edge, 8px radius) so the editable
+  surface reads apart from the panel; 13px/1.5 text; the universal focus
+  treatment (2px Primary Text outline, 2px offset). It grows with its content
+  and caps at 40% of the screen, scrolling inside past that.
+- **The raw view:** same box, dashed hairline and Dim Text — the ground
+  truth as reference, not a second draft. Flipping back always returns to
+  the (possibly edited) cleaned text.
+- **Head row:** 600/13px title, a tabular Caption char count in Text Faint,
+  and the quiet Raw pill (aria-pressed carries its state).
+- **Actions:** filled white Send (the one key action, same grammar as Done
+  and Update now), quiet Copy and Discard pills.
+- **The key line:** the four chords (send / copy / raw / discard) taught on
+  the panel itself in 10.5px Text Faint — keyboard-first means the surface
+  is its own manual.
+- **Focus contract:** the panel is the overlay's one sanctioned focus borrow.
+  Main captures the target window before focusing and repays on every exit —
+  send, copy, discard, cancel — so "paste to the app you came from" survives
+  even a mid-review click elsewhere. The Keys-Keep-Their-Slots rule is
+  satisfied the way the update prompt satisfies it: solo mode removes the
+  control row wholesale; nothing reflows under a cursor.
+
 ### Wizard step dots
 - 7px circles, white 0.35 at rest (clearing the 3:1 UI bar on the ink), solid
   white when active; centered in the footer with an sr-only spoken

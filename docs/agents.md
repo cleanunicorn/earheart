@@ -54,7 +54,8 @@ Settings → Cleanup, three fields, and every recipe below gets better:
 ## Terminal agents — Claude Code, Codex CLI, Aider, Gemini CLI
 
 1. Click the terminal so the TUI input has focus, and leave it there — the
-   overlay never steals focus.
+   overlay never steals focus (unless you've turned on review-before-send,
+   which borrows it for the edit pass and restores it when you send).
 2. Press the hotkey, say the whole prompt, press it again. The transcript
    pastes into the input like any other paste.
 3. Press Enter yourself. Earheart pastes; it does not submit.
@@ -113,10 +114,34 @@ awkwardly; this is where dictating a full paragraph pays off most.
 ## Desktop and web chats — Claude, ChatGPT, agent web UIs
 
 Nothing special, which is worth saying: click the composer, press the hotkey,
-speak, press again. The overlay never steals focus, so the composer keeps the
-caret and the text lands where you were typing.
+speak, press again. The overlay never steals focus (review-before-send, if
+you've enabled it, borrows focus and gives it back on send), so the composer
+keeps the caret and the text lands where you were typing.
 
 The one thing to remember is the same everywhere — you press Enter.
+
+## Reviewing long prompts
+
+A two-minute prompt is full of identifiers — exactly the words speech-to-text
+gets wrong — and the agent will *act* on it. **Review before send** (Settings
+→ General) holds the cleaned transcript on the overlay in an editable panel
+before anything is pasted. The setting worth using for agent work is **Only
+long dictations**: quick chat-sized dictations keep the zero-friction flow,
+long prompts get a look first.
+
+On the panel:
+
+- `Ctrl/Cmd+Enter` (or the record hotkey again) **sends** — the text pastes
+  into the window you dictated from, even if you clicked elsewhere while
+  reviewing.
+- `Ctrl/Cmd+R` flips to the **raw** transcript — the ground truth when
+  cleanup "fixed" a technical term into a real word — and back.
+- `Ctrl/Cmd+Shift+C` copies instead of pasting; `Esc` discards. Either way
+  the transcript is kept in History, so the words are never lost.
+
+On Wayland there is no way to re-focus the target window explicitly; Earheart
+relies on the compositor returning focus when the panel closes, and falls back
+to leaving the text on the clipboard if the paste can't land.
 
 ## When something doesn't land
 

@@ -74,16 +74,21 @@ Supporting truths (real, but not the lead):
 **Not claimed (yet):** Earheart does not submit the prompt for you, does not
 speak the agent's replies, and has no MCP or agent-side integration. These are
 tracked as roadmap issues under the `agents` label — never describe them as
-shipped.
+shipped. Also not claimed: on Wayland, focus returning to the target window
+after review-before-send depends on the compositor; when it doesn't, delivery
+falls back to the clipboard with a note.
 
 ## Operating Context
 
 - Lives in the system tray. UI surfaces: a low always-on-top overlay strip at
   the bottom of the screen (status dot, live waveform, live transcript,
-  progress — never steals focus), a settings window, a first-run wizard, and
-  the tray menu.
+  progress — never steals focus during dictation), a settings window, a
+  first-run wizard, and the tray menu.
 - Used mid-task inside other applications; the overlay must never interrupt or
-  take focus from the app being dictated into.
+  take focus from the app being dictated into. The opt-in review-before-send
+  panel is the sole, deliberate exception: it borrows focus to make the
+  transcript editable and gives it back to the captured target window on
+  every exit.
 - Global hotkey (default `Ctrl/Cmd+Shift+Space`) starts and stops dictation.
   On GNOME/KDE Wayland, users bind a system shortcut to `earheart --toggle`
   (single-instance).
@@ -161,7 +166,9 @@ shipped.
 2. **Never lose the user's words.** Every failure path still delivers the raw
    transcript; history catches mis-aimed pastes.
 3. **Stay out of the way.** Dictation happens inside someone else's app —
-   never steal focus, never interrupt, never demand attention mid-flow.
+   never steal focus, never interrupt, never demand attention mid-flow. The
+   opt-in review step is the one sanctioned focus borrow, and it must always
+   repay it: capture the target before taking focus, restore it on exit.
 4. **Zero setup before power.** Defaults work with nothing installed or
    configured; depth (endpoints, prompts, models, servers) stays available
    underneath, one Settings field away.

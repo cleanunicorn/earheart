@@ -95,6 +95,10 @@ OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
 - **Auto-paste, clipboard, or both** — paste straight into the focused app
   (with clipboard restore), paste *and* keep the transcript on the clipboard,
   or clipboard-only if you prefer to paste yourself.
+- **Review before send (opt-in)** — hold long dictations on the overlay for a
+  keyboard-driven edit pass — fix a mis-heard identifier, peek at the raw
+  transcript — before anything reaches the app. Off by default; turn it on
+  for every dictation or only past a length threshold (Settings → General).
 - **Start on login (optional)** — have Earheart launch into the tray
   automatically when you sign in, so the hotkey is always ready. Off by
   default; toggle it under Settings → General. Works on Windows, macOS and
@@ -261,7 +265,9 @@ OpenAI).
 1. Put your cursor wherever you want text — an email, an editor, a chat box.
 2. Press the hotkey (default `Ctrl/Cmd+Shift+Space`). A slim bar appears at
    the bottom of the screen — a status dot and word, your voice drawn live,
-   and a timer; it never steals focus.
+   and a timer; it never steals focus. (The one exception is the opt-in
+   review-before-send step, which borrows focus so you can edit the
+   transcript, then hands it back to the app you came from when you send.)
 3. Speak, then press the hotkey again (or the bar's ✓ key). Earheart
    transcribes, optionally cleans up, and pastes the result right where you
    were typing. The ✕ key discards the dictation — nothing is typed.
@@ -291,7 +297,7 @@ collide with your editor — live in **[docs/agents.md](docs/agents.md)**.
 | --- | --- |
 | **Claude Code / Codex CLI** (terminal) | Paste lands in the TUI input like any paste. On Linux, auto-paste needs `xdotool`/`wtype` — see [Platform notes](#linux). |
 | **Cursor, VS Code, JetBrains chat** | Nothing special — click the chat box and dictate. |
-| **claude.ai, ChatGPT, agent web UIs** | Same. The overlay never steals focus, so the composer keeps it. |
+| **claude.ai, ChatGPT, agent web UIs** | Same. The overlay never steals focus, so the composer keeps it. With review-before-send on, the overlay borrows focus for the edit pass and returns it on send. |
 | **Anywhere via a shortcut** | Bind a system shortcut, mouse button or foot pedal to `earheart --toggle` instead of using the built-in hotkey. |
 
 Three settings are worth a minute for agent work:

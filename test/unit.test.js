@@ -236,6 +236,40 @@ test("migrateLegacy leaves fresh and already-migrated configs untouched", () => 
   assert.deepStrictEqual(migrateLegacy(modern), modern);
 });
 
+test("the default cleanup prompt carries no source hard wrapping", () => {
+  // It is shown verbatim in a soft-wrapping textarea, so every line must be a
+  // whole rule: no continuation lines, no leading indentation.
+  for (const line of DEFAULTS.cleanup.systemPrompt.split("\n")) {
+    assert.ok(!/^\s/.test(line), `indented prompt line: ${JSON.stringify(line)}`);
+  }
+  const rules = DEFAULTS.cleanup.systemPrompt.split("\n").filter((l) => l.trim());
+  assert.ok(rules.slice(2).every((l) => l.startsWith("- ")));
+});
+
+test("migrateLegacy re-flows an untouched hard-wrapped prompt", () => {
+  // How the default was stored before it was unwrapped: hard-wrapped at ~70
+  // columns, continuation lines indented by two spaces.
+  const wrapped = DEFAULTS.cleanup.systemPrompt
+    .split("\n")
+    .map((line) => {
+      const wrappedLine = line.split(" ").reduce((out, word) => {
+        const last = out[out.length - 1];
+        if (last !== undefined && `${last} ${word}`.length <= 70) out[out.length - 1] = `${last} ${word}`;
+        else out.push(word);
+        return out;
+      }, []);
+      return wrappedLine.map((l, i) => (i === 0 ? l : `  ${l}`)).join("\n");
+    })
+    .join("\n");
+  assert.notStrictEqual(wrapped, DEFAULTS.cleanup.systemPrompt); // wrapping happened
+  const migrated = migrateLegacy({ cleanup: { systemPrompt: wrapped } });
+  assert.strictEqual(migrated.cleanup.systemPrompt, DEFAULTS.cleanup.systemPrompt);
+
+  // An edited prompt is never rewritten, wrapped or not.
+  const edited = migrateLegacy({ cleanup: { systemPrompt: "My own rules." } });
+  assert.strictEqual(edited.cleanup.systemPrompt, "My own rules.");
+});
+
 test("new installs default to in-process engines", () => {
   assert.strictEqual(DEFAULTS.stt.engine, "builtin");
   assert.strictEqual(DEFAULTS.cleanup.engine, "builtin");

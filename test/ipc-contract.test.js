@@ -119,9 +119,7 @@ test("every field the renderer sends on audio:partial reaches the main handler",
   );
   assert.ok(sendBlock, "overlay.js should send audio:partial with an object literal");
   // Object-literal keys, shorthand (`final,`) and explicit (`fromSample: from,`).
-  const sentFields = new Set(
-    [...sendBlock[1].matchAll(/^\s*(\w+)\s*[,:]/gm)].map((m) => m[1])
-  );
+  const sentFields = channels(sendBlock[1], /^\s*(\w+)\s*[,:]/gm);
   assert.ok(sentFields.has("fromSample"), "the send site should carry fromSample");
 
   const onBlock = main.match(
@@ -130,9 +128,7 @@ test("every field the renderer sends on audio:partial reaches the main handler",
     /ipcMain\.on\(\s*"audio:partial",\s*\([^)]*?\{([^}]*)\}/
   );
   assert.ok(onBlock, "main should receive audio:partial with a destructured payload");
-  const receivedFields = new Set(
-    [...onBlock[1].matchAll(/(\w+)/g)].map((m) => m[1])
-  );
+  const receivedFields = channels(onBlock[1], /(\w+)/g);
 
   const dropped = [...sentFields].filter((f) => !receivedFields.has(f)).sort();
   assert.deepStrictEqual(

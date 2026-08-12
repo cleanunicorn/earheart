@@ -1,16 +1,16 @@
 // Minimal WAV (RIFF, PCM16) helpers used by the main process.
+//
+// These run on latency-sensitive threads over minutes of audio (a 5-minute
+// dictation is ~4.8M samples), so the sample data moves via bulk typed-array
+// copies, never per-sample Buffer method calls. Sample bytes are moved as-is
+// between native-endian Int16Array views and the WAV's little-endian data —
+// like the renderer's encoder, this commits to a little-endian host, which is
+// true of every platform Electron ships on.
 
 const SAMPLE_RATE = 16000;
 
-/**
- * Encode mono PCM16 samples as a WAV file buffer.
- * @param {Int16Array} samples
- * @param {number} sampleRate
- * @returns {Buffer}
- */
-function encodeWav(samples, sampleRate = SAMPLE_RATE) {
-  const dataSize = samples.length * 2;
-  const buf = Buffer.alloc(44 + dataSize);
+// Write the canonical 44-byte mono PCM16 RIFF header.
+function writeWavHeader(buf, dataSize, sampleRate) {
   buf.write("RIFF", 0);
   buf.writeUInt32LE(36 + dataSize, 4);
   buf.write("WAVE", 8);
@@ -24,9 +24,22 @@ function encodeWav(samples, sampleRate = SAMPLE_RATE) {
   buf.writeUInt16LE(16, 34); // bits per sample
   buf.write("data", 36);
   buf.writeUInt32LE(dataSize, 40);
-  for (let i = 0; i < samples.length; i++) {
-    buf.writeInt16LE(samples[i], 44 + i * 2);
-  }
+}
+
+/**
+ * Encode mono PCM16 samples as a WAV file buffer.
+ * @param {Int16Array} samples
+ * @param {number} sampleRate
+ * @returns {Buffer}
+ */
+function encodeWav(samples, sampleRate = SAMPLE_RATE) {
+  const dataSize = samples.length * 2;
+  // allocUnsafe: the header covers bytes 0-43 and the copy covers the rest,
+  // so nothing uninitialized survives — and the zero-fill this skips is a
+  // full-recording-sized memset on the stop→transcribe path.
+  const buf = Buffer.allocUnsafe(44 + dataSize);
+  writeWavHeader(buf, dataSize, sampleRate);
+  buf.set(new Uint8Array(samples.buffer, samples.byteOffset, dataSize), 44);
   return buf;
 }
 
@@ -59,21 +72,42 @@ function wavToFloat32(buf) {
     parseRiffChunks(buf);
 
   if (dataOffset < 0) throw new Error("WAV has no data chunk");
-  if (format !== 1 || bitsPerSample !== 16) {
-    throw new Error(`Unsupported WAV format (format=${format}, bits=${bitsPerSample})`);
+  // channels < 1 included: a zero-channel fmt chunk would otherwise make
+  // frameCount Infinity and surface as a raw RangeError instead of this.
+  if (format !== 1 || bitsPerSample !== 16 || channels < 1) {
+    throw new Error(
+      `Unsupported WAV format (format=${format}, bits=${bitsPerSample}, channels=${channels})`
+    );
   }
 
   const frameCount = Math.floor(dataSize / 2 / channels);
   const samples = new Float32Array(frameCount);
-  for (let i = 0; i < frameCount; i++) {
-    // Mixdown to mono by averaging channels (overlay audio is already mono).
-    let acc = 0;
-    for (let c = 0; c < channels; c++) {
-      acc += buf.readInt16LE(dataOffset + (i * channels + c) * 2);
+  const pcm = pcm16View(buf, dataOffset, frameCount * channels);
+  if (channels === 1) {
+    // The common case (overlay audio is mono): a straight scale.
+    for (let i = 0; i < frameCount; i++) samples[i] = pcm[i] / 32768;
+  } else {
+    // Mixdown to mono by averaging channels.
+    for (let i = 0; i < frameCount; i++) {
+      let acc = 0;
+      for (let c = 0; c < channels; c++) acc += pcm[i * channels + c];
+      samples[i] = acc / channels / 32768;
     }
-    samples[i] = acc / channels / 32768;
   }
   return { samples, sampleRate };
+}
+
+// Int16Array view over a buffer's PCM16 bytes. Typed arrays need 2-byte
+// alignment; Buffer pool slices can start at an odd byte, so that rare case
+// gets an aligned copy — still one memcpy, not a per-sample loop.
+function pcm16View(buf, offset, count) {
+  const byteOffset = buf.byteOffset + offset;
+  if ((byteOffset & 1) === 0) {
+    return new Int16Array(buf.buffer, byteOffset, count);
+  }
+  const copy = new Int16Array(count);
+  new Uint8Array(copy.buffer).set(buf.subarray(offset, offset + count * 2));
+  return copy;
 }
 
 // Walk the RIFF chunk list once and collect the fmt/data fields both readers
@@ -155,11 +189,13 @@ function wavSliceFromFrame(buf, fromFrame) {
   }
   const frames = Math.floor(dataSize / 2);
   const from = Math.max(0, Math.min(frames, Math.floor(fromFrame)));
-  const tail = new Int16Array(frames - from);
-  for (let i = 0; i < tail.length; i++) {
-    tail[i] = buf.readInt16LE(dataOffset + (from + i) * 2);
-  }
-  return encodeWav(tail, sampleRate);
+  // The tail's PCM bytes move as one copy — no decode/re-encode round trip.
+  // allocUnsafe: the header and the copy together cover every byte.
+  const tailSize = (frames - from) * 2;
+  const out = Buffer.allocUnsafe(44 + tailSize);
+  writeWavHeader(out, tailSize, sampleRate);
+  buf.copy(out, 44, dataOffset + from * 2, dataOffset + from * 2 + tailSize);
+  return out;
 }
 
 module.exports = {

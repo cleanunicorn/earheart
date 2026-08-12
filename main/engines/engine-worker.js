@@ -19,6 +19,7 @@
 
 const path = require("node:path");
 const { wavToFloat32, SAMPLE_RATE } = require("../util/wav");
+const { cleanContextNeed, cleanBudgetMessage } = require("../util/clean-budget");
 
 const port = process.parentPort;
 
@@ -26,19 +27,15 @@ const port = process.parentPort;
 const FEATURE_DIM = 80;
 // Cleanup engine defaults (overridable per request).
 //
-// The context has to hold the whole cleanup turn AT ONCE: the rules prompt
-// (~500 tokens), the transcript, and the generated output (about as long as the
-// transcript again, since cleanup rewrites it end to end). At 2048 that ceiling
-// was reached around 550 spoken words — well inside the 300s recording cap —
-// and llama.cpp's context shift answers an overflow by silently dropping the
-// OLDEST tokens, i.e. the start of the dictation. The user saw a cleaned
-// transcript missing words with nothing reported. 4096 clears the cap with room
-// to spare (~1300 words); assertCleanBudget below refuses anything past it
-// instead of quietly losing text.
+// A cleanup turn holds the rules prompt, the transcript and the generated
+// output at once — see main/util/clean-budget.js for why that grows at twice
+// the rate of the dictation, and what llama.cpp does when it doesn't fit. At
+// 2048 the ceiling arrived around 550 spoken words, well inside the default
+// recording cap, and the overflow cost the user the start of their dictation
+// with nothing reported. 4096 covers ~1300 words; assertCleanBudget below
+// refuses anything past it instead of quietly losing text.
 const DEFAULT_CONTEXT_SIZE = 4096;
 const DEFAULT_CLEANUP_TEMPERATURE = 0.2;
-// Slack left for the chat template's own tokens on top of prompt + output.
-const CLEAN_CONTEXT_SLACK_TOKENS = 64;
 
 let recognizer = null; // sherpa-onnx OfflineRecognizer
 let sttModelId = null;
@@ -245,11 +242,9 @@ function freshSession(mod) {
 // Refuse a turn that cannot fit in the context instead of letting llama.cpp's
 // context shift silently drop the start of the transcript — a cleaned result
 // that quietly loses the user's words is worse than no cleaning at all, and the
-// caller falls back to the raw transcript (and says so) on a throw.
-//
-// The output is budgeted at the transcript's own token count: cleanup rewrites
-// the transcript end to end, and the prompt already forbids it from being
-// longer than the input.
+// caller falls back to the raw transcript (and says so) on a throw. The
+// arithmetic and the message live in main/util/clean-budget.js, where they are
+// testable; what stays here is the part that needs the loaded model.
 //
 // Both soft cases return rather than throw: nothing loaded is the caller's
 // existing error to raise, and a tokenizer that won't count is no reason to
@@ -258,19 +253,15 @@ function assertCleanBudget(userTurn, transcript) {
   if (!llamaModel || !llamaContext) return;
   let needed;
   try {
-    needed =
-      llamaModel.tokenize(userTurn).length +
-      llamaModel.tokenize(transcript).length +
-      CLEAN_CONTEXT_SLACK_TOKENS;
+    needed = cleanContextNeed(
+      llamaModel.tokenize(userTurn).length,
+      llamaModel.tokenize(transcript).length
+    );
   } catch {
     return; // tokenizer unavailable: let the generation try anyway
   }
   const available = llamaContext.contextSize;
-  if (needed > available) {
-    throw new Error(
-      `Transcript too long for the cleanup context (needs ~${needed} tokens, have ${available})`
-    );
-  }
+  if (needed > available) throw new Error(cleanBudgetMessage(needed, available));
 }
 
 async function clean({ transcript, systemPrompt, sampling }, emitProgress) {

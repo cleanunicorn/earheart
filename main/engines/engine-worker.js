@@ -30,6 +30,19 @@ const DEFAULT_CLEANUP_TEMPERATURE = 0.2;
 
 let recognizer = null; // sherpa-onnx OfflineRecognizer
 let sttModelId = null;
+// STT decode runs on the single-instance recognizer, so at most one decode may
+// be in flight at a time. The sync decoder used to make that implicit (it froze
+// this worker's event loop for the whole decode); the async decoder yields, so
+// an explicit promise chain holds the same invariant — a second transcribe that
+// lands during an in-flight decode waits for it rather than racing on the
+// recognizer. Mirrors the cleanup side's queuedCleanupOp, minus its abort set
+// (an STT decode can't be cancelled mid-flight).
+let sttQueue = Promise.resolve();
+function runSttSerial(fn) {
+  const run = sttQueue.then(fn);
+  sttQueue = run.catch(() => {});
+  return run;
+}
 
 let llama = null; // node-llama-cpp instance
 let llamaGpuMode; // undefined until first load; null = auto, false = CPU
@@ -83,7 +96,7 @@ async function loadStt({ dir, sherpa, modelId }) {
   const family = sherpa.joiner
     ? { transducer: { encoder, decoder, joiner: path.join(dir, sherpa.joiner) } }
     : { whisper: { encoder, decoder } };
-  recognizer = new sherpaOnnx.OfflineRecognizer({
+  recognizer = await sherpaOnnx.OfflineRecognizer.createAsync({
     featConfig: { sampleRate: SAMPLE_RATE, featureDim: FEATURE_DIM },
     modelConfig: {
       ...family,
@@ -102,21 +115,28 @@ async function loadStt({ dir, sherpa, modelId }) {
 
 async function transcribe({ wav, language }) {
   if (!recognizer) throw new Error("STT model not loaded");
-  const buf = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
-  const { samples, sampleRate } = wavToFloat32(buf);
-  const stream = recognizer.createStream();
-  stream.acceptWaveform({ sampleRate, samples });
-  // Time the decode here, where nothing else can leak in: measured from the
-  // pipeline it would include model loads and queueing behind an in-flight
-  // live-preview decode on this single-threaded worker — poisoning the
-  // realtime-factor estimate that paces the transcribing bar.
-  const startedAt = Date.now();
-  recognizer.decode(stream);
-  const decodeMs = Date.now() - startedAt;
-  const result = recognizer.getResult(stream);
-  return { text: (result && result.text ? result.text : "").trim(), decodeMs };
-  // `language` is accepted for parity with the HTTP API; Parakeet v3
-  // auto-detects, so it is not forwarded.
+  // Serialized so the async decode can't race a second decode on the
+  // single-instance recognizer (see runSttSerial). decodeAsync runs the
+  // inference on the native thread pool and returns the result directly
+  // (combining decode + getResult into one native call), leaving this worker's
+  // event loop free during inference — a sync decode froze the worker for the
+  // whole decode and blocked every incoming message until it returned.
+  return runSttSerial(async () => {
+    const buf = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
+    const { samples, sampleRate } = wavToFloat32(buf);
+    const stream = recognizer.createStream();
+    stream.acceptWaveform({ sampleRate, samples });
+    // Time the decode here, where nothing else can leak in: measured from the
+    // pipeline it would include model loads and queueing behind an in-flight
+    // live-preview decode on this worker — poisoning the realtime-factor
+    // estimate that paces the transcribing bar.
+    const startedAt = Date.now();
+    const result = await recognizer.decodeAsync(stream);
+    const decodeMs = Date.now() - startedAt;
+    return { text: (result && result.text ? result.text : "").trim(), decodeMs };
+    // `language` is accepted for parity with the HTTP API; Parakeet v3
+    // auto-detects, so it is not forwarded.
+  });
 }
 
 /* ---------------- cleanup (node-llama-cpp / Gemma) ---------------- */

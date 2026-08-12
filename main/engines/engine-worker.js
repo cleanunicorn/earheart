@@ -32,8 +32,9 @@ const FEATURE_DIM = 80;
 // the rate of the dictation, and what llama.cpp does when it doesn't fit. At
 // 2048 the ceiling arrived around 550 spoken words, well inside the default
 // recording cap, and the overflow cost the user the start of their dictation
-// with nothing reported. 4096 covers ~1300 words; assertCleanBudget below
-// refuses anything past it instead of quietly losing text.
+// with nothing reported. This is the floor the facade sends for a default-length
+// dictation (it sends more when the user allows longer ones); assertCleanBudget
+// below refuses a turn past whatever was allocated, instead of losing text.
 const DEFAULT_CONTEXT_SIZE = 4096;
 const DEFAULT_CLEANUP_TEMPERATURE = 0.2;
 
@@ -46,6 +47,7 @@ let llamaModel = null;
 let llamaContext = null;
 let llamaSession = null;
 let cleanupModelPath = null;
+let cleanupContextSize = 0; // context the loaded model was given, 0 = none loaded
 
 function reply(id, promise) {
   Promise.resolve(promise)
@@ -131,7 +133,12 @@ async function transcribe({ wav, language }) {
 /* ---------------- cleanup (node-llama-cpp / Gemma) ---------------- */
 
 async function loadCleanup({ modelPath, contextSize, cpuOnly }) {
-  if (llamaModel && cleanupModelPath === modelPath) return { ready: true };
+  const wanted = contextSize || DEFAULT_CONTEXT_SIZE;
+  // Same model AND same context: the context is allocated at load time, so a
+  // caller asking for a bigger one has to get a reload, not the old context.
+  if (llamaModel && cleanupModelPath === modelPath && cleanupContextSize === wanted) {
+    return { ready: true };
+  }
   // node-llama-cpp v3 is ESM-only; reach it via dynamic import from CommonJS.
   let mod;
   try {
@@ -160,11 +167,10 @@ async function loadCleanup({ modelPath, contextSize, cpuOnly }) {
         llamaGpuMode = gpu;
       }
       llamaModel = await llama.loadModel({ modelPath });
-      llamaContext = await llamaModel.createContext({
-        contextSize: contextSize || DEFAULT_CONTEXT_SIZE,
-      });
+      llamaContext = await llamaModel.createContext({ contextSize: wanted });
       llamaSession = null;
       cleanupModelPath = modelPath;
+      cleanupContextSize = wanted;
       return { ready: true };
     } catch (err) {
       lastErr = err;
@@ -319,6 +325,7 @@ async function disposeCleanup() {
   llamaContext = null;
   llamaModel = null;
   cleanupModelPath = null;
+  cleanupContextSize = 0;
 }
 
 async function disposeStt() {

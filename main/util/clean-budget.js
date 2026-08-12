@@ -44,8 +44,42 @@ function cleanBudgetMessage(needed, available) {
   return `Transcript too long to clean up in one pass (needs ~${needed} tokens of context, have ${available})`;
 }
 
+// Sizing the context from the dictation cap. The floor is what an ordinary
+// dictation needs; the ceiling is where the KV cache stops being worth it (a
+// context costs memory for every dictation, including the short ones). Past the
+// ceiling the budget check refuses the turn and the raw transcript is delivered
+// — correct, just not cleaned.
+const CLEAN_CONTEXT_MIN = 4096;
+const CLEAN_CONTEXT_MAX = 16384;
+// Dictation is speech, not prose: ~150 words a minute, and Gemma spends a bit
+// over a token a word. Both are deliberately generous — under-sizing costs the
+// user their cleanup, over-sizing costs some memory.
+const WORDS_PER_SECOND = 2.5;
+const TOKENS_PER_WORD = 1.35;
+// The rules prompt, with headroom for the style directive and a dictionary.
+const CLEAN_PROMPT_TOKENS = 700;
+
+/**
+ * Context size for a user who may dictate for `maxRecordingSeconds`. Doubling
+ * steps rather than an exact fit: llama.cpp allocates the KV cache from this,
+ * and a handful of sizes keeps that allocation predictable.
+ * @param {number} maxRecordingSeconds `audio.maxRecordingSeconds`
+ * @returns {number} tokens, within [CLEAN_CONTEXT_MIN, CLEAN_CONTEXT_MAX]
+ */
+function cleanContextFor(maxRecordingSeconds) {
+  const seconds = Number.isFinite(maxRecordingSeconds) ? Math.max(0, maxRecordingSeconds) : 0;
+  const transcriptTokens = Math.ceil(seconds * WORDS_PER_SECOND * TOKENS_PER_WORD);
+  const needed = cleanContextNeed(CLEAN_PROMPT_TOKENS + transcriptTokens, transcriptTokens);
+  let size = CLEAN_CONTEXT_MIN;
+  while (size < needed && size < CLEAN_CONTEXT_MAX) size *= 2;
+  return size;
+}
+
 module.exports = {
   CLEAN_CONTEXT_SLACK_TOKENS,
+  CLEAN_CONTEXT_MIN,
+  CLEAN_CONTEXT_MAX,
   cleanContextNeed,
+  cleanContextFor,
   cleanBudgetMessage,
 };

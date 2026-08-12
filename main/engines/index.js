@@ -8,7 +8,9 @@ const { app } = require("electron");
 const registry = require("./registry");
 const manager = require("./model-manager");
 const hostModule = require("./host");
+const settings = require("../settings");
 const { resolveCleanup } = require("../cleanup-styles");
+const { cleanContextFor } = require("../util/clean-budget");
 
 // STT and cleanup each get their own worker process so they run in parallel and
 // a crash in one engine can't take down the other (see host.js). Each lazily
@@ -96,6 +98,7 @@ async function transcribe(wav, cfg, signal, { onDecodeMs } = {}) {
 /* ---------------- cleanup ---------------- */
 
 let loadedCleanup = null;
+let loadedCleanupContext = 0; // context size the loaded model was given
 
 // Windows on ARM (and macOS Rosetta) runs our x64 build as an emulated process.
 // STT (sherpa-onnx) tolerates that, but node-llama-cpp's GPU auto-probe faults
@@ -118,19 +121,29 @@ function runningEmulated() {
 
 // Load the cleanup model into the worker if it isn't already. Throws if the
 // model isn't downloaded yet — callers surface that (or fall back to HTTP).
+//
+// The context is sized from how long the user is allowed to dictate, because
+// the whole turn — rules, transcript and generated output — has to fit in it at
+// once (main/util/clean-budget.js). Someone who raises Max dictation length
+// gets a context that can still hold what they say; everyone else keeps the
+// smaller KV cache. A changed size reloads the model: the context is allocated
+// at load time, so the worker can't grow one in place.
 async function ensureCleanup(modelId) {
   const model = resolve("cleanup", modelId);
   if (!manager.isInstalled(modelsDir(), model)) {
     throw new Error(`Cleanup model "${modelId}" is not downloaded yet`);
   }
-  if (loadedCleanup !== modelId) {
+  const contextSize = cleanContextFor(settings.get().audio?.maxRecordingSeconds);
+  if (loadedCleanup !== modelId || loadedCleanupContext !== contextSize) {
     await cleanupHost.request("load-cleanup", {
       modelPath: path.join(manager.modelDir(modelsDir(), model), model.gguf.file),
+      contextSize,
       // Skip the GPU probe on an emulated (Windows-on-ARM / Rosetta) host so
       // the load can't crash the worker; run cleanup on the CPU backend there.
       cpuOnly: runningEmulated(),
     });
     loadedCleanup = modelId;
+    loadedCleanupContext = contextSize;
   }
 }
 
@@ -186,6 +199,7 @@ function forgetStt() {
 
 function forgetCleanup() {
   loadedCleanup = null;
+  loadedCleanupContext = 0;
 }
 
 function stop() {

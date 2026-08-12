@@ -25,8 +25,20 @@ const port = process.parentPort;
 // Parakeet's mel-feature dimension, fixed by the model.
 const FEATURE_DIM = 80;
 // Cleanup engine defaults (overridable per request).
-const DEFAULT_CONTEXT_SIZE = 2048;
+//
+// The context has to hold the whole cleanup turn AT ONCE: the rules prompt
+// (~500 tokens), the transcript, and the generated output (about as long as the
+// transcript again, since cleanup rewrites it end to end). At 2048 that ceiling
+// was reached around 550 spoken words — well inside the 300s recording cap —
+// and llama.cpp's context shift answers an overflow by silently dropping the
+// OLDEST tokens, i.e. the start of the dictation. The user saw a cleaned
+// transcript missing words with nothing reported. 4096 clears the cap with room
+// to spare (~1300 words); cleanBudgetError below refuses anything past it
+// instead of quietly losing text.
+const DEFAULT_CONTEXT_SIZE = 4096;
 const DEFAULT_CLEANUP_TEMPERATURE = 0.2;
+// Slack left for the chat template's own tokens on top of prompt + output.
+const CLEAN_CONTEXT_SLACK_TOKENS = 64;
 
 let recognizer = null; // sherpa-onnx OfflineRecognizer
 let sttModelId = null;
@@ -230,6 +242,32 @@ function freshSession(mod) {
   return llamaSession;
 }
 
+// Refuse a turn that cannot fit in the context instead of letting llama.cpp's
+// context shift silently drop the start of the transcript — a cleaned result
+// that quietly loses the user's words is worse than no cleaning at all, and the
+// caller falls back to the raw transcript (and says so) on a throw.
+//
+// The output is budgeted at the transcript's own token count: cleanup rewrites
+// the transcript end to end, and the prompt already forbids it from being
+// longer than the input.
+function cleanBudgetError(userTurn, transcript) {
+  if (!llamaModel || !llamaContext) return null;
+  let needed;
+  try {
+    needed =
+      llamaModel.tokenize(userTurn).length +
+      llamaModel.tokenize(transcript).length +
+      CLEAN_CONTEXT_SLACK_TOKENS;
+  } catch {
+    return null; // tokenizer unavailable: let the generation try anyway
+  }
+  const available = llamaContext.contextSize;
+  if (needed <= available) return null;
+  return new Error(
+    `Transcript too long for the cleanup context (needs ~${needed} tokens, have ${available})`
+  );
+}
+
 async function clean({ transcript, systemPrompt, sampling }, emitProgress) {
   if (!llamaContext) throw new Error("Cleanup model not loaded");
   const mod = await import("node-llama-cpp");
@@ -242,6 +280,8 @@ async function clean({ transcript, systemPrompt, sampling }, emitProgress) {
     // prefill-ahead of "prime-cleanup" pay off here.
     const userTurn =
       `${systemPrompt}\n\nTranscript:\n${transcript}\n\nCleaned transcript:`;
+    const tooLong = cleanBudgetError(userTurn, transcript);
+    if (tooLong) throw tooLong;
     // Cleaned output tracks the input's length closely (punctuation in, fillers
     // out), so generated-chars / transcript-chars is an honest progress ratio.
     const total = Math.max(1, transcript.length);

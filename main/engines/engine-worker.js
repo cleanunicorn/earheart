@@ -19,13 +19,23 @@
 
 const path = require("node:path");
 const { wavToFloat32, SAMPLE_RATE } = require("../util/wav");
+const { cleanContextNeed, cleanBudgetMessage } = require("../util/clean-budget");
 
 const port = process.parentPort;
 
 // Parakeet's mel-feature dimension, fixed by the model.
 const FEATURE_DIM = 80;
 // Cleanup engine defaults (overridable per request).
-const DEFAULT_CONTEXT_SIZE = 2048;
+//
+// A cleanup turn holds the rules prompt, the transcript and the generated
+// output at once — see main/util/clean-budget.js for why that grows at twice
+// the rate of the dictation, and what llama.cpp does when it doesn't fit. At
+// 2048 the ceiling arrived around 550 spoken words, well inside the default
+// recording cap, and the overflow cost the user the start of their dictation
+// with nothing reported. This is the floor the facade sends for a default-length
+// dictation (it sends more when the user allows longer ones); assertCleanBudget
+// below refuses a turn past whatever was allocated, instead of losing text.
+const DEFAULT_CONTEXT_SIZE = 4096;
 const DEFAULT_CLEANUP_TEMPERATURE = 0.2;
 
 let recognizer = null; // sherpa-onnx OfflineRecognizer
@@ -37,6 +47,7 @@ let llamaModel = null;
 let llamaContext = null;
 let llamaSession = null;
 let cleanupModelPath = null;
+let cleanupContextSize = 0; // context the loaded model was given, 0 = none loaded
 
 function reply(id, promise) {
   Promise.resolve(promise)
@@ -122,7 +133,12 @@ async function transcribe({ wav, language }) {
 /* ---------------- cleanup (node-llama-cpp / Gemma) ---------------- */
 
 async function loadCleanup({ modelPath, contextSize, cpuOnly }) {
-  if (llamaModel && cleanupModelPath === modelPath) return { ready: true };
+  const wanted = contextSize || DEFAULT_CONTEXT_SIZE;
+  // Same model AND same context: the context is allocated at load time, so a
+  // caller asking for a bigger one has to get a reload, not the old context.
+  if (llamaModel && cleanupModelPath === modelPath && cleanupContextSize === wanted) {
+    return { ready: true };
+  }
   // node-llama-cpp v3 is ESM-only; reach it via dynamic import from CommonJS.
   let mod;
   try {
@@ -151,11 +167,10 @@ async function loadCleanup({ modelPath, contextSize, cpuOnly }) {
         llamaGpuMode = gpu;
       }
       llamaModel = await llama.loadModel({ modelPath });
-      llamaContext = await llamaModel.createContext({
-        contextSize: contextSize || DEFAULT_CONTEXT_SIZE,
-      });
+      llamaContext = await llamaModel.createContext({ contextSize: wanted });
       llamaSession = null;
       cleanupModelPath = modelPath;
+      cleanupContextSize = wanted;
       return { ready: true };
     } catch (err) {
       lastErr = err;
@@ -230,6 +245,31 @@ function freshSession(mod) {
   return llamaSession;
 }
 
+// Refuse a turn that cannot fit in the context instead of letting llama.cpp's
+// context shift silently drop the start of the transcript — a cleaned result
+// that quietly loses the user's words is worse than no cleaning at all, and the
+// caller falls back to the raw transcript (and says so) on a throw. The
+// arithmetic and the message live in main/util/clean-budget.js, where they are
+// testable; what stays here is the part that needs the loaded model.
+//
+// Both soft cases return rather than throw: nothing loaded is the caller's
+// existing error to raise, and a tokenizer that won't count is no reason to
+// refuse a turn that may well fit.
+function assertCleanBudget(userTurn, transcript) {
+  if (!llamaModel || !llamaContext) return;
+  let needed;
+  try {
+    needed = cleanContextNeed(
+      llamaModel.tokenize(userTurn).length,
+      llamaModel.tokenize(transcript).length
+    );
+  } catch {
+    return; // tokenizer unavailable: let the generation try anyway
+  }
+  const available = llamaContext.contextSize;
+  if (needed > available) throw new Error(cleanBudgetMessage(needed, available));
+}
+
 async function clean({ transcript, systemPrompt, sampling }, emitProgress) {
   if (!llamaContext) throw new Error("Cleanup model not loaded");
   const mod = await import("node-llama-cpp");
@@ -242,6 +282,7 @@ async function clean({ transcript, systemPrompt, sampling }, emitProgress) {
     // prefill-ahead of "prime-cleanup" pay off here.
     const userTurn =
       `${systemPrompt}\n\nTranscript:\n${transcript}\n\nCleaned transcript:`;
+    assertCleanBudget(userTurn, transcript);
     // Cleaned output tracks the input's length closely (punctuation in, fillers
     // out), so generated-chars / transcript-chars is an honest progress ratio.
     const total = Math.max(1, transcript.length);
@@ -284,6 +325,7 @@ async function disposeCleanup() {
   llamaContext = null;
   llamaModel = null;
   cleanupModelPath = null;
+  cleanupContextSize = 0;
 }
 
 async function disposeStt() {

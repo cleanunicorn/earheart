@@ -113,27 +113,50 @@ test("every channel the renderers send is in SEND and has an ipcMain.on", () => 
 // exactly that way — `fromSample` never reached the live preview, so every
 // committed chunk failed its contiguity check and the final pass silently fell
 // back to decoding the whole recording. Compare the two field lists.
-test("every field the renderer sends on audio:partial reaches the main handler", () => {
-  const sendBlock = renderer.match(
-    /earheart\.send\(\s*"audio:partial",\s*\{([\s\S]*?)\}\s*\)/
-  );
-  assert.ok(sendBlock, "overlay.js should send audio:partial with an object literal");
-  // Object-literal keys, shorthand (`final,`) and explicit (`fromSample: from,`).
-  const sentFields = channels(sendBlock[1], /^\s*(\w+)\s*[,:]/gm);
-  assert.ok(sentFields.has("fromSample"), "the send site should carry fromSample");
+//
+// Only channels whose payload is a multi-field object LITERAL can be checked
+// this way. overlay:drag sends a variable (`pendingDrag`), and the single-field
+// channels have nothing to drop — scanning every send site blindly would report
+// those as failures, so the list is explicit. `mustCarry` pins the send side
+// too: without it, a send site that lost the field would make the parity check
+// pass vacuously.
+const PAYLOAD_CHANNELS = [
+  { channel: "audio:partial", mustCarry: "fromSample" },
+  { channel: "audio:captured", mustCarry: "wav" },
+  { channel: "record:error", mustCarry: "message" },
+];
 
-  const onBlock = main.match(
-    // Lazy up to the FIRST brace: greedy would run past the destructure and
-    // capture the empty `= {}` default instead.
-    /ipcMain\.on\(\s*"audio:partial",\s*\([^)]*?\{([^}]*)\}/
-  );
-  assert.ok(onBlock, "main should receive audio:partial with a destructured payload");
-  const receivedFields = channels(onBlock[1], /(\w+)/g);
+for (const { channel, mustCarry } of PAYLOAD_CHANNELS) {
+  test(`every field the renderer sends on ${channel} reaches the main handler`, () => {
+    // Every send site, not just the first: record:error is sent from two places.
+    const sends = [
+      ...renderer.matchAll(
+        new RegExp(`earheart\\.send\\(\\s*"${channel}",\\s*\\{([\\s\\S]*?)\\}\\s*\\)`, "g")
+      ),
+    ];
+    assert.ok(sends.length, `a renderer should send ${channel} with an object literal`);
+    // Top-level keys only: a key opens the literal or follows a comma, and is
+    // itself followed by a colon, a comma or the line end. That covers shorthand
+    // (`final,`) and explicit (`fromSample: from,`), one per line or all on one,
+    // without mistaking a value's own dotted parts (`recording.sid`) for keys.
+    const sentFields = new Set(
+      sends.flatMap((m) => [...channels(m[1], /(?:^|[{,])\s*(\w+)\s*(?::|,|$)/gm)])
+    );
+    assert.ok(sentFields.has(mustCarry), `the ${channel} send site should carry ${mustCarry}`);
 
-  const dropped = [...sentFields].filter((f) => !receivedFields.has(f)).sort();
-  assert.deepStrictEqual(
-    dropped,
-    [],
-    `main's audio:partial handler drops: ${dropped.join(", ")}`
-  );
-});
+    const onBlock = main.match(
+      // Lazy up to the FIRST brace: greedy would run past the destructure and
+      // capture the empty `= {}` default instead.
+      new RegExp(`ipcMain\\.on\\(\\s*"${channel}",\\s*\\([^)]*?\\{([^}]*)\\}`)
+    );
+    assert.ok(onBlock, `main should receive ${channel} with a destructured payload`);
+    const receivedFields = channels(onBlock[1], /(\w+)/g);
+
+    const dropped = [...sentFields].filter((f) => !receivedFields.has(f)).sort();
+    assert.deepStrictEqual(
+      dropped,
+      [],
+      `main's ${channel} handler drops: ${dropped.join(", ")}`
+    );
+  });
+}

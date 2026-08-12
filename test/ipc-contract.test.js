@@ -106,3 +106,38 @@ test("every channel the renderers send is in SEND and has an ipcMain.on", () => 
   const unreceived = [...sent].filter((c) => !received.has(c)).sort();
   assert.deepStrictEqual(unreceived, [], `main has no ipcMain.on for: ${unreceived.join(", ")}`);
 });
+
+// A channel can be allowlisted, sent and received and STILL lose data: the
+// main-side handler destructures the payload, so a field the renderer sends but
+// the handler forgets to name is dropped without a word. audio:partial shipped
+// exactly that way — `fromSample` never reached the live preview, so every
+// committed chunk failed its contiguity check and the final pass silently fell
+// back to decoding the whole recording. Compare the two field lists.
+test("every field the renderer sends on audio:partial reaches the main handler", () => {
+  const sendBlock = renderer.match(
+    /earheart\.send\(\s*"audio:partial",\s*\{([\s\S]*?)\}\s*\)/
+  );
+  assert.ok(sendBlock, "overlay.js should send audio:partial with an object literal");
+  // Object-literal keys, shorthand (`final,`) and explicit (`fromSample: from,`).
+  const sentFields = new Set(
+    [...sendBlock[1].matchAll(/^\s*(\w+)\s*[,:]/gm)].map((m) => m[1])
+  );
+  assert.ok(sentFields.has("fromSample"), "the send site should carry fromSample");
+
+  const onBlock = main.match(
+    // Lazy up to the FIRST brace: greedy would run past the destructure and
+    // capture the empty `= {}` default instead.
+    /ipcMain\.on\(\s*"audio:partial",\s*\([^)]*?\{([^}]*)\}/
+  );
+  assert.ok(onBlock, "main should receive audio:partial with a destructured payload");
+  const receivedFields = new Set(
+    [...onBlock[1].matchAll(/(\w+)/g)].map((m) => m[1])
+  );
+
+  const dropped = [...sentFields].filter((f) => !receivedFields.has(f)).sort();
+  assert.deepStrictEqual(
+    dropped,
+    [],
+    `main's audio:partial handler drops: ${dropped.join(", ")}`
+  );
+});

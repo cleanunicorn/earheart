@@ -409,8 +409,12 @@ function init() {
     process(sid, wav);
   });
 
-  ipcMain.on("audio:partial", (event, { sid, seq, final, wav } = {}) => {
-    livePreview.handleAudio(sid, { seq, final, wav });
+  // `fromSample` must be forwarded: it is the contiguity check that lets the
+  // committed chunk decodes stand in for the final transcript's prefix. Dropping
+  // it marks every snapshot broken, so the final pass silently falls back to
+  // decoding the whole recording in one shot.
+  ipcMain.on("audio:partial", (event, { sid, seq, final, fromSample, wav } = {}) => {
+    livePreview.handleAudio(sid, { seq, final, fromSample, wav });
   });
 
   ipcMain.on("record:cancelled", (event, { sid } = {}) => {

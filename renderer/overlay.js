@@ -611,9 +611,18 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
       // The node is disconnected on teardown, but a message can already be in
       // flight; never let a stale session's samples leak into the current one.
       if (!recording || recording.recorder !== recorder) return;
+      // Pause handshake: {drained} confirms the worklet flushed its partial
+      // batch — everything captured before the pause has now arrived, and
+      // from here on paused-era messages are pure muted silence.
+      if (event.data.drained) {
+        recording.draining = false;
+        return;
+      }
       // Paused: the track is muted at the source, and whatever still arrives
       // is discarded — the capture stays contiguous and the meter freezes.
-      if (recording.pausedAt) return;
+      // Until the drain confirm, though, keep accepting: the batch in flight
+      // holds the last pre-pause syllable, not pause silence.
+      if (recording.pausedAt && !recording.draining) return;
       chunks.push(event.data.samples);
       // Just record the level; the rAF meter loop reads `levels` each frame.
       levels.push(event.data.rms);
@@ -636,6 +645,10 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
       // capturedMs(), which the timer and the max-duration cap share.
       pausedAt: null,
       pausedMs: 0,
+      // True between sending "drain" to the worklet on pause and its
+      // {drained} confirm — the window where paused-era messages still carry
+      // pre-pause speech and must not be discarded.
+      draining: false,
       // Append-only live preview: `committedSamples` is the sample offset where
       // the current in-progress chunk starts; everything before it has been
       // frozen into committed chunks and need never be re-sent. `seq` counts
@@ -722,7 +735,9 @@ function teardown({ collectTail = false } = {}) {
       fallback = setTimeout(done, STOP_FLUSH_TIMEOUT_MS);
       rec.recorder.port.onmessage = (event) => {
         if (event.data.flushed) done();
-        else rec.chunks.push(event.data.samples);
+        // Only sample messages join the tail — a {drained} confirm from a
+        // pause immediately before the stop carries no audio.
+        else if (event.data.samples) rec.chunks.push(event.data.samples);
       };
     });
   } else {
@@ -783,6 +798,11 @@ function togglePause() {
   if (!recording || !recording.startedAt) return;
   if (!recording.pausedAt) {
     recording.pausedAt = Date.now();
+    // Ask the worklet to flush its partial batch before we start discarding
+    // paused-era messages: it holds up to a batch of the last pre-pause
+    // syllable, which a plain pausedAt guard would throw away.
+    recording.draining = true;
+    recording.recorder.port.postMessage("drain");
     // The cap counts captured audio: hold it while paused.
     if (recording.maxTimerId) {
       clearTimeout(recording.maxTimerId);

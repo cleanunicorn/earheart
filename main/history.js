@@ -8,18 +8,6 @@ const logger = require("./util/logger");
 
 let cached = null;
 
-// Persist writes are async (they sit right before the pipeline's "done"
-// status, so a sync write would hold up the overlay) and chained so two adds
-// can never interleave their writes to the file. Reads are served from
-// `cached`, so callers never observe the write lag.
-let writeChain = Promise.resolve();
-
-function persist(json) {
-  writeChain = writeChain
-    .then(() => fs.promises.writeFile(historyPath(), json))
-    .catch((err) => logger.warn("history write failed:", err.message));
-}
-
 function historyPath() {
   return path.join(app.getPath("userData"), "history.json");
 }
@@ -35,13 +23,40 @@ function load() {
   return cached;
 }
 
+// Persistence is deferred one event-loop turn and coalesced: add() returns
+// immediately (the disk write used to sit between delivery and the pipeline's
+// "done" status), a burst of adds writes once, and the flush still runs
+// within milliseconds — before any later quit event can be processed — so an
+// entry is durably on disk by the time the user could exit. The write itself
+// goes through a temp file + rename (same pattern as model-manager/updates),
+// so a crash mid-write can never leave a truncated history.json behind (which
+// load() would silently reset to [], losing the whole history).
+let flushScheduled = false;
+
+function scheduleFlush() {
+  if (flushScheduled) return;
+  flushScheduled = true;
+  setImmediate(() => {
+    if (!flushScheduled) return; // superseded by clear()
+    flushScheduled = false;
+    const file = historyPath();
+    const tmp = `${file}.tmp`;
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(cached, null, 2));
+      fs.renameSync(tmp, file);
+    } catch (err) {
+      logger.warn("history write failed:", err.message);
+    }
+  });
+}
+
 function add(entry, cfg) {
   if (!cfg.enabled) return;
   const items = load();
   items.unshift({ ...entry, at: new Date().toISOString() });
   items.length = Math.min(items.length, cfg.limit || 100);
   cached = items;
-  persist(JSON.stringify(items, null, 2));
+  scheduleFlush();
 }
 
 function list() {
@@ -50,13 +65,16 @@ function list() {
 
 function clear() {
   cached = [];
-  // Through the chain, so a persist still in flight can't recreate the file
-  // after it was deleted.
-  writeChain = writeChain
-    .then(() => fs.promises.unlink(historyPath()))
-    .catch(() => {
-      // Already gone.
-    });
+  // Cancel any pending flush so it can't recreate the file after the delete.
+  flushScheduled = false;
+  try {
+    fs.unlinkSync(historyPath());
+  } catch (err) {
+    // ENOENT just means there was nothing to delete; anything else (EPERM,
+    // EBUSY — an AV scanner holding the file) means the transcripts are still
+    // on disk after the UI said they're gone, which deserves a trace.
+    if (err.code !== "ENOENT") logger.warn("history clear failed:", err.message);
+  }
 }
 
 module.exports = { add, list, clear };

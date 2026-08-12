@@ -1,16 +1,17 @@
 // Minimal WAV (RIFF, PCM16) helpers used by the main process.
+//
+// These run on latency-sensitive threads over minutes of audio (a 5-minute
+// dictation is ~4.8M samples), so the sample data moves via bulk typed-array
+// copies, never per-sample Buffer method calls. The bulk paths assume a
+// little-endian host — true of every platform Electron ships on — and the
+// per-sample fallbacks below keep big-endian hosts correct.
 
 const SAMPLE_RATE = 16000;
 
-/**
- * Encode mono PCM16 samples as a WAV file buffer.
- * @param {Int16Array} samples
- * @param {number} sampleRate
- * @returns {Buffer}
- */
-function encodeWav(samples, sampleRate = SAMPLE_RATE) {
-  const dataSize = samples.length * 2;
-  const buf = Buffer.alloc(44 + dataSize);
+const IS_LE = new Uint8Array(new Uint16Array([0x0102]).buffer)[0] === 0x02;
+
+// Write the canonical 44-byte mono PCM16 RIFF header.
+function writeWavHeader(buf, dataSize, sampleRate) {
   buf.write("RIFF", 0);
   buf.writeUInt32LE(36 + dataSize, 4);
   buf.write("WAVE", 8);
@@ -24,8 +25,24 @@ function encodeWav(samples, sampleRate = SAMPLE_RATE) {
   buf.writeUInt16LE(16, 34); // bits per sample
   buf.write("data", 36);
   buf.writeUInt32LE(dataSize, 40);
-  for (let i = 0; i < samples.length; i++) {
-    buf.writeInt16LE(samples[i], 44 + i * 2);
+}
+
+/**
+ * Encode mono PCM16 samples as a WAV file buffer.
+ * @param {Int16Array} samples
+ * @param {number} sampleRate
+ * @returns {Buffer}
+ */
+function encodeWav(samples, sampleRate = SAMPLE_RATE) {
+  const dataSize = samples.length * 2;
+  const buf = Buffer.alloc(44 + dataSize);
+  writeWavHeader(buf, dataSize, sampleRate);
+  if (IS_LE) {
+    buf.set(new Uint8Array(samples.buffer, samples.byteOffset, dataSize), 44);
+  } else {
+    for (let i = 0; i < samples.length; i++) {
+      buf.writeInt16LE(samples[i], 44 + i * 2);
+    }
   }
   return buf;
 }
@@ -65,15 +82,44 @@ function wavToFloat32(buf) {
 
   const frameCount = Math.floor(dataSize / 2 / channels);
   const samples = new Float32Array(frameCount);
-  for (let i = 0; i < frameCount; i++) {
-    // Mixdown to mono by averaging channels (overlay audio is already mono).
-    let acc = 0;
-    for (let c = 0; c < channels; c++) {
-      acc += buf.readInt16LE(dataOffset + (i * channels + c) * 2);
+  const pcm = pcm16View(buf, dataOffset, frameCount * channels);
+  if (pcm && channels === 1) {
+    // Common case (overlay audio): straight scale, no per-sample method calls.
+    for (let i = 0; i < frameCount; i++) samples[i] = pcm[i] / 32768;
+  } else if (pcm) {
+    // Mixdown to mono by averaging channels.
+    for (let i = 0; i < frameCount; i++) {
+      let acc = 0;
+      for (let c = 0; c < channels; c++) acc += pcm[i * channels + c];
+      samples[i] = acc / channels / 32768;
     }
-    samples[i] = acc / channels / 32768;
+  } else {
+    // Big-endian host: the file's bytes are LE, read them explicitly.
+    for (let i = 0; i < frameCount; i++) {
+      let acc = 0;
+      for (let c = 0; c < channels; c++) {
+        acc += buf.readInt16LE(dataOffset + (i * channels + c) * 2);
+      }
+      samples[i] = acc / channels / 32768;
+    }
   }
   return { samples, sampleRate };
+}
+
+// Int16Array view over a buffer's PCM16 bytes, or null on a big-endian host
+// (where a native-endian view would misread the file's LE samples). Typed
+// arrays need 2-byte alignment; Buffer pool slices can start at an odd byte,
+// so that rare case gets an aligned copy — still one memcpy, not a per-sample
+// loop.
+function pcm16View(buf, offset, count) {
+  if (!IS_LE) return null;
+  const byteOffset = buf.byteOffset + offset;
+  if ((byteOffset & 1) === 0) {
+    return new Int16Array(buf.buffer, byteOffset, count);
+  }
+  const copy = new Int16Array(count);
+  new Uint8Array(copy.buffer).set(buf.subarray(offset, offset + count * 2));
+  return copy;
 }
 
 // Walk the RIFF chunk list once and collect the fmt/data fields both readers
@@ -155,11 +201,13 @@ function wavSliceFromFrame(buf, fromFrame) {
   }
   const frames = Math.floor(dataSize / 2);
   const from = Math.max(0, Math.min(frames, Math.floor(fromFrame)));
-  const tail = new Int16Array(frames - from);
-  for (let i = 0; i < tail.length; i++) {
-    tail[i] = buf.readInt16LE(dataOffset + (from + i) * 2);
-  }
-  return encodeWav(tail, sampleRate);
+  // The tail's PCM bytes move as one copy — no decode/re-encode round trip
+  // (byte order is preserved as-is, so this path is endian-agnostic).
+  const tailSize = (frames - from) * 2;
+  const out = Buffer.alloc(44 + tailSize);
+  writeWavHeader(out, tailSize, sampleRate);
+  buf.copy(out, 44, dataOffset + from * 2, dataOffset + from * 2 + tailSize);
+  return out;
 }
 
 module.exports = {

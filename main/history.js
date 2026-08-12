@@ -4,8 +4,21 @@
 const { app } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
+const logger = require("./util/logger");
 
 let cached = null;
+
+// Persist writes are async (they sit right before the pipeline's "done"
+// status, so a sync write would hold up the overlay) and chained so two adds
+// can never interleave their writes to the file. Reads are served from
+// `cached`, so callers never observe the write lag.
+let writeChain = Promise.resolve();
+
+function persist(json) {
+  writeChain = writeChain
+    .then(() => fs.promises.writeFile(historyPath(), json))
+    .catch((err) => logger.warn("history write failed:", err.message));
+}
 
 function historyPath() {
   return path.join(app.getPath("userData"), "history.json");
@@ -28,7 +41,7 @@ function add(entry, cfg) {
   items.unshift({ ...entry, at: new Date().toISOString() });
   items.length = Math.min(items.length, cfg.limit || 100);
   cached = items;
-  fs.writeFileSync(historyPath(), JSON.stringify(items, null, 2));
+  persist(JSON.stringify(items, null, 2));
 }
 
 function list() {
@@ -37,11 +50,13 @@ function list() {
 
 function clear() {
   cached = [];
-  try {
-    fs.unlinkSync(historyPath());
-  } catch {
-    // Already gone.
-  }
+  // Through the chain, so a persist still in flight can't recreate the file
+  // after it was deleted.
+  writeChain = writeChain
+    .then(() => fs.promises.unlink(historyPath()))
+    .catch(() => {
+      // Already gone.
+    });
 }
 
 module.exports = { add, list, clear };

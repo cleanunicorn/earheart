@@ -351,12 +351,17 @@ function encodeWav(chunks) {
   view.setUint16(34, 16, true);
   writeStr(36, "data");
   view.setUint32(40, total * 2, true);
-  let offset = 44;
+  // Sample writes go through an Int16Array view (offset 44 is 2-byte aligned),
+  // not per-sample DataView calls: this loop covers the whole recording on the
+  // renderer thread at stop, right on the hotkey→paste critical path. Native
+  // byte order is little-endian on every platform Electron ships on, matching
+  // the WAV's LE samples.
+  const pcm = new Int16Array(buffer, 44, total);
+  let offset = 0;
   for (const chunk of chunks) {
     for (let i = 0; i < chunk.length; i++) {
       const s = Math.max(-1, Math.min(1, chunk[i]));
-      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-      offset += 2;
+      pcm[offset++] = s < 0 ? s * 0x8000 : s * 0x7fff;
     }
   }
   return buffer;

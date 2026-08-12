@@ -33,7 +33,7 @@ const FEATURE_DIM = 80;
 // and llama.cpp's context shift answers an overflow by silently dropping the
 // OLDEST tokens, i.e. the start of the dictation. The user saw a cleaned
 // transcript missing words with nothing reported. 4096 clears the cap with room
-// to spare (~1300 words); cleanBudgetError below refuses anything past it
+// to spare (~1300 words); assertCleanBudget below refuses anything past it
 // instead of quietly losing text.
 const DEFAULT_CONTEXT_SIZE = 4096;
 const DEFAULT_CLEANUP_TEMPERATURE = 0.2;
@@ -250,8 +250,12 @@ function freshSession(mod) {
 // The output is budgeted at the transcript's own token count: cleanup rewrites
 // the transcript end to end, and the prompt already forbids it from being
 // longer than the input.
-function cleanBudgetError(userTurn, transcript) {
-  if (!llamaModel || !llamaContext) return null;
+//
+// Both soft cases return rather than throw: nothing loaded is the caller's
+// existing error to raise, and a tokenizer that won't count is no reason to
+// refuse a turn that may well fit.
+function assertCleanBudget(userTurn, transcript) {
+  if (!llamaModel || !llamaContext) return;
   let needed;
   try {
     needed =
@@ -259,13 +263,14 @@ function cleanBudgetError(userTurn, transcript) {
       llamaModel.tokenize(transcript).length +
       CLEAN_CONTEXT_SLACK_TOKENS;
   } catch {
-    return null; // tokenizer unavailable: let the generation try anyway
+    return; // tokenizer unavailable: let the generation try anyway
   }
   const available = llamaContext.contextSize;
-  if (needed <= available) return null;
-  return new Error(
-    `Transcript too long for the cleanup context (needs ~${needed} tokens, have ${available})`
-  );
+  if (needed > available) {
+    throw new Error(
+      `Transcript too long for the cleanup context (needs ~${needed} tokens, have ${available})`
+    );
+  }
 }
 
 async function clean({ transcript, systemPrompt, sampling }, emitProgress) {
@@ -280,8 +285,7 @@ async function clean({ transcript, systemPrompt, sampling }, emitProgress) {
     // prefill-ahead of "prime-cleanup" pay off here.
     const userTurn =
       `${systemPrompt}\n\nTranscript:\n${transcript}\n\nCleaned transcript:`;
-    const tooLong = cleanBudgetError(userTurn, transcript);
-    if (tooLong) throw tooLong;
+    assertCleanBudget(userTurn, transcript);
     // Cleaned output tracks the input's length closely (punctuation in, fillers
     // out), so generated-chars / transcript-chars is an honest progress ratio.
     const total = Math.max(1, transcript.length);

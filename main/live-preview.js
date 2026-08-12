@@ -183,7 +183,14 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
       // A failed partial is cosmetic for the preview — but a failed FINAL chunk
       // means the committed transcript is missing words, so final assembly must
       // fall back to the full decode.
-      if (final) broken = true;
+      //
+      // Only for a chunk still belonging to this recording, though. The state
+      // below is shared across dictations and cancel() resets it, so a decode
+      // that fails after its own session ended would otherwise mark the NEXT
+      // dictation broken and cost it the tail-only decode for nothing. The
+      // session it really belonged to already had its snapshot read before the
+      // reset, so nothing is lost by staying quiet here.
+      if (final && !stale(sid, signal)) broken = true;
       // Report (deduped) instead of eating it silently: a persistently blank
       // preview is almost always a surfaced-here error (model loading, not
       // downloaded, or a decode failure).
@@ -193,7 +200,13 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
         reportError(err);
       }
     } finally {
-      sttInFlight = Math.max(0, sttInFlight - 1);
+      // Same reasoning as the catch, same staleness test: cancel() already
+      // zeroed the counter for the next session, and letting a decode from a
+      // torn-down one decrement it again would under-count the new session's
+      // in-flight work — weakening drop-if-busy into queueing a redundant decode
+      // on the single STT worker. Nothing leaks by skipping it: every path that
+      // makes a request stale runs through cancel(), which zeroes the counter.
+      if (!stale(sid, signal)) sttInFlight = Math.max(0, sttInFlight - 1);
     }
   }
 

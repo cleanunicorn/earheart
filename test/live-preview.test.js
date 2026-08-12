@@ -560,3 +560,59 @@ test("display off: committed chunks are tracked but nothing is painted or cleane
   assert.strictEqual(snap.decodedSamples, 16000);
   assert.strictEqual(snap.broken, false);
 });
+
+test("a decode that fails after its session ended does not break the NEXT one", async () => {
+  // The accumulators are shared across dictations and cancel() resets them, so
+  // a late failure from a torn-down session must stay out of the fresh state —
+  // otherwise the next dictation is marked broken through no fault of its own
+  // and silently pays for a full re-decode.
+  const h = harness();
+  let failStale;
+  h.setTranscribe(() => new Promise((_, reject) => (failStale = reject)));
+  const staleDecode = h.lp.handleAudio(1, finalChunk(0, 0, 16000));
+
+  // Session 1 ends with that decode still in flight; session 2 takes over and
+  // commits a chunk of its own, contiguously.
+  h.lp.cancel();
+  h.setTranscribe(async () => "fresh session text");
+  await h.lp.handleAudio(2, finalChunk(0, 0, 16000));
+
+  failStale(new Error("decode boom"));
+  await staleDecode;
+
+  const snap = h.lp.snapshotFinal();
+  assert.strictEqual(snap.broken, false, "the new session's snapshot stays usable");
+  assert.strictEqual(snap.committedRaw, "fresh session text");
+  assert.strictEqual(snap.decodedSamples, 16000);
+});
+
+test("a stale decode's completion does not free the new session's busy state", async () => {
+  // The same guard on the in-flight counter: an extra decrement from a dead
+  // session would let drop-if-busy admit a redundant decode onto the single
+  // STT worker while the new session's own decode is still running.
+  const h = harness();
+  let finishStale;
+  h.setTranscribe(() => new Promise((resolve) => (finishStale = resolve)));
+  const staleDecode = h.lp.handleAudio(1, { seq: 0, final: false, fromSample: 0, wav: wavOf(4000) });
+
+  h.lp.cancel();
+  // Session 2's own in-progress decode, held in flight.
+  const live = deferred();
+  h.setTranscribe(() => live.promise);
+  const current = h.lp.handleAudio(2, { seq: 0, final: false, fromSample: 0, wav: wavOf(4000) });
+
+  finishStale("stale text");
+  await staleDecode;
+
+  // With session 2 still busy, a further tick must be dropped, not decoded.
+  // Deliberately not awaited before the assert: drop-if-busy returns before the
+  // first await, and awaiting a tick that ISN'T dropped would block on the very
+  // decode we're still holding — a hang instead of a failure.
+  const before = h.transcribeCalls.length;
+  const extra = h.lp.handleAudio(2, { seq: 0, final: false, fromSample: 0, wav: wavOf(8000) });
+  assert.strictEqual(h.transcribeCalls.length, before, "tick dropped while busy");
+
+  live.resolve("live text");
+  await current;
+  await extra;
+});

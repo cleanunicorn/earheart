@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.26.2 — 2026-08-12
+
+- Bulk typed-array WAV paths, batched worklet posts, async history writes (#95)
+
 ## v0.26.1 — 2026-08-07
 
 - Unwrap the default cleanup prompt so it renders cleanly in Settings (#92)

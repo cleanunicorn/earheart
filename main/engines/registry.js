@@ -143,7 +143,11 @@ const MODELS = {
       kind: "cleanup",
       engine: "llama-gguf",
       default: true,
-      note: "Runs on this computer · ~0.8 GB · best for most laptops",
+      // Honest about where it falls down. Measured on a 150-word dictation:
+      // 1B leaves most "um"/"uh" in place and misses the spoken-code rule
+      // ("src slash main dot pie"), where 4B gets both right. Someone picking a
+      // cleanup model should see that before they pick the small one.
+      note: "Runs on this computer · ~0.8 GB · fastest, but leaves some fillers in",
       files: [
         { name: "gemma-3-1b-it-Q4_K_M.gguf", bytes: 806_058_240,
           sha256: "8ccc5cd1f1b3602548715ae25a66ed73fd5dc68a210412eea643eb20eb75a135",
@@ -156,7 +160,7 @@ const MODELS = {
       label: "Gemma 3 4B (balanced)",
       kind: "cleanup",
       engine: "llama-gguf",
-      note: "Runs on this computer · ~2.6 GB · needs ~6 GB RAM",
+      note: "Runs on this computer · ~2.6 GB · needs ~6 GB RAM · removes fillers reliably",
       files: [
         { name: "gemma-3-4b-it-Q4_K_M.gguf", bytes: 2_489_757_856,
           sha256: "882e8d2db44dc554fb0ea5077cb7e4bc49e7342a1f0da57901c0802ea21a0863",

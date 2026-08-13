@@ -1,7 +1,7 @@
 // Earheart entry point: app lifecycle, single-instance handling, and wiring
 // between the hotkey, tray, windows and the dictation pipeline.
 
-const { app, session } = require("electron");
+const { app, session, Notification } = require("electron");
 const settings = require("./settings");
 const windows = require("./windows");
 const pipeline = require("./pipeline");
@@ -49,6 +49,39 @@ function applyHotkeys(cfg) {
     hotkey: record.empty ? { ok: false, error: "No hotkey configured" } : record,
     pauseHotkey: pause,
   };
+}
+
+// Render the configured hotkey as something a person reads in a notification:
+// the stored accelerator form ("CommandOrControl+Shift+Space") is what the
+// settings/wizard fields show, but it's ugly to surface verbatim.
+function prettyHotkey(accelerator) {
+  if (!accelerator) return "";
+  const isMac = process.platform === "darwin";
+  return accelerator
+    .replace(/CommandOrControl/g, isMac ? "Cmd" : "Ctrl")
+    .replace(/\bCommand\b/g, "Cmd")
+    .replace(/\bControl\b/g, "Ctrl");
+}
+
+// A returning user launching the app manually lands straight in the tray,
+// ready for the hotkey — no settings window to dismiss. A one-shot
+// notification confirms it started; clicking it is optional (it opens
+// Settings) and the notification dismisses itself otherwise. Settings stays
+// reachable from the tray menu regardless.
+function announceRunning(cfg) {
+  try {
+    const combo = prettyHotkey(cfg.hotkey);
+    const note = new Notification({
+      title: "Earheart is ready",
+      body: combo
+        ? `Press ${combo} to dictate.`
+        : "Open the tray menu to get started.",
+    });
+    note.on("click", () => windows.openSettings());
+    note.show();
+  } catch (err) {
+    logger.warn(`startup notification failed: ${err.message}`);
+  }
 }
 
 function main() {
@@ -107,7 +140,10 @@ function main() {
       if (firstRun) {
         windows.openWizard();
       } else {
-        windows.openSettings();
+        // Returning user: stay in the tray and announce, instead of popping a
+        // settings window they have to dismiss. Settings is still in the tray
+        // menu. (--hidden, used by autostart-at-login, stays fully silent.)
+        announceRunning(cfg);
       }
     }
 

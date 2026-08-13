@@ -237,6 +237,10 @@ showing a progress bar as it goes. It's a one-time download; everything after
 that is faster than realtime, even on CPU. You can pick a larger, higher-
 quality cleanup model in the wizard or later in Settings → Cleanup.
 
+Every launch after that goes straight to the tray — no window to dismiss — and
+posts a short "ready, press *your hotkey*" notification. Click it to open
+Settings, or ignore it and start dictating. Settings is always in the tray menu.
+
 ### Transcript cleanup
 
 Cleanup is **on by default** and runs the built-in Gemma model in-process: a

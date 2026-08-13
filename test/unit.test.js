@@ -14,6 +14,7 @@ const autostart = require("../main/autostart");
 const { listRemoteModels } = require("../main/services/models-remote");
 const { reconcileTranscript } = require("../renderer/transcript");
 const { acceleratorFromEvent } = require("../renderer/hotkey-capture");
+const { prettyHotkey } = require("../main/util/hotkey-label");
 
 test("encodeWav produces a valid RIFF header", () => {
   const samples = new Int16Array([0, 1000, -1000, 32767, -32768]);
@@ -702,4 +703,20 @@ test("acceleratorFromEvent maps modifiers per platform and names keys", () => {
   } finally {
     delete global.platform;
   }
+});
+
+test("prettyHotkey names modifiers the way each platform does", () => {
+  assert.strictEqual(prettyHotkey("CommandOrControl+Shift+Space", "linux"), "Ctrl+Shift+Space");
+  assert.strictEqual(prettyHotkey("CommandOrControl+Shift+Space", "win32"), "Ctrl+Shift+Space");
+  assert.strictEqual(prettyHotkey("CommandOrControl+Shift+Space", "darwin"), "Cmd+Shift+Space");
+  // macOS spells the physical Ctrl and Alt keys differently from the rest.
+  assert.strictEqual(prettyHotkey("Control+Alt+P", "darwin"), "Control+Option+P");
+  assert.strictEqual(prettyHotkey("Control+Alt+P", "linux"), "Ctrl+Alt+P");
+  // Aliases a hand-edited settings.json may carry, and the Super/Meta key.
+  assert.strictEqual(prettyHotkey("CmdOrCtrl+K", "win32"), "Ctrl+K");
+  assert.strictEqual(prettyHotkey("Super+K", "win32"), "Win+K");
+  assert.strictEqual(prettyHotkey("Meta+K", "linux"), "Super+K");
+  // The key itself passes through untouched, and unbound stays empty.
+  assert.strictEqual(prettyHotkey("CommandOrControl+Up", "linux"), "Ctrl+Up");
+  assert.strictEqual(prettyHotkey("", "linux"), "");
 });

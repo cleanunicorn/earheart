@@ -12,6 +12,7 @@ const engines = require("./engines");
 const autostart = require("./autostart");
 const updates = require("./updates");
 const logger = require("./util/logger");
+const { prettyHotkey } = require("./util/hotkey-label");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
 const startHidden = process.argv.includes("--hidden");
@@ -51,17 +52,9 @@ function applyHotkeys(cfg) {
   };
 }
 
-// Render the configured hotkey as something a person reads in a notification:
-// the stored accelerator form ("CommandOrControl+Shift+Space") is what the
-// settings/wizard fields show, but it's ugly to surface verbatim.
-function prettyHotkey(accelerator) {
-  if (!accelerator) return "";
-  const isMac = process.platform === "darwin";
-  return accelerator
-    .replace(/CommandOrControl/g, isMac ? "Cmd" : "Ctrl")
-    .replace(/\bCommand\b/g, "Cmd")
-    .replace(/\bControl\b/g, "Ctrl");
-}
+// Held past show() so the click handler survives: a Notification that only the
+// local scope referenced can be collected before the user gets to it.
+let startupNote = null;
 
 // A returning user launching the app manually lands straight in the tray,
 // ready for the hotkey — no settings window to dismiss. A one-shot
@@ -69,16 +62,23 @@ function prettyHotkey(accelerator) {
 // Settings) and the notification dismisses itself otherwise. Settings stays
 // reachable from the tray menu regardless.
 function announceRunning(cfg) {
+  // No notification service (a Linux session without one, or permission
+  // denied) means show() is a silent no-op — and on a desktop without a tray
+  // area the launch would leave no trace at all. Fall back to the window.
+  if (!Notification.isSupported()) {
+    windows.openSettings();
+    return;
+  }
   try {
     const combo = prettyHotkey(cfg.hotkey);
-    const note = new Notification({
+    startupNote = new Notification({
       title: "Earheart is ready",
       body: combo
         ? `Press ${combo} to dictate.`
         : "Open the tray menu to get started.",
     });
-    note.on("click", () => windows.openSettings());
-    note.show();
+    startupNote.on("click", () => windows.openSettings());
+    startupNote.show();
   } catch (err) {
     logger.warn(`startup notification failed: ${err.message}`);
   }
@@ -139,6 +139,12 @@ function main() {
     if (!startHidden && !isSmokeTest) {
       if (firstRun) {
         windows.openWizard();
+      } else if (!hotkeyResults.hotkey.ok) {
+        // The hotkey didn't register — taken by something else, or a Wayland
+        // desktop blocking global grabs. Announcing "press X to dictate" would
+        // be a lie, and the tray says nothing about why it does nothing, so
+        // show Settings: the hotkey field and the Wayland note live there.
+        windows.openSettings();
       } else {
         // Returning user: stay in the tray and announce, instead of popping a
         // settings window they have to dismiss. Settings is still in the tray

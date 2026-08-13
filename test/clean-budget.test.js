@@ -14,8 +14,10 @@ const {
   CLEAN_CONTEXT_SLACK_TOKENS,
   CLEAN_CONTEXT_MIN,
   CLEAN_CONTEXT_MAX,
+  CLEAN_RUNAWAY_MESSAGE,
   cleanContextNeed,
   cleanContextFor,
+  cleanMaxTokens,
   cleanBudgetMessage,
 } = require("../main/util/clean-budget");
 
@@ -45,6 +47,34 @@ test("clean budget: fits exactly at the context size, not one token past", () =>
   assert.strictEqual(cleanContextNeed(exact, 0), available);
   assert.ok(!(cleanContextNeed(exact, 0) > available), "exact fit must not be refused");
   assert.ok(cleanContextNeed(exact, 1) > available, "one token past must be refused");
+});
+
+test("clean cap: the generation is capped at the output the context reserves", () => {
+  // The whole point of deriving the cap from the same numbers as the budget: a
+  // turn that passed cleanContextNeed can generate right up to its cap and
+  // still fit, so the cap fires on a runaway rather than on an honest cleanup.
+  const transcriptTokens = 400;
+  const promptTokens = 700 + transcriptTokens;
+  const available = cleanContextNeed(promptTokens, transcriptTokens);
+  assert.ok(
+    promptTokens + cleanMaxTokens(transcriptTokens) <= available,
+    "a generation that runs to the cap must still fit the sized context"
+  );
+});
+
+test("clean cap: scales with the transcript and never reaches zero", () => {
+  // A one-word dictation still needs room for punctuation and casing, so the
+  // cap floors at the slack rather than at the transcript's own length.
+  assert.ok(cleanMaxTokens(1000) > cleanMaxTokens(100));
+  assert.strictEqual(cleanMaxTokens(1000) - cleanMaxTokens(100), 900);
+  assert.ok(cleanMaxTokens(0) > 0);
+});
+
+test("clean cap: the runaway message says what happened to the text", () => {
+  // It reaches the user verbatim in the cleanup-failed notification, so it has
+  // to say the raw transcript was kept — not leave them wondering what landed.
+  assert.match(CLEAN_RUNAWAY_MESSAGE, /raw transcript/i);
+  assert.match(CLEAN_RUNAWAY_MESSAGE, /repeat/i);
 });
 
 test("clean budget: the refusal message names both numbers", () => {

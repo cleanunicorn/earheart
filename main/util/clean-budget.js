@@ -33,6 +33,28 @@ function cleanContextNeed(promptTokens, transcriptTokens) {
 }
 
 /**
+ * The generation cap for one cleanup turn — exactly the output the context
+ * above was sized to hold, and not a token more.
+ *
+ * Two things make this worth capping. Small models loop: Gemma 1B on a
+ * 150-word dictation re-emitted its last two sentences over and over, and with
+ * nothing to stop it, it ran until the context filled — minutes of compute for
+ * a result that repeats itself. And the generation that overruns is the one
+ * that triggers the context shift this module exists to prevent, silently
+ * costing the user the start of their dictation.
+ *
+ * Deriving the cap from the same numbers as cleanContextNeed makes the overrun
+ * arrive as an explicit stop (the maxTokens stop reason in
+ * main/engines/engine-worker.js clean) rather than as quiet truncation, and the
+ * caller answers it by keeping the raw transcript.
+ * @param {number} transcriptTokens tokens in the transcript alone
+ * @returns {number}
+ */
+function cleanMaxTokens(transcriptTokens) {
+  return transcriptTokens + CLEAN_CONTEXT_SLACK_TOKENS;
+}
+
+/**
  * The message for a turn that doesn't fit. It reaches the user verbatim (the
  * pipeline shows a cleanup-failed notification with the error text), so it says
  * what happened in whole words and carries the two numbers that explain it.
@@ -43,6 +65,11 @@ function cleanContextNeed(promptTokens, transcriptTokens) {
 function cleanBudgetMessage(needed, available) {
   return `Transcript too long to clean up in one pass (needs ~${needed} tokens of context, have ${available})`;
 }
+
+// Reaches the user the same way — the pipeline shows it on the cleanup-failed
+// notification — so it says what happened rather than naming a token count.
+const CLEAN_RUNAWAY_MESSAGE =
+  "Cleanup ran away repeating itself and was stopped; used the raw transcript";
 
 // Sizing the context from the dictation cap. The floor is what an ordinary
 // dictation needs; the ceiling is where the KV cache stops being worth it (a
@@ -79,7 +106,9 @@ module.exports = {
   CLEAN_CONTEXT_SLACK_TOKENS,
   CLEAN_CONTEXT_MIN,
   CLEAN_CONTEXT_MAX,
+  CLEAN_RUNAWAY_MESSAGE,
   cleanContextNeed,
   cleanContextFor,
+  cleanMaxTokens,
   cleanBudgetMessage,
 };

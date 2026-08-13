@@ -19,7 +19,12 @@
 
 const path = require("node:path");
 const { wavToFloat32, SAMPLE_RATE } = require("../util/wav");
-const { cleanContextNeed, cleanBudgetMessage } = require("../util/clean-budget");
+const {
+  cleanContextNeed,
+  cleanMaxTokens,
+  cleanBudgetMessage,
+  CLEAN_RUNAWAY_MESSAGE,
+} = require("../util/clean-budget");
 
 const port = process.parentPort;
 
@@ -270,6 +275,17 @@ function assertCleanBudget(userTurn, transcript) {
   if (needed > available) throw new Error(cleanBudgetMessage(needed, available));
 }
 
+// Transcript length in tokens, for the generation cap. Falls back to a
+// deliberately generous character estimate when the tokenizer isn't there: the
+// cap is a guard against a runaway, and a loose guard beats none.
+function transcriptTokens(transcript) {
+  try {
+    return llamaModel.tokenize(transcript).length;
+  } catch {
+    return Math.ceil(transcript.length / 3);
+  }
+}
+
 async function clean({ transcript, systemPrompt, sampling }, emitProgress) {
   if (!llamaContext) throw new Error("Cleanup model not loaded");
   const mod = await import("node-llama-cpp");
@@ -287,15 +303,21 @@ async function clean({ transcript, systemPrompt, sampling }, emitProgress) {
     // out), so generated-chars / transcript-chars is an honest progress ratio.
     const total = Math.max(1, transcript.length);
     let generated = 0;
-    const out = await session.prompt(userTurn, {
+    const { responseText, stopReason } = await session.promptWithMeta(userTurn, {
       ...samplingOptions(sampling),
       signal,
+      maxTokens: cleanMaxTokens(transcriptTokens(transcript)),
       onTextChunk: (text) => {
         generated += text.length;
         if (emitProgress) emitProgress(Math.min(CLEAN_PROGRESS_CAP, generated / total));
       },
     });
-    return (out || "").trim();
+    // Hitting the cap means the model never finished: either it looped, or it
+    // wrote past the output the context was sized for. Both make the text on
+    // screen wrong, and half a cleanup is not worth the user's words — throw,
+    // and the caller delivers the raw transcript instead.
+    if (stopReason === "maxTokens") throw new Error(CLEAN_RUNAWAY_MESSAGE);
+    return (responseText || "").trim();
   });
 }
 

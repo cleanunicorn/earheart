@@ -619,12 +619,18 @@ test("engines facade routes STT and cleanup to separate worker hosts", async () 
           if (type === "load-stt" || type === "load-cleanup") return { ready: true };
           if (type === "transcribe") return "transcribed";
           if (type === "clean") return "cleaned";
-          if (type === "unload-stt" || type === "unload-cleanup") return {};
           throw new Error(`unexpected request: ${type}`);
         },
         stopped: false,
+        inFlight: 0,
+        busy() {
+          return this.inFlight > 0;
+        },
+        // Mirrors the real host: killing the worker notifies exit listeners, so
+        // the facade forgets what that worker had resident.
         stop() {
           this.stopped = true;
+          for (const fn of this.exitFns) fn();
         },
         exitFns: [],
         onExit(fn) {
@@ -660,12 +666,12 @@ test("engines facade routes STT and cleanup to separate worker hosts", async () 
   assert.ok(cleanup.calls.includes("load-cleanup") && cleanup.calls.includes("clean"));
   assert.ok(!cleanup.calls.includes("transcribe") && !cleanup.calls.includes("load-stt"));
 
-  // unloadIdle only unloads hosts that have a model resident, on their own host.
-  await facade.unloadIdle();
-  assert.ok(stt.calls.includes("unload-stt"));
-  assert.ok(cleanup.calls.includes("unload-cleanup"));
+  // Idle eviction exits each worker that has a model resident — that, not an
+  // in-process unload request, is what returns the memory to the OS.
+  facade.unloadIdle();
+  assert.ok(stt.stopped && cleanup.stopped);
 
-  // stop tears down both workers.
+  // stop tears down both workers too (app quit).
   facade.stop();
   assert.ok(stt.stopped && cleanup.stopped);
 });
@@ -686,12 +692,16 @@ function loadTwoHostFacade() {
           if (type === "load-stt" || type === "load-cleanup") return { ready: true };
           if (type === "transcribe") return "transcribed";
           if (type === "clean") return "cleaned";
-          if (type === "unload-stt" || type === "unload-cleanup") return {};
           throw new Error(`unexpected request: ${type}`);
         },
         stopped: false,
+        inFlight: 0,
+        busy() {
+          return this.inFlight > 0;
+        },
         stop() {
           this.stopped = true;
+          for (const fn of this.exitFns) fn();
         },
         exitFns: [],
         onExit(fn) {
@@ -739,22 +749,36 @@ test("an STT worker crash forgets only STT loaded-state, not cleanup", async () 
   assert.strictEqual(count(cleanup, "load-cleanup"), 1, "cleanup must not re-load when only STT died");
 });
 
-test("unloadIdle unloads only the engines that are actually resident", async () => {
-  // A transcribe-only user (never cleaned) must unload STT but never send
-  // unload-cleanup to a cleanup worker that was never loaded.
+test("unloadIdle exits only the workers that are actually resident", async () => {
+  // A transcribe-only user (never cleaned) must have the STT worker exited but
+  // never the cleanup worker, which was never loaded and holds no memory.
   const { facade, hostsBySvc } = loadTwoHostFacade();
   await facade.transcribe(Buffer.from("wav"), STT_CFG);
   const stt = hostsBySvc["earheart-stt"];
   const cleanup = hostsBySvc["earheart-cleanup"];
 
-  await facade.unloadIdle();
-  assert.ok(stt.calls.includes("unload-stt"));
-  assert.ok(!cleanup.calls.includes("unload-cleanup"), "cleanup was never loaded; must not be unloaded");
+  facade.unloadIdle();
+  assert.ok(stt.stopped, "the resident STT worker should be exited");
+  assert.ok(!cleanup.stopped, "cleanup was never loaded; its worker must be left alone");
 
-  // A second unloadIdle with nothing resident is a no-op on both hosts.
-  const before = stt.calls.length + cleanup.calls.length;
-  await facade.unloadIdle();
-  assert.strictEqual(stt.calls.length + cleanup.calls.length, before, "idle unload with nothing loaded is a no-op");
+  // A second unloadIdle with nothing resident touches neither host.
+  stt.stopped = false;
+  facade.unloadIdle();
+  assert.ok(!stt.stopped && !cleanup.stopped, "idle unload with nothing loaded is a no-op");
+
+  // The next dictation re-loads into a fresh worker.
+  await facade.transcribe(Buffer.from("wav"), STT_CFG);
+  assert.strictEqual(count(stt, "load-stt"), 2, "STT should re-load after idle eviction");
+
+  // A worker with a request in flight (e.g. a Settings "test transcribe") is
+  // left alone rather than killed out from under its caller.
+  stt.stopped = false;
+  stt.inFlight = 1;
+  facade.unloadIdle();
+  assert.ok(!stt.stopped, "a busy worker must not be exited");
+  stt.inFlight = 0;
+  facade.unloadIdle();
+  assert.ok(stt.stopped, "once free, the same worker is exited");
 });
 
 test("transcribe/clean reject early on an already-aborted signal without touching the worker", async () => {

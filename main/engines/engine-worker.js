@@ -350,10 +350,13 @@ async function disposeCleanup() {
   cleanupContextSize = 0;
 }
 
+// Drop the recognizer ahead of loading a different STT model. This does NOT
+// reclaim its memory: sherpa-onnx-node's OfflineRecognizer exposes no explicit
+// free(), so its native memory waits on a finalizer that an idle worker never
+// runs. That is why idle eviction exits the whole worker instead (see
+// unloadIdle in ./index.js); here the replacement model is loaded immediately
+// after, so the process is about to be busy either way.
 async function disposeStt() {
-  // sherpa-onnx-node's OfflineRecognizer exposes no explicit free(); its native
-  // memory is released by a finalizer once the handle is unreachable. So we just
-  // drop the reference and let GC reclaim it — reclamation is not immediate.
   recognizer = null;
   sttModelId = null;
 }
@@ -389,12 +392,10 @@ const HANDLERS = {
   loadcheck,
   "load-stt": loadStt,
   transcribe,
-  "unload-stt": disposeStt,
   "load-cleanup": loadCleanup,
   clean,
   "prime-cleanup": primeCleanup,
   "cancel-clean": cancelClean,
-  "unload-cleanup": disposeCleanup,
 };
 
 port.on("message", (event) => {

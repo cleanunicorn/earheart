@@ -668,7 +668,7 @@ test("engines facade routes STT and cleanup to separate worker hosts", async () 
 
   // Idle eviction exits each worker that has a model resident — that, not an
   // in-process unload request, is what returns the memory to the OS.
-  facade.unloadIdle();
+  assert.strictEqual(facade.unloadIdle(), true);
   assert.ok(stt.stopped && cleanup.stopped);
 
   // stop tears down both workers too (app quit).
@@ -771,14 +771,26 @@ test("unloadIdle exits only the workers that are actually resident", async () =>
   assert.strictEqual(count(stt, "load-stt"), 2, "STT should re-load after idle eviction");
 
   // A worker with a request in flight (e.g. a Settings "test transcribe") is
-  // left alone rather than killed out from under its caller.
+  // left alone rather than killed out from under its caller — and the skip is
+  // reported so the caller can come back for it.
   stt.stopped = false;
   stt.inFlight = 1;
-  facade.unloadIdle();
+  assert.strictEqual(facade.unloadIdle(), false, "a skipped worker must be reported");
   assert.ok(!stt.stopped, "a busy worker must not be exited");
   stt.inFlight = 0;
-  facade.unloadIdle();
+  assert.strictEqual(facade.unloadIdle(), true, "nothing left resident");
   assert.ok(stt.stopped, "once free, the same worker is exited");
+});
+
+test("unloadIdle reports success when there is nothing resident to skip", async () => {
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  // Nothing loaded at all: trivially complete.
+  assert.strictEqual(facade.unloadIdle(), true, "no models resident is a complete unload");
+
+  await facade.transcribe(Buffer.from("wav"), STT_CFG);
+  const stt = hostsBySvc["earheart-stt"];
+  assert.strictEqual(facade.unloadIdle(), true, "an idle resident worker unloads completely");
+  assert.ok(stt.stopped);
 });
 
 test("transcribe/clean reject early on an already-aborted signal without touching the worker", async () => {

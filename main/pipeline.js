@@ -53,6 +53,11 @@ const livePreview = createLivePreview({
 // resident during active use. 0 minutes means never unload.
 let idleUnloadTimer = null;
 
+// How soon to re-check a worker that was busy when the idle window elapsed.
+// Short, because the thing holding it is a user-initiated Settings test, not a
+// long-running job.
+const IDLE_UNLOAD_RETRY_MS = 15000;
+
 function cancelIdleUnload() {
   if (idleUnloadTimer) {
     clearTimeout(idleUnloadTimer);
@@ -60,15 +65,22 @@ function cancelIdleUnload() {
   }
 }
 
-function armIdleUnload() {
+// Arm the eviction timer. `delayMs` overrides the configured window for the
+// retry below; the setting still gates whether we arm at all.
+function armIdleUnload(delayMs) {
   cancelIdleUnload();
   const minutes = settings.get().engines?.idleUnloadMinutes ?? 0;
   if (!minutes || minutes <= 0) return; // 0 = keep models resident
   idleUnloadTimer = setTimeout(() => {
     idleUnloadTimer = null;
     // Only unload if still idle — a dictation in flight will re-arm on finish.
-    if (state === "idle") engines.unloadIdle();
-  }, minutes * 60 * 1000);
+    if (state !== "idle") return;
+    // unloadIdle() skips a worker that has a request in flight. That request is
+    // a Settings "test transcribe/cleanup", which never enters this state
+    // machine and so never re-arms the window — without this retry the model
+    // would stay resident until the next real dictation, or forever.
+    if (!engines.unloadIdle()) armIdleUnload(IDLE_UNLOAD_RETRY_MS);
+  }, delayMs ?? minutes * 60 * 1000);
 }
 
 function setState(next) {

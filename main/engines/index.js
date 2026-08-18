@@ -229,11 +229,24 @@ function stop() {
 //
 // A worker with a request in flight is left alone: the pipeline is idle here,
 // but a Settings "test transcribe/cleanup" is not part of that state machine and
-// killing it mid-run would surface as a bare "engine process exited". Its memory
-// is reclaimed by the next idle window instead.
+// killing it mid-run would surface as a bare "engine process exited". Skipping
+// one is reported back rather than swallowed — the caller's idle window has
+// already elapsed, so nothing would re-arm it and that worker would stay
+// resident for the rest of the session.
+//
+// @returns {boolean} true when nothing resident is left, false when a busy
+// worker was skipped and the caller should come back for it.
 function unloadIdle() {
-  if (loadedStt !== null && !sttHost.busy()) sttHost.stop();
-  if (loadedCleanup !== null && !cleanupHost.busy()) cleanupHost.stop();
+  let deferred = false;
+  if (loadedStt !== null) {
+    if (sttHost.busy()) deferred = true;
+    else sttHost.stop();
+  }
+  if (loadedCleanup !== null) {
+    if (cleanupHost.busy()) deferred = true;
+    else cleanupHost.stop();
+  }
+  return !deferred;
 }
 
 // If a worker dies (native crash, or our own stop()), it comes back empty.

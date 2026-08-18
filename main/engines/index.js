@@ -209,6 +209,14 @@ function stop() {
   cleanupHost.stop();
 }
 
+// Stop one worker unless it has a request in flight. Reports whether that
+// worker is now gone.
+function stopIfIdle(host) {
+  if (host.busy()) return false;
+  host.stop();
+  return true;
+}
+
 // Give an idle dictation's memory back to the OS by exiting the worker that
 // holds it. The next transcribe/clean re-forks it and re-runs
 // ensureStt/ensureCleanup.
@@ -237,16 +245,9 @@ function stop() {
 // @returns {boolean} true when nothing resident is left, false when a busy
 // worker was skipped and the caller should come back for it.
 function unloadIdle() {
-  let deferred = false;
-  if (loadedStt !== null) {
-    if (sttHost.busy()) deferred = true;
-    else sttHost.stop();
-  }
-  if (loadedCleanup !== null) {
-    if (cleanupHost.busy()) deferred = true;
-    else cleanupHost.stop();
-  }
-  return !deferred;
+  const sttClear = loadedStt === null || stopIfIdle(sttHost);
+  const cleanupClear = loadedCleanup === null || stopIfIdle(cleanupHost);
+  return sttClear && cleanupClear;
 }
 
 // If a worker dies (native crash, or our own stop()), it comes back empty.

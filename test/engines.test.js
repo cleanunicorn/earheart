@@ -607,45 +607,7 @@ test("engines facade routes STT and cleanup to separate worker hosts", async () 
   // clean only to the cleanup host, so a crash or load in one engine can't
   // affect the other. We hand the facade a `createHost` factory and assert each
   // host sees only its own request types.
-  const hostsBySvc = {};
-  const hostModule = {
-    createHost({ serviceName }) {
-      const calls = [];
-      const host = {
-        serviceName,
-        calls,
-        request: async (type) => {
-          calls.push(type);
-          if (type === "load-stt" || type === "load-cleanup") return { ready: true };
-          if (type === "transcribe") return "transcribed";
-          if (type === "clean") return "cleaned";
-          throw new Error(`unexpected request: ${type}`);
-        },
-        stopped: false,
-        inFlight: 0,
-        busy() {
-          return this.inFlight > 0;
-        },
-        // Mirrors the real host: killing the worker notifies exit listeners, so
-        // the facade forgets what that worker had resident.
-        stop() {
-          this.stopped = true;
-          for (const fn of this.exitFns) fn();
-        },
-        exitFns: [],
-        onExit(fn) {
-          this.exitFns.push(fn);
-        },
-      };
-      hostsBySvc[serviceName] = host;
-      return host;
-    },
-  };
-  const managerStub = {
-    isInstalled: () => true,
-    modelDir: (base, model) => path.join(base, model.kind, model.id),
-  };
-  const facade = loadFacadeWith({ host: hostModule, manager: managerStub });
+  const { facade, hostsBySvc } = loadTwoHostFacade();
 
   const stt = hostsBySvc["earheart-stt"];
   const cleanup = hostsBySvc["earheart-cleanup"];
@@ -676,9 +638,11 @@ test("engines facade routes STT and cleanup to separate worker hosts", async () 
   assert.ok(stt.stopped && cleanup.stopped);
 });
 
-// Build a two-host facade over fake STT + cleanup workers. Each fake records its
-// calls and its registered onExit listeners, so tests can simulate one worker
-// dying and assert the other is unaffected.
+// Build a two-host facade over fake STT + cleanup workers. Each fake records
+// its calls and its registered onExit listeners, so tests can drive routing,
+// idle eviction, and one worker dying while the other is unaffected. Every
+// test in this section shares it — a second hand-written copy of this fake
+// only meant the same edit had to land twice.
 function loadTwoHostFacade() {
   const hostsBySvc = {};
   const hostModule = {
@@ -699,6 +663,9 @@ function loadTwoHostFacade() {
         busy() {
           return this.inFlight > 0;
         },
+        // Mirrors the real host: killing the worker notifies its exit
+        // listeners, which is what makes the facade forget what that worker
+        // had resident.
         stop() {
           this.stopped = true;
           for (const fn of this.exitFns) fn();

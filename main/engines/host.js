@@ -29,15 +29,36 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
     exitListeners.add(fn);
   }
 
+  // Drop every in-flight request and tell callers the worker is gone. Called
+  // both from the child's own "exit" event and synchronously from stop(), so a
+  // deliberate kill resets our state immediately rather than one tick later —
+  // by which time a new request may already have forked a successor.
+  function handleGone() {
+    // Fail anything still in flight so callers fall back instead of hanging.
+    for (const entry of pending.values()) {
+      entry.reject(new Error("engine process exited"));
+    }
+    pending.clear();
+    // A fresh worker has nothing loaded; let callers reset their caches so the
+    // next request re-loads the model instead of assuming it is still resident.
+    for (const fn of exitListeners) fn();
+  }
+
   function spawn() {
     if (child) return child;
     // Required lazily so this module can be loaded in non-Electron unit tests.
     const { utilityProcess } = require("electron");
-    child = utilityProcess.fork(path.join(__dirname, "engine-worker.js"), [], {
+    // Bound to `proc`, not to `child`: stop() (idle eviction) can retire this
+    // worker and a new request can fork its successor before this one's async
+    // "exit" lands. Every handler below checks it is still the current worker,
+    // so a dying process can never clear the successor's state.
+    const proc = utilityProcess.fork(path.join(__dirname, "engine-worker.js"), [], {
       serviceName,
       stdio: "inherit",
     });
-    child.on("message", (msg) => {
+    child = proc;
+    proc.on("message", (msg) => {
+      if (child !== proc) return; // superseded worker: ignore its late messages
       const entry = msg && pending.get(msg.id);
       if (!entry) return; // late progress/reply for a finished request: drop
       if (msg.progress !== undefined) {
@@ -55,18 +76,12 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
       if (msg.ok) entry.resolve(msg.result);
       else entry.reject(new Error(msg.error || "engine error"));
     });
-    child.on("exit", () => {
+    proc.on("exit", () => {
+      if (child !== proc) return; // stop() already handled this one
       child = null;
-      // Fail anything still in flight so callers fall back instead of hanging.
-      for (const entry of pending.values()) {
-        entry.reject(new Error("engine process exited"));
-      }
-      pending.clear();
-      // A fresh worker has nothing loaded; let callers reset their caches so the
-      // next request re-loads the model instead of assuming it is still resident.
-      for (const fn of exitListeners) fn();
+      handleGone();
     });
-    return child;
+    return proc;
   }
 
   /**
@@ -115,18 +130,28 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
     });
   }
 
-  function stop() {
-    if (child) {
-      try {
-        child.kill();
-      } catch {
-        // already gone
-      }
-      child = null;
-    }
+  /** True while any request is in flight, i.e. the worker must not be killed. */
+  function busy() {
+    return pending.size > 0;
   }
 
-  return { request, stop, onExit };
+  // Kill the worker process. This is how memory actually goes back to the OS —
+  // the engines' native allocators hold on to their pages for the life of the
+  // process (see unloadIdle in ../index.js) — so it is used for idle eviction,
+  // not just for quitting. The next request() forks a fresh worker.
+  function stop() {
+    if (!child) return;
+    const proc = child;
+    child = null; // any request from here on forks a successor
+    try {
+      proc.kill();
+    } catch {
+      // already gone
+    }
+    handleGone(); // now, so the async "exit" can't land on the successor
+  }
+
+  return { request, stop, busy, onExit };
 }
 
 module.exports = { createHost };

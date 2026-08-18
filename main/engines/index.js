@@ -209,27 +209,45 @@ function stop() {
   cleanupHost.stop();
 }
 
-// Release the loaded models without killing the workers, leaving them ready for
-// a fast re-load; the next transcribe/clean call re-runs ensureStt/ensureCleanup.
-// The cleanup engine frees its memory promptly via dispose(); the STT engine
-// has no explicit free, so its memory is reclaimed by GC rather than at once.
-// Each worker is unloaded independently and only if it had a model resident.
-async function unloadIdle() {
-  const jobs = [];
-  if (loadedStt !== null) {
-    forgetStt();
-    jobs.push(sttHost.request("unload-stt"));
-  }
-  if (loadedCleanup !== null) {
-    forgetCleanup();
-    jobs.push(cleanupHost.request("unload-cleanup"));
-  }
-  if (jobs.length === 0) return;
-  try {
-    await Promise.all(jobs);
-  } catch {
-    // A worker may have exited; the flags are already cleared either way.
-  }
+// Stop one worker unless it has a request in flight. Reports whether that
+// worker is now gone.
+function stopIfIdle(host) {
+  if (host.busy()) return false;
+  host.stop();
+  return true;
+}
+
+// Give an idle dictation's memory back to the OS by exiting the worker that
+// holds it. The next transcribe/clean re-forks it and re-runs
+// ensureStt/ensureCleanup.
+//
+// Exiting is the only thing that actually reclaims. Dropping the engine handles
+// in-process does not: sherpa-onnx exposes no free() at all, so the recognizer
+// waits on a V8 finalizer that an idle worker never triggers (measured on
+// Parakeet int8: 1.05 GB resident, unchanged 30s after an in-process unload),
+// and even once the handles are gone the native allocators keep the pages
+// rather than returning them.
+//
+// The cost is a cold re-load (~3-4s for Parakeet int8) — paid off the critical
+// path, because startRecording() warms both engines as recording begins, so it
+// lands under the time the user spends speaking. Each worker is stopped
+// independently and only if it had a model resident, so a transcribe-only user
+// never touches the cleanup worker. Stopping a host notifies its exit listeners,
+// which is what clears the loaded-model flags.
+//
+// A worker with a request in flight is left alone: the pipeline is idle here,
+// but a Settings "test transcribe/cleanup" is not part of that state machine and
+// killing it mid-run would surface as a bare "engine process exited". Skipping
+// one is reported back rather than swallowed — the caller's idle window has
+// already elapsed, so nothing would re-arm it and that worker would stay
+// resident for the rest of the session.
+//
+// @returns {boolean} true when nothing resident is left, false when a busy
+// worker was skipped and the caller should come back for it.
+function unloadIdle() {
+  const sttClear = loadedStt === null || stopIfIdle(sttHost);
+  const cleanupClear = loadedCleanup === null || stopIfIdle(cleanupHost);
+  return sttClear && cleanupClear;
 }
 
 // If a worker dies (native crash, or our own stop()), it comes back empty.

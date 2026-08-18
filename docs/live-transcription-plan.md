@@ -169,15 +169,17 @@ keeps the main line from flickering.
      one instance and cleanup requests to the other.
    - **`main/engines/host.js`** — convert the module-level singleton (`child`,
      `nextId`, `pending`, `exitListeners`) into a `createHost({ serviceName })`
-     factory returning an instance with the same `{ request, stop, onExit }`
+     factory returning an instance with the same `{ request, stop, busy, onExit }`
      surface. Each instance owns its own child and lazily forks on first
      `request` (the existing `spawn()` behavior, unchanged).
    - **`main/engines/index.js`** — hold two host instances, `sttHost` and
-     `cleanupHost`; route `load-stt`/`transcribe`/`unload-stt` to the first and
-     `load-cleanup`/`clean`/`unload-cleanup` to the second. Split `forgetLoaded`,
+     `cleanupHost`; route `load-stt`/`transcribe` to the first and
+     `load-cleanup`/`clean` to the second. Split `forgetLoaded`,
      `unloadIdle`, `stop`, and the `onExit` hook so each worker's lifecycle is
-     independent (e.g. unload the heavy LLM while keeping the STT recognizer
-     warm). **Lazy spawn:** because each host forks on first request, a
+     independent (e.g. evict the heavy LLM while keeping the STT recognizer
+     warm). Idle eviction exits the whole worker (`host.stop()`) rather than
+     sending it an unload request — the engines' native allocators do not give
+     the pages back to the OS while the process lives. **Lazy spawn:** because each host forks on first request, a
      batch-only user who never triggers cleanup never spawns the 2nd worker;
      streaming users get full parallelism.
    - Within each worker, requests are still serialized, so the drop-if-busy rule

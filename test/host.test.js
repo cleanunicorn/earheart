@@ -183,3 +183,74 @@ test("host: worker exit rejects in-flight requests", async () => {
   child.emit("exit");
   await assert.rejects(promise, /engine process exited/);
 });
+
+test("host: busy() tracks in-flight requests", async () => {
+  // Idle eviction asks busy() whether the worker can be killed, so an
+  // off-by-one here either kills a worker mid-request or never kills one.
+  const { child, host } = setup();
+
+  assert.strictEqual(host.busy(), false, "nothing requested yet");
+  const promise = host.request("transcribe", {});
+  assert.strictEqual(host.busy(), true, "a request is in flight");
+
+  const { id } = child.sent[0];
+  child.emit("message", { id, ok: true, result: "done" });
+  assert.strictEqual(await promise, "done");
+  assert.strictEqual(host.busy(), false, "a settled request is no longer pending");
+});
+
+test("host: stop() rejects in-flight requests and notifies exit listeners", async () => {
+  // stop() is the idle-eviction path, not just the quit path: index.js clears
+  // its loaded-model flags from the exit listeners, so a stop() that killed the
+  // worker without notifying would leave the facade believing a dead worker
+  // still had a model resident.
+  const { host } = setup();
+  let exits = 0;
+  host.onExit(() => exits++);
+
+  // A short deadline so a stop() that forgot to drain fails the assertion
+  // below rather than hanging this test forever on an unsettled promise.
+  const promise = host.request("transcribe", {}, { timeoutMs: 50 });
+  host.stop();
+
+  await assert.rejects(promise, /engine process exited/);
+  assert.strictEqual(exits, 1, "callers must be told the worker is gone");
+  assert.strictEqual(host.busy(), false, "stop() drains pending");
+
+  // Stopping again with no worker is a no-op, not a second spurious notify.
+  host.stop();
+  assert.strictEqual(exits, 1);
+});
+
+test("host: a retired worker can't clobber its successor", async () => {
+  // The race idle eviction made reachable: stop() kills worker A and a new
+  // request forks successor B before A's async "exit" lands. Without the
+  // `child !== proc` guards, A's late events would reject B's in-flight
+  // request and re-fire the exit listeners, wrongly forgetting a model B just
+  // loaded. Nothing else exercises those guards — engines.test.js stubs this
+  // module out entirely.
+  const { child: a, host } = setup();
+  let exits = 0;
+  host.onExit(() => exits++);
+
+  const first = host.request("transcribe", {});
+  a.emit("message", { id: a.sent[0].id, ok: true, result: "from A" });
+  assert.strictEqual(await first, "from A");
+
+  host.stop(); // idle eviction; the fake kill() leaves `a` able to emit
+  assert.strictEqual(exits, 1);
+
+  const b = (currentChild = createFakeChild());
+  const second = host.request("transcribe", {});
+  assert.strictEqual(b.sent.length, 1, "the request went to the successor");
+
+  a.emit("exit"); // the real OS event, arriving after the successor exists
+  assert.strictEqual(exits, 1, "a retired worker must not re-fire exit listeners");
+  assert.strictEqual(host.busy(), true, "B's request must still be in flight");
+
+  // Ids are host-wide and monotonic, so a real A could never reuse B's id —
+  // forcing the collision here is what pins the message-handler guard.
+  a.emit("message", { id: b.sent[0].id, ok: true, result: "stale from A" });
+  b.emit("message", { id: b.sent[0].id, ok: true, result: "from B" });
+  assert.strictEqual(await second, "from B");
+});

@@ -52,6 +52,9 @@ const livePreview = createLivePreview({
 // cancels the pending timer (and re-arms it when done), so the models stay
 // resident during active use. 0 minutes means never unload.
 let idleUnloadTimer = null;
+// True while the armed timer is a short retry rather than the full window, so
+// an unrelated re-arm can keep the short delay instead of throwing it away.
+let idleUnloadRetrying = false;
 
 // How soon to re-check a worker that was busy when the idle window elapsed.
 // Short, because the thing holding it is a user-initiated Settings test, not a
@@ -63,6 +66,7 @@ function cancelIdleUnload() {
     clearTimeout(idleUnloadTimer);
     idleUnloadTimer = null;
   }
+  idleUnloadRetrying = false;
 }
 
 // Arm the eviction timer. `delayMs` overrides the configured window for the
@@ -71,8 +75,10 @@ function armIdleUnload(delayMs) {
   cancelIdleUnload();
   const minutes = settings.get().engines?.idleUnloadMinutes ?? 0;
   if (!minutes || minutes <= 0) return; // 0 = keep models resident
+  idleUnloadRetrying = delayMs !== undefined;
   idleUnloadTimer = setTimeout(() => {
     idleUnloadTimer = null;
+    idleUnloadRetrying = false;
     // Only unload if still idle — a dictation in flight will re-arm on finish.
     if (state !== "idle") return;
     // unloadIdle() skips a worker that has a request in flight. That request is
@@ -450,8 +456,14 @@ function init() {
 // Re-arm the idle-unload timer with the latest setting (e.g. the user changed
 // the idle window in Settings). Only matters while idle; an active dictation
 // re-arms from the new value when it finishes.
+//
+// Fires on every save, not just idle-window changes — so a save landing inside
+// a busy-worker retry keeps the retry's short delay rather than pushing that
+// worker back out to the full window. Re-arming still re-reads the setting, so
+// switching to 0 (never unload) cancels either kind of pending timer.
 function onSettingsChanged() {
-  if (state === "idle") armIdleUnload();
+  if (state !== "idle") return;
+  armIdleUnload(idleUnloadRetrying ? IDLE_UNLOAD_RETRY_MS : undefined);
 }
 
 module.exports = {

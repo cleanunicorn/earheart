@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.27.1 — 2026-08-18
+
+- Actually free the memory models hold when Earheart sits idle (#100)
+
 ## v0.27.0 — 2026-08-13
 
 - Start silently in the tray instead of opening Settings (#99)

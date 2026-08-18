@@ -749,6 +749,36 @@ test("unloadIdle exits only the workers that are actually resident", async () =>
   assert.ok(stt.stopped, "once free, the same worker is exited");
 });
 
+test("unloadIdle checks each host's own busy state, with both engines resident", async () => {
+  // With only one engine ever loaded, the other's branch never runs — so a
+  // regression asking the wrong host whether it is busy (or bailing out on the
+  // first busy engine and never reaching the second) survives every other test
+  // here. Load both, then make one busy at a time.
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  await facade.transcribe(Buffer.from("wav"), STT_CFG);
+  await facade.clean("text", CLEANUP_CFG);
+  const stt = hostsBySvc["earheart-stt"];
+  const cleanup = hostsBySvc["earheart-cleanup"];
+
+  // Cleanup busy, STT idle: STT still goes, cleanup is spared, skip reported.
+  cleanup.inFlight = 1;
+  assert.strictEqual(facade.unloadIdle(), false, "the busy cleanup worker was skipped");
+  assert.ok(stt.stopped, "the idle STT worker is still evicted");
+  assert.ok(!cleanup.stopped, "the busy cleanup worker must survive");
+
+  // And the mirror image: STT busy, cleanup idle.
+  const second = loadTwoHostFacade();
+  await second.facade.transcribe(Buffer.from("wav"), STT_CFG);
+  await second.facade.clean("text", CLEANUP_CFG);
+  const stt2 = second.hostsBySvc["earheart-stt"];
+  const cleanup2 = second.hostsBySvc["earheart-cleanup"];
+
+  stt2.inFlight = 1;
+  assert.strictEqual(second.facade.unloadIdle(), false, "the busy STT worker was skipped");
+  assert.ok(!stt2.stopped, "the busy STT worker must survive");
+  assert.ok(cleanup2.stopped, "the idle cleanup worker is still evicted");
+});
+
 test("unloadIdle reports success when there is nothing resident to skip", async () => {
   const { facade, hostsBySvc } = loadTwoHostFacade();
   // Nothing loaded at all: trivially complete.

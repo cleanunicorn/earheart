@@ -101,6 +101,23 @@ better/worse relationship to color, and the chosen-is-white convention is a
 cross-surface commitment (shared with the overlay's Done-key grammar) this
 pass wasn't asked to reopen.
 
+**Review follow-through (2026-08-22, same day):** the two passes above were
+recorded here first and DESIGN.md was left saying "everything else is white
+and gray" — wrong about the shipped CSS, which CONTRIBUTING.md treats as the
+source DESIGN.md is derived from. Both hue families now live in DESIGN.md
+proper (frontmatter tokens, two Colors subsections, The Wayfinding Hue Rule
+and The Consequence Color Rule, plus Do/Don't entries), so this file is a
+record of the decision rather than the only place it exists. Three other
+loose ends closed with it: the two engine pills per card moved inside one
+stable `aria-live="polite"` slot (they swap by `hidden`, so the announcement
+had to come from a container that never moves — the badge names a data-egress
+consequence, and a screen reader was hearing only the radio label); the index
+rail went 168px → 180px with the window 760 → 772 because the widest entry
+plus its new glyph and gap cleared 168px by one pixel in DejaVu Sans; and
+`docs/screenshots/settings.png` was re-captured. `scripts/settings-smoke.js`
+now asserts the badge follows the radio both ways and sits in a live region,
+so the engine-switch behaviour is covered rather than eyeballed.
+
 **Unresolved:** none for this surface. If color is ever wanted on the overlay
 or wizard too, that's a DESIGN.md-level decision (shared tokens), not a
 settings-only edit — flag it as its own pass rather than drifting the shared

@@ -39,11 +39,26 @@
 
     <div class="deck">
       <nav id="tabs" aria-label="Settings sections">
-        <button class="tab active" id="tabbtn-general" data-tab="general" aria-current="true">General</button>
-        <button class="tab" id="tabbtn-stt" data-tab="stt">Speech-to-text</button>
-        <button class="tab" id="tabbtn-cleanup" data-tab="cleanup">Cleanup</button>
-        <button class="tab" id="tabbtn-history" data-tab="history">History</button>
-        <button class="tab" id="tabbtn-advanced" data-tab="advanced">Advanced</button>
+        <button class="tab active" id="tabbtn-general" data-tab="general" aria-current="true">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/></svg>
+          <span class="tab-label">General</span>
+        </button>
+        <button class="tab" id="tabbtn-stt" data-tab="stt">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="10" x2="17" y2="10"/><line x1="7" y1="14" x2="13" y2="14"/></svg>
+          <span class="tab-label">Speech-to-text</span>
+        </button>
+        <button class="tab" id="tabbtn-cleanup" data-tab="cleanup">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6z"/></svg>
+          <span class="tab-label">Cleanup</span>
+        </button>
+        <button class="tab" id="tabbtn-history" data-tab="history">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg>
+          <span class="tab-label">History</span>
+        </button>
+        <button class="tab" id="tabbtn-advanced" data-tab="advanced">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="14" cy="6" r="2.2" fill="currentColor" stroke="none"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="8" cy="12" r="2.2" fill="currentColor" stroke="none"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="16" cy="18" r="2.2" fill="currentColor" stroke="none"/></svg>
+          <span class="tab-label">Advanced</span>
+        </button>
       </nav>
 
       <main>
@@ -57,7 +72,10 @@
 
       <!-- General -->
       <section id="tab-general" class="panel" aria-labelledby="legend-general">
-        <h2 class="legend" tabindex="-1" id="legend-general">General</h2>
+        <h2 class="legend" tabindex="-1" id="legend-general">
+          <svg class="legend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/></svg>
+          General
+        </h2>
         <div class="card">
           <div class="card-title">Dictation</div>
           <div class="field">
@@ -108,14 +126,17 @@
             <div class="options">
               <label class="option">
                 <input type="radio" name="output-mode" value="paste" />
+                <svg class="option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/></svg>
                 <span class="option-text">Paste into the active app</span>
               </label>
               <label class="option">
                 <input type="radio" name="output-mode" value="paste-copy" />
+                <svg class="option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="11" height="14" rx="2"/><rect x="9" y="2" width="11" height="14" rx="2"/></svg>
                 <span class="option-text">Paste and keep the transcript on the clipboard</span>
               </label>
               <label class="option">
                 <input type="radio" name="output-mode" value="clipboard" />
+                <svg class="option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1z"/><rect x="5" y="6" width="14" height="15" rx="2"/></svg>
                 <span class="option-text">Copy to clipboard only — I'll paste myself</span>
               </label>
             </div>
@@ -140,7 +161,10 @@
 
       <!-- STT -->
       <section id="tab-stt" class="panel" aria-labelledby="legend-stt">
-        <h2 class="legend" tabindex="-1" id="legend-stt">Speech-to-text</h2>
+        <h2 class="legend" tabindex="-1" id="legend-stt">
+          <svg class="legend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="10" x2="17" y2="10"/><line x1="7" y1="14" x2="13" y2="14"/></svg>
+          Speech-to-text
+        </h2>
         <div class="card">
           <div class="card-title">Transcription engine</div>
           <div class="field">
@@ -158,6 +182,14 @@
               Built-in runs NVIDIA Parakeet privately, with nothing to install.
               OpenAI-compatible points at a local server, OpenAI, Groq, and the like.
             </p>
+            <div class="state-badge" id="stt-engine-state-builtin">
+              <svg class="state-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+              Runs on this device — your audio never leaves it
+            </div>
+            <div class="state-badge" id="stt-engine-state-external" hidden>
+              <svg class="state-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7"/><line x1="21" y1="3" x2="10" y2="14"/><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>
+              Sends audio to the endpoint below
+            </div>
           </div>
 
           <div id="stt-builtin-fields">
@@ -237,7 +269,10 @@
 
       <!-- Cleanup -->
       <section id="tab-cleanup" class="panel" aria-labelledby="legend-cleanup">
-        <h2 class="legend" tabindex="-1" id="legend-cleanup">Cleanup</h2>
+        <h2 class="legend" tabindex="-1" id="legend-cleanup">
+          <svg class="legend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6z"/></svg>
+          Cleanup
+        </h2>
         <div class="card">
           <label class="toggle">
             <span class="toggle-text">
@@ -269,6 +304,14 @@
                 Built-in runs a small Gemma model, with nothing to install.
                 OpenAI-compatible points at Ollama, LM Studio, OpenAI, and the like.
               </p>
+              <div class="state-badge" id="cleanup-engine-state-builtin">
+                <svg class="state-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+                Runs on this device — your words never leave it
+              </div>
+              <div class="state-badge" id="cleanup-engine-state-external" hidden>
+                <svg class="state-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7"/><line x1="21" y1="3" x2="10" y2="14"/><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>
+                Sends the transcript to the endpoint below
+              </div>
             </div>
 
             <div id="cleanup-builtin-fields">
@@ -437,7 +480,10 @@
 
       <!-- History -->
       <section id="tab-history" class="panel" aria-labelledby="legend-history">
-        <h2 class="legend" tabindex="-1" id="legend-history">History</h2>
+        <h2 class="legend" tabindex="-1" id="legend-history">
+          <svg class="legend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg>
+          History
+        </h2>
         <div class="card">
           <label class="toggle">
             <span class="toggle-text">
@@ -461,7 +507,10 @@
 
       <!-- Advanced -->
       <section id="tab-advanced" class="panel" aria-labelledby="legend-advanced">
-        <h2 class="legend" tabindex="-1" id="legend-advanced">Advanced</h2>
+        <h2 class="legend" tabindex="-1" id="legend-advanced">
+          <svg class="legend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="14" cy="6" r="2.2" fill="currentColor" stroke="none"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="8" cy="12" r="2.2" fill="currentColor" stroke="none"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="16" cy="18" r="2.2" fill="currentColor" stroke="none"/></svg>
+          Advanced
+        </h2>
         <div class="card">
           <div class="card-title">Performance</div>
           <div class="grid-2">

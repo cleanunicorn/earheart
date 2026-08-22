@@ -65,4 +65,20 @@ else preserved verbatim.
 sliders are a light track under a white knob; em-dash-heavy copy is the
 product's incumbent voice, kept; tray menu remains unstyled platform UI.
 
+**Visual-aid icon pass (2026-08-22):** added one small monoline glyph system
+(16–18px, `stroke="currentColor"`, no fill except `.tab-icon`'s sliders/legend
+knobs) reused in three places rather than scattered per-card: the index and
+matching section legend (mic/captions/sparkle/clock/sliders — wayfinding, dims
+with the tab's own currentColor, no new rule needed), a `.state-badge` pill on
+the STT and Cleanup engine cards that names what Built-in vs OpenAI-compatible
+actually means for the user's data ("Runs on this device — your
+audio/words never leave it" vs "Sends … to the endpoint below"; toggled in
+`syncEngine()`, no color-coding — text-dim register, not a status color), and
+one distinct pictogram per "Where the text goes" radio (single box+cursor,
+doubled box, clipboard) so the three destinations read apart before the prose
+does. Deliberately did not add a card icon to every card (About, Setup wizard,
+Updates, Performance, Auto-paste permission, Dictionary, System prompt stay
+text-only) — the icon language is reserved for genuine recognition/consequence
+aids, not decoration.
+
 **Unresolved:** none for this surface.

@@ -65,4 +65,60 @@ else preserved verbatim.
 sliders are a light track under a white knob; em-dash-heavy copy is the
 product's incumbent voice, kept; tray menu remains unstyled platform UI.
 
-**Unresolved:** none for this surface.
+**Visual-aid icon pass (2026-08-22):** added one small monoline glyph system
+(16–18px, `stroke="currentColor"`, no fill except `.tab-icon`'s sliders/legend
+knobs) reused in three places rather than scattered per-card: the index and
+matching section legend (mic/captions/sparkle/clock/sliders — wayfinding), a
+`.state-badge` pill on the STT and Cleanup engine cards that names what
+Built-in vs OpenAI-compatible actually means for the user's data ("Runs on
+this device — your audio/words never leave it" vs "Sends … to the endpoint
+below"; toggled in `syncEngine()`), and one distinct pictogram per "Where the
+text goes" radio (single box+cursor, doubled box, clipboard) so the three
+destinations read apart before the prose does. Deliberately did not add a
+card icon to every card (About, Setup wizard, Updates, Performance,
+Auto-paste permission, Dictionary, System prompt stay text-only) — the icon
+language is reserved for genuine recognition/consequence aids, not
+decoration.
+
+**Colorize pass (2026-08-22, same day, user-requested):** the icon pass above
+shipped monochrome first; the user then asked for color on this window
+specifically (not the overlay/wizard — same-day follow-up, scoped to
+settings.css/html only). Added two new token families, both settings-window-
+only and never reusing `--accent` (coral stays the sole hotkey-capture color)
+or `--ok`/`--err` (stay reserved for status text/destructive hover):
+`--section-*` (general/stt/cleanup/history/advanced — five OKLCH-derived
+hues, equal lightness/chroma so no section outranks another, all ≥6.7:1 on
+`--ink`) colors the nav-icon/legend-icon pair per section as a constant
+landmark independent of the tab's active/hover state — the label text still
+uses the pre-existing dim/active grammar untouched. `--state-private` (teal)
+/ `--state-external` (amber) recolor the engine `.state-badge` pills
+end-to-end (icon, text, wash, edge, via `color-mix()`) because that pill's
+whole job is naming a consequence, so color carries meaning there rather than
+decorating it. The "Where the text goes" pictograms and every selection/
+action control (segmented, radios, switches, buttons) deliberately stayed on
+the existing white-is-chosen grammar — those three destinations have no
+better/worse relationship to color, and the chosen-is-white convention is a
+cross-surface commitment (shared with the overlay's Done-key grammar) this
+pass wasn't asked to reopen.
+
+**Review follow-through (2026-08-22, same day):** the two passes above were
+recorded here first and DESIGN.md was left saying "everything else is white
+and gray" — wrong about the shipped CSS, which CONTRIBUTING.md treats as the
+source DESIGN.md is derived from. Both hue families now live in DESIGN.md
+proper (frontmatter tokens, two Colors subsections, The Wayfinding Hue Rule
+and The Consequence Color Rule, plus Do/Don't entries), so this file is a
+record of the decision rather than the only place it exists. Three other
+loose ends closed with it: the two engine pills per card moved inside one
+stable `aria-live="polite"` slot (they swap by `hidden`, so the announcement
+had to come from a container that never moves — the badge names a data-egress
+consequence, and a screen reader was hearing only the radio label); the index
+rail went 168px → 180px with the window 760 → 772 because the widest entry
+plus its new glyph and gap cleared 168px by one pixel in DejaVu Sans; and
+`docs/screenshots/settings.png` was re-captured. `scripts/settings-smoke.js`
+now asserts the badge follows the radio both ways and sits in a live region,
+so the engine-switch behaviour is covered rather than eyeballed.
+
+**Unresolved:** none for this surface. If color is ever wanted on the overlay
+or wizard too, that's a DESIGN.md-level decision (shared tokens), not a
+settings-only edit — flag it as its own pass rather than drifting the shared
+`:root` block through this file.

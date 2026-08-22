@@ -19,6 +19,13 @@ colors:
   delivered-green: "#34d399"
   failed-red: "#f87171"
   idle-gray: "#71717a"
+  section-general: "#79a7e2"
+  section-stt: "#48b7c2"
+  section-cleanup: "#b49ce1"
+  section-history: "#d389ba"
+  section-advanced: "#c49f4d"
+  state-private: "#16bbbc"
+  state-external: "#ea9941"
 typography:
   body:
     fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
@@ -187,8 +194,13 @@ and it means exactly one thing — "Earheart is working with your voice." The
 capture dot, the live waveform, and the dictation progress fill wear it;
 beyond the bar it appears only in two sanctioned capture moments (see The
 Capture Exception). Everything else is white and gray on near-black, with
-green and red confined to miniature status signals. The world explicitly
-refuses the hardware metaphor: no tape, no lamps, no legends, no eject. The
+green and red confined to miniature status signals. The settings window — and
+only the settings window — adds two small hue families that carry meaning
+rather than decoration: five equal-weight section hues on the index and its
+matching legends, and a two-state privacy color on the engine badges (see The
+Wayfinding Hue Rule and The Consequence Color Rule). The overlay and the
+wizard stay monochrome. The world explicitly refuses the hardware metaphor:
+no tape, no lamps, no legends, no eject. The
 previous "Tape Transport" service-panel system and the earlier violet/rose
 "On-Air Lamp" system are both fully retired; neither may resurface.
 
@@ -205,6 +217,8 @@ Transport and On-Air Lamp systems survive only as historical notes.
 **Key Characteristics:**
 - Solid neutral near-black surfaces; nothing translucent under text
 - One coral accent, reserved exclusively for the voice being heard or captured
+- Hue only where recognition or consequence needs it: the settings index's
+  section glyphs and the engine badges — never on chrome, never as decoration
 - Universally-read glyphs in circular ghost keys; one filled white Done key
 - Chosen things are white: washes, radio cores, switch tracks, the Save pill
 - Hairline edges and subtle white washes instead of shadows
@@ -214,7 +228,9 @@ Transport and On-Air Lamp systems survive only as historical notes.
 
 A single-accent dark-neutral palette: near-black ink, four steps of white/gray
 text, a small family of white washes and hairlines, one coral voice, and
-green/red kept miniature.
+green/red kept miniature. Two settings-only families sit outside the accent —
+wayfinding and consequence — each governed by its own Named Rule below and
+each barred from the overlay and the wizard.
 
 ### Primary
 - **Coral Voice** (`coral-voice`): the app's one expressive color, from the
@@ -265,6 +281,28 @@ green/red kept miniature.
   Exception.
 - **Idle Gray** (`idle-gray`): the idle / nothing-heard status dot.
 
+### Wayfinding hues (settings window only)
+Five hues, one per settings section, worn by the index glyph and its matching
+legend glyph and nothing else. Derived in OKLCH at one lightness and chroma
+(L≈0.72, C≈0.10) so no section outranks another; each clears 6.8:1 on Bar Ink.
+They name a place, never a state.
+- **Section General** (`section-general`, #79a7e2): blue — mic glyph.
+- **Section Speech-to-text** (`section-stt`, #48b7c2): cyan — captions glyph.
+- **Section Cleanup** (`section-cleanup`, #b49ce1): violet — sparkle glyph.
+- **Section History** (`section-history`, #d389ba): magenta — clock glyph.
+- **Section Advanced** (`section-advanced`, #c49f4d): gold — sliders glyph.
+
+### Consequence hues (settings window only)
+Two hues on the Speech-to-text and Cleanup engine badges, naming what the
+chosen engine does with the user's audio and words. Neither reuses Delivered
+Green or Failed Red: this is a consequence, not a success or a fault, and
+choosing an external engine is a legitimate choice rather than an error. Both
+hold ≥5.5:1 as text on their own 12% wash.
+- **Private Teal** (`state-private`, #16bbbc): the engine runs on this device
+  — nothing leaves it.
+- **External Amber** (`state-external`, #ea9941): the engine sends audio (STT)
+  or the transcript (Cleanup) to the configured endpoint.
+
 ### Named Rules
 **The One Voice Rule.** Coral is spent only on the dictation itself — the
 capture dot, the waveform, the dictation progress fill. When the app talks
@@ -288,6 +326,23 @@ overlay's discard key, `button.danger` pills) are gray at rest and take
 Failed Red text plus a red wash (rgba(248, 113, 113, 0.12), pills add a
 rgba(248, 113, 113, 0.4) border) on hover only — red names the consequence at
 the moment of intent, never at rest.
+
+**The Wayfinding Hue Rule.** The five section hues live on the settings
+window's index and legend glyphs and nowhere else. Each is constant for its
+section — unmoved by hover, active, or the scroll spy — so the color reads as
+a landmark rather than a state cue; "you are here" stays Hover Wash + Primary
+Text on the label. Equal OKLCH lightness and chroma keeps them peers: a new
+section takes a new hue at the same weight, never a brighter one. Labels,
+cards, edges and controls stay neutral — the hue rides the glyph alone.
+
+**The Consequence Color Rule.** Color may name a consequence at the moment
+the user chooses one. The engine state badge is the single sanctioned case,
+and it wears Private Teal or External Amber end to end (glyph, text, 12%
+wash, 38% edge, all mixed from the one variable) because reading the color is
+reading the answer. It is never spent on the choice controls themselves — the
+segmented control, radios and switches keep the chosen-is-white grammar — and
+the color never travels alone: the glyph and the sentence say the same thing.
+A second consequence color is a new rule, not a precedent to copy.
 
 ## Typography
 
@@ -354,10 +409,10 @@ change the card height; when the transcript actually grows, the card eases its
 own height (0.18s). On narrow widths the update panel's actions wrap to a
 second line, with the two "no" pills grouped so they wrap together.
 
-**The settings window** (760×780 default, 560×480 minimum, framed, solid Bar
+**The settings window** (772×780 default, 560×480 minimum, framed, solid Bar
 Ink). One continuous page read top to bottom — every control visible, no
 hidden-tab shuffle. Header (icon + 16px title + tagline, seam below), then a
-deck: a 168px sticky index rail on the left (outside the scroll area, seam on
+deck: a 180px sticky index rail on the left (outside the scroll area, seam on
 its right) beside one scrolling column of sections capped at 620px
 (`.panel { max-width: 620px }`), then a fixed footer commit row (seam above,
 right-aligned, white Save pill). The index is a scroll spy with roving
@@ -464,18 +519,20 @@ corners anywhere.
   rgba(248, 113, 113, 0.4) border).
 
 ### Sticky index (settings navigation)
-- 168px rail outside the scroll area; entries are 8px-radius text buttons
-  (13px/500, Dim Text) that wash faintly on hover; the active entry takes
-  Hover Wash + Primary Text — no markers, no dots. Scroll spy tracks the section
-  currently in view; roving tabindex; clicks glide the page and focus the
-  section legend.
+- 180px rail outside the scroll area; entries are 8px-radius buttons pairing a
+  16px section glyph in its own Wayfinding hue with a 13px/500 Dim Text label,
+  9px apart. The glyph's hue never changes; the label washes faintly on hover
+  and the active entry takes Hover Wash + Primary Text — no markers, no dots.
+  Scroll spy tracks the section currently in view; roving tabindex; clicks
+  glide the page and focus the section legend.
   Docks horizontally with a bottom seam below 600px.
 
 ### Section headings
-- **Legend:** 16px/650 sentence case (the Window Title token) running into a
-  1px seam hairline
-  (`::after` flex line); `scroll-margin-top: 12px` so anchored scrolls land
-  clear of the edge; focusable (tabindex -1) with a keyboard-only ring.
+- **Legend:** an 18px glyph in the section's Wayfinding hue (the same shape as
+  its index entry) leading 16px/650 sentence case (the Window Title token),
+  10px apart, running into a 1px seam hairline (`::after` flex line);
+  `scroll-margin-top: 12px` so anchored scrolls land clear of the edge;
+  focusable (tabindex -1) with a keyboard-only ring.
 
 ### Cards / Containers
 - **White-wash cards:** Faint Wash fill (white 0.04; the overlay update panel
@@ -514,11 +571,31 @@ corners anywhere.
   segment is the target. Chosen segment takes a white 0.14 wash + Primary
   Text; keyboard focus surfaces as a ring on the label.
 
+### Engine state badge (settings)
+- A 999px pill under the engine segmented control naming what that choice does
+  with the user's data: a 14px glyph plus one 12px sentence, in Private Teal
+  or External Amber end to end (text, glyph, 12% wash, 38% edge). The two
+  states are separate elements swapped by `hidden` inside one
+  `aria-live="polite"` slot, so the consequence is announced and not only
+  seen. Never green/red, and never applied to the control above it — see The
+  Consequence Color Rule.
+
+### Icons (settings)
+- Monoline SVG, `stroke="currentColor"`, 1.6–1.8 stroke, 14–18px, no fills
+  beyond the Advanced glyph's slider knobs. Reserved for genuine recognition
+  or consequence aids — section wayfinding, the engine state badge, the three
+  output destinations — and deliberately absent from cards that read fine
+  without one (About, Setup wizard, Updates, Performance, Dictionary, System
+  prompt). Always `aria-hidden`; the adjacent text is the accessible name.
+
 ### Option rows (radios)
 - 10px-radius rows, transparent border at rest, Faint Wash on hover; the
   chosen row takes a white 0.07 wash + brightened rgba(255, 255, 255, 0.22)
   edge — chosen is white, like everything chosen in this system. Custom 16px
   radios: Field Edge ring that gains a white core (`inset: 3px`) when chosen.
+  Where the rows read alike as prose (the output destinations), each carries a
+  distinct 16px pictogram between radio and label — Dim Text at rest,
+  brightening to Primary Text on the chosen row; never a second accent color.
 
 ### Switches & checkboxes
 - **Switch:** 40×22px track, white 0.1 fill + hairline edge off, Dim Text
@@ -633,6 +710,9 @@ corners anywhere.
 - **Do** extend hit areas invisibly (`::before` halos to ~42px; radios and
   segments stretched over their whole row) instead of enlarging painted
   controls.
+- **Do** keep the settings icon language monoline and `currentColor`, and add
+  a glyph only where it aids recognition or names a consequence — an icon on
+  every card is decoration, and decoration is not this world.
 - **Do** set machine values in mono (accelerators, timestamps, version,
   dictionary/prompt textareas) and keep prose — including the hotkey fields'
   placeholders — in the body face.
@@ -651,6 +731,12 @@ corners anywhere.
   surface.
 - **Don't** spend coral outside the voice and the two Capture Exception
   moments; a third non-overlay coral use is a defect, not a precedent.
+- **Don't** let a Wayfinding hue ride the active or hover state, or leak off
+  the index and legend glyphs onto labels, cards, edges or controls; a color
+  that moves is a state cue, and this system's state cue is white.
+- **Don't** add a third settings hue family, or bring either family to the
+  overlay or the wizard — those surfaces stay white/gray plus coral. New color
+  is a decision at this file's level, not a per-surface one.
 - **Don't** make chrome text larger than the transcript (15px) on the bar, or
   larger than the 16px window title on framed windows; the words stay the
   biggest thing in the system.

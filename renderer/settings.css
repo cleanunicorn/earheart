@@ -121,7 +121,12 @@ nav#tabs {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  width: 168px;
+  /* 180px, not the pre-icon 168px: the widest entry ("Speech-to-text") plus
+     its 16px glyph and 9px gap needs 145px of content in the widest common
+     UI font (DejaVu Sans), which 168px cleared by a single pixel. The
+     window widens to match (main/windows.js) so the content column is
+     unmoved. */
+  width: 180px;
   flex-shrink: 0;
   /* 15px top puts the first 13px entry's BASELINE on the 16px section
      heading's beside it (box tops alone would sit 3px apart across the two
@@ -505,11 +510,18 @@ select {
    leaving it to the segmented control's label alone. No red/green: this is
    information, not a success/fault status, so it stays in the same
    text-dim/wash register as everything else the app says about itself. */
+/* The pill is swapped by hiding one state and showing the other, so the
+   aria-live region has to be this wrapper — a container that never moves —
+   rather than either pill. It also carries the spacing, so the gap below the
+   hint stays the same whichever state is showing. */
+.state-badge-slot {
+  margin-top: 10px;
+}
+
 .state-badge {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  margin-top: 10px;
   padding: 5px 12px 5px 10px;
   border-radius: 999px;
   background: var(--wash-faint);

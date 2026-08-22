@@ -182,13 +182,20 @@
               Built-in runs NVIDIA Parakeet privately, with nothing to install.
               OpenAI-compatible points at a local server, OpenAI, Groq, and the like.
             </p>
-            <div class="state-badge state-badge-private" id="stt-engine-state-builtin">
-              <svg class="state-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
-              Runs on this device — your audio never leaves it
-            </div>
-            <div class="state-badge state-badge-external" id="stt-engine-state-external" hidden>
-              <svg class="state-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7"/><line x1="21" y1="3" x2="10" y2="14"/><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>
-              Sends audio to the endpoint below
+            <!-- One live region per card, wrapping both states: the pill is swapped
+                 by hiding one div and showing the other, so the announcement has to
+                 come from a container that never moves. Switching engines is the one
+                 choice here that changes where your audio/words go — a screen reader
+                 hears that consequence, not just the radio label. -->
+            <div class="state-badge-slot" aria-live="polite">
+              <div class="state-badge state-badge-private" id="stt-engine-state-builtin">
+                <svg class="state-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+                Runs on this device — your audio never leaves it
+              </div>
+              <div class="state-badge state-badge-external" id="stt-engine-state-external" hidden>
+                <svg class="state-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7"/><line x1="21" y1="3" x2="10" y2="14"/><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>
+                Sends audio to the endpoint below
+              </div>
             </div>
           </div>
 
@@ -304,13 +311,20 @@
                 Built-in runs a small Gemma model, with nothing to install.
                 OpenAI-compatible points at Ollama, LM Studio, OpenAI, and the like.
               </p>
-              <div class="state-badge state-badge-private" id="cleanup-engine-state-builtin">
-                <svg class="state-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
-                Runs on this device — your words never leave it
-              </div>
-              <div class="state-badge state-badge-external" id="cleanup-engine-state-external" hidden>
-                <svg class="state-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7"/><line x1="21" y1="3" x2="10" y2="14"/><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>
-                Sends the transcript to the endpoint below
+              <!-- One live region per card, wrapping both states: the pill is swapped
+                   by hiding one div and showing the other, so the announcement has to
+                   come from a container that never moves. Switching engines is the one
+                   choice here that changes where your audio/words go — a screen reader
+                   hears that consequence, not just the radio label. -->
+              <div class="state-badge-slot" aria-live="polite">
+                <div class="state-badge state-badge-private" id="cleanup-engine-state-builtin">
+                  <svg class="state-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+                  Runs on this device — your words never leave it
+                </div>
+                <div class="state-badge state-badge-external" id="cleanup-engine-state-external" hidden>
+                  <svg class="state-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7"/><line x1="21" y1="3" x2="10" y2="14"/><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>
+                  Sends the transcript to the endpoint below
+                </div>
               </div>
             </div>
 

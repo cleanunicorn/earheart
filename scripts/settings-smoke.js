@@ -10,6 +10,8 @@
 //      and glides the panel back to the top.
 //   4. The roving tabindex is seated at load: exactly one index button is a
 //      Tab stop before any interaction.
+//   5. The engine state badge follows the engine radio in both directions, and
+//      swaps inside a live region so the privacy consequence is announced.
 //
 // Run under Electron:
 //
@@ -186,6 +188,54 @@ app.whenReady().then(async () => {
     await sleep(100);
     const cleared = await js(`document.getElementById("update-notes").hidden`);
     check("the notes clear when the update does", cleared === true, `hidden=${cleared}`);
+
+    // 6. The engine badge tracks the engine choice. Built-in vs
+    //    OpenAI-compatible decides whether audio/words ever leave the machine,
+    //    so the pill naming that consequence has to follow the radio in both
+    //    directions — and it has to sit in a live region that stays put while
+    //    the two states swap, or a screen reader hears the radio label and
+    //    nothing about where the data goes.
+    for (const kind of ["stt", "cleanup"]) {
+      const badge = JSON.parse(
+        await js(`
+          (() => {
+            const read = () => ({
+              builtin: !document.getElementById("${kind}-engine-state-builtin").hidden,
+              external: !document.getElementById("${kind}-engine-state-external").hidden,
+            });
+            const pick = (value) => {
+              const radio = document.querySelector(
+                'input[name="${kind}-engine"][value=' + JSON.stringify(value) + ']'
+              );
+              radio.checked = true;
+              radio.dispatchEvent(new Event("change", { bubbles: true }));
+              return read();
+            };
+            const slot = document
+              .getElementById("${kind}-engine-state-builtin")
+              .closest("[aria-live]");
+            return JSON.stringify({
+              external: pick("external"),
+              builtin: pick("builtin"),
+              live: slot ? slot.getAttribute("aria-live") : null,
+            });
+          })()
+        `)
+      );
+      check(
+        `the ${kind} engine badge follows the engine choice`,
+        badge.external.external &&
+          !badge.external.builtin &&
+          badge.builtin.builtin &&
+          !badge.builtin.external,
+        `external=${JSON.stringify(badge.external)} builtin=${JSON.stringify(badge.builtin)}`
+      );
+      check(
+        `the ${kind} engine badge swaps inside a live region`,
+        badge.live === "polite",
+        `aria-live=${badge.live}`
+      );
+    }
 
     const failed = checks.filter((c) => !c.ok);
     console.log(

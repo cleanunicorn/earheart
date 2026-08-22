@@ -312,10 +312,11 @@ function openSettings({ fromWizard = false } = {}) {
     return settingsWindow;
   }
   settingsWindow = new BrowserWindow({
-    // Index rail (168px) + the content column (max-width 620px in
+    // Index rail (180px) + the content column (max-width 620px in
     // settings.css) with its side padding; wide enough that grid-2 fields
-    // stay comfortable.
-    width: 760,
+    // stay comfortable. Widened with the rail when the index gained its
+    // section glyphs, so the content column stayed where it was.
+    width: 772,
     // The panel is one continuous scroll; this shows the whole General
     // section (the most-visited controls) without scrolling.
     height: 780,

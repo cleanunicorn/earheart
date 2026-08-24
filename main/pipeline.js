@@ -412,9 +412,11 @@ function init() {
   // `fromSample` must be forwarded: it is the contiguity check that lets the
   // committed chunk decodes stand in for the final transcript's prefix. Dropping
   // it marks every snapshot broken, so the final pass silently falls back to
-  // decoding the whole recording in one shot.
-  ipcMain.on("audio:partial", (event, { sid, seq, final, fromSample, wav } = {}) => {
-    livePreview.handleAudio(sid, { seq, final, fromSample, wav });
+  // decoding the whole recording in one shot. `hasSpeech` is the other half of
+  // that trust — without it a chunk that decoded to nothing is taken at its
+  // word and the speech inside it is never decoded again.
+  ipcMain.on("audio:partial", (event, { sid, seq, final, fromSample, hasSpeech, wav } = {}) => {
+    livePreview.handleAudio(sid, { seq, final, fromSample, hasSpeech, wav });
   });
 
   ipcMain.on("record:cancelled", (event, { sid } = {}) => {

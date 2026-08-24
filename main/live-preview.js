@@ -24,9 +24,10 @@
 // audio tail instead of re-decoding the whole recording. That works even with
 // the preview display off (the overlay still commits chunks; nothing is
 // painted). Integrity is tracked per commit — each final chunk must start
-// exactly where decoded coverage ends (`fromSample === decodedSamples`) and
-// decode successfully, else the snapshot is marked broken and the final pass
-// falls back to the full decode. Never lose the user's words.
+// exactly where decoded coverage ends (`fromSample === decodedSamples`), decode
+// successfully, and come back with text if the overlay heard speech in it
+// (`hasSpeech`), else the snapshot is marked broken and the final pass falls
+// back to the full decode. Never lose the user's words.
 //
 // Dependencies are injected so the module stays free of the pipeline's private
 // session/state and is unit-testable:
@@ -128,7 +129,7 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   // the last send of that chunk (commit it). A growing in-progress chunk arrives
   // as repeated non-final sends with the same seq. `fromSample` is the absolute
   // sample offset the chunk starts at — final assembly's contiguity check.
-  async function handleAudio(sid, { seq, final, fromSample, wav: wavArrayBuffer } = {}) {
+  async function handleAudio(sid, { seq, final, fromSample, hasSpeech, wav: wavArrayBuffer } = {}) {
     if (!isCurrent(sid)) return;
     const cfg = getSettings();
     if (cfg.stt.engine !== "builtin") return;
@@ -162,7 +163,14 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
         // out-of-order commit, an unparseable buffer) breaks the snapshot for
         // final assembly — the preview display above is unaffected.
         const frames = wavSampleFrames(wav);
-        if (!broken && fromSample === decodedSamples && frames > 0) {
+        // A chunk the overlay heard speech in that decodes to nothing is the
+        // same hole by another route: its samples would count as decoded and
+        // never be looked at again, so the words in them would be gone from the
+        // final transcript for good. Break the snapshot instead — the full
+        // decode costs latency, losing the user's words costs the dictation.
+        // (A silent chunk decoding to nothing is honest, and stays covered.)
+        const lostWords = !!hasSpeech && !text;
+        if (!broken && !lostWords && fromSample === decodedSamples && frames > 0) {
           decodedSamples = fromSample + frames;
         } else {
           broken = true;

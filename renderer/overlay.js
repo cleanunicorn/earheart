@@ -374,10 +374,10 @@ function totalSamples(chunks) {
   return n;
 }
 
-// Encode the recorded samples in [from, to) into a WAV. Walks the chunk list,
-// skipping samples before `from` and stopping at `to`, so we only ever encode
-// the slice the live preview needs — not the whole growing buffer.
-function encodeWavRange(chunks, from, to) {
+// Flatten the recorded samples in [from, to) into one buffer. Walks the chunk
+// list, skipping samples before `from` and stopping at `to`, so we only ever
+// touch the slice the live preview needs — not the whole growing buffer.
+function flattenRange(chunks, from, to) {
   const flat = new Float32Array(to - from);
   let pos = 0; // absolute sample index at the start of the current chunk
   let out = 0;
@@ -391,7 +391,7 @@ function encodeWavRange(chunks, from, to) {
     pos += chunk.length;
     if (pos >= to) break;
   }
-  return encodeWav([flat]);
+  return flat;
 }
 
 // A chunk boundary is only committed when the trailing QUIET_WINDOW_SEC of
@@ -403,6 +403,23 @@ function encodeWavRange(chunks, from, to) {
 // costs a little accuracy on one word rather than unbounded re-decode cost.
 const QUIET_WINDOW_SEC = 0.3;
 const QUIET_RMS = 0.012;
+
+// Did anyone speak inside this committed chunk? The same silence test the
+// boundary detector uses, applied window by window across the whole chunk: any
+// window above QUIET_RMS means the chunk carries words. The main process pairs
+// this with the chunk's decode — audible speech that decodes to nothing is a
+// hole in the committed transcript, and those samples must not be marked
+// decoded (see main/live-preview.js).
+function rangeHasSpeech(samples) {
+  const windowSamples = Math.max(1, Math.floor(QUIET_WINDOW_SEC * SAMPLE_RATE));
+  for (let start = 0; start < samples.length; start += windowSamples) {
+    const end = Math.min(samples.length, start + windowSamples);
+    let sum = 0;
+    for (let i = start; i < end; i++) sum += samples[i] * samples[i];
+    if (Math.sqrt(sum / (end - start)) >= QUIET_RMS) return true;
+  }
+  return false;
+}
 
 // RMS of the trailing `windowSamples` recorded samples.
 function trailingRms(chunks, windowSamples) {
@@ -447,13 +464,16 @@ function sendPartial() {
       trailingRms(recording.chunks, Math.floor(QUIET_WINDOW_SEC * SAMPLE_RATE)) < QUIET_RMS);
   if (!final && !livePreview.display) return;
 
-  const wav = encodeWavRange(recording.chunks, from, total);
+  const samples = flattenRange(recording.chunks, from, total);
   earheart.send("audio:partial", {
     sid: recording.sid,
     seq: recording.seq,
     final,
     fromSample: from,
-    wav,
+    // Only the committed send is assembled into the final transcript, so only
+    // it needs the probe — an in-progress tick is replaceable cosmetics.
+    hasSpeech: final ? rangeHasSpeech(samples) : false,
+    wav: encodeWav([samples]),
   });
 
   if (final) {

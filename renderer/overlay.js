@@ -403,6 +403,12 @@ function flattenRange(chunks, from, to) {
 // costs a little accuracy on one word rather than unbounded re-decode cost.
 const QUIET_WINDOW_SEC = 0.3;
 const QUIET_RMS = 0.012;
+// How far a forced boundary may move back to find a calmer place to cut, and
+// how finely that range is scanned. Three seconds is long enough to reach the
+// gap between two sentences at speaking pace, short enough that the audio
+// handed to the next chunk stays small.
+const BOUNDARY_SEARCH_SEC = 3;
+const BOUNDARY_HOP_SEC = 0.05;
 
 // RMS of the trailing `windowSamples` recorded samples.
 function trailingRms(chunks, windowSamples) {
@@ -441,13 +447,32 @@ function sendPartial() {
 
   const chunkSamples = (livePreview.chunkSeconds || 10) * SAMPLE_RATE;
   const liveSamples = total - from;
-  const final =
-    liveSamples >= chunkSamples * 2 ||
-    (liveSamples >= chunkSamples &&
-      trailingRms(recording.chunks, Math.floor(QUIET_WINDOW_SEC * SAMPLE_RATE)) < QUIET_RMS);
+  const windowSamples = Math.floor(QUIET_WINDOW_SEC * SAMPLE_RATE);
+  const paused =
+    liveSamples >= chunkSamples &&
+    trailingRms(recording.chunks, windowSamples) < QUIET_RMS;
+  const forced = !paused && liveSamples >= chunkSamples * 2;
+  const final = paused || forced;
   if (!final && !livePreview.display) return;
 
-  const samples = flattenRange(recording.chunks, from, total);
+  // A pause-triggered boundary is already sitting in silence. A forced one is
+  // cutting through speech, so it moves back to the quietest window in the last
+  // BOUNDARY_SEARCH_SEC instead of splitting whatever word is being said right
+  // now (see chunk-boundary.js). Everything after the boundary stays live and
+  // is re-sent with the next chunk, so nothing is skipped either way.
+  let boundary = total;
+  if (forced) {
+    const searchFrom = Math.max(from + chunkSamples, total - BOUNDARY_SEARCH_SEC * SAMPLE_RATE);
+    boundary =
+      searchFrom +
+      quietestOffset(
+        flattenRange(recording.chunks, searchFrom, total),
+        windowSamples,
+        Math.floor(BOUNDARY_HOP_SEC * SAMPLE_RATE)
+      );
+  }
+
+  const samples = flattenRange(recording.chunks, from, final ? boundary : total);
   earheart.send("audio:partial", {
     sid: recording.sid,
     seq: recording.seq,
@@ -464,7 +489,7 @@ function sendPartial() {
 
   if (final) {
     // Freeze this chunk: future ticks send only audio recorded after it.
-    recording.committedSamples = total;
+    recording.committedSamples = boundary;
     recording.seq += 1;
   }
 }

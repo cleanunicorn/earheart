@@ -404,23 +404,6 @@ function flattenRange(chunks, from, to) {
 const QUIET_WINDOW_SEC = 0.3;
 const QUIET_RMS = 0.012;
 
-// Did anyone speak inside this committed chunk? The same silence test the
-// boundary detector uses, applied window by window across the whole chunk: any
-// window above QUIET_RMS means the chunk carries words. The main process pairs
-// this with the chunk's decode — audible speech that decodes to nothing is a
-// hole in the committed transcript, and those samples must not be marked
-// decoded (see main/live-preview.js).
-function rangeHasSpeech(samples) {
-  const windowSamples = Math.max(1, Math.floor(QUIET_WINDOW_SEC * SAMPLE_RATE));
-  for (let start = 0; start < samples.length; start += windowSamples) {
-    const end = Math.min(samples.length, start + windowSamples);
-    let sum = 0;
-    for (let i = start; i < end; i++) sum += samples[i] * samples[i];
-    if (Math.sqrt(sum / (end - start)) >= QUIET_RMS) return true;
-  }
-  return false;
-}
-
 // RMS of the trailing `windowSamples` recorded samples.
 function trailingRms(chunks, windowSamples) {
   let needed = windowSamples;
@@ -470,9 +453,12 @@ function sendPartial() {
     seq: recording.seq,
     final,
     fromSample: from,
+    // Did the user speak inside this chunk? Paired with the decode on the main
+    // side: speech in, no text out, means the words are still in the audio and
+    // it must be decoded again (see speech-probe.js and main/live-preview.js).
     // Only the committed send is assembled into the final transcript, so only
     // it needs the probe — an in-progress tick is replaceable cosmetics.
-    hasSpeech: final ? rangeHasSpeech(samples) : false,
+    hasSpeech: final ? containsSpeech(samples, SAMPLE_RATE) : false,
     wav: encodeWav([samples]),
   });
 

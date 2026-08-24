@@ -25,9 +25,9 @@
 // the preview display off (the overlay still commits chunks; nothing is
 // painted). Integrity is tracked per commit — each final chunk must start
 // exactly where decoded coverage ends (`fromSample === decodedSamples`), decode
-// successfully, and come back with text if the overlay heard speech in it
-// (`hasSpeech`), else the snapshot is marked broken and the final pass falls
-// back to the full decode. Never lose the user's words.
+// successfully, and come back with text unless the overlay is sure nobody spoke
+// in it (`hasSpeech === false`), else the snapshot is marked broken and the
+// final pass falls back to the full decode. Never lose the user's words.
 //
 // Dependencies are injected so the module stays free of the pipeline's private
 // session/state and is unit-testable:
@@ -169,7 +169,11 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
         // final transcript for good. Break the snapshot instead — the full
         // decode costs latency, losing the user's words costs the dictation.
         // (A silent chunk decoding to nothing is honest, and stays covered.)
-        const lostWords = !!hasSpeech && !text;
+        //
+        // Only an explicit `false` buys that coverage: a payload that lost the
+        // field on the way, or a renderer too old to send it, arrives as
+        // undefined and must not be read as a promise that nobody spoke.
+        const lostWords = !text && hasSpeech !== false;
         if (!broken && !lostWords && fromSample === decodedSamples && frames > 0) {
           decodedSamples = fromSample + frames;
         } else {

@@ -446,8 +446,9 @@ const wavOf = (frames) => {
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
 };
 // A committed-chunk payload carrying its absolute start offset. `hasSpeech` is
-// the overlay's "someone spoke inside this chunk" probe; the default (absent,
-// i.e. silence) keeps the coverage tests below about contiguity alone.
+// the overlay's "someone spoke inside this chunk" probe; leaving it out means
+// no verdict, which is only consulted when a chunk decodes to nothing — so the
+// coverage tests below (which all decode to text) stay about contiguity alone.
 const finalChunk = (seq, fromSample, frames, hasSpeech) => ({
   seq,
   final: true,
@@ -513,6 +514,16 @@ test("a silent committed chunk that decodes to nothing stays covered", async () 
   assert.strictEqual(snap.broken, false, "nothing said, nothing lost");
   assert.strictEqual(snap.decodedSamples, 24000);
   assert.strictEqual(snap.committedRaw, "chunk one");
+});
+
+test("a committed chunk with no speech verdict is not trusted to be silent", async () => {
+  // The field went missing on the way (dropped from the payload, an older
+  // renderer). Absent is not "nobody spoke" — cover those samples on that and
+  // an empty decode silently eats the words again.
+  const h = harness();
+  h.setTranscribe(async () => "");
+  await h.lp.handleAudio(1, finalChunk(0, 0, 16000));
+  assert.strictEqual(h.lp.snapshotFinal().broken, true);
 });
 
 test("a speech-bearing chunk that decodes to whitespace only breaks the snapshot", async () => {

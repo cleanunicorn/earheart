@@ -41,6 +41,13 @@ const SILENCE_RMS = 0.0015;
 // The shortest thing worth calling speech. A word, not a transient.
 const SPEECH_MIN_SEC = 0.6;
 
+// Root mean square of samples in [from, to).
+function rms(samples, from, to) {
+  let sum = 0;
+  for (let i = from; i < to; i++) sum += samples[i] * samples[i];
+  return Math.sqrt(sum / (to - from));
+}
+
 // RMS per fixed-size window, in order. A chunk too short to hold one full
 // window is measured whole rather than skipped: reporting "no speech" because
 // there was no room to look is the one answer that loses words.
@@ -48,15 +55,9 @@ function windowRmsSeries(samples, sampleRate) {
   const size = Math.max(1, Math.floor(SPEECH_WINDOW_SEC * sampleRate));
   const out = [];
   for (let start = 0; start + size <= samples.length; start += size) {
-    let sum = 0;
-    for (let i = start; i < start + size; i++) sum += samples[i] * samples[i];
-    out.push(Math.sqrt(sum / size));
+    out.push(rms(samples, start, start + size));
   }
-  if (!out.length && samples.length) {
-    let sum = 0;
-    for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
-    out.push(Math.sqrt(sum / samples.length));
-  }
+  if (!out.length && samples.length) out.push(rms(samples, 0, samples.length));
   return out;
 }
 
@@ -86,19 +87,22 @@ function containsSpeech(samples, sampleRate) {
     Math.min(series.length, Math.round(SPEECH_MIN_SEC / SPEECH_WINDOW_SEC))
   );
   let loud = 0;
-  for (const rms of series) {
-    if (rms >= threshold && ++loud >= needed) return true;
+  for (const windowRms of series) {
+    if (windowRms >= threshold && ++loud >= needed) return true;
   }
   return false;
 }
 
+// The verdict that ships with a chunk on `audio:partial`. Only a committed
+// chunk is assembled into the final transcript, so only it is worth probing —
+// an in-progress tick is replaceable cosmetics, and probing one would run this
+// scan over the growing live buffer on every interval for an answer nobody
+// reads. Kept here rather than inline at the send site so the "committed only"
+// rule is testable.
+function chunkSpeechVerdict(final, samples, sampleRate) {
+  return final ? containsSpeech(samples, sampleRate) : false;
+}
+
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = {
-    containsSpeech,
-    SPEECH_WINDOW_SEC,
-    SPEECH_RMS,
-    SPEECH_OVER_FLOOR,
-    SILENCE_RMS,
-    SPEECH_MIN_SEC,
-  };
+  module.exports = { containsSpeech, chunkSpeechVerdict };
 }

@@ -374,10 +374,10 @@ function totalSamples(chunks) {
   return n;
 }
 
-// Encode the recorded samples in [from, to) into a WAV. Walks the chunk list,
-// skipping samples before `from` and stopping at `to`, so we only ever encode
-// the slice the live preview needs — not the whole growing buffer.
-function encodeWavRange(chunks, from, to) {
+// Flatten the recorded samples in [from, to) into one buffer. Walks the chunk
+// list, skipping samples before `from` and stopping at `to`, so we only ever
+// touch the slice the live preview needs — not the whole growing buffer.
+function flattenRange(chunks, from, to) {
   const flat = new Float32Array(to - from);
   let pos = 0; // absolute sample index at the start of the current chunk
   let out = 0;
@@ -391,7 +391,7 @@ function encodeWavRange(chunks, from, to) {
     pos += chunk.length;
     if (pos >= to) break;
   }
-  return encodeWav([flat]);
+  return flat;
 }
 
 // A chunk boundary is only committed when the trailing QUIET_WINDOW_SEC of
@@ -447,13 +447,19 @@ function sendPartial() {
       trailingRms(recording.chunks, Math.floor(QUIET_WINDOW_SEC * SAMPLE_RATE)) < QUIET_RMS);
   if (!final && !livePreview.display) return;
 
-  const wav = encodeWavRange(recording.chunks, from, total);
+  const samples = flattenRange(recording.chunks, from, total);
   earheart.send("audio:partial", {
     sid: recording.sid,
     seq: recording.seq,
     final,
     fromSample: from,
-    wav,
+    // Did the user speak inside this chunk? Paired with the decode on the main
+    // side: speech in, no text out, means the words are still in the audio and
+    // it must be decoded again (see speech-probe.js and main/live-preview.js).
+    // Only the committed send is assembled into the final transcript, so only
+    // it needs the probe — an in-progress tick is replaceable cosmetics.
+    hasSpeech: final ? containsSpeech(samples, SAMPLE_RATE) : false,
+    wav: encodeWav([samples]),
   });
 
   if (final) {

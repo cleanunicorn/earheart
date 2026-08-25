@@ -33,6 +33,29 @@ test("every id overlay.js references exists in overlay.html", () => {
   assert.deepStrictEqual(missing, [], `overlay.html is missing ids: ${missing.join(", ")}`);
 });
 
+// overlay.js calls into its sibling renderer scripts (transcript.js for the
+// two-layer paint, speech-probe.js for the committed-chunk verdict) as plain
+// globals. A script tag dropped from the markup, or a file renamed, throws a
+// ReferenceError deep inside a commit — the preview goes blank and the final
+// pass quietly falls back to a full decode, with overlay-smoke still green.
+test("overlay.html loads every sibling script overlay.js calls into", () => {
+  const loaded = [...html.matchAll(/<script src="([a-z0-9.-]+)"><\/script>/g)].map((m) => m[1]);
+  assert.ok(loaded.includes("overlay.js"), "overlay.html must load overlay.js");
+
+  for (const src of loaded) {
+    assert.ok(fs.existsSync(path.join(RENDERER, src)), `overlay.html loads a missing ${src}`);
+  }
+  // Globals must be defined before overlay.js runs, so their tags come first.
+  const helpers = loaded.slice(0, loaded.indexOf("overlay.js"));
+  for (const { file, fn } of [
+    { file: "transcript.js", fn: "reconcileTranscript" },
+    { file: "speech-probe.js", fn: "containsSpeech" },
+  ]) {
+    assert.ok(new RegExp(`\\b${fn}\\(`).test(js), `overlay.js should call ${fn}()`);
+    assert.ok(helpers.includes(file), `overlay.html must load ${file} before overlay.js`);
+  }
+});
+
 test("overlay.css keeps the [hidden]-always-wins rule", () => {
   // overlay.js toggles the update prompt, its bar, its action pills and the
   // transcript through the hidden attribute; components that set their own

@@ -445,11 +445,15 @@ const wavOf = (frames) => {
   const buf = encodeWav(new Int16Array(frames));
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
 };
-// A committed-chunk payload carrying its absolute start offset.
-const finalChunk = (seq, fromSample, frames) => ({
+// A committed-chunk payload carrying its absolute start offset. `hasSpeech` is
+// the overlay's "someone spoke inside this chunk" probe; leaving it out means
+// no verdict, which is only consulted when a chunk decodes to nothing — so the
+// coverage tests below (which all decode to text) stay about contiguity alone.
+const finalChunk = (seq, fromSample, frames, hasSpeech) => ({
   seq,
   final: true,
   fromSample,
+  hasSpeech,
   wav: wavOf(frames),
 });
 
@@ -484,6 +488,48 @@ test("a failed final-chunk decode breaks the snapshot", async () => {
     throw new Error("decode boom");
   });
   await h.lp.handleAudio(1, finalChunk(0, 0, 16000));
+  assert.strictEqual(h.lp.snapshotFinal().broken, true);
+});
+
+test("a committed chunk that heard speech but decoded to nothing breaks the snapshot", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "chunk zero");
+  await h.lp.handleAudio(1, finalChunk(0, 0, 16000, true));
+  // The words are audibly there, the decoder returned nothing: covering those
+  // samples would drop them from the final transcript for good.
+  h.setTranscribe(async () => "");
+  await h.lp.handleAudio(1, finalChunk(1, 16000, 16000, true));
+  const snap = h.lp.snapshotFinal();
+  assert.strictEqual(snap.broken, true, "speech in, no text out, is a hole");
+  assert.strictEqual(snap.decodedSamples, 16000, "the empty chunk is not covered");
+});
+
+test("a silent committed chunk that decodes to nothing stays covered", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "");
+  await h.lp.handleAudio(1, finalChunk(0, 0, 16000, false));
+  h.setTranscribe(async () => "chunk one");
+  await h.lp.handleAudio(1, finalChunk(1, 16000, 8000, true));
+  const snap = h.lp.snapshotFinal();
+  assert.strictEqual(snap.broken, false, "nothing said, nothing lost");
+  assert.strictEqual(snap.decodedSamples, 24000);
+  assert.strictEqual(snap.committedRaw, "chunk one");
+});
+
+test("a committed chunk with no speech verdict is not trusted to be silent", async () => {
+  // The field went missing on the way (dropped from the payload, an older
+  // renderer). Absent is not "nobody spoke" — cover those samples on that and
+  // an empty decode silently eats the words again.
+  const h = harness();
+  h.setTranscribe(async () => "");
+  await h.lp.handleAudio(1, finalChunk(0, 0, 16000));
+  assert.strictEqual(h.lp.snapshotFinal().broken, true);
+});
+
+test("a speech-bearing chunk that decodes to whitespace only breaks the snapshot", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "   ");
+  await h.lp.handleAudio(1, finalChunk(0, 0, 16000, true));
   assert.strictEqual(h.lp.snapshotFinal().broken, true);
 });
 

@@ -790,6 +790,50 @@ test("unloadIdle reports success when there is nothing resident to skip", async 
   assert.ok(stt.stopped);
 });
 
+test("a worker mid cold-load is skipped and reported, not counted as idle", async () => {
+  // The loaded-model flag is only set once `load-stt` RESOLVES (see ensureStt),
+  // so for the seconds a cold load takes it still reads null while the worker is
+  // busy. Short-circuiting on the flag would report a COMPLETE unload for a
+  // worker that was never even asked whether it was busy — and main/pipeline.js
+  // re-arms its retry only when unloadIdle() comes back false, so the model
+  // would finish loading and sit resident with no timer behind it.
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const stt = hostsBySvc["earheart-stt"];
+
+  // Hold `load-stt` in flight the way the real host does: busy until it settles.
+  let releaseLoad;
+  const held = new Promise((r) => (releaseLoad = r));
+  const passThrough = stt.request;
+  stt.request = async (type, payload) => {
+    if (type !== "load-stt") return passThrough(type, payload);
+    stt.inFlight++;
+    try {
+      await held;
+      return { ready: true };
+    } finally {
+      stt.inFlight--;
+    }
+  };
+
+  const loading = facade.transcribe(Buffer.from("wav"), STT_CFG);
+  await new Promise((r) => setImmediate(r)); // let ensureStt reach the pending load
+  assert.ok(stt.busy(), "precondition: the load is actually in flight");
+
+  assert.strictEqual(
+    facade.unloadIdle(),
+    false,
+    "a worker mid-load must be reported as skipped so the caller comes back for it"
+  );
+  assert.ok(!stt.stopped, "a worker mid-load must not be killed");
+
+  releaseLoad();
+  await loading;
+
+  // Once the load settles the worker is resident and evicts as usual.
+  assert.strictEqual(facade.unloadIdle(), true, "the settled worker unloads completely");
+  assert.ok(stt.stopped);
+});
+
 test("transcribe/clean reject early on an already-aborted signal without touching the worker", async () => {
   // The "pre-cancelled call returns early rather than spending a model load /
   // inference" contract: an aborted signal short-circuits before any host request.

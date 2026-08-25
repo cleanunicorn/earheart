@@ -49,10 +49,7 @@ const STYLES = [
       "readable prose: fix grammar and lightly rephrase awkward phrasing for " +
       "clarity. Preserve the speaker's meaning, intent and approximate " +
       "length — do not summarize, expand or invent details.",
-    // Loose enough to rephrase, tight enough that a 4B model still obeys the
-    // directive: unbounded sampling (topK 0 / topP 1) was where "remove the
-    // fillers" started getting ignored.
-    sampling: { temperature: 0.3, topP: 0.95, topK: 40, minP: 0.02 },
+    sampling: { temperature: 0.4, topP: 1.0, topK: 0, minP: 0.02 },
   },
 ];
 

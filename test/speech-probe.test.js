@@ -72,6 +72,34 @@ test("a single loud transient does not carry speech", () => {
   assert.strictEqual(containsSpeech(chunk, SAMPLE_RATE), false);
 });
 
+// The two cases below pin decision boundaries rather than comfortable
+// middles. Both were checked by mutation: without them, tightening the
+// threshold comparison to `>` or raising the window minimum to 3 leaves the
+// whole suite green.
+
+test("a window landing exactly on the threshold counts as speech", () => {
+  // 0.001953125 is 2^-9, so every RMS below is computed exactly: a window of
+  // constant magnitude f has RMS exactly f, and one at 3f has RMS exactly 3f.
+  // The room is f throughout, so the relative bar sits at exactly 3f — the
+  // loud windows land ON the threshold, not above it.
+  const floorAmp = 0.001953125;
+  const chunk = level(12, floorAmp);
+  speakInto(chunk, 0, 0.6, 3 * floorAmp);
+  assert.strictEqual(containsSpeech(chunk, SAMPLE_RATE), true);
+});
+
+test("two loud windows are speech, one is not", () => {
+  // 0.3 s windows: [0, 0.6) is exactly two, [0, 0.3) exactly one. The bar is
+  // 0.6 s of audio, so two clears it and one must not — in both directions.
+  const two = level(12, 0);
+  speakInto(two, 0, 0.6, 0.05);
+  assert.strictEqual(containsSpeech(two, SAMPLE_RATE), true);
+
+  const one = level(12, 0);
+  speakInto(one, 0, 0.3, 0.05);
+  assert.strictEqual(containsSpeech(one, SAMPLE_RATE), false);
+});
+
 test("a chunk too short to hold a window is still measured", () => {
   // Never answer "no speech" because there was no room to look.
   assert.strictEqual(containsSpeech(level(0.2, 0.05), SAMPLE_RATE), true);

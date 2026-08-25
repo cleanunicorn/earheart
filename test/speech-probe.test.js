@@ -100,6 +100,52 @@ test("two loud windows are speech, one is not", () => {
   assert.strictEqual(containsSpeech(one, SAMPLE_RATE), false);
 });
 
+// A speaker pausing N times and a steady noise dropping out N times are the
+// SAME signal at this level of detail, so the floor's window count is really
+// one question: how many pauses before a quiet, unbroken level is believed to
+// be a voice? The three tests below pin both sides of that answer.
+
+test("a low-gain speaker who pauses is heard, without needing to pause constantly", () => {
+  // 20 s at 0.008 RMS — never reaches the absolute bar, so only the relative
+  // bar can answer, and it can only answer if the floor is measured in a pause.
+  // The 10th percentile this replaced needed SEVEN quiet windows on a chunk
+  // this long, so a speaker pausing three times measured their floor against
+  // their own voice and came back "no speech" — and an empty decode was then
+  // believed, losing the words.
+  const chunk = level(20, 0.008);
+  for (const at of [5, 10, 15]) speakInto(chunk, at, at + 0.7, 0.0008);
+  assert.strictEqual(containsSpeech(chunk, SAMPLE_RATE), true);
+});
+
+test("one dropout in steady noise is not a voice", () => {
+  // The reason the floor looks past more than one window: a single freak-quiet
+  // window must not drag it down and turn a fan into a sentence, which would
+  // cost a full re-decode of the recording on every noisy-room dictation.
+  const chunk = level(20, 0.006);
+  speakInto(chunk, 5, 5.7, 0.0002);
+  assert.strictEqual(containsSpeech(chunk, SAMPLE_RATE), false);
+});
+
+test("steady room tone carries no speech however loud the room is", () => {
+  // Every level under the absolute bar, unbroken: the floor sits on the tone
+  // itself, so nothing stands above it. Pinned across the range because the
+  // floor change only lowers thresholds — this is the property it must not cost.
+  for (const rms of [0.002, 0.006, 0.01]) {
+    assert.strictEqual(containsSpeech(level(20, rms), SAMPLE_RATE), false, `rms=${rms}`);
+  }
+});
+
+// KNOWN LIMIT, pinned so a future change to it is deliberate rather than
+// accidental. A chunk with no pause anywhere is, by RMS alone, identical to
+// steady room tone: the same value in every window. The probe answers "no
+// speech", which keeps a noisy room from forcing a full re-decode but means a
+// low-gain speaker who never once pauses in 20 s is not covered. Separating
+// the two needs evidence this module doesn't have — spectral shape, or a floor
+// carried across chunks. See #109.
+test("a gapless low-gain chunk is indistinguishable from room tone", () => {
+  assert.strictEqual(containsSpeech(level(20, 0.008), SAMPLE_RATE), false);
+});
+
 test("a chunk too short to hold a window is still measured", () => {
   // Never answer "no speech" because there was no room to look.
   assert.strictEqual(containsSpeech(level(0.2, 0.05), SAMPLE_RATE), true);

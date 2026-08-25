@@ -17,6 +17,16 @@
 //     without it the probe fails exactly where the decoder is likeliest to
 //     return nothing.
 //
+// The relative bar only works if the floor is measured somewhere the speaker
+// ISN'T talking, so what it really costs is pauses: the chunk has to hold at
+// least FLOOR_QUIET_WINDOWS quiet windows before the floor stops sitting on
+// speech. A chunk with no pause at all is, at this level of detail, the same
+// signal as steady room tone — same RMS in every window — and no threshold can
+// separate the two. That case stays a known limit rather than a guess: it needs
+// evidence this module doesn't have (spectral shape, or a floor carried across
+// chunks), and guessing "speech" there would force a full re-decode on every
+// noisy-room dictation.
+//
 // Both bars need SPEECH_MIN_SEC of audio to clear them before the chunk counts
 // as speech. A single click, a chair creak or one clipped sample is not a
 // sentence, and used to be enough to force a full re-decode of the recording.
@@ -40,6 +50,14 @@ const SPEECH_OVER_FLOOR = 3;
 const SILENCE_RMS = 0.0015;
 // The shortest thing worth calling speech. A word, not a transient.
 const SPEECH_MIN_SEC = 0.6;
+// How many of the quietest windows the floor has to look past. One would let a
+// single dropout in otherwise steady noise drag the floor down and call the
+// noise a voice; the 10th percentile this replaced needed SEVEN quiet windows
+// on a 20 s chunk, so a low-gain speaker pausing six times still measured their
+// floor against their own voice and came back "no speech". Three is enough
+// pauses to mean the speaker really stopped, and few enough that ordinary
+// speech clears it.
+const FLOOR_QUIET_WINDOWS = 3;
 
 // Root mean square of samples in [from, to).
 function rms(samples, from, to) {
@@ -61,14 +79,19 @@ function windowRmsSeries(samples, sampleRate) {
   return out;
 }
 
-// The room, as this chunk shows it: the 10th-percentile window rather than the
-// minimum, so one freak-quiet window can't drag the floor down and turn steady
-// noise into "speech". In a chunk holding any pause at all this lands on the
-// pause; in one that is wall-to-wall speech it lands on speech, and the
-// absolute bar is what carries the verdict there.
+// The room, as this chunk shows it: the FLOOR_QUIET_WINDOWS'th quietest window
+// rather than the minimum, so one freak-quiet window can't drag the floor down
+// and turn steady noise into "speech". In a chunk holding a few pauses this
+// lands on a pause; in one that is wall-to-wall speech it lands on speech, and
+// the absolute bar is what carries the verdict there.
+//
+// Counting windows rather than taking a percentile is deliberate: a percentile
+// scales the evidence demanded with the LENGTH of the chunk, so the 20 s chunks
+// the hard cap produces — the ones most likely to reach this probe — were the
+// ones asked for the most pauses, which is backwards.
 function noiseFloor(rmsSeries) {
   const sorted = [...rmsSeries].sort((a, b) => a - b);
-  return sorted[Math.floor(0.1 * (sorted.length - 1))];
+  return sorted[Math.min(FLOOR_QUIET_WINDOWS - 1, sorted.length - 1)];
 }
 
 function containsSpeech(samples, sampleRate) {

@@ -48,6 +48,7 @@ test("overlay.html loads every sibling script overlay.js calls into", () => {
   // Globals must be defined before overlay.js runs, so their tags come first.
   const helpers = loaded.slice(0, loaded.indexOf("overlay.js"));
   for (const { file, fn } of [
+    { file: "chunk-boundary.js", fn: "quietestOffset" },
     { file: "transcript.js", fn: "reconcileTranscript" },
     { file: "speech-probe.js", fn: "containsSpeech" },
   ]) {

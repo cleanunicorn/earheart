@@ -315,6 +315,11 @@ Three settings are worth a minute for agent work:
   default prompt already forbids acting on the transcript's content: your
   dictation is text to clean, never instructions to follow.)
 
+  Editing the prompt is safe: the chosen style's rules are added to whatever
+  you write. **Custom values** (the sampling tab) is the exception — it runs
+  your prompt alone, with no style rules at all, so a custom setup has to ask
+  for filler and repetition removal itself.
+
 **What it doesn't do yet.** You still press Enter yourself — Earheart pastes,
 it doesn't submit. The agent can't ask *you* a question by voice, and it can't
 talk back. Those are the next things we're building; the ideas are filed as

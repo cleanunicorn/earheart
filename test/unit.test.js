@@ -287,6 +287,23 @@ test("customModels defaults to empty and a stored list survives the merge", () =
   assert.deepStrictEqual(deepMerge(DEFAULTS, { customModels: stored }).customModels, stored);
 });
 
+/* ---------------- cleanup styles ---------------- */
+
+// The directive is the lever that actually removes fillers — measured against
+// the real Gemma 3 4B in scripts/eval-cleanup.mjs, where the wording below took
+// filler survival from 20/10 runs to 0/10. Keep these promises explicit.
+test("cleanup styles that promise a tidy result ask for it explicitly", () => {
+  for (const id of ["clean", "polished"]) {
+    const { systemPrompt } = resolveCleanup({ systemPrompt: "Base.", style: id });
+    assert.match(systemPrompt, /filler word/i);
+    assert.match(systemPrompt, /collapse repeated words/i);
+  }
+  // Verbatim promises the opposite.
+  const verbatim = resolveCleanup({ systemPrompt: "Base.", style: "verbatim" });
+  assert.match(verbatim.systemPrompt, /do not remove fillers/i);
+  assert.match(verbatim.systemPrompt, /or repetition/i);
+});
+
 /* ---------------- cleanup dictionary ---------------- */
 
 test("dictionary defaults to empty and a stored list survives the merge", () => {

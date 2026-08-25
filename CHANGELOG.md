@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.28.1 — 2026-08-25
+
+- Never cover a chunk that swallowed the words (#103)
+
 ## v0.28.0 — 2026-08-22
 
 - Section icons and engine-state color as comprehension aids (#102)

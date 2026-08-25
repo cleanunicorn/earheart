@@ -94,12 +94,5 @@ function containsSpeech(samples, sampleRate) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = {
-    containsSpeech,
-    SPEECH_WINDOW_SEC,
-    SPEECH_RMS,
-    SPEECH_OVER_FLOOR,
-    SILENCE_RMS,
-    SPEECH_MIN_SEC,
-  };
+  module.exports = { containsSpeech };
 }

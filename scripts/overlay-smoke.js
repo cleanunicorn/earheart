@@ -252,8 +252,16 @@ app.whenReady().then(async () => {
     // Speak ~0.5s, pause ~0.6s (the fake mic keeps producing tone — none of it
     // may land in the capture), resume and speak ~0.5s more. The WAV must
     // cover only the live spans, and the timer must agree with it.
+    //
+    // The live spans are MEASURED, not assumed: the read-backs below (lit
+    // pixels, waveform columns, UI state) all happen while the take is live,
+    // and on a descheduled CI runner each IPC round-trip adds real recorded
+    // time. Comparing against a hardcoded "~1.0s" made this check fail on
+    // macOS for latency rather than for the leak it exists to catch. Stamp each
+    // status transition instead — waitForStatus already returns the time it saw
+    // one — so the expectation stretches with the runner.
     start(win, 6);
-    await waitForStatus(win, "recording");
+    const liveAt6 = await waitForStatus(win, "recording");
     const wave0 = await waveColumns();
     await sleep(500);
     // The waveform is the bar's proof of hearing: while live, the canvas must
@@ -271,7 +279,7 @@ app.whenReady().then(async () => {
     // land here), so the preload whitelist and the renderer handler are both
     // exercised.
     win.webContents.send("record:pause-toggle");
-    await waitForStatus(win, "paused");
+    const pausedAt6 = await waitForStatus(win, "paused");
     const wave1 = await waveColumns();
     // Lower bound only: it is what detects a frozen rAF loop. An upper bound
     // would trip on descheduled CI runners (see WAV_LAG_ALLOWANCE_SEC above)
@@ -317,7 +325,7 @@ app.whenReady().then(async () => {
       `columns grew ${wave2 - wave1} across a 600ms pause`
     );
     win.webContents.send("record:pause-toggle");
-    await waitForStatus(win, "recording");
+    const resumedAt6 = await waitForStatus(win, "recording");
     // Resume must clear the latch and the detail line in lockstep — a
     // data-detail left set would dim the waveform to 7% for the rest of the
     // app's lifetime.
@@ -340,12 +348,22 @@ app.whenReady().then(async () => {
     );
     const captured6P = waitForMessage("audio:captured");
     win.webContents.send("record:stop");
+    const stoppedAt6 = Date.now();
     const captured6 = await captured6P;
     const stats6 = wavStats(captured6.wav);
+    // Both bounds carry weight here. The lower one says nothing live was
+    // dropped; the upper one is the actual subject of the check — the paused
+    // span must not be in the WAV. The allowance is well under the ~0.6s pause,
+    // so a leak still fails even though runner latency no longer does.
+    const live6 = (pausedAt6 - liveAt6 + (stoppedAt6 - resumedAt6)) / 1000;
+    const paused6 = (resumedAt6 - pausedAt6) / 1000;
     check(
       "paused span is excluded from the capture",
-      captured6.sid === 6 && stats6.seconds > 0.75 && stats6.seconds < 1.35,
-      `wav=${stats6.seconds.toFixed(2)}s across ~1.0s live + 0.6s paused`
+      captured6.sid === 6 &&
+        stats6.seconds >= live6 - WAV_LAG_ALLOWANCE_SEC &&
+        stats6.seconds <= live6 + WAV_LAG_ALLOWANCE_SEC,
+      `wav=${stats6.seconds.toFixed(2)}s, ui-live window=${live6.toFixed(2)}s, ` +
+        `paused=${paused6.toFixed(2)}s, allowance=${WAV_LAG_ALLOWANCE_SEC}s`
     );
     const timer6 = await win.webContents.executeJavaScript(
       `document.getElementById("timer").textContent`

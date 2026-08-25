@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.28.6 — 2026-08-25
+
+- Measure the room in a pause, not against the voice (#115)
+
 ## v0.28.5 — 2026-08-25
 
 - Don't mistake a cold model load for an idle worker (#113)

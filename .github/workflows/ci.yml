@@ -57,6 +57,42 @@ jobs:
         if: runner.os != 'Linux'
         run: npx electron scripts/settings-smoke.js --no-sandbox
 
+  # A tracked symlink is the one breakage the jobs above structurally cannot
+  # catch: they run `npm ci`, which rebuilds node_modules over whatever the
+  # checkout put there, so a self-referencing `node_modules` symlink committed
+  # to the tree stays green here and only fails on a real clone (ELOOP on every
+  # access — npm ci, require.resolve, anything walking the tree). That is
+  # exactly how one reached main in #107. This job looks at the index instead of
+  # the working tree, so nothing can paper over it.
+  #
+  # Own job rather than a step in `app`: it needs no Node and no Electron, and
+  # as a step it would run three times over for the OS matrix.
+  repo-hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: No tracked symlinks
+        run: |
+          # Mode 120000 is git's symlink mode. The repo has none, and none is
+          # the intended steady state — if a symlink is ever wanted here on
+          # purpose, allow it explicitly rather than dropping this check.
+          found=$(git ls-files -s | awk '$1 == "120000" { print $4 }')
+          if [ -n "$found" ]; then
+            echo "::error::Tracked symlink(s) found — these break a fresh clone:"
+            echo "$found" | sed 's/^/  /'
+            exit 1
+          fi
+      - name: No committed dependency or build output
+        run: |
+          # .gitignore covers these, but `git add -f` (or an ignore rule that
+          # misses, as `node_modules/` did for a symlink) still gets past it.
+          found=$(git ls-files | grep -E '^(node_modules|dist)(/|$)' || true)
+          if [ -n "$found" ]; then
+            echo "::error::Dependency/build paths are committed:"
+            echo "$found" | head -20 | sed 's/^/  /'
+            exit 1
+          fi
+
   stt-server:
     runs-on: ubuntu-latest
     defaults:

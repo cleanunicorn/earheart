@@ -5,11 +5,13 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 
 const http = require("node:http");
+const Module = require("node:module");
 
 const { encodeWav, encodeSilenceWav, wavToFloat32, wavDurationSec } = require("../main/util/wav");
 const { stripThinking } = require("../main/services/cleanup");
 const { deepMerge, migrateLegacy, DEFAULTS } = require("../main/settings");
 const { resolveCleanup } = require("../main/cleanup-styles");
+const { stripFillers } = require("../main/util/filler-strip");
 const autostart = require("../main/autostart");
 const { listRemoteModels } = require("../main/services/models-remote");
 const { reconcileTranscript } = require("../renderer/transcript");
@@ -285,6 +287,98 @@ test("customModels defaults to empty and a stored list survives the merge", () =
   // deepMerge replaces arrays wholesale, so a saved custom-models list is kept
   // intact (not element-merged against the empty default) when settings load.
   assert.deepStrictEqual(deepMerge(DEFAULTS, { customModels: stored }).customModels, stored);
+});
+
+/* ---------------- filler stripping ---------------- */
+
+test("stripFillers removes um/uh fillers and the punctuation fencing them", () => {
+  // The model's job, done unreliably by small models: what survives its output.
+  assert.strictEqual(
+    stripFillers("the connectors page is uh, for admins"),
+    "the connectors page is for admins"
+  );
+  // A comma before the filler belongs to the preceding clause and stays.
+  assert.strictEqual(stripFillers("So, um, we should ship it."), "So, we should ship it.");
+  // A sentence that loses its opening filler hands the capital to the next word.
+  assert.strictEqual(stripFillers("Um, I think so."), "I think so.");
+  assert.strictEqual(stripFillers("Well. Uh, so we go."), "Well. So we go.");
+  // Repeated/elongated spellings STT produces.
+  assert.strictEqual(stripFillers("it is ummm here uhh now"), "it is here now");
+});
+
+test("stripFillers leaves real words, acronyms and text without fillers alone", () => {
+  const clean = "no fillers here at all";
+  assert.strictEqual(stripFillers(clean), clean);
+  // Substrings are not fillers.
+  assert.strictEqual(stripFillers("Umbrella umbrellas hummus"), "Umbrella umbrellas hummus");
+  // Caps read as an acronym, not a stumble.
+  assert.strictEqual(stripFillers("The UM report is done."), "The UM report is done.");
+  // Hyphenated interjections carry meaning.
+  assert.strictEqual(stripFillers("uh-huh, that works"), "uh-huh, that works");
+  // Dictated line breaks survive, without trailing whitespace.
+  assert.strictEqual(stripFillers("line one um\nline two"), "line one\nline two");
+  // Never lose the user's words: an all-filler transcript stays as it was.
+  assert.strictEqual(stripFillers("um"), "um");
+  assert.strictEqual(stripFillers(""), "");
+});
+
+test("cleanup styles that promise filler-free output actually deliver it", () => {
+  for (const id of ["clean", "polished"]) {
+    const { systemPrompt } = resolveCleanup({ systemPrompt: "Base.", style: id });
+    assert.match(systemPrompt, /filler word/i);
+  }
+  // Verbatim promises the opposite, so the backstop must not apply to it.
+  const verbatim = resolveCleanup({ systemPrompt: "Base.", style: "verbatim" });
+  assert.match(verbatim.systemPrompt, /do not remove fillers/i);
+});
+
+// Load main/services/route.js with the two cleanup backends replaced by a stub
+// that echoes a fixed cleaned text, so the routing + filler backstop can be
+// exercised without Electron or a model.
+function loadRouteWith(cleanedText) {
+  const routePath = require.resolve("../main/services/route");
+  const stubs = {
+    [require.resolve("../main/engines")]: { clean: async () => cleanedText },
+    [require.resolve("../main/services/cleanup")]: { clean: async () => cleanedText },
+    [require.resolve("../main/services/stt")]: {},
+  };
+  const saved = {};
+  for (const p of Object.keys(stubs)) {
+    saved[p] = require.cache[p];
+    const m = new Module(p, null);
+    m.filename = p;
+    m.loaded = true;
+    m.exports = stubs[p];
+    require.cache[p] = m;
+  }
+  delete require.cache[routePath];
+  try {
+    return require(routePath);
+  } finally {
+    delete require.cache[routePath];
+    for (const p of Object.keys(stubs)) {
+      if (saved[p]) require.cache[p] = saved[p];
+      else delete require.cache[p];
+    }
+  }
+}
+
+test("route.clean strips leftover fillers for the styles that promise none", async () => {
+  const left = "So the page is uh, for admins.";
+  for (const engine of ["builtin", "remote"]) {
+    const route = loadRouteWith(left);
+    assert.strictEqual(
+      await route.clean("raw", { engine, style: "polished" }),
+      "So the page is for admins."
+    );
+    assert.strictEqual(
+      await route.clean("raw", { engine, style: "clean" }),
+      "So the page is for admins."
+    );
+    // Verbatim keeps every word, and custom runs the user's own prompt.
+    assert.strictEqual(await route.clean("raw", { engine, style: "verbatim" }), left);
+    assert.strictEqual(await route.clean("raw", { engine, style: "custom" }), left);
+  }
 });
 
 /* ---------------- cleanup dictionary ---------------- */

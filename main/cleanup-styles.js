@@ -31,7 +31,8 @@ const STYLES = [
     label: "Clean",
     hint: "Remove fillers, stumbles and repeats",
     directive:
-      "Remove filler words (um, uh, you know, like) and false starts. " +
+      "Delete every filler word (um, uh, er, mm, you know, like) and every " +
+      "false start — none may appear in your output. " +
       "Collapse repeated words, restarted phrases and stutters into one clean " +
       "version. Keep the speaker's wording and tone — do not summarize, expand " +
       "or add anything.",
@@ -42,11 +43,16 @@ const STYLES = [
     label: "Polished",
     hint: "Smooth it into clear, readable prose",
     directive:
-      "Produce clean, readable prose: remove fillers and false starts, fix " +
-      "grammar, and lightly rephrase awkward phrasing for clarity. Preserve " +
-      "the speaker's meaning, intent and approximate length — do not " +
-      "summarize, expand or invent details.",
-    sampling: { temperature: 0.4, topP: 1.0, topK: 0, minP: 0.02 },
+      "Delete every filler word (um, uh, er, mm, you know, like, I mean) and " +
+      "every false start — none may appear in your output. Collapse repeated " +
+      "words and restarted phrases into one clean version. Then produce " +
+      "readable prose: fix grammar and lightly rephrase awkward phrasing for " +
+      "clarity. Preserve the speaker's meaning, intent and approximate " +
+      "length — do not summarize, expand or invent details.",
+    // Loose enough to rephrase, tight enough that a 4B model still obeys the
+    // directive: unbounded sampling (topK 0 / topP 1) was where "remove the
+    // fillers" started getting ignored.
+    sampling: { temperature: 0.3, topP: 0.95, topK: 40, minP: 0.02 },
   },
 ];
 

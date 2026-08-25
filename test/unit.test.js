@@ -11,7 +11,11 @@ const { encodeWav, encodeSilenceWav, wavToFloat32, wavDurationSec } = require(".
 const { stripThinking } = require("../main/services/cleanup");
 const { deepMerge, migrateLegacy, DEFAULTS } = require("../main/settings");
 const { resolveCleanup } = require("../main/cleanup-styles");
-const { stripFillers } = require("../main/util/filler-strip");
+const {
+  stripFillers,
+  collapseRepeats,
+  stripStumbles,
+} = require("../main/util/stumble-strip");
 const autostart = require("../main/autostart");
 const { listRemoteModels } = require("../main/services/models-remote");
 const { reconcileTranscript } = require("../renderer/transcript");
@@ -289,7 +293,7 @@ test("customModels defaults to empty and a stored list survives the merge", () =
   assert.deepStrictEqual(deepMerge(DEFAULTS, { customModels: stored }).customModels, stored);
 });
 
-/* ---------------- filler stripping ---------------- */
+/* ---------------- stumble stripping ---------------- */
 
 test("stripFillers removes um/uh fillers and the punctuation fencing them", () => {
   // The model's job, done unreliably by small models: what survives its output.
@@ -322,14 +326,41 @@ test("stripFillers leaves real words, acronyms and text without fillers alone", 
   assert.strictEqual(stripFillers(""), "");
 });
 
-test("cleanup styles that promise filler-free output actually deliver it", () => {
+test("collapseRepeats collapses a re-spoken word but not a deliberate one", () => {
+  assert.strictEqual(
+    collapseRepeats("The the admin will add it."),
+    "The admin will add it."
+  );
+  assert.strictEqual(collapseRepeats("I I wanted to to send it"), "I wanted to send it");
+  assert.strictEqual(collapseRepeats("the the the file"), "the file");
+  // Deliberate doublings, numbers and proper names keep both words.
+  assert.strictEqual(collapseRepeats("He had had enough"), "He had had enough");
+  assert.strictEqual(collapseRepeats("it was very very late"), "it was very very late");
+  assert.strictEqual(collapseRepeats("call two two three"), "call two two three");
+  assert.strictEqual(collapseRepeats("port 3000 3000"), "port 3000 3000");
+  assert.strictEqual(collapseRepeats("I went to Walla Walla"), "I went to Walla Walla");
+  // Punctuation between them means the repetition was meant.
+  assert.strictEqual(collapseRepeats("No, no that is wrong"), "No, no that is wrong");
+  // Spelled-out letters are data, not a stutter.
+  assert.strictEqual(collapseRepeats("serial V V 7"), "serial V V 7");
+});
+
+test("stripStumbles removes fillers first, so the repeat they hid collapses too", () => {
+  assert.strictEqual(stripStumbles("how can we move the um the file"), "how can we move the file");
+  const untouched = "nothing to fix here";
+  assert.strictEqual(stripStumbles(untouched), untouched);
+});
+
+test("cleanup styles that promise a tidy result actually deliver it", () => {
   for (const id of ["clean", "polished"]) {
     const { systemPrompt } = resolveCleanup({ systemPrompt: "Base.", style: id });
     assert.match(systemPrompt, /filler word/i);
+    assert.match(systemPrompt, /collapse repeated words/i);
   }
   // Verbatim promises the opposite, so the backstop must not apply to it.
   const verbatim = resolveCleanup({ systemPrompt: "Base.", style: "verbatim" });
   assert.match(verbatim.systemPrompt, /do not remove fillers/i);
+  assert.match(verbatim.systemPrompt, /or repetition/i);
 });
 
 // Load main/services/route.js with the two cleanup backends replaced by a stub
@@ -363,8 +394,8 @@ function loadRouteWith(cleanedText) {
   }
 }
 
-test("route.clean strips leftover fillers for the styles that promise none", async () => {
-  const left = "So the page is uh, for admins.";
+test("route.clean strips leftover stumbles for the styles that promise none", async () => {
+  const left = "So the the page is uh, for admins.";
   for (const engine of ["builtin", "remote"]) {
     const route = loadRouteWith(left);
     assert.strictEqual(

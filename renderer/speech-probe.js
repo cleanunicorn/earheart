@@ -93,6 +93,16 @@ function containsSpeech(samples, sampleRate) {
   return false;
 }
 
+// The verdict that ships with a chunk on `audio:partial`. Only a committed
+// chunk is assembled into the final transcript, so only it is worth probing —
+// an in-progress tick is replaceable cosmetics, and probing one would run this
+// scan over the growing live buffer on every interval for an answer nobody
+// reads. Kept here rather than inline at the send site so the "committed only"
+// rule is testable.
+function chunkSpeechVerdict(final, samples, sampleRate) {
+  return final ? containsSpeech(samples, sampleRate) : false;
+}
+
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { containsSpeech };
+  module.exports = { containsSpeech, chunkSpeechVerdict };
 }

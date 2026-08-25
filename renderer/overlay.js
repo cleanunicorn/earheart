@@ -473,17 +473,17 @@ function sendPartial() {
   }
 
   const samples = flattenRange(recording.chunks, from, final ? boundary : total);
+  // Did the user speak inside this chunk? Paired with the decode on the main
+  // side: speech in, no text out, means the words are still in the audio and it
+  // must be decoded again (see speech-probe.js and main/live-preview.js).
+  // Probed for committed chunks only — the rule lives in speech-probe.js.
+  const hasSpeech = chunkSpeechVerdict(final, samples, SAMPLE_RATE);
   earheart.send("audio:partial", {
     sid: recording.sid,
     seq: recording.seq,
     final,
     fromSample: from,
-    // Did the user speak inside this chunk? Paired with the decode on the main
-    // side: speech in, no text out, means the words are still in the audio and
-    // it must be decoded again (see speech-probe.js and main/live-preview.js).
-    // Only the committed send is assembled into the final transcript, so only
-    // it needs the probe — an in-progress tick is replaceable cosmetics.
-    hasSpeech: final ? containsSpeech(samples, SAMPLE_RATE) : false,
+    hasSpeech,
     wav: encodeWav([samples]),
   });
 

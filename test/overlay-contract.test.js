@@ -50,7 +50,7 @@ test("overlay.html loads every sibling script overlay.js calls into", () => {
   for (const { file, fn } of [
     { file: "chunk-boundary.js", fn: "quietestOffset" },
     { file: "transcript.js", fn: "reconcileTranscript" },
-    { file: "speech-probe.js", fn: "containsSpeech" },
+    { file: "speech-probe.js", fn: "chunkSpeechVerdict" },
   ]) {
     assert.ok(new RegExp(`\\b${fn}\\(`).test(js), `overlay.js should call ${fn}()`);
     assert.ok(helpers.includes(file), `overlay.html must load ${file} before overlay.js`);

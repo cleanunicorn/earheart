@@ -10,7 +10,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 
-const { containsSpeech } = require("../renderer/speech-probe");
+const { containsSpeech, chunkSpeechVerdict } = require("../renderer/speech-probe");
 
 const SAMPLE_RATE = 16000;
 
@@ -104,4 +104,16 @@ test("a chunk too short to hold a window is still measured", () => {
   // Never answer "no speech" because there was no room to look.
   assert.strictEqual(containsSpeech(level(0.2, 0.05), SAMPLE_RATE), true);
   assert.strictEqual(containsSpeech(level(0.2, 0), SAMPLE_RATE), false);
+});
+
+// The send site ships this verdict on `audio:partial`; only the committed
+// chunk is assembled into the final transcript, so only it is probed.
+test("only a committed chunk is probed", () => {
+  const speech = level(12, 0.05);
+  const silence = level(12, 0);
+  assert.strictEqual(chunkSpeechVerdict(true, speech, SAMPLE_RATE), true);
+  assert.strictEqual(chunkSpeechVerdict(true, silence, SAMPLE_RATE), false);
+  // An in-progress tick answers false without looking — probing the growing
+  // live buffer every interval would burn the scan for an answer nobody reads.
+  assert.strictEqual(chunkSpeechVerdict(false, speech, SAMPLE_RATE), false);
 });

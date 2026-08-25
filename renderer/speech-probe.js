@@ -48,7 +48,24 @@ const SPEECH_OVER_FLOOR = 3;
 // Below this everything is dither and dead air, whatever the floor computes to
 // — without it, digital silence would make every window "3x the floor".
 const SILENCE_RMS = 0.0015;
-// The shortest thing worth calling speech. A word, not a transient.
+// How much over-threshold audio it takes to call a chunk speech, expressed as
+// whole SPEECH_WINDOW_SEC windows below. A word, not a transient.
+//
+// The EFFECTIVE minimum is not this number, and deliberately so. The windows sit
+// on a fixed grid, so a sound landing across a boundary lights two of them while
+// the same sound landing inside one lights only one. Measured against where the
+// sound starts: from 0.5 s up every alignment answers "speech", even for a word
+// only twice the relative bar; between roughly 0.1 s and 0.45 s the answer
+// depends on the alignment, leaning toward "speech" as the length grows; and a
+// 6 ms click is rejected at all but the sliver of offsets that split it.
+//
+// That skew is left alone because it leans the way this module is supposed to
+// lean. Its bias is stated at the top — a false "speech" costs one re-decode, a
+// false "silence" costs the user a sentence — and a clipped 0.25 s "yes" being
+// believed at most alignments is worth more than the rare click that buys a
+// re-decode nobody needed. Tightening it would mean measuring duration below
+// the window (finer frames), which costs quiet speech near the threshold the
+// smoothing that lets it clear the bar at all. See #110.
 const SPEECH_MIN_SEC = 0.6;
 // How many of the quietest windows the floor has to look past. One would let a
 // single dropout in otherwise steady noise drag the floor down and call the

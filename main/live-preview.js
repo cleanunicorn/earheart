@@ -45,6 +45,38 @@ function joinText(a, b) {
   return `${a} ${b}`;
 }
 
+// Words compared for content only: two decodes of the same audio agree on the
+// words but not always on their capitalization or punctuation.
+function normWord(w) {
+  return w.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+// The part of the in-progress decode that a commit did NOT take over.
+//
+// A forced boundary cuts BEHIND the audio the last in-progress tick already
+// painted — the overlay moves it back to the quietest moment in the preceding
+// seconds (see renderer/overlay.js) — so `committed`, the decode of the chunk
+// up to that boundary, stops short of `live`, the decode of everything recorded
+// at the last tick. Dropping the live tail outright would blink those trailing
+// words off the overlay until the next tick decoded them again; this keeps them
+// on screen until the next in-progress decode replaces them for real.
+//
+// Text is the only thing the two decodes can be aligned on (they share audio,
+// not offsets), so the leftover is trusted only when one word sequence really is
+// a prefix of the other. Any disagreement over the shared words means the
+// alignment is guesswork, and a wrong guess would duplicate words on screen —
+// so that falls back to "", the same one-tick blink as before.
+function residualTail(live, committed) {
+  if (!live) return "";
+  const liveWords = live.split(/\s+/);
+  const committedWords = committed ? committed.split(/\s+/) : [];
+  const shared = Math.min(liveWords.length, committedWords.length);
+  for (let i = 0; i < shared; i++) {
+    if (normWord(liveWords[i]) !== normWord(committedWords[i])) return "";
+  }
+  return liveWords.slice(committedWords.length).join(" ");
+}
+
 function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettings, isCurrent, onError }) {
   const reportError = onError || (() => {});
   // Count rather than a flag: a committed-chunk decode may legitimately overlap
@@ -62,6 +94,8 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   // so decode cost stays flat however long the dictation runs.
   let committedRaw = ""; // text from finalized chunks (never re-decoded)
   let liveRaw = ""; // decode of the current in-progress chunk (replaced each tick)
+  // On commit it is not cleared but cut back to whatever the committed chunk
+  // left over (see residualTail), so a forced boundary can't un-paint words.
   let lastSeq = -1; // highest chunk seq we've committed
   // Final-assembly bookkeeping: committedRaw covers exactly the recording's
   // first `decodedSamples` samples — unless `broken`, which flags any hole in
@@ -154,10 +188,12 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
       const text = (raw || "").trim();
 
       if (final && seq > lastSeq) {
-        // Freeze this chunk into the committed transcript and start fresh.
+        // Freeze this chunk into the committed transcript and start fresh —
+        // keeping any painted words the chunk's boundary stopped short of, so
+        // the preview only ever grows.
         lastSeq = seq;
         committedRaw = joinText(committedRaw, text);
-        liveRaw = "";
+        liveRaw = residualTail(liveRaw, text);
         // Contiguous coverage only: the chunk must start exactly where decoded
         // coverage ends. Anything else (an earlier final dropped or failed, an
         // out-of-order commit, an unparseable buffer) breaks the snapshot for

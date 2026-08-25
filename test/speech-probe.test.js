@@ -13,6 +13,10 @@ const assert = require("node:assert");
 const { containsSpeech, chunkSpeechVerdict } = require("../renderer/speech-probe");
 
 const SAMPLE_RATE = 16000;
+// Mirrors the window length the probe measures in. Kept local rather than
+// imported: the sweeps below need to step across exactly one window, and the
+// module deliberately exports only the two functions its callers use.
+const WINDOW_SEC = 0.3;
 
 // A `seconds`-long buffer at a constant RMS.
 function level(seconds, amplitude) {
@@ -144,6 +148,46 @@ test("steady room tone carries no speech however loud the room is", () => {
 // carried across chunks. See #109.
 test("a gapless low-gain chunk is indistinguishable from room tone", () => {
   assert.strictEqual(containsSpeech(level(20, 0.008), SAMPLE_RATE), false);
+});
+
+// The window grid decides how a sound of a given length is counted, so the
+// contract worth pinning is where the answer stops depending on WHERE the sound
+// landed. Both tests sweep the offset across a full window.
+
+test("a quiet 0.5s word is heard at every window alignment", () => {
+  // The property a caller can rely on: past this length the verdict is a
+  // function of the audio, not of where the recording happened to start.
+  // Deliberately quiet — 0.004 against a 0.0006 room clears the relative bar
+  // by about 2x, so this fails if the bar moves, if the window changes size, or
+  // if the grid stops catching a word that straddles it. A loud burst would
+  // sail over every such regression and pin nothing.
+  //
+  // 0.5 s is where the grid stops mattering, measured, and it is longer than
+  // the 0.6/0.3 = 2 windows the constants suggest because a word lying across a
+  // boundary lights both. Shorter words are still usually heard — 0.4 s at this
+  // level answers "speech" at all but a sliver of alignments — but 0.5 s is the
+  // point where "usually" becomes "always", so it is what can be promised.
+  for (let offset = 0; offset < WINDOW_SEC; offset += 0.03) {
+    const chunk = speakInto(level(10, 0.0006), 4 + offset, 4 + offset + 0.5, 0.004);
+    assert.strictEqual(containsSpeech(chunk, SAMPLE_RATE), true, `offset=${offset.toFixed(2)}`);
+  }
+});
+
+test("a lone click is rejected wherever it lands inside a window", () => {
+  // Transient rejection is why SPEECH_MIN_SEC exists: a keyboard tap must not
+  // buy a full re-decode of the recording. It survives the sweep everywhere the
+  // click sits inside a single window — which is every alignment except the
+  // narrow band that splits it across two. That residue is tolerated on
+  // purpose (see SPEECH_MIN_SEC): erring toward "speech" costs one re-decode,
+  // erring the other way costs words.
+  let heard = 0;
+  const offsets = [];
+  for (let offset = 0; offset < WINDOW_SEC; offset += 0.005) offsets.push(offset);
+  for (const offset of offsets) {
+    const chunk = speakInto(level(10, 0.0006), 4 + offset, 4 + offset + 0.006, 0.5);
+    if (containsSpeech(chunk, SAMPLE_RATE)) heard++;
+  }
+  assert.ok(heard <= offsets.length * 0.05, `click heard at ${heard}/${offsets.length} offsets`);
 });
 
 test("a chunk too short to hold a window is still measured", () => {

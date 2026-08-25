@@ -242,11 +242,19 @@ function stopIfIdle(host) {
 // already elapsed, so nothing would re-arm it and that worker would stay
 // resident for the rest of the session.
 //
+// The busy check has to run even when the loaded-model flag says there is
+// nothing to reclaim. That flag is only set once a load RESOLVES (see
+// ensureStt), so for the several seconds a cold load takes it reads null while
+// the worker is very much working — and a `loaded === null` short-circuit would
+// skip the worker without reporting it, leaving the model resident with no
+// timer armed behind it. Ask the host directly instead: null AND idle is the
+// only combination that means "nothing to do here".
+//
 // @returns {boolean} true when nothing resident is left, false when a busy
 // worker was skipped and the caller should come back for it.
 function unloadIdle() {
-  const sttClear = loadedStt === null || stopIfIdle(sttHost);
-  const cleanupClear = loadedCleanup === null || stopIfIdle(cleanupHost);
+  const sttClear = (loadedStt === null && !sttHost.busy()) || stopIfIdle(sttHost);
+  const cleanupClear = (loadedCleanup === null && !cleanupHost.busy()) || stopIfIdle(cleanupHost);
   return sttClear && cleanupClear;
 }
 

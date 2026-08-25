@@ -102,6 +102,79 @@ test("a growing in-progress chunk replaces only the live tail", async () => {
   assert.strictEqual(lastRaw(h), "alpha beta gamma", "tail replaced, commit preserved");
 });
 
+// A FORCED chunk boundary (the hard cap, cutting through speech) is moved back
+// to the quietest moment in the preceding seconds, so the committed chunk stops
+// short of the audio the last in-progress tick already painted. Those trailing
+// words are in no accumulator, so clearing the live tail on commit would blink
+// them off the overlay for a tick. They're kept instead.
+test("a commit that stops short of the live decode keeps the words it left over", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "the quick brown fox jumps");
+  await h.lp.handleAudio(1, chunk(0, false));
+  // The forced boundary lands after "brown": the committed chunk decodes to
+  // less than what's on screen.
+  h.setTranscribe(async () => "the quick brown");
+  await h.lp.handleAudio(1, chunk(0, true));
+  assert.strictEqual(lastRaw(h), "the quick brown fox jumps", "nothing blinked off");
+});
+
+test("the next in-progress decode replaces the leftover tail, not appends to it", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "the quick brown fox jumps");
+  await h.lp.handleAudio(1, chunk(0, false));
+  h.setTranscribe(async () => "the quick brown");
+  await h.lp.handleAudio(1, chunk(0, true));
+  h.setTranscribe(async () => "fox jumps over");
+  await h.lp.handleAudio(1, chunk(1, false));
+  assert.strictEqual(lastRaw(h), "the quick brown fox jumps over");
+});
+
+test("a commit covering the whole live decode leaves no leftover to duplicate", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "the quick brown");
+  await h.lp.handleAudio(1, chunk(0, false));
+  await h.lp.handleAudio(1, chunk(0, true)); // pause boundary: same audio, same text
+  assert.strictEqual(lastRaw(h), "the quick brown");
+});
+
+test("a commit longer than the live decode leaves no leftover", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "the quick");
+  await h.lp.handleAudio(1, chunk(0, false)); // an older, shorter tick
+  h.setTranscribe(async () => "the quick brown fox");
+  await h.lp.handleAudio(1, chunk(0, true));
+  assert.strictEqual(lastRaw(h), "the quick brown fox");
+});
+
+test("the leftover survives cleanup's capitalization and punctuation of the shared words", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "the quick brown fox jumps");
+  await h.lp.handleAudio(1, chunk(0, false));
+  h.setTranscribe(async () => "The quick, brown.");
+  await h.lp.handleAudio(1, chunk(0, true));
+  assert.strictEqual(lastRaw(h), "The quick, brown. fox jumps");
+});
+
+test("decodes that disagree on the shared words drop the leftover instead of guessing", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "the quick brown fox jumps");
+  await h.lp.handleAudio(1, chunk(0, false));
+  h.setTranscribe(async () => "the quick brawn");
+  await h.lp.handleAudio(1, chunk(0, true));
+  assert.strictEqual(lastRaw(h), "the quick brawn", "no duplicated words");
+});
+
+test("a stale in-progress result for a committed seq does not disturb the leftover", async () => {
+  const h = harness();
+  h.setTranscribe(async () => "the quick brown fox jumps");
+  await h.lp.handleAudio(1, chunk(0, false));
+  h.setTranscribe(async () => "the quick brown");
+  await h.lp.handleAudio(1, chunk(0, true));
+  h.setTranscribe(async () => "the quick brown fox jumps over");
+  await h.lp.handleAudio(1, chunk(0, false)); // seq 0 is already committed
+  assert.strictEqual(lastRaw(h), "the quick brown fox jumps");
+});
+
 test("handleAudio drops the partial when the session isn't current", async () => {
   const h = harness({ current: false });
   await h.lp.handleAudio(1, chunk(0, false));

@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.28.3 — 2026-08-25
+
+- Stop a forced chunk boundary un-painting words (#106)
+
 ## v0.28.2 — 2026-08-25
 
 - Put a forced chunk boundary in the quietest moment (#104)

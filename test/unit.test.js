@@ -5,11 +5,18 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 
 const http = require("node:http");
+const Module = require("node:module");
 
 const { encodeWav, encodeSilenceWav, wavToFloat32, wavDurationSec } = require("../main/util/wav");
 const { stripThinking } = require("../main/services/cleanup");
 const { deepMerge, migrateLegacy, DEFAULTS } = require("../main/settings");
 const { resolveCleanup } = require("../main/cleanup-styles");
+const {
+  stripFillers,
+  collapseRepeats,
+  stripStumbles,
+} = require("../main/util/stumble-strip");
+const { FLUENT } = require("../scripts/dictation-corpus");
 const autostart = require("../main/autostart");
 const { listRemoteModels } = require("../main/services/models-remote");
 const { reconcileTranscript } = require("../renderer/transcript");
@@ -287,21 +294,166 @@ test("customModels defaults to empty and a stored list survives the merge", () =
   assert.deepStrictEqual(deepMerge(DEFAULTS, { customModels: stored }).customModels, stored);
 });
 
+/* ---------------- stumble stripping ---------------- */
+
+test("stripFillers removes um/uh fillers and the punctuation fencing them", () => {
+  // The model's job, done unreliably by small models: what survives its output.
+  assert.strictEqual(
+    stripFillers("the connectors page is uh, for admins"),
+    "the connectors page is for admins"
+  );
+  // A comma before the filler belongs to the preceding clause and stays.
+  assert.strictEqual(stripFillers("So, um, we should ship it."), "So, we should ship it.");
+  // A sentence that loses its opening filler hands the capital to the next word.
+  assert.strictEqual(stripFillers("Um, I think so."), "I think so.");
+  assert.strictEqual(stripFillers("Well. Uh, so we go."), "Well. So we go.");
+  // Repeated/elongated spellings STT produces.
+  assert.strictEqual(stripFillers("it is ummm here uhh now"), "it is here now");
+  // A filler that trails its clause leaves no orphaned punctuation behind:
+  // the comma that fenced it goes with it, the sentence keeps its own end.
+  assert.strictEqual(stripFillers("I think that is it, um."), "I think that is it.");
+  assert.strictEqual(stripFillers("Wait, um!"), "Wait!");
+  assert.strictEqual(stripFillers("It is uh..."), "It is...");
+  // A "sentence" that was only a filler takes its punctuation with it.
+  assert.strictEqual(stripFillers("Do it. Um! Really?"), "Do it. Really?");
+  // ":" and ";" continue a sentence — the next word keeps its lower case.
+  assert.strictEqual(stripFillers("the plan: um, we ship it"), "the plan: we ship it");
+  // A line that opens with a filler does not inherit its space.
+  assert.strictEqual(stripFillers("para one.\n\nUm, para two."), "para one.\n\nPara two.");
+});
+
+test("stripFillers leaves real words, acronyms and text without fillers alone", () => {
+  const clean = "no fillers here at all";
+  assert.strictEqual(stripFillers(clean), clean);
+  // Substrings are not fillers.
+  assert.strictEqual(stripFillers("Umbrella umbrellas hummus"), "Umbrella umbrellas hummus");
+  // Caps read as an acronym, not a stumble.
+  assert.strictEqual(stripFillers("The UM report is done."), "The UM report is done.");
+  // Hyphenated interjections carry meaning.
+  assert.strictEqual(stripFillers("uh-huh, that works"), "uh-huh, that works");
+  // Dictated line breaks survive, without trailing whitespace.
+  assert.strictEqual(stripFillers("line one um\nline two"), "line one\nline two");
+  // Never lose the user's words: an all-filler transcript stays as it was.
+  assert.strictEqual(stripFillers("um"), "um");
+  assert.strictEqual(stripFillers(""), "");
+});
+
+test("collapseRepeats collapses a re-spoken word but not a deliberate one", () => {
+  assert.strictEqual(
+    collapseRepeats("The the admin will add it."),
+    "The admin will add it."
+  );
+  assert.strictEqual(collapseRepeats("I I wanted to to send it"), "I wanted to send it");
+  assert.strictEqual(collapseRepeats("the the the file"), "the file");
+  // Deliberate doublings, numbers and proper names keep both words.
+  assert.strictEqual(collapseRepeats("He had had enough"), "He had had enough");
+  assert.strictEqual(collapseRepeats("it was very very late"), "it was very very late");
+  assert.strictEqual(collapseRepeats("call two two three"), "call two two three");
+  assert.strictEqual(collapseRepeats("port 3000 3000"), "port 3000 3000");
+  assert.strictEqual(collapseRepeats("I went to Walla Walla"), "I went to Walla Walla");
+  // Punctuation between them means the repetition was meant.
+  assert.strictEqual(collapseRepeats("No, no that is wrong"), "No, no that is wrong");
+  // Spelled-out letters are data, not a stutter.
+  assert.strictEqual(collapseRepeats("serial V V 7"), "serial V V 7");
+});
+
+test("stripStumbles removes fillers first, so the repeat they hid collapses too", () => {
+  assert.strictEqual(stripStumbles("how can we move the um the file"), "how can we move the file");
+  const untouched = "nothing to fix here";
+  assert.strictEqual(stripStumbles(untouched), untouched);
+});
+
+// The regression this whole backstop exists for, pinned with the real thing:
+// FLUENT.modelOutput is what the built-in Gemma 3 4B actually returned for a
+// long, fluent dictation on the Polished style — the transcript tidied and all
+// six fillers left in. A directive-only cleanup ships that text to the user.
+test("the reported fluent dictation comes out filler-free", () => {
+  const out = stripStumbles(FLUENT.modelOutput);
+  assert.deepStrictEqual(out.match(/(?<![\w-])(?:u[mh]+|erm+)(?![\w-])/gi), null);
+  // Only the stumbles go: the words around them are untouched, including the
+  // opening sentence the small models like to rewrite.
+  assert.match(out, /^I want to change how the contact form works\./);
+  assert.match(out, /and all the other fields\.$/);
+  assert.match(out, /let's see if we can simplify the process\./);
+});
+
 /* ---------------- cleanup styles ---------------- */
 
-// The directive is the lever that actually removes fillers — measured against
-// the real Gemma 3 4B in scripts/eval-cleanup.mjs, where the wording below took
-// filler survival from 20/10 runs to 0/10. Keep these promises explicit.
-test("cleanup styles that promise a tidy result ask for it explicitly", () => {
+// The directive is the first lever, and it is not enough on its own (see the
+// FLUENT corpus in scripts/dictation-corpus.js), but a style that promises a
+// tidy result still has to ask for one. Keep the promises explicit.
+test("cleanup styles that promise a tidy result actually deliver it", () => {
   for (const id of ["clean", "polished"]) {
     const { systemPrompt } = resolveCleanup({ systemPrompt: "Base.", style: id });
     assert.match(systemPrompt, /filler word/i);
     assert.match(systemPrompt, /collapse repeated words/i);
   }
-  // Verbatim promises the opposite.
+  // Verbatim promises the opposite, so the backstop must not apply to it.
   const verbatim = resolveCleanup({ systemPrompt: "Base.", style: "verbatim" });
   assert.match(verbatim.systemPrompt, /do not remove fillers/i);
   assert.match(verbatim.systemPrompt, /or repetition/i);
+});
+
+// Load main/services/route.js with the two cleanup backends replaced by a stub
+// that echoes a fixed cleaned text, so the routing + filler backstop can be
+// exercised without Electron or a model.
+function loadRouteWith(cleanedText) {
+  const routePath = require.resolve("../main/services/route");
+  const stubs = {
+    [require.resolve("../main/engines")]: { clean: async () => cleanedText },
+    [require.resolve("../main/services/cleanup")]: { clean: async () => cleanedText },
+    [require.resolve("../main/services/stt")]: {},
+  };
+  const saved = {};
+  for (const p of Object.keys(stubs)) {
+    saved[p] = require.cache[p];
+    const m = new Module(p, null);
+    m.filename = p;
+    m.loaded = true;
+    m.exports = stubs[p];
+    require.cache[p] = m;
+  }
+  delete require.cache[routePath];
+  try {
+    return require(routePath);
+  } finally {
+    delete require.cache[routePath];
+    for (const p of Object.keys(stubs)) {
+      if (saved[p]) require.cache[p] = saved[p];
+      else delete require.cache[p];
+    }
+  }
+}
+
+test("route.clean strips leftover stumbles for the styles that promise none", async () => {
+  const left = "So the the page is uh, for admins.";
+  for (const engine of ["builtin", "remote"]) {
+    const route = loadRouteWith(left);
+    assert.strictEqual(
+      await route.clean("raw", { engine, style: "polished" }),
+      "So the page is for admins."
+    );
+    assert.strictEqual(
+      await route.clean("raw", { engine, style: "clean" }),
+      "So the page is for admins."
+    );
+    // Verbatim keeps every word, and custom runs the user's own prompt.
+    assert.strictEqual(await route.clean("raw", { engine, style: "verbatim" }), left);
+    assert.strictEqual(await route.clean("raw", { engine, style: "custom" }), left);
+  }
+});
+
+// End-to-end over the real failure: whatever the model hands back, the styles
+// that promise no fillers deliver none — on both engines, which is what the
+// live preview and the final clean both go through.
+test("route.clean rescues the reported fluent dictation on every tidied style", async () => {
+  for (const engine of ["builtin", "remote"]) {
+    for (const style of ["clean", "polished"]) {
+      const route = loadRouteWith(FLUENT.modelOutput);
+      const out = await route.clean(FLUENT.raw, { engine, style });
+      assert.deepStrictEqual(out.match(/(?<![\w-])(?:u[mh]+|erm+)(?![\w-])/gi), null);
+    }
+  }
 });
 
 /* ---------------- cleanup dictionary ---------------- */

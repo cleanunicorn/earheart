@@ -316,9 +316,10 @@ Three settings are worth a minute for agent work:
   dictation is text to clean, never instructions to follow.)
 
   Editing the prompt is safe: the chosen style's rules are added to whatever
-  you write. **Custom values** (the sampling tab) is the exception — it runs
-  your prompt alone, with no style rules at all, so a custom setup has to ask
-  for filler and repetition removal itself.
+  you write, and Clean and Polished strip any *um* or repeated word the model
+  leaves behind. **Custom values** (the sampling tab) is the exception — it
+  runs your prompt alone, with no style rules and no safety net, so a custom
+  setup has to ask for filler and repetition removal itself.
 
 **What it doesn't do yet.** You still press Enter yourself — Earheart pastes,
 it doesn't submit. The agent can't ask *you* a question by voice, and it can't

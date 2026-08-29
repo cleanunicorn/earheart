@@ -338,6 +338,24 @@ test("stripFillers leaves real words, acronyms and text without fillers alone", 
   assert.strictEqual(stripFillers(""), "");
 });
 
+test("stripFillers repairs the seam only, leaving the rest of the spacing alone", () => {
+  // Cutting a filler used to reflow the whole transcript: indentation, aligned
+  // columns and the trailing newline are the user's, not the filler's.
+  assert.strictEqual(
+    stripFillers("um, hello\n  step one\n  step two"),
+    "Hello\n  step one\n  step two"
+  );
+  assert.strictEqual(stripFillers("uh okay\nfoo    bar"), "Okay\nfoo    bar");
+  assert.strictEqual(stripFillers("um, hello\n"), "Hello\n");
+  assert.strictEqual(stripFillers("a  b um c"), "a  b c");
+  // A line break the filler did not own survives the comma that fenced it.
+  assert.strictEqual(stripFillers("foo\n, um bar"), "foo\nbar");
+  // A run of fillers is one cut, so the next word still takes the capital.
+  assert.strictEqual(stripFillers("um um hello"), "Hello");
+  assert.strictEqual(stripFillers("um, uh, hello"), "Hello");
+  assert.strictEqual(stripFillers("um... okay"), "Okay");
+});
+
 test("collapseRepeats collapses a re-spoken word but not a deliberate one", () => {
   assert.strictEqual(
     collapseRepeats("The the admin will add it."),

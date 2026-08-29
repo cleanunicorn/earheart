@@ -46,38 +46,60 @@ function stripFillers(text) {
   // we"); one that only follows is the filler's own ("is uh, for" -> "is for").
   // `tail` is the sentence-ending punctuation the filler was sitting in front
   // of, which decides who the fencing comma really belonged to.
+  //
+  // A run of fillers ("um, uh") is one cut, so the seam is repaired once. The
+  // match eats the horizontal whitespace on both sides of it and the callback
+  // returns the join already correct — spacing anywhere else in the text is
+  // the user's, and is never reflowed.
   let out = marked.replace(
-    new RegExp(`(\\s*,)?[^\\S\\n]*${CUT}[^\\S\\n]*(?:,[^\\S\\n]*)?([.!?]+)?`, "g"),
+    new RegExp(`([^\\S\\n]*,)?[^\\S\\n]*(?:${CUT}[^\\S\\n]*(?:,[^\\S\\n]*)?)+([.!?]+[^\\S\\n]*)?`, "g"),
     (m, before, tail, offset, whole) => {
       // Opening a sentence? The next word has to take over the capital.
       // (":" and ";" continue a sentence, so they are not boundaries here.)
       const head = whole.slice(0, offset);
       const opensSentence = /(?:^|[.!?\n]["')\]]?\s*)$/.test(head);
+      // At the start of a line there is nothing to separate from; at the end of
+      // one there is nothing left to separate.
+      const startsLine = head === "" || head.endsWith("\n");
+      const next = whole[offset + m.length];
+      const endsLine = next === undefined || next === "\n";
+
       if (tail) {
+        // `tail` is the punctuation plus the spacing that followed it, so
+        // whichever side keeps it keeps the seam intact.
+        if (!opensSentence) {
+          // The punctuation ends the running clause and stays, without the
+          // comma that fenced the filler off ("that's it, um." -> "that's
+          // it.").
+          return endsLine ? tail.replace(/[^\S\n]+$/, "") : tail;
+        }
         // A "sentence" that was nothing but the filler takes its punctuation
         // with it — the clause before it already ended with its own ("Do it.
-        // Um! Really?" -> "Do it. Really?"). Anywhere else the punctuation ends
-        // the running clause and stays, without the comma that fenced the
-        // filler off ("that's it, um." -> "that's it.").
-        return opensSentence ? "" : tail;
+        // Um! Really?" -> "Do it. Really?") — and the next word takes over the
+        // capital it was holding ("Um... okay" -> "Okay").
+        if (endsLine) return "";
+        return startsLine ? CAP : ` ${CAP}`;
       }
-      if (before) return ", ";
-      if (!opensSentence) return " ";
-      // At the very start of a line there is nothing to separate from.
-      return head === "" || head.endsWith("\n") ? CAP : ` ${CAP}`;
+      if (before) {
+        // A comma with nothing left to fence off on either side goes too.
+        if (startsLine) return "";
+        // The clause keeps its comma, but not a second one and not a space in
+        // front of punctuation that follows.
+        if (endsLine || next === ",") return endsLine ? "," : "";
+        return /[.;:!?]/.test(next) ? "," : ", ";
+      }
+      if (endsLine) return "";
+      if (startsLine) return CAP;
+      if (opensSentence) return ` ${CAP}`;
+      // No space in front of the punctuation the filler was hiding.
+      return /[,.;:!?]/.test(next) ? "" : " ";
     }
   );
 
   out = out
     .replace(new RegExp(`${CAP}(\\p{Ll})`, "gu"), (m, ch) => ch.toUpperCase())
     .split(CAP)
-    .join("")
-    .replace(/[^\S\n]{2,}/g, " ")
-    .replace(/[^\S\n]+([,.;:!?])/g, "$1")
-    .replace(/,[^\S\n]*,/g, ",")
-    .replace(/[^\S\n]+$/gm, "")
-    .replace(/^[^\S\n]*,[^\S\n]*/gm, "")
-    .trim();
+    .join("");
 
   return out.length > 0 ? out : text;
 }

@@ -309,6 +309,17 @@ test("stripFillers removes um/uh fillers and the punctuation fencing them", () =
   assert.strictEqual(stripFillers("Well. Uh, so we go."), "Well. So we go.");
   // Repeated/elongated spellings STT produces.
   assert.strictEqual(stripFillers("it is ummm here uhh now"), "it is here now");
+  // A filler that trails its clause leaves no orphaned punctuation behind:
+  // the comma that fenced it goes with it, the sentence keeps its own end.
+  assert.strictEqual(stripFillers("I think that is it, um."), "I think that is it.");
+  assert.strictEqual(stripFillers("Wait, um!"), "Wait!");
+  assert.strictEqual(stripFillers("It is uh..."), "It is...");
+  // A "sentence" that was only a filler takes its punctuation with it.
+  assert.strictEqual(stripFillers("Do it. Um! Really?"), "Do it. Really?");
+  // ":" and ";" continue a sentence — the next word keeps its lower case.
+  assert.strictEqual(stripFillers("the plan: um, we ship it"), "the plan: we ship it");
+  // A line that opens with a filler does not inherit its space.
+  assert.strictEqual(stripFillers("para one.\n\nUm, para two."), "para one.\n\nPara two.");
 });
 
 test("stripFillers leaves real words, acronyms and text without fillers alone", () => {

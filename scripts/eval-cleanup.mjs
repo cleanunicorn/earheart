@@ -36,7 +36,7 @@ import { getLlama, LlamaChatSession } from "node-llama-cpp";
 const require = createRequire(import.meta.url);
 const { DEFAULTS } = require("../main/settings");
 const { STYLES } = require("../main/cleanup-styles");
-const { stripStumbles } = require("../main/util/stumble-strip");
+const { stripStumbles, collapseRepeats } = require("../main/util/stumble-strip");
 const { SHORT, REPORTED, FLUENT } = require("./dictation-corpus");
 
 const BASE = DEFAULTS.cleanup.systemPrompt;
@@ -87,17 +87,17 @@ if (!INPUTS) {
 const FILLER = /(?<![\w-])(?:u[mh]+|erm+)(?![\w-])/gi;
 const REPEAT =
   /(?<![\p{L}\p{N}'’-])([\p{L}\p{N}][\p{L}\p{N}'’-]*)((?:[^\S\n]+\1)+)(?![\p{L}\p{N}'’-])/giu;
-const KEEP_DOUBLED = new Set(["had", "that", "very", "really", "so", "no", "yes"]);
 
 function countFillers(text) {
   return (text.match(FILLER) || []).length;
 }
+// A "repeat" is what the backstop would collapse — the production rule itself
+// (deliberate doublings, numbers and spelled-out letters are not stutters), so
+// the delivered column can never report a repeat the backstop keeps on purpose.
 function countRepeats(text) {
   let n = 0;
-  text.replace(REPEAT, (m, word, rest) => {
-    if (KEEP_DOUBLED.has(word.toLowerCase()) || /\p{N}/u.test(word)) return m;
-    const echoes = rest.trim().split(/\s+/);
-    if (echoes.every((e) => e === e.toLowerCase() || word === "I")) n++;
+  text.replace(REPEAT, (m) => {
+    if (collapseRepeats(m) !== m) n++;
     return m;
   });
   return n;

@@ -44,13 +44,27 @@ function stripFillers(text) {
   // Take the filler with the comma that only existed to fence it off. A comma
   // BEFORE the filler belongs to the preceding clause ("So, um, we" -> "So,
   // we"); one that only follows is the filler's own ("is uh, for" -> "is for").
+  // `tail` is the sentence-ending punctuation the filler was sitting in front
+  // of, which decides who the fencing comma really belonged to.
   let out = marked.replace(
-    new RegExp(`(\\s*,)?[^\\S\\n]*${CUT}[^\\S\\n]*(?:,[^\\S\\n]*)?`, "g"),
-    (m, before, offset, whole) => {
-      if (before) return ", ";
+    new RegExp(`(\\s*,)?[^\\S\\n]*${CUT}[^\\S\\n]*(?:,[^\\S\\n]*)?([.!?]+)?`, "g"),
+    (m, before, tail, offset, whole) => {
       // Opening a sentence? The next word has to take over the capital.
+      // (":" and ";" continue a sentence, so they are not boundaries here.)
       const head = whole.slice(0, offset);
-      return /(?:^|[.!?:;\n]["')\]]?\s*)$/.test(head) ? ` ${CAP}` : " ";
+      const opensSentence = /(?:^|[.!?\n]["')\]]?\s*)$/.test(head);
+      if (tail) {
+        // A "sentence" that was nothing but the filler takes its punctuation
+        // with it — the clause before it already ended with its own ("Do it.
+        // Um! Really?" -> "Do it. Really?"). Anywhere else the punctuation ends
+        // the running clause and stays, without the comma that fenced the
+        // filler off ("that's it, um." -> "that's it.").
+        return opensSentence ? "" : tail;
+      }
+      if (before) return ", ";
+      if (!opensSentence) return " ";
+      // At the very start of a line there is nothing to separate from.
+      return head === "" || head.endsWith("\n") ? CAP : ` ${CAP}`;
     }
   );
 

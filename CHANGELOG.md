@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.28.8 — 2026-08-29
+
+- Bring back the filler backstop, measured on the shape that broke (#119)
+
 ## v0.28.7 — 2026-08-25
 
 - Ask Gemma properly and the fillers go (Custom style: update your prompt) (#118)

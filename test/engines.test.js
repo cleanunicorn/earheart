@@ -828,6 +828,49 @@ test("a checksum-less partial without a strong validator restarts from zero", as
   }
 });
 
+test("a checksum-less partial resumes with a matching strong ETag", async () => {
+  const full = Buffer.from("custom-model-with-strong-etag-".repeat(32));
+  const cut = 192;
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    requests.push({ range: req.headers.range, ifRange: req.headers["if-range"] });
+    res.statusCode = 206;
+    res.setHeader("etag", '"strong-v1"');
+    res.setHeader("content-range", `bytes ${cut}-${full.length - 1}/${full.length}`);
+    res.setHeader("content-length", full.length - cut);
+    res.end(full.subarray(cut));
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "cleanup", id: "strong-custom",
+        files: [{ name: "model.gguf", bytes: full.length, url: `${base}/model.gguf` }],
+      };
+      const dest = manager.filePath(dir, model, model.files[0]);
+      await fsp.mkdir(path.dirname(dest), { recursive: true });
+      await fsp.writeFile(`${dest}.part`, full.subarray(0, cut));
+      await fsp.writeFile(`${dest}.part.json`, JSON.stringify({
+        url: model.files[0].url,
+        expectedBytes: full.length,
+        etag: '"strong-v1"',
+        lastModified: null,
+        totalBytes: full.length,
+      }));
+
+      await manager.download(dir, model);
+      assert.deepStrictEqual(requests, [
+        { range: `bytes=${cut}-`, ifRange: '"strong-v1"' },
+      ]);
+      assert.deepStrictEqual(fs.readFileSync(dest), full);
+      assert.strictEqual(manager.isInstalled(dir, model), true);
+    });
+  } finally {
+    server.close();
+  }
+});
+
 test("an unsatisfiable range discards the partial and retries from zero", async () => {
   const full = Buffer.from("range-no-longer-valid-".repeat(64));
   const sha = crypto.createHash("sha256").update(full).digest("hex");

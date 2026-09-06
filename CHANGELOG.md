@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.29.0 — 2026-09-06
+
+- Resume interrupted model downloads (#127)
+
 ## v0.28.9 — 2026-08-30
 
 - Keep the filler cut from reflowing the whole transcript (#120)

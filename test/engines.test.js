@@ -650,6 +650,54 @@ test("a changed validator invalidates the partial and fetches a full representat
   }
 });
 
+test("an unsatisfiable range discards the partial and retries from zero", async () => {
+  const full = Buffer.from("range-no-longer-valid-".repeat(64));
+  const sha = crypto.createHash("sha256").update(full).digest("hex");
+  const cut = 144;
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    requests.push(req.headers.range);
+    if (requests.length === 1) {
+      res.statusCode = 416;
+      res.setHeader("content-range", `bytes */${full.length}`);
+      res.end();
+      return;
+    }
+    res.setHeader("etag", '"replacement"');
+    res.setHeader("content-length", full.length);
+    res.end(full);
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "stt", id: "range-416",
+        files: [{ name: "a.bin", bytes: full.length, url: `${base}/a.bin`, sha256: sha }],
+      };
+      const dest = manager.filePath(dir, model, model.files[0]);
+      await fsp.mkdir(path.dirname(dest), { recursive: true });
+      await fsp.writeFile(`${dest}.part`, full.subarray(0, cut));
+      await fsp.writeFile(`${dest}.part.json`, JSON.stringify({
+        url: model.files[0].url,
+        expectedBytes: full.length,
+        etag: '"old"',
+        lastModified: null,
+        totalBytes: full.length,
+      }));
+
+      await manager.download(dir, model);
+      assert.deepStrictEqual(requests, [`bytes=${cut}-`, undefined]);
+      assert.deepStrictEqual(fs.readFileSync(dest), full);
+      assert.ok(!fs.existsSync(`${dest}.part`));
+      assert.ok(!fs.existsSync(`${dest}.part.json`));
+      assert.strictEqual(manager.isInstalled(dir, model), true);
+    });
+  } finally {
+    server.close();
+  }
+});
+
 test("cancellation preserves a resumable partial", async () => {
   const full = Buffer.from("cancel-me-".repeat(200));
   const sha = crypto.createHash("sha256").update(full).digest("hex");

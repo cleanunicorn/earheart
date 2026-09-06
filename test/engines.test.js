@@ -787,6 +787,47 @@ test("weak ETags use Last-Modified to validate resumed content", async () => {
   }
 });
 
+test("a checksum-less partial without a strong validator restarts from zero", async () => {
+  const oldBody = Buffer.from("old-unvalidated-content-".repeat(32));
+  const newBody = Buffer.from("new-unvalidated-content-".repeat(32));
+  assert.strictEqual(oldBody.length, newBody.length);
+  const cut = 128;
+  const ranges = [];
+  const server = http.createServer((req, res) => {
+    ranges.push(req.headers.range);
+    res.setHeader("etag", 'W/"shared"');
+    res.setHeader("content-length", newBody.length);
+    res.end(newBody);
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "cleanup", id: "weak-only",
+        files: [{ name: "model.gguf", bytes: newBody.length, url: `${base}/model.gguf` }],
+      };
+      const dest = manager.filePath(dir, model, model.files[0]);
+      await fsp.mkdir(path.dirname(dest), { recursive: true });
+      await fsp.writeFile(`${dest}.part`, oldBody.subarray(0, cut));
+      await fsp.writeFile(`${dest}.part.json`, JSON.stringify({
+        url: model.files[0].url,
+        expectedBytes: oldBody.length,
+        etag: 'W/"shared"',
+        lastModified: null,
+        totalBytes: oldBody.length,
+      }));
+
+      await manager.download(dir, model);
+      assert.deepStrictEqual(ranges, [undefined]);
+      assert.deepStrictEqual(fs.readFileSync(dest), newBody);
+      assert.strictEqual(manager.isInstalled(dir, model), true);
+    });
+  } finally {
+    server.close();
+  }
+});
+
 test("an unsatisfiable range discards the partial and retries from zero", async () => {
   const full = Buffer.from("range-no-longer-valid-".repeat(64));
   const sha = crypto.createHash("sha256").update(full).digest("hex");

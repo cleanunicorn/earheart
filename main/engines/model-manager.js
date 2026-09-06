@@ -145,7 +145,8 @@ async function readPartial(dest, file) {
     meta.url !== file.url ||
     meta.expectedBytes !== expectedBytes ||
     stat.size <= 0 ||
-    (expectedBytes && stat.size > expectedBytes)
+    (expectedBytes && stat.size > expectedBytes) ||
+    (!file.sha256 && !ifRangeValue(meta))
   ) {
     await discardPartial(paths);
     return null;
@@ -167,8 +168,12 @@ function ifRangeValue(metadata) {
   // RFC 9110 forbids weak entity tags in If-Range. Last-Modified is the next
   // best validator; with neither, the final SHA-256 still prevents installation
   // of bytes combined from incompatible representations.
-  if (metadata.etag && !metadata.etag.startsWith("W/")) return metadata.etag;
-  return metadata.lastModified || null;
+  const etag = typeof metadata.etag === "string" ? metadata.etag : null;
+  const lastModified = typeof metadata.lastModified === "string"
+    ? metadata.lastModified
+    : null;
+  if (etag && !etag.startsWith("W/")) return etag;
+  return lastModified;
 }
 
 function parseContentRange(value) {
@@ -183,8 +188,12 @@ function resumedResponseIsCompatible(res, partial, file) {
   if (file.bytes && range.total !== file.bytes) return false;
   if (partial.metadata.totalBytes && range.total !== partial.metadata.totalBytes) return false;
 
-  const oldEtag = partial.metadata.etag;
-  const oldModified = partial.metadata.lastModified;
+  const oldEtag = typeof partial.metadata.etag === "string"
+    ? partial.metadata.etag
+    : null;
+  const oldModified = typeof partial.metadata.lastModified === "string"
+    ? partial.metadata.lastModified
+    : null;
   const strongEtag = oldEtag && !oldEtag.startsWith("W/");
   if (strongEtag && res.headers.get("etag") !== oldEtag) return false;
   if (!strongEtag && oldModified && res.headers.get("last-modified") !== oldModified) {

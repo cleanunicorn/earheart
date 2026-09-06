@@ -9,9 +9,9 @@
 // manager streams each URL to disk and the engines load the files in place.
 //
 // `bytes` is the exact file size, used for the wizard's progress bar. `sha256`
-// is the file's verified checksum: the download manager hashes each file as it
-// streams and rejects a mismatch, which is the real guard against a corrupted,
-// tampered, or wrong file being loaded into the native runtimes. Every URL is
+// is the file's verified checksum: the download manager hashes every byte of
+// the completed file and rejects a mismatch, which is the real guard against a
+// corrupted, tampered, or wrong file being loaded into the native runtimes. Every URL is
 // pinned to an immutable Hugging Face commit (`resolve/<commit>/…`) rather than
 // a moving branch, so the bytes are reproducible and the checksum can't drift.
 //

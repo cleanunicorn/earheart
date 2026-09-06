@@ -81,23 +81,33 @@ async function remove(baseDir, model) {
   await fsp.rm(modelDir(baseDir, model), { recursive: true, force: true });
 }
 
-// A pass-through stream that counts bytes as they are written.
-function makeMeter(onChunk) {
+// A pass-through stream that counts and hashes bytes as they are written.
+function makeMeter(onChunk, hash) {
   return new Transform({
     transform(chunk, _enc, cb) {
+      hash?.update(chunk);
       onChunk(chunk.length);
       cb(null, chunk);
     },
   });
 }
 
-async function hashFile(filename) {
+async function updateHashFromFile(filename, hash, signal) {
+  signal?.throwIfAborted();
+  for await (const chunk of fs.createReadStream(filename)) {
+    signal?.throwIfAborted();
+    hash.update(chunk);
+  }
+  signal?.throwIfAborted();
+}
+
+async function hashFile(filename, signal) {
   const hash = crypto.createHash("sha256");
-  for await (const chunk of fs.createReadStream(filename)) hash.update(chunk);
+  await updateHashFromFile(filename, hash, signal);
   return hash.digest("hex");
 }
 
-async function verifyFile(filename, file) {
+async function verifyFile(filename, file, signal) {
   let stat;
   try {
     stat = await fsp.stat(filename);
@@ -105,7 +115,7 @@ async function verifyFile(filename, file) {
     return false;
   }
   if (file.bytes && stat.size !== file.bytes) return false;
-  if (file.sha256 && (await hashFile(filename)) !== file.sha256) return false;
+  if (file.sha256 && (await hashFile(filename, signal)) !== file.sha256) return false;
   return true;
 }
 
@@ -197,7 +207,8 @@ async function downloadFile(baseDir, model, file, { partial, onSize, signal }) {
   // A crash can happen after the last byte lands but before verification and
   // rename. Finish that work locally instead of issuing an unsatisfiable range.
   if (partial && file.bytes && partial.size === file.bytes) {
-    if (await verifyFile(paths.part, file)) {
+    if (await verifyFile(paths.part, file, signal)) {
+      signal?.throwIfAborted();
       await fsp.rename(paths.part, dest);
       await fsp.rm(paths.meta, { force: true });
       return;
@@ -205,6 +216,9 @@ async function downloadFile(baseDir, model, file, { partial, onSize, signal }) {
     await discardPartial(paths);
     partial = null;
   }
+
+  let hash = file.sha256 ? crypto.createHash("sha256") : null;
+  if (hash && partial) await updateHashFromFile(paths.part, hash, signal);
 
   let res;
   let offset = 0;
@@ -239,6 +253,8 @@ async function downloadFile(baseDir, model, file, { partial, onSize, signal }) {
   }
 
   if (!res.body) throw new Error(`Download failed for ${file.name}: HTTP ${res.status}`);
+  // A full response replaces, rather than extends, any previously hashed prefix.
+  if (!offset && hash) hash = crypto.createHash("sha256");
   const range = offset ? parseContentRange(res.headers.get("content-range")) : null;
   const contentLength = Number(res.headers.get("content-length")) || 0;
   const responseTotal = range?.total || contentLength || null;
@@ -250,7 +266,7 @@ async function downloadFile(baseDir, model, file, { partial, onSize, signal }) {
     makeMeter((n) => {
       streamed += n;
       onSize(offset + streamed);
-    }),
+    }, hash),
     fs.createWriteStream(paths.part, { flags: offset ? "a" : "w" }),
     { signal }
   );
@@ -260,10 +276,12 @@ async function downloadFile(baseDir, model, file, { partial, onSize, signal }) {
     await discardPartial(paths);
     throw new Error(`Size mismatch for ${file.name}`);
   }
-  if (file.sha256 && (await hashFile(paths.part)) !== file.sha256) {
+  signal?.throwIfAborted();
+  if (hash && hash.digest("hex") !== file.sha256) {
     await discardPartial(paths);
     throw new Error(`Checksum mismatch for ${file.name}`);
   }
+  signal?.throwIfAborted();
   await fsp.rename(paths.part, dest); // atomic: only a verified file lands in place
   await fsp.rm(paths.meta, { force: true });
 }
@@ -298,7 +316,7 @@ async function download(baseDir, model, { onProgress, signal } = {}) {
   for (const file of model.files) {
     const dest = filePath(baseDir, model, file);
     if (fs.existsSync(dest)) {
-      if (await verifyFile(dest, file)) {
+      if (await verifyFile(dest, file, signal)) {
         const size = fs.statSync(dest).size;
         reusable.push({ complete: true, partial: null, credit: size });
         received += size;
@@ -336,10 +354,13 @@ async function download(baseDir, model, { onProgress, signal } = {}) {
   for (const file of model.files) {
     sizes[file.name] = fs.statSync(filePath(baseDir, model, file)).size;
   }
-  await fsp.writeFile(
-    path.join(modelDir(baseDir, model), MARKER),
-    JSON.stringify({ files: sizes })
-  );
+  signal?.throwIfAborted();
+  const marker = path.join(modelDir(baseDir, model), MARKER);
+  await fsp.writeFile(marker, JSON.stringify({ files: sizes }));
+  if (signal?.aborted) {
+    await fsp.rm(marker, { force: true });
+    signal.throwIfAborted();
+  }
   onProgress?.({ received: total, total, fraction: 1, file: null });
 }
 

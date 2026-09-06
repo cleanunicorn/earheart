@@ -619,6 +619,49 @@ test("cancellation preserves a resumable partial", async () => {
   }
 });
 
+test("cancellation while hashing preserves the complete partial", async () => {
+  const full = Buffer.alloc(32 * 1024 * 1024, 0x5a);
+  const sha = crypto.createHash("sha256").update(full).digest("hex");
+  let hits = 0;
+  const server = http.createServer((_req, res) => {
+    hits++;
+    res.end(full);
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "cleanup", id: "cancel-hash",
+        files: [{ name: "m.gguf", bytes: full.length, url: `${base}/m.gguf`, sha256: sha }],
+      };
+      const dest = manager.filePath(dir, model, model.files[0]);
+      await fsp.mkdir(path.dirname(dest), { recursive: true });
+      await fsp.writeFile(`${dest}.part`, full);
+      await fsp.writeFile(`${dest}.part.json`, JSON.stringify({
+        url: model.files[0].url,
+        expectedBytes: full.length,
+        etag: '"stable"',
+        lastModified: null,
+        totalBytes: full.length,
+      }));
+
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), 0);
+      await assert.rejects(
+        () => manager.download(dir, model, { signal: controller.signal }),
+        /abort/i
+      );
+      assert.strictEqual(hits, 0);
+      assert.ok(!fs.existsSync(dest));
+      assert.strictEqual(fs.statSync(`${dest}.part`).size, full.length);
+      assert.ok(fs.existsSync(`${dest}.part.json`));
+    });
+  } finally {
+    server.close();
+  }
+});
+
 test("corrupted resumed bytes fail the full checksum and are discarded", async () => {
   const full = Buffer.from("checksum-all-bytes-".repeat(64));
   const sha = crypto.createHash("sha256").update(full).digest("hex");

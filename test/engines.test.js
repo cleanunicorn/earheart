@@ -333,6 +333,39 @@ test("download skips files already on disk and remove frees them", async () => {
   }
 });
 
+test("download replaces an existing file that fails checksum validation", async () => {
+  const good = Buffer.from("verified destination");
+  const bad = Buffer.from("corrupted destinatio");
+  assert.strictEqual(bad.length, good.length);
+  const sha = crypto.createHash("sha256").update(good).digest("hex");
+  let hits = 0;
+  const server = http.createServer((_req, res) => {
+    hits++;
+    res.setHeader("content-length", good.length);
+    res.end(good);
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "stt", id: "replace-corrupt",
+        files: [{ name: "a.bin", bytes: good.length, url: `${base}/a.bin`, sha256: sha }],
+      };
+      const dest = manager.filePath(dir, model, model.files[0]);
+      await fsp.mkdir(path.dirname(dest), { recursive: true });
+      await fsp.writeFile(dest, bad);
+
+      await manager.download(dir, model);
+      assert.strictEqual(hits, 1);
+      assert.deepStrictEqual(fs.readFileSync(dest), good);
+      assert.strictEqual(manager.isInstalled(dir, model), true);
+    });
+  } finally {
+    server.close();
+  }
+});
+
 test("isInstalled rejects a model whose file was truncated after download", async () => {
   const a = Buffer.from("the-whole-file-".repeat(20));
   const { server, base } = await serveFiles({ "/a.bin": a });

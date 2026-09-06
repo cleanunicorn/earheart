@@ -662,6 +662,45 @@ test("cancellation while hashing preserves the complete partial", async () => {
   }
 });
 
+test("an exact-size verified partial completes without a network request", async () => {
+  const full = Buffer.from("complete-before-rename-".repeat(32));
+  const sha = crypto.createHash("sha256").update(full).digest("hex");
+  let hits = 0;
+  const server = http.createServer((_req, res) => {
+    hits++;
+    res.end(full);
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "cleanup", id: "complete-partial",
+        files: [{ name: "m.gguf", bytes: full.length, url: `${base}/m.gguf`, sha256: sha }],
+      };
+      const dest = manager.filePath(dir, model, model.files[0]);
+      await fsp.mkdir(path.dirname(dest), { recursive: true });
+      await fsp.writeFile(`${dest}.part`, full);
+      await fsp.writeFile(`${dest}.part.json`, JSON.stringify({
+        url: model.files[0].url,
+        expectedBytes: full.length,
+        etag: '"stable"',
+        lastModified: null,
+        totalBytes: full.length,
+      }));
+
+      await manager.download(dir, model);
+      assert.strictEqual(hits, 0);
+      assert.deepStrictEqual(fs.readFileSync(dest), full);
+      assert.ok(!fs.existsSync(`${dest}.part`));
+      assert.ok(!fs.existsSync(`${dest}.part.json`));
+      assert.strictEqual(manager.isInstalled(dir, model), true);
+    });
+  } finally {
+    server.close();
+  }
+});
+
 test("corrupted resumed bytes fail the full checksum and are discarded", async () => {
   const full = Buffer.from("checksum-all-bytes-".repeat(64));
   const sha = crypto.createHash("sha256").update(full).digest("hex");

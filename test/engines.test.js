@@ -1014,6 +1014,48 @@ test("an exact-size verified partial completes without a network request", async
   }
 });
 
+test("an exact-size corrupted partial is replaced by a verified download", async () => {
+  const good = Buffer.from("verified-complete-partial");
+  const bad = Buffer.from("corrupted-complete-partia");
+  assert.strictEqual(bad.length, good.length);
+  const sha = crypto.createHash("sha256").update(good).digest("hex");
+  const ranges = [];
+  const server = http.createServer((req, res) => {
+    ranges.push(req.headers.range);
+    res.setHeader("content-length", good.length);
+    res.end(good);
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "cleanup", id: "corrupt-complete-partial",
+        files: [{ name: "m.gguf", bytes: good.length, url: `${base}/m.gguf`, sha256: sha }],
+      };
+      const dest = manager.filePath(dir, model, model.files[0]);
+      await fsp.mkdir(path.dirname(dest), { recursive: true });
+      await fsp.writeFile(`${dest}.part`, bad);
+      await fsp.writeFile(`${dest}.part.json`, JSON.stringify({
+        url: model.files[0].url,
+        expectedBytes: good.length,
+        etag: '"stale"',
+        lastModified: null,
+        totalBytes: good.length,
+      }));
+
+      await manager.download(dir, model);
+      assert.deepStrictEqual(ranges, [undefined]);
+      assert.deepStrictEqual(fs.readFileSync(dest), good);
+      assert.ok(!fs.existsSync(`${dest}.part`));
+      assert.ok(!fs.existsSync(`${dest}.part.json`));
+      assert.strictEqual(manager.isInstalled(dir, model), true);
+    });
+  } finally {
+    server.close();
+  }
+});
+
 test("corrupted resumed bytes fail the full checksum and are discarded", async () => {
   const full = Buffer.from("checksum-all-bytes-".repeat(64));
   const sha = crypto.createHash("sha256").update(full).digest("hex");

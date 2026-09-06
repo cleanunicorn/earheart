@@ -497,6 +497,60 @@ test("a transient failure retains bytes and retries with Range and If-Range", as
   }
 });
 
+test("a temporary HTTP error preserves partial state for a later resume", async () => {
+  const full = Buffer.from("retry-after-http-error-".repeat(64));
+  const sha = crypto.createHash("sha256").update(full).digest("hex");
+  const cut = 160;
+  let attempt = 0;
+  const server = http.createServer((req, res) => {
+    attempt++;
+    assert.strictEqual(req.headers.range, `bytes=${cut}-`);
+    assert.strictEqual(req.headers["if-range"], '"stable"');
+    if (attempt === 1) {
+      res.statusCode = 503;
+      res.end("try later");
+      return;
+    }
+    res.statusCode = 206;
+    res.setHeader("etag", '"stable"');
+    res.setHeader("content-range", `bytes ${cut}-${full.length - 1}/${full.length}`);
+    res.setHeader("content-length", full.length - cut);
+    res.end(full.subarray(cut));
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "cleanup", id: "temporary-http-error",
+        files: [{ name: "m.gguf", bytes: full.length, url: `${base}/m.gguf`, sha256: sha }],
+      };
+      const dest = manager.filePath(dir, model, model.files[0]);
+      const metadata = JSON.stringify({
+        url: model.files[0].url,
+        expectedBytes: full.length,
+        etag: '"stable"',
+        lastModified: null,
+        totalBytes: full.length,
+      });
+      await fsp.mkdir(path.dirname(dest), { recursive: true });
+      await fsp.writeFile(`${dest}.part`, full.subarray(0, cut));
+      await fsp.writeFile(`${dest}.part.json`, metadata);
+
+      await assert.rejects(() => manager.download(dir, model), /HTTP 503/);
+      assert.deepStrictEqual(fs.readFileSync(`${dest}.part`), full.subarray(0, cut));
+      assert.strictEqual(fs.readFileSync(`${dest}.part.json`, "utf8"), metadata);
+
+      await manager.download(dir, model);
+      assert.strictEqual(attempt, 2);
+      assert.deepStrictEqual(fs.readFileSync(dest), full);
+      assert.strictEqual(manager.isInstalled(dir, model), true);
+    });
+  } finally {
+    server.close();
+  }
+});
+
 test("a server that ignores Range safely overwrites rather than appends", async () => {
   const full = Buffer.from("ignore-range-".repeat(80));
   const sha = crypto.createHash("sha256").update(full).digest("hex");

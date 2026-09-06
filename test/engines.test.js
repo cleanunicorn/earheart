@@ -879,6 +879,70 @@ test("corrupted resumed bytes fail the full checksum and are discarded", async (
   }
 });
 
+test("invalid partial metadata is discarded before a full download", async () => {
+  const full = Buffer.from("fresh-representation-".repeat(32));
+  const sha = crypto.createHash("sha256").update(full).digest("hex");
+  const ranges = [];
+  const server = http.createServer((req, res) => {
+    ranges.push(req.headers.range);
+    res.setHeader("content-length", full.length);
+    res.end(full);
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const cases = [
+    { name: "missing-metadata", metadata: null },
+    { name: "malformed-metadata", metadata: "{" },
+    { name: "wrong-url", metadata: { url: `${base}/other.bin` } },
+    { name: "wrong-expected-size", metadata: { expectedBytes: full.length + 1 } },
+    { name: "zero-byte-partial", body: Buffer.alloc(0) },
+    { name: "oversized-partial", body: Buffer.alloc(full.length + 1) },
+  ];
+  try {
+    await withTmp(async (dir) => {
+      for (const scenario of cases) {
+        const file = {
+          name: `${scenario.name}.bin`,
+          bytes: full.length,
+          url: `${base}/${scenario.name}.bin`,
+          sha256: sha,
+        };
+        const model = { kind: "stt", id: scenario.name, files: [file] };
+        const dest = manager.filePath(dir, model, file);
+        const metadata = {
+          url: file.url,
+          expectedBytes: full.length,
+          etag: '"stable"',
+          lastModified: null,
+          totalBytes: full.length,
+          ...(typeof scenario.metadata === "object" ? scenario.metadata : {}),
+        };
+        await fsp.mkdir(path.dirname(dest), { recursive: true });
+        await fsp.writeFile(
+          `${dest}.part`,
+          scenario.body === undefined ? full.subarray(0, 100) : scenario.body
+        );
+        if (scenario.metadata !== null) {
+          await fsp.writeFile(
+            `${dest}.part.json`,
+            typeof scenario.metadata === "string"
+              ? scenario.metadata
+              : JSON.stringify(metadata)
+          );
+        }
+
+        await manager.download(dir, model);
+        assert.deepStrictEqual(fs.readFileSync(dest), full, scenario.name);
+        assert.ok(!fs.existsSync(`${dest}.part`), scenario.name);
+        assert.ok(!fs.existsSync(`${dest}.part.json`), scenario.name);
+      }
+      assert.deepStrictEqual(ranges, cases.map(() => undefined));
+    });
+  } finally {
+    server.close();
+  }
+});
+
 test("remove deletes partial files and their resume metadata", async () => {
   await withTmp(async (dir) => {
     const model = {

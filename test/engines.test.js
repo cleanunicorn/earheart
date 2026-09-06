@@ -650,6 +650,86 @@ test("a changed validator invalidates the partial and fetches a full representat
   }
 });
 
+test("weak ETags use Last-Modified to validate resumed content", async () => {
+  const oldDate = "Wed, 21 Oct 2015 07:28:00 GMT";
+  const newDate = "Thu, 22 Oct 2015 07:28:00 GMT";
+  const stable = Buffer.from("stable-weak-validator-".repeat(32));
+  const oldBody = Buffer.from("old-weak-content-".repeat(32));
+  const newBody = Buffer.from("new-weak-content-".repeat(32));
+  assert.strictEqual(oldBody.length, newBody.length);
+  const cut = 128;
+  const requests = [];
+  let changedAttempts = 0;
+  const server = http.createServer((req, res) => {
+    requests.push({ url: req.url, range: req.headers.range, ifRange: req.headers["if-range"] });
+    res.setHeader("etag", 'W/"shared"');
+    if (req.url === "/stable.bin") {
+      res.statusCode = 206;
+      res.setHeader("last-modified", oldDate);
+      res.setHeader("content-range", `bytes ${cut}-${stable.length - 1}/${stable.length}`);
+      res.setHeader("content-length", stable.length - cut);
+      res.end(stable.subarray(cut));
+      return;
+    }
+    changedAttempts++;
+    res.setHeader("last-modified", newDate);
+    if (changedAttempts === 1) {
+      res.statusCode = 206;
+      res.setHeader("content-range", `bytes ${cut}-${newBody.length - 1}/${newBody.length}`);
+      res.setHeader("content-length", newBody.length - cut);
+      res.end(newBody.subarray(cut));
+      return;
+    }
+    res.setHeader("content-length", newBody.length);
+    res.end(newBody);
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  async function seed(dir, model, body) {
+    const dest = manager.filePath(dir, model, model.files[0]);
+    await fsp.mkdir(path.dirname(dest), { recursive: true });
+    await fsp.writeFile(`${dest}.part`, body.subarray(0, cut));
+    await fsp.writeFile(`${dest}.part.json`, JSON.stringify({
+      url: model.files[0].url,
+      expectedBytes: body.length,
+      etag: 'W/"shared"',
+      lastModified: oldDate,
+      totalBytes: body.length,
+    }));
+    return dest;
+  }
+
+  try {
+    await withTmp(async (dir) => {
+      const stableModel = {
+        kind: "stt", id: "weak-stable",
+        files: [{ name: "stable.bin", bytes: stable.length, url: `${base}/stable.bin` }],
+      };
+      const stableDest = await seed(dir, stableModel, stable);
+      await manager.download(dir, stableModel);
+      assert.deepStrictEqual(fs.readFileSync(stableDest), stable);
+
+      const changedModel = {
+        kind: "cleanup", id: "weak-changed",
+        // Deliberately checksum-less: remote validators must prevent mixed bytes.
+        files: [{ name: "changed.bin", bytes: newBody.length, url: `${base}/changed.bin` }],
+      };
+      const changedDest = await seed(dir, changedModel, oldBody);
+      await manager.download(dir, changedModel);
+      assert.deepStrictEqual(fs.readFileSync(changedDest), newBody);
+
+      assert.deepStrictEqual(requests, [
+        { url: "/stable.bin", range: `bytes=${cut}-`, ifRange: oldDate },
+        { url: "/changed.bin", range: `bytes=${cut}-`, ifRange: oldDate },
+        { url: "/changed.bin", range: undefined, ifRange: undefined },
+      ]);
+    });
+  } finally {
+    server.close();
+  }
+});
+
 test("an unsatisfiable range discards the partial and retries from zero", async () => {
   const full = Buffer.from("range-no-longer-valid-".repeat(64));
   const sha = crypto.createHash("sha256").update(full).digest("hex");

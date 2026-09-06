@@ -185,8 +185,16 @@ function resumedResponseIsCompatible(res, partial, file) {
 
   const oldEtag = partial.metadata.etag;
   const oldModified = partial.metadata.lastModified;
-  if (oldEtag && res.headers.get("etag") !== oldEtag) return false;
-  if (!oldEtag && oldModified && res.headers.get("last-modified") !== oldModified) return false;
+  const strongEtag = oldEtag && !oldEtag.startsWith("W/");
+  if (strongEtag && res.headers.get("etag") !== oldEtag) return false;
+  if (!strongEtag && oldModified && res.headers.get("last-modified") !== oldModified) {
+    return false;
+  }
+  // A weak ETag cannot go in If-Range, but it is still useful as a consistency
+  // check when Last-Modified is unavailable.
+  if (!strongEtag && !oldModified && oldEtag && res.headers.get("etag") !== oldEtag) {
+    return false;
+  }
   return true;
 }
 

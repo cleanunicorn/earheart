@@ -277,6 +277,63 @@ test("download streams files, reports progress, and marks complete", async () =>
   }
 });
 
+test("multi-file resume credits complete and partial files together", async () => {
+  const complete = Buffer.from("already-verified-file");
+  const resumed = Buffer.from("partially-downloaded-file-".repeat(32));
+  const completeSha = crypto.createHash("sha256").update(complete).digest("hex");
+  const resumedSha = crypto.createHash("sha256").update(resumed).digest("hex");
+  const cut = 180;
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    requests.push({ url: req.url, range: req.headers.range });
+    assert.strictEqual(req.url, "/partial.bin");
+    assert.strictEqual(req.headers.range, `bytes=${cut}-`);
+    res.statusCode = 206;
+    res.setHeader("etag", '"stable"');
+    res.setHeader("content-range", `bytes ${cut}-${resumed.length - 1}/${resumed.length}`);
+    res.setHeader("content-length", resumed.length - cut);
+    res.end(resumed.subarray(cut));
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "stt", id: "multi-resume",
+        files: [
+          { name: "complete.bin", bytes: complete.length,
+            url: `${base}/complete.bin`, sha256: completeSha },
+          { name: "partial.bin", bytes: resumed.length,
+            url: `${base}/partial.bin`, sha256: resumedSha },
+        ],
+      };
+      const completeDest = manager.filePath(dir, model, model.files[0]);
+      const partialDest = manager.filePath(dir, model, model.files[1]);
+      await fsp.mkdir(path.dirname(completeDest), { recursive: true });
+      await fsp.writeFile(completeDest, complete);
+      await fsp.writeFile(`${partialDest}.part`, resumed.subarray(0, cut));
+      await fsp.writeFile(`${partialDest}.part.json`, JSON.stringify({
+        url: model.files[1].url,
+        expectedBytes: resumed.length,
+        etag: '"stable"',
+        lastModified: null,
+        totalBytes: resumed.length,
+      }));
+
+      const progress = [];
+      await manager.download(dir, model, { onProgress: (p) => progress.push(p.received) });
+      assert.deepStrictEqual(requests, [{ url: "/partial.bin", range: `bytes=${cut}-` }]);
+      assert.strictEqual(progress[0], complete.length + cut);
+      for (let i = 1; i < progress.length; i++) assert.ok(progress[i] >= progress[i - 1]);
+      assert.deepStrictEqual(fs.readFileSync(completeDest), complete);
+      assert.deepStrictEqual(fs.readFileSync(partialDest), resumed);
+      assert.strictEqual(manager.isInstalled(dir, model), true);
+    });
+  } finally {
+    server.close();
+  }
+});
+
 test("download verifies sha256 and rejects a mismatch", async () => {
   const good = Buffer.from("trustworthy bytes");
   const sha = crypto.createHash("sha256").update(good).digest("hex");

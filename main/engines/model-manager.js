@@ -5,11 +5,12 @@
 // unit-testable against a local HTTP server.
 //
 // Each file is streamed to `<name>.part`, with resume metadata in
-// `<name>.part.json`, checksum-verified, then renamed into place — so a
-// half-finished download never looks complete. A
-// model counts as installed once every file is present and a `.complete`
-// marker has been written. The marker records each file's size as actually
-// written, so `isInstalled` can reject a model whose files were later truncated
+// `<name>.part.json`, then validated against its configured size and optional
+// SHA-256 checksum before being renamed into place — so a half-finished
+// download never looks complete. A model counts as installed once every file
+// is present and a `.complete` marker has been written. The marker records each
+// file's size as actually written, so `isInstalled` can reject a model whose
+// files were later truncated
 // (e.g. a disk filling up) rather than trusting mere file presence.
 
 const fs = require("node:fs");

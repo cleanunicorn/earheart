@@ -289,6 +289,11 @@ async function downloadFile(baseDir, model, file, { partial, onSize, signal }) {
 /**
  * Download every file of a model, reporting aggregate progress.
  *
+ * Failed or cancelled transfers leave valid partial state for the next retry;
+ * incompatible state is discarded and downloaded afresh. Progress credits all
+ * reusable on-disk bytes in its first event and never moves backward. Files are
+ * installed only after their exact size and configured checksum are verified.
+ *
  * @param {string} baseDir
  * @param {object} model - a registry entry
  * @param {object} [opts]

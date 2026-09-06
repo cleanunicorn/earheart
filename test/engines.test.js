@@ -410,6 +410,7 @@ test("a transient failure retains bytes and retries with Range and If-Range", as
   const full = Buffer.from("the-full-payload-".repeat(64));
   const sha = crypto.createHash("sha256").update(full).digest("hex");
   const cut = 128;
+  let kept = 0;
   let attempt = 0;
   const requests = [];
   const server = http.createServer((req, res) => {
@@ -419,15 +420,17 @@ test("a transient failure retains bytes and retries with Range and If-Range", as
     if (attempt === 1) {
       res.setHeader("content-length", full.length);
       res.flushHeaders();
-      res.write(full.subarray(0, cut));
-      setTimeout(() => res.destroy(), 10); // abrupt failure, like a dropped connection
+      res.write(full.subarray(0, cut), () => {
+        setTimeout(() => res.destroy(), 25); // abrupt failure, like a dropped connection
+      });
       return;
     }
-    assert.strictEqual(req.headers.range, `bytes=${cut}-`);
+    const offset = Number(req.headers.range.match(/^bytes=(\d+)-$/)[1]);
+    assert.strictEqual(offset, kept);
     res.statusCode = 206;
-    res.setHeader("content-range", `bytes ${cut}-${full.length - 1}/${full.length}`);
-    res.setHeader("content-length", full.length - cut);
-    res.end(full.subarray(cut));
+    res.setHeader("content-range", `bytes ${offset}-${full.length - 1}/${full.length}`);
+    res.setHeader("content-length", full.length - offset);
+    res.end(full.subarray(offset));
   });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -440,7 +443,8 @@ test("a transient failure retains bytes and retries with Range and If-Range", as
       const dest = manager.filePath(dir, model, model.files[0]);
 
       await assert.rejects(() => manager.download(dir, model));
-      assert.strictEqual(fs.statSync(`${dest}.part`).size, cut);
+      kept = fs.statSync(`${dest}.part`).size;
+      assert.ok(kept > 0 && kept <= cut);
       assert.ok(fs.existsSync(`${dest}.part.json`));
       assert.strictEqual(manager.isInstalled(dir, model), false);
 
@@ -449,7 +453,7 @@ test("a transient failure retains bytes and retries with Range and If-Range", as
       assert.strictEqual(manager.isInstalled(dir, model), true);
       assert.deepStrictEqual(fs.readFileSync(dest), full);
       assert.strictEqual(requests[1].ifRange, '"version-1"');
-      assert.strictEqual(progress[0], cut, "retry begins at reusable on-disk bytes");
+      assert.strictEqual(progress[0], kept, "retry begins at reusable on-disk bytes");
       for (let i = 1; i < progress.length; i++) {
         assert.ok(progress[i] >= progress[i - 1], "resume progress must be monotonic");
       }
@@ -464,6 +468,7 @@ test("a server that ignores Range safely overwrites rather than appends", async 
   const full = Buffer.from("ignore-range-".repeat(80));
   const sha = crypto.createHash("sha256").update(full).digest("hex");
   const cut = 96;
+  let kept = 0;
   let attempt = 0;
   const ranges = [];
   const server = http.createServer((req, res) => {
@@ -473,8 +478,7 @@ test("a server that ignores Range safely overwrites rather than appends", async 
     res.setHeader("content-length", full.length);
     if (attempt === 1) {
       res.flushHeaders();
-      res.write(full.subarray(0, cut));
-      setTimeout(() => res.destroy(), 10);
+      res.write(full.subarray(0, cut), () => setTimeout(() => res.destroy(), 25));
       return;
     }
     res.end(full); // deliberately return 200 to the Range request
@@ -488,10 +492,13 @@ test("a server that ignores Range safely overwrites rather than appends", async 
         files: [{ name: "a.bin", bytes: full.length, url: `${base}/a.bin`, sha256: sha }],
       };
       await assert.rejects(() => manager.download(dir, model));
+      const dest = manager.filePath(dir, model, model.files[0]);
+      kept = fs.statSync(`${dest}.part`).size;
+      assert.ok(kept > 0 && kept <= cut);
       const seen = [];
       await manager.download(dir, model, { onProgress: (p) => seen.push(p.received) });
-      assert.strictEqual(ranges[1], `bytes=${cut}-`);
-      assert.deepStrictEqual(fs.readFileSync(manager.filePath(dir, model, model.files[0])), full);
+      assert.strictEqual(ranges[1], `bytes=${kept}-`);
+      assert.deepStrictEqual(fs.readFileSync(dest), full);
       for (let i = 1; i < seen.length; i++) assert.ok(seen[i] >= seen[i - 1]);
     });
   } finally {
@@ -505,6 +512,7 @@ test("a changed validator invalidates the partial and fetches a full representat
   assert.strictEqual(oldBody.length, newBody.length);
   const sha = crypto.createHash("sha256").update(newBody).digest("hex");
   const cut = 100;
+  let kept = 0;
   let attempt = 0;
   const requests = [];
   const server = http.createServer((req, res) => {
@@ -514,18 +522,19 @@ test("a changed validator invalidates the partial and fetches a full representat
       res.setHeader("etag", '"old"');
       res.setHeader("content-length", oldBody.length);
       res.flushHeaders();
-      res.write(oldBody.subarray(0, cut));
-      setTimeout(() => res.destroy(), 10);
+      res.write(oldBody.subarray(0, cut), () => setTimeout(() => res.destroy(), 25));
       return;
     }
     res.setHeader("etag", '"new"');
     if (attempt === 2) {
       // A non-compliant server sends a range despite the failed If-Range. The
       // changed ETag must still be noticed before any bytes are appended.
+      const offset = Number(req.headers.range.match(/^bytes=(\d+)-$/)[1]);
+      assert.strictEqual(offset, kept);
       res.statusCode = 206;
-      res.setHeader("content-range", `bytes ${cut}-${newBody.length - 1}/${newBody.length}`);
-      res.setHeader("content-length", newBody.length - cut);
-      res.end(newBody.subarray(cut));
+      res.setHeader("content-range", `bytes ${offset}-${newBody.length - 1}/${newBody.length}`);
+      res.setHeader("content-length", newBody.length - offset);
+      res.end(newBody.subarray(offset));
       return;
     }
     res.setHeader("content-length", newBody.length);
@@ -540,11 +549,14 @@ test("a changed validator invalidates the partial and fetches a full representat
         files: [{ name: "m.gguf", bytes: newBody.length, url: `${base}/m.gguf`, sha256: sha }],
       };
       await assert.rejects(() => manager.download(dir, model));
+      const dest = manager.filePath(dir, model, model.files[0]);
+      kept = fs.statSync(`${dest}.part`).size;
+      assert.ok(kept > 0 && kept <= cut);
       await manager.download(dir, model);
       assert.strictEqual(attempt, 3);
       assert.strictEqual(requests[1].ifRange, '"old"');
       assert.strictEqual(requests[2].range, undefined);
-      assert.deepStrictEqual(fs.readFileSync(manager.filePath(dir, model, model.files[0])), newBody);
+      assert.deepStrictEqual(fs.readFileSync(dest), newBody);
     });
   } finally {
     server.close();

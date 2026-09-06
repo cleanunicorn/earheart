@@ -4,8 +4,9 @@
 // app; a temp dir in tests) so this module has no Electron dependency and is
 // unit-testable against a local HTTP server.
 //
-// Each file is streamed to `<name>.part`, optionally checksum-verified, then
-// renamed into place — so a half-finished download never looks complete. A
+// Each file is streamed to `<name>.part`, with resume metadata in
+// `<name>.part.json`, checksum-verified, then renamed into place — so a
+// half-finished download never looks complete. A
 // model counts as installed once every file is present and a `.complete`
 // marker has been written. The marker records each file's size as actually
 // written, so `isInstalled` can reject a model whose files were later truncated
@@ -28,6 +29,11 @@ function modelDir(baseDir, model) {
 
 function filePath(baseDir, model, file) {
   return path.join(modelDir(baseDir, model), file.name);
+}
+
+function partialPaths(dest) {
+  const part = `${dest}.part`;
+  return { part, meta: `${part}.json` };
 }
 
 // Read the completion marker. Returns the recorded {name: size} map, an empty
@@ -75,48 +81,191 @@ async function remove(baseDir, model) {
   await fsp.rm(modelDir(baseDir, model), { recursive: true, force: true });
 }
 
-// A pass-through stream that counts bytes and (optionally) hashes them, so we
-// can report progress and verify integrity in a single pass over the data.
-function makeMeter(onChunk, hash) {
+// A pass-through stream that counts bytes as they are written.
+function makeMeter(onChunk) {
   return new Transform({
     transform(chunk, _enc, cb) {
-      if (hash) hash.update(chunk);
       onChunk(chunk.length);
       cb(null, chunk);
     },
   });
 }
 
-async function downloadFile(baseDir, model, file, { onBytes, signal }) {
+async function hashFile(filename) {
+  const hash = crypto.createHash("sha256");
+  for await (const chunk of fs.createReadStream(filename)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
+async function verifyFile(filename, file) {
+  let stat;
+  try {
+    stat = await fsp.stat(filename);
+  } catch {
+    return false;
+  }
+  if (file.bytes && stat.size !== file.bytes) return false;
+  if (file.sha256 && (await hashFile(filename)) !== file.sha256) return false;
+  return true;
+}
+
+async function discardPartial(paths) {
+  await Promise.all([
+    fsp.rm(paths.part, { force: true }),
+    fsp.rm(paths.meta, { force: true }),
+  ]);
+}
+
+async function readPartial(dest, file) {
+  const paths = partialPaths(dest);
+  let stat;
+  let meta;
+  try {
+    [stat, meta] = await Promise.all([
+      fsp.stat(paths.part),
+      fsp.readFile(paths.meta, "utf8").then(JSON.parse),
+    ]);
+  } catch {
+    await discardPartial(paths);
+    return null;
+  }
+  const expectedBytes = file.bytes || null;
+  if (
+    !meta ||
+    meta.url !== file.url ||
+    meta.expectedBytes !== expectedBytes ||
+    stat.size <= 0 ||
+    (expectedBytes && stat.size > expectedBytes)
+  ) {
+    await discardPartial(paths);
+    return null;
+  }
+  return { ...paths, size: stat.size, metadata: meta };
+}
+
+function responseMetadata(res, file, totalBytesHint) {
+  return {
+    url: file.url,
+    expectedBytes: file.bytes || null,
+    etag: res.headers.get("etag") || null,
+    lastModified: res.headers.get("last-modified") || null,
+    totalBytes: file.bytes || totalBytesHint || null,
+  };
+}
+
+function ifRangeValue(metadata) {
+  // RFC 9110 forbids weak entity tags in If-Range. Last-Modified is the next
+  // best validator; with neither, the final SHA-256 still prevents installation
+  // of bytes combined from incompatible representations.
+  if (metadata.etag && !metadata.etag.startsWith("W/")) return metadata.etag;
+  return metadata.lastModified || null;
+}
+
+function parseContentRange(value) {
+  const match = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(value || "");
+  if (!match) return null;
+  return { start: Number(match[1]), end: Number(match[2]), total: Number(match[3]) };
+}
+
+function resumedResponseIsCompatible(res, partial, file) {
+  const range = parseContentRange(res.headers.get("content-range"));
+  if (!range || range.start !== partial.size || range.end < range.start) return false;
+  if (file.bytes && range.total !== file.bytes) return false;
+  if (partial.metadata.totalBytes && range.total !== partial.metadata.totalBytes) return false;
+
+  const oldEtag = partial.metadata.etag;
+  const oldModified = partial.metadata.lastModified;
+  if (oldEtag && res.headers.get("etag") !== oldEtag) return false;
+  if (!oldEtag && oldModified && res.headers.get("last-modified") !== oldModified) return false;
+  return true;
+}
+
+async function fetchFull(file, signal) {
+  const res = await fetch(file.url, { signal });
+  if (res.status !== 200 || !res.body) {
+    throw new Error(`Download failed for ${file.name}: HTTP ${res.status}`);
+  }
+  return res;
+}
+
+async function downloadFile(baseDir, model, file, { partial, onSize, signal }) {
   const dir = modelDir(baseDir, model);
   await fsp.mkdir(dir, { recursive: true });
   const dest = path.join(dir, file.name);
-  const part = `${dest}.part`;
+  const paths = partialPaths(dest);
 
-  // No HTTP range/resume: a failed or cancelled transfer discards the `.part`
-  // and the next attempt re-fetches the whole file from the start. Completed
-  // files are still skipped (below), so only the in-flight file is repeated.
-  const res = await fetch(file.url, { signal });
-  if (!res.ok || !res.body) {
-    throw new Error(`Download failed for ${file.name}: HTTP ${res.status}`);
+  // A crash can happen after the last byte lands but before verification and
+  // rename. Finish that work locally instead of issuing an unsatisfiable range.
+  if (partial && file.bytes && partial.size === file.bytes) {
+    if (await verifyFile(paths.part, file)) {
+      await fsp.rename(paths.part, dest);
+      await fsp.rm(paths.meta, { force: true });
+      return;
+    }
+    await discardPartial(paths);
+    partial = null;
   }
 
-  const hash = file.sha256 ? crypto.createHash("sha256") : null;
+  let res;
+  let offset = 0;
+  if (partial) {
+    const headers = { Range: `bytes=${partial.size}-` };
+    const validator = ifRangeValue(partial.metadata);
+    if (validator) headers["If-Range"] = validator;
+    res = await fetch(file.url, { headers, signal });
+
+    if (res.status === 206 && resumedResponseIsCompatible(res, partial, file)) {
+      offset = partial.size;
+    } else if (res.status === 200 && res.body) {
+      // The host ignored Range or If-Range detected changed content. The body
+      // is already a complete representation, so safely truncate rather than
+      // append (and avoid wasting it on a second request).
+      offset = 0;
+    } else if (res.status === 206 || res.status === 416) {
+      // Malformed ranges, 416, or a changed validator on a non-compliant 206
+      // invalidate the partial. Cancel that body and explicitly fetch afresh.
+      await res.body?.cancel().catch(() => {});
+      await discardPartial(paths);
+      partial = null;
+      res = await fetchFull(file, signal);
+    } else {
+      // A temporary HTTP error says nothing about the partial's validity. Keep
+      // it for the next attempt just as we do for a dropped connection.
+      await res.body?.cancel().catch(() => {});
+      throw new Error(`Download failed for ${file.name}: HTTP ${res.status}`);
+    }
+  } else {
+    res = await fetchFull(file, signal);
+  }
+
+  if (!res.body) throw new Error(`Download failed for ${file.name}: HTTP ${res.status}`);
+  const range = offset ? parseContentRange(res.headers.get("content-range")) : null;
+  const contentLength = Number(res.headers.get("content-length")) || 0;
+  const responseTotal = range?.total || contentLength || null;
+  await fsp.writeFile(paths.meta, JSON.stringify(responseMetadata(res, file, responseTotal)));
+
+  let streamed = 0;
   await pipeline(
     Readable.fromWeb(res.body),
-    makeMeter(onBytes, hash),
-    fs.createWriteStream(part),
+    makeMeter((n) => {
+      streamed += n;
+      onSize(offset + streamed);
+    }),
+    fs.createWriteStream(paths.part, { flags: offset ? "a" : "w" }),
     { signal }
   );
 
-  if (hash) {
-    const got = hash.digest("hex");
-    if (got !== file.sha256) {
-      await fsp.rm(part, { force: true });
-      throw new Error(`Checksum mismatch for ${file.name}`);
-    }
+  const actualSize = (await fsp.stat(paths.part)).size;
+  if (file.bytes && actualSize !== file.bytes) {
+    await discardPartial(paths);
+    throw new Error(`Size mismatch for ${file.name}`);
   }
-  await fsp.rename(part, dest); // atomic: only a verified file lands in place
+  if (file.sha256 && (await hashFile(paths.part)) !== file.sha256) {
+    await discardPartial(paths);
+    throw new Error(`Checksum mismatch for ${file.name}`);
+  }
+  await fsp.rename(paths.part, dest); // atomic: only a verified file lands in place
+  await fsp.rm(paths.meta, { force: true });
 }
 
 /**
@@ -141,21 +290,40 @@ async function download(baseDir, model, { onProgress, signal } = {}) {
       file,
     });
 
+  // Validate and credit everything reusable before the first progress event.
+  // This makes a resumed setup open at its real on-disk byte count rather than
+  // briefly flashing zero. Credits are high-water marks: if a server forces a
+  // safe restart, fresh bytes do not make aggregate progress move backward.
+  const reusable = [];
   for (const file of model.files) {
     const dest = filePath(baseDir, model, file);
-    // Skip files already pulled in by an earlier (interrupted) run. Count the
-    // real on-disk size, not the registry's approximate `bytes`, so the
-    // aggregate progress stays monotonic when a resumed download mixes
-    // already-present files with freshly streamed ones.
     if (fs.existsSync(dest)) {
-      received += fs.statSync(dest).size;
-      report(file.name);
-      continue;
+      if (await verifyFile(dest, file)) {
+        const size = fs.statSync(dest).size;
+        reusable.push({ complete: true, partial: null, credit: size });
+        received += size;
+        continue;
+      }
+      await fsp.rm(dest, { force: true });
     }
+    const partial = await readPartial(dest, file);
+    const credit = partial?.size || 0;
+    reusable.push({ complete: false, partial, credit });
+    received += credit;
+  }
+  if (received) report(model.files.find((_, i) => !reusable[i].complete)?.name || null);
+
+  for (let i = 0; i < model.files.length; i++) {
+    const file = model.files[i];
+    const state = reusable[i];
+    if (state.complete) continue;
     await downloadFile(baseDir, model, file, {
       signal,
-      onBytes: (n) => {
-        received += n;
+      partial: state.partial,
+      onSize: (size) => {
+        if (size <= state.credit) return;
+        received += size - state.credit;
+        state.credit = size;
         report(file.name);
       },
     });

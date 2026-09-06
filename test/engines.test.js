@@ -406,21 +406,28 @@ test("isInstalled accepts a legacy or malformed marker as presence-only", async 
   }
 });
 
-test("an aborted download leaves no .part and a retry succeeds", async () => {
+test("a transient failure retains bytes and retries with Range and If-Range", async () => {
   const full = Buffer.from("the-full-payload-".repeat(64));
-  // First request: send a few bytes then destroy the socket mid-stream so the
-  // transfer fails. Later requests: serve the whole file.
+  const sha = crypto.createHash("sha256").update(full).digest("hex");
+  const cut = 128;
   let attempt = 0;
+  const requests = [];
   const server = http.createServer((req, res) => {
     attempt++;
+    requests.push({ range: req.headers.range, ifRange: req.headers["if-range"] });
+    res.setHeader("etag", '"version-1"');
     if (attempt === 1) {
       res.setHeader("content-length", full.length);
-      res.write(full.subarray(0, 8));
-      res.socket.destroy(); // abrupt failure, like a dropped connection
+      res.flushHeaders();
+      res.write(full.subarray(0, cut));
+      setTimeout(() => res.destroy(), 10); // abrupt failure, like a dropped connection
       return;
     }
-    res.setHeader("content-length", full.length);
-    res.end(full);
+    assert.strictEqual(req.headers.range, `bytes=${cut}-`);
+    res.statusCode = 206;
+    res.setHeader("content-range", `bytes ${cut}-${full.length - 1}/${full.length}`);
+    res.setHeader("content-length", full.length - cut);
+    res.end(full.subarray(cut));
   });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -428,24 +435,234 @@ test("an aborted download leaves no .part and a retry succeeds", async () => {
     await withTmp(async (dir) => {
       const model = {
         kind: "cleanup", id: "resume",
-        files: [{ name: "m.gguf", bytes: full.length, url: `${base}/m.gguf` }],
+        files: [{ name: "m.gguf", bytes: full.length, url: `${base}/m.gguf`, sha256: sha }],
       };
       const dest = manager.filePath(dir, model, model.files[0]);
 
       await assert.rejects(() => manager.download(dir, model));
-      // No half-written .part is left behind to masquerade as a real file, and
-      // the model is not considered installed.
-      assert.ok(!fs.existsSync(`${dest}.part`), "stray .part should be discarded");
+      assert.strictEqual(fs.statSync(`${dest}.part`).size, cut);
+      assert.ok(fs.existsSync(`${dest}.part.json`));
       assert.strictEqual(manager.isInstalled(dir, model), false);
 
-      // A second attempt re-fetches the whole file and completes.
-      await manager.download(dir, model);
+      const progress = [];
+      await manager.download(dir, model, { onProgress: (p) => progress.push(p.received) });
       assert.strictEqual(manager.isInstalled(dir, model), true);
+      assert.deepStrictEqual(fs.readFileSync(dest), full);
+      assert.strictEqual(requests[1].ifRange, '"version-1"');
+      assert.strictEqual(progress[0], cut, "retry begins at reusable on-disk bytes");
+      for (let i = 1; i < progress.length; i++) {
+        assert.ok(progress[i] >= progress[i - 1], "resume progress must be monotonic");
+      }
+      assert.ok(!fs.existsSync(`${dest}.part.json`));
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("a server that ignores Range safely overwrites rather than appends", async () => {
+  const full = Buffer.from("ignore-range-".repeat(80));
+  const sha = crypto.createHash("sha256").update(full).digest("hex");
+  const cut = 96;
+  let attempt = 0;
+  const ranges = [];
+  const server = http.createServer((req, res) => {
+    attempt++;
+    ranges.push(req.headers.range);
+    res.setHeader("etag", '"same"');
+    res.setHeader("content-length", full.length);
+    if (attempt === 1) {
+      res.flushHeaders();
+      res.write(full.subarray(0, cut));
+      setTimeout(() => res.destroy(), 10);
+      return;
+    }
+    res.end(full); // deliberately return 200 to the Range request
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "stt", id: "ignore-range",
+        files: [{ name: "a.bin", bytes: full.length, url: `${base}/a.bin`, sha256: sha }],
+      };
+      await assert.rejects(() => manager.download(dir, model));
+      const seen = [];
+      await manager.download(dir, model, { onProgress: (p) => seen.push(p.received) });
+      assert.strictEqual(ranges[1], `bytes=${cut}-`);
+      assert.deepStrictEqual(fs.readFileSync(manager.filePath(dir, model, model.files[0])), full);
+      for (let i = 1; i < seen.length; i++) assert.ok(seen[i] >= seen[i - 1]);
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("a changed validator invalidates the partial and fetches a full representation", async () => {
+  const oldBody = Buffer.from("old-content-".repeat(80));
+  const newBody = Buffer.from("new-content-".repeat(80));
+  assert.strictEqual(oldBody.length, newBody.length);
+  const sha = crypto.createHash("sha256").update(newBody).digest("hex");
+  const cut = 100;
+  let attempt = 0;
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    attempt++;
+    requests.push({ range: req.headers.range, ifRange: req.headers["if-range"] });
+    if (attempt === 1) {
+      res.setHeader("etag", '"old"');
+      res.setHeader("content-length", oldBody.length);
+      res.flushHeaders();
+      res.write(oldBody.subarray(0, cut));
+      setTimeout(() => res.destroy(), 10);
+      return;
+    }
+    res.setHeader("etag", '"new"');
+    if (attempt === 2) {
+      // A non-compliant server sends a range despite the failed If-Range. The
+      // changed ETag must still be noticed before any bytes are appended.
+      res.statusCode = 206;
+      res.setHeader("content-range", `bytes ${cut}-${newBody.length - 1}/${newBody.length}`);
+      res.setHeader("content-length", newBody.length - cut);
+      res.end(newBody.subarray(cut));
+      return;
+    }
+    res.setHeader("content-length", newBody.length);
+    res.end(newBody);
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "cleanup", id: "changed",
+        files: [{ name: "m.gguf", bytes: newBody.length, url: `${base}/m.gguf`, sha256: sha }],
+      };
+      await assert.rejects(() => manager.download(dir, model));
+      await manager.download(dir, model);
+      assert.strictEqual(attempt, 3);
+      assert.strictEqual(requests[1].ifRange, '"old"');
+      assert.strictEqual(requests[2].range, undefined);
+      assert.deepStrictEqual(fs.readFileSync(manager.filePath(dir, model, model.files[0])), newBody);
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("cancellation preserves a resumable partial", async () => {
+  const full = Buffer.from("cancel-me-".repeat(200));
+  const sha = crypto.createHash("sha256").update(full).digest("hex");
+  let attempt = 0;
+  let firstResponse;
+  const server = http.createServer((req, res) => {
+    attempt++;
+    res.setHeader("etag", '"cancel-v1"');
+    if (attempt === 1) {
+      firstResponse = res;
+      res.setHeader("content-length", full.length);
+      res.flushHeaders();
+      res.write(full.subarray(0, 256));
+      return;
+    }
+    const offset = Number(req.headers.range.match(/^bytes=(\d+)-$/)[1]);
+    res.statusCode = 206;
+    res.setHeader("content-range", `bytes ${offset}-${full.length - 1}/${full.length}`);
+    res.setHeader("content-length", full.length - offset);
+    res.end(full.subarray(offset));
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "cleanup", id: "cancel",
+        files: [{ name: "m.gguf", bytes: full.length, url: `${base}/m.gguf`, sha256: sha }],
+      };
+      const controller = new AbortController();
+      let queued = false;
+      await assert.rejects(
+        () => manager.download(dir, model, {
+          signal: controller.signal,
+          onProgress: () => {
+            if (!queued) {
+              queued = true;
+              setTimeout(() => controller.abort(), 10);
+            }
+          },
+        }),
+        /abort/i
+      );
+      firstResponse.destroy();
+      const dest = manager.filePath(dir, model, model.files[0]);
+      const kept = fs.statSync(`${dest}.part`).size;
+      assert.ok(kept > 0 && kept < full.length);
+      assert.ok(fs.existsSync(`${dest}.part.json`));
+      await manager.download(dir, model);
       assert.deepStrictEqual(fs.readFileSync(dest), full);
     });
   } finally {
     server.close();
   }
+});
+
+test("corrupted resumed bytes fail the full checksum and are discarded", async () => {
+  const full = Buffer.from("checksum-all-bytes-".repeat(64));
+  const sha = crypto.createHash("sha256").update(full).digest("hex");
+  const cut = 120;
+  const server = http.createServer((req, res) => {
+    assert.strictEqual(req.headers.range, `bytes=${cut}-`);
+    res.statusCode = 206;
+    res.setHeader("etag", '"stable"');
+    res.setHeader("content-range", `bytes ${cut}-${full.length - 1}/${full.length}`);
+    res.setHeader("content-length", full.length - cut);
+    res.end(full.subarray(cut));
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "stt", id: "corrupt-partial",
+        files: [{ name: "a.bin", bytes: full.length, url: `${base}/a.bin`, sha256: sha }],
+      };
+      const dest = manager.filePath(dir, model, model.files[0]);
+      await fsp.mkdir(path.dirname(dest), { recursive: true });
+      const corrupt = Buffer.from(full.subarray(0, cut));
+      corrupt[0] ^= 0xff;
+      await fsp.writeFile(`${dest}.part`, corrupt);
+      await fsp.writeFile(`${dest}.part.json`, JSON.stringify({
+        url: model.files[0].url,
+        expectedBytes: full.length,
+        etag: '"stable"',
+        lastModified: null,
+        totalBytes: full.length,
+      }));
+
+      await assert.rejects(() => manager.download(dir, model), /Checksum mismatch/);
+      assert.ok(!fs.existsSync(`${dest}.part`));
+      assert.ok(!fs.existsSync(`${dest}.part.json`));
+      assert.strictEqual(manager.isInstalled(dir, model), false);
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("remove deletes partial files and their resume metadata", async () => {
+  await withTmp(async (dir) => {
+    const model = {
+      kind: "cleanup", id: "remove-partial",
+      files: [{ name: "m.gguf", bytes: 10, url: "https://example.com/m.gguf" }],
+    };
+    const dest = manager.filePath(dir, model, model.files[0]);
+    await fsp.mkdir(path.dirname(dest), { recursive: true });
+    await fsp.writeFile(`${dest}.part`, "partial");
+    await fsp.writeFile(`${dest}.part.json`, "{}");
+    await manager.remove(dir, model);
+    assert.ok(!fs.existsSync(manager.modelDir(dir, model)));
+  });
 });
 
 test("engines.clean falls back to the raw transcript when cleanup is empty", async () => {

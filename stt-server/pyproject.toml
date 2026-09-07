@@ -19,6 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 # pip install "earheart-stt[gpu]" — requires CUDA; see README.
 gpu = ["onnxruntime-gpu>=1.20"]
+test = ["pytest>=8", "httpx>=0.27"]
 
 [project.scripts]
 earheart-stt = "earheart_stt.cli:main"

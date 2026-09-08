@@ -378,7 +378,11 @@ async function loadcheck() {
     engines.sttError = String((err && err.message) || err);
   }
   try {
-    await import("node-llama-cpp");
+    const { getLlama } = await import("node-llama-cpp");
+    // Import alone only loads JS. Initialize the native CPU backend, without
+    // downloading or building a replacement that could mask a missing binary.
+    const check = await getLlama({ gpu: false, build: "never", skipDownload: true });
+    await check.dispose();
     engines.cleanup = true;
   } catch (err) {
     engines.cleanup = false;

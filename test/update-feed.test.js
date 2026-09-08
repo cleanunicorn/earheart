@@ -48,9 +48,15 @@ releaseDate: '2026-07-01T10:08:06.116Z'
 `;
 
 test("feedFileFor picks the platform feed", () => {
-  assert.strictEqual(feedFileFor("darwin"), "latest-mac.yml");
+  assert.strictEqual(feedFileFor("darwin", "arm64"), "latest-mac.yml");
   assert.strictEqual(feedFileFor("linux"), "latest-linux.yml");
   assert.strictEqual(feedFileFor("win32"), "latest.yml");
+});
+
+test("Intel installs (including Rosetta) use a separate feed", () => {
+  assert.strictEqual(feedFileFor("darwin", "x64"), "latest-mac-x64.yml");
+  assert.notStrictEqual(feedFileFor("darwin", "x64"), feedFileFor("darwin", "arm64"));
+  assert.throws(() => feedFileFor("darwin", "unknown"), /Unsupported/);
 });
 
 test("parseLatestYml reads the mac feed", () => {
@@ -59,6 +65,18 @@ test("parseLatestYml reads the mac feed", () => {
   assert.strictEqual(info.path, "Earheart-0.12.1-arm64-mac.zip");
   assert.ok(info.sha512.startsWith("KJ9kKheSxLn"));
   assert.strictEqual(info.size, 171973146);
+});
+
+test("macOS rejects the other architecture even if its feed was mispublished", () => {
+  const intel = MAC_YML.replaceAll("-arm64-mac.zip", "-mac.zip");
+  for (const [arch, valid, wrong] of [["arm64", MAC_YML, intel], ["x64", intel, MAC_YML]]) {
+    const info = parseLatestYml(valid, { platform: "darwin", arch });
+    assert.strictEqual(info.size, 171973146);
+    assert.throws(() => parseLatestYml(wrong, { platform: "darwin", arch }), /incompatible/);
+    assert.throws(() => parseLatestYml(valid.replaceAll(".zip", ".dmg"), {
+      platform: "darwin", arch,
+    }), /incompatible/);
+  }
 });
 
 test("parseLatestYml picks the top-level path, not the second files entry", () => {

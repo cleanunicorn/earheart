@@ -268,8 +268,8 @@ async function check({ manual = false } = {}) {
   if (["checking", "downloading", "ready", "installing"].includes(state.status)) return;
   setState({ status: "checking", error: null });
   try {
-    const url = `${feedBase().replace(/\/$/, "")}/${feed.feedFileFor(process.platform)}`;
-    const info = feed.parseLatestYml(await fetchText(url));
+    const url = `${feedBase().replace(/\/$/, "")}/${feed.feedFileFor(process.platform, process.arch)}`;
+    const info = feed.parseLatestYml(await fetchText(url), { platform: process.platform, arch: process.arch });
     if (feed.compareVersions(info.version, state.current) <= 0) {
       pendingInfo = null;
       setState({ status: "idle", latest: null, progress: null, notes: [] });

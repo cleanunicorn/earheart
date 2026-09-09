@@ -10,7 +10,13 @@ function joinUrl(baseUrl, route) {
 
 // Reasoning models may emit <think>...</think> blocks; strip them.
 function stripThinking(text) {
-  return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    // A response can hit its token/time limit before the closing tag. Treat
+    // everything after an unmatched opener as reasoning too; clean() will
+    // fall back to the raw transcript when that leaves no answer.
+    .replace(/<think>[\s\S]*$/i, "")
+    .trim();
 }
 
 /**

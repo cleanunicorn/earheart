@@ -25,22 +25,31 @@ const registered = new Map();
  */
 function register(name, accelerator, onTrigger) {
   const prev = registered.get(name);
-  if (prev) {
-    globalShortcut.unregister(prev);
-    registered.delete(name);
+  if (!accelerator) {
+    if (prev) {
+      globalShortcut.unregister(prev);
+      registered.delete(name);
+    }
+    return { ok: true, empty: true };
   }
-  if (!accelerator) return { ok: true, empty: true };
   // Two slots on one combo would silently shadow each other; refuse up front
   // with a clearer message than globalShortcut's generic failure.
   for (const [otherName, otherAccelerator] of registered) {
-    if (otherAccelerator === accelerator) {
+    if (otherName !== name && otherAccelerator === accelerator) {
       return {
         ok: false,
         error: `"${accelerator}" is already used by the ${otherName} hotkey`,
       };
     }
   }
+  // Saving unrelated settings re-applies the same shortcuts. Leave an already
+  // working registration alone instead of briefly dropping it.
+  if (prev === accelerator) return { ok: true };
   try {
+    // Register the replacement before releasing the old accelerator. If the
+    // new combo is invalid, occupied, or blocked by the desktop, dictation must
+    // keep working on the previous combo while the settings window asks the
+    // user to choose another one.
     const ok = globalShortcut.register(accelerator, onTrigger);
     if (!ok) {
       return {
@@ -48,6 +57,7 @@ function register(name, accelerator, onTrigger) {
         error: `Could not register "${accelerator}" (already in use, or your desktop blocks global shortcuts — see the Wayland note in Settings).`,
       };
     }
+    if (prev) globalShortcut.unregister(prev);
     registered.set(name, accelerator);
     return { ok: true };
   } catch (err) {

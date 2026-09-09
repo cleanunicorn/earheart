@@ -24,12 +24,32 @@ const { totalBytes } = require("./registry");
 
 const MARKER = ".complete";
 
+function assertPathSegment(value, label) {
+  if (
+    typeof value !== "string" ||
+    !value ||
+    value === "." ||
+    value === ".." ||
+    value.includes("/") ||
+    value.includes("\\") ||
+    value.includes("\0")
+  ) {
+    throw new Error(`Invalid model ${label}`);
+  }
+  return value;
+}
+
 function modelDir(baseDir, model) {
-  return path.join(baseDir, model.kind, model.id);
+  const kind = assertPathSegment(model.kind, "kind");
+  const id = assertPathSegment(model.id, "id");
+  return path.join(baseDir, kind, id);
 }
 
 function filePath(baseDir, model, file) {
-  return path.join(modelDir(baseDir, model), file.name);
+  return path.join(
+    modelDir(baseDir, model),
+    assertPathSegment(file.name, "filename")
+  );
 }
 
 function partialPaths(dest) {
@@ -66,7 +86,7 @@ function isInstalled(baseDir, model) {
   const sizes = readMarker(dir);
   if (sizes === null) return false;
   return model.files.every((f) => {
-    const p = path.join(dir, f.name);
+    const p = filePath(baseDir, model, f);
     const expected = sizes[f.name];
     if (expected === undefined) return fs.existsSync(p); // legacy marker
     try {
@@ -219,7 +239,7 @@ async function fetchFull(file, signal) {
 async function downloadFile(baseDir, model, file, { partial, onSize, signal }) {
   const dir = modelDir(baseDir, model);
   await fsp.mkdir(dir, { recursive: true });
-  const dest = path.join(dir, file.name);
+  const dest = filePath(baseDir, model, file);
   const paths = partialPaths(dest);
 
   // A crash can happen after the last byte lands but before verification and

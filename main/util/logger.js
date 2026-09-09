@@ -35,9 +35,15 @@ function resolveDir() {
   }
 }
 
-function rotateIfLarge(file) {
+function rotateIfLarge(file, maxBytes = MAX_BYTES) {
   try {
-    if (fs.statSync(file).size > MAX_BYTES) fs.renameSync(file, `${file}.1`);
+    if (fs.statSync(file).size <= maxBytes) return;
+    const backup = `${file}.1`;
+    // POSIX rename replaces an existing file, but Windows rename does not.
+    // Remove the one retained generation first so rotation keeps working after
+    // the log has crossed the limit more than once.
+    fs.rmSync(backup, { force: true });
+    fs.renameSync(file, backup);
   } catch {
     // No existing file, or the rename failed — not worth blocking startup on.
   }
@@ -103,4 +109,5 @@ module.exports = {
   warn: (...args) => write("WARN", args),
   info: (...args) => write("INFO", args),
   getLogPath: () => logPath,
+  rotateIfLarge,
 };

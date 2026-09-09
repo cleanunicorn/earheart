@@ -24,12 +24,12 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
-const { fileURLToPath } = require("node:url");
 const { spawn, spawnSync } = require("node:child_process");
 const { pipeline: streamPipeline } = require("node:stream/promises");
 const { Readable, Transform } = require("node:stream");
 
 const feed = require("./services/update-feed");
+const { fetchUpdateText } = require("./services/update-fetch");
 const releaseNotes = require("./services/release-notes");
 const settings = require("./settings");
 const windows = require("./windows");
@@ -246,22 +246,6 @@ function dispose() {
   if (downloadController) downloadController.abort();
 }
 
-/** Fetch a URL as text; supports file:// so tests can use a local dist dir. */
-async function fetchText(url) {
-  if (url.startsWith("file://")) {
-    return fsp.readFile(fileURLToPath(url), "utf8");
-  }
-  let res;
-  try {
-    res = await fetch(url, { headers: { Accept: "text/plain, */*" } });
-  } catch (err) {
-    throw new Error(`Could not reach the update server: ${err.message}`);
-  }
-  if (res.status === 404) throw new Error("No release feed found");
-  if (!res.ok) throw new Error(`Update server returned HTTP ${res.status}`);
-  return res.text();
-}
-
 async function check({ manual = false } = {}) {
   // "ready" is also off-limits: a background poll must not clobber an update
   // that's downloaded and waiting for the user to restart.
@@ -269,7 +253,7 @@ async function check({ manual = false } = {}) {
   setState({ status: "checking", error: null });
   try {
     const url = `${feedBase().replace(/\/$/, "")}/${feed.feedFileFor(process.platform)}`;
-    const info = feed.parseLatestYml(await fetchText(url));
+    const info = feed.parseLatestYml(await fetchUpdateText(url));
     if (feed.compareVersions(info.version, state.current) <= 0) {
       pendingInfo = null;
       setState({ status: "idle", latest: null, progress: null, notes: [] });
@@ -316,7 +300,7 @@ async function check({ manual = false } = {}) {
 async function fetchNotes(latest) {
   try {
     const url = `${feedBase().replace(/\/$/, "")}/release-notes.json`;
-    const entries = releaseNotes.parseFeed(await fetchText(url));
+    const entries = releaseNotes.parseFeed(await fetchUpdateText(url));
     return releaseNotes.notesBetween(entries, state.current, latest);
   } catch (err) {
     logger.info(`no release notes for ${latest}: ${err.message}`);

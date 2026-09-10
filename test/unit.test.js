@@ -844,6 +844,21 @@ test("listRemoteModels wraps a network failure with the URL", async () => {
   );
 });
 
+test("listRemoteModels times out when a service never responds", async () => {
+  const server = http.createServer(() => {});
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}/v1`;
+  try {
+    await assert.rejects(
+      () => listRemoteModels({ baseUrl: base }, { timeoutMs: 20 }),
+      /Timed out fetching models/
+    );
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
 test("idle model unload defaults to a finite window and is overridable", () => {
   // Sensible default: unload after a couple of idle minutes.
   assert.strictEqual(DEFAULTS.engines.idleUnloadMinutes, 2);

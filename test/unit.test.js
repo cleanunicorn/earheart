@@ -109,6 +109,35 @@ test("deepMerge ignores null/undefined overrides", () => {
   assert.deepStrictEqual(deepMerge({ a: 1 }, undefined), { a: 1 });
 });
 
+test("deepMerge keeps the default shape when stored settings have wrong types", () => {
+  const base = {
+    enabled: true,
+    retries: 2,
+    endpoint: "http://localhost",
+    nested: { value: "default" },
+    items: ["default"],
+  };
+  assert.deepStrictEqual(
+    deepMerge(base, {
+      enabled: "yes",
+      retries: null,
+      endpoint: {},
+      nested: "broken",
+      items: { 0: "broken" },
+    }),
+    base
+  );
+});
+
+test("deepMerge ignores prototype-mutating keys from stored JSON", () => {
+  const stored = JSON.parse(
+    '{"nested":{"value":"custom","__proto__":{"polluted":true}},"constructor":{"polluted":true}}'
+  );
+  const merged = deepMerge({ nested: { value: "default" } }, stored);
+  assert.deepStrictEqual(merged, { nested: { value: "custom" } });
+  assert.strictEqual({}.polluted, undefined);
+});
+
 test("wavToFloat32 round-trips PCM16 samples to [-1, 1]", () => {
   const wav = encodeWav(new Int16Array([0, 16384, -16384, 32767, -32768]));
   const { samples, sampleRate } = wavToFloat32(wav);

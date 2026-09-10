@@ -201,3 +201,14 @@ test("shared classes the wizard relies on still exist in settings.css", () => {
   const missing = shared.filter((sel) => !css.includes(sel)).sort();
   assert.deepStrictEqual(missing, [], `settings.css no longer defines: ${missing.join(", ")}`);
 });
+
+test("disabled cleanup controls are inert in settings and the wizard", () => {
+  for (const [name, source] of [["settings", js], ["wizard", wizardJs]]) {
+    const normalized = source.replace(/\s+/g, " ");
+    assert.match(
+      normalized,
+      /fields\.inert = !on/,
+      `${name} must remove disabled cleanup fields from keyboard and accessibility navigation`
+    );
+  }
+});

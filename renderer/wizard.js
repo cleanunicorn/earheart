@@ -105,7 +105,10 @@ async function loadMicrophones() {
 // remote config already exists in settings (collect() spreads it through).
 
 function syncCleanupEnabled() {
-  $("cleanup-fields").classList.toggle("disabled", !$("cleanup-enabled").checked);
+  const on = $("cleanup-enabled").checked;
+  const fields = $("cleanup-fields");
+  fields.classList.toggle("disabled", !on);
+  fields.inert = !on;
 }
 
 $("cleanup-enabled").addEventListener("change", syncCleanupEnabled);

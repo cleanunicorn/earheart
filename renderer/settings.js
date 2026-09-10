@@ -842,6 +842,18 @@ bindAddCustomModel("cleanup");
 const HISTORY_PAGE_SIZE = 5;
 let historyPage = 0; // 0 = the newest page
 
+function historyCopyButton(label, value) {
+  const button = document.createElement("button");
+  button.className = "copy";
+  button.textContent = label;
+  button.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(value);
+    button.textContent = "Copied";
+    setTimeout(() => (button.textContent = label), 1200);
+  });
+  return button;
+}
+
 async function renderHistory() {
   const items = await earheart.invoke("history:list");
   const list = $("history-list");
@@ -876,15 +888,12 @@ async function renderHistory() {
     when.textContent = `${new Date(item.at).toLocaleString()}${item.cleaned ? " · cleaned" : ""}`;
     const actions = document.createElement("span");
     actions.className = "actions";
-    const copy = document.createElement("button");
-    copy.className = "copy";
-    copy.textContent = "Copy";
-    copy.addEventListener("click", async () => {
-      await navigator.clipboard.writeText(item.text);
-      copy.textContent = "Copied";
-      setTimeout(() => (copy.textContent = "Copy"), 1200);
-    });
-    actions.append(copy);
+    actions.append(historyCopyButton("Copy", item.text));
+    if (item.cleaned && typeof item.raw === "string" && item.raw !== item.text) {
+      const copyOriginal = historyCopyButton("Copy original", item.raw);
+      copyOriginal.title = "Copy the transcript before cleanup";
+      actions.append(copyOriginal);
+    }
     meta.append(when, actions);
     li.append(text, meta);
     list.appendChild(li);

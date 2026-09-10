@@ -134,6 +134,20 @@ test("the always-visible History section stays live (no active-tab guard)", () =
   );
 });
 
+test("history exposes the preserved original when cleanup changed it", () => {
+  const normalized = js.replace(/\s+/g, " ");
+  assert.match(
+    normalized,
+    /item\.cleaned && typeof item\.raw === "string" && item\.raw !== item\.text/,
+    "the original action should appear only when cleanup produced different text"
+  );
+  assert.match(
+    normalized,
+    /historyCopyButton\("Copy original", item\.raw\)/,
+    "the original action must copy the preserved raw transcript"
+  );
+});
+
 test("every radio/checkbox group name settings.js uses exists in settings.html", () => {
   const referenced = new Set([...js.matchAll(/name="([a-z-]+)"/g)].map((m) => m[1]));
   assert.ok(referenced.size >= 3, "expected the output-mode/stt-engine/cleanup-engine groups");

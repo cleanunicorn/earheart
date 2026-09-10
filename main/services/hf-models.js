@@ -16,6 +16,7 @@
 // download is reproducible, and we surface gated/private/404 errors clearly.
 
 const HF_HOSTS = new Set(["huggingface.co", "hf.co"]);
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 
 /**
  * Parse what the user pasted into { owner, repo, ref }. Accepts a bare
@@ -59,11 +60,19 @@ function parseRepoInput(input) {
   return { owner, repo, ref };
 }
 
-async function hfJson(fetchImpl, url, signal) {
+async function hfJson(fetchImpl, url, signal, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
   let res;
   try {
-    res = await fetchImpl(url, { signal, headers: { Accept: "application/json" } });
+    res = await fetchImpl(url, {
+      signal: requestSignal,
+      headers: { Accept: "application/json" },
+    });
   } catch (err) {
+    if (timeout.aborted && !signal?.aborted) {
+      throw new Error("Hugging Face request timed out");
+    }
     throw new Error(`Could not reach Hugging Face: ${err.message}`);
   }
   if (res.status === 401 || res.status === 403) {
@@ -83,12 +92,13 @@ async function hfJson(fetchImpl, url, signal) {
 // Fetch a repo's file listing pinned to an immutable commit, so the files we
 // download match what we listed even if the repo is updated in between.
 // Returns { commit, files: [{ path, name, bytes }] }.
-async function repoTree({ owner, repo, ref }, fetchImpl, signal) {
+async function repoTree({ owner, repo, ref }, fetchImpl, { signal, timeoutMs } = {}) {
   const base = `https://huggingface.co/api/models/${owner}/${repo}`;
   const info = await hfJson(
     fetchImpl,
     ref ? `${base}/revision/${encodeURIComponent(ref)}` : base,
-    signal
+    signal,
+    timeoutMs
   );
   if (info.gated) {
     throw new Error("This repository is gated — Earheart can only download public models");
@@ -97,7 +107,8 @@ async function repoTree({ owner, repo, ref }, fetchImpl, signal) {
   const tree = await hfJson(
     fetchImpl,
     `${base}/tree/${encodeURIComponent(commit)}?recursive=true`,
-    signal
+    signal,
+    timeoutMs
   );
   const files = (Array.isArray(tree) ? tree : [])
     .filter((e) => e && e.type === "file")
@@ -154,8 +165,8 @@ function recommendedVariant(variants) {
  * List the GGUF quantizations available in a model repo.
  * @returns {Promise<{repo,commit,recommended,variants:Array<{label,totalBytes,files:Array<{name,url,bytes}>}>}>}
  */
-async function listGgufQuants({ owner, repo, ref }, fetchImpl, { signal } = {}) {
-  const { commit, files } = await repoTree({ owner, repo, ref }, fetchImpl, signal);
+async function listGgufQuants({ owner, repo, ref }, fetchImpl, options = {}) {
+  const { commit, files } = await repoTree({ owner, repo, ref }, fetchImpl, options);
   const ggufs = files.filter((f) => /\.gguf$/i.test(f.path));
   if (ggufs.length === 0) throw new Error("No GGUF files found in this repository");
 
@@ -336,8 +347,8 @@ function samplePaths(files, limit = 3) {
  * `joiner` for transducers and without one for Whisper.
  * @returns {Promise<{repo,commit,recommended,variants:Array<{label,totalBytes,files,sherpa}>}>}
  */
-async function listSttVariants({ owner, repo, ref }, fetchImpl, { signal } = {}) {
-  const { commit, files } = await repoTree({ owner, repo, ref }, fetchImpl, signal);
+async function listSttVariants({ owner, repo, ref }, fetchImpl, options = {}) {
+  const { commit, files } = await repoTree({ owner, repo, ref }, fetchImpl, options);
 
   // Shallowest path wins when the same file name appears twice (files land in
   // one flat directory on disk), so flat bundles keep their top-level files.

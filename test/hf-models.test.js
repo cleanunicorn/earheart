@@ -141,6 +141,18 @@ test("listGgufQuants surfaces a 401 as a gated/private error", async () => {
   await assert.rejects(listGgufQuants({ owner: "u", repo: "r" }, fetchImpl), /gated or private/);
 });
 
+test("listGgufQuants times out when Hugging Face stops responding", async () => {
+  const hangingFetch = (_url, { signal }) =>
+    new Promise((resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+
+  await assert.rejects(
+    listGgufQuants({ owner: "u", repo: "r" }, hangingFetch, { timeoutMs: 10 }),
+    /Hugging Face request timed out/
+  );
+});
+
 test("recommendedVariant picks the first (best-sorted) entry", () => {
   assert.strictEqual(recommendedVariant([{ label: "Q4_K_M" }, { label: "Q8_0" }]), "Q4_K_M");
   assert.strictEqual(recommendedVariant([]), null);

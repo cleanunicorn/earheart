@@ -11,9 +11,13 @@ const REPO_SLUG = "cleanunicorn/earheart";
 const DEFAULT_FEED_BASE = `https://github.com/${REPO_SLUG}/releases/latest/download`;
 const RELEASES_PAGE = `https://github.com/${REPO_SLUG}/releases/latest`;
 
-/** Feed file published by electron-builder for a given process.platform. */
-function feedFileFor(platform) {
-  if (platform === "darwin") return "latest-mac.yml";
+/** Architecture-specific feed; the legacy mac feed stays Apple Silicon. */
+function feedFileFor(platform, arch = process.arch) {
+  if (platform === "darwin") {
+    if (arch === "x64") return "latest-mac-x64.yml";
+    if (arch === "arm64") return "latest-mac.yml";
+    throw new Error(`Unsupported macOS architecture: ${arch}`);
+  }
   if (platform === "linux") return "latest-linux.yml";
   return "latest.yml";
 }
@@ -25,7 +29,7 @@ function feedFileFor(platform) {
  * download progress has a denominator. Throws when required keys are missing
  * so a mangled feed fails loudly instead of installing garbage.
  */
-function parseLatestYml(text) {
+function parseLatestYml(text, { platform, arch } = {}) {
   const lines = String(text).split(/\r?\n/);
   const top = {};
   const files = [];
@@ -51,6 +55,16 @@ function parseLatestYml(text) {
   const { version, path, sha512 } = top;
   if (!version || !path || !sha512) {
     throw new Error("Update feed is missing version, path or sha512");
+  }
+  // Fail closed if a mispublished macOS feed points at the other CPU (or a
+  // DMG instead of the ZIP the updater extracts). Intel uses builder's legacy
+  // unsuffixed x64 name; Apple Silicon always includes -arm64.
+  if (platform === "darwin") {
+    const suffix = arch === "arm64" ? "-arm64-mac.zip" : "-mac.zip";
+    if ((arch !== "arm64" && arch !== "x64") || !path.endsWith(suffix) ||
+        (arch === "x64" && path !== `Earheart-${version}-mac.zip`)) {
+      throw new Error(`Update artifact is incompatible with macOS ${arch}: ${path}`);
+    }
   }
   const entry = files.find((f) => f.url === path);
   const size = entry && entry.size ? Number(entry.size) : 0;

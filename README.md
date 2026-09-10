@@ -123,7 +123,10 @@ is just the version number (e.g. `0.8.0`).
 **🍎 macOS**
 
 - **Apple Silicon (M1/M2/M3/M4):** `Earheart-<version>-arm64.dmg`
-- **Intel Macs:** `Earheart-<version>.dmg`
+- **Intel Macs (x64):** `Earheart-<version>.dmg`
+
+Each build is packaged and tested on its matching architecture. Choose the DMG
+for your Mac; the in-app updater keeps that architecture on subsequent updates.
 - Not sure which Mac you have? Click  → **About This Mac** and look at
   "Chip" / "Processor".
 

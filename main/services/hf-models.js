@@ -89,6 +89,9 @@ async function hfJson(fetchImpl, url, signal, timeoutMs = DEFAULT_REQUEST_TIMEOU
     try {
       return await res.json();
     } catch {
+      if (timeout.signal.aborted && !signal?.aborted) {
+        throw new Error("Hugging Face request timed out");
+      }
       throw new Error("Unexpected response from Hugging Face");
     }
   } finally {

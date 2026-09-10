@@ -187,10 +187,17 @@ function settingsPath() {
 
 function deepMerge(base, override) {
   if (override === null || override === undefined) return base;
-  if (Array.isArray(base) || typeof base !== "object") return override;
+  if (Array.isArray(base)) return Array.isArray(override) ? override : base;
+  if (base === null || typeof base !== "object") {
+    return typeof override === typeof base ? override : base;
+  }
+  if (Array.isArray(override) || typeof override !== "object") return base;
   const out = { ...base };
   for (const key of Object.keys(override)) {
-    out[key] = key in base ? deepMerge(base[key], override[key]) : override[key];
+    if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
+    out[key] = Object.hasOwn(base, key)
+      ? deepMerge(base[key], override[key])
+      : override[key];
   }
   return out;
 }

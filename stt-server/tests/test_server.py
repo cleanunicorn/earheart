@@ -151,6 +151,13 @@ def test_audio_is_mono_float32_at_16khz(client, recognizer, rate, channels):
     np.testing.assert_allclose(actual, expected, atol=1e-7)
 
 
+def test_resampling_keeps_a_nonempty_tiny_clip():
+    waveform = np.array([0.25], dtype=np.float32)
+    actual = server.resample_linear(waveform, 48000, 16000)
+    assert actual.dtype == np.float32
+    np.testing.assert_array_equal(actual, waveform)
+
+
 def test_model_not_loaded(loader):
     # TestClient without a context deliberately skips startup, leaving the
     # app in its initial model-loading state.

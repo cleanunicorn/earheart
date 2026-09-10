@@ -212,6 +212,7 @@
                 placeholder="csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2" />
               <div class="row">
                 <button id="stt-hf-find" class="ghost" type="button">Find versions</button>
+                <button id="stt-hf-browse" class="ghost" type="button">Browse Hugging Face</button>
                 <span id="stt-hf-result" class="status" aria-live="polite"></span>
               </div>
               <div class="row" id="stt-hf-pick" hidden>
@@ -223,7 +224,8 @@
                 bundle (encoder, decoder, joiner + tokens.txt) or Whisper export
                 (encoder, decoder + tokens.txt), such as
                 <code>csukuangfj/sherpa-onnx-whisper-turbo</code>. Custom models
-                aren't checksum-verified.
+                aren't checksum-verified. Browse Hugging Face opens your browser on
+                the Parakeet TDT exports, the family the built-in models come from.
               </p>
             </div>
           </div>
@@ -341,6 +343,7 @@
                   placeholder="unsloth/gemma-3-1b-it-GGUF" />
                 <div class="row">
                   <button id="cleanup-hf-find" class="ghost" type="button">Find versions</button>
+                  <button id="cleanup-hf-browse" class="ghost" type="button">Browse Hugging Face</button>
                   <span id="cleanup-hf-result" class="status" aria-live="polite"></span>
                 </div>
                 <div class="row" id="cleanup-hf-pick" hidden>
@@ -350,7 +353,8 @@
                 <p class="hint">
                   Paste a Hugging Face GGUF model URL or owner/model. Earheart lists its
                   versions and downloads the one you pick. Custom models aren't
-                  checksum-verified.
+                  checksum-verified. Browse Hugging Face opens your browser on chat
+                  GGUF models up to 12B parameters; smaller ones clean up faster.
                 </p>
               </div>
             </div>

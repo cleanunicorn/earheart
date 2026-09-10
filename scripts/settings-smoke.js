@@ -237,6 +237,32 @@ app.whenReady().then(async () => {
       );
     }
 
+    // 6. Both custom-model sections offer a way to find a compatible repo
+    //    without leaving the flow: an enabled "Browse Hugging Face" pill in
+    //    the same action row as "Find versions".
+    const browse = JSON.parse(
+      await js(`
+        JSON.stringify(["stt", "cleanup"].map((kind) => {
+          const btn = document.getElementById(kind + "-hf-browse");
+          const find = document.getElementById(kind + "-hf-find");
+          return {
+            kind,
+            present: !!btn,
+            enabled: !!btn && !btn.disabled,
+            label: btn ? btn.textContent.trim() : null,
+            sameRow: !!btn && !!find && btn.parentElement === find.parentElement,
+          };
+        }))
+      `)
+    );
+    for (const b of browse) {
+      check(
+        `the ${b.kind} section offers a Browse Hugging Face button`,
+        b.present && b.enabled && b.label === "Browse Hugging Face" && b.sameRow,
+        JSON.stringify(b)
+      );
+    }
+
     const failed = checks.filter((c) => !c.ok);
     console.log(
       `[settings-smoke] ${checks.length - failed.length}/${checks.length} checks passed`

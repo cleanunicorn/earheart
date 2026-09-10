@@ -772,6 +772,30 @@ function bindAddCustomModel(kind) {
   const pick = $(`${kind}-hf-pick`);
   const variantSelect = $(`${kind}-hf-variant`);
   const addBtn = $(`${kind}-hf-add`);
+  const browseBtn = $(`${kind}-hf-browse`);
+
+  // Opens the hub in the browser, pre-filtered to this kind; the user copies
+  // a repo from there into the field above. Disabled while the browser is
+  // being asked, so a double-click doesn't open two tabs.
+  let browseError = null;
+  browseBtn.addEventListener("click", async () => {
+    browseBtn.disabled = true;
+    try {
+      const res = await earheart.invoke("models:browse-hf", { kind });
+      if (!res.ok) {
+        browseError = res.error;
+        result.textContent = res.error;
+        result.className = "status err";
+      } else if (browseError !== null && result.textContent === browseError) {
+        // Clear only our own stale error, never a Find/Add status.
+        result.textContent = "";
+        result.className = "status";
+        browseError = null;
+      }
+    } finally {
+      browseBtn.disabled = false;
+    }
+  });
 
   findBtn.addEventListener("click", async () => {
     const url = urlInput.value.trim();

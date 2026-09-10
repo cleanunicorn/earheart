@@ -19,6 +19,7 @@ const {
   listSttVariants,
   buildCleanupModel,
   buildSttModel,
+  searchUrl,
 } = require("./services/hf-models");
 const { STYLES: CLEANUP_STYLES } = require("./cleanup-styles");
 const { encodeSilenceWav } = require("./util/wav");
@@ -217,6 +218,18 @@ function init({ applyHotkeys, onSettingsChanged }) {
       if (!hfDiscover[kind]) return { ok: false, error: `Unknown model kind: ${kind}` };
       const result = await hfDiscover[kind](parseRepoInput(url), fetch);
       return { ok: true, ...result };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  // Open the Hugging Face hub in the browser, filtered to models Earheart can
+  // run as this kind. The URL is built here from the kind, never taken from
+  // the renderer, so the bridge can't be used to open arbitrary links.
+  ipcMain.handle("models:browse-hf", async (event, { kind } = {}) => {
+    try {
+      await shell.openExternal(searchUrl(kind));
+      return { ok: true };
     } catch (err) {
       return { ok: false, error: err.message };
     }

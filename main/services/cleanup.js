@@ -3,11 +3,18 @@
 // llama.cpp, LM Studio, vLLM, OpenRouter, OpenAI, or anything else compatible.
 
 const { resolveCleanup, remoteSamplingBody } = require("../cleanup-styles");
+const { CLEAN_RUNAWAY_MESSAGE } = require("../util/clean-budget");
 const { serviceUrl } = require("./service-url");
 
 // Reasoning models may emit <think>...</think> blocks; strip them.
 function stripThinking(text) {
-  return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    // A response can hit its token/time limit before the closing tag. Treat
+    // everything after an unmatched opener as reasoning too; clean() will
+    // fall back to the raw transcript when that leaves no answer.
+    .replace(/<think>[\s\S]*$/i, "")
+    .trim();
 }
 
 /**
@@ -44,7 +51,12 @@ async function clean(transcript, cfg, signal) {
     throw new Error(`Cleanup service error ${res.status}: ${body.slice(0, 300)}`);
   }
   const data = await res.json();
-  const content = data.choices?.[0]?.message?.content;
+  const choice = data.choices?.[0];
+  // The server cut the answer off at its token limit. A half-cleaned
+  // transcript is not a cleanup result; throwing sends the pipeline down the
+  // same raw-transcript fallback the in-process engine uses for a runaway.
+  if (choice?.finish_reason === "length") throw new Error(CLEAN_RUNAWAY_MESSAGE);
+  const content = choice?.message?.content;
   if (typeof content !== "string") {
     throw new Error("Cleanup service returned no message content");
   }

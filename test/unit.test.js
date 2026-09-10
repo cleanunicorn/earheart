@@ -8,7 +8,8 @@ const http = require("node:http");
 const Module = require("node:module");
 
 const { encodeWav, encodeSilenceWav, wavToFloat32, wavDurationSec } = require("../main/util/wav");
-const { stripThinking } = require("../main/services/cleanup");
+const { stripThinking, clean: remoteClean } = require("../main/services/cleanup");
+const { CLEAN_RUNAWAY_MESSAGE } = require("../main/util/clean-budget");
 const { deepMerge, migrateLegacy, DEFAULTS } = require("../main/settings");
 const { resolveCleanup } = require("../main/cleanup-styles");
 const {
@@ -92,6 +93,31 @@ test("stripThinking removes reasoning blocks", () => {
     stripThinking("<THINK>a</THINK>\n\n  Result  "),
     "Result"
   );
+  assert.strictEqual(stripThinking("<think>unfinished private reasoning"), "");
+  assert.strictEqual(
+    stripThinking("Answer so far.<think>unfinished private reasoning"),
+    "Answer so far."
+  );
+});
+
+test("remote cleanup rejects an answer the server cut off at its token limit", async () => {
+  const reply = (finish_reason) =>
+    JSON.stringify({ choices: [{ finish_reason, message: { content: "Answer so far." } }] });
+  let finish = "length";
+  const server = http.createServer((req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.end(reply(finish));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const cfg = { baseUrl: `http://127.0.0.1:${server.address().port}/v1`, model: "m" };
+  try {
+    await assert.rejects(() => remoteClean("um hello", cfg), { message: CLEAN_RUNAWAY_MESSAGE });
+    finish = "stop";
+    assert.strictEqual(await remoteClean("um hello", cfg), "Answer so far.");
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
 });
 
 test("deepMerge keeps defaults for missing keys and overrides present ones", () => {
@@ -533,10 +559,10 @@ test("start-on-boot defaults to off and survives the merge both ways", () => {
 });
 
 test("linux autostart entry is a valid XDG desktop file launched hidden", () => {
-  const entry = autostart.linuxDesktopEntry("/opt/Earheart.AppImage --hidden");
+  const entry = autostart.linuxDesktopEntry('"/opt/Earheart.AppImage" --hidden');
   assert.match(entry, /^\[Desktop Entry\]/);
   assert.match(entry, /\nType=Application\n/);
-  assert.match(entry, /\nExec=\/opt\/Earheart\.AppImage --hidden\n/);
+  assert.match(entry, /\nExec="\/opt\/Earheart\.AppImage" --hidden\n/);
   // GNOME treats a missing flag as disabled, so it must be present and true.
   assert.match(entry, /\nX-GNOME-Autostart-enabled=true\n/);
 });
@@ -547,10 +573,30 @@ test("linux launch command starts hidden and prefers $APPIMAGE", () => {
     process.env.APPIMAGE = "/home/u/Earheart.AppImage";
     assert.strictEqual(
       autostart.linuxLaunchCommand(),
-      "/home/u/Earheart.AppImage --hidden"
+      '"/home/u/Earheart.AppImage" --hidden'
     );
     delete process.env.APPIMAGE;
     assert.ok(autostart.linuxLaunchCommand().endsWith(" --hidden"));
+  } finally {
+    if (saved === undefined) delete process.env.APPIMAGE;
+    else process.env.APPIMAGE = saved;
+  }
+});
+
+test("linux launch command quotes AppImage paths with spaces and field codes", () => {
+  const saved = process.env.APPIMAGE;
+  try {
+    process.env.APPIMAGE = "/home/A User/Earheart 100%.AppImage";
+    assert.strictEqual(
+      autostart.linuxLaunchCommand(),
+      '"/home/A User/Earheart 100%%.AppImage" --hidden'
+    );
+    // Exec quoting (\") then key-file escaping (\\") — GLib unescapes the
+    // key-file layer first, so a single backslash would be rejected.
+    assert.strictEqual(
+      autostart.desktopExecArg('/tmp/a"b\\c$`'),
+      '"/tmp/a\\\\"b\\\\\\\\c\\\\$\\\\`"'
+    );
   } finally {
     if (saved === undefined) delete process.env.APPIMAGE;
     else process.env.APPIMAGE = saved;
@@ -819,6 +865,40 @@ test("listRemoteModels wraps a network failure with the URL", async () => {
     () => listRemoteModels({ baseUrl: "http://127.0.0.1:1/v1" }),
     /Could not reach/
   );
+});
+
+test("listRemoteModels reports a stalled response body as a timeout", async () => {
+  const server = http.createServer((req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.write('{"data": [');
+    // Never end the response.
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}/v1`;
+  try {
+    await assert.rejects(
+      () => listRemoteModels({ baseUrl: base }, { timeoutMs: 50 }),
+      /Timed out fetching models/
+    );
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test("listRemoteModels times out when a service never responds", async () => {
+  const server = http.createServer(() => {});
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}/v1`;
+  try {
+    await assert.rejects(
+      () => listRemoteModels({ baseUrl: base }, { timeoutMs: 20 }),
+      /Timed out fetching models/
+    );
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
 });
 
 test("idle model unload defaults to a finite window and is overridable", () => {

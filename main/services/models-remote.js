@@ -6,13 +6,15 @@ function joinUrl(baseUrl, route) {
   return baseUrl.replace(/\/+$/, "") + route;
 }
 
+const DEFAULT_TIMEOUT_MS = 15000;
+
 /**
  * Fetch available model ids from an OpenAI-compatible endpoint.
  * @param {{ baseUrl: string, apiKey?: string }} cfg
- * @param {{ signal?: AbortSignal }} [opts]
+ * @param {{ signal?: AbortSignal, timeoutMs?: number }} [opts]
  * @returns {Promise<string[]>} sorted, de-duplicated model ids
  */
-async function listRemoteModels(cfg, { signal } = {}) {
+async function listRemoteModels(cfg, { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   if (!cfg || !cfg.baseUrl) throw new Error("Base URL is required");
   const url = joinUrl(cfg.baseUrl, "/models");
   // Only fetch over HTTP(S). The base URL is user-supplied and reaches here
@@ -32,8 +34,15 @@ async function listRemoteModels(cfg, { signal } = {}) {
 
   let res;
   try {
-    res = await fetch(url, { headers, signal });
+    const timeout = AbortSignal.timeout(timeoutMs);
+    res = await fetch(url, {
+      headers,
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    });
   } catch (err) {
+    if (err.name === "TimeoutError") {
+      throw new Error(`Timed out fetching models from ${url}`);
+    }
     throw new Error(`Could not reach ${url}: ${err.message}`);
   }
   if (!res.ok) {
@@ -43,7 +52,15 @@ async function listRemoteModels(cfg, { signal } = {}) {
   let body;
   try {
     body = await res.json();
-  } catch {
+  } catch (err) {
+    // The deadline covers the body too: a server that sends headers and then
+    // stalls is a timeout, not a malformed response.
+    if (err.name === "TimeoutError") {
+      throw new Error(`Timed out fetching models from ${url}`);
+    }
+    if (err.name === "AbortError") {
+      throw new Error(`Could not reach ${url}: ${err.message}`);
+    }
     throw new Error(`${url} did not return JSON`);
   }
 

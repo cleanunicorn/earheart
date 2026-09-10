@@ -93,6 +93,14 @@ test("compareVersions orders releases", () => {
   assert.strictEqual(compareVersions("0.13.0-beta.1", "0.13.0"), -1);
   assert.strictEqual(compareVersions("0.13.0", "0.13.0-beta.1"), 1);
   assert.strictEqual(compareVersions("0.13.0-beta.10", "0.13.0-beta.2"), 1);
+  assert.strictEqual(
+    compareVersions("0.13.0-beta.9007199254740992", "0.13.0-beta.9007199254740993"),
+    -1
+  );
+  assert.strictEqual(
+    compareVersions("0.13.0-beta.9007199254740993", "0.13.0-beta.9007199254740992"),
+    1
+  );
   assert.strictEqual(compareVersions("0.13.0-beta.1", "0.13.0-beta.alpha"), -1);
   assert.strictEqual(compareVersions("0.13.0-beta", "0.13.0-beta.1"), -1);
   assert.strictEqual(compareVersions("0.13.0+linux", "0.13.0+mac"), 0);

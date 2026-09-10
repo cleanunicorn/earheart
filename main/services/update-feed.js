@@ -95,7 +95,7 @@ function compareVersions(a, b) {
     if (pa === pb) continue;
     const aNumeric = /^\d+$/.test(pa);
     const bNumeric = /^\d+$/.test(pb);
-    if (aNumeric && bNumeric) return Number(pa) < Number(pb) ? -1 : 1;
+    if (aNumeric && bNumeric) return BigInt(pa) < BigInt(pb) ? -1 : 1;
     if (aNumeric !== bNumeric) return aNumeric ? -1 : 1;
     return pa < pb ? -1 : 1;
   }

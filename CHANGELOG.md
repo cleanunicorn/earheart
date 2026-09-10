@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.29.6 — 2026-09-10
+
+- Cap audio upload size (#148)
+
 ## v0.29.5 — 2026-09-10
 
 - Preserve tiny clips when resampling (#150)

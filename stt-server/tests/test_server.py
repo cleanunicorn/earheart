@@ -129,6 +129,16 @@ def test_missing_upload(client, recognizer):
     recognizer.recognize.assert_not_called()
 
 
+def test_oversized_upload_is_rejected_before_decode(
+    client, recognizer, monkeypatch
+):
+    monkeypatch.setattr(server, "MAX_UPLOAD_BYTES", 1024 * 1024)
+    response = transcribe(client, b"x" * (1024 * 1024 + 1))
+    assert response.status_code == 413
+    assert response.json() == {"detail": "Audio upload exceeds the 1 MiB limit"}
+    recognizer.recognize.assert_not_called()
+
+
 @pytest.mark.parametrize("rate", [8000, 16000, 48000])
 @pytest.mark.parametrize("channels", [1, 2])
 def test_audio_is_mono_float32_at_16khz(client, recognizer, rate, channels):

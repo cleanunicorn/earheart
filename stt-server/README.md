@@ -44,6 +44,8 @@ curl -s http://127.0.0.1:8484/v1/audio/transcriptions \
   -F file=@speech.wav -F response_format=json
 ```
 
+Audio uploads are limited to 64 MiB.
+
 ## Options
 
 | Flag | Env var | Default | Notes |

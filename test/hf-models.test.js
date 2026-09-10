@@ -7,6 +7,7 @@ const assert = require("node:assert");
 
 const {
   parseRepoInput,
+  searchUrl,
   listGgufQuants,
   listSttVariants,
   recommendedVariant,
@@ -517,4 +518,19 @@ test("buildSttModel produces a registry-shaped custom entry", () => {
   assert.deepStrictEqual(model.sherpa, variant.sherpa);
   assert.match(model.note, /not checksum-verified/);
   assert.strictEqual(model.files.length, 4);
+});
+
+test("searchUrl points each kind at the hub filtered to what its discoverer accepts", () => {
+  const cleanup = new URL(searchUrl("cleanup"));
+  assert.strictEqual(cleanup.origin, "https://huggingface.co");
+  assert.strictEqual(cleanup.pathname, "/models");
+  assert.strictEqual(cleanup.searchParams.get("library"), "gguf");
+
+  const stt = new URL(searchUrl("stt"));
+  assert.strictEqual(stt.origin, "https://huggingface.co");
+  assert.strictEqual(stt.pathname, "/models");
+  assert.strictEqual(stt.searchParams.get("search"), "sherpa-onnx");
+
+  assert.throws(() => searchUrl("video"), /Unknown model kind/);
+  assert.throws(() => searchUrl(), /Unknown model kind/);
 });

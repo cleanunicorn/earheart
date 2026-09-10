@@ -772,6 +772,17 @@ function bindAddCustomModel(kind) {
   const pick = $(`${kind}-hf-pick`);
   const variantSelect = $(`${kind}-hf-variant`);
   const addBtn = $(`${kind}-hf-add`);
+  const browseBtn = $(`${kind}-hf-browse`);
+
+  // Opens the hub in the browser, pre-filtered to this kind; the user copies
+  // a repo from there into the field above.
+  browseBtn.addEventListener("click", async () => {
+    const res = await earheart.invoke("models:browse-hf", { kind });
+    if (!res.ok) {
+      result.textContent = res.error;
+      result.className = "status err";
+    }
+  });
 
   findBtn.addEventListener("click", async () => {
     const url = urlInput.value.trim();

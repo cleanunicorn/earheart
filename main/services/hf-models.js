@@ -18,6 +18,23 @@
 const HF_HOSTS = new Set(["huggingface.co", "hf.co"]);
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 
+// Where "Browse Hugging Face" sends the user: the model hub filtered to what
+// the discoverers below can actually consume, trending first so the useful
+// repos surface. Cleanup runs GGUF text-generation models; STT runs the
+// sherpa-onnx exports, which the hub only knows by name (they carry no
+// library tag), so that side is a name search.
+const HF_SEARCH = {
+  cleanup: "https://huggingface.co/models?library=gguf&pipeline_tag=text-generation&sort=trending",
+  stt: "https://huggingface.co/models?search=sherpa-onnx&sort=trending",
+};
+
+/** The Hugging Face search page for models Earheart can run as `kind`. */
+function searchUrl(kind) {
+  const url = HF_SEARCH[kind];
+  if (!url) throw new Error(`Unknown model kind: ${kind}`);
+  return url;
+}
+
 /**
  * Parse what the user pasted into { owner, repo, ref }. Accepts a bare
  * "owner/model" (what the Hugging Face site shows as the repo name), the repo
@@ -522,6 +539,7 @@ function buildSttModel(repoFull, variant) {
 
 module.exports = {
   parseRepoInput,
+  searchUrl,
   listGgufQuants,
   listSttVariants,
   recommendedVariant,

@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.29.1 — 2026-09-10
+
+- Restore Intel Mac downloads and architecture-compatible updates (#130)
+
 ## v0.29.0 — 2026-09-06
 
 - Resume interrupted model downloads (#127)

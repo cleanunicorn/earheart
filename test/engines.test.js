@@ -89,6 +89,25 @@ test("registry totalBytes sums the file sizes", () => {
   assert.strictEqual(registry.totalBytes(model), 15);
 });
 
+test("model paths cannot escape the managed model directory", () => {
+  const base = path.join(os.tmpdir(), "earheart-models");
+  const model = { kind: "cleanup", id: "safe-model" };
+  assert.strictEqual(
+    manager.filePath(base, model, { name: "weights.gguf" }),
+    path.join(base, "cleanup", "safe-model", "weights.gguf")
+  );
+
+  for (const id of ["../outside", "..\\outside", "..", ""]) {
+    assert.throws(() => manager.modelDir(base, { ...model, id }), /Invalid model id/);
+  }
+  for (const name of ["../outside.gguf", "..\\outside.gguf", "/tmp/outside", ""]) {
+    assert.throws(
+      () => manager.filePath(base, model, { name }),
+      /Invalid model filename/
+    );
+  }
+});
+
 test("exactly one cleanup model is marked default", () => {
   const defaults = registry.listModels("cleanup").filter((m) => m.default);
   assert.strictEqual(defaults.length, 1);

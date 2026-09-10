@@ -101,6 +101,13 @@ test("parseLatestYml rejects a feed missing required keys", () => {
   );
 });
 
+test("parseLatestYml ignores an invalid asset size", () => {
+  for (const size of ["not-a-number", "-42", "Infinity"]) {
+    const feed = MAC_YML.replace("size: 171973146", `size: ${size}`);
+    assert.strictEqual(parseLatestYml(feed).size, 0);
+  }
+});
+
 test("compareVersions orders releases", () => {
   assert.strictEqual(compareVersions("0.12.1", "0.12.1"), 0);
   assert.strictEqual(compareVersions("0.12.1", "0.13.0"), -1);

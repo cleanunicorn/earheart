@@ -15,6 +15,7 @@ const {
   buildSttModel,
   quantOf,
 } = require("../main/services/hf-models");
+const registry = require("../main/engines/registry");
 
 // A fetch stub that routes by URL substring. Routes are tried in order, so put
 // more specific matches (e.g. "/tree/") first.
@@ -525,11 +526,22 @@ test("searchUrl points each kind at the hub filtered to what its discoverer acce
   assert.strictEqual(cleanup.origin, "https://huggingface.co");
   assert.strictEqual(cleanup.pathname, "/models");
   assert.strictEqual(cleanup.searchParams.get("library"), "gguf");
+  // Chat models by tag, not pipeline: the hub files the built-in Gemma 3
+  // 4B/12B GGUFs under image-text-to-text, which a text-generation filter hides.
+  assert.strictEqual(cleanup.searchParams.get("other"), "conversational");
+  assert.strictEqual(cleanup.searchParams.get("pipeline_tag"), null);
+  // Capped at the largest built-in (12B), so the list stays runnable in-process.
+  assert.strictEqual(cleanup.searchParams.get("num_parameters"), "min:0,max:12B");
 
   const stt = new URL(searchUrl("stt"));
   assert.strictEqual(stt.origin, "https://huggingface.co");
   assert.strictEqual(stt.pathname, "/models");
-  assert.strictEqual(stt.searchParams.get("search"), "sherpa-onnx");
+  // The Parakeet TDT family the built-ins come from, not every sherpa-onnx repo.
+  assert.strictEqual(stt.searchParams.get("search"), "sherpa-onnx-nemo-parakeet-tdt");
+  for (const m of registry.listModels("stt")) {
+    const repo = m.files.map((f) => f.url).find(Boolean).split("/")[4];
+    assert.ok(repo.includes(stt.searchParams.get("search")), `${repo} should match the STT search`);
+  }
 
   assert.throws(() => searchUrl("video"), /Unknown model kind/);
   assert.throws(() => searchUrl(), /Unknown model kind/);

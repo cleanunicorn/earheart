@@ -18,14 +18,26 @@
 const HF_HOSTS = new Set(["huggingface.co", "hf.co"]);
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 
-// Where "Browse Hugging Face" sends the user: the model hub filtered to what
-// the discoverers below can actually consume, trending first so the useful
-// repos surface. Cleanup runs GGUF text-generation models; STT runs the
-// sherpa-onnx exports, which the hub only knows by name (they carry no
-// library tag), so that side is a name search.
+// Where "Browse Hugging Face" sends the user: the model hub narrowed to repos
+// the discoverers below can turn into a working model, trending first.
+//
+// Cleanup: chat GGUFs up to 12B parameters (the largest built-in). Filter on
+// the "conversational" tag, not pipeline_tag=text-generation — the hub files
+// Gemma 3 4B/12B GGUFs under image-text-to-text, and node-llama-cpp runs
+// their text model fine, so the pipeline filter would hide two of the three
+// built-in families. The size cap keeps 27B+ models that can't clean up a
+// dictation in-process on a laptop out of the list.
+//
+// STT: sherpa-onnx exports carry no library tag, so this is a name search.
+// A bare "sherpa-onnx" matches ~550 repos, mostly streaming, CTC, TTS and
+// build artifacts the offline recognizer can't load; "…-nemo-parakeet-tdt"
+// is the Parakeet TDT family the built-ins come from, and nearly every hit is
+// a transducer bundle that loads.
 const HF_SEARCH = {
-  cleanup: "https://huggingface.co/models?library=gguf&pipeline_tag=text-generation&sort=trending",
-  stt: "https://huggingface.co/models?search=sherpa-onnx&sort=trending",
+  cleanup:
+    "https://huggingface.co/models?library=gguf&other=conversational" +
+    "&num_parameters=min:0,max:12B&sort=trending",
+  stt: "https://huggingface.co/models?search=sherpa-onnx-nemo-parakeet-tdt&sort=trending",
 };
 
 /** The Hugging Face search page for models Earheart can run as `kind`. */

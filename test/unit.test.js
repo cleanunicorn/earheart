@@ -92,6 +92,11 @@ test("stripThinking removes reasoning blocks", () => {
     stripThinking("<THINK>a</THINK>\n\n  Result  "),
     "Result"
   );
+  assert.strictEqual(stripThinking("<think>unfinished private reasoning"), "");
+  assert.strictEqual(
+    stripThinking("Answer so far.<think>unfinished private reasoning"),
+    "Answer so far."
+  );
 });
 
 test("deepMerge keeps defaults for missing keys and overrides present ones", () => {

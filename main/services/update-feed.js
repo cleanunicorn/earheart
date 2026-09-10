@@ -69,8 +69,12 @@ function unquote(value) {
  */
 function compareVersions(a, b) {
   const split = (v) => {
-    const [core, ...pre] = String(v).trim().replace(/^v/i, "").split("-");
-    return { nums: core.split(".").map((n) => parseInt(n, 10) || 0), pre: pre.join("-") };
+    const withoutBuild = String(v).trim().replace(/^v/i, "").split("+")[0];
+    const [core, ...pre] = withoutBuild.split("-");
+    return {
+      nums: core.split(".").map((n) => parseInt(n, 10) || 0),
+      pre: pre.join("-").split(".").filter(Boolean),
+    };
   };
   const va = split(a);
   const vb = split(b);
@@ -79,10 +83,21 @@ function compareVersions(a, b) {
     const nb = vb.nums[i] || 0;
     if (na !== nb) return na < nb ? -1 : 1;
   }
-  if (va.pre !== vb.pre) {
-    if (!va.pre) return 1; // release > prerelease
-    if (!vb.pre) return -1;
-    return va.pre < vb.pre ? -1 : 1;
+  if (va.pre.length === 0 || vb.pre.length === 0) {
+    if (va.pre.length === vb.pre.length) return 0;
+    return va.pre.length === 0 ? 1 : -1; // release > prerelease
+  }
+  for (let i = 0; i < Math.max(va.pre.length, vb.pre.length); i++) {
+    if (i >= va.pre.length) return -1;
+    if (i >= vb.pre.length) return 1;
+    const pa = va.pre[i];
+    const pb = vb.pre[i];
+    if (pa === pb) continue;
+    const aNumeric = /^\d+$/.test(pa);
+    const bNumeric = /^\d+$/.test(pb);
+    if (aNumeric && bNumeric) return Number(pa) < Number(pb) ? -1 : 1;
+    if (aNumeric !== bNumeric) return aNumeric ? -1 : 1;
+    return pa < pb ? -1 : 1;
   }
   return 0;
 }

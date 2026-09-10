@@ -89,7 +89,9 @@ def resample_linear(waveform: np.ndarray, src_rate: int, dst_rate: int) -> np.nd
     if src_rate == dst_rate:
         return waveform
     duration = waveform.shape[0] / src_rate
-    dst_len = int(round(duration * dst_rate))
+    # A non-empty clip shorter than half a destination sample would otherwise
+    # round down to zero after it already passed the endpoint's empty check.
+    dst_len = max(1, int(round(duration * dst_rate)))
     src_t = np.linspace(0.0, duration, num=waveform.shape[0], endpoint=False)
     dst_t = np.linspace(0.0, duration, num=dst_len, endpoint=False)
     return np.interp(dst_t, src_t, waveform).astype(np.float32)

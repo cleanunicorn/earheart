@@ -53,7 +53,8 @@ function parseLatestYml(text) {
     throw new Error("Update feed is missing version, path or sha512");
   }
   const entry = files.find((f) => f.url === path);
-  const size = entry && entry.size ? Number(entry.size) : 0;
+  const parsedSize = entry && entry.size ? Number(entry.size) : 0;
+  const size = Number.isFinite(parsedSize) && parsedSize >= 0 ? parsedSize : 0;
   return { version, path, sha512, size };
 }
 

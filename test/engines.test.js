@@ -305,6 +305,31 @@ async function withTmp(fn) {
   }
 }
 
+// Simulate a dropped connection only once the client has `bytes` of the body
+// on disk in its `.part` file. A fixed delay between the write and the drop
+// races the client: downloadFile writes its resume metadata before it starts
+// reading the body, and bytes still queued in a fetch body when the socket
+// dies are discarded with the error. On a slow runner the drop won and the
+// partial came out empty (seen repeatedly on macos-15-intel). `partPath` is a
+// getter because the test only learns the path once its temp dir exists.
+function dropOnceOnDisk(res, partPath, bytes, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  const poll = () => {
+    let size = 0;
+    try {
+      const p = partPath();
+      if (p) size = fs.statSync(p).size;
+    } catch {
+      // Not created yet.
+    }
+    // Past the deadline, drop anyway: the byte-count assertion then fails
+    // with a clear message instead of the test hanging.
+    if (size >= bytes || Date.now() > deadline) res.destroy();
+    else setTimeout(poll, 5);
+  };
+  poll();
+}
+
 test("download streams files, reports progress, and marks complete", async () => {
   const a = Buffer.from("encoder-bytes-".repeat(100));
   const b = Buffer.from("tokens");
@@ -569,6 +594,7 @@ test("a transient failure retains bytes and retries with Range and If-Range", as
   const cut = 128;
   let kept = 0;
   let attempt = 0;
+  let part = null;
   const requests = [];
   const server = http.createServer((req, res) => {
     attempt++;
@@ -577,9 +603,8 @@ test("a transient failure retains bytes and retries with Range and If-Range", as
     if (attempt === 1) {
       res.setHeader("content-length", full.length);
       res.flushHeaders();
-      res.write(full.subarray(0, cut), () => {
-        setTimeout(() => res.destroy(), 25); // abrupt failure, like a dropped connection
-      });
+      // Abrupt failure, like a dropped connection, once the prefix is saved.
+      res.write(full.subarray(0, cut), () => dropOnceOnDisk(res, () => part, cut));
       return;
     }
     const offset = Number(req.headers.range.match(/^bytes=(\d+)-$/)[1]);
@@ -598,10 +623,11 @@ test("a transient failure retains bytes and retries with Range and If-Range", as
         files: [{ name: "m.gguf", bytes: full.length, url: `${base}/m.gguf`, sha256: sha }],
       };
       const dest = manager.filePath(dir, model, model.files[0]);
+      part = `${dest}.part`;
 
       await assert.rejects(() => manager.download(dir, model));
-      kept = fs.statSync(`${dest}.part`).size;
-      assert.ok(kept > 0 && kept <= cut);
+      kept = fs.statSync(part).size;
+      assert.strictEqual(kept, cut, "the received prefix survives the drop");
       assert.ok(fs.existsSync(`${dest}.part.json`));
       assert.strictEqual(manager.isInstalled(dir, model), false);
 
@@ -681,6 +707,7 @@ test("a server that ignores Range safely overwrites rather than appends", async 
   const cut = 96;
   let kept = 0;
   let attempt = 0;
+  let part = null;
   const ranges = [];
   const server = http.createServer((req, res) => {
     attempt++;
@@ -689,7 +716,7 @@ test("a server that ignores Range safely overwrites rather than appends", async 
     res.setHeader("content-length", full.length);
     if (attempt === 1) {
       res.flushHeaders();
-      res.write(full.subarray(0, cut), () => setTimeout(() => res.destroy(), 25));
+      res.write(full.subarray(0, cut), () => dropOnceOnDisk(res, () => part, cut));
       return;
     }
     res.end(full); // deliberately return 200 to the Range request
@@ -702,10 +729,11 @@ test("a server that ignores Range safely overwrites rather than appends", async 
         kind: "stt", id: "ignore-range",
         files: [{ name: "a.bin", bytes: full.length, url: `${base}/a.bin`, sha256: sha }],
       };
-      await assert.rejects(() => manager.download(dir, model));
       const dest = manager.filePath(dir, model, model.files[0]);
-      kept = fs.statSync(`${dest}.part`).size;
-      assert.ok(kept > 0 && kept <= cut);
+      part = `${dest}.part`;
+      await assert.rejects(() => manager.download(dir, model));
+      kept = fs.statSync(part).size;
+      assert.strictEqual(kept, cut, "the received prefix survives the drop");
       const seen = [];
       await manager.download(dir, model, { onProgress: (p) => seen.push(p.received) });
       assert.strictEqual(ranges[1], `bytes=${kept}-`);
@@ -725,6 +753,7 @@ test("a changed validator invalidates the partial and fetches a full representat
   const cut = 100;
   let kept = 0;
   let attempt = 0;
+  let part = null;
   const requests = [];
   const server = http.createServer((req, res) => {
     attempt++;
@@ -733,7 +762,7 @@ test("a changed validator invalidates the partial and fetches a full representat
       res.setHeader("etag", '"old"');
       res.setHeader("content-length", oldBody.length);
       res.flushHeaders();
-      res.write(oldBody.subarray(0, cut), () => setTimeout(() => res.destroy(), 25));
+      res.write(oldBody.subarray(0, cut), () => dropOnceOnDisk(res, () => part, cut));
       return;
     }
     res.setHeader("etag", '"new"');
@@ -759,10 +788,11 @@ test("a changed validator invalidates the partial and fetches a full representat
         kind: "cleanup", id: "changed",
         files: [{ name: "m.gguf", bytes: newBody.length, url: `${base}/m.gguf`, sha256: sha }],
       };
-      await assert.rejects(() => manager.download(dir, model));
       const dest = manager.filePath(dir, model, model.files[0]);
-      kept = fs.statSync(`${dest}.part`).size;
-      assert.ok(kept > 0 && kept <= cut);
+      part = `${dest}.part`;
+      await assert.rejects(() => manager.download(dir, model));
+      kept = fs.statSync(part).size;
+      assert.strictEqual(kept, cut, "the received prefix survives the drop");
       await manager.download(dir, model);
       assert.strictEqual(attempt, 3);
       assert.strictEqual(requests[1].ifRange, '"old"');
@@ -1015,23 +1045,37 @@ test("cancellation preserves a resumable partial", async () => {
         kind: "cleanup", id: "cancel",
         files: [{ name: "m.gguf", bytes: full.length, url: `${base}/m.gguf`, sha256: sha }],
       };
+      const dest = manager.filePath(dir, model, model.files[0]);
+      const part = `${dest}.part`;
       const controller = new AbortController();
       let queued = false;
       await assert.rejects(
         () => manager.download(dir, model, {
           signal: controller.signal,
           onProgress: () => {
-            if (!queued) {
-              queued = true;
-              setTimeout(() => controller.abort(), 10);
-            }
+            if (queued) return;
+            queued = true;
+            // Cancel once some bytes are on disk, not after a fixed delay:
+            // progress fires before the write, and a slow runner may not have
+            // opened the file yet, which would leave nothing to resume.
+            const deadline = Date.now() + 10_000;
+            const poll = () => {
+              let size = 0;
+              try {
+                size = fs.statSync(part).size;
+              } catch {
+                // Not created yet.
+              }
+              if (size > 0 || Date.now() > deadline) controller.abort();
+              else setTimeout(poll, 5);
+            };
+            poll();
           },
         }),
         /abort/i
       );
       firstResponse.destroy();
-      const dest = manager.filePath(dir, model, model.files[0]);
-      const kept = fs.statSync(`${dest}.part`).size;
+      const kept = fs.statSync(part).size;
       assert.ok(kept > 0 && kept < full.length);
       assert.ok(fs.existsSync(`${dest}.part.json`));
       await manager.download(dir, model);

@@ -96,6 +96,18 @@ def resample_linear(waveform: np.ndarray, src_rate: int, dst_rate: int) -> np.nd
 
 
 TARGET_SAMPLE_RATE = 16000
+MAX_UPLOAD_BYTES = 64 * 1024 * 1024
+
+
+def read_upload(file: UploadFile) -> bytes:
+    """Read one upload without allowing an unbounded in-memory allocation."""
+    data = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Audio upload exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB limit",
+        )
+    return data
 
 
 def create_app(config: ServerConfig | None = None) -> FastAPI:
@@ -138,7 +150,7 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
                 "(supported: json, text, verbose_json)",
             )
 
-        waveform, sample_rate = decode_audio(file.file.read())
+        waveform, sample_rate = decode_audio(read_upload(file))
         if waveform.shape[0] == 0:
             raise HTTPException(status_code=400, detail="Empty audio file")
         waveform = resample_linear(waveform, sample_rate, TARGET_SAMPLE_RATE)

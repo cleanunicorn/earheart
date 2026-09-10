@@ -61,31 +61,38 @@ function parseRepoInput(input) {
 }
 
 async function hfJson(fetchImpl, url, signal, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
-  const timeout = AbortSignal.timeout(timeoutMs);
-  const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
-  let res;
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), timeoutMs);
+  const requestSignal = signal
+    ? AbortSignal.any([signal, timeout.signal])
+    : timeout.signal;
   try {
-    res = await fetchImpl(url, {
-      signal: requestSignal,
-      headers: { Accept: "application/json" },
-    });
-  } catch (err) {
-    if (timeout.aborted && !signal?.aborted) {
-      throw new Error("Hugging Face request timed out");
+    let res;
+    try {
+      res = await fetchImpl(url, {
+        signal: requestSignal,
+        headers: { Accept: "application/json" },
+      });
+    } catch (err) {
+      if (timeout.signal.aborted && !signal?.aborted) {
+        throw new Error("Hugging Face request timed out");
+      }
+      throw new Error(`Could not reach Hugging Face: ${err.message}`);
     }
-    throw new Error(`Could not reach Hugging Face: ${err.message}`);
-  }
-  if (res.status === 401 || res.status === 403) {
-    throw new Error(
-      "This repository is gated or private — Earheart can only download public models"
-    );
-  }
-  if (res.status === 404) throw new Error("Model repository not found on Hugging Face");
-  if (!res.ok) throw new Error(`Hugging Face returned HTTP ${res.status}`);
-  try {
-    return await res.json();
-  } catch {
-    throw new Error("Unexpected response from Hugging Face");
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(
+        "This repository is gated or private — Earheart can only download public models"
+      );
+    }
+    if (res.status === 404) throw new Error("Model repository not found on Hugging Face");
+    if (!res.ok) throw new Error(`Hugging Face returned HTTP ${res.status}`);
+    try {
+      return await res.json();
+    } catch {
+      throw new Error("Unexpected response from Hugging Face");
+    }
+  } finally {
+    clearTimeout(timer);
   }
 }
 

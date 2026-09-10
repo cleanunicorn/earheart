@@ -23,13 +23,24 @@ const LINUX_DESKTOP_FILE = "earheart.desktop";
 // query with, so the two MUST match or the read-back state drifts.
 const LOGIN_ITEM_ARGS = ["--hidden"];
 
+// Exec= is not a shell command: the Desktop Entry spec tokenizes it itself,
+// and paths containing spaces must be quoted. Percent signs are field-code
+// markers even inside quotes, while backslash, quote, dollar and backtick need
+// escaping inside a quoted argument.
+function desktopExecArg(value) {
+  const escaped = String(value)
+    .replace(/%/g, "%%")
+    .replace(/([\\"`$])/g, "\\$1");
+  return `"${escaped}"`;
+}
+
 // The command the desktop environment should run at login. On Linux AppImages
 // the relaunchable path lives in $APPIMAGE — process.execPath points inside the
 // mounted image and would be stale next boot — so prefer it; fall back to
 // execPath for .deb installs and `npm start` development runs.
 function linuxLaunchCommand() {
   const exec = process.env.APPIMAGE || process.execPath;
-  return `${exec} --hidden`;
+  return `${desktopExecArg(exec)} --hidden`;
 }
 
 // A minimal but complete XDG autostart entry. X-GNOME-Autostart-enabled keeps
@@ -109,5 +120,6 @@ module.exports = {
   loginItemEnabled,
   linuxDesktopEntry,
   linuxLaunchCommand,
+  desktopExecArg,
   linuxAutostartPath,
 };

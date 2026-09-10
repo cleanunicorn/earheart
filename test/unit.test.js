@@ -538,10 +538,10 @@ test("start-on-boot defaults to off and survives the merge both ways", () => {
 });
 
 test("linux autostart entry is a valid XDG desktop file launched hidden", () => {
-  const entry = autostart.linuxDesktopEntry("/opt/Earheart.AppImage --hidden");
+  const entry = autostart.linuxDesktopEntry('"/opt/Earheart.AppImage" --hidden');
   assert.match(entry, /^\[Desktop Entry\]/);
   assert.match(entry, /\nType=Application\n/);
-  assert.match(entry, /\nExec=\/opt\/Earheart\.AppImage --hidden\n/);
+  assert.match(entry, /\nExec="\/opt\/Earheart\.AppImage" --hidden\n/);
   // GNOME treats a missing flag as disabled, so it must be present and true.
   assert.match(entry, /\nX-GNOME-Autostart-enabled=true\n/);
 });
@@ -552,10 +552,28 @@ test("linux launch command starts hidden and prefers $APPIMAGE", () => {
     process.env.APPIMAGE = "/home/u/Earheart.AppImage";
     assert.strictEqual(
       autostart.linuxLaunchCommand(),
-      "/home/u/Earheart.AppImage --hidden"
+      '"/home/u/Earheart.AppImage" --hidden'
     );
     delete process.env.APPIMAGE;
     assert.ok(autostart.linuxLaunchCommand().endsWith(" --hidden"));
+  } finally {
+    if (saved === undefined) delete process.env.APPIMAGE;
+    else process.env.APPIMAGE = saved;
+  }
+});
+
+test("linux launch command quotes AppImage paths with spaces and field codes", () => {
+  const saved = process.env.APPIMAGE;
+  try {
+    process.env.APPIMAGE = "/home/A User/Earheart 100%.AppImage";
+    assert.strictEqual(
+      autostart.linuxLaunchCommand(),
+      '"/home/A User/Earheart 100%%.AppImage" --hidden'
+    );
+    assert.strictEqual(
+      autostart.desktopExecArg('/tmp/a"b\\c$`'),
+      '"/tmp/a\\"b\\\\c\\$\\`"'
+    );
   } finally {
     if (saved === undefined) delete process.env.APPIMAGE;
     else process.env.APPIMAGE = saved;

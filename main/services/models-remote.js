@@ -52,7 +52,15 @@ async function listRemoteModels(cfg, { signal, timeoutMs = DEFAULT_TIMEOUT_MS } 
   let body;
   try {
     body = await res.json();
-  } catch {
+  } catch (err) {
+    // The deadline covers the body too: a server that sends headers and then
+    // stalls is a timeout, not a malformed response.
+    if (err.name === "TimeoutError") {
+      throw new Error(`Timed out fetching models from ${url}`);
+    }
+    if (err.name === "AbortError") {
+      throw new Error(`Could not reach ${url}: ${err.message}`);
+    }
     throw new Error(`${url} did not return JSON`);
   }
 

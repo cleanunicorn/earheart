@@ -38,12 +38,11 @@ function resolveDir() {
 function rotateIfLarge(file, maxBytes = MAX_BYTES) {
   try {
     if (fs.statSync(file).size <= maxBytes) return;
-    const backup = `${file}.1`;
-    // POSIX rename replaces an existing file, but Windows rename does not.
-    // Remove the one retained generation first so rotation keeps working after
-    // the log has crossed the limit more than once.
-    fs.rmSync(backup, { force: true });
-    fs.renameSync(file, backup);
+    // rename replaces an existing destination on every platform Node supports
+    // (libuv uses MOVEFILE_REPLACE_EXISTING on Windows), so the previous
+    // generation is swapped out in one step — never removed ahead of a rename
+    // that might then fail and leave nothing retained.
+    fs.renameSync(file, `${file}.1`);
   } catch {
     // No existing file, or the rename failed — not worth blocking startup on.
   }

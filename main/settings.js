@@ -283,7 +283,7 @@ function load() {
 }
 
 function save(next) {
-  cached = deepMerge(DEFAULTS, next);
+  const merged = deepMerge(DEFAULTS, next);
   const file = settingsPath();
   const tmp = `${file}.${process.pid}.tmp`;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -292,7 +292,7 @@ function save(next) {
     // place atomically. A crash can leave the previous settings or a harmless
     // temp file, but never a truncated settings.json. The restrictive mode is
     // especially important while API keys still live in this file.
-    fs.writeFileSync(tmp, JSON.stringify(cached, null, 2), { mode: 0o600 });
+    fs.writeFileSync(tmp, JSON.stringify(merged, null, 2), { mode: 0o600 });
     fs.renameSync(tmp, file);
   } catch (err) {
     try {
@@ -302,6 +302,9 @@ function save(next) {
     }
     throw err;
   }
+  // Only now does the in-memory copy change: a failed save must leave get()
+  // agreeing with the file, not handing out values that were never persisted.
+  cached = merged;
   return cached;
 }
 

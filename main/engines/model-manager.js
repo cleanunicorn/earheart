@@ -20,24 +20,9 @@ const crypto = require("node:crypto");
 const { Readable, Transform } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 
-const { totalBytes } = require("./registry");
+const { totalBytes, assertPathSegment } = require("./registry");
 
 const MARKER = ".complete";
-
-function assertPathSegment(value, label) {
-  if (
-    typeof value !== "string" ||
-    !value ||
-    value === "." ||
-    value === ".." ||
-    value.includes("/") ||
-    value.includes("\\") ||
-    value.includes("\0")
-  ) {
-    throw new Error(`Invalid model ${label}`);
-  }
-  return value;
-}
 
 function modelDir(baseDir, model) {
   const kind = assertPathSegment(model.kind, "kind");
@@ -82,11 +67,24 @@ function readMarker(dir) {
  * later truncated is treated as not installed.
  */
 function isInstalled(baseDir, model) {
-  const dir = modelDir(baseDir, model);
+  // A model whose id or filenames can't name a path inside the managed
+  // directory is never installed; answer false rather than throwing so one
+  // bad entry can't take down a whole model listing.
+  let dir;
+  try {
+    dir = modelDir(baseDir, model);
+  } catch {
+    return false;
+  }
   const sizes = readMarker(dir);
   if (sizes === null) return false;
   return model.files.every((f) => {
-    const p = filePath(baseDir, model, f);
+    let p;
+    try {
+      p = filePath(baseDir, model, f);
+    } catch {
+      return false;
+    }
     const expected = sizes[f.name];
     if (expected === undefined) return fs.existsSync(p); // legacy marker
     try {

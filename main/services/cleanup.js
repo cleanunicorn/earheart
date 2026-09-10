@@ -3,6 +3,7 @@
 // llama.cpp, LM Studio, vLLM, OpenRouter, OpenAI, or anything else compatible.
 
 const { resolveCleanup, remoteSamplingBody } = require("../cleanup-styles");
+const { CLEAN_RUNAWAY_MESSAGE } = require("../util/clean-budget");
 
 function joinUrl(baseUrl, route) {
   return baseUrl.replace(/\/+$/, "") + route;
@@ -53,7 +54,12 @@ async function clean(transcript, cfg, signal) {
     throw new Error(`Cleanup service error ${res.status}: ${body.slice(0, 300)}`);
   }
   const data = await res.json();
-  const content = data.choices?.[0]?.message?.content;
+  const choice = data.choices?.[0];
+  // The server cut the answer off at its token limit. A half-cleaned
+  // transcript is not a cleanup result; throwing sends the pipeline down the
+  // same raw-transcript fallback the in-process engine uses for a runaway.
+  if (choice?.finish_reason === "length") throw new Error(CLEAN_RUNAWAY_MESSAGE);
+  const content = choice?.message?.content;
   if (typeof content !== "string") {
     throw new Error("Cleanup service returned no message content");
   }

@@ -108,6 +108,54 @@ test("model paths cannot escape the managed model directory", () => {
   }
 });
 
+test("isInstalled answers false for a model that cannot name a managed path", () => {
+  const base = path.join(os.tmpdir(), "earheart-models");
+  assert.strictEqual(
+    manager.isInstalled(base, { kind: "cleanup", id: "../outside", files: [] }),
+    false
+  );
+  assert.strictEqual(
+    manager.isInstalled(base, {
+      kind: "cleanup",
+      id: "fine",
+      files: [{ name: "../escape.gguf" }],
+    }),
+    false
+  );
+});
+
+test("registry drops custom models whose paths could leave the model directory", () => {
+  const good = {
+    kind: "cleanup",
+    id: "custom-good",
+    label: "Good",
+    files: [{ name: "model.gguf", url: "https://example.invalid/model.gguf" }],
+    gguf: { file: "model.gguf" },
+  };
+  const bad = [
+    { ...good, id: "custom-org/name" },
+    { ...good, id: "custom-bad-1", gguf: { file: "../../evil.gguf" } },
+    { ...good, id: "custom-bad-2", files: [{ name: "..\\evil.gguf" }] },
+    { ...good, id: "custom-bad-3", kind: "stt", sherpa: { encoder: "../x.onnx" } },
+    { ...good, id: "CON" },
+    { ...good, id: "custom-bad-4", gguf: { file: "weights:v2.gguf" } },
+    { ...good, id: "trailing-dot." },
+  ];
+  try {
+    registry.setCustomModels([good, ...bad]);
+    assert.deepStrictEqual(
+      registry.listModels("cleanup").filter((m) => m.custom || m.id.startsWith("custom")).map((m) => m.id),
+      ["custom-good"]
+    );
+    assert.strictEqual(registry.getModel("stt", "custom-bad-3"), null);
+  } finally {
+    registry.setCustomModels([]);
+  }
+  for (const s of ["model.gguf", "parakeet-tdt-0.6b-v3", "encoder.int8.onnx"]) {
+    assert.ok(registry.isPathSegment(s), s);
+  }
+});
+
 test("exactly one cleanup model is marked default", () => {
   const defaults = registry.listModels("cleanup").filter((m) => m.default);
   assert.strictEqual(defaults.length, 1);

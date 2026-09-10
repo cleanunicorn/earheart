@@ -74,6 +74,7 @@ test("a failed replacement preserves the previous settings", (t) => {
 
   const file = path.join(dir, "settings.json");
   assert.strictEqual(JSON.parse(fs.readFileSync(file, "utf8")).hotkey, "Working");
+  assert.strictEqual(settings.get().hotkey, "Working");
   assert.deepStrictEqual(
     fs.readdirSync(dir).filter((name) => name.includes(".tmp")),
     []

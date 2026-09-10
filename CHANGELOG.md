@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.31.0 — 2026-09-10
+
+- Add a button that searches Hugging Face for compatible models (#152)
+
 ## v0.30.0 — 2026-09-10
 
 - Copy the original transcript (#151)

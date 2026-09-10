@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.29.11 — 2026-09-10
+
+- Time out stalled model discovery (#146)
+
 ## v0.29.10 — 2026-09-10
 
 - Reject malformed stored setting types (#143)

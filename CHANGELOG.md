@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.29.10 — 2026-09-10
+
+- Reject malformed stored setting types (#143)
+
 ## v0.29.9 — 2026-09-10
 
 - Ignore invalid update asset sizes (#142)

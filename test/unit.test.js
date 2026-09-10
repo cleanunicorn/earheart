@@ -138,6 +138,12 @@ test("deepMerge ignores prototype-mutating keys from stored JSON", () => {
   assert.strictEqual({}.polluted, undefined);
 });
 
+test("deepMerge preserves unknown keys that share names with inherited properties", () => {
+  const merged = deepMerge({}, { toString: "stored value" });
+  assert.strictEqual(Object.hasOwn(merged, "toString"), true);
+  assert.strictEqual(merged.toString, "stored value");
+});
+
 test("wavToFloat32 round-trips PCM16 samples to [-1, 1]", () => {
   const wav = encodeWav(new Int16Array([0, 16384, -16384, 32767, -32768]));
   const { samples, sampleRate } = wavToFloat32(wav);

@@ -195,7 +195,9 @@ function deepMerge(base, override) {
   const out = { ...base };
   for (const key of Object.keys(override)) {
     if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
-    out[key] = key in base ? deepMerge(base[key], override[key]) : override[key];
+    out[key] = Object.hasOwn(base, key)
+      ? deepMerge(base[key], override[key])
+      : override[key];
   }
   return out;
 }

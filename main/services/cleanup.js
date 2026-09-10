@@ -4,10 +4,7 @@
 
 const { resolveCleanup, remoteSamplingBody } = require("../cleanup-styles");
 const { CLEAN_RUNAWAY_MESSAGE } = require("../util/clean-budget");
-
-function joinUrl(baseUrl, route) {
-  return baseUrl.replace(/\/+$/, "") + route;
-}
+const { serviceUrl } = require("./service-url");
 
 // Reasoning models may emit <think>...</think> blocks; strip them.
 function stripThinking(text) {
@@ -27,7 +24,7 @@ function stripThinking(text) {
  * @returns {Promise<string>} cleaned text
  */
 async function clean(transcript, cfg, signal) {
-  const url = joinUrl(cfg.baseUrl, "/chat/completions");
+  const url = serviceUrl(cfg?.baseUrl, "/chat/completions");
   const headers = { "Content-Type": "application/json" };
   if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
 

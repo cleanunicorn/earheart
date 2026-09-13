@@ -8,5 +8,10 @@
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
+    <!-- Auto-paste drives Cmd+V through System Events via osascript. Under the
+         hardened runtime the app (as the responsible process) must be allowed
+         to send Apple Events, or macOS refuses with -1743 and never prompts. -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
   </dict>
 </plist>

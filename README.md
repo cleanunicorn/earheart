@@ -384,11 +384,15 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
   "unidentified developer" prompt, not the "damaged" one.)
 
 - The first dictation asks for **Microphone** permission.
-- Auto-paste simulates Cmd+V via System Events, which requires
-  **Accessibility** permission (System Settings → Privacy & Security →
-  Accessibility → enable Earheart). If auto-paste stops working later, use
-  Settings → Advanced → **Fix auto-paste permission** to re-check it and jump
-  to the right System Settings pane.
+- Auto-paste simulates Cmd+V via System Events, which requires two
+  permissions: **Accessibility** (System Settings → Privacy & Security →
+  Accessibility → enable Earheart) and **Automation** (allow Earheart to
+  control System Events when macOS asks on the first paste; later under
+  Privacy & Security → Automation → Earheart → System Events). If auto-paste
+  stops working later, use Settings → Advanced → **Fix auto-paste
+  permission** to re-check Accessibility and jump to the right pane. When a
+  paste fails the overlay says why, and the reason is also written to
+  `~/Library/Logs/Earheart/earheart.log`.
 
 ### Windows
 

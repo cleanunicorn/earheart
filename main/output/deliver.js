@@ -8,7 +8,9 @@
 // "clipboard" mode only copies, leaving pasting to the user.
 //
 // Keystroke simulation per platform:
-//   macOS   - osascript (System Events); needs Accessibility permission
+//   macOS   - osascript (System Events); needs Accessibility permission for
+//             the keystroke and Automation permission (Apple Events to System
+//             Events) for the packaged app to talk to System Events at all
 //   Windows - PowerShell SendKeys
 //   Linux   - wtype or ydotool on Wayland, xdotool on X11; if none of those
 //             tools exist we degrade to clipboard-only and tell the caller.
@@ -16,6 +18,7 @@
 const { clipboard, systemPreferences, shell } = require("electron");
 const { execFile } = require("node:child_process");
 const fs = require("node:fs");
+const logger = require("../util/logger");
 
 // Deep link to System Settings ▸ Privacy & Security ▸ Accessibility. The URL is
 // unchanged across the old System Preferences and the new System Settings, so it
@@ -86,12 +89,37 @@ async function simulatePasteLinux() {
   throw lastErr;
 }
 
+// Turn the raw osascript failure into something the user can act on. The
+// two permission errors macOS raises look nothing alike, and both leave the
+// text safely on the clipboard, so the overlay note is the only place the
+// user learns which toggle to flip.
+function explainMacPasteError(message) {
+  // "Not authorized to send Apple events to System Events. (-1743)": the
+  // Automation permission was denied, or the build lacks the apple-events
+  // entitlement, so osascript never reaches System Events.
+  if (/-1743\b|not authorized to send apple events/i.test(message)) {
+    return "macOS blocked Automation — allow Earheart to control System Events under Privacy & Security ▸ Automation";
+  }
+  // "osascript is not allowed to send keystrokes. (1002)": Accessibility is off.
+  if (/\b1002\b|not allowed to send keystrokes/i.test(message)) {
+    return "Accessibility permission is off — Settings ▸ Advanced ▸ Fix auto-paste permission";
+  }
+  return message;
+}
+
 async function simulatePaste() {
   if (process.platform === "darwin") {
-    await execFileAsync("osascript", [
-      "-e",
-      'tell application "System Events" to keystroke "v" using command down',
-    ]);
+    try {
+      await execFileAsync(
+        "osascript",
+        ["-e", 'tell application "System Events" to keystroke "v" using command down'],
+        // The first run can pop the Automation permission dialog, and osascript
+        // blocks until the user answers it — give them time to read it.
+        { timeout: 30000 }
+      );
+    } catch (err) {
+      throw new Error(explainMacPasteError(err.message));
+    }
   } else if (process.platform === "win32") {
     await execFileAsync("powershell.exe", [
       "-NoProfile",
@@ -138,8 +166,10 @@ async function deliver(text, cfg, signal) {
   try {
     await simulatePaste();
   } catch (err) {
-    // Text is already on the clipboard, so the user can paste manually.
-    return { method: "clipboard", note: `Auto-paste failed: ${err.message}` };
+    // Text is already on the clipboard, so the user can paste manually. The
+    // overlay note vanishes in seconds; the log line is what survives.
+    logger.error("auto-paste failed:", err.message);
+    return { method: "clipboard", note: err.message };
   }
 
   if (previous !== null) {
@@ -173,4 +203,5 @@ module.exports = {
   deliver,
   accessibilityTrusted,
   openAccessibilitySettings,
+  explainMacPasteError,
 };

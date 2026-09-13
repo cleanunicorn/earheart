@@ -23,6 +23,7 @@ const { listRemoteModels } = require("../main/services/models-remote");
 const { reconcileTranscript } = require("../renderer/transcript");
 const { acceleratorFromEvent } = require("../renderer/hotkey-capture");
 const { prettyHotkey } = require("../main/util/hotkey-label");
+const { explainMacPasteError } = require("../main/output/deliver");
 
 test("encodeWav produces a valid RIFF header", () => {
   const samples = new Int16Array([0, 1000, -1000, 32767, -32768]);
@@ -1021,4 +1022,23 @@ test("prettyHotkey names modifiers the way each platform does", () => {
   // The key itself passes through untouched, and unbound stays empty.
   assert.strictEqual(prettyHotkey("CommandOrControl+Up", "linux"), "Ctrl+Up");
   assert.strictEqual(prettyHotkey("", "linux"), "");
+});
+
+// macOS reports the two auto-paste permission failures with unrelated wording;
+// each must map to the toggle the user has to flip, and anything else must pass
+// through untouched so the log still shows the real cause.
+test("explainMacPasteError names the macOS permission that blocked the paste", () => {
+  assert.match(
+    explainMacPasteError(
+      "execution error: Not authorized to send Apple events to System Events. (-1743)"
+    ),
+    /Automation/
+  );
+  assert.match(
+    explainMacPasteError(
+      "execution error: System Events got an error: osascript is not allowed to send keystrokes. (1002)"
+    ),
+    /Accessibility/
+  );
+  assert.strictEqual(explainMacPasteError("Command failed: osascript"), "Command failed: osascript");
 });

@@ -62,7 +62,9 @@ mac:
     NSMicrophoneUsageDescription: >-
       Earheart records your voice while dictating so it can be transcribed.
     # Without this string macOS denies the Automation request silently instead
-    # of showing the "Earheart wants to control System Events" prompt.
+    # of showing the "Earheart wants to control System Events" prompt. This is
+    # the piece that reaches unsigned release builds (extendInfo is applied
+    # unconditionally; the entitlements file only matters once we sign).
     NSAppleEventsUsageDescription: >-
       Earheart presses Cmd+V in the app you are working in to paste what you
       dictated.

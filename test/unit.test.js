@@ -1024,21 +1024,38 @@ test("prettyHotkey names modifiers the way each platform does", () => {
   assert.strictEqual(prettyHotkey("", "linux"), "");
 });
 
-// macOS reports the two auto-paste permission failures with unrelated wording;
-// each must map to the toggle the user has to flip, and anything else must pass
-// through untouched so the log still shows the real cause.
+// macOS reports the auto-paste permission failures with unrelated wording; each
+// must map to the toggle the user has to flip, with a note short enough for the
+// overlay, and anything else must pass through untouched so the log still shows
+// the real cause.
 test("explainMacPasteError names the macOS permission that blocked the paste", () => {
-  assert.match(
-    explainMacPasteError(
-      "execution error: Not authorized to send Apple events to System Events. (-1743)"
-    ),
-    /Automation/
+  const automation = explainMacPasteError(
+    new Error("execution error: Not authorized to send Apple events to System Events. (-1743)")
   );
-  assert.match(
-    explainMacPasteError(
+  assert.match(automation.note, /Automation/);
+  assert.match(automation.hint, /Privacy & Security ▸ Automation/);
+
+  const accessibility = explainMacPasteError(
+    new Error(
       "execution error: System Events got an error: osascript is not allowed to send keystrokes. (1002)"
-    ),
-    /Accessibility/
+    )
   );
-  assert.strictEqual(explainMacPasteError("Command failed: osascript"), "Command failed: osascript");
+  assert.match(accessibility.note, /Accessibility/);
+  assert.match(accessibility.hint, /Fix auto-paste permission/);
+
+  // Our timeout killed osascript: stderr is empty and the message is the
+  // command line, which must not be what the user reads.
+  const killed = Object.assign(new Error("Command failed: osascript -e tell application"), {
+    killed: true,
+  });
+  const timedOut = explainMacPasteError(killed);
+  assert.match(timedOut.note, /prompt/i);
+  assert.doesNotMatch(timedOut.note, /osascript/);
+
+  const other = explainMacPasteError(new Error("Command failed: osascript"));
+  assert.strictEqual(other.note, "Command failed: osascript");
+  assert.strictEqual(other.hint, "Command failed: osascript");
+
+  // Every note fits the overlay's single detail row.
+  for (const r of [automation, accessibility, timedOut]) assert.ok(r.note.length <= 32, r.note);
 });

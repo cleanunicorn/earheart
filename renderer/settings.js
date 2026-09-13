@@ -996,7 +996,7 @@ $("open-logs").addEventListener("click", async () => {
   }
 });
 
-/* ---------- macOS auto-paste (Accessibility) permission ---------- */
+/* ---------- macOS auto-paste (Accessibility + Automation) permissions ---------- */
 
 function setAccessibilityStatus(text, cls = "status") {
   const el = $("accessibility-status");
@@ -1010,18 +1010,18 @@ $("accessibility-fix").addEventListener("click", async () => {
   setAccessibilityStatus("Checking…");
   try {
     const result = await earheart.invoke("permissions:accessibility-fix");
+    // Which of the two macOS toggles is off decides where we send the user.
+    const pane = result.pane === "automation" ? "Automation ▸ Earheart ▸ System Events" : "Accessibility";
     if (result.granted) {
       setAccessibilityStatus(
-        "Already granted — if auto-paste still fails, toggle Earheart off and on under Accessibility.",
+        "Both permissions are on — if auto-paste still fails, toggle Earheart off and on under Accessibility.",
         "status ok"
       );
     } else if (result.opened) {
-      setAccessibilityStatus(
-        "Opened System Settings — turn Earheart on under Accessibility."
-      );
+      setAccessibilityStatus(`Opened System Settings — turn Earheart on under ${pane}.`);
     } else {
       setAccessibilityStatus(
-        "Couldn't open System Settings — open it manually: Privacy & Security ▸ Accessibility.",
+        `Couldn't open System Settings — open it manually: Privacy & Security ▸ ${pane}.`,
         "status err"
       );
     }

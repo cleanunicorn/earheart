@@ -390,9 +390,9 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
   control System Events when macOS asks on the first paste; later under
   Privacy & Security → Automation → Earheart → System Events). If auto-paste
   stops working later, use Settings → Advanced → **Fix auto-paste
-  permission** to re-check Accessibility and jump to the right pane. When a
-  paste fails the overlay says why, and the reason is also written to
-  `~/Library/Logs/Earheart/earheart.log`.
+  permission** to re-check both and jump to the pane for whichever is off.
+  When a paste fails the overlay and a notification say why, and the reason
+  is also written to `~/Library/Logs/Earheart/earheart.log`.
 
 ### Windows
 

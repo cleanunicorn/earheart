@@ -8,7 +8,9 @@
 // "clipboard" mode only copies, leaving pasting to the user.
 //
 // Keystroke simulation per platform:
-//   macOS   - osascript (System Events); needs Accessibility permission
+//   macOS   - osascript (System Events); needs Accessibility permission for
+//             the keystroke and Automation permission (Apple Events to System
+//             Events) for the packaged app to talk to System Events at all
 //   Windows - PowerShell SendKeys
 //   Linux   - wtype or ydotool on Wayland, xdotool on X11; if none of those
 //             tools exist we degrade to clipboard-only and tell the caller.
@@ -16,18 +18,34 @@
 const { clipboard, systemPreferences, shell } = require("electron");
 const { execFile } = require("node:child_process");
 const fs = require("node:fs");
+const logger = require("../util/logger");
 
 // Deep link to System Settings ▸ Privacy & Security ▸ Accessibility. The URL is
 // unchanged across the old System Preferences and the new System Settings, so it
 // resolves on modern macOS (Ventura+).
 const ACCESSIBILITY_PANE_URL =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
+// Privacy & Security ▸ Automation: where a denied "control System Events"
+// decision is undone.
+const AUTOMATION_PANE_URL =
+  "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation";
+
+// The AppleScript auto-paste runs. Also used as the Automation probe: it only
+// reaches System Events at all when the user has allowed Earheart to control
+// it, so the same one-liner tells us whether that permission is on.
+const PASTE_SCRIPT = 'tell application "System Events" to keystroke "v" using command down';
+const PROBE_SCRIPT = 'tell application "System Events" to get name';
 
 function execFileAsync(cmd, args, options = {}) {
   return new Promise((resolve, reject) => {
     execFile(cmd, args, { timeout: 10000, ...options }, (err, stdout, stderr) => {
-      if (err) reject(new Error(stderr?.trim() || err.message));
-      else resolve(stdout);
+      if (!err) return resolve(stdout);
+      // Prefer the tool's own stderr, but keep the raw error underneath so a
+      // caller can tell a timeout or abort apart from a real failure.
+      const wrapped = new Error(stderr?.trim() || err.message, { cause: err });
+      wrapped.killed = !!err.killed;
+      wrapped.aborted = err.name === "AbortError" || err.code === "ABORT_ERR";
+      reject(wrapped);
     });
   });
 }
@@ -86,12 +104,48 @@ async function simulatePasteLinux() {
   throw lastErr;
 }
 
-async function simulatePaste() {
+// Turn the raw osascript failure into something the user can act on. The
+// permission errors macOS raises look nothing alike, and both leave the text
+// safely on the clipboard, so the overlay note is where the user learns which
+// toggle to flip. `note` is one short line (the overlay's detail row shows
+// roughly 25 characters before it clips); `hint` is the full instruction, for
+// the notification and the log. osascript always prints the numeric code in
+// parentheses; the prose around it is localized, so only the code is matched.
+function explainMacPasteError(err) {
+  const message = typeof err === "string" ? err : err.message;
+  // The child was killed by our timeout: nothing on stderr, and almost always
+  // because the Automation prompt sat unanswered behind a full-screen app.
+  if (typeof err === "object" && err.killed) {
+    return {
+      note: "Automation prompt not answered",
+      hint: "macOS is waiting for you to allow Earheart to control System Events — dictate again and click Allow",
+    };
+  }
+  // -1743 errAEEventNotPermitted: Automation was denied, so osascript never
+  // reaches System Events.
+  if (/\(-1743\)/.test(message)) {
+    return {
+      note: "Automation permission is off",
+      hint: "Allow Earheart to control System Events under System Settings ▸ Privacy & Security ▸ Automation",
+    };
+  }
+  // 1002: System Events refused the keystroke, which is Accessibility.
+  if (/\(1002\)/.test(message)) {
+    return {
+      note: "Accessibility permission is off",
+      hint: "Turn Earheart on under System Settings ▸ Privacy & Security ▸ Accessibility (Settings ▸ Advanced ▸ Fix auto-paste permission)",
+    };
+  }
+  return { note: message, hint: message };
+}
+
+async function simulatePaste(signal) {
   if (process.platform === "darwin") {
-    await execFileAsync("osascript", [
-      "-e",
-      'tell application "System Events" to keystroke "v" using command down',
-    ]);
+    // The first run can pop the Automation permission dialog, and osascript
+    // blocks until the user answers it — give them time to read it. The
+    // signal lets Cancel kill the waiting child instead of leaving it to fire
+    // Cmd+V into whatever is focused once the dialog is finally answered.
+    await execFileAsync("osascript", ["-e", PASTE_SCRIPT], { timeout: 30000, signal });
   } else if (process.platform === "win32") {
     await execFileAsync("powershell.exe", [
       "-NoProfile",
@@ -111,7 +165,9 @@ let pendingRestore = null;
  * @param {string} text
  * @param {object} cfg - settings.output slice
  * @param {AbortSignal} [signal]
- * @returns {Promise<{method: "paste"|"paste-copy"|"clipboard"|"cancelled", note?: string}>}
+ * @returns {Promise<{method: "paste"|"paste-copy"|"clipboard"|"cancelled", note?: string, hint?: string}>}
+ *   `note` is a one-line reason auto-paste fell back to the clipboard (short
+ *   enough for the overlay); `hint` is the full instruction for a notification.
  */
 async function deliver(text, cfg, signal) {
   if (signal?.aborted) return { method: "cancelled" };
@@ -136,11 +192,20 @@ async function deliver(text, cfg, signal) {
   await sleep(cfg.pasteDelayMs ?? 150);
   if (signal?.aborted) return { method: "cancelled" };
   try {
-    await simulatePaste();
+    await simulatePaste(signal);
   } catch (err) {
-    // Text is already on the clipboard, so the user can paste manually.
-    return { method: "clipboard", note: `Auto-paste failed: ${err.message}` };
+    if (signal?.aborted || err.aborted) return { method: "cancelled" };
+    // Text is already on the clipboard, so the user can paste manually. The
+    // overlay note vanishes in seconds; the log line is what survives, so it
+    // carries the verbatim tool output, not just our reading of it.
+    const { note, hint } =
+      process.platform === "darwin" ? explainMacPasteError(err) : { note: err.message, hint: err.message };
+    logger.error("auto-paste failed:", hint, "—", err.cause ?? err);
+    return { method: "clipboard", note, hint };
   }
+  // Cancelled while the keystroke was in flight: the paste may have landed,
+  // but nothing after it (the clipboard restore) should run for a dead session.
+  if (signal?.aborted) return { method: "cancelled" };
 
   if (previous !== null) {
     // Wait for the target app to consume the clipboard before restoring it,
@@ -169,8 +234,31 @@ function openAccessibilitySettings() {
   return shell.openExternal(ACCESSIBILITY_PANE_URL);
 }
 
+// Whether macOS lets this app send Apple Events to System Events (Privacy &
+// Security ▸ Automation), the second permission auto-paste needs. There is no
+// query API for it, so ask System Events something harmless: a never-decided
+// app gets the native prompt (which is what we want), a denied one fails with
+// -1743. Non-macOS platforms have no such permission.
+async function automationTrusted() {
+  if (process.platform !== "darwin") return true;
+  try {
+    await execFileAsync("osascript", ["-e", PROBE_SCRIPT], { timeout: 30000 });
+    return true;
+  } catch (err) {
+    logger.warn("automation probe failed:", err.cause ?? err);
+    return false;
+  }
+}
+
+function openAutomationSettings() {
+  return shell.openExternal(AUTOMATION_PANE_URL);
+}
+
 module.exports = {
   deliver,
   accessibilityTrusted,
+  automationTrusted,
   openAccessibilitySettings,
+  openAutomationSettings,
+  explainMacPasteError,
 };

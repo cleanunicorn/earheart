@@ -154,24 +154,31 @@ function init({ applyHotkeys, onSettingsChanged }) {
   // Settings → Advanced: report whether auto-paste is allowed, so the UI can
   // re-check silently (e.g. when the window regains focus after the user
   // toggled the permission) without re-opening System Settings.
-  ipcMain.handle("permissions:accessibility-check", () => ({
-    granted: deliver.accessibilityTrusted(),
+  ipcMain.handle("permissions:accessibility-check", async () => ({
+    granted: deliver.accessibilityTrusted() && (await deliver.automationTrusted()),
   }));
 
   // Get the user back into a working auto-paste state on macOS. Auto-paste
-  // drives keystrokes through System Events, which needs Accessibility
-  // permission. macOS only shows its prompt once per app, so after the first
+  // drives keystrokes through System Events, which needs two permissions:
+  // Accessibility (for the keystroke) and Automation (to talk to System Events
+  // at all). macOS only shows each prompt once per app, so after the first
   // allow/deny there is nothing to re-trigger — we fire the native prompt
-  // (covers a never-decided app) and open the Accessibility pane (the reliable
-  // path once a decision has been recorded). On other platforms there is no
-  // such permission, so accessibilityTrusted always reports granted.
+  // (covers a never-decided app) and open the pane for whichever one is off
+  // (the reliable path once a decision has been recorded). `pane` tells the
+  // UI which toggle to point at. On other platforms there is no such
+  // permission, so both checks always report granted.
   ipcMain.handle("permissions:accessibility-fix", async () => {
-    if (deliver.accessibilityTrusted(true)) return { granted: true };
+    let pane = null;
+    if (!deliver.accessibilityTrusted(true)) pane = "accessibility";
+    else if (!(await deliver.automationTrusted())) pane = "automation";
+    if (!pane) return { granted: true };
     try {
-      await deliver.openAccessibilitySettings();
-      return { granted: false, opened: true };
+      await (pane === "automation"
+        ? deliver.openAutomationSettings()
+        : deliver.openAccessibilitySettings());
+      return { granted: false, opened: true, pane };
     } catch {
-      return { granted: false, opened: false };
+      return { granted: false, opened: false, pane };
     }
   });
 

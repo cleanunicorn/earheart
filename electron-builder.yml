@@ -62,7 +62,10 @@ mac:
   # and a timestamp matters only for notarization, which we don't do.
   timestamp: none
   # Signs by certificate hash, so the self-signed certificate needs no trust
-  # settings on the CI runner. Leaves local builds unsigned.
+  # settings on the CI runner. Leaves local builds unsigned. electron-builder
+  # only calls a sign hook once it has an identity; "-" gives it one without a
+  # keychain lookup, and the hook swaps in the real certificate.
+  identity: "-"
   sign: ./build/mac-sign.js
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist

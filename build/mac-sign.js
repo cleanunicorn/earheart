@@ -7,6 +7,9 @@
 // fine with an untrusted certificate named by its SHA-1 hash, so this hook
 // passes the hash straight through with identity validation off.
 //
+// electron-builder.yml sets `identity: "-"` only so electron-builder reaches
+// this hook; the identity it passes is replaced here.
+//
 // release.yml sets EARHEART_MAC_SIGN_IDENTITY (the certificate's SHA-1) and
 // EARHEART_MAC_SIGN_KEYCHAIN after importing the certificate. Without them —
 // local `npm run dist:mac`, PR CI, a dry run with no secrets — the build stays

@@ -30,6 +30,7 @@ const {
   fixPastePermissions,
   checkPastePermissions,
   repairPastePermissions,
+  shouldRepairAtStartup,
   automationStatus,
   resetMacPermission,
   MAC_BUNDLE_ID,
@@ -1240,11 +1241,19 @@ test("repairPastePermissions clears stale grants once per build, and retries a f
   assert.strictEqual(await repairPastePermissions({ p: failing, marker: unrecorded, ...env }), "reset-failed");
   assert.strictEqual(unrecorded.value, "0.31.1");
 
-  // Accessibility cleared but Automation didn't: not recorded either.
+  // Accessibility cleared but Automation didn't: recorded as partial, and
+  // finished on a later launch even though Accessibility is trusted by then.
   const split = fakeMacPermissions({ trusted: false, reset: { Accessibility: true, AppleEvents: false } });
   const splitMarker = fakeMarker("0.31.1");
   assert.strictEqual(await repairPastePermissions({ p: split, marker: splitMarker, ...env }), "reset-failed");
-  assert.strictEqual(splitMarker.value, "0.31.1");
+  assert.strictEqual(splitMarker.value, "0.32.0:partial");
+  const stillFailing = fakeMacPermissions({ reset: false });
+  assert.strictEqual(await repairPastePermissions({ p: stillFailing, marker: splitMarker, ...env }), "reset-failed");
+  assert.strictEqual(splitMarker.value, "0.32.0:partial");
+  const granted = fakeMacPermissions();
+  assert.strictEqual(await repairPastePermissions({ p: granted, marker: splitMarker, ...env }), "repaired");
+  assert.deepStrictEqual(granted.calls, ["check", "reset:AppleEvents"]);
+  assert.strictEqual(splitMarker.value, "0.32.0");
 
   // Trusted or not macOS: nothing to do and nothing recorded.
   for (const [over, trusted] of [[{}, true], [{ platform: "linux" }, false]]) {
@@ -1307,4 +1316,13 @@ test("overlapping repair requests share one run", async () => {
   assert.deepStrictEqual(await Promise.all([first, second]), ["repaired", "repaired"]);
   assert.deepStrictEqual(p.calls.filter((c) => c !== "check"), ["reset:Accessibility", "reset:AppleEvents", "prompt"]);
   assert.strictEqual(writes, 1);
+});
+
+test("startup repairs only on a returning user's visible launch in a paste mode", () => {
+  const base = { smokeTest: false, firstRun: false, hidden: false, mode: "paste" };
+  assert.strictEqual(shouldRepairAtStartup(base), true);
+  assert.strictEqual(shouldRepairAtStartup({ ...base, mode: "paste-copy" }), true);
+  for (const over of [{ smokeTest: true }, { firstRun: true }, { hidden: true }, { mode: "clipboard" }]) {
+    assert.strictEqual(shouldRepairAtStartup({ ...base, ...over }), false, JSON.stringify(over));
+  }
 });

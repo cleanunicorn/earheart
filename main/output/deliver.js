@@ -403,6 +403,17 @@ const repairMarker = {
  * @returns {Promise<"not-needed"|"already-repaired"|"repaired"|"reset-failed">}
  *   "already-repaired" also covers the unpackaged app, which only prompts.
  */
+// Marker suffix for a build whose Accessibility reset went through but whose
+// AppleEvents reset did not.
+const PARTIAL = ":partial";
+
+// Whether startup should run the repair: a returning user's visible launch in
+// a paste mode. A first run hasn't chosen how to deliver yet and a hidden login
+// launch stays silent; the first skipped paste covers both.
+function shouldRepairAtStartup({ smokeTest, firstRun, hidden, mode }) {
+  return !smokeTest && !firstRun && !hidden && mode !== "clipboard";
+}
+
 // Startup and the first skipped paste can both ask for the repair. One run
 // per launch, shared while in flight: two overlapping resets could clear a
 // grant the user accepted from the first prompt.
@@ -426,22 +437,34 @@ async function runPastePermissionRepair({
   packaged = app.isPackaged,
   version = app.getVersion?.(),
 } = {}) {
-  if (platform !== "darwin" || p.accessibilityTrusted()) return "not-needed";
+  if (platform !== "darwin") return "not-needed";
+  const recorded = marker.read();
+  if (p.accessibilityTrusted()) {
+    // A previous launch cleared Accessibility but not Automation, and the user
+    // has since granted Accessibility: finish the job before calling it done.
+    if (packaged && recorded === `${version}${PARTIAL}`) {
+      if (!(await p.resetMacPermission("AppleEvents"))) return "reset-failed";
+      marker.write(version);
+      return "repaired";
+    }
+    return "not-needed";
+  }
   // Under `npm start` the grants belong to Electron or the terminal, so there
   // is nothing of ours to clear — but the prompt is still worth raising.
-  if (!packaged || marker.read() === version) {
+  if (!packaged || recorded === version) {
     // Already cleared for this build: the prompt is all that is left to offer
     // (a no-op once the user has answered it).
     p.accessibilityTrusted(true);
     return "already-repaired";
   }
   // Both must clear before the build counts as repaired; either failing is
-  // retried next launch.
-  const reset =
-    (await p.resetMacPermission("Accessibility")) && (await p.resetMacPermission("AppleEvents"));
-  if (reset) {
-    marker.write(version);
-    logger.info(`cleared stale auto-paste permissions for ${version}`);
+  // retried next launch. Accessibility alone is recorded as partial, since
+  // once the user grants it the untrusted check above no longer fires.
+  let reset = false;
+  if (await p.resetMacPermission("Accessibility")) {
+    reset = await p.resetMacPermission("AppleEvents");
+    marker.write(reset ? version : `${version}${PARTIAL}`);
+    if (reset) logger.info(`cleared stale auto-paste permissions for ${version}`);
   }
   p.accessibilityTrusted(true);
   return reset ? "repaired" : "reset-failed";
@@ -455,6 +478,7 @@ module.exports = {
   fixPastePermissions,
   checkPastePermissions,
   repairPastePermissions,
+  shouldRepairAtStartup,
   explainMacPasteError,
   MAC_BUNDLE_ID,
 };

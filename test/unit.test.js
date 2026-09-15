@@ -1084,6 +1084,7 @@ test("the TCC bundle id matches the packaged appId", () => {
 
 // A fake of the macOS permission primitives fixPastePermissions drives, with a
 // call log so each test can check what was reset, prompted and opened.
+// `reset` is a boolean for every service, or a {service: boolean} map.
 function fakeMacPermissions({ trusted = true, automation = ["granted"], reset = true, openFails = false } = {}) {
   const calls = [];
   const statuses = [...automation];
@@ -1099,7 +1100,7 @@ function fakeMacPermissions({ trusted = true, automation = ["granted"], reset = 
     },
     resetMacPermission: async (service) => {
       calls.push(`reset:${service}`);
-      return reset;
+      return typeof reset === "object" ? reset[service] : reset;
     },
     openAccessibilitySettings: async () => {
       calls.push("open:accessibility");
@@ -1239,6 +1240,12 @@ test("repairPastePermissions clears stale grants once per build, and retries a f
   assert.strictEqual(await repairPastePermissions({ p: failing, marker: unrecorded, ...env }), "reset-failed");
   assert.strictEqual(unrecorded.value, "0.31.1");
 
+  // Accessibility cleared but Automation didn't: not recorded either.
+  const split = fakeMacPermissions({ trusted: false, reset: { Accessibility: true, AppleEvents: false } });
+  const splitMarker = fakeMarker("0.31.1");
+  assert.strictEqual(await repairPastePermissions({ p: split, marker: splitMarker, ...env }), "reset-failed");
+  assert.strictEqual(splitMarker.value, "0.31.1");
+
   // Trusted or not macOS: nothing to do and nothing recorded.
   for (const [over, trusted] of [[{}, true], [{ platform: "linux" }, false]]) {
     const q = fakeMacPermissions({ trusted });
@@ -1279,4 +1286,25 @@ test("automationStatus and resetMacPermission drive osascript and tccutil correc
   assert.strictEqual(await resetMacPermission("Accessibility", { platform: "linux", packaged: true, run }), false);
   assert.strictEqual(runs.length, 1);
   assert.strictEqual(await resetMacPermission("AppleEvents", { ...mac, packaged: true, run: fail({ message: "no" }) }), false);
+});
+
+test("overlapping repair requests share one run", async () => {
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const p = fakeMacPermissions({ trusted: false });
+  const resetOnce = p.resetMacPermission;
+  p.resetMacPermission = async (service) => {
+    await gate;
+    return resetOnce(service);
+  };
+  const marker = fakeMarker();
+  let writes = 0;
+  const countingMarker = { read: () => marker.read(), write: (v) => (writes++, marker.write(v)) };
+  const env = { p, marker: countingMarker, platform: "darwin", packaged: true, version: "0.32.0" };
+  const first = repairPastePermissions(env);
+  const second = repairPastePermissions(env);
+  release();
+  assert.deepStrictEqual(await Promise.all([first, second]), ["repaired", "repaired"]);
+  assert.deepStrictEqual(p.calls.filter((c) => c !== "check"), ["reset:Accessibility", "reset:AppleEvents", "prompt"]);
+  assert.strictEqual(writes, 1);
 });

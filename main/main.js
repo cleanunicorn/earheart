@@ -126,8 +126,10 @@ function main() {
     windows.createOverlay();
     tray.init(app, pipeline);
     // macOS: an update leaves auto-paste's permission grants stale; repair
-    // them before the first dictation rather than during it.
-    if (!isSmokeTest && cfg.output.mode !== "clipboard") {
+    // them before the first dictation rather than during it. Not on a first
+    // run (the wizard hasn't asked how to deliver yet) or a hidden login
+    // launch (which stays silent): the first skipped paste covers both.
+    if (!isSmokeTest && !firstRun && !startHidden && cfg.output.mode !== "clipboard") {
       deliver.repairPastePermissions().catch((err) => logger.warn("permission repair failed:", err));
     }
     if (!isSmokeTest) {

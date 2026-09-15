@@ -168,7 +168,6 @@ async function simulatePaste(signal) {
 }
 
 let pendingRestore = null;
-let accessibilityPrompted = false;
 
 /**
  * Deliver text to the user.
@@ -212,8 +211,7 @@ async function deliver(text, cfg, signal) {
     // Once per launch, clear a stale grant this build hasn't repaired yet and
     // raise the prompt. Not awaited: the transcript is already on the
     // clipboard and the fallback must not wait on tccutil.
-    if (!accessibilityPrompted) {
-      accessibilityPrompted = true;
+    if (!repairRanThisLaunch) {
       repairPastePermissions().catch((err) => logger.warn("permission repair failed:", err));
     }
     return { method: "clipboard", ...ACCESSIBILITY_OFF };
@@ -396,14 +394,32 @@ const repairMarker = {
  * no stable signing identity, so every update leaves the Accessibility (and
  * Automation) grant on record for the old build: shown as on, trusting
  * nothing, never re-prompted. When this build is untrusted and hasn't been
- * repaired yet, clear both decisions and raise the prompt. Runs at startup in
- * a paste mode and on the first skipped paste of a launch, so switching from
- * clipboard-only to paste later still gets it. The build is recorded only when
- * the reset went through, so a failed reset is retried next launch.
+ * repaired yet, clear both decisions and raise the prompt. Runs at a visible,
+ * non-first-run startup in a paste mode, or else on the first skipped paste of
+ * a launch — so a hidden login launch stays silent and switching from
+ * clipboard-only to paste later still gets it. At most once per launch. The
+ * build is recorded only when both resets went through, so a failure is
+ * retried next launch.
  * @returns {Promise<"not-needed"|"already-repaired"|"repaired"|"reset-failed">}
  *   "already-repaired" also covers the unpackaged app, which only prompts.
  */
-async function repairPastePermissions({
+// Startup and the first skipped paste can both ask for the repair. One run
+// per launch, shared while in flight: two overlapping resets could clear a
+// grant the user accepted from the first prompt.
+let repairRanThisLaunch = false;
+let repairInFlight = null;
+
+function repairPastePermissions(options) {
+  if (!repairInFlight) {
+    repairRanThisLaunch = true;
+    repairInFlight = runPastePermissionRepair(options).finally(() => {
+      repairInFlight = null;
+    });
+  }
+  return repairInFlight;
+}
+
+async function runPastePermissionRepair({
   p = macPermissions,
   marker = repairMarker,
   platform = process.platform,
@@ -419,9 +435,11 @@ async function repairPastePermissions({
     p.accessibilityTrusted(true);
     return "already-repaired";
   }
-  const reset = await p.resetMacPermission("Accessibility");
+  // Both must clear before the build counts as repaired; either failing is
+  // retried next launch.
+  const reset =
+    (await p.resetMacPermission("Accessibility")) && (await p.resetMacPermission("AppleEvents"));
   if (reset) {
-    await p.resetMacPermission("AppleEvents");
     marker.write(version);
     logger.info(`cleared stale auto-paste permissions for ${version}`);
   }

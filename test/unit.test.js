@@ -4,8 +4,10 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 
+const fs = require("node:fs");
 const http = require("node:http");
 const Module = require("node:module");
+const path = require("node:path");
 
 const { encodeWav, encodeSilenceWav, wavToFloat32, wavDurationSec } = require("../main/util/wav");
 const { stripThinking, clean: remoteClean } = require("../main/services/cleanup");
@@ -23,7 +25,7 @@ const { listRemoteModels } = require("../main/services/models-remote");
 const { reconcileTranscript } = require("../renderer/transcript");
 const { acceleratorFromEvent } = require("../renderer/hotkey-capture");
 const { prettyHotkey } = require("../main/util/hotkey-label");
-const { explainMacPasteError } = require("../main/output/deliver");
+const { explainMacPasteError, MAC_BUNDLE_ID } = require("../main/output/deliver");
 
 test("encodeWav produces a valid RIFF header", () => {
   const samples = new Int16Array([0, 1000, -1000, 32767, -32768]);
@@ -1042,6 +1044,9 @@ test("explainMacPasteError names the macOS permission that blocked the paste", (
   );
   assert.match(accessibility.note, /Accessibility/);
   assert.match(accessibility.hint, /Fix auto-paste permission/);
+  // The usual cause is an update invalidating the old grant; the hint says so,
+  // because the toggle in System Settings still looks on.
+  assert.match(accessibility.hint, /update/);
 
   // Our timeout killed osascript: stderr is empty and the message is the
   // command line, which must not be what the user reads.
@@ -1058,4 +1063,12 @@ test("explainMacPasteError names the macOS permission that blocked the paste", (
 
   // Every note fits the overlay's single detail row.
   for (const r of [automation, accessibility, timedOut]) assert.ok(r.note.length <= 32, r.note);
+});
+
+// The permission reset clears TCC decisions by bundle identifier; if it drifts
+// from the appId the packaged app is built with, the reset silently clears
+// nothing and the stale grant stays.
+test("the TCC bundle id matches the packaged appId", () => {
+  const yml = fs.readFileSync(path.join(__dirname, "..", "electron-builder.yml"), "utf8");
+  assert.strictEqual(yml.match(/^appId:\s*(\S+)/m)?.[1], MAC_BUNDLE_ID);
 });

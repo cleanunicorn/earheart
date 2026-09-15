@@ -1018,7 +1018,12 @@ $("accessibility-fix").addEventListener("click", async () => {
         "status ok"
       );
     } else if (result.opened) {
-      setAccessibilityStatus(`Opened System Settings — turn Earheart on under ${pane}.`);
+      // An update leaves the old build's grant listed and switched on. If the
+      // reset couldn't clear it, removing the entry by hand is the way out.
+      const stale = result.reset
+        ? " Allow Earheart if macOS asks."
+        : " If it is already on, select it, remove it with −, and add Earheart again.";
+      setAccessibilityStatus(`Opened System Settings — turn Earheart on under ${pane}.${stale}`);
     } else {
       setAccessibilityStatus(
         `Couldn't open System Settings — open it manually: Privacy & Security ▸ ${pane}.`,

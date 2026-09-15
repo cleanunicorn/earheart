@@ -15,7 +15,7 @@
 //   Linux   - wtype or ydotool on Wayland, xdotool on X11; if none of those
 //             tools exist we degrade to clipboard-only and tell the caller.
 
-const { clipboard, systemPreferences, shell } = require("electron");
+const { app, clipboard, systemPreferences, shell } = require("electron");
 const { execFile } = require("node:child_process");
 const fs = require("node:fs");
 const logger = require("../util/logger");
@@ -35,6 +35,19 @@ const AUTOMATION_PANE_URL =
 // it, so the same one-liner tells us whether that permission is on.
 const PASTE_SCRIPT = 'tell application "System Events" to keystroke "v" using command down';
 const PROBE_SCRIPT = 'tell application "System Events" to get name';
+
+// The bundle identifier TCC files Earheart's permission decisions under. Must
+// match `appId` in electron-builder.yml (a unit test holds them together).
+const MAC_BUNDLE_ID = "dev.cleanunicorn.earheart";
+
+// Releases are not signed with a stable identity, so macOS ties a permission
+// grant to the exact build that received it. After an update the Accessibility
+// toggle still shows Earheart as on, but the grant belongs to the old build
+// and the new one is not trusted — the failure users hit right after updating.
+const ACCESSIBILITY_OFF = {
+  note: "Accessibility permission is off",
+  hint: "macOS no longer trusts this copy of Earheart (updates reset it). Settings ▸ Advanced ▸ Fix auto-paste permission, then allow Earheart",
+};
 
 function execFileAsync(cmd, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -130,12 +143,7 @@ function explainMacPasteError(err) {
     };
   }
   // 1002: System Events refused the keystroke, which is Accessibility.
-  if (/\(1002\)/.test(message)) {
-    return {
-      note: "Accessibility permission is off",
-      hint: "Turn Earheart on under System Settings ▸ Privacy & Security ▸ Accessibility (Settings ▸ Advanced ▸ Fix auto-paste permission)",
-    };
-  }
+  if (/\(1002\)/.test(message)) return ACCESSIBILITY_OFF;
   return { note: message, hint: message };
 }
 
@@ -191,6 +199,14 @@ async function deliver(text, cfg, signal) {
   // focus, but the clipboard write itself can need a beat on some systems).
   await sleep(cfg.pasteDelayMs ?? 150);
   if (signal?.aborted) return { method: "cancelled" };
+  // Ask macOS directly before driving System Events. An untrusted app's
+  // keystroke can never land, and the osascript attempt can hang on a
+  // permission prompt or fail with an error that doesn't say the grant went
+  // stale after an update.
+  if (!accessibilityTrusted()) {
+    logger.error("auto-paste skipped:", ACCESSIBILITY_OFF.hint);
+    return { method: "clipboard", ...ACCESSIBILITY_OFF };
+  }
   try {
     await simulatePaste(signal);
   } catch (err) {
@@ -254,11 +270,31 @@ function openAutomationSettings() {
   return shell.openExternal(AUTOMATION_PANE_URL);
 }
 
+// Forget Earheart's recorded decision for a TCC service ("Accessibility" or
+// "AppleEvents"). A grant left behind by an older build keeps its toggle on in
+// System Settings while trusting nothing, and macOS never prompts again while
+// any decision is on record — clearing it is what lets the native prompt come
+// back. Only for the packaged app: under `npm start` the decisions belong to
+// Electron or the terminal, not to Earheart. Best-effort; resolves whether the
+// reset went through.
+async function resetMacPermission(service) {
+  if (process.platform !== "darwin" || !app.isPackaged) return false;
+  try {
+    await execFileAsync("/usr/bin/tccutil", ["reset", service, MAC_BUNDLE_ID]);
+    return true;
+  } catch (err) {
+    logger.warn(`tccutil reset ${service} failed:`, err.cause ?? err);
+    return false;
+  }
+}
+
 module.exports = {
   deliver,
   accessibilityTrusted,
   automationTrusted,
   openAccessibilitySettings,
   openAutomationSettings,
+  resetMacPermission,
   explainMacPasteError,
+  MAC_BUNDLE_ID,
 };

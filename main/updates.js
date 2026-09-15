@@ -36,6 +36,7 @@ const settings = require("./settings");
 const windows = require("./windows");
 const dictation = require("./pipeline");
 const logger = require("./util/logger");
+const { ensureMacSignature } = require("./util/mac-signature");
 
 const CHECK_DELAY_MS = 10_000;
 const CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000;
@@ -619,29 +620,6 @@ fi
 open "$OLD"
 `;
 
-// Apple Silicon refuses to exec an arm64 binary that has no valid code
-// signature — the kernel kills it before our JS ever runs, so a bundle that
-// arrives unsigned (or with a signature the extract/move invalidated) launches
-// to nothing: "the update installed but the app won't open." A fresh install
-// dodges this only because the shipped bundle happens to be signed; the
-// self-update must not assume that. Verify the extracted bundle and, only when
-// the seal is missing or broken, repair it with an ad-hoc signature (`-`). A
-// bundle that already verifies — including a real Developer ID signature, if we
-// ever ship one — is left untouched so we never downgrade a good signature to
-// ad-hoc. Throwing here aborts the update before the swap, leaving the working
-// old app in place, rather than swapping in a bundle that can't start.
-function ensureMacSignature(bundle) {
-  const verify = spawnSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", bundle]);
-  if (verify.status === 0) return;
-  logger.warn("updated app has no valid signature; re-signing ad-hoc so it can launch");
-  const sign = spawnSync("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", bundle]);
-  if (sign.status !== 0) {
-    throw new Error(
-      `Could not sign the updated app: ${(sign.stderr || sign.status || "").toString().trim()}`
-    );
-  }
-}
-
 function installMac(zipPath) {
   const bundle = path.resolve(process.execPath, "..", "..", "..");
   if (!bundle.endsWith(".app")) {
@@ -678,7 +656,7 @@ function installMac(zipPath) {
 
   // Make sure the bundle will actually launch on Apple Silicon (a valid
   // signature is mandatory there) before we commit to swapping it in.
-  ensureMacSignature(newBundle);
+  ensureMacSignature(newBundle, { warn: (msg) => logger.warn(msg) });
 
   // Our own download carries no quarantine flag (Electron doesn't opt into
   // LSFileQuarantineEnabled), but stripping it here costs nothing.

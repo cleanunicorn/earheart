@@ -13,6 +13,7 @@ const autostart = require("./autostart");
 const updates = require("./updates");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
+const { createHost } = require("./engines/host");
 const { prettyHotkey } = require("./util/hotkey-label");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
@@ -168,7 +169,27 @@ function main() {
 
     if (isSmokeTest) {
       // CI/dev sanity check: boot everything, then exit cleanly.
-      setTimeout(() => {
+      setTimeout(async () => {
+        // --engine-check: also load both native addons in an engine worker of
+        // *this* process. Release CI runs it on the signed bundle, where the
+        // hardened runtime's library validation decides whether they load —
+        // something scripts/engine-smoke.js under the dev Electron can't see.
+        if (process.argv.includes("--engine-check")) {
+          const host = createHost({ serviceName: "earheart-engine-check" });
+          try {
+            const engines = await host.request("loadcheck", {}, { timeoutMs: 30000 });
+            if (engines?.stt !== true || engines?.cleanup !== true) {
+              throw new Error(`native addon load failed: ${JSON.stringify(engines)}`);
+            }
+            console.log("[earheart] engine check OK (stt + cleanup)");
+          } catch (err) {
+            console.error("[earheart] engine check failed:", err?.message ?? err);
+            host.stop();
+            app.exit(1);
+            return;
+          }
+          host.stop();
+        }
         console.log("[earheart] smoke test OK");
         app.quit();
       }, 1500);

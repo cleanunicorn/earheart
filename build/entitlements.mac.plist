@@ -8,13 +8,16 @@
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
-    <!-- Auto-paste drives Cmd+V through System Events via osascript. In a
-         signed build the hardened runtime requires the app (as the responsible
-         process) to be entitled to send Apple Events, or macOS refuses with
-         -1743. Release builds are currently unsigned, so entitlements are not
-         applied to them at all; this is here so signing later does not break
-         auto-paste. What releases rely on is NSAppleEventsUsageDescription in
-         electron-builder.yml. -->
+    <!-- Releases are signed with a self-signed certificate, which has no
+         Apple Team ID. Under the hardened runtime, library validation only
+         admits code from the app's own Team ID or Apple, so without this the
+         app refuses to load Electron Framework and the engines' native .node
+         addons. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- Auto-paste drives Cmd+V through System Events via osascript. The
+         hardened runtime requires the app (as the responsible process) to be
+         entitled to send Apple Events, or macOS refuses with -1743. -->
     <key>com.apple.security.automation.apple-events</key>
     <true/>
   </dict>

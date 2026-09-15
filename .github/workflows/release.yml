@@ -93,6 +93,53 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # Build locally first: publish macOS only after the packaged app and
       # its bundled native engines pass on the matching hardware.
+      # Sign with Earheart's self-signed certificate. A stable certificate gives
+      # every build the same designated requirement, which is what macOS files
+      # Accessibility/Automation grants under — so they survive updates. A tag
+      # build without the secrets fails rather than publishing an unsigned app;
+      # a branch dry-run without them builds unsigned. The certificate is
+      # imported into a throwaway keychain and trusted for code signing only
+      # (electron-builder only picks identities macOS reports as valid).
+      - name: Import the macOS signing certificate
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$MAC_CSC_LINK" || -z "$MAC_CSC_KEY_PASSWORD" ]]; then
+            if [[ "$IS_TAG" == true ]]; then
+              echo "::error::MAC_CSC_LINK / MAC_CSC_KEY_PASSWORD are not set; refusing to publish an unsigned macOS build"
+              exit 1
+            fi
+            echo "No signing secrets on this dry run; building unsigned."
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/earheart-signing.keychain-db"
+          p12="$RUNNER_TEMP/earheart-signing.p12"
+          cert="$RUNNER_TEMP/earheart-signing.pem"
+          kc_pass="$(openssl rand -base64 24)"
+          echo "::add-mask::$kc_pass"
+          printf %s "$MAC_CSC_LINK" | base64 --decode > "$p12"
+          security create-keychain -p "$kc_pass" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$kc_pass" "$keychain"
+          security import "$p12" -k "$keychain" -P "$MAC_CSC_KEY_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_pass" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          openssl pkcs12 -in "$p12" -nokeys -passin env:MAC_CSC_KEY_PASSWORD -out "$cert"
+          # Trust settings changes normally need a GUI confirmation; allow them
+          # non-interactively on this ephemeral runner.
+          sudo security authorizationdb write com.apple.trust-settings.admin allow
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k "$keychain" "$cert"
+          rm -f "$p12" "$cert"
+          security find-identity -v -p codesigning "$keychain"
+          {
+            echo "CSC_NAME=Earheart Code Signing"
+            echo "CSC_KEYCHAIN=$keychain"
+          } >> "$GITHUB_ENV"
       - name: Build macOS installers
         if: runner.os == 'macOS'
         run: npx electron-builder --mac --publish never
@@ -100,17 +147,45 @@ jobs:
         timeout-minutes: 5
         if: runner.os == 'macOS'
         shell: bash
+        env:
+          MAC_SIGNING_CERT_SHA1: ${{ vars.MAC_SIGNING_CERT_SHA1 }}
         run: |
+          set -euo pipefail
           expected=arm64
           bundle=dist/mac-arm64/Earheart.app
+          zip=$(ls dist/Earheart-*-arm64-mac.zip)
           if [[ "${{ matrix.os }}" == macos-15-intel ]]; then
             expected=x64
             bundle=dist/mac/Earheart.app
+            zip=$(ls dist/Earheart-*-mac.zip | grep -v -- -arm64-)
           fi
           test "$(node -p process.arch)" = "$expected"
-          "$bundle/Contents/MacOS/Earheart" --smoke-test --no-sandbox
+          if [[ -n "${CSC_NAME:-}" ]]; then
+            # Same certificate on every build: the requirement macOS stores
+            # permission grants under must name it, not a per-build hash.
+            codesign --verify --deep --strict "$bundle"
+            requirement=$(codesign -dr - "$bundle" 2>&1)
+            echo "$requirement"
+            grep -q 'identifier "dev.cleanunicorn.earheart"' <<< "$requirement"
+            grep -qi "certificate leaf = H\"$MAC_SIGNING_CERT_SHA1\"" <<< "$requirement"
+            codesign -dv "$bundle" 2>&1 | grep -q "flags=.*runtime"
+            # The in-app updater installs from the zip and re-signs ad-hoc
+            # anything that doesn't verify, which would void users' grants.
+            staging="$RUNNER_TEMP/zip-check"
+            rm -rf "$staging" && mkdir -p "$staging"
+            ditto -xk "$zip" "$staging"
+            codesign --verify --deep --strict "$staging/Earheart.app"
+          fi
+          # --engine-check loads the native addons inside the packaged app, so
+          # the signed bundle's library validation is what gets tested.
+          "$bundle/Contents/MacOS/Earheart" --smoke-test --engine-check --no-sandbox
           EARHEART_ENGINE_ROOT="$PWD/$bundle/Contents/Resources/app.asar" \
             npx electron scripts/engine-smoke.js --no-sandbox
+      - name: Remove the signing keychain
+        if: always() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          if [[ -n "${CSC_KEYCHAIN:-}" ]]; then security delete-keychain "$CSC_KEYCHAIN" || true; fi
       - name: Separate the Intel update feed
         if: matrix.os == 'macos-15-intel'
         run: mv dist/latest-mac.yml dist/latest-mac-x64.yml

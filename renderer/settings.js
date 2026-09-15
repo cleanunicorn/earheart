@@ -1007,24 +1007,11 @@ function setAccessibilityStatus(text, cls = "status") {
 $("accessibility-fix").addEventListener("click", async () => {
   const btn = $("accessibility-fix");
   btn.disabled = true;
-  setAccessibilityStatus("Checking…");
+  // The check can sit on a macOS permission prompt for up to half a minute.
+  setAccessibilityStatus("Checking… answer the macOS prompt if one appears.");
   try {
-    const result = await earheart.invoke("permissions:accessibility-fix");
-    // Which of the two macOS toggles is off decides where we send the user.
-    const pane = result.pane === "automation" ? "Automation ▸ Earheart ▸ System Events" : "Accessibility";
-    if (result.granted) {
-      setAccessibilityStatus(
-        "Both permissions are on — if auto-paste still fails, toggle Earheart off and on under Accessibility.",
-        "status ok"
-      );
-    } else if (result.opened) {
-      setAccessibilityStatus(`Opened System Settings — turn Earheart on under ${pane}.`);
-    } else {
-      setAccessibilityStatus(
-        `Couldn't open System Settings — open it manually: Privacy & Security ▸ ${pane}.`,
-        "status err"
-      );
-    }
+    const { text, cls } = permissionFixStatus(await earheart.invoke("permissions:accessibility-fix"));
+    setAccessibilityStatus(text, cls);
   } finally {
     btn.disabled = false;
   }
@@ -1036,10 +1023,8 @@ $("accessibility-fix").addEventListener("click", async () => {
 // has clicked Fix (so an empty status stays empty).
 window.addEventListener("focus", async () => {
   if (platform !== "darwin" || !$("accessibility-status").textContent) return;
-  const result = await earheart.invoke("permissions:accessibility-check");
-  if (result.granted) {
-    setAccessibilityStatus("Auto-paste permission is on.", "status ok");
-  }
+  const status = permissionCheckStatus(await earheart.invoke("permissions:accessibility-check"));
+  if (status) setAccessibilityStatus(status.text, status.cls);
 });
 
 // Opened right after the setup wizard: tell the user their choices are

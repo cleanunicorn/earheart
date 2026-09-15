@@ -173,6 +173,18 @@ test("hotkey-capture.js loads before each page's own script", () => {
   }
 });
 
+test("permission-status.js loads before settings.js, which uses it", () => {
+  // settings.js only reaches for these when Fix is clicked or the window
+  // regains focus, so a dropped tag passes the smoke checks and throws later.
+  const shared = html.indexOf('src="permission-status.js"');
+  const own = html.indexOf('src="settings.js"');
+  assert.notStrictEqual(shared, -1, "settings.html must load permission-status.js");
+  assert.ok(shared < own, "settings.html must load permission-status.js before settings.js");
+  assert.ok(fs.existsSync(path.join(RENDERER, "permission-status.js")));
+  assert.match(js, /permissionFixStatus\(/);
+  assert.match(js, /permissionCheckStatus\(/);
+});
+
 test("settings.html uses no inline style attributes (blocked by the CSP)", () => {
   // The window's Content-Security-Policy is `style-src 'self'`, which forbids
   // inline style="…" attributes. Any such attribute would be silently dropped.

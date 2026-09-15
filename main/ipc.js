@@ -151,36 +151,17 @@ function init({ applyHotkeys, onSettingsChanged }) {
     windows.openWizard();
   });
 
-  // Settings → Advanced: report whether auto-paste is allowed, so the UI can
-  // re-check silently (e.g. when the window regains focus after the user
-  // toggled the permission) without re-opening System Settings.
-  ipcMain.handle("permissions:accessibility-check", async () => ({
-    granted: deliver.accessibilityTrusted() && (await deliver.automationTrusted()),
-  }));
+  // Settings → Advanced: report whether auto-paste is allowed, and which
+  // permission blocks it, so the UI can re-check silently (e.g. when the window
+  // regains focus after the user toggled a permission) without resetting
+  // anything or re-opening System Settings.
+  ipcMain.handle("permissions:accessibility-check", () => deliver.checkPastePermissions());
 
-  // Get the user back into a working auto-paste state on macOS. Auto-paste
-  // drives keystrokes through System Events, which needs two permissions:
-  // Accessibility (for the keystroke) and Automation (to talk to System Events
-  // at all). macOS only shows each prompt once per app, so after the first
-  // allow/deny there is nothing to re-trigger — we fire the native prompt
-  // (covers a never-decided app) and open the pane for whichever one is off
-  // (the reliable path once a decision has been recorded). `pane` tells the
-  // UI which toggle to point at. On other platforms there is no such
-  // permission, so both checks always report granted.
-  ipcMain.handle("permissions:accessibility-fix", async () => {
-    let pane = null;
-    if (!deliver.accessibilityTrusted(true)) pane = "accessibility";
-    else if (!(await deliver.automationTrusted())) pane = "automation";
-    if (!pane) return { granted: true };
-    try {
-      await (pane === "automation"
-        ? deliver.openAutomationSettings()
-        : deliver.openAccessibilitySettings());
-      return { granted: false, opened: true, pane };
-    } catch {
-      return { granted: false, opened: false, pane };
-    }
-  });
+  // Get the user back into a working auto-paste state on macOS: auto-paste
+  // needs Accessibility and Automation, and an update leaves stale grants for
+  // both that macOS will not re-prompt over. fixPastePermissions clears them,
+  // re-asks, and says which pane to point the user at.
+  ipcMain.handle("permissions:accessibility-fix", () => deliver.fixPastePermissions());
 
   // Skipping still persists the defaults so the wizard only ever runs once.
   ipcMain.handle("wizard:skip", () => {

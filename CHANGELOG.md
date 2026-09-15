@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.31.2 — 2026-09-15
+
+- Re-grant macOS auto-paste after an update invalidates it (#155)
+
 ## v0.31.1 — 2026-09-13
 
 - Make macOS auto-paste work and log why it fails (#154)

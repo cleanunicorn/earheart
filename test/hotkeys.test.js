@@ -46,6 +46,18 @@ test("a rejected replacement keeps the working hotkey registered", () => {
   assert.deepStrictEqual(calls.unregistered, []);
 });
 
+test("an invalid replacement keeps the working hotkey registered", () => {
+  const { hotkeys, calls } = loadHotkeys((accelerator) => {
+    if (accelerator === "Nope+X") throw new Error("bad accelerator");
+    return true;
+  });
+  hotkeys.register("record", "CommandOrControl+Shift+Space", () => {});
+  const result = hotkeys.register("record", "Nope+X", () => {});
+  assert.strictEqual(result.ok, false);
+  assert.match(result.error, /Invalid hotkey "Nope\+X": bad accelerator/);
+  assert.deepStrictEqual(calls.unregistered, []);
+});
+
 test("a successful replacement releases the previous hotkey afterwards", () => {
   const { hotkeys, calls } = loadHotkeys(() => true);
   hotkeys.register("record", "CommandOrControl+Shift+Space", () => {});

@@ -17,8 +17,11 @@ work* here.
 
 - **Node.js ≥ 22 + npm** — `.nvmrc` is provided, so `nvm use` picks it up.
 - **The `gh` CLI** — for opening PRs.
-- **A display for the smoke checks** — on headless Linux wrap them in
-  `xvfb-run -a`, as CI does.
+- **A display for the smoke checks** — on Linux, the `make` smoke targets
+  already wrap Electron in `xvfb-run -a` (install Xvfb); on macOS and Windows
+  run the underlying `npx electron …` commands directly, as CI does.
+- **GNU Make** — for the `make` targets (on Windows, run the underlying
+  commands instead).
 - **`uv`** — only if you touch the optional Python server in `stt-server/`.
 - **No keys needed.** Built-in models download to Electron's `userData/models`
   on first use; tests and smoke checks don't need them present.
@@ -32,8 +35,13 @@ The Makefile wraps most tasks; `make help` lists them all.
 - **Lint / format / type-check:** none — plain JavaScript, no linter configured.
 - **Test (all):** `make test` (`node --test`, no framework)
 - **Test (single file):** `node --test test/pipeline.test.js`
-- **Smoke checks:** `make smoke`, `make overlay-smoke`, `make settings-smoke`,
-  and `npx electron scripts/engine-smoke.js --no-sandbox` (no make target)
+- **Smoke checks (Linux):** `make smoke`, `make overlay-smoke`,
+  `make settings-smoke` (each wraps `xvfb-run -a`), and
+  `xvfb-run -a npx electron scripts/engine-smoke.js --no-sandbox` (no make
+  target)
+- **Smoke checks (macOS / Windows):** the same commands without `xvfb-run`:
+  `npx electron . --smoke-test --no-sandbox`, then
+  `npx electron scripts/<engine|overlay|settings>-smoke.js --no-sandbox`
 - **STT server tests:** `cd stt-server && uv run --extra test python -m pytest`
 - **Build:** `make dist` (current platform)
 
@@ -41,23 +49,26 @@ Always run the tests and smoke checks before opening a PR.
 
 ## Golden rules
 
-1. **Never commit directly to `main`.** Always branch, always PR. It is
-   protected and is the release branch — merging to it auto-publishes a release
-   (see [Release automation](#release-automation)).
+1. **Never commit or push directly to `main`.** Always branch, always PR.
+   GitHub does not enforce this (no branch protection), so it is on you. `main`
+   is the release branch — merging to it can auto-publish a release (see
+   [Release automation](#release-automation)).
 2. **Start every feature or fix in its own worktree.** Never switch branches in
    a shared checkout — parallel agents and humans work here at the same time
    (see [Create a branch](#2-create-a-branch--in-a-worktree)).
 3. **Never force-push a shared branch.**
 4. **Keep `main` green.** Run the checks locally before opening a PR (see
    [Run the checks](#5-run-the-checks-locally)).
-5. **Use the project's task runner.** `make` is the single source of the dev
-   flow — don't hand-roll the underlying commands. If the flow needs to change,
-   change the Makefile so everyone (and CI) stays in sync.
+5. **Prefer the project's task runner.** Use a `make` target where one exists
+   rather than hand-rolling its command. CI runs the underlying commands itself
+   (see [ci.yml](.github/workflows/ci.yml)), so when you change a Makefile
+   target, change the matching CI step too.
 6. **Never disable, skip, or delete a test to make a build pass.** If a test is
    wrong, say so and propose the fix.
-7. **The PR title is load-bearing.** It drives the released version bump and is
-   the release note users see in the app, so it must be a valid Conventional
-   Commits string (see [PR titles](#pr-titles)).
+7. **The PR title is load-bearing.** It decides whether a release ships and
+   how big, and a release-affecting title becomes the release note users see in
+   the app, so it must be a valid Conventional Commits string (see
+   [PR titles](#pr-titles)).
 8. **Never lose the user's words.** If cleanup fails, deliver the raw
    transcript; if paste fails, fall back to the clipboard; history keeps the
    text either way. Preserve these fallbacks whenever you touch the pipeline.
@@ -157,20 +168,23 @@ Do not open a PR with these failing — they mirror what CI runs on every
 platform:
 
 ```bash
+# Linux
 make test
 make smoke
-npx electron scripts/engine-smoke.js --no-sandbox
+xvfb-run -a npx electron scripts/engine-smoke.js --no-sandbox
 make overlay-smoke
 make settings-smoke
 ```
 
-On headless Linux, prefix the Electron checks with `xvfb-run -a`. If you touched
+The `make` smoke targets already call `xvfb-run -a`, so don't wrap them again.
+On macOS and Windows, use the plain `npx electron …` commands from
+[Commands](#commands) (as [ci.yml](.github/workflows/ci.yml) does). If you touched
 `stt-server/`, also run its pytest suite (see [Commands](#commands)).
 
 ### 6. Push and open a PR
 
 ```bash
-git push -u origin feat/<short-description>
+git push -u origin HEAD
 gh pr create --base main --fill
 ```
 
@@ -184,8 +198,9 @@ The PR title follows the same Conventional Commits format as commits:
 type(optional scope)!: description
 ```
 
-A GitHub Action ([pr-title.yml](.github/workflows/pr-title.yml)) blocks the
-merge on an invalid title. The title also drives the release and becomes the
+A GitHub Action ([pr-title.yml](.github/workflows/pr-title.yml)) fails on an
+invalid title. It is not a required check, so it won't stop a merge — never
+merge with it red. For a release-affecting title, the title also becomes the
 user-facing release note — write it for users: `feat: paginate the settings
 history list`, not `feat: pagination`.
 
@@ -222,8 +237,9 @@ Keep it short and useful:
 
 ## Release automation
 
-- **Is `main` protected?** Yes.
-- **What does merging trigger?**
+- **Is `main` protected?** No — no branch protection or rulesets, and no
+  required status checks. The PR-only and green-CI rules are convention.
+- **What does merging trigger?** For a release-affecting title (table below),
   [auto-release.yml](.github/workflows/auto-release.yml) bumps `package.json`,
   writes the PR title into `CHANGELOG.md`, commits `release: vX.Y.Z`, tags it,
   and dispatches the multi-platform release builds. The release goes live only
@@ -236,6 +252,10 @@ Keep it short and useful:
 | `feat: …` | **minor** |
 | `fix: …`, `perf: …`, `refactor: …` | **patch** |
 | `docs:`, `style:`, `test:`, `build:`, `ci:`, `chore:`, `revert:` | **none** |
+| any title containing `[skip release]` | **none** (overrides every row above) |
+
+A no-release merge doesn't touch `package.json` or `CHANGELOG.md`, so its title
+never reaches the in-app release notes.
 
 > ⚠️ Choose the prefix deliberately — it decides whether (and how big) a release
 > ships when the PR merges.
@@ -282,8 +302,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#architecture) for the full architecture.
 
 - **Framework / runner:** Node's built-in `node --test`, no framework. Electron
   behavior is covered by the smoke scripts in `scripts/`.
-- **Location & naming:** `test/<area>.test.js`; cross-process contracts have
-  their own `*-contract.test.js` files (IPC, overlay, settings).
+- **Location & naming:** `test/<area>.test.js`. `*-contract.test.js` files
+  guard couplings between files: `ipc-contract` checks IPC channels across
+  main, preload, and renderer; `overlay-contract` and `settings-contract`
+  check renderer scripts against their HTML/CSS.
 - **What to cover:** happy path, error paths, and edge cases for new code.
 - **Fixtures / stubs:** no network or models needed; the STT server suite uses
   synthetic WAVs and fake recognizers.
@@ -292,8 +314,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#architecture) for the full architecture.
 
 - Never commit secrets, API keys, credentials, or sensitive data.
 - Always validate and sanitize user and external input.
-- Downloaded models are checksum-verified (`main/engines/model-manager.js`);
-  keep that true for anything new the app downloads.
+- Built-in catalog models are SHA-256 verified on download
+  (`main/engines/model-manager.js`). User-added models have no `sha256`, so
+  they only get size and HTTP-validator checks. Pin a checksum for anything new
+  the app ships in its catalog.
 
 ## Hazards
 
@@ -302,23 +326,24 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#architecture) for the full architecture.
 **Run `make install` in each new worktree; never symlink `node_modules` from
 another checkout, and never stage it.**
 
-A symlink is tracked as a file, so a `node_modules` symlink slips past the
-ignore rule and into a commit. CI stays green because `npm ci` rebuilds
-`node_modules` over it, but on every fresh clone the link points at a path that
-doesn't exist or at itself, and every access fails with `ELOOP`.
+A committed `node_modules` symlink breaks every fresh clone: a link to another
+checkout's absolute path dangles (`ENOENT`), and a link to itself loops
+(`ELOOP`). CI's install step doesn't notice, because `npm ci` rebuilds
+`node_modules` over it.
 
 This reached `main` in #107: a `node_modules` symlink to the main checkout's
 absolute path. It dropped the local suite from 251 passing to 19 failures until
-#112 removed it; `repo-hygiene` in [ci.yml](.github/workflows/ci.yml) now fails
-on it (#117).
+#112 removed it. Today `.gitignore` ignores a `node_modules` symlink too, so
+plain `git add -A` won't stage it, and `repo-hygiene` in
+[ci.yml](.github/workflows/ci.yml) fails on any tracked symlink (#117).
 
 ```sh
 make install          # in each new worktree
 git status --short    # review before committing; stage paths explicitly
 ```
 
-`git add -A` in a worktree that has such a link, and `git add -f` on any ignored
-path, are the same hazard.
+`git add -f` on an ignored path is the remaining way in — don't use it for
+`node_modules`, `dist`, or a symlink.
 
 ## Start here
 

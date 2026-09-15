@@ -1241,19 +1241,17 @@ test("repairPastePermissions clears stale grants once per build, and retries a f
   assert.strictEqual(await repairPastePermissions({ p: failing, marker: unrecorded, ...env }), "reset-failed");
   assert.strictEqual(unrecorded.value, "0.31.1");
 
-  // Accessibility cleared but Automation didn't: recorded as partial, and
-  // finished on a later launch even though Accessibility is trusted by then.
+  // Accessibility cleared but Automation didn't: not recorded, so a launch
+  // that is still untrusted retries both.
   const split = fakeMacPermissions({ trusted: false, reset: { Accessibility: true, AppleEvents: false } });
   const splitMarker = fakeMarker("0.31.1");
   assert.strictEqual(await repairPastePermissions({ p: split, marker: splitMarker, ...env }), "reset-failed");
-  assert.strictEqual(splitMarker.value, "0.32.0:partial");
-  const stillFailing = fakeMacPermissions({ reset: false });
-  assert.strictEqual(await repairPastePermissions({ p: stillFailing, marker: splitMarker, ...env }), "reset-failed");
-  assert.strictEqual(splitMarker.value, "0.32.0:partial");
-  const granted = fakeMacPermissions();
-  assert.strictEqual(await repairPastePermissions({ p: granted, marker: splitMarker, ...env }), "repaired");
-  assert.deepStrictEqual(granted.calls, ["check", "reset:AppleEvents"]);
-  assert.strictEqual(splitMarker.value, "0.32.0");
+  assert.strictEqual(splitMarker.value, "0.31.1");
+  // Once Accessibility is trusted, never reset blind: that could revoke a
+  // grant the user just gave.
+  const grantedSince = fakeMacPermissions();
+  assert.strictEqual(await repairPastePermissions({ p: grantedSince, marker: splitMarker, ...env }), "not-needed");
+  assert.deepStrictEqual(grantedSince.calls, ["check"]);
 
   // Trusted or not macOS: nothing to do and nothing recorded.
   for (const [over, trusted] of [[{}, true], [{ platform: "linux" }, false]]) {

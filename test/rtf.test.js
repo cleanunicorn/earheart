@@ -80,6 +80,33 @@ test("persisted rtf: saves after record and reloads on the next construction", (
   assert.strictEqual(second.estimate(), learned);
 });
 
+test("persisted rtf: replaces state atomically through a temporary file", () => {
+  const file = tmpStateFile();
+  const writes = [];
+  const renames = [];
+  const originalWrite = fs.writeFileSync;
+  const originalRename = fs.renameSync;
+  fs.writeFileSync = (target, ...args) => {
+    writes.push(target);
+    return originalWrite(target, ...args);
+  };
+  fs.renameSync = (source, target) => {
+    renames.push([source, target]);
+    return originalRename(source, target);
+  };
+  try {
+    createPersistedRtfEstimator(file).record(10, 1);
+  } finally {
+    fs.writeFileSync = originalWrite;
+    fs.renameSync = originalRename;
+  }
+
+  assert.deepStrictEqual(writes, [`${file}.${process.pid}.tmp`]);
+  assert.deepStrictEqual(renames, [[`${file}.${process.pid}.tmp`, file]]);
+  assert.ok(fs.existsSync(file));
+  assert.ok(!fs.existsSync(`${file}.${process.pid}.tmp`));
+});
+
 test("persisted rtf: missing or corrupt state falls back to the default", () => {
   const file = tmpStateFile();
   assert.strictEqual(createPersistedRtfEstimator(file).estimate(), 0.25);

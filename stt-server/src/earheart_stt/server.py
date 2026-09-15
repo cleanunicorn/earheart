@@ -89,13 +89,27 @@ def resample_linear(waveform: np.ndarray, src_rate: int, dst_rate: int) -> np.nd
     if src_rate == dst_rate:
         return waveform
     duration = waveform.shape[0] / src_rate
-    dst_len = int(round(duration * dst_rate))
+    # A non-empty clip shorter than half a destination sample would otherwise
+    # round down to zero after it already passed the endpoint's empty check.
+    dst_len = max(1, int(round(duration * dst_rate)))
     src_t = np.linspace(0.0, duration, num=waveform.shape[0], endpoint=False)
     dst_t = np.linspace(0.0, duration, num=dst_len, endpoint=False)
     return np.interp(dst_t, src_t, waveform).astype(np.float32)
 
 
 TARGET_SAMPLE_RATE = 16000
+MAX_UPLOAD_BYTES = 64 * 1024 * 1024
+
+
+def read_upload(file: UploadFile) -> bytes:
+    """Read one upload without allowing an unbounded in-memory allocation."""
+    data = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Audio upload exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB limit",
+        )
+    return data
 
 
 def create_app(config: ServerConfig | None = None) -> FastAPI:
@@ -138,7 +152,7 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
                 "(supported: json, text, verbose_json)",
             )
 
-        waveform, sample_rate = decode_audio(file.file.read())
+        waveform, sample_rate = decode_audio(read_upload(file))
         if waveform.shape[0] == 0:
             raise HTTPException(status_code=400, detail="Empty audio file")
         waveform = resample_linear(waveform, sample_rate, TARGET_SAMPLE_RATE)

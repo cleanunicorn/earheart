@@ -12,6 +12,7 @@ const engines = require("./engines");
 const autostart = require("./autostart");
 const updates = require("./updates");
 const logger = require("./util/logger");
+const deliver = require("./output/deliver");
 const { prettyHotkey } = require("./util/hotkey-label");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
@@ -124,6 +125,18 @@ function main() {
     });
     windows.createOverlay();
     tray.init(app, pipeline);
+    // macOS: an update leaves auto-paste's permission grants stale; repair
+    // them before the first dictation rather than during it.
+    if (
+      deliver.shouldRepairAtStartup({
+        smokeTest: isSmokeTest,
+        firstRun,
+        hidden: startHidden,
+        mode: cfg.output.mode,
+      })
+    ) {
+      deliver.repairPastePermissions().catch((err) => logger.warn("permission repair failed:", err));
+    }
     if (!isSmokeTest) {
       updates.init({ onStateChange: () => tray.refresh() });
     }

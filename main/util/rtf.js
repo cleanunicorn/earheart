@@ -78,10 +78,17 @@ function createPersistedRtfEstimator(filePath, options = {}) {
     inner.record(audioDurationSec, elapsedSec);
     const next = inner.estimate();
     if (next === before) return; // rejected sample (or no-op fold): nothing new
+    const tempPath = `${filePath}.${process.pid}.tmp`;
     try {
-      fs.writeFileSync(filePath, JSON.stringify({ rtf: next }));
+      fs.writeFileSync(tempPath, JSON.stringify({ rtf: next }), { mode: 0o600 });
+      fs.renameSync(tempPath, filePath);
     } catch {
       // Best effort — this session still benefits from the in-memory value.
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+        // The temporary file may never have been created.
+      }
     }
   }
 

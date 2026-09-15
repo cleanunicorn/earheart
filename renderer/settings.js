@@ -772,6 +772,30 @@ function bindAddCustomModel(kind) {
   const pick = $(`${kind}-hf-pick`);
   const variantSelect = $(`${kind}-hf-variant`);
   const addBtn = $(`${kind}-hf-add`);
+  const browseBtn = $(`${kind}-hf-browse`);
+
+  // Opens the hub in the browser, pre-filtered to this kind; the user copies
+  // a repo from there into the field above. Disabled while the browser is
+  // being asked, so a double-click doesn't open two tabs.
+  let browseError = null;
+  browseBtn.addEventListener("click", async () => {
+    browseBtn.disabled = true;
+    try {
+      const res = await earheart.invoke("models:browse-hf", { kind });
+      if (!res.ok) {
+        browseError = res.error;
+        result.textContent = res.error;
+        result.className = "status err";
+      } else if (browseError !== null && result.textContent === browseError) {
+        // Clear only our own stale error, never a Find/Add status.
+        result.textContent = "";
+        result.className = "status";
+        browseError = null;
+      }
+    } finally {
+      browseBtn.disabled = false;
+    }
+  });
 
   findBtn.addEventListener("click", async () => {
     const url = urlInput.value.trim();
@@ -842,6 +866,18 @@ bindAddCustomModel("cleanup");
 const HISTORY_PAGE_SIZE = 5;
 let historyPage = 0; // 0 = the newest page
 
+function historyCopyButton(label, value) {
+  const button = document.createElement("button");
+  button.className = "copy";
+  button.textContent = label;
+  button.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(value);
+    button.textContent = "Copied";
+    setTimeout(() => (button.textContent = label), 1200);
+  });
+  return button;
+}
+
 async function renderHistory() {
   const items = await earheart.invoke("history:list");
   const list = $("history-list");
@@ -876,15 +912,12 @@ async function renderHistory() {
     when.textContent = `${new Date(item.at).toLocaleString()}${item.cleaned ? " · cleaned" : ""}`;
     const actions = document.createElement("span");
     actions.className = "actions";
-    const copy = document.createElement("button");
-    copy.className = "copy";
-    copy.textContent = "Copy";
-    copy.addEventListener("click", async () => {
-      await navigator.clipboard.writeText(item.text);
-      copy.textContent = "Copied";
-      setTimeout(() => (copy.textContent = "Copy"), 1200);
-    });
-    actions.append(copy);
+    actions.append(historyCopyButton("Copy", item.text));
+    if (item.cleaned && typeof item.raw === "string" && item.raw !== item.text) {
+      const copyOriginal = historyCopyButton("Copy original", item.raw);
+      copyOriginal.title = "Copy the transcript before cleanup";
+      actions.append(copyOriginal);
+    }
     meta.append(when, actions);
     li.append(text, meta);
     list.appendChild(li);
@@ -963,7 +996,7 @@ $("open-logs").addEventListener("click", async () => {
   }
 });
 
-/* ---------- macOS auto-paste (Accessibility) permission ---------- */
+/* ---------- macOS auto-paste (Accessibility + Automation) permissions ---------- */
 
 function setAccessibilityStatus(text, cls = "status") {
   const el = $("accessibility-status");
@@ -974,24 +1007,11 @@ function setAccessibilityStatus(text, cls = "status") {
 $("accessibility-fix").addEventListener("click", async () => {
   const btn = $("accessibility-fix");
   btn.disabled = true;
-  setAccessibilityStatus("Checking…");
+  // The check can sit on a macOS permission prompt for up to half a minute.
+  setAccessibilityStatus("Checking… answer the macOS prompt if one appears.");
   try {
-    const result = await earheart.invoke("permissions:accessibility-fix");
-    if (result.granted) {
-      setAccessibilityStatus(
-        "Already granted — if auto-paste still fails, toggle Earheart off and on under Accessibility.",
-        "status ok"
-      );
-    } else if (result.opened) {
-      setAccessibilityStatus(
-        "Opened System Settings — turn Earheart on under Accessibility."
-      );
-    } else {
-      setAccessibilityStatus(
-        "Couldn't open System Settings — open it manually: Privacy & Security ▸ Accessibility.",
-        "status err"
-      );
-    }
+    const { text, cls } = permissionFixStatus(await earheart.invoke("permissions:accessibility-fix"));
+    setAccessibilityStatus(text, cls);
   } finally {
     btn.disabled = false;
   }
@@ -1003,10 +1023,8 @@ $("accessibility-fix").addEventListener("click", async () => {
 // has clicked Fix (so an empty status stays empty).
 window.addEventListener("focus", async () => {
   if (platform !== "darwin" || !$("accessibility-status").textContent) return;
-  const result = await earheart.invoke("permissions:accessibility-check");
-  if (result.granted) {
-    setAccessibilityStatus("Auto-paste permission is on.", "status ok");
-  }
+  const status = permissionCheckStatus(await earheart.invoke("permissions:accessibility-check"));
+  if (status) setAccessibilityStatus(status.text, status.cls);
 });
 
 // Opened right after the setup wizard: tell the user their choices are

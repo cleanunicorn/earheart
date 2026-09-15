@@ -24,6 +24,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
+const { fileURLToPath } = require("node:url");
 const { spawn, spawnSync } = require("node:child_process");
 const { pipeline: streamPipeline } = require("node:stream/promises");
 const { Readable, Transform } = require("node:stream");
@@ -252,8 +253,8 @@ async function check({ manual = false } = {}) {
   if (["checking", "downloading", "ready", "installing"].includes(state.status)) return;
   setState({ status: "checking", error: null });
   try {
-    const url = `${feedBase().replace(/\/$/, "")}/${feed.feedFileFor(process.platform)}`;
-    const info = feed.parseLatestYml(await fetchUpdateText(url));
+    const url = `${feedBase().replace(/\/$/, "")}/${feed.feedFileFor(process.platform, process.arch)}`;
+    const info = feed.parseLatestYml(await fetchUpdateText(url), { platform: process.platform, arch: process.arch });
     if (feed.compareVersions(info.version, state.current) <= 0) {
       pendingInfo = null;
       setState({ status: "idle", latest: null, progress: null, notes: [] });

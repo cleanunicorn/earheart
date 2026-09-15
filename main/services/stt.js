@@ -3,9 +3,7 @@
 // works against the bundled Parakeet server, OpenAI, Groq, speaches, or any
 // other compatible service — switching is just a base URL change.
 
-function joinUrl(baseUrl, route) {
-  return baseUrl.replace(/\/+$/, "") + route;
-}
+const { serviceUrl } = require("./service-url");
 
 /**
  * @param {Buffer|ArrayBuffer} wav - WAV audio (16 kHz mono PCM16 expected)
@@ -14,7 +12,7 @@ function joinUrl(baseUrl, route) {
  * @returns {Promise<string>} transcribed text
  */
 async function transcribe(wav, cfg, signal) {
-  const url = joinUrl(cfg.baseUrl, "/audio/transcriptions");
+  const url = serviceUrl(cfg?.baseUrl, "/audio/transcriptions");
   const form = new FormData();
   const bytes = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
   form.append("file", new Blob([bytes], { type: "audio/wav" }), "audio.wav");

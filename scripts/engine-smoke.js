@@ -14,7 +14,10 @@
 //   npx electron scripts/engine-smoke.js                            # macOS/Win
 
 const { app } = require("electron");
-const { createHost } = require("../main/engines/host");
+const path = require("node:path");
+// Release CI points this at the packaged asar to verify the shipped addons.
+const engineRoot = process.env.EARHEART_ENGINE_ROOT || path.join(__dirname, "..");
+const { createHost } = require(path.join(engineRoot, "main/engines/host"));
 
 // One worker is enough to prove the addons load; the app runs two of these
 // (STT + cleanup) but they fork the same engine-worker.js.

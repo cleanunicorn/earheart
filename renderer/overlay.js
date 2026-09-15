@@ -185,6 +185,13 @@ let progressHideTimer = null;
 // the green done dot).
 const PROGRESS_HOLD_STATUSES = new Set(["transcribing", "cleaning", "delivering"]);
 
+// Title of the done card by how the text was delivered.
+const DONE_TITLE = {
+  clipboard: "Copied to clipboard",
+  "paste-copy": "Pasted & copied",
+  paste: "Pasted",
+};
+
 function setStatus(status, title, detail) {
   card.dataset.status = status;
   // The stop key only works while there's a take to stop (a paused take still
@@ -923,13 +930,12 @@ earheart.on("pipeline:status", ({ status, detail }) => {
       setStatus("delivering", "Typing…");
       break;
     case "done":
+      // A note means auto-paste was attempted and failed: say so in the
+      // title, and put the reason where the preview would go — the text is
+      // on the clipboard either way.
       setStatus(
         "done",
-        detail?.note || detail?.method === "clipboard"
-          ? "Copied to clipboard"
-          : detail?.method === "paste-copy"
-            ? "Pasted & copied"
-            : "Pasted",
+        detail?.note ? "Copied — auto-paste failed" : DONE_TITLE[detail?.method] ?? "Pasted",
         detail?.note || detail?.preview
       );
       break;

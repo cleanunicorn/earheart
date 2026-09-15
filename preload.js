@@ -43,6 +43,7 @@ const INVOKE = new Set([
   "cleanup:test",
   "models:list-remote",
   "models:hf-variants",
+  "models:browse-hf",
   "models:add-custom",
   "models:remove-custom",
   "history:list",

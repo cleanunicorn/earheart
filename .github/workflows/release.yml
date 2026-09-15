@@ -150,13 +150,14 @@ jobs:
           MAC_SIGNING_CERT_SHA1: ${{ vars.MAC_SIGNING_CERT_SHA1 }}
         run: |
           set -euo pipefail
-          expected=arm64
-          bundle=dist/mac-arm64/Earheart.app
-          zip=$(ls dist/Earheart-*-arm64-mac.zip)
           if [[ "${{ matrix.os }}" == macos-15-intel ]]; then
             expected=x64
             bundle=dist/mac/Earheart.app
             zip=$(ls dist/Earheart-*-mac.zip | grep -v -- -arm64-)
+          else
+            expected=arm64
+            bundle=dist/mac-arm64/Earheart.app
+            zip=$(ls dist/Earheart-*-arm64-mac.zip)
           fi
           test "$(node -p process.arch)" = "$expected"
           if [[ -n "${EARHEART_MAC_SIGN_IDENTITY:-}" ]]; then

@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.31.4 — 2026-09-15
+
+- Time out stalled update checks (#139)
+
 ## v0.31.3 — 2026-09-15
 
 - Keep the current hotkey when replacement fails (#132)

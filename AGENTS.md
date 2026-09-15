@@ -1,75 +1,151 @@
-# AGENTS.md
+# Earheart — Agent guide
 
-Guidance for AI agents (and humans) contributing to **Earheart**. This project
-follows the **GitHub flow**: `main` is always releasable, all work happens on
-short-lived branches, and every change lands through a reviewed pull request.
+Guidance for AI agents (and humans) contributing to **Earheart**.
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) for full setup, build, and architecture
-details. This file is the operational checklist for *how to work* here.
+Earheart is a hotkey-driven voice dictation app (Electron) that speaks a prompt
+into Claude Code, Codex, Cursor, or any focused window, fully local. A change is
+done when its code, tests, and docs land together in one reviewed PR with CI
+green on Linux, macOS, and Windows. This project follows GitHub flow: `main` is
+always releasable, all work happens on short-lived branches, and every change
+lands through a reviewed pull request.
+
+Read [README.md](README.md) for setup, and [CONTRIBUTING.md](CONTRIBUTING.md)
+for the full architecture. This file is the operational checklist for *how to
+work* here.
+
+## Prerequisites
+
+- **Node.js ≥ 22 + npm** — `.nvmrc` is provided, so `nvm use` picks it up.
+- **The `gh` CLI** — for opening PRs.
+- **A display for the smoke checks** — on headless Linux wrap them in
+  `xvfb-run -a`, as CI does.
+- **`uv`** — only if you touch the optional Python server in `stt-server/`.
+- **No keys needed.** Built-in models download to Electron's `userData/models`
+  on first use; tests and smoke checks don't need them present.
+
+## Commands
+
+The Makefile wraps most tasks; `make help` lists them all.
+
+- **Install / bootstrap:** `make install`
+- **Run locally:** `make run`
+- **Lint / format / type-check:** none — plain JavaScript, no linter configured.
+- **Test (all):** `make test` (`node --test`, no framework)
+- **Test (single file):** `node --test test/pipeline.test.js`
+- **Smoke checks:** `make smoke`, `make overlay-smoke`, `make settings-smoke`,
+  and `npx electron scripts/engine-smoke.js --no-sandbox` (no make target)
+- **STT server tests:** `cd stt-server && uv run --extra test python -m pytest`
+- **Build:** `make dist` (current platform)
+
+Always run the tests and smoke checks before opening a PR.
 
 ## Golden rules
 
-1. **Never commit directly to `main`.** It is protected and is the release
-   branch — merging to it auto-publishes a release (see below). Always branch.
-2. **Never push to `main` or force-push a shared branch.**
-3. **The PR title is load-bearing.** It drives the released version bump, so it
-   must be a valid Conventional Commits string (see [PR titles](#pr-titles)).
-4. **Keep `main` green.** Run the checks locally before opening a PR.
-5. **Never lose the user's words.** A core design constraint of the app — if you
-   touch the pipeline, preserve the raw-transcript fallbacks.
+1. **Never commit directly to `main`.** Always branch, always PR. It is
+   protected and is the release branch — merging to it auto-publishes a release
+   (see [Release automation](#release-automation)).
+2. **Start every feature or fix in its own worktree.** Never switch branches in
+   a shared checkout — parallel agents and humans work here at the same time
+   (see [Create a branch](#2-create-a-branch--in-a-worktree)).
+3. **Never force-push a shared branch.**
+4. **Keep `main` green.** Run the checks locally before opening a PR (see
+   [Run the checks](#5-run-the-checks-locally)).
+5. **Use the project's task runner.** `make` is the single source of the dev
+   flow — don't hand-roll the underlying commands. If the flow needs to change,
+   change the Makefile so everyone (and CI) stays in sync.
+6. **Never disable, skip, or delete a test to make a build pass.** If a test is
+   wrong, say so and propose the fix.
+7. **The PR title is load-bearing.** It drives the released version bump and is
+   the release note users see in the app, so it must be a valid Conventional
+   Commits string (see [PR titles](#pr-titles)).
+8. **Never lose the user's words.** If cleanup fails, deliver the raw
+   transcript; if paste fails, fall back to the clipboard; history keeps the
+   text either way. Preserve these fallbacks whenever you touch the pipeline.
+9. **Few runtime npm dependencies.** Stay close to Electron built-ins and
+   platform tools (PowerShell, AppleScript, xdotool/wtype). The only runtime
+   deps are the two native engines, `sherpa-onnx-node` and `node-llama-cpp`.
+
+## Communication
+
+- Always explain the reasoning behind decisions and approaches.
+- When claiming something works or is fixed, prove it — a passing test, a
+  script that validates the behavior, or a clear explanation of why. Don't just
+  assert.
+- When uncertain, say so rather than presenting a guess as fact.
+- End each response with a confidence indicator: 🟢 High | 🟡 Medium | 🔴 Low
 
 ## The GitHub flow, step by step
 
 ### 1. Start from an up-to-date `main`
 
 ```bash
-git checkout main
-git pull origin main
+git fetch origin main
 ```
 
-### 2. Create a branch
+The next step branches from `origin/main` directly, so there is no need to
+check out `main` (it may already be checked out in another worktree).
+
+### 2. Create a branch — in a worktree
+
+**Never edit a checkout of `main` directly.** Create the worktree before the
+first edit, do the whole change there, and open the PR from it:
+
+```bash
+git worktree add ../earheart-<short-topic> -b <type>/<short-topic> origin/main
+cd ../earheart-<short-topic>
+make install
+```
+
+Worktrees live as siblings of the main checkout (`../earheart-<short-topic>`),
+so nothing needs to be gitignored. If the harness has a worktree tool (e.g.
+Claude Code's `EnterWorktree`), use it. After the PR merges, remove it with
+`git worktree remove ../earheart-<short-topic>`.
 
 Branch names are short, lowercase, hyphenated, and prefixed by intent. Match the
-Conventional Commits type you expect the PR to use:
+Conventional Commits type you expect the PR to use (see [Commit](#4-commit)):
 
 ```
 feat/<short-description>      # new feature
 fix/<short-description>       # bug fix
 refactor/<short-description>  # internal change, no behavior change
+perf/<short-description>      # performance work
 docs/<short-description>      # documentation only
 chore/<short-description>     # tooling, deps, housekeeping
 ```
 
-Examples: `feat/overlay-copy-button`, `fix/windows-autostart-readback`,
-`docs/agents-guide`.
-
-```bash
-git checkout -b fix/windows-autostart-readback
-```
+Examples: `fix/windows-autostart-readback`, `feat/overlay-copy-button`.
 
 ### 3. Make focused changes
 
-- One logical change per PR. Don't bundle an unrelated refactor into a fix.
-- Match the surrounding style: plain JavaScript, no bundler, few runtime deps.
-  Stay close to Electron built-ins and platform tools rather than adding npm
-  packages — the only runtime deps are the two native engines.
-- Keep diffs small and reviewable.
+- One logical change per PR — and a whole feature *is* one logical change.
+  Ship its code, tests, and docs together; don't split it across a chain of
+  dependent PRs. Don't bundle an unrelated refactor into a fix either.
+- Match the surrounding style: plain JavaScript (CommonJS), no bundler, small
+  pure helpers that are unit-tested on their own.
+- Keep diffs focused: everything in the diff should serve that one change.
+  Focused is about relevance, not size — don't ship half a feature to keep the
+  diff short.
+- **Fix it everywhere.** When you fix a problem, search the repo for the same
+  problem — the *shape*, not the literal text — and fix every instance in the
+  same PR. One instance fixed while identical ones remain is an incomplete fix.
+  Confirm the scope first if the sweep passes ~10 instances or reaches
+  generated or vendored code.
 
 ### 4. Commit
 
-Commit messages follow Conventional Commits too (the **PR title** is what gates
-the release, but consistent commits keep history readable):
+Commits follow [Conventional Commits](https://www.conventionalcommits.org):
 
 ```
 type(optional-scope): short imperative description
 ```
 
-Examples:
+Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`,
+`build`, `ci`, `chore`, `revert`. Add `!` before the colon for a breaking change.
 
 ```
 fix: read back start-on-boot state correctly on Windows
 feat(overlay): add a copy-to-clipboard button
-docs: add AGENTS.md contributor guide
+chore!: drop support for Node 20
 ```
 
 Write in the imperative mood ("add", not "added"). Keep the subject under ~72
@@ -77,38 +153,82 @@ characters and explain the *why* in the body when it isn't obvious.
 
 ### 5. Run the checks locally
 
-Match what CI runs on every platform — do not open a PR with these failing:
+Do not open a PR with these failing — they mirror what CI runs on every
+platform:
 
 ```bash
-npm test                                            # unit tests (node --test)
-make smoke                                           # boot app headlessly and exit
-npx electron scripts/engine-smoke.js --no-sandbox    # boot engine worker, round-trip a ping
-npx electron scripts/overlay-smoke.js --no-sandbox   # fake-mic overlay: capture/UI sync checks
-npx electron scripts/settings-smoke.js --no-sandbox  # settings window: index/scroll-spy contract
+make test
+make smoke
+npx electron scripts/engine-smoke.js --no-sandbox
+make overlay-smoke
+make settings-smoke
 ```
 
-`make help` lists every wrapped task. On Linux the smoke checks need a display —
-CI wraps them with `xvfb-run`.
+On headless Linux, prefix the Electron checks with `xvfb-run -a`. If you touched
+`stt-server/`, also run its pytest suite (see [Commands](#commands)).
 
 ### 6. Push and open a PR
 
 ```bash
-git push -u origin fix/windows-autostart-readback
+git push -u origin feat/<short-description>
 gh pr create --base main --fill
 ```
 
-Target **`main`**. Then set a valid title and a clear body (see below).
+Target **`main`**.
 
 ## PR titles
 
-The title **must** follow Conventional Commits — a GitHub Action
-([pr-title.yml](.github/workflows/pr-title.yml)) blocks the merge otherwise, and
-[auto-release.yml](.github/workflows/auto-release.yml) turns the prefix into the
-released version bump.
+The PR title follows the same Conventional Commits format as commits:
 
 ```
 type(optional scope)!: description
 ```
+
+A GitHub Action ([pr-title.yml](.github/workflows/pr-title.yml)) blocks the
+merge on an invalid title. The title also drives the release and becomes the
+user-facing release note — write it for users: `feat: paginate the settings
+history list`, not `feat: pagination`.
+
+## PR description
+
+Keep it short and useful:
+
+- **What** changed and **why** (the motivation/problem).
+- **Numbers, not adjectives.** Anything you claim improved carries the value you
+  measured, the threshold it is judged against, and how to reproduce it —
+  `3.73:1 → 7.13:1 (AA needs 4.5:1)`, `make test: 269 pass`, `-412 lines`.
+  A table when there is more than one pair. "Not measured" beats a vague
+  adjective.
+- **The gap**, for a bug fix: what was supposed to catch this, why it didn't,
+  and what now would. Give it its own heading — it is the half of the fix a
+  reviewer can't reconstruct from the diff.
+- **The sweep**, for any fix: the search you ran for other instances of the
+  problem, and its count — found, fixed, and left (with why).
+- **How to test** / what you ran (`make test`, the smoke checks, manual steps).
+- **Linked issues**: `Closes #123` when it resolves one.
+- Screenshots for UI changes — re-capture README shots with `make screenshots`
+  if the UI changed.
+- When the change is mostly a removal, lead with what is **gone** (net lines,
+  the concepts dropped) and add an explicit **Kept:** line.
+
+## After opening the PR
+
+- Make sure **CI is green on all three platforms** (Linux/macOS/Windows) — the
+  native engines ship per-OS binaries, so all three matter.
+- If the PR-title check fails, edit the title — it re-validates on edit.
+- Address review feedback by pushing more commits to the same branch.
+- Don't merge your own release-affecting PR without confirmation from a
+  maintainer unless explicitly asked to.
+
+## Release automation
+
+- **Is `main` protected?** Yes.
+- **What does merging trigger?**
+  [auto-release.yml](.github/workflows/auto-release.yml) bumps `package.json`,
+  writes the PR title into `CHANGELOG.md`, commits `release: vX.Y.Z`, tags it,
+  and dispatches the multi-platform release builds. The release goes live only
+  after all three platforms build successfully.
+- **Does the PR title/prefix decide the bump?** Yes.
 
 | PR title prefix | Release effect |
 | --- | --- |
@@ -117,65 +237,92 @@ type(optional scope)!: description
 | `fix: …`, `perf: …`, `refactor: …` | **patch** |
 | `docs:`, `style:`, `test:`, `build:`, `ci:`, `chore:`, `revert:` | **none** |
 
-Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`,
-`build`, `ci`, `chore`, `revert`. Add `!` before the colon for a breaking change
-(→ major). Requires a colon **and a single space**, then a non-empty description.
-
-Examples:
-
-```
-feat(overlay): add a copy-to-clipboard button
-fix: accept first mouse so overlay controls work
-chore!: drop support for Node 20
-```
-
 > ⚠️ Choose the prefix deliberately — it decides whether (and how big) a release
-> ships when the PR merges. A `chore:`/`docs:` title ships no release.
+> ships when the PR merges.
 
-## PR description
-
-Keep it short and useful:
-
-- **What** changed and **why** (the motivation/problem).
-- **How to test** / what you ran (`npm test`, `make smoke`, manual steps).
-- **Linked issues**: `Closes #123` when it resolves one.
-- Screenshots for UI changes — re-capture README shots with `make screenshots`
-  if the UI changed.
-
-## After opening the PR
-
-- Make sure **CI is green** on all three platforms (Linux/macOS/Windows) — the
-  native engines ship per-OS binaries, so all three matter.
-- If the **PR title** check fails, edit the title (it re-validates on edit).
-- Address review feedback by pushing more commits to the same branch.
-- Don't merge your own release-affecting PR without confirmation from a
-  maintainer unless explicitly asked to.
-
-## What merging does (so you pick the right title)
-
-When a PR merges to `main`, [auto-release.yml](.github/workflows/auto-release.yml)
-reads the PR title's prefix and, for a release-affecting type, bumps
-`package.json`, commits `release: vX.Y.Z`, tags it, and dispatches the
-multi-platform release builds. The release goes live only after all three
-platforms build successfully. So:
-
-- A `feat`/`fix`/`perf`/`refactor` (or `!`) title **publishes a release**.
-- A `chore`/`docs`/`style`/`test`/`build`/`ci`/`revert` title does **not**.
+`CHANGELOG.md` is generated from PR titles — don't hand-edit it.
 
 ## Project map (where things live)
 
 ```
 main/                Electron main process (pipeline, hotkeys, settings, tray, windows)
-  services/          OpenAI-compatible STT + cleanup HTTP clients
+  pipeline.js        record → transcribe → clean → deliver state machine
+  services/          OpenAI-compatible STT + cleanup HTTP clients, updater feed
   engines/           in-process STT + cleanup (utilityProcess workers, native addons)
   output/deliver.js  clipboard + per-OS paste injection
 renderer/            overlay (mic → 16 kHz WAV, live preview), settings, wizard
+stt-server/          optional Python FastAPI Parakeet server
+scripts/             icons, screenshots, release notes, smoke tests
+test/                unit tests (node --test)
+.github/workflows/   ci, pr-title, auto-release, release
 DESIGN.md            the UI design system — read before changing renderer CSS
 PRODUCT.md           product truth: users, positioning, principles
-stt-server/          optional Python FastAPI Parakeet server
-scripts/             icons, screenshots, engine smoke test
-.github/workflows/   ci, pr-title, auto-release, release
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md#architecture) for the full architecture
-and design constraints.
+The pipeline routes each stage to the in-process engine or the HTTP client
+based on `stt.engine` / `cleanup.engine` (`"builtin"` | `"remote"`). STT and
+cleanup each run in their own `utilityProcess` worker, so a native crash in one
+can't take down the other. **The overlay window owns the microphone** — the main
+process never touches raw audio; it receives finished WAVs from the renderer.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md#architecture) for the full architecture.
+
+## Conventions
+
+- **Naming:** files kebab-case; tests are `test/<area>.test.js`.
+- **Configuration:** user settings are JSON with deep-merged defaults in
+  `main/settings.js`.
+- **UI:** [DESIGN.md](DESIGN.md) governs the overlay, settings, and wizard. Two
+  hardcoded values must stay in sync with the CSS: `WAVE_COLOR` ↔ `--accent`,
+  `INK_COLOR` ↔ `--ink`.
+- **Error handling:** degrade, don't drop — every failure path still delivers
+  the user's text (see Golden rule 8).
+
+## Testing
+
+- **Framework / runner:** Node's built-in `node --test`, no framework. Electron
+  behavior is covered by the smoke scripts in `scripts/`.
+- **Location & naming:** `test/<area>.test.js`; cross-process contracts have
+  their own `*-contract.test.js` files (IPC, overlay, settings).
+- **What to cover:** happy path, error paths, and edge cases for new code.
+- **Fixtures / stubs:** no network or models needed; the STT server suite uses
+  synthetic WAVs and fake recognizers.
+
+## Security
+
+- Never commit secrets, API keys, credentials, or sensitive data.
+- Always validate and sanitize user and external input.
+- Downloaded models are checksum-verified (`main/engines/model-manager.js`);
+  keep that true for anything new the app downloads.
+
+## Hazards
+
+### Never commit a symlink, `node_modules`, or `dist`
+
+**Run `make install` in each new worktree; never symlink `node_modules` from
+another checkout, and never stage it.**
+
+A symlink is tracked as a file, so a `node_modules` symlink slips past the
+ignore rule and into a commit. CI stays green because `npm ci` rebuilds
+`node_modules` over it, but on every fresh clone the link points at a path that
+doesn't exist or at itself, and every access fails with `ELOOP`.
+
+This reached `main` in #107: a `node_modules` symlink to the main checkout's
+absolute path. It dropped the local suite from 251 passing to 19 failures until
+#112 removed it; `repo-hygiene` in [ci.yml](.github/workflows/ci.yml) now fails
+on it (#117).
+
+```sh
+make install          # in each new worktree
+git status --short    # review before committing; stage paths explicitly
+```
+
+`git add -A` in a worktree that has such a link, and `git add -f` on any ignored
+path, are the same hazard.
+
+## Start here
+
+The fastest path to understanding this codebase:
+
+[README.md](README.md) → [main/pipeline.js](main/pipeline.js) →
+[main/engines/index.js](main/engines/index.js)

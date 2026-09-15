@@ -18,6 +18,7 @@
 const { app, clipboard, systemPreferences, shell } = require("electron");
 const { execFile } = require("node:child_process");
 const fs = require("node:fs");
+const path = require("node:path");
 const logger = require("../util/logger");
 
 // Deep link to System Settings ▸ Privacy & Security ▸ Accessibility. The URL is
@@ -208,9 +209,12 @@ async function deliver(text, cfg, signal) {
     logger.error("auto-paste skipped:", ACCESSIBILITY_OFF.hint);
     // Skipping the keystroke also skips the prompt System Events would have
     // raised for a never-decided app, so raise it ourselves, once per launch.
+    // Once per launch, clear a stale grant this build hasn't repaired yet and
+    // raise the prompt. Not awaited: the transcript is already on the
+    // clipboard and the fallback must not wait on tccutil.
     if (!accessibilityPrompted) {
       accessibilityPrompted = true;
-      accessibilityTrusted(true);
+      repairPastePermissions().catch((err) => logger.warn("permission repair failed:", err));
     }
     return { method: "clipboard", ...ACCESSIBILITY_OFF };
   }
@@ -263,21 +267,18 @@ function openAccessibilitySettings() {
 // app gets the native prompt (which is what we want). Resolves "granted",
 // "denied" (-1743: a refusal is on record), "pending" (our timeout killed the
 // probe, almost always because the prompt went unanswered) or "error".
-// Non-macOS platforms have no such permission.
-async function automationStatus() {
-  if (process.platform !== "darwin") return "granted";
+// Non-macOS platforms have no such permission. `run` and `platform` are
+// injectable for tests.
+async function automationStatus({ run = execFileAsync, platform = process.platform } = {}) {
+  if (platform !== "darwin") return "granted";
   try {
-    await execFileAsync("osascript", ["-e", PROBE_SCRIPT], { timeout: 30000 });
+    await run("osascript", ["-e", PROBE_SCRIPT], { timeout: 30000 });
     return "granted";
   } catch (err) {
     logger.warn("automation probe failed:", err.cause ?? err);
     if (err.killed) return "pending";
     return /\(-1743\)/.test(err.message) ? "denied" : "error";
   }
-}
-
-async function automationTrusted() {
-  return (await automationStatus()) === "granted";
 }
 
 function openAutomationSettings() {
@@ -288,13 +289,17 @@ function openAutomationSettings() {
 // "AppleEvents"). A grant left behind by an older build keeps its toggle on in
 // System Settings while trusting nothing, and macOS never prompts again while
 // any decision is on record — clearing it is what lets the native prompt come
-// back. Only for the packaged app: under `npm start` the decisions belong to
-// Electron or the terminal, not to Earheart. Best-effort; resolves whether the
-// reset went through.
-async function resetMacPermission(service) {
-  if (process.platform !== "darwin" || !app.isPackaged) return false;
+// back. Always scoped to our bundle id: without it tccutil resets the service
+// for every app. Only for the packaged app: under `npm start` the decisions
+// belong to Electron or the terminal, not to Earheart. Best-effort; resolves
+// whether the reset went through.
+async function resetMacPermission(
+  service,
+  { run = execFileAsync, platform = process.platform, packaged = app.isPackaged } = {}
+) {
+  if (platform !== "darwin" || !packaged) return false;
   try {
-    await execFileAsync("/usr/bin/tccutil", ["reset", service, MAC_BUNDLE_ID]);
+    await run("/usr/bin/tccutil", ["reset", service, MAC_BUNDLE_ID]);
     logger.info(`tccutil reset ${service} ${MAC_BUNDLE_ID}: ok`);
     return true;
   } catch (err) {
@@ -305,8 +310,8 @@ async function resetMacPermission(service) {
 
 const macPermissions = {
   accessibilityTrusted,
-  automationStatus,
-  resetMacPermission,
+  automationStatus: () => automationStatus(),
+  resetMacPermission: (service) => resetMacPermission(service),
   openAccessibilitySettings,
   openAutomationSettings,
 };
@@ -353,25 +358,85 @@ async function fixPastePermissions(p = macPermissions) {
   }
 }
 
-// Called once on the first launch after an update. The update has just
-// invalidated the Accessibility grant (see ACCESSIBILITY_OFF), so repair it
-// before the user dictates into a paste that can't land: clear the stale
-// decisions and let macOS ask again. Does nothing for a build macOS already
-// trusts, or outside the packaged app.
-async function repairPastePermissionsAfterUpdate(p = macPermissions) {
-  if (process.platform !== "darwin" || !app.isPackaged || p.accessibilityTrusted()) return false;
-  logger.info("updated build is not trusted for Accessibility; clearing the stale grant");
-  if (await p.resetMacPermission("Accessibility")) await p.resetMacPermission("AppleEvents");
+// Passive state for the settings window's refocus check: never resets or
+// opens anything. `automation` is only probed once Accessibility is on, so the
+// UI can move on to the next blocker after the user flips the first toggle.
+async function checkPastePermissions(p = macPermissions) {
+  if (!p.accessibilityTrusted()) return { granted: false, accessibility: false };
+  const automation = await p.automationStatus();
+  return { granted: automation === "granted", accessibility: true, automation };
+}
+
+// Which build the automatic stale-grant repair last ran for. Its own file, not
+// settings.json: the settings window saves whole objects, and the repair must
+// not depend on the wizard having written settings yet.
+function repairMarkerPath() {
+  return path.join(app.getPath("userData"), "paste-permission-repair");
+}
+
+const repairMarker = {
+  read() {
+    try {
+      return fs.readFileSync(repairMarkerPath(), "utf8").trim();
+    } catch {
+      return "";
+    }
+  },
+  write(version) {
+    try {
+      fs.writeFileSync(repairMarkerPath(), version);
+    } catch (err) {
+      logger.warn("could not record the permission repair:", err);
+    }
+  },
+};
+
+/**
+ * Repair auto-paste permissions without a click, once per build. Releases have
+ * no stable signing identity, so every update leaves the Accessibility (and
+ * Automation) grant on record for the old build: shown as on, trusting
+ * nothing, never re-prompted. When this build is untrusted and hasn't been
+ * repaired yet, clear both decisions and raise the prompt. Runs at startup in
+ * a paste mode and on the first skipped paste of a launch, so switching from
+ * clipboard-only to paste later still gets it. The build is recorded only when
+ * the reset went through, so a failed reset is retried next launch.
+ * @returns {Promise<"not-needed"|"already-repaired"|"repaired"|"reset-failed">}
+ *   "already-repaired" also covers the unpackaged app, which only prompts.
+ */
+async function repairPastePermissions({
+  p = macPermissions,
+  marker = repairMarker,
+  platform = process.platform,
+  packaged = app.isPackaged,
+  version = app.getVersion?.(),
+} = {}) {
+  if (platform !== "darwin" || p.accessibilityTrusted()) return "not-needed";
+  // Under `npm start` the grants belong to Electron or the terminal, so there
+  // is nothing of ours to clear — but the prompt is still worth raising.
+  if (!packaged || marker.read() === version) {
+    // Already cleared for this build: the prompt is all that is left to offer
+    // (a no-op once the user has answered it).
+    p.accessibilityTrusted(true);
+    return "already-repaired";
+  }
+  const reset = await p.resetMacPermission("Accessibility");
+  if (reset) {
+    await p.resetMacPermission("AppleEvents");
+    marker.write(version);
+    logger.info(`cleared stale auto-paste permissions for ${version}`);
+  }
   p.accessibilityTrusted(true);
-  return true;
+  return reset ? "repaired" : "reset-failed";
 }
 
 module.exports = {
   deliver,
   accessibilityTrusted,
-  automationTrusted,
+  automationStatus,
+  resetMacPermission,
   fixPastePermissions,
-  repairPastePermissionsAfterUpdate,
+  checkPastePermissions,
+  repairPastePermissions,
   explainMacPasteError,
   MAC_BUNDLE_ID,
 };

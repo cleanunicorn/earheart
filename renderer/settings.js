@@ -1023,10 +1023,8 @@ $("accessibility-fix").addEventListener("click", async () => {
 // has clicked Fix (so an empty status stays empty).
 window.addEventListener("focus", async () => {
   if (platform !== "darwin" || !$("accessibility-status").textContent) return;
-  const result = await earheart.invoke("permissions:accessibility-check");
-  if (result.granted) {
-    setAccessibilityStatus("Auto-paste permission is on.", "status ok");
-  }
+  const status = permissionCheckStatus(await earheart.invoke("permissions:accessibility-check"));
+  if (status) setAccessibilityStatus(status.text, status.cls);
 });
 
 // Opened right after the setup wizard: tell the user their choices are

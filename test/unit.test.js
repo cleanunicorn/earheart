@@ -25,8 +25,16 @@ const { listRemoteModels } = require("../main/services/models-remote");
 const { reconcileTranscript } = require("../renderer/transcript");
 const { acceleratorFromEvent } = require("../renderer/hotkey-capture");
 const { prettyHotkey } = require("../main/util/hotkey-label");
-const { explainMacPasteError, fixPastePermissions, MAC_BUNDLE_ID } = require("../main/output/deliver");
-const { permissionFixStatus } = require("../renderer/permission-status");
+const {
+  explainMacPasteError,
+  fixPastePermissions,
+  checkPastePermissions,
+  repairPastePermissions,
+  automationStatus,
+  resetMacPermission,
+  MAC_BUNDLE_ID,
+} = require("../main/output/deliver");
+const { permissionFixStatus, permissionCheckStatus } = require("../renderer/permission-status");
 
 test("encodeWav produces a valid RIFF header", () => {
   const samples = new Int16Array([0, 1000, -1000, 32767, -32768]);
@@ -1171,4 +1179,104 @@ test("permissionFixStatus gives instructions that match the pane", () => {
     assert.strictEqual(closed.cls, "status err");
     assert.match(closed.text, /manually/);
   }
+  // Pane didn't open and the stale entry wasn't cleared: removing it by hand is
+  // still the instruction that matters — but never for Automation.
+  assert.match(permissionFixStatus({ granted: false, pane: "accessibility", reset: false, opened: false }).text, /remove it with −/);
+  assert.doesNotMatch(permissionFixStatus({ granted: false, pane: "automation", reset: false, opened: false }).text, /−/);
+});
+
+test("the refocus check moves on to Automation once Accessibility is on", async () => {
+  assert.deepStrictEqual(await checkPastePermissions(fakeMacPermissions({ trusted: false })), {
+    granted: false,
+    accessibility: false,
+  });
+  const pending = fakeMacPermissions({ automation: ["pending"] });
+  assert.deepStrictEqual(await checkPastePermissions(pending), {
+    granted: false,
+    accessibility: true,
+    automation: "pending",
+  });
+  // Passive: no reset, no prompt, no pane.
+  assert.deepStrictEqual(pending.calls, ["check", "probe"]);
+
+  assert.strictEqual(permissionCheckStatus({ granted: false, accessibility: false }), null);
+  assert.strictEqual(permissionCheckStatus({ granted: true }).cls, "status ok");
+  assert.match(permissionCheckStatus({ granted: false, accessibility: true, automation: "pending" }).text, /Allow/);
+  assert.match(permissionCheckStatus({ granted: false, accessibility: true, automation: "denied" }).text, /Automation/);
+  assert.strictEqual(permissionCheckStatus({ granted: false, accessibility: true, automation: "error" }).cls, "status err");
+});
+
+function fakeMarker(value = "") {
+  return {
+    value,
+    read() {
+      return this.value;
+    },
+    write(v) {
+      this.value = v;
+    },
+  };
+}
+
+test("repairPastePermissions clears stale grants once per build, and retries a failed reset", async () => {
+  const env = { platform: "darwin", packaged: true, version: "0.32.0" };
+
+  const p = fakeMacPermissions({ trusted: false });
+  const marker = fakeMarker("0.31.1");
+  assert.strictEqual(await repairPastePermissions({ p, marker, ...env }), "repaired");
+  assert.deepStrictEqual(p.calls, ["check", "reset:Accessibility", "reset:AppleEvents", "prompt"]);
+  assert.strictEqual(marker.value, "0.32.0");
+
+  // Same build, still untrusted (the user dismissed the prompt): no second
+  // reset, just the prompt offer.
+  const again = fakeMacPermissions({ trusted: false });
+  assert.strictEqual(await repairPastePermissions({ p: again, marker, ...env }), "already-repaired");
+  assert.deepStrictEqual(again.calls, ["check", "prompt"]);
+
+  // A failed reset is not recorded, so the next launch tries again.
+  const failing = fakeMacPermissions({ trusted: false, reset: false });
+  const unrecorded = fakeMarker("0.31.1");
+  assert.strictEqual(await repairPastePermissions({ p: failing, marker: unrecorded, ...env }), "reset-failed");
+  assert.strictEqual(unrecorded.value, "0.31.1");
+
+  // Trusted or not macOS: nothing to do and nothing recorded.
+  for (const [over, trusted] of [[{}, true], [{ platform: "linux" }, false]]) {
+    const q = fakeMacPermissions({ trusted });
+    const m = fakeMarker();
+    assert.strictEqual(await repairPastePermissions({ p: q, marker: m, ...env, ...over }), "not-needed");
+    assert.ok(!q.calls.some((c) => c.startsWith("reset:")));
+    assert.strictEqual(m.value, "");
+  }
+  // Unpackaged: nothing of ours to reset, but still prompt.
+  const dev = fakeMacPermissions({ trusted: false });
+  const devMarker = fakeMarker();
+  assert.strictEqual(await repairPastePermissions({ p: dev, marker: devMarker, ...env, packaged: false }), "already-repaired");
+  assert.deepStrictEqual(dev.calls, ["check", "prompt"]);
+  assert.strictEqual(devMarker.value, "");
+});
+
+// The real adapters, with the child process faked: never touch live TCC.
+test("automationStatus and resetMacPermission drive osascript and tccutil correctly", async () => {
+  const fail = (props) => async () => {
+    throw Object.assign(new Error(props.message ?? ""), props);
+  };
+  const mac = { platform: "darwin" };
+  assert.strictEqual(await automationStatus({ ...mac, run: async () => "System Events" }), "granted");
+  assert.strictEqual(await automationStatus({ ...mac, run: fail({ killed: true }) }), "pending");
+  assert.strictEqual(
+    await automationStatus({ ...mac, run: fail({ message: "Not authorized to send Apple events to System Events. (-1743)" }) }),
+    "denied"
+  );
+  assert.strictEqual(await automationStatus({ ...mac, run: fail({ message: "boom" }) }), "error");
+  assert.strictEqual(await automationStatus({ platform: "linux", run: fail({ message: "unused" }) }), "granted");
+
+  const runs = [];
+  const run = async (cmd, args) => runs.push([cmd, ...args]);
+  assert.strictEqual(await resetMacPermission("Accessibility", { ...mac, packaged: true, run }), true);
+  // Scoped to our bundle id: without it tccutil resets the service for every app.
+  assert.deepStrictEqual(runs, [["/usr/bin/tccutil", "reset", "Accessibility", MAC_BUNDLE_ID]]);
+  assert.strictEqual(await resetMacPermission("Accessibility", { ...mac, packaged: false, run }), false);
+  assert.strictEqual(await resetMacPermission("Accessibility", { platform: "linux", packaged: true, run }), false);
+  assert.strictEqual(runs.length, 1);
+  assert.strictEqual(await resetMacPermission("AppleEvents", { ...mac, packaged: true, run: fail({ message: "no" }) }), false);
 });

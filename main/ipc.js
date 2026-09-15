@@ -151,12 +151,11 @@ function init({ applyHotkeys, onSettingsChanged }) {
     windows.openWizard();
   });
 
-  // Settings → Advanced: report whether auto-paste is allowed, so the UI can
-  // re-check silently (e.g. when the window regains focus after the user
-  // toggled the permission) without re-opening System Settings.
-  ipcMain.handle("permissions:accessibility-check", async () => ({
-    granted: deliver.accessibilityTrusted() && (await deliver.automationTrusted()),
-  }));
+  // Settings → Advanced: report whether auto-paste is allowed, and which
+  // permission blocks it, so the UI can re-check silently (e.g. when the window
+  // regains focus after the user toggled a permission) without resetting
+  // anything or re-opening System Settings.
+  ipcMain.handle("permissions:accessibility-check", () => deliver.checkPastePermissions());
 
   // Get the user back into a working auto-paste state on macOS: auto-paste
   // needs Accessibility and Automation, and an update leaves stale grants for

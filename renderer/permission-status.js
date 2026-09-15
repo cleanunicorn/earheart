@@ -13,8 +13,10 @@ function permissionFixStatus(result) {
   const automation = result.pane === "automation";
   if (!result.opened) {
     const where = automation ? "Automation ▸ Earheart ▸ System Events" : "Accessibility";
+    // A stale Accessibility entry looks on; only removing it rewrites it.
+    const stale = !automation && !result.reset ? " If Earheart is already on, remove it with − and add it again." : "";
     return {
-      text: `Couldn't open System Settings — open it manually: Privacy & Security ▸ ${where}.`,
+      text: `Couldn't open System Settings — open it manually: Privacy & Security ▸ ${where}.${stale}`,
       cls: "status err",
     };
   }
@@ -49,7 +51,34 @@ function permissionFixStatus(result) {
   };
 }
 
+// What to show when the settings window regains focus after a Fix, from the
+// passive check (no reset, no pane opened). null leaves the status alone: the
+// user hasn't flipped the Accessibility toggle yet, so the Fix instruction
+// still stands. Once Accessibility is on, Automation may be the next blocker —
+// the Fix flow reset it alongside — so point at that instead of the toggle the
+// user just fixed.
+function permissionCheckStatus(check) {
+  if (check.granted) return { text: "Auto-paste permission is on.", cls: "status ok" };
+  if (!check.accessibility) return null;
+  if (check.automation === "pending") {
+    return {
+      text: "Accessibility is on. Now click Allow when macOS asks to let Earheart control System Events.",
+      cls: "status",
+    };
+  }
+  if (check.automation === "denied") {
+    return {
+      text: "Accessibility is on. Now turn System Events on under Privacy & Security ▸ Automation ▸ Earheart, or click Fix again.",
+      cls: "status",
+    };
+  }
+  return {
+    text: "Accessibility is on, but Automation couldn't be checked — click Fix again; Open error log shows why.",
+    cls: "status err",
+  };
+}
+
 // Exported for unit tests only (hotkey-capture.js pattern).
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { permissionFixStatus };
+  module.exports = { permissionFixStatus, permissionCheckStatus };
 }

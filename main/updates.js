@@ -34,7 +34,6 @@ const releaseNotes = require("./services/release-notes");
 const settings = require("./settings");
 const windows = require("./windows");
 const dictation = require("./pipeline");
-const deliver = require("./output/deliver");
 const logger = require("./util/logger");
 
 const CHECK_DELAY_MS = 10_000;
@@ -200,13 +199,6 @@ function armWhatsNew() {
     settings.save(cfg);
   }
   if (!seen || feed.compareVersions(current, seen) <= 0) return;
-  // The update just invalidated macOS's auto-paste grant; repair it now rather
-  // than at the first dictation. Independent of "remind": it is a fix, not news.
-  if (cfg.output.mode !== "clipboard") {
-    deliver.repairPastePermissionsAfterUpdate().catch((err) =>
-      logger.warn("post-update permission repair failed:", err)
-    );
-  }
   // "Don't remind me" is a request to stop being interrupted about versions;
   // this is one of those interruptions. Nothing is lost — the same notes are
   // in the release on GitHub.

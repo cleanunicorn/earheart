@@ -199,7 +199,15 @@ async function deliver(text, cfg, signal) {
   // Give the target app a moment to be focused (the overlay never takes
   // focus, but the clipboard write itself can need a beat on some systems).
   await sleep(cfg.pasteDelayMs ?? 150);
-  if (signal?.aborted) return { method: "cancelled" };
+  if (signal?.aborted) {
+    // Plain paste promises to put the previous clipboard back. Cancellation
+    // before the keystroke should keep that promise too, but only if another
+    // app has not replaced our transcript in the meantime.
+    if (previous !== null && clipboard.readText() === text) {
+      clipboard.writeText(previous);
+    }
+    return { method: "cancelled" };
+  }
   // Ask macOS directly before driving System Events. An untrusted app's
   // keystroke can never land, and the osascript attempt can hang on a
   // permission prompt or fail with an error that doesn't say the grant went

@@ -92,3 +92,48 @@ test("a cancel during the paste delay wins over the permission check", async (t)
   assert.deepStrictEqual(await pending, { method: "cancelled" });
   assert.strictEqual(state.prompts, 0);
 });
+
+test("cancelling before paste restores the previous clipboard", async () => {
+  const { deliver, state } = loadDeliver({ trusted: true });
+  const controller = new AbortController();
+  const pending = deliver(
+    "new transcript",
+    { mode: "paste", restoreClipboard: true, pasteDelayMs: 10 },
+    controller.signal
+  );
+  assert.strictEqual(state.clipboard, "new transcript");
+  controller.abort();
+
+  assert.deepStrictEqual(await pending, { method: "cancelled" });
+  assert.strictEqual(state.clipboard, "old");
+  assert.deepStrictEqual(state.execs, []);
+});
+
+test("cancelling does not overwrite a newer clipboard change", async () => {
+  const { deliver, state } = loadDeliver({ trusted: true });
+  const controller = new AbortController();
+  const pending = deliver(
+    "new transcript",
+    { mode: "paste", restoreClipboard: true, pasteDelayMs: 10 },
+    controller.signal
+  );
+  state.clipboard = "copied by another app";
+  controller.abort();
+
+  assert.deepStrictEqual(await pending, { method: "cancelled" });
+  assert.strictEqual(state.clipboard, "copied by another app");
+});
+
+test("cancelling paste-copy keeps the transcript on the clipboard", async () => {
+  const { deliver, state } = loadDeliver({ trusted: true });
+  const controller = new AbortController();
+  const pending = deliver(
+    "new transcript",
+    { mode: "paste-copy", restoreClipboard: true, pasteDelayMs: 10 },
+    controller.signal
+  );
+  controller.abort();
+
+  assert.deepStrictEqual(await pending, { method: "cancelled" });
+  assert.strictEqual(state.clipboard, "new transcript");
+});

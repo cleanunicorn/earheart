@@ -158,40 +158,11 @@ function init({ applyHotkeys, onSettingsChanged }) {
     granted: deliver.accessibilityTrusted() && (await deliver.automationTrusted()),
   }));
 
-  // Get the user back into a working auto-paste state on macOS. Auto-paste
-  // drives keystrokes through System Events, which needs two permissions:
-  // Accessibility (for the keystroke) and Automation (to talk to System Events
-  // at all). macOS prompts for each only while no decision is on record, and an
-  // update leaves the old build's grant on record — toggle shown on, new build
-  // untrusted. So for whichever permission is off we clear Earheart's recorded
-  // decision first, then fire the native prompt, and open the pane as the
-  // fallback. `pane` tells the UI which toggle to point at; `reset` whether the
-  // stale decision was cleared. On other platforms both checks report granted.
-  ipcMain.handle("permissions:accessibility-fix", async () => {
-    let pane = null;
-    let reset = false;
-    if (!deliver.accessibilityTrusted()) {
-      reset = await deliver.resetMacPermission("Accessibility");
-      // A no-op when a decision is still on record; the pane covers that.
-      deliver.accessibilityTrusted(true);
-      pane = "accessibility";
-    } else if (!(await deliver.automationTrusted())) {
-      reset = await deliver.resetMacPermission("AppleEvents");
-      // With the denial cleared, the probe brings the prompt back and waits
-      // for the answer: Allow there is all the fix needs.
-      if (reset && (await deliver.automationTrusted())) return { granted: true };
-      pane = "automation";
-    }
-    if (!pane) return { granted: true };
-    try {
-      await (pane === "automation"
-        ? deliver.openAutomationSettings()
-        : deliver.openAccessibilitySettings());
-      return { granted: false, opened: true, pane, reset };
-    } catch {
-      return { granted: false, opened: false, pane, reset };
-    }
-  });
+  // Get the user back into a working auto-paste state on macOS: auto-paste
+  // needs Accessibility and Automation, and an update leaves stale grants for
+  // both that macOS will not re-prompt over. fixPastePermissions clears them,
+  // re-asks, and says which pane to point the user at.
+  ipcMain.handle("permissions:accessibility-fix", () => deliver.fixPastePermissions());
 
   // Skipping still persists the defaults so the wizard only ever runs once.
   ipcMain.handle("wizard:skip", () => {

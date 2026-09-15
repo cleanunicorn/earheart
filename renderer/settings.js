@@ -1007,29 +1007,11 @@ function setAccessibilityStatus(text, cls = "status") {
 $("accessibility-fix").addEventListener("click", async () => {
   const btn = $("accessibility-fix");
   btn.disabled = true;
-  setAccessibilityStatus("Checking…");
+  // The check can sit on a macOS permission prompt for up to half a minute.
+  setAccessibilityStatus("Checking… answer the macOS prompt if one appears.");
   try {
-    const result = await earheart.invoke("permissions:accessibility-fix");
-    // Which of the two macOS toggles is off decides where we send the user.
-    const pane = result.pane === "automation" ? "Automation ▸ Earheart ▸ System Events" : "Accessibility";
-    if (result.granted) {
-      setAccessibilityStatus(
-        "Both permissions are on — if auto-paste still fails, toggle Earheart off and on under Accessibility.",
-        "status ok"
-      );
-    } else if (result.opened) {
-      // An update leaves the old build's grant listed and switched on. If the
-      // reset couldn't clear it, removing the entry by hand is the way out.
-      const stale = result.reset
-        ? " Allow Earheart if macOS asks."
-        : " If it is already on, select it, remove it with −, and add Earheart again.";
-      setAccessibilityStatus(`Opened System Settings — turn Earheart on under ${pane}.${stale}`);
-    } else {
-      setAccessibilityStatus(
-        `Couldn't open System Settings — open it manually: Privacy & Security ▸ ${pane}.`,
-        "status err"
-      );
-    }
+    const { text, cls } = permissionFixStatus(await earheart.invoke("permissions:accessibility-fix"));
+    setAccessibilityStatus(text, cls);
   } finally {
     btn.disabled = false;
   }

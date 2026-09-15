@@ -40,13 +40,13 @@ const PROBE_SCRIPT = 'tell application "System Events" to get name';
 // match `appId` in electron-builder.yml (a unit test holds them together).
 const MAC_BUNDLE_ID = "dev.cleanunicorn.earheart";
 
-// Releases are not signed with a stable identity, so macOS ties a permission
-// grant to the exact build that received it. After an update the Accessibility
-// toggle still shows Earheart as on, but the grant belongs to the old build
-// and the new one is not trusted — the failure users hit right after updating.
+// Accessibility is off for this build. Either it was never granted, or —
+// because releases are not signed with a stable identity, so macOS ties a
+// grant to the exact build that received it — an update left the old build's
+// grant listed and switched on while the new build is untrusted.
 const ACCESSIBILITY_OFF = {
   note: "Accessibility permission is off",
-  hint: "macOS no longer trusts this copy of Earheart (updates reset it). Settings ▸ Advanced ▸ Fix auto-paste permission, then allow Earheart",
+  hint: "Accessibility is off for Earheart (an update can reset it) — Settings ▸ Advanced ▸ Fix auto-paste permission",
 };
 
 function execFileAsync(cmd, args, options = {}) {
@@ -167,6 +167,7 @@ async function simulatePaste(signal) {
 }
 
 let pendingRestore = null;
+let accessibilityPrompted = false;
 
 /**
  * Deliver text to the user.
@@ -205,6 +206,12 @@ async function deliver(text, cfg, signal) {
   // stale after an update.
   if (!accessibilityTrusted()) {
     logger.error("auto-paste skipped:", ACCESSIBILITY_OFF.hint);
+    // Skipping the keystroke also skips the prompt System Events would have
+    // raised for a never-decided app, so raise it ourselves, once per launch.
+    if (!accessibilityPrompted) {
+      accessibilityPrompted = true;
+      accessibilityTrusted(true);
+    }
     return { method: "clipboard", ...ACCESSIBILITY_OFF };
   }
   try {
@@ -253,17 +260,24 @@ function openAccessibilitySettings() {
 // Whether macOS lets this app send Apple Events to System Events (Privacy &
 // Security ▸ Automation), the second permission auto-paste needs. There is no
 // query API for it, so ask System Events something harmless: a never-decided
-// app gets the native prompt (which is what we want), a denied one fails with
-// -1743. Non-macOS platforms have no such permission.
-async function automationTrusted() {
-  if (process.platform !== "darwin") return true;
+// app gets the native prompt (which is what we want). Resolves "granted",
+// "denied" (-1743: a refusal is on record), "pending" (our timeout killed the
+// probe, almost always because the prompt went unanswered) or "error".
+// Non-macOS platforms have no such permission.
+async function automationStatus() {
+  if (process.platform !== "darwin") return "granted";
   try {
     await execFileAsync("osascript", ["-e", PROBE_SCRIPT], { timeout: 30000 });
-    return true;
+    return "granted";
   } catch (err) {
     logger.warn("automation probe failed:", err.cause ?? err);
-    return false;
+    if (err.killed) return "pending";
+    return /\(-1743\)/.test(err.message) ? "denied" : "error";
   }
+}
+
+async function automationTrusted() {
+  return (await automationStatus()) === "granted";
 }
 
 function openAutomationSettings() {
@@ -281,6 +295,7 @@ async function resetMacPermission(service) {
   if (process.platform !== "darwin" || !app.isPackaged) return false;
   try {
     await execFileAsync("/usr/bin/tccutil", ["reset", service, MAC_BUNDLE_ID]);
+    logger.info(`tccutil reset ${service} ${MAC_BUNDLE_ID}: ok`);
     return true;
   } catch (err) {
     logger.warn(`tccutil reset ${service} failed:`, err.cause ?? err);
@@ -288,13 +303,75 @@ async function resetMacPermission(service) {
   }
 }
 
+const macPermissions = {
+  accessibilityTrusted,
+  automationStatus,
+  resetMacPermission,
+  openAccessibilitySettings,
+  openAutomationSettings,
+};
+
+/**
+ * Get auto-paste back to a working state on macOS (Settings ▸ Advanced ▸ Fix
+ * auto-paste permission). For whichever permission is off, clear Earheart's
+ * recorded decision so macOS asks again, fire the native prompt, and open the
+ * pane as the fallback. Other platforms report granted.
+ * @param {object} [p] - permission primitives, injectable for tests
+ * @returns {Promise<{granted: boolean, pane?: "accessibility"|"automation",
+ *   opened?: boolean, reset?: boolean, automation?: string}>}
+ *   `reset` says whether the stale decision was cleared; `automation` is the
+ *   final probe status when the Automation pane is the one to act on.
+ */
+async function fixPastePermissions(p = macPermissions) {
+  let result;
+  if (!p.accessibilityTrusted()) {
+    const reset = await p.resetMacPermission("Accessibility");
+    // An update leaves the Automation grant as stale as the Accessibility one;
+    // clearing both now means one click repairs both, and the next paste gets
+    // a fresh Automation prompt instead of a -1743.
+    if (reset) await p.resetMacPermission("AppleEvents");
+    // A no-op while a decision is still on record; the pane covers that.
+    p.accessibilityTrusted(true);
+    result = { granted: false, pane: "accessibility", reset };
+  } else {
+    let automation = await p.automationStatus();
+    let reset = false;
+    // Only a refusal on record is worth clearing: a probe that timed out is a
+    // prompt still waiting, and any other failure is not a permission.
+    if (automation === "denied") {
+      reset = await p.resetMacPermission("AppleEvents");
+      if (reset) automation = await p.automationStatus();
+    }
+    if (automation === "granted") return { granted: true };
+    result = { granted: false, pane: "automation", reset, automation };
+  }
+  try {
+    await (result.pane === "automation" ? p.openAutomationSettings() : p.openAccessibilitySettings());
+    return { ...result, opened: true };
+  } catch {
+    return { ...result, opened: false };
+  }
+}
+
+// Called once on the first launch after an update. The update has just
+// invalidated the Accessibility grant (see ACCESSIBILITY_OFF), so repair it
+// before the user dictates into a paste that can't land: clear the stale
+// decisions and let macOS ask again. Does nothing for a build macOS already
+// trusts, or outside the packaged app.
+async function repairPastePermissionsAfterUpdate(p = macPermissions) {
+  if (process.platform !== "darwin" || !app.isPackaged || p.accessibilityTrusted()) return false;
+  logger.info("updated build is not trusted for Accessibility; clearing the stale grant");
+  if (await p.resetMacPermission("Accessibility")) await p.resetMacPermission("AppleEvents");
+  p.accessibilityTrusted(true);
+  return true;
+}
+
 module.exports = {
   deliver,
   accessibilityTrusted,
   automationTrusted,
-  openAccessibilitySettings,
-  openAutomationSettings,
-  resetMacPermission,
+  fixPastePermissions,
+  repairPastePermissionsAfterUpdate,
   explainMacPasteError,
   MAC_BUNDLE_ID,
 };

@@ -392,8 +392,9 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
   stops working later — updates do this, because macOS keeps the old build's
   grant listed and switched on but no longer trusts the new one — use Settings
   → Advanced → **Fix auto-paste permission**: it clears the stale entry,
-  re-asks, and opens the pane for whichever permission is off. If Earheart is
-  still listed as on, remove it with **−** and add it again.
+  re-asks, and opens the pane for whichever permission is off. Earheart also
+  does this by itself on the first launch after an update. If Earheart is
+  still listed as on under Accessibility, remove it with **−** and add it again.
   When a paste fails the overlay and a notification say why, and the reason
   is also written to `~/Library/Logs/Earheart/earheart.log`.
 

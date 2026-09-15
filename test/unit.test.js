@@ -25,7 +25,8 @@ const { listRemoteModels } = require("../main/services/models-remote");
 const { reconcileTranscript } = require("../renderer/transcript");
 const { acceleratorFromEvent } = require("../renderer/hotkey-capture");
 const { prettyHotkey } = require("../main/util/hotkey-label");
-const { explainMacPasteError, MAC_BUNDLE_ID } = require("../main/output/deliver");
+const { explainMacPasteError, fixPastePermissions, MAC_BUNDLE_ID } = require("../main/output/deliver");
+const { permissionFixStatus } = require("../renderer/permission-status");
 
 test("encodeWav produces a valid RIFF header", () => {
   const samples = new Int16Array([0, 1000, -1000, 32767, -32768]);
@@ -1071,4 +1072,103 @@ test("explainMacPasteError names the macOS permission that blocked the paste", (
 test("the TCC bundle id matches the packaged appId", () => {
   const yml = fs.readFileSync(path.join(__dirname, "..", "electron-builder.yml"), "utf8");
   assert.strictEqual(yml.match(/^appId:\s*(\S+)/m)?.[1], MAC_BUNDLE_ID);
+});
+
+// A fake of the macOS permission primitives fixPastePermissions drives, with a
+// call log so each test can check what was reset, prompted and opened.
+function fakeMacPermissions({ trusted = true, automation = ["granted"], reset = true, openFails = false } = {}) {
+  const calls = [];
+  const statuses = [...automation];
+  return {
+    calls,
+    accessibilityTrusted: (prompt = false) => {
+      calls.push(prompt ? "prompt" : "check");
+      return trusted;
+    },
+    automationStatus: async () => {
+      calls.push("probe");
+      return statuses.length > 1 ? statuses.shift() : statuses[0];
+    },
+    resetMacPermission: async (service) => {
+      calls.push(`reset:${service}`);
+      return reset;
+    },
+    openAccessibilitySettings: async () => {
+      calls.push("open:accessibility");
+      if (openFails) throw new Error("no");
+    },
+    openAutomationSettings: async () => {
+      calls.push("open:automation");
+      if (openFails) throw new Error("no");
+    },
+  };
+}
+
+test("fixPastePermissions clears a stale Accessibility grant (and Automation's) before re-prompting", async () => {
+  const p = fakeMacPermissions({ trusted: false });
+  const result = await fixPastePermissions(p);
+  assert.deepStrictEqual(result, { granted: false, pane: "accessibility", reset: true, opened: true });
+  assert.deepStrictEqual(p.calls, [
+    "check",
+    "reset:Accessibility",
+    "reset:AppleEvents",
+    "prompt",
+    "open:accessibility",
+  ]);
+  // A failed reset leaves Automation alone and still opens the pane.
+  const failed = fakeMacPermissions({ trusted: false, reset: false });
+  assert.strictEqual((await fixPastePermissions(failed)).reset, false);
+  assert.ok(!failed.calls.includes("reset:AppleEvents"));
+});
+
+test("fixPastePermissions resets Automation only for a recorded denial", async () => {
+  const allowed = fakeMacPermissions({ automation: ["denied", "granted"] });
+  assert.deepStrictEqual(await fixPastePermissions(allowed), { granted: true });
+  assert.deepStrictEqual(allowed.calls, ["check", "probe", "reset:AppleEvents", "probe"]);
+
+  const stillDenied = fakeMacPermissions({ automation: ["denied"], reset: false });
+  assert.deepStrictEqual(await fixPastePermissions(stillDenied), {
+    granted: false,
+    pane: "automation",
+    reset: false,
+    automation: "denied",
+    opened: true,
+  });
+
+  // A timed-out probe is a prompt still waiting: nothing to clear.
+  const pending = fakeMacPermissions({ automation: ["pending"] });
+  assert.strictEqual((await fixPastePermissions(pending)).automation, "pending");
+  assert.ok(!pending.calls.some((c) => c.startsWith("reset:")));
+
+  const granted = fakeMacPermissions();
+  assert.deepStrictEqual(await fixPastePermissions(granted), { granted: true });
+
+  const noPane = fakeMacPermissions({ trusted: false, openFails: true });
+  assert.strictEqual((await fixPastePermissions(noPane)).opened, false);
+});
+
+// The Automation pane has no +/−, and a prompt that is still waiting has no
+// entry to toggle: each result must send the user somewhere that exists.
+test("permissionFixStatus gives instructions that match the pane", () => {
+  assert.strictEqual(permissionFixStatus({ granted: true }).cls, "status ok");
+
+  const accReset = permissionFixStatus({ granted: false, pane: "accessibility", reset: true, opened: true });
+  assert.doesNotMatch(accReset.text, /−/);
+  const accStale = permissionFixStatus({ granted: false, pane: "accessibility", reset: false, opened: true });
+  assert.match(accStale.text, /remove it with −/);
+
+  for (const reset of [true, false]) {
+    for (const automation of ["denied", "pending", "error"]) {
+      const { text } = permissionFixStatus({ granted: false, pane: "automation", reset, opened: true, automation });
+      assert.doesNotMatch(text, /−/, `${automation}/${reset}`);
+    }
+  }
+  assert.match(permissionFixStatus({ granted: false, pane: "automation", opened: true, automation: "pending" }).text, /Allow/);
+  assert.match(permissionFixStatus({ granted: false, pane: "automation", opened: true, automation: "denied" }).text, /System Events on/);
+
+  for (const pane of ["accessibility", "automation"]) {
+    const closed = permissionFixStatus({ granted: false, pane, opened: false });
+    assert.strictEqual(closed.cls, "status err");
+    assert.match(closed.text, /manually/);
+  }
 });

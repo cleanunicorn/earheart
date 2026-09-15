@@ -3,9 +3,9 @@
 //
 //   Windows (NSIS install)  run the new setup silently and relaunch
 //   macOS (.app bundle)     swap the bundle via a detached script, strip the
-//                           com.apple.quarantine attribute (the app ships
-//                           unsigned, so this is what prevents Gatekeeper's
-//                           "Earheart is damaged" dialog), relaunch
+//                           com.apple.quarantine attribute (the app is not
+//                           notarized, so this is what keeps Gatekeeper from
+//                           blocking the new version), relaunch
 //   Linux (AppImage)        replace the AppImage in place and relaunch
 //
 // Portable/deb/translocated installs can't be updated in place; those get a
@@ -597,8 +597,8 @@ function installWindows(setupExe) {
 
 // Replace the running .app bundle. The swap itself happens in a detached
 // shell script after this process exits; the script also strips the
-// quarantine attribute so the updated (unsigned) app opens without the
-// "Earheart is damaged" Gatekeeper dialog — that's the whole reason updates
+// quarantine attribute so the updated (not notarized) app opens without a
+// Gatekeeper dialog — that's the whole reason updates
 // from inside the app work while a manual download needs `xattr -cr` once.
 const MAC_SWAP_SCRIPT = `#!/bin/sh
 # earheart update swap: $1=pid $2=old-bundle $3=new-bundle

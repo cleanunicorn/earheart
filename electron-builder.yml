@@ -45,12 +45,10 @@ linux:
     entry:
       StartupWMClass: earheart
 
-# macOS builds on macos-latest (arm64) only; the build defaults to the host arch,
-# so the per-arch native addons (sherpa-onnx-darwin-arm64 and
-# @node-llama-cpp/mac-arm64) npm installed on that host are the ones that ship.
-# Cross-compiling x64 from this runner would bundle the wrong-arch native
-# binaries, so we don't — Intel Macs run the arm64 build under Rosetta. (The
-# x64 macos-13 runner was dropped from the release matrix; see release.yml.)
+# Build on native Apple Silicon and Intel runners so npm installs the matching
+# native addons. release.yml boots each packaged app and loads its engines
+# before uploading. Keep latest-mac.yml for existing Apple Silicon installs;
+# the Intel job publishes its metadata as latest-mac-x64.yml to avoid races.
 mac:
   target:
     - dmg
@@ -63,6 +61,13 @@ mac:
   extendInfo:
     NSMicrophoneUsageDescription: >-
       Earheart records your voice while dictating so it can be transcribed.
+    # Without this string macOS denies the Automation request silently instead
+    # of showing the "Earheart wants to control System Events" prompt. This is
+    # the piece that reaches unsigned release builds (extendInfo is applied
+    # unconditionally; the entitlements file only matters once we sign).
+    NSAppleEventsUsageDescription: >-
+      Earheart presses Cmd+V in the app you are working in to paste what you
+      dictated.
 
 win:
   target:

@@ -122,7 +122,7 @@ The one thing to remember is the same everywhere — you press Enter.
 
 | Symptom | Fix |
 | --- | --- |
-| Nothing pastes | Check Settings → General isn't set to clipboard-only; on Linux install `xdotool`/`wtype`; on macOS grant Accessibility (Settings → Advanced → **Fix auto-paste permission**). |
+| Nothing pastes | Check Settings → General isn't set to clipboard-only; on Linux install `xdotool`/`wtype`; on macOS grant Accessibility (Settings → Advanced → **Fix auto-paste permission** — releases have no stable signing identity, so an update invalidates the old grant; Earheart re-asks on the first launch after one) and Automation (Privacy & Security → Automation → Earheart → System Events); the overlay and `earheart.log` name which one blocked the paste. |
 | Prompt submitted itself halfway | Line breaks in a terminal — see the line-break note above. |
 | Identifiers come out wrong | Add them to the dictionary; switch the style to **Verbatim** for a take that is mostly code. |
 | Hotkey does nothing | Another app grabbed the combo, or you're on Wayland — use `earheart --toggle` from a system shortcut. |

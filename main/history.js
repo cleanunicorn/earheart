@@ -12,11 +12,20 @@ function historyPath() {
   return path.join(app.getPath("userData"), "history.json");
 }
 
+function validEntries(value) {
+  if (!Array.isArray(value)) return [];
+  // A manually edited, partially recovered, or older history file may contain
+  // nulls or other JSON values. Only records with transcript text can satisfy
+  // the renderer/tray contract; ignore bad rows without hiding valid ones.
+  return value.filter(
+    (entry) => entry && typeof entry === "object" && typeof entry.text === "string"
+  );
+}
+
 function load() {
   if (cached) return cached;
   try {
-    cached = JSON.parse(fs.readFileSync(historyPath(), "utf8"));
-    if (!Array.isArray(cached)) cached = [];
+    cached = validEntries(JSON.parse(fs.readFileSync(historyPath(), "utf8")));
   } catch {
     cached = [];
   }
@@ -77,4 +86,4 @@ function clear() {
   }
 }
 
-module.exports = { add, list, clear };
+module.exports = { add, list, clear, validEntries };

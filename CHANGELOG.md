@@ -6,6 +6,74 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.31.4 — 2026-09-15
+
+- Time out stalled update checks (#139)
+
+## v0.31.3 — 2026-09-15
+
+- Keep the current hotkey when replacement fails (#132)
+
+## v0.31.2 — 2026-09-15
+
+- Re-grant macOS auto-paste after an update invalidates it (#155)
+
+## v0.31.1 — 2026-09-13
+
+- Make macOS auto-paste work and log why it fails (#154)
+
+## v0.31.0 — 2026-09-10
+
+- Add a button that searches Hugging Face for compatible models (#152)
+
+## v0.30.0 — 2026-09-10
+
+- Copy the original transcript (#151)
+
+## v0.29.11 — 2026-09-10
+
+- Time out stalled model discovery (#146)
+
+## v0.29.10 — 2026-09-10
+
+- Reject malformed stored setting types (#143)
+
+## v0.29.9 — 2026-09-10
+
+- Ignore invalid update asset sizes (#142)
+
+## v0.29.8 — 2026-09-10
+
+- Ignore malformed history rows (#136)
+
+## v0.29.7 — 2026-09-10
+
+- Compare numeric prerelease identifiers correctly (#141)
+
+## v0.29.6 — 2026-09-10
+
+- Cap audio upload size (#148)
+
+## v0.29.5 — 2026-09-10
+
+- Preserve tiny clips when resampling (#150)
+
+## v0.29.4 — 2026-09-10
+
+- Make disabled cleanup fields inert (#149)
+
+## v0.29.3 — 2026-09-10
+
+- Validate remote service URLs (#147)
+
+## v0.29.2 — 2026-09-10
+
+- Persist decode calibration atomically (#145)
+
+## v0.29.1 — 2026-09-10
+
+- Restore Intel Mac downloads and architecture-compatible updates (#130)
+
 ## v0.29.0 — 2026-09-06
 
 - Resume interrupted model downloads (#127)

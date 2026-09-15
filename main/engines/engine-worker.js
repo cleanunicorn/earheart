@@ -378,7 +378,13 @@ async function loadcheck() {
     engines.sttError = String((err && err.message) || err);
   }
   try {
-    await import("node-llama-cpp");
+    const { getLlama } = await import("node-llama-cpp");
+    // Import alone only loads JS. Initialize the shipped native backend,
+    // without downloading or building a replacement that masks missing files.
+    // Apple Silicon prebuilts use Metal; Intel/Linux/Windows ship a CPU build.
+    const gpu = process.platform === "darwin" && process.arch === "arm64" ? "metal" : false;
+    const check = await getLlama({ gpu, build: "never", skipDownload: true });
+    await check.dispose();
     engines.cleanup = true;
   } catch (err) {
     engines.cleanup = false;

@@ -195,8 +195,60 @@ const DEFAULT_CLEANUP_MODEL = "gemma-3-1b";
 // shape as a MODELS entry, minus the sha256 we can't pre-verify for a user URL.
 let customModels = [];
 
+// A model id or filename becomes one path component under the managed models
+// directory, so it must be a single, plain segment: no separators, no dot
+// segments, none of the characters Windows refuses in a name, no reserved
+// device name, and no trailing dot or space (Windows strips those, so the
+// path checked and the path written would differ).
+const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+
+function isPathSegment(value) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value !== "." &&
+    value !== ".." &&
+    !/[\\/:*?"<>|\u0000-\u001f]/.test(value) &&
+    !/[. ]$/.test(value) &&
+    !WINDOWS_RESERVED_NAME.test(value)
+  );
+}
+
+function assertPathSegment(value, label) {
+  if (!isPathSegment(value)) throw new Error(`Invalid model ${label}`);
+  return value;
+}
+
+// Every string a custom model contributes to a filesystem path. The load
+// paths (gguf.file, sherpa.*) are joined onto the model dir by the engines
+// without going through the download validation, so they are checked here.
+function customModelPathSegments(m) {
+  const sherpa = m.sherpa || {};
+  return [
+    m.id,
+    ...(Array.isArray(m.files) ? m.files.map((f) => f && f.name) : []),
+    m.gguf && m.gguf.file,
+    sherpa.encoder,
+    sherpa.decoder,
+    sherpa.joiner,
+    sherpa.tokens,
+  ].filter((s) => s !== undefined && s !== null);
+}
+
 function setCustomModels(list) {
-  customModels = Array.isArray(list) ? list.filter((m) => m && m.id && m.kind) : [];
+  customModels = [];
+  if (!Array.isArray(list)) return;
+  for (const m of list) {
+    if (!m || !m.id || !m.kind) continue;
+    // Custom models come from settings.json, which the user can edit by hand.
+    // A row that could name a path outside its managed directory is dropped
+    // rather than left to throw from every model listing.
+    if (!customModelPathSegments(m).every(isPathSegment)) {
+      console.warn(`[earheart] ignoring custom model with an invalid path segment: ${m.id}`);
+      continue;
+    }
+    customModels.push(m);
+  }
 }
 
 /** Look up a model by kind ("stt" | "cleanup") and id. */
@@ -225,6 +277,8 @@ module.exports = {
   DEFAULT_STT_MODEL,
   DEFAULT_CLEANUP_MODEL,
   setCustomModels,
+  isPathSegment,
+  assertPathSegment,
   getModel,
   listModels,
   totalBytes,

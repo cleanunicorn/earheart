@@ -134,6 +134,20 @@ test("the always-visible History section stays live (no active-tab guard)", () =
   );
 });
 
+test("history exposes the preserved original when cleanup changed it", () => {
+  const normalized = js.replace(/\s+/g, " ");
+  assert.match(
+    normalized,
+    /item\.cleaned && typeof item\.raw === "string" && item\.raw !== item\.text/,
+    "the original action should appear only when cleanup produced different text"
+  );
+  assert.match(
+    normalized,
+    /historyCopyButton\("Copy original", item\.raw\)/,
+    "the original action must copy the preserved raw transcript"
+  );
+});
+
 test("every radio/checkbox group name settings.js uses exists in settings.html", () => {
   const referenced = new Set([...js.matchAll(/name="([a-z-]+)"/g)].map((m) => m[1]));
   assert.ok(referenced.size >= 3, "expected the output-mode/stt-engine/cleanup-engine groups");
@@ -157,6 +171,18 @@ test("hotkey-capture.js loads before each page's own script", () => {
     assert.notStrictEqual(own, -1, `${name} must load ${page}`);
     assert.ok(shared < own, `${name} must load hotkey-capture.js before ${page}`);
   }
+});
+
+test("permission-status.js loads before settings.js, which uses it", () => {
+  // settings.js only reaches for these when Fix is clicked or the window
+  // regains focus, so a dropped tag passes the smoke checks and throws later.
+  const shared = html.indexOf('src="permission-status.js"');
+  const own = html.indexOf('src="settings.js"');
+  assert.notStrictEqual(shared, -1, "settings.html must load permission-status.js");
+  assert.ok(shared < own, "settings.html must load permission-status.js before settings.js");
+  assert.ok(fs.existsSync(path.join(RENDERER, "permission-status.js")));
+  assert.match(js, /permissionFixStatus\(/);
+  assert.match(js, /permissionCheckStatus\(/);
 });
 
 test("settings.html uses no inline style attributes (blocked by the CSP)", () => {
@@ -200,4 +226,15 @@ test("shared classes the wizard relies on still exist in settings.css", () => {
   const shared = [".field", ".row", ".hint", ".status", ".lead", ".choice", "button.primary", "button.ghost", "code", ".capturing"];
   const missing = shared.filter((sel) => !css.includes(sel)).sort();
   assert.deepStrictEqual(missing, [], `settings.css no longer defines: ${missing.join(", ")}`);
+});
+
+test("disabled cleanup controls are inert in settings and the wizard", () => {
+  for (const [name, source] of [["settings", js], ["wizard", wizardJs]]) {
+    const normalized = source.replace(/\s+/g, " ");
+    assert.match(
+      normalized,
+      /fields\.inert = !on/,
+      `${name} must remove disabled cleanup fields from keyboard and accessibility navigation`
+    );
+  }
 });

@@ -11,9 +11,13 @@ const REPO_SLUG = "cleanunicorn/earheart";
 const DEFAULT_FEED_BASE = `https://github.com/${REPO_SLUG}/releases/latest/download`;
 const RELEASES_PAGE = `https://github.com/${REPO_SLUG}/releases/latest`;
 
-/** Feed file published by electron-builder for a given process.platform. */
-function feedFileFor(platform) {
-  if (platform === "darwin") return "latest-mac.yml";
+/** Architecture-specific feed; the legacy mac feed stays Apple Silicon. */
+function feedFileFor(platform, arch = process.arch) {
+  if (platform === "darwin") {
+    if (arch === "x64") return "latest-mac-x64.yml";
+    if (arch === "arm64") return "latest-mac.yml";
+    throw new Error(`Unsupported macOS architecture: ${arch}`);
+  }
   if (platform === "linux") return "latest-linux.yml";
   return "latest.yml";
 }
@@ -25,7 +29,7 @@ function feedFileFor(platform) {
  * download progress has a denominator. Throws when required keys are missing
  * so a mangled feed fails loudly instead of installing garbage.
  */
-function parseLatestYml(text) {
+function parseLatestYml(text, { platform, arch } = {}) {
   const lines = String(text).split(/\r?\n/);
   const top = {};
   const files = [];
@@ -52,8 +56,19 @@ function parseLatestYml(text) {
   if (!version || !path || !sha512) {
     throw new Error("Update feed is missing version, path or sha512");
   }
+  // Fail closed if a mispublished macOS feed points at the other CPU (or a
+  // DMG instead of the ZIP the updater extracts). Intel uses builder's legacy
+  // unsuffixed x64 name; Apple Silicon always includes -arm64.
+  if (platform === "darwin") {
+    const suffix = arch === "arm64" ? "-arm64-mac.zip" : "-mac.zip";
+    if ((arch !== "arm64" && arch !== "x64") || !path.endsWith(suffix) ||
+        (arch === "x64" && path !== `Earheart-${version}-mac.zip`)) {
+      throw new Error(`Update artifact is incompatible with macOS ${arch}: ${path}`);
+    }
+  }
   const entry = files.find((f) => f.url === path);
-  const size = entry && entry.size ? Number(entry.size) : 0;
+  const parsedSize = entry && entry.size ? Number(entry.size) : 0;
+  const size = Number.isFinite(parsedSize) && parsedSize >= 0 ? parsedSize : 0;
   return { version, path, sha512, size };
 }
 
@@ -69,8 +84,12 @@ function unquote(value) {
  */
 function compareVersions(a, b) {
   const split = (v) => {
-    const [core, ...pre] = String(v).trim().replace(/^v/i, "").split("-");
-    return { nums: core.split(".").map((n) => parseInt(n, 10) || 0), pre: pre.join("-") };
+    const withoutBuild = String(v).trim().replace(/^v/i, "").split("+")[0];
+    const [core, ...pre] = withoutBuild.split("-");
+    return {
+      nums: core.split(".").map((n) => parseInt(n, 10) || 0),
+      pre: pre.join("-").split(".").filter(Boolean),
+    };
   };
   const va = split(a);
   const vb = split(b);
@@ -79,10 +98,21 @@ function compareVersions(a, b) {
     const nb = vb.nums[i] || 0;
     if (na !== nb) return na < nb ? -1 : 1;
   }
-  if (va.pre !== vb.pre) {
-    if (!va.pre) return 1; // release > prerelease
-    if (!vb.pre) return -1;
-    return va.pre < vb.pre ? -1 : 1;
+  if (va.pre.length === 0 || vb.pre.length === 0) {
+    if (va.pre.length === vb.pre.length) return 0;
+    return va.pre.length === 0 ? 1 : -1; // release > prerelease
+  }
+  for (let i = 0; i < Math.max(va.pre.length, vb.pre.length); i++) {
+    if (i >= va.pre.length) return -1;
+    if (i >= vb.pre.length) return 1;
+    const pa = va.pre[i];
+    const pb = vb.pre[i];
+    if (pa === pb) continue;
+    const aNumeric = /^\d+$/.test(pa);
+    const bNumeric = /^\d+$/.test(pb);
+    if (aNumeric && bNumeric) return BigInt(pa) < BigInt(pb) ? -1 : 1;
+    if (aNumeric !== bNumeric) return aNumeric ? -1 : 1;
+    return pa < pb ? -1 : 1;
   }
   return 0;
 }

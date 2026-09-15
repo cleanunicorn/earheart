@@ -404,6 +404,15 @@ async function process(sid, wavArrayBuffer) {
       windows.sendToSettings("history:changed");
     }
 
+    if (result.hint) {
+      // The overlay's detail row clips after a couple of dozen characters and
+      // hides itself seconds later; the full instruction needs somewhere to
+      // stay, same as a cleanup failure does.
+      new Notification({
+        title: "Earheart: auto-paste failed, copied to clipboard",
+        body: result.hint.slice(0, 180),
+      }).show();
+    }
     overlayStatus("done", {
       preview: text.length > 120 ? `${text.slice(0, 120)}…` : text,
       method: result.method,

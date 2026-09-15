@@ -19,6 +19,7 @@ const {
   listSttVariants,
   buildCleanupModel,
   buildSttModel,
+  searchUrl,
 } = require("./services/hf-models");
 const { STYLES: CLEANUP_STYLES } = require("./cleanup-styles");
 const { encodeSilenceWav } = require("./util/wav");
@@ -150,29 +151,17 @@ function init({ applyHotkeys, onSettingsChanged }) {
     windows.openWizard();
   });
 
-  // Settings → Advanced: report whether auto-paste is allowed, so the UI can
-  // re-check silently (e.g. when the window regains focus after the user
-  // toggled the permission) without re-opening System Settings.
-  ipcMain.handle("permissions:accessibility-check", () => ({
-    granted: deliver.accessibilityTrusted(),
-  }));
+  // Settings → Advanced: report whether auto-paste is allowed, and which
+  // permission blocks it, so the UI can re-check silently (e.g. when the window
+  // regains focus after the user toggled a permission) without resetting
+  // anything or re-opening System Settings.
+  ipcMain.handle("permissions:accessibility-check", () => deliver.checkPastePermissions());
 
-  // Get the user back into a working auto-paste state on macOS. Auto-paste
-  // drives keystrokes through System Events, which needs Accessibility
-  // permission. macOS only shows its prompt once per app, so after the first
-  // allow/deny there is nothing to re-trigger — we fire the native prompt
-  // (covers a never-decided app) and open the Accessibility pane (the reliable
-  // path once a decision has been recorded). On other platforms there is no
-  // such permission, so accessibilityTrusted always reports granted.
-  ipcMain.handle("permissions:accessibility-fix", async () => {
-    if (deliver.accessibilityTrusted(true)) return { granted: true };
-    try {
-      await deliver.openAccessibilitySettings();
-      return { granted: false, opened: true };
-    } catch {
-      return { granted: false, opened: false };
-    }
-  });
+  // Get the user back into a working auto-paste state on macOS: auto-paste
+  // needs Accessibility and Automation, and an update leaves stale grants for
+  // both that macOS will not re-prompt over. fixPastePermissions clears them,
+  // re-asks, and says which pane to point the user at.
+  ipcMain.handle("permissions:accessibility-fix", () => deliver.fixPastePermissions());
 
   // Skipping still persists the defaults so the wizard only ever runs once.
   ipcMain.handle("wizard:skip", () => {
@@ -217,6 +206,18 @@ function init({ applyHotkeys, onSettingsChanged }) {
       if (!hfDiscover[kind]) return { ok: false, error: `Unknown model kind: ${kind}` };
       const result = await hfDiscover[kind](parseRepoInput(url), fetch);
       return { ok: true, ...result };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  // Open the Hugging Face hub in the browser, filtered to models Earheart can
+  // run as this kind. The URL is built here from the kind, never taken from
+  // the renderer, so the bridge can't be used to open arbitrary links.
+  ipcMain.handle("models:browse-hf", async (event, { kind } = {}) => {
+    try {
+      await shell.openExternal(searchUrl(kind));
+      return { ok: true };
     } catch (err) {
       return { ok: false, error: err.message };
     }

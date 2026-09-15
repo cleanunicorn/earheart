@@ -35,9 +35,14 @@ function resolveDir() {
   }
 }
 
-function rotateIfLarge(file) {
+function rotateIfLarge(file, maxBytes = MAX_BYTES) {
   try {
-    if (fs.statSync(file).size > MAX_BYTES) fs.renameSync(file, `${file}.1`);
+    if (fs.statSync(file).size <= maxBytes) return;
+    // rename replaces an existing destination on every platform Node supports
+    // (libuv uses MOVEFILE_REPLACE_EXISTING on Windows), so the previous
+    // generation is swapped out in one step — never removed ahead of a rename
+    // that might then fail and leave nothing retained.
+    fs.renameSync(file, `${file}.1`);
   } catch {
     // No existing file, or the rename failed — not worth blocking startup on.
   }
@@ -103,4 +108,5 @@ module.exports = {
   warn: (...args) => write("WARN", args),
   info: (...args) => write("INFO", args),
   getLogPath: () => logPath,
+  rotateIfLarge,
 };

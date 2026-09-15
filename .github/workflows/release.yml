@@ -76,12 +76,8 @@ jobs:
       # One platform failing must not cancel the other platforms' uploads.
       fail-fast: false
       matrix:
-        # macos-latest is Apple Silicon (arm64) — the only macOS build we ship;
-        # Intel Macs run it under Rosetta. The Intel (x64) macos-13 leg was
-        # dropped: its GitHub-hosted runner repeatedly sat queued with no host,
-        # which left the publish-release gate (needs all builds) waiting forever
-        # and stranded v0.7.0/v0.8.0 as unpublished drafts.
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Each macOS build installs and tests native addons on its own CPU.
+        os: [ubuntu-latest, macos-latest, macos-15-intel, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -91,9 +87,39 @@ jobs:
       - run: npm ci
       # On a tag, publish installers to the GitHub release; a plain
       # workflow_dispatch on a branch only uploads CI artifacts.
-      - run: npx electron-builder --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
+      - if: runner.os != 'macOS'
+        run: npx electron-builder --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Build locally first: publish macOS only after the packaged app and
+      # its bundled native engines pass on the matching hardware.
+      - name: Build macOS installers
+        if: runner.os == 'macOS'
+        run: npx electron-builder --mac --publish never
+      - name: Verify packaged macOS app and engines
+        timeout-minutes: 5
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          expected=arm64
+          bundle=dist/mac-arm64/Earheart.app
+          if [[ "${{ matrix.os }}" == macos-15-intel ]]; then
+            expected=x64
+            bundle=dist/mac/Earheart.app
+          fi
+          test "$(node -p process.arch)" = "$expected"
+          "$bundle/Contents/MacOS/Earheart" --smoke-test --no-sandbox
+          EARHEART_ENGINE_ROOT="$PWD/$bundle/Contents/Resources/app.asar" \
+            npx electron scripts/engine-smoke.js --no-sandbox
+      - name: Separate the Intel update feed
+        if: matrix.os == 'macos-15-intel'
+        run: mv dist/latest-mac.yml dist/latest-mac-x64.yml
+      - name: Upload verified macOS installers and feed
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.dmg dist/*.zip dist/*.blockmap dist/latest-mac*.yml --clobber
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: earheart-${{ matrix.os }}
@@ -103,6 +129,7 @@ jobs:
             dist/*.dmg
             dist/*.zip
             dist/*.exe
+            dist/latest*.yml
           if-no-files-found: ignore
 
   # Flip the draft release live once every platform has uploaded its installers,

@@ -1153,11 +1153,11 @@ earheart.on("updates:state", renderUpdateState);
   if (platform === "darwin") $("accessibility-field").hidden = false;
   $("version").textContent = `v${data.version}`;
   if (platform === "darwin") {
-    // The app ships unsigned; this is the one-time manual step after which
-    // in-app updates de-quarantine new versions automatically.
+    // Releases are signed but not notarized, so a fresh download needs one
+    // approval; in-app updates de-quarantine new versions automatically.
     $("update-hint").textContent +=
-      " If a freshly downloaded Earheart says it is damaged, run" +
-      " `xattr -cr /Applications/Earheart.app` once — updates installed from" +
+      " A freshly downloaded Earheart needs approving once under System" +
+      " Settings ▸ Privacy & Security ▸ Open Anyway — updates installed from" +
       " here handle that automatically afterwards.";
   }
   renderUpdateState(await earheart.invoke("updates:get"));

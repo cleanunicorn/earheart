@@ -146,23 +146,15 @@ for your Mac; the in-app updater keeps that architecture on subsequent updates.
 | `Earheart-<version>.AppImage` | In a terminal: `chmod +x Earheart-*.AppImage`, then double-click or run it. |
 | `earheart_<version>_amd64.deb` | `sudo apt install ./earheart_<version>_amd64.deb` |
 
-> **⚠️ macOS first launch: "Earheart is damaged and can't be opened"**
+> **⚠️ macOS first launch: "Apple could not verify Earheart is free of malware"**
 >
-> This does **not** mean the app is broken. Earheart isn't signed/notarized
-> yet, so macOS quarantines it. After dragging Earheart to Applications, run
-> this once in Terminal:
+> Releases are signed, but not notarized by Apple, so the first launch needs
+> one approval. Open Earheart, dismiss that dialog, then go to **System
+> Settings → Privacy & Security**, scroll to the bottom, and click **Open
+> Anyway** next to the Earheart message. The app opens from then on.
 >
-> ```bash
-> xattr -dr com.apple.quarantine /Applications/Earheart.app
-> ```
->
-> Then open Earheart normally. (The "right-click → Open" trick only clears the
-> milder "unidentified developer" warning, not the "damaged" one.) More detail
-> in [macOS notes](#macos) below.
->
-> You only ever do this once: Earheart updates itself from GitHub releases
-> (see below), and updates installed from inside the app clear the quarantine
-> automatically.
+> You only ever do this once. Updates installed from inside the app relaunch
+> without asking again.
 
 That's it — the built-in engines need nothing else installed. The first-run
 wizard downloads the speech and cleanup models for you.
@@ -181,8 +173,8 @@ downloads the release, verifies its checksum and reinstalls in place:
   relaunches. The portable exe can't update itself — the app opens the
   releases page instead.
 - **macOS:** the app bundle is swapped and the quarantine attribute is
-  stripped automatically, so the updated app opens normally — no `xattr`
-  needed after the first manual install.
+  stripped automatically, so the updated app opens without going through
+  Privacy & Security again.
 - **Linux (AppImage):** the AppImage file is replaced in place (same path, so
   launchers and autostart keep working) and the app relaunches. A `.deb`
   install opens the releases page instead (upgrading needs `sudo`).
@@ -371,17 +363,17 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
 
 ### macOS
 
-- **"Earheart is damaged and can't be opened"** on first launch means
-  Gatekeeper has quarantined the download — the app is unsigned and not yet
-  notarized, not corrupt. Drag it to Applications, then strip the quarantine
-  attribute once:
+- **"Apple could not verify Earheart is free of malware"** on first launch is
+  Gatekeeper: releases are signed with Earheart's own certificate but not
+  notarized by Apple. Drag the app to Applications, launch it, dismiss the
+  dialog, then approve it once under **System Settings → Privacy & Security →
+  Open Anyway** (bottom of the pane). On macOS 15 right-click → **Open** no
+  longer offers a bypass; Open Anyway is the way. If you would rather do it in
+  a terminal:
 
   ```bash
   xattr -dr com.apple.quarantine /Applications/Earheart.app
   ```
-
-  After that it opens normally. (Right-click → **Open** only works for the
-  "unidentified developer" prompt, not the "damaged" one.)
 
 - The first dictation asks for **Microphone** permission.
 - Auto-paste simulates Cmd+V via System Events, which requires two

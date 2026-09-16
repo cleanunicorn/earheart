@@ -123,8 +123,8 @@ function getState() {
 const HINTS = {
   "mac-translocated":
     "macOS is running Earheart from a temporary location. Move Earheart.app to " +
-    "/Applications and run `xattr -cr /Applications/Earheart.app` once — " +
-    "after that, in-app updates handle it automatically.",
+    "/Applications and open it once from there (approve it under Privacy & " +
+    "Security if macOS asks) — after that, in-app updates handle it automatically.",
   "win-portable":
     "This is the portable build — download the new version from the releases page.",
   "linux-pkg":

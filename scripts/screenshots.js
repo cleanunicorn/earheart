@@ -66,9 +66,9 @@ app.whenReady().then(async () => {
     setStatus("recording", "Listening…");
     // The live transcript mid-dictation: settled cleaned text plus the dimmed
     // still-streaming raw tail (the README's hero moment).
-    partialClean = "Let's meet tomorrow at ten to review the draft.";
+    partialClean = "In the auth middleware, don't retry on a 401.";
     partialRaw =
-      "let's meet tomorrow at ten to review the draft and then send it over to";
+      "in the auth middleware don't retry on a 401 just surface the error and add a test";
     renderTranscript();
     "";
   `);
@@ -103,7 +103,7 @@ app.whenReady().then(async () => {
   await shot(overlay, "overlay-processing");
 
   await overlay.webContents.executeJavaScript(`
-    setStatus("done", "Pasted", "Let's meet tomorrow at ten to review the draft.");
+    setStatus("done", "Pasted", "In the auth middleware, don't retry on a 401. Surface the error and add a test.");
     "";
   `);
   await sleep(400);

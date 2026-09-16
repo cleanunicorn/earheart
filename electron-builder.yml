@@ -56,15 +56,24 @@ mac:
   category: public.app-category.productivity
   icon: assets/icon.png
   hardenedRuntime: true
+  # Release builds are signed with a stable self-signed certificate (see
+  # release.yml), so macOS keeps Accessibility/Automation grants across
+  # updates. Apple's timestamp server only stamps Apple-issued certificates,
+  # and a timestamp matters only for notarization, which we don't do.
+  timestamp: none
+  # Signs by certificate hash, so the self-signed certificate needs no trust
+  # settings on the CI runner. Leaves local builds unsigned. electron-builder
+  # only calls a sign hook once it has an identity; "-" gives it one without a
+  # keychain lookup, and the hook swaps in the real certificate.
+  identity: "-"
+  sign: ./build/mac-sign.js
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     NSMicrophoneUsageDescription: >-
       Earheart records your voice while dictating so it can be transcribed.
     # Without this string macOS denies the Automation request silently instead
-    # of showing the "Earheart wants to control System Events" prompt. This is
-    # the piece that reaches unsigned release builds (extendInfo is applied
-    # unconditionally; the entitlements file only matters once we sign).
+    # of showing the "Earheart wants to control System Events" prompt.
     NSAppleEventsUsageDescription: >-
       Earheart presses Cmd+V in the app you are working in to paste what you
       dictated.

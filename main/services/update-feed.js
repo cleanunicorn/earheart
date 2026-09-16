@@ -5,7 +5,8 @@
 //
 // The yml files are the same feed electron-updater would consume — version,
 // asset filename and a base64 sha512 — but we read them ourselves because the
-// stock macOS updater requires a signed app and Earheart ships unsigned.
+// stock macOS updater expects an Apple Developer ID signature, and Earheart is
+// signed with its own self-signed certificate.
 
 const REPO_SLUG = "cleanunicorn/earheart";
 const DEFAULT_FEED_BASE = `https://github.com/${REPO_SLUG}/releases/latest/download`;

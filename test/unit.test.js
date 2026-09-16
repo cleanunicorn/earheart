@@ -1324,3 +1324,24 @@ test("startup repairs only on a returning user's visible launch in a paste mode"
     assert.strictEqual(shouldRepairAtStartup({ ...base, ...over }), false, JSON.stringify(over));
   }
 });
+
+// A signed release must survive the self-update untouched: re-signing it
+// ad-hoc would change its designated requirement and void the user's macOS
+// permission grants. Only a bundle that fails verification gets re-signed.
+test("ensureMacSignature leaves a valid signature alone and repairs a broken one", () => {
+  const { ensureMacSignature } = require("../main/util/mac-signature");
+  const calls = [];
+  const runWith = (verifyStatus, signStatus = 0) => (cmd, args) => {
+    calls.push(args.includes("--verify") ? "verify" : "sign");
+    return { status: args.includes("--verify") ? verifyStatus : signStatus, stderr: "boom" };
+  };
+
+  assert.strictEqual(ensureMacSignature("/A.app", { run: runWith(0) }), "verified");
+  assert.deepStrictEqual(calls, ["verify"]);
+
+  calls.length = 0;
+  assert.strictEqual(ensureMacSignature("/A.app", { run: runWith(1) }), "re-signed");
+  assert.deepStrictEqual(calls, ["verify", "sign"]);
+
+  assert.throws(() => ensureMacSignature("/A.app", { run: runWith(1, 1) }), /Could not sign the updated app: boom/);
+});

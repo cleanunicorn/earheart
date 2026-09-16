@@ -41,10 +41,10 @@ const PROBE_SCRIPT = 'tell application "System Events" to get name';
 // match `appId` in electron-builder.yml (a unit test holds them together).
 const MAC_BUNDLE_ID = "dev.cleanunicorn.earheart";
 
-// Accessibility is off for this build. Either it was never granted, or —
-// because releases are not signed with a stable identity, so macOS ties a
-// grant to the exact build that received it — an update left the old build's
-// grant listed and switched on while the new build is untrusted.
+// Accessibility is off for this build. Either it was never granted, or the
+// app's designated requirement changed — the move from unsigned to
+// certificate-signed releases, or a certificate rotation — leaving the old
+// grant listed and switched on while this build is untrusted.
 const ACCESSIBILITY_OFF = {
   note: "Accessibility permission is off",
   hint: "Accessibility is off for Earheart (an update can reset it) — Settings ▸ Advanced ▸ Fix auto-paste permission",
@@ -398,10 +398,12 @@ const repairMarker = {
 };
 
 /**
- * Repair auto-paste permissions without a click, once per build. Releases have
- * no stable signing identity, so every update leaves the Accessibility (and
- * Automation) grant on record for the old build: shown as on, trusting
- * nothing, never re-prompted. When this build is untrusted and hasn't been
+ * Repair auto-paste permissions without a click, once per build. Releases are
+ * signed with one certificate, so grants normally survive updates — but when
+ * the designated requirement changes (the first signed release after unsigned
+ * ones, or a certificate rotation), the Accessibility (and Automation) grant
+ * stays on record for the old one: shown as on, trusting nothing, never
+ * re-prompted. When this build is untrusted and hasn't been
  * repaired yet, clear both decisions and raise the prompt. Runs at a visible,
  * non-first-run startup in a paste mode, or else on the first skipped paste of
  * a launch — so a hidden login launch stays silent and switching from

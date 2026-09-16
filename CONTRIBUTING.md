@@ -90,6 +90,33 @@ npm run dist:win               # run on Windows, or: make dist-win-docker
 Output lands in `dist/`. Release builds for all three platforms run in CI on
 tag pushes (`v*`) — see [.github/workflows/release.yml](.github/workflows/release.yml).
 
+### macOS signing
+
+Release builds are signed with Earheart's **self-signed** code-signing
+certificate (not an Apple Developer ID, so they are still not notarized). Its
+job is permissions, not Gatekeeper: macOS files Accessibility and Automation
+grants under the app's designated requirement, and one certificate makes that
+`identifier "dev.cleanunicorn.earheart" and certificate leaf = H"…"` on every
+build, so grants survive updates. Unsigned builds got a per-build hash there
+and lost auto-paste on every update.
+
+- Secrets `MAC_CSC_LINK` (base64 `.p12`) and `MAC_CSC_KEY_PASSWORD`; repo
+  variable `MAC_SIGNING_CERT_SHA1` (the certificate's public fingerprint).
+- CI imports the certificate into a throwaway keychain and
+  [build/mac-sign.js](build/mac-sign.js) signs by its hash. macOS won't let CI
+  mark a self-signed certificate as trusted, and electron-builder's own
+  identity lookup only accepts trusted ones.
+- A tag build fails if the secrets are missing. A branch dry run
+  (`gh workflow run release.yml --ref <branch>`) signs when they are present
+  and builds unsigned otherwise. PR CI never signs.
+- The verify step checks the requirement names that fingerprint, the hardened
+  runtime flag, that the updater's zip still verifies after `ditto`, and runs
+  `--smoke-test --engine-check` in the signed app (library validation).
+- Local `npm run dist:mac` builds are unsigned.
+- **Rotation** (the certificate expires in 2036, or the key leaks): generate a
+  new one, replace both secrets and the variable. Every user re-grants
+  permissions once; the app's automatic repair re-asks on that first launch.
+
 ## Releasing
 
 Releases are cut **automatically when a PR merges to main**, sized by the

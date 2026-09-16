@@ -388,13 +388,14 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
   permissions: **Accessibility** (System Settings → Privacy & Security →
   Accessibility → enable Earheart) and **Automation** (allow Earheart to
   control System Events when macOS asks on the first paste; later under
-  Privacy & Security → Automation → Earheart → System Events). If auto-paste
-  stops working later — updates do this, because macOS keeps the old build's
-  grant listed and switched on but no longer trusts the new one — use Settings
-  → Advanced → **Fix auto-paste permission**: it clears the stale entry,
-  re-asks, and opens the pane for whichever permission is off. Earheart also
-  does this by itself on the first launch after an update. If Earheart is
-  still listed as on under Accessibility, remove it with **−** and add it again.
+  Privacy & Security → Automation → Earheart → System Events). Releases are
+  signed with the same certificate every time, so both permissions carry over
+  across updates. Updating from an older unsigned release (v0.31.x or
+  earlier) asks once more, and Earheart re-asks by itself on that first
+  launch. If auto-paste stops working, use Settings → Advanced → **Fix
+  auto-paste permission**: it clears a stale entry, re-asks, and opens the pane
+  for whichever permission is off. If Earheart is still listed as on under
+  Accessibility, remove it with **−** and add it again.
   When a paste fails the overlay and a notification say why, and the reason
   is also written to `~/Library/Logs/Earheart/earheart.log`.
 

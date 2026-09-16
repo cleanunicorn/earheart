@@ -12,9 +12,9 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/overlay-recording.png" width="500" alt="Earheart overlay showing a live transcript while recording" /><br/>
+  <img src="docs/screenshots/overlay-recording.png" width="500" alt="Earheart overlay transcribing a spoken coding-agent prompt" /><br/>
   <img src="docs/screenshots/overlay-processing.png" width="400" alt="Earheart overlay showing a progress bar while the transcript is cleaned up" /><br/>
-  <img src="docs/screenshots/overlay-done.png" width="400" alt="Earheart overlay confirming the transcript was pasted" />
+  <img src="docs/screenshots/overlay-done.png" width="400" alt="Earheart overlay confirming an agent prompt was pasted" />
 </p>
 
 <p align="center">
@@ -45,10 +45,8 @@ account, no telemetry. The setup wizard downloads a small
 a small [Gemma](https://huggingface.co/google) cleanup model (with a progress
 bar) and runs them in-process.
 
-It is still a general-purpose dictation app — the hotkey works the same in your
-email client, your notes and your browser. Agents are just where it earns its
-keep. See [Talking to agents](#talking-to-agents) for the practical setup, and
-[docs/agents.md](docs/agents.md) for a recipe per tool.
+It is still a general-purpose dictation app: the same hotkey works in email,
+notes, issues, and any other focused text field.
 
 Prefer to point Earheart elsewhere? Both steps are also **modular,
 OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
@@ -60,81 +58,108 @@ OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
 - **Mix and match**: local STT with a hosted LLM for cleanup, or any other
   combination. Switching is just a base URL in Settings.
 
+## Talking to agents
+
+Earheart works with any agent you can type into — no integration, plugin, API
+key, or account required. It pastes into the focused window and leaves the
+prompt for you to review and submit.
+
+### Quick start for agents
+
+1. [Install Earheart](#install) and finish the first-run wizard.
+2. Put the cursor in your agent's input — a terminal, editor chat, desktop app,
+   or browser composer.
+3. Press `Ctrl/Cmd+Shift+Space`, speak the full prompt, then press the hotkey
+   again.
+4. Review the pasted prompt and press Enter yourself.
+
+Per-tool setup recipes — terminal newlines, Wayland hotkeys, and hotkeys that
+do not collide with your editor — live in **[docs/agents.md](docs/agents.md)**.
+
+| Where you're prompting | What to know |
+| --- | --- |
+| **Claude Code / Codex CLI** (terminal) | Paste lands in the TUI input like any paste. On Linux, auto-paste needs `xdotool`/`wtype` — see [Platform notes](#linux). |
+| **Cursor, VS Code, JetBrains chat** | Nothing special — click the chat box and dictate. |
+| **claude.ai, ChatGPT, agent web UIs** | Same. The overlay never steals focus, so the composer keeps it. |
+| **Anywhere via a shortcut** | Bind a system shortcut, mouse button or foot pedal to `earheart --toggle` instead of using the built-in hotkey. |
+
+Three settings are worth a minute for agent work:
+
+- **Cleanup style** (Settings → Cleanup). **Clean** — the default — removes
+  *ums* and restarts but keeps your wording and intent. Switch to **Verbatim**
+  for exact strings, commands, or code. Avoid **Polished** for prompts; smoothing
+  prose is not what you want done to an instruction.
+- **Dictionary** (Settings → Cleanup). Add the repo, service, tool, and teammate
+  names you say every day — `pnpm`, `kubectl`, `PostgreSQL`, `useEffect` — so
+  near-misses are corrected to the exact spelling.
+- **Cleanup prompt** (Settings → Cleanup). Tell it to preserve file paths,
+  flags, and identifiers exactly as spoken and never to answer the transcript.
+  The default prompt already treats your dictation as text to clean, never as
+  instructions to follow.
+
+  The selected style's rules are added to your edited prompt, and Clean and
+  Polished strip any filler or repeated word the model leaves behind. **Custom
+  values** (the sampling tab) is the exception: it runs your prompt alone, with
+  no style rules or safety net, so it must request filler and repetition removal.
+
+**What it doesn't do yet.** You still press Enter yourself — Earheart pastes,
+it does not submit. The agent cannot ask you a question by voice or talk back.
+Those ideas are filed under the
+[`agents`](https://github.com/cleanunicorn/earheart/issues?q=is%3Aissue+label%3Aagents)
+label, and opinions are welcome.
+
 ## Features
 
-- **Global hotkey** (default `Ctrl/Cmd+Shift+Space`): press to start, press to
-  stop. A small overlay draws your voice live and shows progress without
-  stealing focus from the app you're dictating into. With the built-in
-  engines, a slim bar tracks the finishing passes too — estimated from your
-  machine's measured decode speed while transcribing (so it deliberately
-  stops short of the end rather than overpromise), and following actual
-  generation during cleanup.
-- **Pause and resume mid-dictation** — the overlay's pause key holds the take
-  (talk to someone, take a call) and resumes the same dictation; paused time
-  is never captured and never counts against the max dictation length.
-  Optionally bind a global pause hotkey in Settings → General.
-- **Speech-to-text with NVIDIA Parakeet** — by default Parakeet TDT 0.6B v3
-  (multilingual, 25 languages) runs **in-process** via sherpa-onnx / ONNX
-  Runtime, faster than realtime on CPU and with no network hop. Or point
-  Earheart at any OpenAI-compatible transcription API, or run the optional
-  [`earheart-stt`](stt-server/) server yourself.
 - **Live transcript while you speak (on by default)** — with the built-in
   engine the overlay fills in the text as you talk, with a cleaned-up version
   settling in behind the raw words on pauses. The final transcript on stop is
-  unchanged. Toggle it under Settings → Speech-to-text.
-- **LLM cleanup (on by default)** — punctuation, filler-word removal, false
-  starts, so a rambled prompt arrives as something an agent can actually read.
-  By default a small Gemma model runs **in-process**; or point cleanup at any
-  OpenAI-compatible chat API. If cleanup fails, the raw transcript is delivered
-  instead — your words are never lost.
-- **Cleanup styles and a personal dictionary** — one slider picks how far
-  cleanup may stray from your exact words (**Verbatim** → **Clean** →
-  **Polished**), and the prompt underneath is fully editable. The dictionary in
-  Settings → Cleanup fixes the terms speech-to-text always mangles: your repo
-  and product names, `pnpm`, `kubectl`, `useEffect`, colleagues' names.
+  unchanged. Without stealing focus, the overlay draws your voice and tracks
+  the finishing passes: transcription progress is estimated from your machine's
+  measured decode speed and deliberately stops short of the end; cleanup follows
+  actual generation. Toggle live transcription under Settings → Speech-to-text.
+- **Cleanup built for spoken prompts** — the default **Clean** style fixes
+  punctuation and removes filler words and false starts without polishing away
+  your intent. Choose **Verbatim** or **Polished** with the style slider and edit
+  the prompt underneath. Gemma runs in-process by default; any OpenAI-compatible
+  chat API also works. If cleanup fails, Earheart delivers the raw transcript.
+- **A dictionary for technical names** — teach Earheart the exact spelling of
+  repo and product names, `pnpm`, `kubectl`, `useEffect`, or colleagues' names.
+- **Pause and resume mid-dictation** — hold a take while you talk to someone or
+  take a call, then resume it. Paused time is never captured or counted against
+  the maximum length. You can also bind a global pause hotkey in Settings →
+  General.
+- **Private by default** — speech and cleanup run in-process, with no account,
+  telemetry, cloud requirement, or network hop.
+- **Works anywhere without an integration** — the global hotkey (default
+  `Ctrl/Cmd+Shift+Space`) starts and stops dictation without moving focus. Bind
+  `earheart --toggle` to a system shortcut, mouse button, or foot pedal; use
+  `earheart --pause` for pause/resume.
+- **Speech-to-text with NVIDIA Parakeet** — Parakeet TDT 0.6B v3 (multilingual,
+  25 languages) runs in-process via sherpa-onnx / ONNX Runtime, faster than
+  realtime on CPU. Or use any OpenAI-compatible transcription API or the
+  optional [`earheart-stt`](stt-server/) server.
 - **Auto-paste, clipboard, or both** — paste straight into the focused app
   (with clipboard restore), paste *and* keep the transcript on the clipboard,
   or clipboard-only if you prefer to paste yourself.
+- **Local history** — recent transcriptions stay in a local JSON file, so a
+  mis-aimed paste never loses a dictation. History can be disabled.
 - **Start on login (optional)** — have Earheart launch into the tray
   automatically when you sign in, so the hotkey is always ready. Off by
   default; toggle it under Settings → General. Works on Windows, macOS and
   Linux.
-- **Local history** — recent transcriptions are kept in a local JSON file so a
-  mis-aimed paste never loses a dictation. Can be disabled.
-- **No telemetry, no accounts, no cloud requirement.**
 
 ## Install
 
 ### 1. Download the right file for your OS
 
 Open the **[latest release page](https://github.com/cleanunicorn/earheart/releases/latest)**
-and, under **Assets**, download the file that matches your system. `<version>`
-is just the version number (e.g. `0.8.0`).
+and choose an asset (`<version>` is the version number, such as `0.8.0`):
 
-**🪟 Windows**
-
-- **Most people:** `Earheart-Setup-<version>.exe` — the installer.
-- Don't want to install? `Earheart-<version>.exe` — a portable build you can
-  run directly.
-- **Windows on ARM (Snapdragon X):** use the same x64 files above — Windows
-  runs them under built-in emulation, and both transcription and cleanup work.
-  There is no separate ARM installer yet.
-
-**🍎 macOS**
-
-- **Apple Silicon (M1/M2/M3/M4):** `Earheart-<version>-arm64.dmg`
-- **Intel Macs (x64):** `Earheart-<version>.dmg`
-
-Each build is packaged and tested on its matching architecture. Choose the DMG
-for your Mac; the in-app updater keeps that architecture on subsequent updates.
-- Not sure which Mac you have? Click  → **About This Mac** and look at
-  "Chip" / "Processor".
-
-**🐧 Linux**
-
-- **Any distro:** `Earheart-<version>.AppImage` — works everywhere.
-- **Debian / Ubuntu:** `earheart_<version>_amd64.deb` — installs as a normal
-  package.
+| System | Download |
+| --- | --- |
+| 🪟 Windows | `Earheart-Setup-<version>.exe` for the installer, or `Earheart-<version>.exe` to run a portable build. Windows on ARM (Snapdragon X) uses these x64 builds under built-in emulation; both engines work, but there is no separate ARM build yet. |
+| 🍎 macOS | `Earheart-<version>-arm64.dmg` for Apple Silicon (M1/M2/M3/M4), or `Earheart-<version>.dmg` for Intel. Each is packaged and tested on its matching architecture, which the updater preserves. Check  → **About This Mac** for “Chip” or “Processor” if unsure. |
+| 🐧 Linux | `Earheart-<version>.AppImage` for any distro, or `earheart_<version>_amd64.deb` for Debian/Ubuntu. |
 
 ### 2. Install it
 
@@ -276,53 +301,6 @@ the wizard:
 
 A mis-aimed paste never loses your words: the History section in Settings
 keeps recent transcriptions in a local file (you can turn this off).
-
-## Talking to agents
-
-Earheart pastes into the focused window, so it works with any agent you can
-type into — no integration, no plugin, no API key. Put the cursor in the
-agent's input, hold the thought, press the hotkey, and say the whole prompt
-including the parts you'd normally leave out because typing them is tedious.
-
-Per-tool setup recipes — terminal newlines, Wayland hotkeys, hotkeys that don't
-collide with your editor — live in **[docs/agents.md](docs/agents.md)**.
-
-| Where you're prompting | What to know |
-| --- | --- |
-| **Claude Code / Codex CLI** (terminal) | Paste lands in the TUI input like any paste. On Linux, auto-paste needs `xdotool`/`wtype` — see [Platform notes](#linux). |
-| **Cursor, VS Code, JetBrains chat** | Nothing special — click the chat box and dictate. |
-| **claude.ai, ChatGPT, agent web UIs** | Same. The overlay never steals focus, so the composer keeps it. |
-| **Anywhere via a shortcut** | Bind a system shortcut, mouse button or foot pedal to `earheart --toggle` instead of using the built-in hotkey. |
-
-Three settings are worth a minute for agent work:
-
-- **Cleanup style** (Settings → Cleanup). **Clean** — the default — is the
-  right one for prompts: it removes the *ums* and the restarts but keeps your
-  wording and your intent. Switch to **Verbatim** when you're dictating exact
-  strings, commands or code and want nothing touched. Avoid **Polished** for
-  prompts; smoothing prose is not what you want done to an instruction.
-- **Dictionary** (Settings → Cleanup). Speech-to-text has never heard of your
-  repo. Add the words you say fifty times a day — service names, `pnpm`,
-  `kubectl`, `PostgreSQL`, `useEffect`, your teammates' names — and near-misses
-  get corrected to the exact spelling.
-- **Cleanup prompt** (Settings → Cleanup). Editable. Agent prompts are not
-  prose, and you can say so — e.g. tell it to keep file paths, flags and
-  identifiers exactly as spoken and never to answer the transcript. (The
-  default prompt already forbids acting on the transcript's content: your
-  dictation is text to clean, never instructions to follow.)
-
-  Editing the prompt is safe: the chosen style's rules are added to whatever
-  you write, and Clean and Polished strip any *um* or repeated word the model
-  leaves behind. **Custom values** (the sampling tab) is the exception — it
-  runs your prompt alone, with no style rules and no safety net, so a custom
-  setup has to ask for filler and repetition removal itself.
-
-**What it doesn't do yet.** You still press Enter yourself — Earheart pastes,
-it doesn't submit. The agent can't ask *you* a question by voice, and it can't
-talk back. Those are the next things we're building; the ideas are filed as
-issues under the
-[`agents`](https://github.com/cleanunicorn/earheart/issues?q=is%3Aissue+label%3Aagents)
-label, and opinions on them are welcome.
 
 ## Using other services
 

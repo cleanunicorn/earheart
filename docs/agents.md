@@ -8,7 +8,7 @@ New here? Start with the [README](../README.md); this page assumes Earheart is
 installed and the setup wizard is done.
 
 <p align="center">
-  <img src="screenshots/overlay-recording.png" width="500" alt="Earheart overlay showing a live transcript while recording" />
+  <img src="screenshots/overlay-recording.png" width="500" alt="Earheart overlay transcribing a spoken coding-agent prompt" />
 </p>
 
 ## Why dictate to an agent

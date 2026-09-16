@@ -8,13 +8,13 @@
   <b>Talk to your coding agents.</b><br/>
   Press a hotkey, speak your prompt, press again — it lands in Claude Code,
   Codex, Cursor, or whatever else has focus.<br/>
-  Fully local. No cloud, no account, nothing leaves your machine.
+  Runs on your machine by default: your audio and prompts never leave it.
 </p>
 
 <p align="center">
   <img src="docs/screenshots/overlay-recording.png" width="500" alt="Earheart overlay transcribing a spoken coding-agent prompt" /><br/>
-  <img src="docs/screenshots/overlay-processing.png" width="400" alt="Earheart overlay showing a progress bar while the transcript is cleaned up" /><br/>
-  <img src="docs/screenshots/overlay-done.png" width="400" alt="Earheart overlay confirming an agent prompt was pasted" />
+  <img src="docs/screenshots/overlay-processing.png" width="500" alt="Earheart overlay showing a progress bar while the transcript is cleaned up" /><br/>
+  <img src="docs/screenshots/overlay-done.png" width="500" alt="Earheart overlay confirming an agent prompt was pasted" />
 </p>
 
 <p align="center">
@@ -26,8 +26,8 @@
 Working with an agent is a conversation, but you type it like a form. The
 prompts that actually work are long — context, constraints, the three things
 you already tried, the "no, not like that." Typing all of that is the slow part
-of the loop, and the reason people send a one-liner instead and then spend four
-turns correcting it.
+of the loop, and the reason people send a one-liner instead and then spend
+several turns correcting it.
 
 Earheart turns that part into talking. Press a global hotkey, say what you
 want, press it again: your speech is transcribed on-device (NVIDIA Parakeet),
@@ -36,7 +36,7 @@ backtracking), and **pasted straight into whatever app has focus** — the
 terminal running Claude Code, the Codex composer, Cursor's chat box, a GitHub
 issue, an email.
 
-**Nothing leaves your machine**, which matters more for agent prompts than for
+**Your voice and transcripts stay on your machine**, which matters more for agent prompts than for
 ordinary dictation: what you say to an agent is your own code, your file
 layout, your architecture, your unshipped work. Out of the box both models run
 **inside the app, on your computer** — no separate program, no Python, no
@@ -48,15 +48,8 @@ bar) and runs them in-process.
 It is still a general-purpose dictation app: the same hotkey works in email,
 notes, issues, and any other focused text field.
 
-Prefer to point Earheart elsewhere? Both steps are also **modular,
-OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
-
-- **Built-in (default)**: Parakeet + Gemma run in-process — fully private,
-  nothing to install.
-- **Local server**: run the [Parakeet STT server](stt-server/) and an
-  [Ollama](https://ollama.com)/llama.cpp model yourself.
-- **Mix and match**: local STT with a hosted LLM for cleanup, or any other
-  combination. Switching is just a base URL in Settings.
+Prefer your own servers or a hosted API? See
+[Using other services](#using-other-services).
 
 ## Talking to agents
 
@@ -81,7 +74,7 @@ do not collide with your editor — live in **[docs/agents.md](docs/agents.md)**
 | **Claude Code / Codex CLI** (terminal) | Paste lands in the TUI input like any paste. On Linux, auto-paste needs `xdotool`/`wtype` — see [Platform notes](#linux). |
 | **Cursor, VS Code, JetBrains chat** | Nothing special — click the chat box and dictate. |
 | **claude.ai, ChatGPT, agent web UIs** | Same. The overlay never steals focus, so the composer keeps it. |
-| **Anywhere via a shortcut** | Bind a system shortcut, mouse button or foot pedal to `earheart --toggle` instead of using the built-in hotkey. |
+| **Anywhere via a shortcut** | Bind a system shortcut, mouse button or foot pedal to `earheart --toggle` instead of using the built-in hotkey (Earheart must already be running). |
 
 Three settings are worth a minute for agent work:
 
@@ -91,16 +84,18 @@ Three settings are worth a minute for agent work:
   prose is not what you want done to an instruction.
 - **Dictionary** (Settings → Cleanup). Add the repo, service, tool, and teammate
   names you say every day — `pnpm`, `kubectl`, `PostgreSQL`, `useEffect` — so
-  near-misses are corrected to the exact spelling.
-- **Cleanup prompt** (Settings → Cleanup). Tell it to preserve file paths,
+  the cleanup model corrects near-misses to the exact spelling. It works through
+  cleanup, so it has no effect with cleanup turned off.
+- **System prompt** (Settings → Cleanup). Tell it to preserve file paths,
   flags, and identifiers exactly as spoken and never to answer the transcript.
   The default prompt already treats your dictation as text to clean, never as
   instructions to follow.
 
   The selected style's rules are added to your edited prompt, and Clean and
-  Polished strip any filler or repeated word the model leaves behind. **Custom
-  values** (the sampling tab) is the exception: it runs your prompt alone, with
-  no style rules or safety net, so it must request filler and repetition removal.
+  Polished also strip the *um*/*uh* fillers and accidental repeated words the
+  model leaves behind. **Custom values** (the style picker's last option) is the
+  exception: it runs your prompt plus the dictionary, with no style rules and no
+  safety net, so it must ask for filler and repetition removal itself.
 
 **What it doesn't do yet.** You still press Enter yourself — Earheart pastes,
 it does not submit. The agent cannot ask you a question by voice or talk back.
@@ -131,9 +126,9 @@ label, and opinions are welcome.
 - **Private by default** — speech and cleanup run in-process, with no account,
   telemetry, cloud requirement, or network hop.
 - **Works anywhere without an integration** — the global hotkey (default
-  `Ctrl/Cmd+Shift+Space`) starts and stops dictation without moving focus. Bind
-  `earheart --toggle` to a system shortcut, mouse button, or foot pedal; use
-  `earheart --pause` for pause/resume.
+  `Ctrl/Cmd+Shift+Space`) starts and stops dictation without moving focus. Or,
+  with Earheart running, bind `earheart --toggle` to a system shortcut, mouse
+  button, or foot pedal; `earheart --pause` pauses and resumes.
 - **Speech-to-text with NVIDIA Parakeet** — Parakeet TDT 0.6B v3 (multilingual,
   25 languages) runs in-process via sherpa-onnx / ONNX Runtime, faster than
   realtime on CPU. Or use any OpenAI-compatible transcription API or the
@@ -158,7 +153,7 @@ and choose an asset (`<version>` is the version number, such as `0.8.0`):
 | System | Download |
 | --- | --- |
 | 🪟 Windows | `Earheart-Setup-<version>.exe` for the installer, or `Earheart-<version>.exe` to run a portable build. Windows on ARM (Snapdragon X) uses these x64 builds under built-in emulation; both engines work, but there is no separate ARM build yet. |
-| 🍎 macOS | `Earheart-<version>-arm64.dmg` for Apple Silicon (M1/M2/M3/M4), or `Earheart-<version>.dmg` for Intel. Each is packaged and tested on its matching architecture, which the updater preserves. Check  → **About This Mac** for “Chip” or “Processor” if unsure. |
+| 🍎 macOS | `Earheart-<version>-arm64.dmg` for Apple Silicon (M1/M2/M3/M4), or `Earheart-<version>.dmg` for Intel. Each is packaged and tested on its matching architecture, which the updater preserves. Check the Apple menu → **About This Mac** for “Chip” or “Processor” if unsure. |
 | 🐧 Linux | `Earheart-<version>.AppImage` for any distro, or `earheart_<version>_amd64.deb` for Debian/Ubuntu. |
 
 ### 2. Install it
@@ -254,7 +249,7 @@ Settings → Speech-to-text or Settings → Cleanup.
 The wizard's last step downloads the models that run on your machine — a small
 Parakeet speech model (≈ 670 MB) and a small Gemma cleanup model (≈ 800 MB) —
 showing a progress bar as it goes. It's a one-time download; everything after
-that is faster than realtime, even on CPU. If a download is interrupted,
+that, speech-to-text runs faster than realtime, even on CPU. If a download is interrupted,
 retrying resumes from the saved partial file when possible. You can pick a
 larger, higher-quality cleanup model in the wizard or later in Settings → Cleanup.
 
@@ -304,6 +299,16 @@ keeps recent transcriptions in a local file (you can turn this off).
 
 ## Using other services
 
+Both speech-to-text and cleanup steps are also **modular,
+OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
+
+- **Built-in (default)**: Parakeet + Gemma run in-process — fully private,
+  nothing to install.
+- **Local server**: run the [Parakeet STT server](stt-server/) and an
+  [Ollama](https://ollama.com)/llama.cpp model yourself.
+- **Mix and match**: local STT with a hosted LLM for cleanup, or any other
+  combination. Switching is just a base URL in Settings.
+
 Anything that implements the OpenAI API shapes works out of the box:
 
 | Component | Endpoint used | Examples |
@@ -336,8 +341,11 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
   earheart --toggle
   ```
 
-  Earheart runs single-instance; a second invocation just toggles dictation in
-  the running app. The same works for pause/resume with `earheart --pause`.
+  Earheart runs single-instance; with the app already running, a second
+  invocation just toggles dictation in it. Use the full path to the binary if
+  `earheart` isn't on your `PATH`, e.g.
+  `~/Applications/Earheart-<version>.AppImage --toggle`. The same works for
+  pause/resume with `earheart --pause`.
 
 ### macOS
 

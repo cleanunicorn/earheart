@@ -103,7 +103,7 @@ app.whenReady().then(async () => {
   await shot(overlay, "overlay-processing");
 
   await overlay.webContents.executeJavaScript(`
-    setStatus("done", "Pasted", "Don't retry auth 401s.");
+    setStatus("done", "Pasted", "In the auth middleware, don't retry on a 401. Surface the error and add a test.");
     "";
   `);
   await sleep(400);

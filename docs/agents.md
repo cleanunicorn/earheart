@@ -26,9 +26,10 @@ speech, Gemma for cleanup) — no network hop, no account, no telemetry. Nothing
 you say to an agent leaves your computer unless you deliberately point Earheart
 at a hosted endpoint.
 
-## Do this once, for any agent
+## Optional tuning for any agent
 
-Settings → Cleanup, three fields, and every recipe below gets better:
+Dictation works as soon as the wizard is done. If a term keeps coming out
+wrong or a prompt gets reworded, these three fields in Settings → Cleanup help:
 
 1. **Cleanup style → Clean.** The default, and the right one for prompts: it
    drops the *ums* and false starts but keeps your wording. **Verbatim** when
@@ -36,9 +37,9 @@ Settings → Cleanup, three fields, and every recipe below gets better:
    instruction changes what the agent does.
 2. **Dictionary.** Add the words you say fifty times a day: your repo and
    service names, `pnpm`, `kubectl`, `useEffect`, teammates' names.
-   Speech-to-text has never heard of your project; near-misses get corrected to
-   these exact spellings.
-3. **Cleanup prompt.** Editable. Until the dedicated Prompt style ships
+   Speech-to-text has never heard of your project; the cleanup model corrects
+   near-misses to these exact spellings (so cleanup must be on).
+3. **System prompt.** Editable. Until the dedicated Prompt style ships
    ([#69](https://github.com/cleanunicorn/earheart/issues/69)), append a line
    like this to make cleanup safe for instructions:
 
@@ -63,7 +64,7 @@ Settings → Cleanup, three fields, and every recipe below gets better:
 text can be read as "submit", so a three-paragraph prompt gets sent as its
 first sentence while the rest lands in the next turn. Two ways to avoid it:
 don't dictate "new line" or "new paragraph" in a terminal, and add the
-"one paragraph, no line breaks" line from the cleanup prompt above. Fixing this
+"one paragraph, no line breaks" line from the system prompt above. Fixing this
 properly is [#68](https://github.com/cleanunicorn/earheart/issues/68).
 
 **Linux: auto-paste needs a keystroke tool.** `xdotool` on X11,
@@ -82,7 +83,7 @@ terminal's preferences, or pick **Copy to clipboard only** under Settings →
 General → *Where the text goes* and paste yourself. macOS (Cmd+V) and Windows
 are unaffected.
 
-**Wayland: the global hotkey won't register.** GNOME and KDE on Wayland stop
+**Wayland: the global hotkey may not register.** GNOME and KDE on Wayland stop
 apps from grabbing global keys. Bind a system shortcut (GNOME Settings →
 Keyboard → Custom Shortcuts) to:
 
@@ -90,8 +91,9 @@ Keyboard → Custom Shortcuts) to:
 earheart --toggle
 ```
 
-Earheart is single-instance, so a second invocation just toggles dictation in
-the running app. `earheart --pause` pauses and resumes the same way. This also
+Earheart is single-instance, so with the app already running a second
+invocation just toggles dictation in it (use the full path to the AppImage or
+binary if `earheart` isn't on your `PATH`). `earheart --pause` pauses and resumes the same way. This also
 works for a mouse button or a foot pedal on any platform.
 
 ## Editor agent panels — Cursor, Windsurf, VS Code, JetBrains

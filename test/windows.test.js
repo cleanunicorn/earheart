@@ -30,7 +30,6 @@ function makeFakeWindow(calls, { refuseRejoin = false } = {}) {
   let bit = false;
   return class FakeWindow {
     constructor(options) {
-      this.options = options;
       calls.push(["construct", options]);
       this.webContents = {
         on: () => {},

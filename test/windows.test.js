@@ -209,7 +209,11 @@ test("win32: showOverlay() makes no all-Spaces call and keeps the topmost-band s
   );
 });
 
-test("every platform: the card never takes focus and the hit-testing nudge survives", (t) => {
+// Runs on darwin, but none of the code it asserts has a platform branch: the
+// constructor options and the size nudge are unconditional. One platform proves
+// them — the title says darwin anyway, so nobody reads this as linux or win32
+// coverage that exists when it does not.
+test("darwin: the card never takes focus and the hit-testing nudge survives", (t) => {
   onPlatform(t, "darwin");
   const { windows, calls } = loadWindows();
   windows.createOverlay();

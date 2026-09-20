@@ -183,12 +183,10 @@ function createOverlay() {
   // desktop is fixed at creation and there is no public API to pin it to all of
   // them; showOverlay() re-asserts topmost there instead, see raiseWithinTopmostBand.
   //
-  // This call is deliberately left on Electron's default path, which also transforms
-  // the process to a UIElementApplication. That is the first half of a two-phase
-  // contract on macOS: once here, to establish the process type, and then once per
-  // show in rejoinActiveSpace(), which relies on it to skip the transform. Setting
-  // the bit here is necessary but not sufficient — a launch-time assertion on a
-  // never-shown window is exactly what made the card's Space membership unreliable.
+  // Deliberately left on Electron's default path, which also transforms the process
+  // to a UIElementApplication. Necessary but not sufficient: rejoinActiveSpace()
+  // re-asserts the bit on every show and depends on this call having stayed on that
+  // path — see there for why once at launch is not enough.
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlayWindow.loadFile(path.join(RENDERER, "overlay.html"));
   overlayWindow.webContents.on("render-process-gone", () => {

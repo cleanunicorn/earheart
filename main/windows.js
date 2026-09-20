@@ -254,12 +254,12 @@ function raiseWithinTopmostBand(win) {
 // once per dictation. createOverlay() has already run that default path once, which is
 // what establishes the process type in the first place.
 //
-// What that does NOT establish — stated plainly, because the paragraph above names
-// policy drift as one of the two suspected causes: createOverlay() having run proves
-// the transform happened at launch, not that the process is still a
+// What that does NOT establish — stated plainly, because the opening paragraph of
+// this comment names policy drift as one of the two suspected causes: createOverlay()
+// having run proves the transform happened at launch, not that the process is still a
 // UIElementApplication now. This call therefore *assumes* the policy has not drifted
-// since. If it has, passing the flag bypasses the very transform that would restore it,
-// and the assumption is wrong. That second mechanism is deliberately left open here
+// since. If it has, passing the flag bypasses the very transform that would restore
+// it, and the assumption is wrong. That second mechanism is deliberately left open here
 // rather than guessed at: the macOS verification run checks for a Dock icon at
 // dictation time, and a "yes" there is the signal to drop this flag and pay the
 // flicker instead.

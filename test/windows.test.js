@@ -10,8 +10,8 @@
 //
 // What this file can and cannot prove: it pins the JavaScript — call frequency,
 // exact options, ordering, and platform gating. It cannot execute a line of macOS
-// window behaviour, so the macOS Spaces fix these assertions guard is verified by
-// a human on real hardware, not here. See the PR body.
+// window behaviour, so the macOS Spaces fix that these assertions guard is verified
+// by a human on real hardware, not here. See the PR body.
 
 const { test } = require("node:test");
 const assert = require("node:assert");

@@ -256,6 +256,21 @@ test("darwin: every show re-asserts all-Spaces, after setBounds and before the w
   assert.ok(rejoin < shown, "the re-assert must precede showInactive()");
 });
 
+test("darwin: creation stays on the default path that establishes the process type", (t) => {
+  onPlatform(t, "darwin");
+  const { windows, calls } = loadWindows();
+  windows.createOverlay();
+
+  const [, visible, options] = calls.find(([name]) => name === "setVisibleOnAllWorkspaces");
+  assert.strictEqual(visible, true);
+  // The other half of the two-phase contract, and the half that is silent when it
+  // breaks: adding skipTransformProcessType here would skip the transform that
+  // rejoinActiveSpace() then relies on having happened, leaving the per-show call
+  // resting on a process type nothing ever established. Pin the absence of the key,
+  // not just the presence of the call.
+  assert.deepStrictEqual(options, { visibleOnFullScreen: true });
+});
+
 test("darwin: the re-assert skips the process-type transform", (t) => {
   onPlatform(t, "darwin");
   const { windows, calls } = loadWindows();

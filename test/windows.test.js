@@ -22,9 +22,11 @@ const WINDOWS = require.resolve("../main/windows");
 // A BrowserWindow that records every call as [name, ...args], so a test can
 // assert not just that something happened but where it happened relative to
 // everything else. Geometry answers are fixed: nothing here depends on layout.
-function makeFakeWindow(calls) {
+function makeFakeWindow(calls, { refuseRejoin = false } = {}) {
   // Tracks the NSWindow's all-Spaces collection-behaviour bit, so a test can
   // clear it after creation to stand in for the bit being lost at runtime.
+  // refuseRejoin stands in for the other failure the production warn
+  // distinguishes: the set itself silently not taking.
   let bit = false;
   return class FakeWindow {
     constructor(options) {
@@ -45,7 +47,7 @@ function makeFakeWindow(calls) {
       return true;
     }
     setVisibleOnAllWorkspaces(visible, options) {
-      bit = visible;
+      bit = refuseRejoin ? false : visible;
       calls.push(["setVisibleOnAllWorkspaces", visible, options]);
     }
     isVisibleOnAllWorkspaces() {
@@ -100,12 +102,12 @@ function makeFakeWindow(calls) {
 
 // Load a fresh main/windows.js against fakes. Fresh per test because the module
 // keeps the overlay as module-level singleton state.
-function loadWindows() {
+function loadWindows({ refuseRejoin = false } = {}) {
   const calls = [];
   const warnings = [];
   const workArea = { x: 0, y: 0, width: 1920, height: 1080 };
   const electron = {
-    BrowserWindow: makeFakeWindow(calls),
+    BrowserWindow: makeFakeWindow(calls, { refuseRejoin }),
     ipcMain: { on: () => {} },
     screen: {
       getPrimaryDisplay: () => ({ workArea }),
@@ -351,4 +353,21 @@ test("darwin: losing the bit is logged with what re-applying achieved; holding i
   assert.match(lost.warnings[0], /now true/);
   // The diagnostic must never become a gate: the repair runs either way.
   assert.strictEqual(countOf(lost.calls.slice(show), "setVisibleOnAllWorkspaces"), 1);
+});
+
+test("darwin: a re-apply that does not take is reported as such, not as a repair", (t) => {
+  onPlatform(t, "darwin");
+  const { windows, calls, warnings } = loadWindows({ refuseRejoin: true });
+  windows.createOverlay();
+  const show = calls.length;
+  windows.showOverlay();
+
+  // The warn's two outcomes mean different things and route to different repairs:
+  // "now true" is the bit having been cleared and put back, "now false" is the set
+  // itself not taking — which the escalation treats as a different bug entirely.
+  // Without this case only the first half is reachable, so a regression in the
+  // second half would ship unnoticed.
+  assert.strictEqual(warnings.length, 1);
+  assert.match(warnings[0], /now false/);
+  assert.strictEqual(countOf(calls.slice(show), "setVisibleOnAllWorkspaces"), 1);
 });

@@ -268,12 +268,12 @@ function raiseWithinTopmostBand(win) {
 // Linux, where the creation-time call is all that has ever been needed.
 function rejoinActiveSpace(win) {
   if (process.platform !== "darwin") return;
-  const joined = win.isVisibleOnAllWorkspaces();
+  const wasJoined = win.isVisibleOnAllWorkspaces();
   win.setVisibleOnAllWorkspaces(true, {
     visibleOnFullScreen: true,
     skipTransformProcessType: true,
   });
-  if (!joined) {
+  if (!wasJoined) {
     // The bit was lost after creation. Report what re-applying achieved, not just
     // that we tried: a read-back that still says false means the set itself didn't
     // take, which is a different bug from the bit having been cleared under us.

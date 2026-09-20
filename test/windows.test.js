@@ -65,10 +65,6 @@ function makeFakeWindow(calls, { refuseRejoin = false } = {}) {
     setSize(w, h) {
       calls.push(["setSize", w, h]);
     }
-    getPosition() {
-      return [0, 0];
-    }
-    setPosition() {}
     showInactive() {
       calls.push(["showInactive"]);
     }

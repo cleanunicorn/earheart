@@ -253,10 +253,18 @@ function raiseWithinTopmostBand(win) {
 // skipTransformProcessType: the default path transforms the process between
 // UIElementApplication and ForegroundApplication and "will hide the window and dock
 // for a short time every time it is called" (Electron's own typings) — unacceptable
-// once per dictation. Its documented precondition, that the window already be a
-// UIElementApplication, is guaranteed rather than assumed here: showOverlay() returns
-// early unless createOverlay() has run, and createOverlay() is what performs that
-// transform (it calls setVisibleOnAllWorkspaces on the default path).
+// once per dictation. createOverlay() has already run that default path once, which is
+// what establishes the process type in the first place.
+//
+// What that does NOT establish — stated plainly, because the paragraph above names
+// policy drift as one of the two suspected causes: createOverlay() having run proves
+// the transform happened at launch, not that the process is still a
+// UIElementApplication now. This call therefore *assumes* the policy has not drifted
+// since. If it has, passing the flag bypasses the very transform that would restore it,
+// and the assumption is wrong. That second mechanism is deliberately left open here
+// rather than guessed at: the macOS verification run checks for a Dock icon at
+// dictation time, and a "yes" there is the signal to drop this flag and pay the
+// flicker instead.
 //
 // Windows: this API is a documented no-op there. The darwin guard also keeps it off
 // Linux, where the creation-time call is all that has ever been needed.

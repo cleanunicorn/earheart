@@ -142,6 +142,17 @@ function onPlatform(t, platform) {
   t.after(() => Object.defineProperty(process, "platform", original));
 }
 
+// The three-line opening every "show once on macOS" case shares: load, create,
+// then note where the show begins so assertions can slice the calls it made.
+function showOnceOnDarwin(t) {
+  onPlatform(t, "darwin");
+  const { windows, calls, warnings } = loadWindows();
+  windows.createOverlay();
+  const show = calls.length;
+  windows.showOverlay();
+  return { windows, calls, warnings, show, during: calls.slice(show) };
+}
+
 const names = (calls) => calls.map(([name]) => name);
 const indexOf = (calls, name) => names(calls).indexOf(name);
 const countOf = (calls, name) => names(calls).filter((n) => n === name).length;
@@ -235,12 +246,7 @@ test("every platform: the card never takes focus and the hit-testing nudge survi
 // re-assertion that replaces that one frozen sample.
 
 test("darwin: every show re-asserts all-Spaces, after setBounds and before the window is ordered in", (t) => {
-  onPlatform(t, "darwin");
-  const { windows, calls } = loadWindows();
-  windows.createOverlay();
-  const show = calls.length;
-  windows.showOverlay();
-  const during = calls.slice(show);
+  const { during } = showOnceOnDarwin(t);
 
   assert.strictEqual(
     countOf(during, "setVisibleOnAllWorkspaces"),
@@ -274,15 +280,9 @@ test("darwin: creation stays on the default path that establishes the process ty
 });
 
 test("darwin: the re-assert skips the process-type transform", (t) => {
-  onPlatform(t, "darwin");
-  const { windows, calls } = loadWindows();
-  windows.createOverlay();
-  const show = calls.length;
-  windows.showOverlay();
+  const { during } = showOnceOnDarwin(t);
 
-  const [, visible, options] = calls
-    .slice(show)
-    .find(([name]) => name === "setVisibleOnAllWorkspaces");
+  const [, visible, options] = during.find(([name]) => name === "setVisibleOnAllWorkspaces");
   assert.strictEqual(visible, true);
   // Without skipTransformProcessType the default path transforms the process
   // between UIElementApplication and ForegroundApplication, which Electron

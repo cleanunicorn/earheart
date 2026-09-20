@@ -137,11 +137,14 @@ function onPlatform(t, platform) {
   t.after(() => Object.defineProperty(process, "platform", original));
 }
 
-// The three-line opening every "show once on macOS" case shares: load, create,
-// then note where the show begins so assertions can slice the calls it made.
-function showOnceOnDarwin(t) {
+// The opening the "one show on macOS" cases share: load, create, then note where
+// the show begins so assertions can slice the calls it made. Cases that assert
+// between create and show, or load twice, set themselves up instead — calling
+// onPlatform twice in one test would leave the override in place for the rest of
+// the file, because t.after hooks run in registration order.
+function showOnceOnDarwin(t, options) {
   onPlatform(t, "darwin");
-  const { windows, calls, warnings } = loadWindows();
+  const { windows, calls, warnings } = loadWindows(options);
   windows.createOverlay();
   const show = calls.length;
   windows.showOverlay();
@@ -291,11 +294,7 @@ test("darwin: the re-assert skips the process-type transform", (t) => {
 });
 
 test("darwin: a second show re-asserts again rather than caching the first", (t) => {
-  onPlatform(t, "darwin");
-  const { windows, calls } = loadWindows();
-  windows.createOverlay();
-  const show = calls.length;
-  windows.showOverlay();
+  const { windows, calls, show } = showOnceOnDarwin(t);
   windows.hideOverlay();
   windows.showOverlay();
   windows.destroyOverlay();
@@ -308,10 +307,7 @@ test("darwin: a second show re-asserts again rather than caching the first", (t)
 });
 
 test("darwin: a show that supersedes a fade-out still re-asserts", (t) => {
-  onPlatform(t, "darwin");
-  const { windows, calls } = loadWindows();
-  windows.createOverlay();
-  windows.showOverlay();
+  const { windows, calls } = showOnceOnDarwin(t);
   // A fade-out is in flight; this show cancels it and takes the early branch
   // through showOverlay(). The re-assert must not live in a cold-start path.
   windows.hideOverlay();
@@ -351,11 +347,7 @@ test("darwin: losing the bit is logged with what re-applying achieved; holding i
 });
 
 test("darwin: a re-apply that does not take is reported as such, not as a repair", (t) => {
-  onPlatform(t, "darwin");
-  const { windows, calls, warnings } = loadWindows({ refuseRejoin: true });
-  windows.createOverlay();
-  const show = calls.length;
-  windows.showOverlay();
+  const { calls, warnings, show } = showOnceOnDarwin(t, { refuseRejoin: true });
 
   // The warn's two outcomes mean different things and route to different repairs:
   // "now true" is the bit having been cleared and put back, "now false" is the set

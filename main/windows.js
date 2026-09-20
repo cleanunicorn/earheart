@@ -181,7 +181,14 @@ function createOverlay() {
   overlayWindow.setAlwaysOnTop(true, "screen-saver");
   // macOS/Linux only — documented as a no-op on Windows, where a window's virtual
   // desktop is fixed at creation and there is no public API to pin it to all of
-  // them. showOverlay() re-asserts topmost instead; see raiseWithinTopmostBand.
+  // them; showOverlay() re-asserts topmost there instead, see raiseWithinTopmostBand.
+  //
+  // This call is deliberately left on Electron's default path, which also transforms
+  // the process to a UIElementApplication. That is the first half of a two-phase
+  // contract on macOS: once here, to establish the process type, and then once per
+  // show in rejoinActiveSpace(), which relies on it to skip the transform. Setting
+  // the bit here is necessary but not sufficient — a launch-time assertion on a
+  // never-shown window is exactly what made the card's Space membership unreliable.
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlayWindow.loadFile(path.join(RENDERER, "overlay.html"));
   overlayWindow.webContents.on("render-process-gone", () => {
@@ -233,6 +240,43 @@ function raiseWithinTopmostBand(win) {
   win.moveTop();
 }
 
+// On macOS the card's "visible on every Space" state is a collection-behaviour bit
+// on the NSWindow, and createOverlay() sets it exactly once — at launch, on a window
+// that has never been ordered in, inside a busy whenReady handler. Whatever decides
+// whether that one assertion sticks (window realization timing, or the process
+// activation policy changing under us afterwards) is decided once and then frozen for
+// the rest of the run, with nothing here to notice or repair it. That is the shape
+// that produces "sometimes the card follows me to another desktop, sometimes it
+// doesn't": a single unverified sample of an operation we don't control, never taken
+// again. Re-assert it on every show, while the Space the user is on is the current one.
+//
+// skipTransformProcessType: the default path transforms the process between
+// UIElementApplication and ForegroundApplication and "will hide the window and dock
+// for a short time every time it is called" (Electron's own typings) — unacceptable
+// once per dictation. Its documented precondition, that the window already be a
+// UIElementApplication, is guaranteed rather than assumed here: showOverlay() returns
+// early unless createOverlay() has run, and createOverlay() is what performs that
+// transform (it calls setVisibleOnAllWorkspaces on the default path).
+//
+// Windows: this API is a documented no-op there. The darwin guard also keeps it off
+// Linux, where the creation-time call is all that has ever been needed.
+function rejoinActiveSpace(win) {
+  if (process.platform !== "darwin") return;
+  const joined = win.isVisibleOnAllWorkspaces();
+  win.setVisibleOnAllWorkspaces(true, {
+    visibleOnFullScreen: true,
+    skipTransformProcessType: true,
+  });
+  if (!joined) {
+    // The bit was lost after creation. Report what re-applying achieved, not just
+    // that we tried: a read-back that still says false means the set itself didn't
+    // take, which is a different bug from the bit having been cleared under us.
+    logger.warn(
+      `overlay had lost its all-Spaces collection behaviour; re-applied (now ${win.isVisibleOnAllWorkspaces()})`
+    );
+  }
+}
+
 function showOverlay() {
   const win = getOverlay();
   if (!win) return;
@@ -246,6 +290,10 @@ function showOverlay() {
   // height. The renderer re-reports its height as the new transcript fills in.
   const { x, y } = overlayPosition();
   win.setBounds({ x, y, width: OVERLAY_WIDTH, height: OVERLAY_HEIGHT });
+  // Before the window is ordered in, not after: a window that isn't all-Spaces at
+  // the moment it's shown goes to the Space it remembers, and re-asserting
+  // afterwards is at best a visible jump off the Space the user is looking at.
+  rejoinActiveSpace(win);
   win.showInactive();
   // Transparent, frameless windows don't begin hit-testing mouse input until
   // their bounds actually change *while visible*. The setBounds above runs while

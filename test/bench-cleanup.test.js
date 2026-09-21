@@ -368,6 +368,8 @@ test("benchModel: the CPU pass prompts as the app does, fresh each time, and sav
   assert.deepStrictEqual(saved.summary, summary);
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(out, "manifest.json"), "utf8")), manifest);
   assert.strictEqual(manifest.backend, "cpu");
+  assert.deepStrictEqual(manifest.corpora, ["fluent", "reported"]);
+  assert.deepStrictEqual(manifest.styles, ["clean", "polished"]);
   assert.strictEqual(manifest.chatWrapper, "GemmaChatWrapper");
   assert.strictEqual(manifest.sha256, require("node:crypto").createHash("sha256").update("not really weights").digest("hex"));
 });
@@ -383,6 +385,9 @@ test("benchModel: the GPU pass auto-detects the backend and times FLUENT/clean o
   assert.deepStrictEqual(calls.getLlama, [{}]);
   assert.strictEqual(calls.prompts.length, 1 + 3);
   assert.strictEqual(manifest.backend, "cuda");
+  // Asked for fluent + reported; the GPU pass measured FLUENT/clean only.
+  assert.deepStrictEqual(manifest.corpora, ["fluent"]);
+  assert.deepStrictEqual(manifest.styles, ["clean"]);
   assert.ok(fs.existsSync(path.join(dir, "tiny-gpu", "summary.json")));
 });
 

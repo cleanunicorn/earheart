@@ -210,6 +210,7 @@ async function benchModel(modelPath, opts, mod) {
   const loadMs = performance.now() - tLoad;
   const sequence = context.getSequence();
   const session = new mod.LlamaChatSession({ contextSequence: sequence });
+  const turns = plan(opts);
 
   const manifest = {
     id,
@@ -232,7 +233,9 @@ async function benchModel(modelPath, opts, mod) {
       os: `${os.type()} ${os.release()}`,
     },
     seeds: opts.seeds,
-    corpora: opts.corpora,
+    // What was measured, not what was asked for: a GPU pass runs FLUENT/clean only.
+    corpora: [...new Set(turns.map((t) => t.corpus))],
+    styles: [...new Set(turns.map((t) => t.style))],
     backendMs: Math.round(backendMs),
     loadMs: Math.round(loadMs),
     gitCommit: gitCommit(),
@@ -272,7 +275,6 @@ async function benchModel(modelPath, opts, mod) {
     return { output: (responseText || "").trim(), stopReason, wallMs, firstMs, lastMs, genTokens, firstBatch };
   }
 
-  const turns = plan(opts);
   log(`warm-up, then ${turns.length} timed cleans`);
   await clean(turns[0]);
 

@@ -459,12 +459,12 @@ function speedFileBrackets(res, cfg) {
   };
 }
 
-const speedFields = (s, ref, file, res) => ({
-  decodeRtf: s.decodeRtf, p50Rtf: s.p50Rtf, p95Rtf: s.p95Rtf, wallRtf: s.wallRtf,
-  coldLoadWallMs: s.coldLoadWallMs, firstDecodeMs: s.firstDecodeMs,
-  otherRunIdle: Boolean(s.otherRun && s.otherRun.active === false),
-  otherRunSamples: s.otherRun && s.otherRun.samples,
-  loadavg: [s.loadavgBefore[0], s.loadavgAfter[0]],
+const speedFields = (row, ref, file, res) => ({
+  decodeRtf: row.decodeRtf, p50Rtf: row.p50Rtf, p95Rtf: row.p95Rtf, wallRtf: row.wallRtf,
+  coldLoadWallMs: row.coldLoadWallMs, firstDecodeMs: row.firstDecodeMs,
+  otherRunIdle: Boolean(row.otherRun && row.otherRun.active === false),
+  otherRunSamples: row.otherRun && row.otherRun.samples,
+  loadavg: [row.loadavgBefore[0], row.loadavgAfter[0]],
   file,
   heldCpuLock: Boolean(res.cpuLock && res.cpuLock.role === "held for the whole pass"),
   refDecodeRtf: ref ? ref.decodeRtf : null,

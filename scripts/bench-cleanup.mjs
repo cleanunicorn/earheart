@@ -66,6 +66,7 @@ const { cleanupUserTurn, cleanupSamplingOptions } = require("../main/util/cleanu
 const { cleanMaxTokens, cleanContextNeed } = require("../main/util/clean-budget");
 const { SHORT, REPORTED, FLUENT } = require("./dictation-corpus");
 const metrics = require("./cleanup-metrics");
+const { isPathSegment } = require("../main/engines/registry");
 
 const CONTEXT_SIZE = 4096;
 const DEFAULT_SEEDS = [17, 29, 43, 61, 79];
@@ -135,6 +136,10 @@ function parseArgs(argv) {
   for (const c of opts.corpora) if (!CORPORA[c]) usage(`unknown corpus "${c}"`);
   if (opts.seeds.some((s) => !Number.isInteger(s))) usage("--seeds takes integers");
   for (const m of opts.models) if (!fs.existsSync(m)) usage(`no such file: ${m}`);
+  // The id names this run's directory under --out; one plain path segment
+  // (the registry's rule for model ids), so "../x" can't write outside --out.
+  const id = opts.id ?? path.basename(opts.models[0], ".gguf");
+  if (!isPathSegment(id)) usage(`--id must be one plain path segment, got ${JSON.stringify(id)}`);
   return opts;
 }
 

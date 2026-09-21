@@ -55,6 +55,22 @@ test("parseArgs: measure mode defaults and validation", async () => {
   for (const argv of bad) assert.throws(() => parseArgs(argv), UsageError, JSON.stringify(argv));
 });
 
+test("parseArgs: the run id must stay one path segment under --out", async () => {
+  const { parseArgs, UsageError } = await load();
+  const dir = tmpdir();
+  const model = path.join(dir, "m.gguf");
+  fs.writeFileSync(model, "");
+  assert.strictEqual(parseArgs([`--out=${dir}`, "--id=gemma-3-4b", model]).id, "gemma-3-4b");
+  for (const id of ["../outside", "a/b", "a\\b", "/abs", ".", "..", "", "con", "trailing."]) {
+    assert.throws(() => parseArgs([`--out=${dir}`, `--id=${id}`, model]), UsageError, id);
+  }
+  // A model file whose own name isn't a safe id needs an explicit --id.
+  const odd = path.join(dir, "con.gguf");
+  fs.writeFileSync(odd, "");
+  assert.throws(() => parseArgs([`--out=${dir}`, odd]), UsageError);
+  assert.strictEqual(parseArgs([`--out=${dir}`, "--id=ok", odd]).id, "ok");
+});
+
 test("parseArgs: probe and report modes", async () => {
   const { parseArgs, UsageError } = await load();
   const dir = tmpdir();

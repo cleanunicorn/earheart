@@ -254,6 +254,49 @@ ggml-org/SmolLM3-3B-GGUF (smollm3, apache-2.0, hybrid thinking,
 1,915,305,312 B), bartowski/Llama-3.2-3B-Instruct-GGUF (llama, `llama3.2`
 licence → not addable, 2,019,377,696 B).
 
+## Pins (probed 2026-09-21)
+
+What every row above was judged on: the Hugging Face commit `resolve/main`
+pointed to on 2026-09-21, and that file's sha256 and size (the headers the
+registry's refresh recipe pins from). `--probe` reads today's `main`, so a
+later probe may differ; this checks a row against its pinned revision instead:
+
+```sh
+curl -sI "https://huggingface.co/<repo>/resolve/<commit>/<file>" | grep -iE '^x-(linked-etag|linked-size)'
+```
+
+The measured models' downloaded bytes were verified against these sha256
+values before each run, and each run's `manifest.json` records the hash
+again.
+
+| repo · file | commit | sha256 | bytes |
+|---|---|---|---|
+| ggml-org/gemma-3-1b-it-GGUF · `gemma-3-1b-it-Q4_K_M.gguf` | `f9c28bcd85737ffc5aef028638d3341d49869c27` | `8ccc5cd1f1b3602548715ae25a66ed73fd5dc68a210412eea643eb20eb75a135` | 806,058,240 |
+| ggml-org/gemma-3-4b-it-GGUF · `gemma-3-4b-it-Q4_K_M.gguf` | `d0976223747697cb51e056d85c532013931fe52e` | `882e8d2db44dc554fb0ea5077cb7e4bc49e7342a1f0da57901c0802ea21a0863` | 2,489,757,856 |
+| ggml-org/gemma-3-12b-it-GGUF · `gemma-3-12b-it-Q4_K_M.gguf` | `ec0cbabd8dbff316f659876a50202295c3c4a314` | `7bb69bff3f48a7b642355d64a90e481182a7794707b3133890646b1efa778ff5` | 7,300,574,976 |
+| ggml-org/Qwen3.5-0.8B-GGUF · `Qwen3.5-0.8B-Q4_0.gguf` | `8fea620810c4afa23dd6443f999a48574c1611a3` | `57d1997790d1744fba5b40a7317df71ea5e2acee28c47e78f0cce39c0703f8cf` | 563,036,064 |
+| LiquidAI/LFM2-1.2B-GGUF · `LFM2-1.2B-Q4_K_M.gguf` | `5399e76c648f4eb8c053feb1ab747277dea5bf8b` | `55175400e3f509a9616227afeffd58d87e80b9f628a5d3d54ada884d85221fed` | 730,893,248 |
+| LiquidAI/LFM2-2.6B-GGUF · `LFM2-2.6B-Q4_K_M.gguf` | `a759abdc5955d4ca97763e5cb7ff3940589ba898` | `384bc877b6c37064982f96885bef69e4475919f5969218ed4e3b9399ae0340df` | 1,563,668,704 |
+| ibm-granite/granite-4.0-micro-GGUF · `granite-4.0-micro-Q4_K_M.gguf` | `ec48475f0c811d812fbfb61975717a9c36eeb652` | `97c417dcc0534b0737c74016fb2af083cb17c3b51eaac621192d23961b7024eb` | 2,099,502,528 |
+| bartowski/Phi-3.5-mini-instruct-GGUF · `Phi-3.5-mini-instruct-Q4_K_M.gguf` | `6d70da17e749a471ccb62ade694486011a75cda3` | `e4165e3a71af97f1b4820da61079826d8752a2088e313af0c7d346796c38eff5` | 2,393,232,672 |
+| unsloth/Qwen3-4B-Instruct-2507-GGUF · `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` | `a06e946bb6b655725eafa393f4a9745d460374c9` | `3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597` | 2,497,281,120 |
+| ggml-org/gemma-3-4b-it-qat-GGUF · `gemma-3-4b-it-qat-Q4_0.gguf` | `bbcac0d065076c47042838c0675c602411b0dd4c` | `ee91c3e7a4ab95d8c95672f9fcb58bf236b257e9f217966bcf53a5a6df4ab49a` | 2,526,080,992 |
+| ggml-org/Ministral-3-3B-Instruct-2512-GGUF · `Ministral-3-3B-Instruct-2512-Q8_0.gguf` | `742ab8db17d5c8ee5dc8f5afb5acfc2da1c33b26` | `70c6e5b77435062a46bfa3f0b9fa21744a10161ed23eabe9fdc47b3fb6711ad3` | 3,651,679,744 |
+| LiquidAI/LFM2.5-8B-A1B-GGUF · `LFM2.5-8B-A1B-Q4_K_M.gguf` | `49c14831707011e64d70b2ebd8462ba08d608434` | `4923ec14f06b968b74d663e5949867d2d9c3bf13a20b8be1a9f9af39989b2bb0` | 5,155,564,768 |
+| bartowski/Mistral-Nemo-Instruct-2407-GGUF · `Mistral-Nemo-Instruct-2407-Q4_K_M.gguf` | `a2dd64a0a76ea1bdb2bb6ab6fa5496b003c7c908` | `7c1a10d202d8788dbe5628dc962254d10654c853cae6aaeca0618f05490d4a46` | 7,477,208,192 |
+| ggml-org/gemma-4-E2B-it-GGUF · `gemma-4-E2B-it-Q4_0.gguf` | `b4243c156154b6dca9324415f8c7ccc098b4aed1` | `8e30dff3ac4c8434c49a7036fa15564bdbb6044e42bf04550bf1a096ad7e6a52` | 2,841,481,184 |
+| ggml-org/gemma-4-E4B-it-GGUF · `gemma-4-E4B-it-Q4_0.gguf` | `b8093469224f83f5c38f691eb906c380e9e63114` | `a555b900214b477d8880e7832e0b8925e139b0159640036b09fe472b6f2097f2` | 4,590,807,392 |
+| ggml-org/Laguna-XS-2.1-GGUF · `Laguna-XS-2.1-Q4_K_M.gguf` | `273068c9ae4ee6efea803da861aa404d115d3023` | `0a8301bc1b8509b27ed39ec86b98278c03341db6311c065326bd6629cd7304d6` | 19,563,570,240 |
+| Qwen/Qwen2.5-7B-Instruct-GGUF · `qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf` | `bb5d59e06d9551d752d08b292a50eb208b07ab1f` | `dfce12e3862a5283ccfb88221b48480e58745165de856439950d0f22590580db` | 3,993,201,344 |
+| Qwen/Qwen2.5-3B-Instruct-GGUF · `qwen2.5-3b-instruct-q4_k_m.gguf` | `7dabda4d13d513e3e842b20f0d435c732f172cbe` | `626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d` | 2,104,932,768 |
+| unsloth/Qwen3-4B-GGUF · `Qwen3-4B-Q4_K_M.gguf` | `22c9fc8a8c7700b76a1789366280a6a5a1ad1120` | `f6f851777709861056efcdad3af01da38b31223a3ba26e61a4f8bf3a2195813a` | 2,497,281,312 |
+| microsoft/Phi-3-mini-4k-instruct-gguf · `Phi-3-mini-4k-instruct-q4.gguf` | `a64113399c2f6b8ad3e11c394733a2ddadaa7f33` | `8a83c7fb9049a9b2e92266fa7ad04933bb53aa1e85136b7b30f1b8000ff2edef` | 2,393,231,072 |
+| tiiuae/Falcon3-3B-Instruct-GGUF · `Falcon3-3B-Instruct-q4_k_m.gguf` | `142f28a7f0ec90e701157ec3c4e9842e9471dfcd` | `ac9bc2edb58a961f77db11ae89e7f23b610d8b15c2ef603d1e7cb390c50d1aad` | 2,005,684,448 |
+| HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF · `smollm2-1.7b-instruct-q4_k_m.gguf` | `2d4a76a30b4af41ecd395c35725ac11688d4cfe4` | `decd2598bc2c8ed08c19adc3c8fdd461ee19ed5708679d1c54ef54a5a30d4f33` | 1,055,609,536 |
+| Qwen/Qwen2.5-1.5B-Instruct-GGUF · `qwen2.5-1.5b-instruct-q4_k_m.gguf` | `91cad51170dc346986eccefdc2dd33a9da36ead9` | `6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e` | 1,117,320,736 |
+| ggml-org/SmolLM3-3B-GGUF · `SmolLM3-Q4_K_M.gguf` | `4965cb60b150737b68a0408c36aeefb65078f894` | `8334b850b7bd46238c16b0c550df2138f0889bf433809008cc17a8b05761863e` | 1,915,305,312 |
+| bartowski/Llama-3.2-3B-Instruct-GGUF · `Llama-3.2-3B-Instruct-Q4_K_M.gguf` | `5ab33fa94d1d04e903623ae72c95d1696f09f9e8` | `6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff` | 2,019,377,696 |
+
 ## How it was measured
 
 - **Prompt: exactly what ships.** The default config's base prompt and style
@@ -320,7 +363,7 @@ mkdir -p "$OUT" "$OUT-locked" "$MODELS"
 fetch() {  # <repo> <commit> <file>: download a pinned file after a disk check
   df -h /                        # the run kept eval weights under ~20 GB
   curl -fL -o "$MODELS/$3" "https://huggingface.co/$1/resolve/$2/$3" </dev/null
-  sha256sum "$MODELS/$3"         # compare with the Pins table below
+  sha256sum "$MODELS/$3"         # compare with the Pins table above
 }
 
 # 1. Every measured model: id, repo, pinned commit, file.

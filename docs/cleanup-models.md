@@ -454,15 +454,15 @@ again.
 Everything below runs from the repository root and writes outside it. It is
 the exact sequence behind this page: 13 models, one at a time (download,
 check, CPU pass, GPU pass, delete), then the verdict trio re-timed under a CPU
-lock, then the tables. The whole run takes about two and a half hours on the
-hardware above and never holds more than one model's weights (at most
-7.5 GB) on disk.
+lock, then Gemma 3 4B's extra passes, then the tables. The whole run takes
+about two and a half hours on the hardware above and never holds more than
+one model's weights (at most 7.5 GB) on disk.
 
 ```sh
 OUT=/tmp/cleanup-bench          # saved runs: manifests, scores, raw outputs
 MODELS=/tmp/cleanup-models      # weights, one model at a time
 LOCK=/tmp/cpu-quiet.lock        # any lock file every heavy job on the machine agrees on
-mkdir -p "$OUT" "$OUT-locked" "$MODELS"
+mkdir -p "$OUT" "$OUT-rerun" "$OUT-locked" "$OUT-locked2" "$OUT-locked3" "$MODELS"
 
 fetch() {  # <repo> <commit> <file>: download a pinned file after a disk check
   df -h /                        # the run kept eval weights under ~20 GB
@@ -504,19 +504,38 @@ granite-4.0-micro ibm-granite/granite-4.0-micro-GGUF ec48475f0c811d812fbfb619757
 qwen3-4b-2507 unsloth/Qwen3-4B-Instruct-2507-GGUF a06e946bb6b655725eafa393f4a9745d460374c9 Qwen3-4B-Instruct-2507-Q4_K_M.gguf
 PINS
 
-# 3. Re-score with the current scoring (only needed if it changed since the
-#    runs), then print every table on this page.
-node scripts/bench-cleanup.mjs --rescore "$OUT"
-node scripts/bench-cleanup.mjs --rescore "$OUT-locked"
-node scripts/bench-cleanup.mjs --report "$OUT" --locked="$OUT-locked" \
+# 3. The other Gemma 3 4B passes in the speed table, in the order they ran.
+#    None was quiet; they are listed for transparency, and the bar's rule
+#    picks the last one (see "Speed passes and load").
+G4="ggml-org/gemma-3-4b-it-GGUF d0976223747697cb51e056d85c532013931fe52e gemma-3-4b-it-Q4_K_M.gguf"
+# 3a. A re-run that started only once the 1-minute load was below 14.
+fetch $G4
+until awk '{exit !($1 < 14)}' /proc/loadavg; do sleep 15; done
+node scripts/bench-cleanup.mjs --out="$OUT-rerun" --id=gemma-3-4b --corpus=fluent "$MODELS/gemma-3-4b-it-Q4_K_M.gguf" </dev/null
+# 3b, 3c. Two more passes holding the lock, each started below load 14.
+for pass in 2 3; do
+  flock "$LOCK" sh -c 'until awk "{exit !(\$1 < 14)}" /proc/loadavg; do sleep 15; done
+    node scripts/bench-cleanup.mjs --out="$0" --id=gemma-3-4b --corpus=fluent "$1" </dev/null' \
+    "$OUT-locked$pass" "$MODELS/gemma-3-4b-it-Q4_K_M.gguf"
+done
+rm "$MODELS/gemma-3-4b-it-Q4_K_M.gguf"
+
+# 4. Re-score every pass with the current scoring (only needed if it changed
+#    since the runs), then print every table on this page. The order of
+#    --locked decides the "locked re-run 1/2/3" labels.
+for d in "$OUT" "$OUT-rerun" "$OUT-locked" "$OUT-locked2" "$OUT-locked3"; do
+  node scripts/bench-cleanup.mjs --rescore "$d"
+done
+node scripts/bench-cleanup.mjs --report "$OUT" --also="$OUT-rerun" \
+  --locked="$OUT-locked" --locked="$OUT-locked2" --locked="$OUT-locked3" \
   --licences=qwen3.5-0.8b=apache-2.0,lfm2-1.2b=lfm1.0,lfm2-2.6b=lfm1.0,granite-4.0-micro=apache-2.0,phi-3.5-mini=mit,qwen3-4b-2507=apache-2.0,gemma-3-4b-qat=gemma,ministral-3-3b=apache-2.0,lfm2.5-8b-a1b=lfm1.0,mistral-nemo-12b=apache-2.0
 ```
 
 The shipped Gemmas need no `--licences` entry (they are "gemma"); a candidate
 missing from it reports as "unknown", which the bar treats as not shippable.
-The speed table on this page also lists a load-gated re-run of Gemma 3 4B
-(`--also=<dir>`) and two more locked passes of it (one `--locked=<dir>` per
-pass, numbered in order); all of Gemma 3 4B's passes were contended.
+Step 3 and the `--also`/`--locked` arguments reproduce the extra Gemma 3 4B
+passes in the speed table. On a quiet machine they will time differently;
+here all of them ran contended.
 
 Check a candidate on Hugging Face without downloading it:
 

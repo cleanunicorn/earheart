@@ -662,42 +662,42 @@ const FEATURE_DIM = 80;
  * The OfflineRecognizer config for a model's `sherpa` block, by family:
  * transducer (has a joiner), whisper, moonshine, nemoCtc, canary.
  */
-function sherpaRecognizerConfig(dir, s, runtime) {
+function sherpaRecognizerConfig(dir, sherpa, runtime) {
   const p = (f) => joinPath(dir, f);
-  const family = s.family || (s.joiner ? "transducer" : "whisper");
+  const family = sherpa.family || (sherpa.joiner ? "transducer" : "whisper");
   let modelFiles;
   switch (family) {
     case "transducer":
-      modelFiles = { transducer: { encoder: p(s.encoder), decoder: p(s.decoder), joiner: p(s.joiner) } };
+      modelFiles = { transducer: { encoder: p(sherpa.encoder), decoder: p(sherpa.decoder), joiner: p(sherpa.joiner) } };
       break;
     case "whisper":
-      modelFiles = { whisper: { encoder: p(s.encoder), decoder: p(s.decoder) } };
+      modelFiles = { whisper: { encoder: p(sherpa.encoder), decoder: p(sherpa.decoder) } };
       break;
     case "moonshine":
       modelFiles = {
         moonshine: {
-          preprocessor: p(s.preprocessor),
-          encoder: p(s.encoder),
-          uncachedDecoder: p(s.uncachedDecoder),
-          cachedDecoder: p(s.cachedDecoder),
+          preprocessor: p(sherpa.preprocessor),
+          encoder: p(sherpa.encoder),
+          uncachedDecoder: p(sherpa.uncachedDecoder),
+          cachedDecoder: p(sherpa.cachedDecoder),
         },
       };
       break;
     case "nemoCtc":
-      modelFiles = { nemoCtc: { model: p(s.model) } };
+      modelFiles = { nemoCtc: { model: p(sherpa.model) } };
       break;
     case "canary":
-      modelFiles = { canary: { encoder: p(s.encoder), decoder: p(s.decoder), srcLang: "en", tgtLang: "en", usePnc: 1 } };
+      modelFiles = { canary: { encoder: p(sherpa.encoder), decoder: p(sherpa.decoder), srcLang: "en", tgtLang: "en", usePnc: 1 } };
       break;
     default:
-      throw new Error(`unknown sherpa family: ${s.family}`);
+      throw new Error(`unknown sherpa family: ${sherpa.family}`);
   }
-  const modelType = s.modelType || (family === "transducer" ? "nemo_transducer" : undefined);
+  const modelType = sherpa.modelType || (family === "transducer" ? "nemo_transducer" : undefined);
   return {
     featConfig: { sampleRate: SAMPLE_RATE, featureDim: FEATURE_DIM },
     modelConfig: {
       ...modelFiles,
-      tokens: p(s.tokens),
+      tokens: p(sherpa.tokens),
       ...runtime,
       ...(modelType ? { modelType } : {}),
       debug: false,

@@ -1026,7 +1026,10 @@ async function run(opts) {
 const pct = (x, d = 2) => (x === undefined || x === null || Number.isNaN(x) ? "—" : (x * 100).toFixed(d));
 const num = (x, d = 3) => (x === undefined || x === null || Number.isNaN(x) ? "—" : x.toFixed(d));
 
-function report(result) {
+// The report is its sections, in order; each returns its lines (an empty
+// array when the result has nothing for it).
+
+function reportHeader(result) {
   const lines = [];
   const c = result.corpus;
   lines.push(`Corpus: ${c.source} ${c.id} @ ${c.commit.slice(0, 8)} — ${c.utterances} utterances, ${c.referenceWords} words, ${(c.audioSec / 60).toFixed(1)} min (${c.subset || "all"})`);
@@ -1043,7 +1046,21 @@ function report(result) {
     lines.push(`Resumed across a code change: ${result.resumed.rows} rows were measured by code ${result.resumed.fromMeasuringCode.slice(0, 8)}, not this run's (see each row's measuredWith).`);
   }
   lines.push(`Status: ${result.status}`);
-  lines.push("");
+  return lines;
+}
+
+// Per-timing statement of the conditions: was the other run's process seen,
+// and the 1-minute load average before / after the model.
+function conditionsCell(x) {
+  const la = x.loadavg || [x.loadavgBefore && x.loadavgBefore[0], x.loadavgAfter && x.loadavgAfter[0]];
+  const other = x.otherRunIdle !== undefined ? x.otherRunIdle : x.otherRun && x.otherRun.active === false;
+  return `cleanup run ${other ? "idle" : "ACTIVE or unknown"}, load ${num(la[0], 1)}–${num(la[1], 1)}`;
+}
+
+// The main table, the speed attempts it did not use, and — if any cell shows
+// a contended time — the footnote for it.
+function reportTable(result) {
+  const lines = [];
   lines.push("| model | role | path | wer_norm % | wer_verbatim % | Δ vs default (95 % CI), pts | decode RTF (p50 / p95) | speedup | cold load s | first decode s | speed measured with | punct % | caps % | size MB | verdict |");
   lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
   let contendedShown = false;
@@ -1058,14 +1075,7 @@ function report(result) {
     const sp = r.speed || (r.contended === false ? r : null);
     let speedCell;
     let loadCell;
-    // Per-timing statement of the conditions: was the other run's process seen,
-    // and the 1-minute load average before / after the model.
-    const cond = (x) => {
-      const la = x.loadavg || [x.loadavgBefore && x.loadavgBefore[0], x.loadavgAfter && x.loadavgAfter[0]];
-      const other = x.otherRunIdle !== undefined ? x.otherRunIdle : x.otherRun && x.otherRun.active === false;
-      return `cleanup run ${other ? "idle" : "ACTIVE or unknown"}, load ${num(la[0], 1)}–${num(la[1], 1)}`;
-    };
-    const condCell = sp ? cond(sp) : cond(r);
+    const condCell = sp ? conditionsCell(sp) : conditionsCell(r);
     if (sp) {
       speedCell = `${num(sp.decodeRtf, 4)} (${num(sp.p50Rtf, 4)} / ${num(sp.p95Rtf, 4)})`;
       loadCell = `${num(sp.coldLoadWallMs / 1000, 1)} | ${num(sp.firstDecodeMs / 1000, 2)}`;
@@ -1090,28 +1100,41 @@ function report(result) {
     lines.push("");
     lines.push("\\* measured while the machine was busy (not a clean speed number; never used for a verdict).");
   }
+  return lines;
+}
+
+function reportLongForm(result) {
   const long = result.rows.filter((r) => r.longForm);
-  if (long.length) {
-    lines.push("");
-    lines.push("| model | role | clip | WER % | word ratio | decode RTF |");
-    lines.push("|---|---|---|---|---|---|");
-    for (const r of long) {
-      for (const l of r.longForm) {
-        lines.push(`| ${r.id} | ${r.role} | ${l.label} (${num(l.audioSec, 0)} s) | ${pct(l.wer)} | ${num(l.wordRatio, 3)} | ${l.error ? `error: ${l.error}` : `${num(l.decodeRtf, 4)}${r.contended ? "*" : ""}`} |`);
-      }
+  if (!long.length) return [];
+  const lines = ["", "| model | role | clip | WER % | word ratio | decode RTF |", "|---|---|---|---|---|---|"];
+  for (const r of long) {
+    for (const l of r.longForm) {
+      lines.push(`| ${r.id} | ${r.role} | ${l.label} (${num(l.audioSec, 0)} s) | ${pct(l.wer)} | ${num(l.wordRatio, 3)} | ${l.error ? `error: ${l.error}` : `${num(l.decodeRtf, 4)}${r.contended ? "*" : ""}`} |`);
     }
   }
-  if (result.ablation) {
-    lines.push("");
-    lines.push(`Normalisation ablation on the default (wer_norm %): all stages ${pct(result.ablation.all)}; ` +
-      Object.entries(result.ablation).filter(([k]) => k !== "all").map(([k, v]) => `${k.replace("without_", "without ")} ${pct(v)}`).join("; "));
-  }
-  if (result.skipped && result.skipped.length) {
-    lines.push("");
-    lines.push("Surveyed and not measured:");
-    for (const s of result.skipped) lines.push(`- ${s.repo}: ${s.reason}`);
-  }
-  return lines.join("\n");
+  return lines;
+}
+
+function reportAblation(result) {
+  if (!result.ablation) return [];
+  return ["", `Normalisation ablation on the default (wer_norm %): all stages ${pct(result.ablation.all)}; ` +
+    Object.entries(result.ablation).filter(([k]) => k !== "all").map(([k, v]) => `${k.replace("without_", "without ")} ${pct(v)}`).join("; ")];
+}
+
+function reportSkipped(result) {
+  if (!result.skipped || !result.skipped.length) return [];
+  return ["", "Surveyed and not measured:", ...result.skipped.map((s) => `- ${s.repo}: ${s.reason}`)];
+}
+
+function report(result) {
+  return [
+    ...reportHeader(result),
+    "",
+    ...reportTable(result),
+    ...reportLongForm(result),
+    ...reportAblation(result),
+    ...reportSkipped(result),
+  ].join("\n");
 }
 
 /* ---------------- entry ---------------- */

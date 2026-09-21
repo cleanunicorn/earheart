@@ -36,8 +36,9 @@
 // (reuse the measured rows of an existing --out file, only if it is the same
 // pass, corpus selection, runtime and measuring code, and only rows whose model
 // files are unchanged), --resume-across-code (the same, but allowing a
-// measuring-code change — recorded in the result), --log <file> (append one
-// line per model).
+// measuring-code change — recorded in the result), --log <file> (append
+// progress lines: each model's start and result, any wait and why, the run's
+// final status).
 //
 // WHAT IT MEASURES. Every shipped and wired candidate model is measured
 // through the app's own engine worker (main/engines/engine-worker.js, forked

@@ -390,14 +390,9 @@ function readRuns(dir) {
     });
 }
 
-function report(opts) {
-  const all = readRuns(opts.report);
-  const cpu = all.filter((r) => r.manifest.backend === "cpu").sort((a, b) => a.manifest.bytes - b.manifest.bytes);
-  const gpu = all.filter((r) => r.manifest.backend !== "cpu").sort((a, b) => a.manifest.bytes - b.manifest.bytes);
-  const gemmas = cpu.filter((r) => opts.baselines.includes(r.manifest.id));
-  const licence = (id) => (opts.baselines.includes(id) ? "gemma" : opts.licences[id] || "unknown");
-
-  // Every CPU pass per model id: the first pass, then --also, then --locked.
+// Every CPU pass per model id — the first pass, then --also, then --locked —
+// with its load label and FLUENT/clean wall-clock.
+function collectPasses(cpu, opts) {
   const sources = [
     { label: "first pass", locked: false, runs: cpu },
     ...opts.also.map((d) => ({ label: `re-run (${path.basename(d)})`, locked: false, runs: readRuns(d) })),
@@ -426,13 +421,14 @@ function report(opts) {
       });
     }
   }
-  const speed = (id) => metrics.speedEstimates(passes[id]);
+  return passes;
+}
 
-  const out = [TABLE_HEAD, ...cpu.map(markdownRow), ""];
-  out.push(
+function passesTable(cpu, passes) {
+  const out = [
     "| model | pass | 1-min load: start · peak · end | load label | FLUENT/clean wall ms median [min–max] |",
-    "|---|---|---|---|---|"
-  );
+    "|---|---|---|---|---|",
+  ];
   for (const r of cpu) {
     for (const p of passes[r.manifest.id]) {
       const label = !p.load.recorded ? "load not recorded" : p.load.contended ? "contended" : "quiet";
@@ -442,12 +438,19 @@ function report(opts) {
       );
     }
   }
-  out.push(
-    "",
-    "| candidate | vs | licence | quality (clean, strictly fewer) | polished (no more) | fidelity | speed: least-contended median ≤ | speed: min of all passes ≤ | adds to catalog |",
-    "|---|---|---|---|---|---|---|---|---|"
-  );
+  return out;
+}
+
+// Each candidate against its byte-nearest shipped Gemma through the catalog bar.
+function verdictTable(cpu, passes, opts) {
+  const gemmas = cpu.filter((r) => opts.baselines.includes(r.manifest.id));
+  const licence = (id) => (opts.baselines.includes(id) ? "gemma" : opts.licences[id] || "unknown");
+  const speed = (id) => metrics.speedEstimates(passes[id]);
   const yn = (b) => (b ? "yes" : "no");
+  const out = [
+    "| candidate | vs | licence | quality (clean, strictly fewer) | polished (no more) | fidelity | speed: least-contended median ≤ | speed: min of all passes ≤ | adds to catalog |",
+    "|---|---|---|---|---|---|---|---|---|",
+  ];
   for (const r of cpu) {
     if (opts.baselines.includes(r.manifest.id) || gemmas.length === 0) continue;
     const g = metrics.nearestComparator(
@@ -477,25 +480,40 @@ function report(opts) {
         `${yn(robust)} (${fmt(cs.min)} vs ${fmt(gs.min)}) | **${yn(bar.pass)}**${bar.pass && !robust ? " (not robust)" : ""} |`
     );
   }
-  if (gpu.length) {
-    out.push("", "| GPU footnote (FLUENT/clean) | backend | wall ms median [min–max] | decode tok/s | fillers/repeats | fidelity fails |", "|---|---|---|---|---|---|");
-    for (const r of gpu) {
-      const c = r.summary["fluent/clean"];
-      out.push(
-        `| ${r.manifest.id} | ${r.manifest.backend} | ${fmt(c.wallMs.median)} [${fmt(c.wallMs.min)}–${fmt(c.wallMs.max)}] | ` +
-          `${fmt(c.decodeTps, 1)} | ${c.fillers}/${c.repeats} | ${c.fidelityFails}/${c.n} |`
-      );
-    }
-  }
-  const t = cpu[0]?.manifest;
-  if (t) {
+  return out;
+}
+
+function gpuFootnote(gpu) {
+  const out = [
+    "| GPU footnote (FLUENT/clean) | backend | wall ms median [min–max] | decode tok/s | fillers/repeats | fidelity fails |",
+    "|---|---|---|---|---|---|",
+  ];
+  for (const r of gpu) {
+    const c = r.summary["fluent/clean"];
     out.push(
-      "",
-      `Hardware: ${t.hardware.cpu} (${t.hardware.logicalCpus} logical CPUs), ${t.hardware.ramGB} GB RAM, ${t.hardware.os}; ` +
-        `CPU backend, node-llama-cpp threads ideal/current ${t.threads.idealThreads}/${t.threads.currentThreads}; ` +
-        `seeds ${t.seeds.join(",")}.`
+      `| ${r.manifest.id} | ${r.manifest.backend} | ${fmt(c.wallMs.median)} [${fmt(c.wallMs.min)}–${fmt(c.wallMs.max)}] | ` +
+        `${fmt(c.decodeTps, 1)} | ${c.fillers}/${c.repeats} | ${c.fidelityFails}/${c.n} |`
     );
   }
+  return out;
+}
+
+function hardwareLine(t) {
+  return (
+    `Hardware: ${t.hardware.cpu} (${t.hardware.logicalCpus} logical CPUs), ${t.hardware.ramGB} GB RAM, ${t.hardware.os}; ` +
+    `CPU backend, node-llama-cpp threads ideal/current ${t.threads.idealThreads}/${t.threads.currentThreads}; ` +
+    `seeds ${t.seeds.join(",")}.`
+  );
+}
+
+function report(opts) {
+  const all = readRuns(opts.report);
+  const cpu = all.filter((r) => r.manifest.backend === "cpu").sort((a, b) => a.manifest.bytes - b.manifest.bytes);
+  const gpu = all.filter((r) => r.manifest.backend !== "cpu").sort((a, b) => a.manifest.bytes - b.manifest.bytes);
+  const passes = collectPasses(cpu, opts);
+  const out = [TABLE_HEAD, ...cpu.map(markdownRow), "", ...passesTable(cpu, passes), "", ...verdictTable(cpu, passes, opts)];
+  if (gpu.length) out.push("", ...gpuFootnote(gpu));
+  if (cpu[0]) out.push("", hardwareLine(cpu[0].manifest));
   return out.join("\n");
 }
 

@@ -8,6 +8,7 @@
 //     [--seeds=17,29,43,61,79] [--corpus=fluent,reported[,short]] [--gpu] \
 //     <model.gguf>
 //   node scripts/bench-cleanup.mjs --probe <owner/repo> <file.gguf>
+//   node scripts/bench-cleanup.mjs --report <out dir> [--licences=<id>=<licence>,…]
 //
 // Every clean is prompted exactly as the app prompts: the default config's
 // base prompt + style directive through resolveCleanup (main/cleanup-styles
@@ -36,6 +37,10 @@
 // every output, for spot checks. stdout gets the model's markdown table row.
 // --probe prints one survey row from Hugging Face (architecture, template,
 // licence, gating, pinned commit, sha256, bytes) without downloading weights.
+// --report reads every summary under an --out directory and prints the
+// results table, each candidate against its byte-nearest shipped Gemma through
+// the catalog bar (meetsBar in scripts/cleanup-metrics.js), and the GPU
+// footnote — the tables in docs/cleanup-models.md and the PR.
 // Not in the test suite: it needs multi-GB models. The scoring is pinned in
 // test/cleanup-metrics.test.js.
 
@@ -64,17 +69,29 @@ function usage(msg) {
   console.error(
     "usage: node scripts/bench-cleanup.mjs --out=<dir> [--id=<label>] [--seeds=17,29,43,61,79]\n" +
       "         [--corpus=fluent,reported[,short]] [--gpu] <model.gguf>\n" +
-      "       node scripts/bench-cleanup.mjs --probe <owner/repo> <file.gguf>"
+      "       node scripts/bench-cleanup.mjs --probe <owner/repo> <file.gguf>\n" +
+      "       node scripts/bench-cleanup.mjs --report <out dir> [--licences=<id>=<licence>,...]\n" +
+      "         [--baselines=gemma-3-1b,gemma-3-4b,gemma-3-12b]"
   );
   process.exit(2);
 }
 
 function parseArgs(argv) {
-  const opts = { seeds: DEFAULT_SEEDS, corpora: ["fluent", "reported"], gpu: false, models: [] };
+  const opts = {
+    seeds: DEFAULT_SEEDS,
+    corpora: ["fluent", "reported"],
+    gpu: false,
+    models: [],
+    licences: {},
+    baselines: ["gemma-3-1b", "gemma-3-4b", "gemma-3-12b"],
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const [k, v] = a.startsWith("--") ? a.slice(2).split(/=(.*)/s) : [null, null];
     if (k === "probe") opts.probe = { repo: argv[++i], file: argv[++i] };
+    else if (k === "report") opts.report = argv[++i];
+    else if (k === "licences") opts.licences = Object.fromEntries(v.split(",").map((kv) => kv.split("=")));
+    else if (k === "baselines") opts.baselines = v.split(",");
     else if (k === "out") opts.out = v;
     else if (k === "id") opts.id = v;
     else if (k === "gpu") opts.gpu = true;
@@ -85,6 +102,10 @@ function parseArgs(argv) {
   }
   if (opts.probe) {
     if (!opts.probe.repo || !opts.probe.file) usage("--probe needs <owner/repo> <file.gguf>");
+    return opts;
+  }
+  if (opts.report !== undefined) {
+    if (!opts.report || !fs.existsSync(opts.report)) usage("--report needs the --out directory of earlier runs");
     return opts;
   }
   if (!opts.out) usage("--out=<dir> is required (outputs never go in the repo)");
@@ -272,27 +293,94 @@ async function benchModel(modelPath, opts, mod) {
 
 const fmt = (x, d = 0) => (x === null || x === undefined ? "–" : Number(x).toFixed(d));
 
+const TABLE_HEAD =
+  "| model | FLUENT clean: fillers/repeats (model) | clean runs | FLUENT polished: fillers/repeats | delivered after backstop (clean) | fidelity fails clean/polished | ratio | retention | echo/refusal/runaway | REPORTED: stumbles · fidelity fails | CPU wall ms median [min–max] | load avg | TTFT ms | decode tok/s | load ms | size | chat wrapper |\n" +
+  "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|";
+
 function markdownRow({ manifest: m, summary }) {
   const c = summary["fluent/clean"];
   const p = summary["fluent/polished"];
+  const r = summary["reported/clean"];
   const w = c.wallMs;
+  const flags = (x) => `${x.echo}/${x.refusal}/${x.runaway}`;
   return (
-    `| ${m.id} | ${m.backend} | ${c.fillers}/${c.repeats} | ${p ? `${p.fillers}/${p.repeats}` : "–"} | ` +
-    `${c.deliveredFillers}/${c.deliveredRepeats} | ${c.cleanRuns}/${c.n} | ${c.fidelityFails} | ` +
-    `${fmt(c.medianRatio, 2)} | ${fmt(c.medianRetention, 2)} | ${fmt(w.median)} [${fmt(w.min)}–${fmt(w.max)}] | ` +
-    `${fmt(c.ttftMs)} | ${fmt(c.decodeTps, 1)} | ${m.loadMs} | ${(m.bytes / 1e9).toFixed(2)} GB |`
+    `| ${m.id} | ${c.fillers}/${c.repeats} | ${c.cleanRuns}/${c.n} | ${p ? `${p.fillers}/${p.repeats}` : "–"} | ` +
+    `${c.deliveredFillers}/${c.deliveredRepeats} | ${c.fidelityFails}/${p ? p.fidelityFails : "–"} | ` +
+    `${fmt(c.medianRatio, 2)} | ${fmt(c.medianRetention, 2)} | ${flags(c)}${p ? ` · ${flags(p)}` : ""} | ` +
+    `${r ? `${r.stumbles} · ${r.fidelityFails}` : "–"} | ${fmt(w.median)} [${fmt(w.min)}–${fmt(w.max)}] | ${fmt(c.loadAvg1, 1)} | ` +
+    `${fmt(c.ttftMs)} | ${fmt(c.decodeTps, 1)} | ${m.loadMs} | ${(m.bytes / 1e9).toFixed(2)} GB | ${m.chatWrapper} |`
   );
+}
+
+// Every earlier run under one --out directory: the results table, each
+// candidate against its byte-nearest shipped Gemma through the catalog bar,
+// and the GPU footnote. Licences come from --licences (the harness can't read
+// them from a GGUF); the shipped Gemmas are "gemma".
+function report(opts) {
+  const all = fs
+    .readdirSync(opts.report)
+    .map((d) => path.join(opts.report, d, "summary.json"))
+    .filter((f) => fs.existsSync(f))
+    .map((f) => JSON.parse(fs.readFileSync(f, "utf8")));
+  const cpu = all.filter((r) => r.manifest.backend === "cpu").sort((a, b) => a.manifest.bytes - b.manifest.bytes);
+  const gpu = all.filter((r) => r.manifest.backend !== "cpu").sort((a, b) => a.manifest.bytes - b.manifest.bytes);
+  const gemmas = cpu.filter((r) => opts.baselines.includes(r.manifest.id));
+  const licence = (id) => (opts.baselines.includes(id) ? "gemma" : opts.licences[id] || "unknown");
+
+  const out = [TABLE_HEAD, ...cpu.map(markdownRow), ""];
+  out.push(
+    "| candidate | vs | licence | quality (clean, strictly fewer) | polished (no more) | fidelity | speed (median wall ≤) | adds to catalog |",
+    "|---|---|---|---|---|---|---|---|"
+  );
+  const yn = (b) => (b ? "yes" : "no");
+  for (const r of cpu) {
+    if (opts.baselines.includes(r.manifest.id) || gemmas.length === 0) continue;
+    const g = metrics.nearestComparator(
+      r.manifest.bytes,
+      gemmas.map((x) => ({ id: x.manifest.id, bytes: x.manifest.bytes, run: x }))
+    ).run;
+    const bar = metrics.meetsBar(
+      { licence: licence(r.manifest.id), summary: r.summary },
+      { licence: "gemma", summary: g.summary }
+    );
+    const cs = r.summary["fluent/clean"];
+    const gs = g.summary["fluent/clean"];
+    out.push(
+      `| ${r.manifest.id} | ${g.manifest.id} | ${licence(r.manifest.id)} ${bar.licence ? "✓" : "✗"} | ` +
+        `${yn(bar.quality)} (${cs.stumbles} vs ${gs.stumbles}) | ${yn(bar.polished)} | ${yn(bar.fidelity)} | ` +
+        `${yn(bar.speed)} (${fmt(cs.wallMs.median)} vs ${fmt(gs.wallMs.median)} ms) | **${yn(bar.pass)}** |`
+    );
+  }
+  if (gpu.length) {
+    out.push("", "| GPU footnote (FLUENT/clean) | backend | wall ms median [min–max] | decode tok/s | fillers/repeats | fidelity fails |", "|---|---|---|---|---|---|");
+    for (const r of gpu) {
+      const c = r.summary["fluent/clean"];
+      out.push(
+        `| ${r.manifest.id} | ${r.manifest.backend} | ${fmt(c.wallMs.median)} [${fmt(c.wallMs.min)}–${fmt(c.wallMs.max)}] | ` +
+          `${fmt(c.decodeTps, 1)} | ${c.fillers}/${c.repeats} | ${c.fidelityFails}/${c.n} |`
+      );
+    }
+  }
+  const t = cpu[0]?.manifest;
+  if (t) {
+    out.push(
+      "",
+      `Hardware: ${t.hardware.cpu} (${t.hardware.logicalCpus} logical CPUs), ${t.hardware.ramGB} GB RAM, ${t.hardware.os}; ` +
+        `CPU backend, node-llama-cpp threads ideal/current ${t.threads.idealThreads}/${t.threads.currentThreads}; ` +
+        `seeds ${t.seeds.join(",")}.`
+    );
+  }
+  console.log(out.join("\n"));
 }
 
 const opts = parseArgs(process.argv.slice(2));
 if (opts.probe) {
   await probe(opts.probe);
+} else if (opts.report) {
+  report(opts);
 } else {
   const mod = await import("node-llama-cpp");
-  console.log(
-    "| model | backend | FLUENT clean fillers/repeats (model) | FLUENT polished fillers/repeats | delivered fillers/repeats | clean runs | fidelity fails | ratio | retention | wall ms median [min–max] | TTFT ms | decode tok/s | load ms | size |\n" +
-      "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
-  );
+  console.log(TABLE_HEAD);
   console.log(markdownRow(await benchModel(opts.models[0], opts, mod)));
   // Exit without tearing the native backend down: disposing it segfaults
   // node-llama-cpp 3.18.1 here (exit 139), after every file is written. One

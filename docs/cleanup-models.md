@@ -346,14 +346,54 @@ licence → not addable, 2,019,377,696 B).
 ## Disk
 
 The run had a ~20 GB budget for model weights on a disk shared with another
-evaluation. It kept to it: `df -h /` before every download (free space never
-below 119 GB), each file sha256-checked against its pin after download, and
-deleted as soon as its `summary.json` was written. The only time more than
-one model sat on disk was the start, when the three shipped Gemmas were
-fetched together — a peak of **10.6 GB**. No candidate was skipped for disk
-(or for time: all 13 finished inside the window), and **no weights were left
-on disk at hand-back**. Every download and deletion is in the run log; only
-the raw outputs and JSON (a few MB) were kept, outside the repository.
+evaluation. The procedure (also in the reproduce loop below): `df -h /` before
+every download, the file's sha256 checked against its pin, and the file
+deleted as soon as its `summary.json` was written. The record, from the run
+log of 2026-09-21 (every download and deletion; times local):
+
+<details>
+<summary>Download and deletion ledger (21 downloads)</summary>
+
+| downloaded | model | for | free on `/` before | eval weights already on disk | bytes, sha256 verified | deleted |
+|---|---|---|---|---|---|---|
+| 05:21 | gemma-3-1b | first pass | 124G | 0 | 806,058,240 | 05:32 |
+| 05:21 | gemma-3-4b | first pass | 123G | 806 MB | 2,489,757,856 | 05:40 |
+| 05:22 | gemma-3-12b | first pass | 121G | 3,295 MB | 7,300,574,976 | 06:03 |
+| 06:03 | qwen3.5-0.8b | first pass | 122G | 0 | 563,036,064 | 06:06 |
+| 06:06 | lfm2-1.2b | first pass | 121G | 0 | 730,893,248 | 06:08 |
+| 06:08 | lfm2-2.6b | first pass | 122G | 0 | 1,563,668,704 | 06:11 |
+| 06:11 | granite-4.0-micro | first pass | 122G | 0 | 2,099,502,528 | 06:18 |
+| 06:18 | phi-3.5-mini | first pass | 122G | 0 | 2,393,232,672 | 06:26 |
+| 06:26 | qwen3-4b-2507 | first pass | 122G | 0 | 2,497,281,120 | 06:34 |
+| 06:34 | gemma-3-4b-qat | first pass | 122G | 0 | 2,526,080,992 | 06:43 |
+| 06:43 | ministral-3-3b | first pass | 121G | 0 | 3,651,679,744 | 06:58 |
+| 06:58 | lfm2.5-8b-a1b | first pass | 121G | 0 | 5,155,564,768 | 07:06 |
+| 07:06 | mistral-nemo-12b | first pass | 121G | 0 | 7,477,208,192 | 07:34 |
+| 07:34 | gemma-3-4b | gated re-run | 120G | 0 | 2,489,757,856 | ≤ 07:45 ¹ |
+| 07:45 | granite-4.0-micro | gated re-run (stopped) | 121G | 0 | 2,099,502,528 | 08:08 ² |
+| 07:58 | gemma-3-4b | locked re-run 1 | 119G | 2,099 MB ² | 2,489,757,856 | 08:05 |
+| 08:08 | qwen3-4b-2507 | locked re-run 1 | 120G | 0 | 2,497,281,120 | 08:13 |
+| 09:51 | gemma-3-4b | locked re-run 2 | 122G | 0 | 2,489,757,856 | 09:57 |
+| 09:58 | gemma-3-4b | locked re-run 3 | 122G | 0 | 2,489,757,856 | 10:04 |
+| 10:34 | gemma-3-1b | first-batch check (V-12) | 122G | 0 | 806,058,240 | 10:36 |
+| 10:34 | qwen3.5-0.8b | first-batch check (V-12) | 122G | 806 MB | 563,036,064 | 10:36 |
+
+¹ The gated re-run's script deleted the file without logging it; the next
+download (07:45) found 0 MB of eval weights on disk.
+² That re-run was stopped mid-pass; its file stayed until the locked trio
+deleted it at 08:08, which is the 2,099 MB the 07:58 download found.
+
+</details>
+
+From that record: free space never fell below **119 GB**; the most weights on
+disk at once was **10.6 GB** (the three shipped Gemmas, fetched together at the
+start; one model at a time after that); no candidate was skipped for disk or
+for time; and every file was deleted — nothing was left at hand-back. One
+more download is not in the ledger because it bypassed the download script: at
+09:48 a mistaken run of the reproduce block fetched gemma-3-1b to `/tmp` and
+ran two minutes of benchmark before it was stopped; the file was deleted at
+09:51 and nothing from it is used. Only the raw outputs and JSON (a few MB)
+were kept, outside the repository.
 
 ## Pins (probed 2026-09-21)
 

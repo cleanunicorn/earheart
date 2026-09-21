@@ -1104,7 +1104,7 @@ function report(result) {
 /* ---------------- entry ---------------- */
 
 async function main() {
-  const opts = parseArgs(process.argv.slice(process.versions.electron ? 2 : 2));
+  const opts = parseArgs(process.argv.slice(2));
   if (opts.report) {
     process.stdout.write(`${report(JSON.parse(fs.readFileSync(opts.report, "utf8")))}\n`);
     return 0;

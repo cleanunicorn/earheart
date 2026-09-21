@@ -401,7 +401,11 @@ function report(opts) {
   const sources = [
     { label: "first pass", locked: false, runs: cpu },
     ...opts.also.map((d) => ({ label: `re-run (${path.basename(d)})`, locked: false, runs: readRuns(d) })),
-    ...opts.locked.map((d) => ({ label: "locked re-run", locked: true, runs: readRuns(d) })),
+    ...opts.locked.map((d, i) => ({
+      label: opts.locked.length > 1 ? `locked re-run ${i + 1}` : "locked re-run",
+      locked: true,
+      runs: readRuns(d),
+    })),
   ];
   const passes = {};
   for (const src of sources) {

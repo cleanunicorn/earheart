@@ -165,6 +165,17 @@ test("report: the bar passes a clean, faithful, faster, shippable candidate only
   assert.match(text, /\| good \| cuda \|/);
 });
 
+test("report: several locked passes are numbered in the speed table", async () => {
+  const { report } = await load();
+  const { first, locked } = fixtures();
+  const text = report({
+    report: first, also: [], locked: [locked, locked],
+    baselines: ["gemma-3-1b", "gemma-3-4b", "gemma-3-12b"], licences: { late: "mit" },
+  });
+  assert.match(text, /\| late \| locked re-run 1 \|/);
+  assert.match(text, /\| late \| locked re-run 2 \|/);
+});
+
 test("report: an unknown licence never passes, and passes are labelled by load", async () => {
   const { report } = await load();
   const { first } = fixtures();

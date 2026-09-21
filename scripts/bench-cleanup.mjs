@@ -344,6 +344,10 @@ function markdownRow({ manifest: m, summary }) {
 // Every pass is labelled by its load (classifyPass); the bar's speed criterion
 // uses each model's least-contended pass, and the table also shows whether the
 // verdict survives the fastest clean of every pass (speedEstimates).
+// The files a benchmark run leaves under --out/<id>/.
+const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
+const readJsonl = (file) => fs.readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+
 // Re-score every saved run under an --out directory from its raw outputs with
 // the current scoring, keeping its timings and manifest. Scoring changes after
 // a benchmark (a new guard, a counter fix) are then applied to every model
@@ -355,7 +359,7 @@ function rescore(dir) {
     const runsFile = path.join(d, "runs.jsonl");
     const summaryFile = path.join(d, "summary.json");
     if (!fs.existsSync(runsFile) || !fs.existsSync(summaryFile)) continue;
-    const rows = fs.readFileSync(runsFile, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    const rows = readJsonl(runsFile);
     for (const row of rows) {
       const raw = path.join(d, "raw", `${row.corpus}-${row.style}-${row.index}-s${row.seed}.txt`);
       const { systemPrompt } = resolveCleanup({ ...DEFAULTS.cleanup, style: row.style });
@@ -369,7 +373,7 @@ function rescore(dir) {
       row.score = { ...score, delivered: undefined };
       runs++;
     }
-    const { manifest } = JSON.parse(fs.readFileSync(summaryFile, "utf8"));
+    const { manifest } = readJson(summaryFile);
     manifest.rescoredAt = new Date().toISOString();
     fs.writeFileSync(runsFile, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
     fs.writeFileSync(summaryFile, JSON.stringify({ manifest, summary: metrics.summarizeRuns(rows) }, null, 2) + "\n");
@@ -384,8 +388,8 @@ function readRuns(dir) {
     .map((d) => path.join(dir, d))
     .filter((d) => fs.existsSync(path.join(d, "summary.json")))
     .map((d) => {
-      const r = JSON.parse(fs.readFileSync(path.join(d, "summary.json"), "utf8"));
-      const runs = fs.readFileSync(path.join(d, "runs.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+      const r = readJson(path.join(d, "summary.json"));
+      const runs = readJsonl(path.join(d, "runs.jsonl"));
       return { ...r, runLoads: runs.map((x) => x.loadAvg1) };
     });
 }

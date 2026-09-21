@@ -22,10 +22,12 @@
 
 // Sherpa-onnx hosts ready-to-run ONNX bundles of the NeMo Parakeet models on
 // Hugging Face; we pull the encoder/decoder/joiner and the token table. Each
-// bundle lives in its own repo (int8 vs fp32, v3 multilingual vs v2 English),
-// so pin a repo + commit per model. The fp32 builds store the encoder weights
-// in a separate `encoder.weights` external-data file alongside `encoder.onnx`;
-// both must be downloaded into the same directory for the loader to find them.
+// bundle lives in its own repo (int8 vs fp32, v3 multilingual vs v2 English,
+// 0.6B vs 110M), so pin a repo + commit per model. scripts/eval-stt.js
+// --discover produces these pins, and --verify-shipped re-derives them. The
+// fp32 builds store the encoder weights in a separate `encoder.weights`
+// external-data file alongside `encoder.onnx`; both must be downloaded into
+// the same directory for the loader to find them.
 const sttUrl = (repo, commit, file) =>
   `https://huggingface.co/csukuangfj/${repo}/resolve/${commit}/${file}`;
 
@@ -128,6 +130,40 @@ const MODELS = {
         { name: "tokens.txt", bytes: 9_384,
           sha256: "ec182b70dd42113aff6c5372c75cac58c952443eb22322f57bbd7f53977d497d",
           url: sttUrl("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2", "86891485dd8ad7cb28cb1aade45c3e23d0197c30", "tokens.txt") },
+      ],
+      sherpa: {
+        encoder: "encoder.onnx",
+        decoder: "decoder.onnx",
+        joiner: "joiner.onnx",
+        tokens: "tokens.txt",
+        modelType: "nemo_transducer",
+      },
+    },
+    "parakeet-tdt-110m-en": {
+      id: "parakeet-tdt-110m-en",
+      label: "Parakeet TDT 110M (English only, fastest)",
+      kind: "stt",
+      engine: "sherpa-parakeet",
+      // English-only 110M-parameter Parakeet TDT, fp32 (there is no int8 build
+      // of it). Measured by scripts/eval-stt.js against the default on FLEURS
+      // en_us test, CPU at the app's 8 threads (Ryzen 9 3900X, Linux): decode
+      // ~4x faster (RTF 0.0104 vs 0.0425) at WER 6.29 % vs 6.07 % — a gap the
+      // corpus can't separate — and it keeps every word on a ~60 s single
+      // buffer. It does not punctuate every utterance (96 %).
+      note: "Runs on this computer · English only · ~480 MB · fastest, near-default accuracy",
+      files: [
+        { name: "encoder.onnx", bytes: 456_050_698,
+          sha256: "db260f1073c654c37dd65006885d1ee98ff16c22463b1ef992bbcabc29780a3f",
+          url: sttUrl("sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000", "e9bea5a06247dc3f55319ff23d34b0328f2f5ddf", "encoder.onnx") },
+        { name: "decoder.onnx", bytes: 15_753_086,
+          sha256: "3da156bde41a04c94ef783e0bd92928e9974e08645b976a22d0c3e1063510249",
+          url: sttUrl("sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000", "e9bea5a06247dc3f55319ff23d34b0328f2f5ddf", "decoder.onnx") },
+        { name: "joiner.onnx", bytes: 5_596_854,
+          sha256: "b603765c0724a0768c378a23326dabbeb9cfea932d260e4fcc14384fa5fd5aff",
+          url: sttUrl("sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000", "e9bea5a06247dc3f55319ff23d34b0328f2f5ddf", "joiner.onnx") },
+        { name: "tokens.txt", bytes: 9_953,
+          sha256: "450e56bd2f036fe5b6aa821865838cc5aa9d8b0106134ce9a9ba0664abe6cd10",
+          url: sttUrl("sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000", "e9bea5a06247dc3f55319ff23d34b0328f2f5ddf", "tokens.txt") },
       ],
       sherpa: {
         encoder: "encoder.onnx",

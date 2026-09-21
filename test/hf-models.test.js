@@ -538,9 +538,13 @@ test("searchUrl points each kind at the hub filtered to what its discoverer acce
   assert.strictEqual(stt.pathname, "/models");
   // The Parakeet TDT family the built-ins come from, not every sherpa-onnx repo.
   assert.strictEqual(stt.searchParams.get("search"), "sherpa-onnx-nemo-parakeet-tdt");
+  // Hugging Face's search treats "-" and "_" alike (verified: this search
+  // lists csukuangfj/sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000),
+  // so compare with separators folded the same way.
+  const fold = (x) => x.toLowerCase().replace(/[-_]/g, "-");
   for (const m of registry.listModels("stt")) {
     const repo = m.files.map((f) => f.url).find(Boolean).split("/")[4];
-    assert.ok(repo.includes(stt.searchParams.get("search")), `${repo} should match the STT search`);
+    assert.ok(fold(repo).includes(fold(stt.searchParams.get("search"))), `${repo} should match the STT search`);
   }
 
   assert.throws(() => searchUrl("video"), /Unknown model kind/);

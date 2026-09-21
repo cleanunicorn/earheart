@@ -346,3 +346,69 @@ test("stt-eval: concatenating clips inserts the silence gap", () => {
   const out = e.concatPcm16([new Int16Array([1, 2]), new Int16Array([3])], 2);
   assert.deepStrictEqual([...out], [1, 2, 0, 0, 3]);
 });
+
+test("stt-eval: only a 64-hex LFS etag counts as a sha256", () => {
+  const sha = "a32b12d1".padEnd(64, "0");
+  assert.strictEqual(e.sha256FromLinkedEtag(`"${sha}"`), sha);
+  assert.strictEqual(e.sha256FromLinkedEtag(`W/"${sha.toUpperCase()}"`), sha);
+  // tokens.txt: a git blob id, verified on csukuangfj/…-v2-int8 — not a sha256.
+  assert.strictEqual(e.sha256FromLinkedEtag('"f0742785f6073e80b911964c455b05f3609bf23b"'), null);
+  assert.strictEqual(e.sha256FromLinkedEtag(undefined), null);
+});
+
+/* ---------------- the evaluation manifest ---------------- */
+
+const manifest = require("../scripts/stt-eval-manifest");
+const registry = require("../main/engines/registry");
+
+const PINNED_HF = /^https:\/\/huggingface\.co\/(datasets\/)?[\w.-]+\/[\w.-]+\/resolve\/[0-9a-f]{40}\//;
+
+test("stt-eval manifest: every file is checksum-pinned to an immutable commit", () => {
+  const all = [
+    ...manifest.CORPUS.files.map((f) => ["corpus", f]),
+    ...manifest.CANDIDATES.flatMap((c) => c.files.map((f) => [c.id, f])),
+  ];
+  for (const [owner, f] of all) {
+    const where = `${owner} -> ${f.name}`;
+    assert.match(f.sha256, /^[0-9a-f]{64}$/, `${where}: sha256`);
+    assert.ok(Number.isInteger(f.bytes) && f.bytes > 0, `${where}: bytes`);
+    assert.match(f.url, PINNED_HF, `${where}: url must pin resolve/<40-hex commit>`);
+    assert.strictEqual(decodeURIComponent(new URL(f.url).pathname.split("/").pop()), f.name, `${where}: url basename`);
+    assert.ok(registry.isPathSegment(f.name), `${where}: file name must be a single path segment`);
+  }
+});
+
+test("stt-eval manifest: candidates are catalog-shaped and wire only files they download", () => {
+  const ids = manifest.CANDIDATES.map((c) => c.id);
+  assert.strictEqual(new Set(ids).size, ids.length, "duplicate candidate id");
+  for (const c of manifest.CANDIDATES) {
+    assert.ok(!registry.getModel("stt", c.id), `${c.id}: collides with a shipped id`);
+    assert.ok(registry.isPathSegment(c.id), `${c.id}: id must be a path segment`);
+    assert.strictEqual(c.kind, "stt");
+    assert.ok(c.label && c.note && c.licence, `${c.id}: label, note and licence`);
+    assert.ok(!("default" in c), `${c.id}: a candidate never carries default`);
+    assert.ok(["wired", "exploratory"].includes(c.arm), `${c.id}: arm`);
+    const names = c.files.map((f) => f.name);
+    for (const [role, file] of Object.entries(c.sherpa)) {
+      if (role === "family" || role === "modelType") continue;
+      assert.ok(names.includes(file), `${c.id}: sherpa.${role} "${file}" is not downloaded`);
+    }
+    if (c.arm === "wired") {
+      // The worker routes on the joiner alone: transducer with one, Whisper without.
+      assert.ok(c.sherpa.encoder && c.sherpa.decoder && c.sherpa.tokens, `${c.id}: wired roles`);
+      assert.ok(!c.sherpa.family, `${c.id}: a wired model uses the worker's own routing`);
+    } else {
+      assert.ok(["moonshine", "nemoCtc", "canary"].includes(c.sherpa.family), `${c.id}: exploratory family`);
+    }
+  }
+});
+
+test("stt-eval manifest: the corpus and every skipped survey row are pinned down", () => {
+  assert.strictEqual(manifest.BASELINE_ID, registry.DEFAULT_STT_MODEL);
+  assert.ok(manifest.CORPUS.files.some((f) => f.name === manifest.CORPUS.archive));
+  assert.ok(manifest.CORPUS.files.some((f) => f.name === manifest.CORPUS.tsv));
+  assert.strictEqual(manifest.CORPUS.utterances, 647);
+  for (const s of manifest.SKIPPED) {
+    assert.ok(s.repo && s.reason && s.reason.length > 10, `unclassified survey row: ${JSON.stringify(s)}`);
+  }
+});

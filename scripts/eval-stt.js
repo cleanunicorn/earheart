@@ -1,0 +1,847 @@
+// Measure the in-process speech-to-text models against each other — the
+// harness behind "is there a model that's as good as the shipped Parakeet, or
+// better, but faster?".
+//
+//   xvfb-run -a npx electron scripts/eval-stt.js --no-sandbox --out stt-eval.json   # Linux
+//   npx electron scripts/eval-stt.js --out stt-eval.json                            # macOS / Windows
+//
+//   node scripts/eval-stt.js --report stt-eval.json        # Markdown table from a run
+//   node scripts/eval-stt.js --verify-shipped              # re-derive the catalog's pins
+//   node scripts/eval-stt.js --discover owner/repo[@commit] …   # pins for a new model
+//
+// Flags: --cache-dir <dir> (default <userData>/stt-eval; models, corpus and
+// clips land there, never in the repo), --models id,id (subset, for
+// development), --limit N (first N utterances, for development — the headline
+// uses all 647), --keep (don't delete a model after measuring it),
+// --exploratory (also measure families the worker can't run yet), --resume
+// (reuse the measured rows of an existing --out file), --log <file> (append
+// one line per model).
+//
+// WHAT IT MEASURES. Every model is measured through the app's own engine
+// worker (main/engines/engine-worker.js, forked by main/engines/host.js),
+// never a copy of its recognizer config: the speed number is the worker's own
+// `decodeMs` around recognizer.decode(), the same number that paces the
+// overlay's transcribing bar. load-stt reports the thread count and provider
+// it used, and a model is refused unless that is CPU at the app's
+// min(8, cpus-1). Each model gets a fresh worker (a replaced recognizer's
+// native memory is only reclaimed when the worker exits): cold load, one
+// first decode and one discarded warm-up of a declared clip (their texts must
+// match), then the scored pass over every utterance. Headline speed is the
+// aggregate decode RTF (total decode time / total audio); p50/p95 per
+// utterance and the harness's own wall clock around each request are reported
+// beside it, so IPC overhead is visible and never folded in.
+//
+// THE CORPUS is FLEURS en_us test (google/fleurs, CC BY 4.0), pinned to a
+// commit and checksum: 647 utterances of 350 sentences, 106.5 min, 16 kHz.
+// It is READ speech of encyclopaedic sentences, not dictation captured
+// through Earheart's microphone path. Clips are re-encoded to exactly the
+// PCM16 the overlay produces, so the worker parses them with its own reader.
+// Their length (mean 9.9 s, max 29 s) matches what the app decodes by
+// default: live preview commits 10-20 s chunks and only the tail is decoded at
+// stop. With live preview off, a whole recording (up to 300 s) goes in as one
+// buffer; a candidate that clears the threshold is also run on ~60 s and
+// ~300 s concatenations to catch a model that drops words there.
+//
+// ACCURACY is WER after the normalisation spelled out in scripts/stt-eval.js
+// (wer_norm, the threshold metric), with wer_verbatim (case and punctuation
+// kept), the model's punctuation/capitalisation/hesitation rates, WER on the
+// utterances free of number constructs the normaliser doesn't model, and a
+// paired bootstrap interval (resampling sentences) for every difference from
+// the default.
+//
+// THE THRESHOLD (stt-model-eval-Q3, fixed before any number existed): a
+// candidate earns a catalog entry when, against parakeet-tdt-0.6b-v3-int8 in
+// the same run, it is (a) >= 1.3x faster with WER at most 1.0 point worse, or
+// (b) lower WER at most 1.1x slower — and does not drop words on long audio
+// (Q5). The default is measured first and last; if the two disagree on speed
+// by more than 10 % the machine was busy and the run is marked unstable.
+//
+// Numbers are the machine's, not the model's: every run records the CPU, RAM,
+// OS, Electron and sherpa-onnx-node versions, and the load average around each
+// model. Not in the test suite — it downloads gigabytes. The pure parts are
+// pinned in test/stt-eval.test.js.
+
+const fs = require("node:fs");
+const fsp = require("node:fs/promises");
+const os = require("node:os");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const zlib = require("node:zlib");
+const { pipeline } = require("node:stream/promises");
+const { execFileSync } = require("node:child_process");
+
+const e = require("./stt-eval");
+const manifest = require("./stt-eval-manifest");
+const registry = require("../main/engines/registry");
+const manager = require("../main/engines/model-manager");
+const { listSttVariants } = require("../main/services/hf-models");
+const { SAMPLE_RATE } = require("../main/util/wav");
+
+const SCHEMA = 1;
+// What the worker must report back — the app's own thread count.
+const APP_THREADS = Math.max(1, Math.min(8, os.cpus().length - 1));
+const DISK_BUDGET_BYTES = 20e9; // this item's share of a disk used by others too
+const MIN_FREE_BYTES = 10e9; // never take the disk below this for anyone
+const MAX_EMPTY_RATE = 0.05;
+const BRACKET_DRIFT = 0.1;
+const LONG_FORM_TARGETS = [60, 300];
+const LONG_FORM_GAP_SAMPLES = Math.round(0.3 * SAMPLE_RATE);
+
+/* ---------------- arguments ---------------- */
+
+function parseArgs(argv) {
+  const opts = { models: null, limit: 0, keep: false, exploratory: false, resume: false, discover: [] };
+  const valued = new Set(["--out", "--cache-dir", "--models", "--limit", "--report", "--log"]);
+  for (let i = 0; i < argv.length; i++) {
+    let arg = argv[i];
+    let value = null;
+    const eq = arg.indexOf("=");
+    if (arg.startsWith("--") && eq > 0) {
+      value = arg.slice(eq + 1);
+      arg = arg.slice(0, eq);
+    }
+    if (valued.has(arg) && value === null) value = argv[++i];
+    switch (arg) {
+      case "--out": opts.out = value; break;
+      case "--cache-dir": opts.cacheDir = value; break;
+      case "--models": opts.models = value.split(",").filter(Boolean); break;
+      case "--limit": opts.limit = Number(value); break;
+      case "--report": opts.report = value; break;
+      case "--log": opts.log = value; break;
+      case "--keep": opts.keep = true; break;
+      case "--exploratory": opts.exploratory = true; break;
+      case "--resume": opts.resume = true; break;
+      case "--verify-shipped": opts.verifyShipped = true; break;
+      case "--discover":
+        while (argv[i + 1] && !argv[i + 1].startsWith("--")) opts.discover.push(argv[++i]);
+        break;
+      default:
+        // Chromium's own switches (--no-sandbox, …) reach the script too.
+        if (!arg.startsWith("--no-sandbox") && !arg.startsWith("--enable-") && !arg.startsWith("--disable-")) {
+          throw new Error(`unknown argument: ${argv[i]}`);
+        }
+    }
+  }
+  return opts;
+}
+
+const log = (...args) => console.error("[eval-stt]", ...args);
+
+/* ---------------- pin discovery (plain Node) ---------------- */
+
+async function hashStream(readable) {
+  const hash = crypto.createHash("sha256");
+  let bytes = 0;
+  for await (const chunk of readable) {
+    hash.update(chunk);
+    bytes += chunk.length;
+  }
+  return { sha256: hash.digest("hex"), bytes };
+}
+
+async function hashFile(file) {
+  return hashStream(fs.createReadStream(file));
+}
+
+// bytes + sha256 for one file at a pinned commit: the LFS etag when it is a
+// sha256, else download and hash (tokens.txt and other git-stored files).
+async function pinFile(url) {
+  const head = await fetch(url, { method: "HEAD", redirect: "manual" });
+  const sha256 = e.sha256FromLinkedEtag(head.headers.get("x-linked-etag"));
+  const size = Number(head.headers.get("x-linked-size") || 0);
+  if (sha256 && size) return { bytes: size, sha256, from: "x-linked-etag" };
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`GET ${url}: HTTP ${res.status}`);
+  const { sha256: hashed, bytes } = await hashStream(res.body);
+  return { bytes, sha256: hashed, from: "download" };
+}
+
+async function repoInfo(owner, repo, ref) {
+  const base = `https://huggingface.co/api/models/${owner}/${repo}`;
+  const info = await (await fetch(ref ? `${base}/revision/${ref}` : base)).json();
+  if (!info.sha) throw new Error(`${owner}/${repo}: no commit (${JSON.stringify(info).slice(0, 200)})`);
+  const tree = await (await fetch(`${base}/tree/${info.sha}?recursive=true`)).json();
+  return {
+    commit: info.sha,
+    gated: Boolean(info.gated),
+    files: tree.filter((f) => f.type === "file").map((f) => ({ path: f.path, bytes: f.size })),
+  };
+}
+
+/**
+ * Pins for one repo: the commit, every file's bytes and sha256, and — when
+ * hf-models recognises it as a transducer or Whisper bundle — the per-precision
+ * `sherpa` wiring the worker needs.
+ */
+async function discover(spec) {
+  const [full, ref] = spec.split("@");
+  const [owner, repo] = full.split("/");
+  const info = await repoInfo(owner, repo, ref);
+  const url = (p) => `https://huggingface.co/${owner}/${repo}/resolve/${info.commit}/${p}`;
+  const files = [];
+  for (const f of info.files) {
+    if (f.path === ".gitattributes" || /(^|\/)(README\.md|test_wavs\/)/.test(f.path)) continue;
+    files.push({ name: f.path.split("/").pop(), path: f.path, url: url(f.path), ...(await pinFile(url(f.path))) });
+  }
+  let variants = null;
+  try {
+    const listed = await listSttVariants({ owner, repo, ref: info.commit }, fetch);
+    const byUrl = new Map(files.map((f) => [f.url, f]));
+    variants = listed.variants.map((v) => ({
+      label: v.label,
+      files: v.files.map((f) => {
+        const pinned = byUrl.get(f.url);
+        return { name: f.name, bytes: pinned.bytes, sha256: pinned.sha256, url: f.url };
+      }),
+      sherpa: v.sherpa,
+    }));
+  } catch (err) {
+    variants = { error: err.message };
+  }
+  return { repo: full, commit: info.commit, gated: info.gated, files, variants };
+}
+
+// Re-derive every shipped STT entry's pins from Hugging Face at its own commit
+// and compare byte for byte — the self-test for the pins this tool produces.
+async function verifyShipped() {
+  let ok = true;
+  for (const model of registry.listModels("stt")) {
+    const [owner, repo, , commit] = new URL(model.files[0].url).pathname.split("/").filter(Boolean);
+    const found = await discover(`${owner}/${repo}@${commit}`);
+    const byName = new Map(found.files.map((f) => [f.name, f]));
+    for (const file of model.files) {
+      const got = byName.get(file.name);
+      const same = got && got.bytes === file.bytes && got.sha256 === file.sha256 && got.url === file.url;
+      if (!same) ok = false;
+      log(`${same ? "ok  " : "DIFF"} ${model.id} ${file.name}`, same ? `(${got.from})` : JSON.stringify(got));
+    }
+  }
+  return ok;
+}
+
+/* ---------------- corpus ---------------- */
+
+async function prepareCorpus(cacheDir, limit) {
+  const corpus = manifest.CORPUS;
+  const model = { kind: "corpus", id: corpus.id, files: corpus.files };
+  log(`corpus: ${corpus.source} @ ${corpus.commit}`);
+  for (const f of corpus.files) log(`  fetch ${f.url} (${f.bytes} B, sha256 ${f.sha256})`);
+  await manager.download(cacheDir, model);
+  const dir = manager.modelDir(cacheDir, model);
+  for (const f of corpus.files) {
+    const got = await hashFile(path.join(dir, f.name));
+    if (got.sha256 !== f.sha256 || got.bytes !== f.bytes) {
+      throw new Error(`corpus file ${f.name} re-hash mismatch: ${JSON.stringify(got)}`);
+    }
+  }
+  const rows = e.parseFleursTsv(fs.readFileSync(path.join(dir, corpus.tsv), "utf8"));
+  if (rows.length !== corpus.utterances) {
+    throw new Error(`expected ${corpus.utterances} utterances, tsv has ${rows.length}`);
+  }
+  const mismatches = e.tsvColumnMismatches(rows);
+  if (mismatches.length > rows.length * 0.01) {
+    throw new Error(`tsv columns disagree on ${mismatches.length} rows — parsed the wrong columns?`);
+  }
+
+  // Extract once: gunzip to a temporary .tar, walk it, write each clip as
+  // overlay-identical PCM16, then drop the .tar.
+  const clipsDir = path.join(dir, "pcm16");
+  const done = path.join(clipsDir, ".complete");
+  if (!fs.existsSync(done) || fs.readFileSync(done, "utf8") !== corpus.files[0].sha256) {
+    await fsp.rm(clipsDir, { recursive: true, force: true });
+    await fsp.mkdir(clipsDir, { recursive: true });
+    const tarPath = path.join(dir, "audio.tar");
+    await pipeline(fs.createReadStream(path.join(dir, corpus.archive)), zlib.createGunzip(), fs.createWriteStream(tarPath));
+    const fd = fs.openSync(tarPath, "r");
+    try {
+      const readAt = (offset, length) => {
+        const buf = Buffer.alloc(length);
+        fs.readSync(fd, buf, 0, length, offset);
+        return buf;
+      };
+      let n = 0;
+      for (const entry of e.tarEntries(readAt, fs.fstatSync(fd).size)) {
+        if (!entry.name.endsWith(".wav")) continue;
+        const { wav } = e.toPcm16Wav(readAt(entry.offset, entry.size));
+        fs.writeFileSync(path.join(clipsDir, path.basename(entry.name)), wav);
+        n++;
+      }
+      log(`  extracted ${n} clips`);
+    } finally {
+      fs.closeSync(fd);
+      await fsp.rm(tarPath, { force: true });
+    }
+    fs.writeFileSync(done, corpus.files[0].sha256);
+  }
+
+  const clips = rows.map((r) => {
+    const wavPath = path.join(clipsDir, r.file);
+    if (!fs.existsSync(wavPath)) throw new Error(`clip ${r.file} missing from the archive`);
+    const samples = (fs.statSync(wavPath).size - 44) / 2;
+    return {
+      file: r.file,
+      sentenceId: r.sentenceId,
+      gender: r.gender,
+      raw: r.raw,
+      samples,
+      expectedSamples: r.numSamples,
+      audioSec: samples / SAMPLE_RATE,
+      wavPath,
+      refNorm: e.normalise(r.raw),
+      refVerbatim: e.normalise(r.raw, e.VERBATIM),
+      unmodelled: e.hasUnmodelledConstruct(r.raw),
+    };
+  });
+  // Duration accounting: the audio we decode is the audio the tsv describes.
+  const got = clips.reduce((s, c) => s + c.samples, 0);
+  const want = clips.reduce((s, c) => s + c.expectedSamples, 0);
+  if (Math.abs(got - want) / SAMPLE_RATE > 0.1) {
+    throw new Error(`clip durations ${got / SAMPLE_RATE}s != tsv ${want / SAMPLE_RATE}s`);
+  }
+  const selected = limit > 0 ? clips.slice(0, limit) : clips;
+  return {
+    id: corpus.id,
+    source: corpus.source,
+    commit: corpus.commit,
+    licence: corpus.licence,
+    files: corpus.files.map(({ name, bytes, sha256, url }) => ({ name, bytes, sha256, url })),
+    utterances: selected.length,
+    sentences: new Set(selected.map((c) => c.sentenceId)).size,
+    referenceWords: selected.reduce((s, c) => s + c.refNorm.length, 0),
+    audioSec: selected.reduce((s, c) => s + c.audioSec, 0),
+    columnMismatches: mismatches.length,
+    unmodelledUtterances: selected.filter((c) => c.unmodelled).length,
+    limited: limit > 0,
+    clips: selected,
+  };
+}
+
+// ~60 s and ~300 s single buffers of distinct sentences, same speaker gender,
+// 300 ms apart — the live-preview-off shape. Deterministic: tsv order.
+function buildLongForm(clips) {
+  const out = [];
+  for (const target of LONG_FORM_TARGETS) {
+    const seen = new Set();
+    const picked = [];
+    let sec = 0;
+    for (const c of clips) {
+      if (c.gender !== "FEMALE" || seen.has(c.sentenceId)) continue;
+      seen.add(c.sentenceId);
+      picked.push(c);
+      sec += c.audioSec + LONG_FORM_GAP_SAMPLES / SAMPLE_RATE;
+      if (sec >= target) break;
+    }
+    const pcm = e.concatPcm16(
+      picked.map((c) => {
+        const buf = fs.readFileSync(c.wavPath);
+        return new Int16Array(buf.buffer.slice(buf.byteOffset + 44, buf.byteOffset + buf.length));
+      }),
+      LONG_FORM_GAP_SAMPLES
+    );
+    const raw = picked.map((c) => c.raw).join(" ");
+    out.push({
+      label: `${target}s`,
+      audioSec: pcm.length / SAMPLE_RATE,
+      wav: require("../main/util/wav").encodeWav(pcm, SAMPLE_RATE),
+      refNorm: e.normalise(raw),
+      utterances: picked.map((c) => c.file),
+    });
+  }
+  return out;
+}
+
+/* ---------------- recognisers ---------------- */
+
+// The app's path: a fresh engine worker per model.
+function workerRecognizer(model, dir) {
+  const { createHost } = require("../main/engines/host");
+  const host = createHost({ serviceName: "earheart-stt-eval" });
+  return {
+    path: "worker",
+    async load() {
+      return host.request("load-stt", { dir, sherpa: model.sherpa, modelId: model.id }, { timeoutMs: 600000 });
+    },
+    async transcribe(wav, audioSec) {
+      return host.request("transcribe", { wav }, { timeoutMs: Math.max(180000, audioSec * 20000) });
+    },
+    close() {
+      host.stop();
+    },
+  };
+}
+
+// The exploratory path, for families the worker has no config for yet: the
+// same recognizer settings the worker uses (16 kHz, 80-dim features, the app's
+// thread count, CPU), built in this process. Rows from here are labelled and
+// compared only against the default measured the same way (the calibration
+// row); a winner is wired into the worker and re-measured through it before
+// it can reach the catalog.
+function directRecognizer(model, dir) {
+  const sherpaOnnx = require("sherpa-onnx-node");
+  const { wavToFloat32 } = require("../main/util/wav");
+  const p = (f) => path.join(dir, f);
+  const s = model.sherpa;
+  const families = {
+    transducer: () => ({ transducer: { encoder: p(s.encoder), decoder: p(s.decoder), joiner: p(s.joiner) } }),
+    whisper: () => ({ whisper: { encoder: p(s.encoder), decoder: p(s.decoder) } }),
+    moonshine: () => ({
+      moonshine: {
+        preprocessor: p(s.preprocessor),
+        encoder: p(s.encoder),
+        uncachedDecoder: p(s.uncachedDecoder),
+        cachedDecoder: p(s.cachedDecoder),
+      },
+    }),
+    nemoCtc: () => ({ nemoCtc: { model: p(s.model) } }),
+    canary: () => ({ canary: { encoder: p(s.encoder), decoder: p(s.decoder), srcLang: "en", tgtLang: "en", usePnc: 1 } }),
+  };
+  const family = s.family || (s.joiner ? "transducer" : "whisper");
+  const runtime = { numThreads: APP_THREADS, provider: "cpu" };
+  let recognizer = null;
+  return {
+    path: "direct",
+    async load() {
+      recognizer = new sherpaOnnx.OfflineRecognizer({
+        featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
+        modelConfig: {
+          ...families[family](),
+          tokens: p(s.tokens),
+          ...runtime,
+          ...(s.modelType ? { modelType: s.modelType } : family === "transducer" ? { modelType: "nemo_transducer" } : {}),
+          debug: false,
+        },
+      });
+      return { ready: true, ...runtime };
+    },
+    async transcribe(wav) {
+      const { samples, sampleRate } = wavToFloat32(wav);
+      const stream = recognizer.createStream();
+      stream.acceptWaveform({ sampleRate, samples });
+      const startedAt = Date.now();
+      recognizer.decode(stream);
+      const decodeMs = Date.now() - startedAt;
+      const result = recognizer.getResult(stream);
+      return { text: (result && result.text ? result.text : "").trim(), decodeMs };
+    },
+    close() {
+      recognizer = null;
+    },
+  };
+}
+
+/* ---------------- measuring one model ---------------- */
+
+function dirSize(dir) {
+  let total = 0;
+  if (!fs.existsSync(dir)) return 0;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    total += entry.isDirectory() ? dirSize(p) : fs.statSync(p).size;
+  }
+  return total;
+}
+
+function diskCheck(cacheDir, model) {
+  const need = model.files.reduce((s, f) => s + (f.bytes || 0), 0);
+  const st = fs.statfsSync(cacheDir);
+  const free = st.bavail * st.bsize;
+  const used = dirSize(cacheDir);
+  if (free - need < MIN_FREE_BYTES) return `disk: ${need} B needed, ${free} B free, floor ${MIN_FREE_BYTES} B`;
+  if (used + need > DISK_BUDGET_BYTES) return `disk: ${used} B cached + ${need} B > budget ${DISK_BUDGET_BYTES} B`;
+  return null;
+}
+
+function scoreDecodes(corpus, decodes) {
+  const norm = [];
+  const verb = [];
+  const clean = [];
+  corpus.clips.forEach((c, i) => {
+    const text = decodes[i].text;
+    const n = e.editCounts(c.refNorm, e.normalise(text));
+    norm.push(n);
+    verb.push(e.editCounts(c.refVerbatim, e.normalise(text, e.VERBATIM)));
+    if (!c.unmodelled) clean.push(n);
+  });
+  const sum = (list, k) => list.reduce((s, x) => s + x[k], 0);
+  return {
+    errors: sum(norm, "errors"),
+    ref: sum(norm, "ref"),
+    sub: sum(norm, "sub"),
+    del: sum(norm, "del"),
+    ins: sum(norm, "ins"),
+    werNorm: e.corpusWer(norm),
+    werNormMeanUtt: e.meanUtteranceWer(norm),
+    werVerbatim: e.corpusWer(verb),
+    werNormClean: e.corpusWer(clean),
+    perUtteranceErrors: norm.map((x) => x.errors),
+  };
+}
+
+function ablation(corpus, decodes) {
+  const base = e.corpusWer(corpus.clips.map((c, i) => e.editCounts(c.refNorm, e.normalise(decodes[i].text))));
+  const out = { all: base };
+  for (const stage of Object.keys(e.ALL_STAGES)) {
+    const off = { [stage]: false };
+    out[`without_${stage}`] = e.corpusWer(
+      corpus.clips.map((c, i) => e.editCounts(e.normalise(c.raw, off), e.normalise(decodes[i].text, off)))
+    );
+  }
+  return out;
+}
+
+async function measureModel(entry, ctx) {
+  const { model, role, arm } = entry;
+  const row = { id: model.id, label: model.label, role, arm, path: arm === "exploratory" || role === "calibration" ? "direct" : "worker" };
+  const blocked = diskCheck(ctx.cacheDir, model);
+  if (blocked) return { ...row, status: "skipped", reason: blocked };
+
+  const dl = Date.now();
+  for (const f of model.files) log(`  fetch ${f.url} (${f.bytes} B)`);
+  await manager.download(ctx.cacheDir, model);
+  const dir = manager.modelDir(ctx.cacheDir, model);
+  row.downloadMs = Date.now() - dl;
+  row.files = [];
+  for (const f of model.files) {
+    const got = await hashFile(path.join(dir, f.name));
+    if (got.sha256 !== f.sha256 || got.bytes !== f.bytes) {
+      throw new Error(`${model.id}/${f.name}: re-hash mismatch ${JSON.stringify(got)}`);
+    }
+    row.files.push({ name: f.name, bytes: got.bytes, sha256: got.sha256, url: f.url });
+  }
+  row.bytes = row.files.reduce((s, f) => s + f.bytes, 0);
+
+  const rec = row.path === "direct" ? directRecognizer(model, dir) : workerRecognizer(model, dir);
+  row.loadavgBefore = os.loadavg();
+  try {
+    const t0 = Date.now();
+    const loaded = await rec.load();
+    row.coldLoadWallMs = Date.now() - t0;
+    row.numThreads = loaded.numThreads;
+    row.provider = loaded.provider;
+    if (loaded.provider !== "cpu" || loaded.numThreads !== APP_THREADS) {
+      throw new Error(`worker ran provider=${loaded.provider} threads=${loaded.numThreads}, app uses cpu/${APP_THREADS}`);
+    }
+    // Declared warm-up clip: the corpus's first utterance, decoded twice.
+    const warm = ctx.corpus.clips[0];
+    const warmWav = fs.readFileSync(warm.wavPath);
+    const first = await rec.transcribe(warmWav, warm.audioSec);
+    const second = await rec.transcribe(warmWav, warm.audioSec);
+    row.firstDecodeMs = first.decodeMs;
+    row.firstDecodeRtf = first.decodeMs / 1000 / warm.audioSec;
+    row.deterministic = first.text === second.text;
+
+    const decodes = [];
+    for (const [i, c] of ctx.corpus.clips.entries()) {
+      const wav = fs.readFileSync(c.wavPath);
+      const t = process.hrtime.bigint();
+      const r = await rec.transcribe(wav, c.audioSec);
+      const wallMs = Number(process.hrtime.bigint() - t) / 1e6;
+      decodes.push({ file: c.file, text: r.text, decodeMs: r.decodeMs, wallMs, audioSec: c.audioSec });
+      if ((i + 1) % 100 === 0) log(`  ${model.id}: ${i + 1}/${ctx.corpus.clips.length}`);
+    }
+    if (decodes.length !== ctx.corpus.clips.length) throw new Error("coverage: missing hypotheses");
+    const empty = decodes.filter((d) => !d.text).length;
+    row.emptyRate = empty / decodes.length;
+    const speed = e.rtfStats(decodes);
+    const wall = e.rtfStats(decodes.map((d) => ({ decodeMs: d.wallMs, audioSec: d.audioSec })));
+    Object.assign(row, {
+      decodeRtf: speed.decodeRtf,
+      p50Rtf: speed.p50,
+      p95Rtf: speed.p95,
+      wallRtf: wall.decodeRtf,
+      decodeSec: speed.decodeSec,
+      audioSec: speed.audioSec,
+      ...scoreDecodes(ctx.corpus, decodes),
+      ...e.styleRates(decodes.map((d) => d.text)),
+    });
+    row.decodes = decodes.map(({ file, text, decodeMs, wallMs }) => ({ file, text, decodeMs, wallMs: Math.round(wallMs * 10) / 10 }));
+    if (row.emptyRate > MAX_EMPTY_RATE) {
+      row.status = "failed";
+      row.reason = `empty-output rate ${(row.emptyRate * 100).toFixed(1)} % > ${MAX_EMPTY_RATE * 100} %`;
+    } else {
+      row.status = "measured";
+    }
+    if (role === "baseline" && model.id === manifest.BASELINE_ID && !ctx.ablation) {
+      ctx.ablation = ablation(ctx.corpus, decodes);
+    }
+
+    // Q5: long single buffers, for the default and anything clearing Q3.
+    const ref = row.path === "direct" ? ctx.calibration : ctx.bracketFirst;
+    const passesQ3 =
+      row.status === "measured" && ref && role !== "calibration" && model.id !== manifest.BASELINE_ID &&
+      e.classify(ref, row).eligible;
+    const isDefaultRun = model.id === manifest.BASELINE_ID && (role === "bracket-first" || role === "calibration");
+    if (isDefaultRun || passesQ3) {
+      row.longForm = [];
+      for (const clip of ctx.longForm) {
+        try {
+          const r = await rec.transcribe(clip.wav, clip.audioSec);
+          const hyp = e.normalise(r.text);
+          const counts = e.editCounts(clip.refNorm, hyp);
+          row.longForm.push({
+            label: clip.label,
+            audioSec: clip.audioSec,
+            decodeMs: r.decodeMs,
+            decodeRtf: r.decodeMs / 1000 / clip.audioSec,
+            wer: counts.errors / counts.ref,
+            wordRatio: hyp.length / clip.refNorm.length,
+            text: r.text,
+          });
+        } catch (err) {
+          row.longForm.push({ label: clip.label, audioSec: clip.audioSec, error: String(err.message || err), wer: 1, wordRatio: 0 });
+        }
+      }
+    }
+  } catch (err) {
+    row.status = "failed";
+    row.reason = String((err && err.message) || err);
+  } finally {
+    rec.close();
+    row.loadavgAfter = os.loadavg();
+  }
+  return row;
+}
+
+/* ---------------- the run ---------------- */
+
+function machine() {
+  const cpus = os.cpus();
+  let head = null;
+  try {
+    head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: path.join(__dirname, ".."), encoding: "utf8" }).trim();
+  } catch {
+    // Not a git checkout — record nothing rather than guess.
+  }
+  return {
+    cpu: cpus[0] && cpus[0].model,
+    logicalCpus: cpus.length,
+    appThreads: APP_THREADS,
+    ramGb: Math.round(os.totalmem() / 2 ** 30),
+    platform: `${os.platform()} ${os.release()} ${os.arch()}`,
+    versions: {
+      node: process.versions.node,
+      electron: process.versions.electron,
+      v8: process.versions.v8,
+      sherpaOnnxNode: require("sherpa-onnx-node/package.json").version,
+    },
+    gitHead: head,
+  };
+}
+
+// The measurement order: the default first (it is the reference every
+// candidate is judged against as soon as it is measured), the other shipped
+// models, the wired candidates, the exploratory arm behind its calibration
+// row, and the default again to show the machine stayed as quiet as it began.
+function plan(opts) {
+  const shipped = registry.listModels("stt");
+  const def = shipped.find((m) => m.id === manifest.BASELINE_ID);
+  const list = [{ model: def, role: "bracket-first", arm: "shipped" }];
+  for (const m of shipped) if (m.id !== def.id) list.push({ model: m, role: "baseline", arm: "shipped" });
+  for (const c of manifest.CANDIDATES.filter((x) => x.arm === "wired")) list.push({ model: c, role: "candidate", arm: "wired" });
+  if (opts.exploratory) {
+    list.push({ model: def, role: "calibration", arm: "exploratory" });
+    for (const c of manifest.CANDIDATES.filter((x) => x.arm === "exploratory")) {
+      list.push({ model: c, role: "candidate", arm: "exploratory" });
+    }
+  }
+  list.push({ model: def, role: "bracket-last", arm: "shipped" });
+  return opts.models ? list.filter((x) => opts.models.includes(x.model.id)) : list;
+}
+
+function finalise(result, ctx) {
+  const rows = result.rows;
+  const first = rows.find((r) => r.role === "bracket-first" && r.status === "measured");
+  const last = rows.find((r) => r.role === "bracket-last" && r.status === "measured");
+  const calib = rows.find((r) => r.role === "calibration" && r.status === "measured");
+  result.brackets = first && last
+    ? { first: first.decodeRtf, last: last.decodeRtf, drift: Math.abs(last.decodeRtf - first.decodeRtf) / first.decodeRtf }
+    : null;
+  const defaultLong = first && first.longForm;
+  const calibLong = calib && calib.longForm;
+  for (const r of rows) {
+    if (r.status !== "measured" || r.role === "bracket-first" || r.role === "bracket-last" || r.role === "calibration") continue;
+    const ref = r.arm === "exploratory" ? calib : first;
+    if (!ref) continue;
+    r.vsDefault = e.classify(ref, r);
+    r.vsDefault.against = r.arm === "exploratory" ? "calibration (direct path)" : "bracket-first (worker)";
+    r.vsDefault.bootstrap = e.pairedBootstrap(
+      ctx.corpus.clips.map((c, i) => ({
+        cluster: c.sentenceId,
+        ref: c.refNorm.length,
+        baseErrors: ref.perUtteranceErrors[i],
+        candErrors: r.perUtteranceErrors[i],
+      }))
+    );
+    if (r.vsDefault.eligible) {
+      const baseLong = r.arm === "exploratory" ? calibLong : defaultLong;
+      r.longFormCheck = r.longForm && baseLong
+        ? e.longFormCompatible(r.longForm.map((l, i) => ({ ...l, baseWer: baseLong[i].wer })))
+        : { compatible: false, reasons: ["long-form not measured"] };
+      // Q2: an exploratory family is never catalogued from the direct path.
+      r.eligible = r.longFormCheck.compatible && r.arm === "wired";
+      r.verdict = !r.longFormCheck.compatible
+        ? "incompatible on long audio"
+        : r.arm === "wired"
+          ? `eligible (rule ${r.vsDefault.rule})`
+          : `clears Q3 on the direct path (rule ${r.vsDefault.rule}) — wire and re-measure`;
+    } else {
+      r.eligible = false;
+      r.verdict = "does not clear Q3";
+    }
+  }
+  const baselineIds = registry.listModels("stt").map((m) => m.id);
+  const haveBaselines = baselineIds.every((id) =>
+    rows.some((r) => r.id === id && r.status === "measured" && r.role !== "calibration")
+  );
+  const failed = rows.filter((r) => r.status === "failed");
+  if (ctx.opts.models || ctx.opts.limit) result.status = "partial (development subset)";
+  else if (!haveBaselines || failed.length) result.status = "incomplete";
+  else if (!result.brackets || result.brackets.drift > BRACKET_DRIFT) result.status = "unstable";
+  else result.status = "complete";
+}
+
+async function writeJson(file, data) {
+  const tmp = `${file}.tmp`;
+  await fsp.writeFile(tmp, JSON.stringify(data, null, 1));
+  await fsp.rename(tmp, file);
+}
+
+async function run(opts) {
+  const { app } = require("electron");
+  await app.whenReady();
+  const cacheDir = path.resolve(opts.cacheDir || path.join(app.getPath("userData"), "stt-eval"));
+  await fsp.mkdir(cacheDir, { recursive: true });
+  const out = path.resolve(opts.out);
+  const appendLog = (line) => opts.log && fs.appendFileSync(opts.log, `${new Date().toISOString()} ${line}\n`);
+
+  const corpus = await prepareCorpus(cacheDir, opts.limit);
+  const { clips, ...corpusInfo } = corpus;
+  const previous = opts.resume && fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, "utf8")) : null;
+  const result = {
+    schema: SCHEMA,
+    status: "running",
+    command: process.argv.slice(1).join(" "),
+    machine: machine(),
+    corpus: corpusInfo,
+    threshold: { ...e.THRESHOLD, against: manifest.BASELINE_ID, longForm: e.LONG_FORM, bracketDrift: BRACKET_DRIFT },
+    skipped: manifest.SKIPPED,
+    rows: [],
+  };
+  if (previous && previous.corpus && previous.corpus.utterances !== corpusInfo.utterances) {
+    throw new Error("--resume: the existing file was measured on a different corpus selection");
+  }
+  const ctx = { opts, cacheDir, corpus, longForm: buildLongForm(clips), ablation: null, bracketFirst: null, calibration: null };
+  const order = plan(opts);
+  for (const entry of order) {
+    const reused = previous && previous.rows.find((r) => r.id === entry.model.id && r.role === entry.role && r.status === "measured");
+    let row;
+    if (reused) {
+      row = reused;
+      log(`${entry.model.id} (${entry.role}): reused from ${out}`);
+    } else {
+      log(`${entry.model.id} (${entry.role}, ${entry.arm}) — free ${Math.round(fs.statfsSync(cacheDir).bavail * fs.statfsSync(cacheDir).bsize / 1e9)} GB`);
+      appendLog(`start ${entry.model.id} (${entry.role})`);
+      row = await measureModel(entry, ctx);
+    }
+    if (row.role === "bracket-first" && row.status === "measured") ctx.bracketFirst = row;
+    if (row.role === "calibration" && row.status === "measured") ctx.calibration = row;
+    result.rows.push(row);
+    const summary = row.status === "measured"
+      ? `wer_norm ${(row.werNorm * 100).toFixed(2)} % decodeRtf ${row.decodeRtf.toFixed(4)}`
+      : `${row.status}: ${row.reason}`;
+    log(`${entry.model.id} (${entry.role}): ${summary}`);
+    appendLog(`done ${entry.model.id} (${entry.role}) ${summary}`);
+    result.ablation = ctx.ablation;
+    await writeJson(out, result);
+    // Keep the default until its last use; everything else goes once recorded.
+    const usedLater = order.slice(order.indexOf(entry) + 1).some((x) => x.model.id === entry.model.id);
+    if (!opts.keep && !usedLater && entry.model.files) await manager.remove(cacheDir, entry.model);
+  }
+  finalise(result, ctx);
+  await writeJson(out, result);
+  process.stderr.write(`\n${report(result)}\n`);
+  log(`status: ${result.status} -> ${out}`);
+  appendLog(`run ${result.status}`);
+  return result.status === "complete" || result.status.startsWith("partial") ? 0 : 1;
+}
+
+/* ---------------- report ---------------- */
+
+const pct = (x, d = 2) => (x === undefined || x === null || Number.isNaN(x) ? "—" : (x * 100).toFixed(d));
+const num = (x, d = 3) => (x === undefined || x === null || Number.isNaN(x) ? "—" : x.toFixed(d));
+
+function report(result) {
+  const lines = [];
+  lines.push(`Corpus: ${result.corpus.source} ${result.corpus.id} @ ${result.corpus.commit.slice(0, 8)} — ${result.corpus.utterances} utterances, ${result.corpus.referenceWords} words, ${(result.corpus.audioSec / 60).toFixed(1)} min`);
+  const m = result.machine;
+  lines.push(`Machine: ${m.cpu}, ${m.logicalCpus} logical CPUs, ${m.ramGb} GB, ${m.platform}; Electron ${m.versions.electron}, sherpa-onnx-node ${m.versions.sherpaOnnxNode}; CPU, ${m.appThreads} threads`);
+  if (result.brackets) {
+    lines.push(`Default measured first/last: decodeRtf ${num(result.brackets.first, 4)} / ${num(result.brackets.last, 4)} (drift ${pct(result.brackets.drift, 1)} %, limit ${BRACKET_DRIFT * 100} %)`);
+  }
+  lines.push(`Status: ${result.status}`);
+  lines.push("");
+  lines.push("| model | role | path | wer_norm % | wer_verbatim % | Δ vs default (95 % CI), pts | decode RTF (p50 / p95) | speedup | cold load s | first decode s | punct % | caps % | size MB | verdict |");
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+  for (const r of result.rows) {
+    if (r.status !== "measured") {
+      lines.push(`| ${r.id} | ${r.role} | ${r.path} | — | — | — | — | — | — | — | — | — | — | ${r.status}: ${r.reason} |`);
+      continue;
+    }
+    const v = r.vsDefault;
+    const ci = v ? `${pct(v.deltaWer)} (${pct(v.bootstrap.lo)} … ${pct(v.bootstrap.hi)})${v.bootstrap.separable ? "" : " n.s."}` : "—";
+    lines.push(
+      `| ${r.id} | ${r.role} | ${r.path} | ${pct(r.werNorm)} | ${pct(r.werVerbatim)} | ${ci} | ${num(r.decodeRtf, 4)} (${num(r.p50Rtf, 4)} / ${num(r.p95Rtf, 4)}) | ${v ? `${num(v.speedup, 2)}x` : "—"} | ${num(r.coldLoadWallMs / 1000, 1)} | ${num(r.firstDecodeMs / 1000, 2)} | ${pct(r.punctuationRate, 0)} | ${pct(r.capitalisationRate, 0)} | ${Math.round(r.bytes / 1e6)} | ${r.verdict || (r.role.startsWith("bracket") || r.role === "calibration" ? "reference" : "baseline")} |`
+    );
+  }
+  const long = result.rows.filter((r) => r.longForm);
+  if (long.length) {
+    lines.push("");
+    lines.push("| model | role | clip | WER % | word ratio | decode RTF |");
+    lines.push("|---|---|---|---|---|---|");
+    for (const r of long) {
+      for (const l of r.longForm) {
+        lines.push(`| ${r.id} | ${r.role} | ${l.label} (${num(l.audioSec, 0)} s) | ${pct(l.wer)} | ${num(l.wordRatio, 3)} | ${l.error ? `error: ${l.error}` : num(l.decodeRtf, 4)} |`);
+      }
+    }
+  }
+  if (result.ablation) {
+    lines.push("");
+    lines.push(`Normalisation ablation on the default (wer_norm %): all stages ${pct(result.ablation.all)}; ` +
+      Object.entries(result.ablation).filter(([k]) => k !== "all").map(([k, v]) => `${k.replace("without_", "without ")} ${pct(v)}`).join("; "));
+  }
+  if (result.skipped && result.skipped.length) {
+    lines.push("");
+    lines.push("Surveyed and not measured:");
+    for (const s of result.skipped) lines.push(`- ${s.repo}: ${s.reason}`);
+  }
+  return lines.join("\n");
+}
+
+/* ---------------- entry ---------------- */
+
+async function main() {
+  const opts = parseArgs(process.argv.slice(process.versions.electron ? 2 : 2));
+  if (opts.report) {
+    process.stdout.write(`${report(JSON.parse(fs.readFileSync(opts.report, "utf8")))}\n`);
+    return 0;
+  }
+  if (opts.verifyShipped) return (await verifyShipped()) ? 0 : 1;
+  if (opts.discover.length) {
+    const found = [];
+    for (const spec of opts.discover) found.push(await discover(spec));
+    process.stdout.write(`${JSON.stringify(found, null, 2)}\n`);
+    return 0;
+  }
+  if (!opts.out) throw new Error("--out <file.json> is required for a measurement run");
+  if (!process.versions.electron) throw new Error("a measurement run needs Electron: npx electron scripts/eval-stt.js …");
+  return run(opts);
+}
+
+main().then(
+  (code) => (process.versions.electron ? require("electron").app.exit(code) : process.exit(code)),
+  (err) => {
+    log("failed:", (err && err.stack) || err);
+    if (process.versions.electron) require("electron").app.exit(1);
+    else process.exit(1);
+  }
+);

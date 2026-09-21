@@ -589,6 +589,19 @@ function toPcm16Wav(buf) {
   return { wav: encodeWav(pcm, SAMPLE_RATE), pcm, sampleRate: SAMPLE_RATE };
 }
 
+/* ---------------- pin discovery ---------------- */
+
+/**
+ * The sha256 a Hugging Face `x-linked-etag` header vouches for, or null. For
+ * an LFS file the etag IS the content sha256 (64 hex, quoted); for a small
+ * file kept in git (tokens.txt) it is the 40-hex git blob id, which is not a
+ * content hash at all — that file has to be downloaded and hashed instead.
+ */
+function sha256FromLinkedEtag(etag) {
+  const v = String(etag || "").replace(/^W\//, "").replace(/"/g, "").trim().toLowerCase();
+  return /^[0-9a-f]{64}$/.test(v) ? v : null;
+}
+
 /** Join PCM16 clips with `gapSamples` of silence between them. */
 function concatPcm16(clips, gapSamples) {
   const total = clips.reduce((n, c) => n + c.length, 0) + gapSamples * Math.max(0, clips.length - 1);
@@ -629,4 +642,5 @@ module.exports = {
   bufferReader,
   toPcm16Wav,
   concatPcm16,
+  sha256FromLinkedEtag,
 };

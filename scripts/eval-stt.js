@@ -668,6 +668,27 @@ async function waitForQuiet(limit, appendLog) {
   return { waitedMs: Date.now() - started, load, limit, quiet: load <= limit };
 }
 
+// Everything that shapes a number: the harness, its manifest, the worker
+// that decodes, the WAV reader, and the catalog the baselines come from. Two
+// passes can be combined only if this matches — unrelated commits in between
+// don't matter.
+const MEASURING_CODE = [
+  "scripts/eval-stt.js",
+  "scripts/stt-eval.js",
+  "scripts/stt-eval-manifest.js",
+  "scripts/stt-eval-worker.js",
+  "main/engines/engine-worker.js",
+  "main/engines/host.js",
+  "main/util/wav.js",
+  "main/engines/registry.js",
+];
+
+function measuringCodeHash() {
+  const hash = crypto.createHash("sha256");
+  for (const f of MEASURING_CODE) hash.update(`${f}\0`).update(fs.readFileSync(path.join(__dirname, "..", f)));
+  return hash.digest("hex");
+}
+
 function machine() {
   const cpus = os.cpus();
   let head = null;
@@ -689,6 +710,7 @@ function machine() {
       sherpaOnnxNode: require("sherpa-onnx-node/package.json").version,
     },
     gitHead: head,
+    measuringCode: measuringCodeHash(),
   };
 }
 
@@ -806,8 +828,8 @@ function combine(accFile, speedFile) {
   const spd = speedFile ? JSON.parse(fs.readFileSync(speedFile, "utf8")) : null;
   if (acc.pass !== "accuracy") throw new Error(`${accFile} is not an accuracy pass (pass: ${acc.pass})`);
   if (spd && spd.pass !== "speed") throw new Error(`${speedFile} is not a speed pass (pass: ${spd.pass})`);
-  if (spd && (spd.corpus.commit !== acc.corpus.commit || spd.machine.gitHead !== acc.machine.gitHead)) {
-    throw new Error("accuracy and speed passes come from different corpus pins or code");
+  if (spd && (spd.corpus.commit !== acc.corpus.commit || spd.machine.measuringCode !== acc.machine.measuringCode)) {
+    throw new Error("accuracy and speed passes come from different corpus pins or measuring code");
   }
   const out = {
     ...acc,

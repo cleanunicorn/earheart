@@ -629,7 +629,8 @@ function runtimeMismatches(a = {}, b = {}) {
 
 // What must match before --resume may reuse a single row of an earlier --out
 // file: the same kind of pass over the same corpus selection, on the same
-// runtime, by the same measuring code. `acrossCode` (--resume-across-code) is
+// machine and runtime, under the same measurement policy, by the same
+// measuring code. `acrossCode` (--resume-across-code) is
 // the one deliberate exception, for the measuring code only; it is recorded in
 // the result, never silent.
 /**
@@ -648,8 +649,12 @@ function resumeCompatibility(previous, current, { acrossCode = false } = {}) {
   same("corpus files", (pc.files || []).map((f) => f.sha256), current.corpus.files.map((f) => f.sha256));
   same("corpus subset", pc.subset, current.corpus.subset);
   same("utterances", pc.utterances, current.corpus.utterances);
-  for (const k of RUNTIME_FIELDS) same(`machine.${k}`, pm[k], current.machine[k]);
-  for (const k of RUNTIME_VERSIONS) same(`versions.${k}`, (pm.versions || {})[k], current.machine.versions[k]);
+  for (const d of runtimeMismatches(pm, current.machine)) problems.push(d);
+  // The measurement policy the rows were taken under (CPU lock, which
+  // processes count as another run, the quiet-load limit): a reused row must
+  // have been measured under the policy this run reports.
+  if (!previous.policy) problems.push("policy: not recorded in the file (it predates recorded measurement policy)");
+  else same("policy", previous.policy, current.policy);
   if (!acrossCode) same("measuring code", pm.measuringCode, current.machine.measuringCode);
   return { ok: problems.length === 0, problems };
 }

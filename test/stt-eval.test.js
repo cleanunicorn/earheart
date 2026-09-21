@@ -593,7 +593,8 @@ const runFile = (over = {}) => ({
   schema: 1,
   pass: "accuracy",
   corpus: { commit: "c0", files: [{ sha256: "a" }, { sha256: "b" }], subset: "all", utterances: 647 },
-  machine: { cpu: "Ryzen", logicalCpus: 24, appThreads: 8, versions: { electron: "42", sherpaOnnxNode: "1.13.3" }, measuringCode: "h1" },
+  machine: { cpu: "Ryzen", logicalCpus: 24, appThreads: 8, platform: "linux 6.17 x64", versions: { electron: "42", sherpaOnnxNode: "1.13.3" }, measuringCode: "h1" },
+  policy: { cpuLock: { file: "/x/cpu-quiet.lock", role: "held for the whole pass" }, otherRunPattern: "bench-cleanup|eval-cleanup", quietLoad: 4 },
   ...over,
 });
 
@@ -610,6 +611,9 @@ test("stt-eval resume: every field that decides a number must match", () => {
     "corpus subset": runFile({ corpus: { ...runFile().corpus, subset: "speed" } }),
     utterances: runFile({ corpus: { ...runFile().corpus, utterances: 40 } }),
     "machine.appThreads": runFile({ machine: { ...runFile().machine, appThreads: 4 } }),
+    "machine.platform": runFile({ machine: { ...runFile().machine, platform: "darwin 24.0 arm64" } }),
+    // Rows measured without the lock may not be reused by a run that reports it.
+    policy: runFile({ policy: { ...runFile().policy, cpuLock: null } }),
     "versions.sherpaOnnxNode": runFile({ machine: { ...runFile().machine, versions: { electron: "42", sherpaOnnxNode: "1.14.0" } } }),
     "measuring code": runFile({ machine: { ...runFile().machine, measuringCode: "h2" } }),
   };
@@ -619,6 +623,16 @@ test("stt-eval resume: every field that decides a number must match", () => {
     assert.strictEqual(r.problems.length, 1, `${field}: ${r.problems}`);
     assert.ok(r.problems[0].startsWith(field), `${field}: ${r.problems[0]}`);
   }
+});
+
+test("stt-eval resume: every part of the measurement policy must match, and it must be recorded", () => {
+  for (const over of [{ otherRunPattern: "other" }, { quietLoad: Infinity }, { cpuLock: { file: "/y.lock", role: "held for the whole pass" } }]) {
+    const r = e.resumeCompatibility(runFile({ policy: { ...runFile().policy, ...over } }), runFile());
+    assert.deepStrictEqual(r.problems.map((p) => p.split(":")[0]), ["policy"], JSON.stringify(over));
+  }
+  const noPolicy = runFile();
+  delete noPolicy.policy;
+  assert.match(e.resumeCompatibility(noPolicy, runFile(), { acrossCode: true }).problems[0], /policy: not recorded/);
 });
 
 test("stt-eval resume: --resume-across-code waives the code hash only", () => {

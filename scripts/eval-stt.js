@@ -936,13 +936,21 @@ async function run(opts) {
     corpus: corpusInfo,
     threshold: { ...e.THRESHOLD, against: manifest.BASELINE_ID, longForm: e.LONG_FORM, bracketDrift: BRACKET_DRIFT },
     skipped: manifest.SKIPPED,
-    // A timed pass verified at start that the lock was held (by the flock it
-    // runs under); the accuracy pass only yields to it.
+    rows: [],
+  };
+  // The measurement policy every row of this result was taken under. A timed
+  // pass verified at start that the lock was held (by the flock it runs
+  // under); the accuracy pass only yields to it. --resume requires an equal
+  // policy, so reused rows share it and the report's lock claim holds for
+  // every row, not just for this invocation.
+  result.policy = {
     cpuLock: opts.cpuLock
       ? { file: opts.cpuLock, role: opts.pass === "accuracy" ? "yields to holders" : "held for the whole pass" }
       : null,
-    rows: [],
+    otherRunPattern: opts.otherRunPattern,
+    quietLoad: opts.quietLoad,
   };
+  result.cpuLock = result.policy.cpuLock;
   if (previous) {
     const compat = e.resumeCompatibility(previous, result, { acrossCode: opts.resumeAcrossCode });
     if (!compat.ok) {

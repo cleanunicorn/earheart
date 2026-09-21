@@ -380,8 +380,6 @@ function summarizeProbe(api, headers, file) {
 }
 
 module.exports = {
-  FILLER,
-  REPEAT,
   countFillers,
   countRepeats,
   countMarkers,
@@ -389,7 +387,6 @@ module.exports = {
   contentWords,
   contentRetention,
   novelContentRatio,
-  criticalTokens,
   criticalRetention,
   detectEcho,
   detectRefusal,
@@ -399,11 +396,9 @@ module.exports = {
   minMax,
   decodeTokensPerSecond,
   summarizeRuns,
-  QUIET_LOAD,
   classifyPass,
   speedEstimates,
   nearestComparator,
-  SHIPPABLE_LICENCES,
   meetsBar,
   summarizeProbe,
 };

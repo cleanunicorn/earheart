@@ -25,6 +25,7 @@ const {
   cleanBudgetMessage,
   CLEAN_RUNAWAY_MESSAGE,
 } = require("../util/clean-budget");
+const { cleanupUserTurn, cleanupSamplingOptions } = require("../util/cleanup-turn");
 
 const port = process.parentPort;
 
@@ -41,7 +42,6 @@ const FEATURE_DIM = 80;
 // dictation (it sends more when the user allows longer ones); assertCleanBudget
 // below refuses a turn past whatever was allocated, instead of losing text.
 const DEFAULT_CONTEXT_SIZE = 4096;
-const DEFAULT_CLEANUP_TEMPERATURE = 0.2;
 
 let recognizer = null; // sherpa-onnx OfflineRecognizer
 let sttModelId = null;
@@ -221,18 +221,6 @@ async function cancelClean() {
   return { cancelled: cleanupAborts.size };
 }
 
-// Map a resolved cleanup sampling profile onto node-llama-cpp prompt options.
-// topK 0 and minP 0 mean "disabled", so they're only forwarded when active;
-// temperature always has a value (falls back to the engine default).
-function samplingOptions(sampling) {
-  const s = sampling || {};
-  const opts = { temperature: s.temperature ?? DEFAULT_CLEANUP_TEMPERATURE };
-  if (s.topP != null) opts.topP = s.topP;
-  if (s.topK != null && s.topK > 0) opts.topK = s.topK;
-  if (s.minP != null && s.minP > 0) opts.minP = s.minP;
-  return opts;
-}
-
 // Lazily create (or reset) the single chat session all cleanup ops share.
 // No systemPrompt: tested against Gemma 1B, putting the cleanup rules in the
 // chat system prompt makes the small model behave like an assistant and
@@ -291,20 +279,17 @@ async function clean({ transcript, systemPrompt, sampling }, emitProgress) {
   const mod = await import("node-llama-cpp");
   return queuedCleanupOp(async (signal) => {
     const session = freshSession(mod);
-    // The transcript is labelled as data and followed by a cue, so the model
-    // continues with the cleaned text rather than a reply to its content.
     // Re-prompting with the same leading text re-uses the context's evaluated
     // state (llama.cpp skips the shared token prefix), which is what makes the
     // prefill-ahead of "prime-cleanup" pay off here.
-    const userTurn =
-      `${systemPrompt}\n\nTranscript:\n${transcript}\n\nCleaned transcript:`;
+    const userTurn = cleanupUserTurn(systemPrompt, transcript);
     assertCleanBudget(userTurn, transcript);
     // Cleaned output tracks the input's length closely (punctuation in, fillers
     // out), so generated-chars / transcript-chars is an honest progress ratio.
     const total = Math.max(1, transcript.length);
     let generated = 0;
     const { responseText, stopReason } = await session.promptWithMeta(userTurn, {
-      ...samplingOptions(sampling),
+      ...cleanupSamplingOptions(sampling),
       signal,
       maxTokens: cleanMaxTokens(transcriptTokens(transcript)),
       onTextChunk: (text) => {

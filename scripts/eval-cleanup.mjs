@@ -38,6 +38,7 @@ const { DEFAULTS } = require("../main/settings");
 const { STYLES } = require("../main/cleanup-styles");
 const { stripStumbles, collapseRepeats } = require("../main/util/stumble-strip");
 const { SHORT, REPORTED, FLUENT } = require("./dictation-corpus");
+const { cleanupUserTurn, cleanupSamplingOptions } = require("../main/util/cleanup-turn");
 
 const BASE = DEFAULTS.cleanup.systemPrompt;
 
@@ -103,14 +104,6 @@ function countRepeats(text) {
   return n;
 }
 
-function samplingOptions(s) {
-  const o = { temperature: s.temperature };
-  if (s.topP != null) o.topP = s.topP;
-  if (s.topK != null && s.topK > 0) o.topK = s.topK;
-  if (s.minP != null && s.minP > 0) o.minP = s.minP;
-  return o;
-}
-
 const modelPath = process.argv[2];
 const seeds = (process.argv[3] || "1").split(",").map(Number);
 
@@ -127,10 +120,10 @@ for (const arm of ARMS) {
   for (const [i, transcript] of INPUTS.entries()) {
     for (const seed of seeds) {
       session.resetChatHistory();
-      const userTurn = `${systemPrompt}\n\nTranscript:\n${transcript}\n\nCleaned transcript:`;
+      const userTurn = cleanupUserTurn(systemPrompt, transcript);
       const out = (
         await session.prompt(userTurn, {
-          ...samplingOptions(arm.sampling),
+          ...cleanupSamplingOptions(arm.sampling),
           seed,
           maxTokens: 1024,
         })

@@ -24,9 +24,10 @@
 // Hugging Face; we pull the encoder/decoder/joiner and the token table. Each
 // bundle lives in its own repo (int8 vs fp32, v3 multilingual vs v2 English,
 // 0.6B vs 110M), so pin a repo + commit per model. scripts/eval-stt.js
-// --discover produces these pins, and --verify-shipped re-derives them. The fp32 builds store the encoder weights
-// in a separate `encoder.weights` external-data file alongside `encoder.onnx`;
-// both must be downloaded into the same directory for the loader to find them.
+// --discover produces these pins, and --verify-shipped re-derives them. The
+// fp32 builds store the encoder weights in a separate `encoder.weights`
+// external-data file alongside `encoder.onnx`; both must be downloaded into
+// the same directory for the loader to find them.
 const sttUrl = (repo, commit, file) =>
   `https://huggingface.co/csukuangfj/${repo}/resolve/${commit}/${file}`;
 

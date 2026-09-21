@@ -388,10 +388,11 @@ The run had a ~20 GB budget for model weights on a disk shared with another
 evaluation. The procedure (also in the reproduce loop below): `df -h /` before
 every download, the file's sha256 checked against its pin, and the file
 deleted as soon as its `summary.json` was written. The record, from the run
-log of 2026-09-21 (every download and deletion; times local):
+log of 2026-09-21 (the 21 downloads made by the download script, with their
+deletions; times local):
 
 <details>
-<summary>Download and deletion ledger (21 downloads)</summary>
+<summary>Download and deletion ledger (21 scripted downloads)</summary>
 
 | downloaded | model | for | free on `/` before | eval weights already on disk | bytes, sha256 verified | deleted |
 |---|---|---|---|---|---|---|
@@ -424,15 +425,19 @@ deleted it at 08:08, which is the 2,099 MB the 07:58 download found.
 
 </details>
 
-From that record: free space never fell below **119 GB**; the most weights on
-disk at once was **10.6 GB** (the three shipped Gemmas, fetched together at the
-start; one model at a time after that); no candidate was skipped for disk or
-for time; and every file was deleted — nothing was left at hand-back. One
-more download is not in the ledger because it bypassed the download script: at
-09:48 a mistaken run of the reproduce block fetched gemma-3-1b to `/tmp` and
-ran two minutes of benchmark before it was stopped; the file was deleted at
-09:51 and nothing from it is used. Only the raw outputs and JSON (a few MB)
-were kept, outside the repository.
+There were **22 downloads in all**: the 21 above, plus one that bypassed the
+download script — at 09:48 a mistaken run of the reproduce block fetched
+gemma-3-1b (806 MB) to `/tmp` and ran two minutes of benchmark before it was
+stopped; the file was deleted at 09:51 and nothing from it is used.
+
+What the record supports: free space was never below **119 GB** when a
+download started (the ledger samples `df` before each download, not after).
+The lowest reading anywhere in the run log is **114 GB**, at 05:32, just
+after the 12B download while all three Gemmas were on disk. The most weights
+on disk at once was **10.6 GB** (those three Gemmas, fetched together at the
+start; at most two files at a time after that). No candidate was skipped for
+disk or for time, and every file was deleted: nothing was left at hand-back.
+Only the raw outputs and JSON (a few MB) were kept, outside the repository.
 
 ## Pins (probed 2026-09-21)
 

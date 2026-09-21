@@ -292,7 +292,7 @@ The built-in engine is `node-llama-cpp` 3.18.1, which bundles llama.cpp
   Terms** (the shipped precedent). Anything else is measured and recorded here,
   never added.
 
-Every row below was checked with
+Every measured row, and every "checked" skip further down, was probed with
 `node scripts/bench-cleanup.mjs --probe <owner/repo> <file>` on 2026-09-21
 (architecture, template, licence, gating, pinned commit, sha256, bytes).
 "Thinking" means the chat template mentions `<think>` or `enable_thinking`.
@@ -320,20 +320,38 @@ quantization-aware Q4_0. It separates "a better model" from "a better quant".
 
 ## Skipped, with the reason
 
-| candidate | reason | evidence |
+Two kinds of skip. **Checked** rows name one file that was probed on
+2026-09-21 (its commit, sha256 and size are in the Pins table below, and the
+check can be repeated there). **Policy** rows are whole groups excluded by a
+rule of this survey without enumerating their members; the rule is the
+reason, not a measurement.
+
+**Checked**
+
+| candidate (probed file) | reason | evidence |
 |---|---|---|
-| ggml-org/gemma-4-E2B-it-GGUF (2,841,481,184 B), gemma-4-E4B-it-GGUF (4,590,807,392 B) | **Engine cannot load it:** architecture `gemma4` is not in llama.cpp b8390. Needs a node-llama-cpp bump (a runtime-dependency change, out of scope) | probe `arch: gemma4`; `grep -xc gemma4` → 0 (`gemma3` → 1) |
-| ggml-org/Laguna-XS-2.1-GGUF | Engine cannot load it (`laguna` not in b8390); also 19.6 GB, outside the size band; licence `openmdw-1.1` | probe; `grep -xc laguna` → 0 |
-| Qwen/Qwen2.5-7B-Instruct-GGUF | **Split GGUF:** Q4_K_M is `…-00001-of-00002.gguf` + `…-00002-of-00002.gguf` | probe `split: true` |
-| Qwen/Qwen2.5-3B-Instruct-GGUF | **Licence** `qwen-research` (non-commercial) | probe |
-| unsloth/Qwen3-4B-GGUF and the other non-2507 Qwen3 sizes | Hybrid-thinking predecessor of Qwen3-4B-Instruct-2507, which is measured at the same size | probe `thinking: true` (template has `enable_thinking`) |
-| ggml-org/Nemotron-3-Nano-4B-GGUF | Only BF16 and Q8_0 published; a reasoning-first model (template built around `<think>`) | repo file list |
-| microsoft/Phi-3-mini-4k-instruct-gguf | Superseded by Phi-3.5 Mini (measured); no Q4_K_M, only `…-q4.gguf` | repo file list |
-| tiiuae/Falcon3-3B-Instruct-GGUF | Licence `falcon-llm-license` | probe |
-| google/\*, meta-llama/\*, mistralai/\* | Gated (HTTP 401 anonymous); rejected by `test/engines.test.js` | — |
-| Qwen3.5 9B+, Qwen3.6/3.8 27B, gpt-oss-20b, GLM-4.7-Flash, Qwen3.5-35B-A3B | Outside the 0.5–12 B band | sizes from the HF API |
-| gemma-3-1b / 12b QAT | Redundant with the 4B QAT control | — |
-| community re-quants without upstream provenance ("abliterated", "uncensored", distills) | No licence metadata or provenance to pin | — |
+| ggml-org/gemma-4-E2B-it-GGUF · `gemma-4-E2B-it-Q4_0.gguf`, ggml-org/gemma-4-E4B-it-GGUF · `gemma-4-E4B-it-Q4_0.gguf` | **Engine cannot load it:** architecture `gemma4` is not in llama.cpp b8390. Needs a node-llama-cpp bump (a runtime-dependency change, out of scope) | probe `arch: gemma4`; `grep -xc gemma4` → 0 (`gemma3` → 1) |
+| ggml-org/Laguna-XS-2.1-GGUF · `Laguna-XS-2.1-Q4_K_M.gguf` | Engine cannot load it (`laguna` not in b8390); also 19.6 GB, outside the size band; licence `openmdw-1.1` | probe; `grep -xc laguna` → 0 |
+| Qwen/Qwen2.5-7B-Instruct-GGUF · `qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf` | **Split GGUF:** Q4_K_M comes in two parts | probe `split: true` |
+| Qwen/Qwen2.5-3B-Instruct-GGUF · `qwen2.5-3b-instruct-q4_k_m.gguf` | **Licence** `qwen-research` (non-commercial) | probe |
+| unsloth/Qwen3-4B-GGUF · `Qwen3-4B-Q4_K_M.gguf` | Hybrid-thinking predecessor of Qwen3-4B-Instruct-2507, which is measured at the same size | probe `thinking: true` |
+| ggml-org/Nemotron-3-Nano-4B-GGUF · `Nemotron-3-Nano-4B-Q8_0.gguf` | No Q4 build: the repo holds only BF16 and Q8_0 (4.23 GB); the template is built around `<think>` | file list at the pinned commit (below); probe `thinking: true`, arch `nemotron_h` |
+| microsoft/Phi-3-mini-4k-instruct-gguf · `Phi-3-mini-4k-instruct-q4.gguf` | Superseded by Phi-3.5 Mini (measured); no Q4_K_M, only `…-q4.gguf` | probe |
+| tiiuae/Falcon3-3B-Instruct-GGUF · `Falcon3-3B-Instruct-q4_k_m.gguf` | Licence `falcon-llm-license` | probe |
+
+Nemotron's file list at its pinned commit:
+`curl -s https://huggingface.co/api/models/ggml-org/Nemotron-3-Nano-4B-GGUF/tree/12f6af4d6fcafbfe54f29c4c7e26ccb6f4bea0c2`
+→ `.gitattributes`, `Nemotron-3-Nano-4B-BF16.gguf`, `Nemotron-3-Nano-4B-Q8_0.gguf`, `README.md`.
+
+**Policy** (groups, not enumerated)
+
+| group | rule |
+|---|---|
+| repos owned by google, meta-llama, mistralai | Gated: anonymous downloads get HTTP 401, and `test/engines.test.js` rejects these owners for the catalog |
+| non-2507 Qwen3 sizes (0.6B, 1.7B, 8B, …) | Same hybrid-thinking family as the checked Qwen3-4B row above; the 2507 Instruct build stands in for it |
+| models above about 12 B (e.g. Qwen3.5 9B+ … 35B-A3B, 27B-class, gpt-oss-20b, GLM-4.7-Flash) | Outside the 0.5–12 B size band the app's tiers target |
+| gemma-3-1b and gemma-3-12b QAT builds | The 4B QAT control answers the "better quant vs better model" question for the family |
+| community re-quants without upstream provenance ("abliterated", "uncensored", distills) | No licence metadata or provenance to pin |
 
 **Reserves** (loadable and eligible, not measured because the shortlist
 already covers their size band with newer weights):
@@ -437,6 +455,7 @@ again.
 | Qwen/Qwen2.5-1.5B-Instruct-GGUF · `qwen2.5-1.5b-instruct-q4_k_m.gguf` | `91cad51170dc346986eccefdc2dd33a9da36ead9` | `6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e` | 1,117,320,736 |
 | ggml-org/SmolLM3-3B-GGUF · `SmolLM3-Q4_K_M.gguf` | `4965cb60b150737b68a0408c36aeefb65078f894` | `8334b850b7bd46238c16b0c550df2138f0889bf433809008cc17a8b05761863e` | 1,915,305,312 |
 | bartowski/Llama-3.2-3B-Instruct-GGUF · `Llama-3.2-3B-Instruct-Q4_K_M.gguf` | `5ab33fa94d1d04e903623ae72c95d1696f09f9e8` | `6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff` | 2,019,377,696 |
+| ggml-org/Nemotron-3-Nano-4B-GGUF · `Nemotron-3-Nano-4B-Q8_0.gguf` | `12f6af4d6fcafbfe54f29c4c7e26ccb6f4bea0c2` | `ca243f216a23f91731ab2a9ba218fcd666db3dbb48c90cfbc16a87706b3e5a2f` | 4,233,681,088 |
 
 ## How it was measured
 

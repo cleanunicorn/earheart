@@ -154,8 +154,8 @@ function verbaliseNumbers(text) {
   });
 }
 
-// A whitespace token, stripped of the punctuation that can surround a number,
-// that still carries a digit but is not a shape N3 models.
+// The number shapes N3 does model, as one whole token (surrounding
+// punctuation stripped): "$5", "40,000", "2.5", "20%", "13th", "1960s".
 const MODELLED_TOKEN_RE = /^\$?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:%|st|nd|rd|th|s)?$/;
 
 /**

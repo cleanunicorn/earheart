@@ -43,8 +43,9 @@
 // footnote — the tables in docs/cleanup-models.md and the PR. Re-measured
 // speed passes join through --also=<dir> or, for passes taken while holding a
 // cross-run CPU lock, --locked=<dir>; each pass is labelled by its load.
-// Not in the test suite: it needs multi-GB models. The scoring is pinned in
-// test/cleanup-metrics.test.js.
+// Benchmark runs are not in the test suite: they need multi-GB models. The
+// scoring is pinned in test/cleanup-metrics.test.js, and the argument handling,
+// run matrix and report tables in test/bench-cleanup.test.js.
 
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
@@ -53,6 +54,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
+import { pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
 const { DEFAULTS } = require("../main/settings");
@@ -66,16 +68,19 @@ const CONTEXT_SIZE = 4096;
 const DEFAULT_SEEDS = [17, 29, 43, 61, 79];
 const CORPORA = { fluent: [FLUENT.raw], reported: REPORTED, short: SHORT };
 
+const USAGE =
+  "usage: node scripts/bench-cleanup.mjs --out=<dir> [--id=<label>] [--seeds=17,29,43,61,79]\n" +
+  "         [--corpus=fluent,reported[,short]] [--gpu] <model.gguf>\n" +
+  "       node scripts/bench-cleanup.mjs --probe <owner/repo> <file.gguf>\n" +
+  "       node scripts/bench-cleanup.mjs --report <out dir> [--licences=<id>=<licence>,...]\n" +
+  "         [--baselines=gemma-3-1b,gemma-3-4b,gemma-3-12b] [--also=<out dir>]... [--locked=<out dir>]...";
+
+// A bad command line. Thrown rather than exiting so the argument handling can
+// be tested; the CLI below prints it with the usage text and exits 2.
+class UsageError extends Error {}
+
 function usage(msg) {
-  if (msg) console.error(`bench-cleanup: ${msg}`);
-  console.error(
-    "usage: node scripts/bench-cleanup.mjs --out=<dir> [--id=<label>] [--seeds=17,29,43,61,79]\n" +
-      "         [--corpus=fluent,reported[,short]] [--gpu] <model.gguf>\n" +
-      "       node scripts/bench-cleanup.mjs --probe <owner/repo> <file.gguf>\n" +
-      "       node scripts/bench-cleanup.mjs --report <out dir> [--licences=<id>=<licence>,...]\n" +
-      "         [--baselines=gemma-3-1b,gemma-3-4b,gemma-3-12b] [--also=<out dir>]... [--locked=<out dir>]..."
-  );
-  process.exit(2);
+  throw new UsageError(msg);
 }
 
 function parseArgs(argv) {
@@ -443,21 +448,38 @@ function report(opts) {
         `seeds ${t.seeds.join(",")}.`
     );
   }
-  console.log(out.join("\n"));
+  return out.join("\n");
 }
 
-const opts = parseArgs(process.argv.slice(2));
-if (opts.probe) {
-  await probe(opts.probe);
-} else if (opts.report) {
-  report(opts);
-} else {
-  const mod = await import("node-llama-cpp");
-  console.log(TABLE_HEAD);
-  console.log(markdownRow(await benchModel(opts.models[0], opts, mod)));
-  // Exit without tearing the native backend down: disposing it segfaults
-  // node-llama-cpp 3.18.1 here (exit 139), after every file is written. One
-  // model per process also keeps each model's timings free of the last one's
-  // memory.
-  process.exit(0);
+async function main(argv) {
+  let opts;
+  try {
+    opts = parseArgs(argv);
+  } catch (err) {
+    if (!(err instanceof UsageError)) throw err;
+    console.error(`bench-cleanup: ${err.message}\n${USAGE}`);
+    process.exit(2);
+  }
+  if (opts.probe) {
+    await probe(opts.probe);
+  } else if (opts.report) {
+    console.log(report(opts));
+  } else {
+    const mod = await import("node-llama-cpp");
+    console.log(TABLE_HEAD);
+    console.log(markdownRow(await benchModel(opts.models[0], opts, mod)));
+    // Exit without tearing the native backend down: disposing it segfaults
+    // node-llama-cpp 3.18.1 here (exit 139), after every file is written. One
+    // model per process also keeps each model's timings free of the last one's
+    // memory.
+    process.exit(0);
+  }
 }
+
+// Run as a command; imported (by test/bench-cleanup.test.js) it only exports
+// its pure parts.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main(process.argv.slice(2));
+}
+
+export { UsageError, parseArgs, plan, markdownRow, report };

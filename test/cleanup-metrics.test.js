@@ -31,7 +31,8 @@ const {
   meetsBar,
   summarizeProbe,
 } = require("../scripts/cleanup-metrics");
-const { FLUENT } = require("../scripts/dictation-corpus");
+const { FLUENT, SHORT, REPORTED } = require("../scripts/dictation-corpus");
+const { stripStumbles } = require("../main/util/stumble-strip");
 const { DEFAULTS } = require("../main/settings");
 
 const PROMPT = DEFAULTS.cleanup.systemPrompt;
@@ -45,6 +46,28 @@ test("filler and repeat counters match the production backstop's families", () =
   // Deliberate doublings the backstop keeps are not counted.
   assert.strictEqual(countRepeats("it is very very fast"), 0);
   assert.strictEqual(countFillers(FLUENT.modelOutput), 6);
+  // All caps reads as an acronym, as in the production backstop.
+  assert.strictEqual(countFillers("the UM team and the UH office, um, agreed"), 1);
+});
+
+test("the counters count exactly what the production backstop removes", () => {
+  // Contract with main/util/stumble-strip.js: whatever countFillers /
+  // countRepeats see, stripStumbles removes, and what it keeps they don't count.
+  const samples = [
+    FLUENT.raw,
+    FLUENT.modelOutput,
+    ...SHORT,
+    ...REPORTED,
+    "the UM team and the UH office, um, agreed",
+    "Umm, so uh, the the the parser, erm, is is broken.",
+    "it is very very fast and we had had enough",
+  ];
+  for (const text of samples) {
+    const out = stripStumbles(text);
+    assert.strictEqual(countFillers(out), 0, `filler left in: ${out}`);
+    assert.strictEqual(countRepeats(out), 0, `repeat left in: ${out}`);
+  }
+  assert.match(stripStumbles("the UM team"), /UM/);
 });
 
 test("lengthRatio compares code points, output over input", () => {

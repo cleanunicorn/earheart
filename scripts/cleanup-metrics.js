@@ -20,8 +20,10 @@ const FILLER = /(?<![\w-])(?:u[mh]+|erm+)(?![\w-])/gi;
 const REPEAT =
   /(?<![\p{L}\p{N}'’-])([\p{L}\p{N}][\p{L}\p{N}'’-]*)((?:[^\S\n]+\1)+)(?![\p{L}\p{N}'’-])/giu;
 
+// Counts what the backstop would strip: an all-caps "UM"/"UH" reads as an
+// acronym there and is kept (main/util/stumble-strip.js), so it isn't counted.
 function countFillers(text) {
-  return (text.match(FILLER) || []).length;
+  return (text.match(FILLER) || []).filter((m) => m !== m.toUpperCase()).length;
 }
 
 // A "repeat" is what the backstop would collapse — the production rule itself

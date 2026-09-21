@@ -26,9 +26,10 @@
 //
 // Each arm reproduces production exactly: the prompt assembly from
 // main/cleanup-styles.js (base prompt + style directive) and the single-user-
-// turn shape from main/engines/engine-worker.js. Only the directive text and
-// the sampling profile differ between arms. Not in the test suite: it needs a
-// multi-GB model. The shapes themselves are pinned in test/unit.test.js.
+// turn shape the engine worker sends (main/util/cleanup-turn.js). Only the
+// directive text and the sampling profile differ between arms. Not in the
+// test suite: it needs a multi-GB model. The shapes themselves are pinned in
+// test/unit.test.js.
 
 import { createRequire } from "node:module";
 import { getLlama, LlamaChatSession } from "node-llama-cpp";

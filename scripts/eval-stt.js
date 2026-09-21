@@ -112,15 +112,24 @@ const LONG_FORM_GAP_SAMPLES = Math.round(0.3 * SAMPLE_RATE);
 const QUIET_LOAD = 4;
 const QUIET_POLL_MS = 30000;
 const QUIET_TIMEOUT_MS = 4 * 3600 * 1000;
+// A low load average is not enough on its own: the parallel cleanup run
+// benchmarks on this same CPU. Its processes are only OBSERVED (pgrep, read
+// only — never signalled or reniced): sampled before, every
+// OTHER_RUN_SAMPLE_MS during, and after each model's decodes. A speed row
+// measured while one was running is contended, and a speed pass re-measures
+// it (up to SPEED_ATTEMPTS times) once the machine is quiet again.
+const OTHER_RUN_PATTERN = "bench-cleanup|eval-cleanup";
+const OTHER_RUN_SAMPLE_MS = 10000;
+const SPEED_ATTEMPTS = 3;
 
 /* ---------------- arguments ---------------- */
 
 function parseArgs(argv) {
   const opts = {
     models: null, limit: 0, keep: false, exploratory: false, resume: false, discover: [],
-    quietLoad: QUIET_LOAD, pass: "both", combine: [],
+    quietLoad: QUIET_LOAD, pass: "both", combine: [], otherRunPattern: OTHER_RUN_PATTERN,
   };
-  const valued = new Set(["--out", "--cache-dir", "--models", "--limit", "--report", "--log", "--quiet-load", "--pass"]);
+  const valued = new Set(["--out", "--cache-dir", "--models", "--limit", "--report", "--log", "--quiet-load", "--pass", "--other-run-pattern"]);
   for (let i = 0; i < argv.length; i++) {
     let arg = argv[i];
     let value = null;
@@ -138,6 +147,7 @@ function parseArgs(argv) {
       case "--report": opts.report = value; break;
       case "--log": opts.log = value; break;
       case "--quiet-load": opts.quietLoad = Number(value); break;
+      case "--other-run-pattern": opts.otherRunPattern = value; break;
       case "--pass":
         if (!["both", "accuracy", "speed"].includes(value)) throw new Error(`--pass must be accuracy, speed or both`);
         opts.pass = value;
@@ -556,6 +566,7 @@ async function measureModel(entry, ctx) {
 
   const rec = row.path === "direct" ? directRecognizer(model, dir) : workerRecognizer(model, dir);
   row.loadavgBefore = os.loadavg();
+  const sampler = otherRunSampler(ctx.opts.otherRunPattern);
   try {
     const t0 = Date.now();
     const loaded = await rec.load();
@@ -645,6 +656,7 @@ async function measureModel(entry, ctx) {
     row.reason = String((err && err.message) || err);
   } finally {
     rec.close();
+    row.otherRun = sampler.stop();
     row.loadavgAfter = os.loadavg();
   }
   return row;
@@ -652,20 +664,53 @@ async function measureModel(entry, ctx) {
 
 /* ---------------- the run ---------------- */
 
-async function waitForQuiet(limit, appendLog) {
+// Is a process of the other run alive? Read-only: pgrep lists, never signals.
+// null where pgrep does not exist (Windows) — unknown, and recorded as such.
+function otherRunActive(pattern) {
+  if (!pattern) return false;
+  try {
+    const out = execFileSync("pgrep", ["-af", pattern], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    // Not ourselves: this harness's own command line (and its xvfb/npx
+    // wrappers) can carry the pattern when it is passed as a flag.
+    return out.split("\n").some((line) => line.trim() && !line.includes("eval-stt.js"));
+  } catch (err) {
+    if (err.status === 1) return false; // pgrep: no match
+    return null;
+  }
+}
+
+// Samples otherRunActive now, every OTHER_RUN_SAMPLE_MS, and on stop().
+function otherRunSampler(pattern) {
+  const samples = [otherRunActive(pattern)];
+  const timer = setInterval(() => samples.push(otherRunActive(pattern)), OTHER_RUN_SAMPLE_MS);
+  return {
+    stop() {
+      clearInterval(timer);
+      samples.push(otherRunActive(pattern));
+      const hits = samples.filter((x) => x === true).length;
+      const unknown = samples.filter((x) => x === null).length;
+      return { pattern, samples: samples.length, hits, unknown, active: hits > 0 ? true : unknown ? null : false };
+    },
+  };
+}
+
+async function waitForQuiet(limit, pattern, appendLog) {
   const started = Date.now();
   let load = os.loadavg()[0];
+  let other = otherRunActive(pattern);
   let announced = false;
-  while (load > limit && Date.now() - started < QUIET_TIMEOUT_MS) {
+  while ((load > limit || other === true) && Date.now() - started < QUIET_TIMEOUT_MS) {
     if (!announced) {
-      log(`waiting for a quiet machine: 1-min load ${load.toFixed(1)} > ${limit}`);
-      appendLog(`waiting for quiet (load ${load.toFixed(1)} > ${limit})`);
+      const why = `1-min load ${load.toFixed(1)} (limit ${limit})${other ? `, other run active (${pattern})` : ""}`;
+      log(`waiting for a quiet machine: ${why}`);
+      appendLog(`waiting for quiet: ${why}`);
       announced = true;
     }
     await new Promise((resolve) => setTimeout(resolve, QUIET_POLL_MS));
     load = os.loadavg()[0];
+    other = otherRunActive(pattern);
   }
-  return { waitedMs: Date.now() - started, load, limit, quiet: load <= limit };
+  return { waitedMs: Date.now() - started, load, limit, otherRunActive: other, quiet: load <= limit && other !== true };
 }
 
 // Everything that shapes a number: the harness, its manifest, the worker
@@ -763,7 +808,12 @@ function judge(acc, spd) {
   for (const r of rows) {
     const s = speedOf(r);
     r.speed = s && speedStable
-      ? { decodeRtf: s.decodeRtf, p50Rtf: s.p50Rtf, p95Rtf: s.p95Rtf, wallRtf: s.wallRtf, coldLoadWallMs: s.coldLoadWallMs, firstDecodeMs: s.firstDecodeMs }
+      ? {
+        decodeRtf: s.decodeRtf, p50Rtf: s.p50Rtf, p95Rtf: s.p95Rtf, wallRtf: s.wallRtf,
+        coldLoadWallMs: s.coldLoadWallMs, firstDecodeMs: s.firstDecodeMs,
+        otherRunIdle: s.otherRun && s.otherRun.active === false, otherRunSamples: s.otherRun && s.otherRun.samples,
+        loadavg: [s.loadavgBefore[0], s.loadavgAfter[0]],
+      }
       : null;
   }
   const index = acc.corpus.utteranceIndex;
@@ -889,11 +939,20 @@ async function run(opts) {
       log(`${entry.model.id} (${entry.role}, ${entry.arm}) — free ${Math.round(fs.statfsSync(cacheDir).bavail * fs.statfsSync(cacheDir).bsize / 1e9)} GB`);
       // The accuracy pass does not wait: its decode times are contended by
       // definition and never used for speed.
-      const waited = opts.pass === "accuracy" ? null : await waitForQuiet(opts.quietLoad, appendLog);
-      appendLog(`start ${entry.model.id} (${entry.role})`);
-      row = await measureModel(entry, ctx);
-      row.quietWait = waited;
-      row.contended = !waited || !waited.quiet;
+      const attempts = [];
+      for (;;) {
+        const waited = opts.pass === "accuracy" ? null : await waitForQuiet(opts.quietLoad, opts.otherRunPattern, appendLog);
+        appendLog(`start ${entry.model.id} (${entry.role})${attempts.length ? ` — speed attempt ${attempts.length + 1}` : ""}`);
+        row = await measureModel(entry, ctx);
+        row.quietWait = waited;
+        // Clean only if the gate held AND no other-run process was seen at
+        // any sample during the decodes (unknown counts as not clean).
+        row.contended = !waited || !waited.quiet || row.otherRun.active !== false;
+        attempts.push({ contended: row.contended, decodeRtf: row.decodeRtf, otherRun: row.otherRun, loadavgBefore: row.loadavgBefore, loadavgAfter: row.loadavgAfter });
+        if (opts.pass === "accuracy" || row.status !== "measured" || !row.contended || attempts.length >= SPEED_ATTEMPTS) break;
+        log(`${entry.model.id} (${entry.role}): contended (other run ${row.otherRun.active}), re-measuring when quiet`);
+      }
+      row.speedAttempts = attempts;
     }
     if (row.role === "bracket-first" && row.status === "measured") ctx.bracketFirst = row;
     if (row.role === "calibration" && row.status === "measured") ctx.calibration = row;
@@ -938,12 +997,12 @@ function report(result) {
   }
   lines.push(`Status: ${result.status}`);
   lines.push("");
-  lines.push("| model | role | path | wer_norm % | wer_verbatim % | Δ vs default (95 % CI), pts | decode RTF (p50 / p95) | speedup | cold load s | first decode s | punct % | caps % | size MB | verdict |");
-  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+  lines.push("| model | role | path | wer_norm % | wer_verbatim % | Δ vs default (95 % CI), pts | decode RTF (p50 / p95) | speedup | cold load s | first decode s | speed measured with | punct % | caps % | size MB | verdict |");
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
   let contendedShown = false;
   for (const r of result.rows) {
     if (r.status !== "measured") {
-      lines.push(`| ${r.id} | ${r.role} | ${r.path} | — | — | — | — | — | — | — | — | — | — | ${r.status}: ${r.reason} |`);
+      lines.push(`| ${r.id} | ${r.role} | ${r.path} | — | — | — | — | — | — | — | — | — | — | — | ${r.status}: ${r.reason} |`);
       continue;
     }
     const v = r.vsDefault;
@@ -952,6 +1011,14 @@ function report(result) {
     const sp = r.speed || (r.contended === false ? r : null);
     let speedCell;
     let loadCell;
+    // Per-timing statement of the conditions: was the other run's process seen,
+    // and the 1-minute load average before / after the model.
+    const cond = (x) => {
+      const la = x.loadavg || [x.loadavgBefore && x.loadavgBefore[0], x.loadavgAfter && x.loadavgAfter[0]];
+      const other = x.otherRunIdle !== undefined ? x.otherRunIdle : x.otherRun && x.otherRun.active === false;
+      return `cleanup run ${other ? "idle" : "ACTIVE or unknown"}, load ${num(la[0], 1)}–${num(la[1], 1)}`;
+    };
+    const condCell = sp ? cond(sp) : cond(r);
     if (sp) {
       speedCell = `${num(sp.decodeRtf, 4)} (${num(sp.p50Rtf, 4)} / ${num(sp.p95Rtf, 4)})`;
       loadCell = `${num(sp.coldLoadWallMs / 1000, 1)} | ${num(sp.firstDecodeMs / 1000, 2)}`;
@@ -961,7 +1028,7 @@ function report(result) {
       loadCell = `${num(r.coldLoadWallMs / 1000, 1)}* | ${num(r.firstDecodeMs / 1000, 2)}*`;
     }
     lines.push(
-      `| ${r.id} | ${r.role} | ${r.path} | ${pct(r.werNorm)} | ${pct(r.werVerbatim)} | ${ci} | ${speedCell} | ${v && v.speedup ? `${num(v.speedup, 2)}x` : "—"} | ${loadCell} | ${pct(r.punctuationRate, 0)} | ${pct(r.capitalisationRate, 0)} | ${Math.round(r.bytes / 1e6)} | ${r.verdict || (r.role.startsWith("bracket") || r.role === "calibration" ? "reference" : "baseline")} |`
+      `| ${r.id} | ${r.role} | ${r.path} | ${pct(r.werNorm)} | ${pct(r.werVerbatim)} | ${ci} | ${speedCell} | ${v && v.speedup ? `${num(v.speedup, 2)}x` : "—"} | ${loadCell} | ${condCell} | ${pct(r.punctuationRate, 0)} | ${pct(r.capitalisationRate, 0)} | ${Math.round(r.bytes / 1e6)} | ${r.verdict || (r.role.startsWith("bracket") || r.role === "calibration" ? "reference" : "baseline")} |`
     );
   }
   if (contendedShown) {

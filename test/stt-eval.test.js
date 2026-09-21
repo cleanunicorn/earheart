@@ -676,3 +676,97 @@ test("stt-eval plan: --models narrows the plan and the baseline must exist", () 
   ]);
   assert.throws(() => e.planModels(shipped, [], { baselineId: "nope" }), /not in the catalog/);
 });
+
+/* ---------------- combining passes and the report (scripts/eval-stt.js) ---------------- */
+
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const harness = require("../scripts/eval-stt");
+
+// A minimal but complete pair of pass files, shaped like the harness writes them.
+function passFiles({ speedOver = {}, accOver = {} } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stt-combine-"));
+  const machine = { cpu: "cpu", logicalCpus: 24, ramGb: 60, platform: "linux", appThreads: 8,
+    versions: { electron: "42", sherpaOnnxNode: "1.13.3" }, gitHead: "abc", measuringCode: "h1" };
+  const corpus = (subset, utterances) => ({ id: "fleurs", source: "google/fleurs", commit: "c0", subset, utterances,
+    referenceWords: 100, audioSec: 20, files: [], utteranceIndex: [{ sentenceId: "1", refWords: 50 }, { sentenceId: "2", refWords: 50 }] });
+  const accRowFull = (id, role, errors, extra) => ({
+    ...accRow(id, role, errors, extra), path: "worker", werNorm: errors / 100, werVerbatim: errors / 50,
+    punctuationRate: 1, capitalisationRate: 1, bytes: 500e6, decodeRtf: 0.09, contended: true,
+    coldLoadWallMs: 2000, firstDecodeMs: 500, loadavgBefore: [20, 1, 1], loadavgAfter: [20, 1, 1],
+  });
+  const acc = {
+    schema: 1, pass: "accuracy", status: "accuracy complete", command: "acc", machine, corpus: corpus("all", 647),
+    rows: [accRowFull("base", "bracket-first", 6), accRowFull("fast", "candidate", 6)], ...accOver,
+  };
+  const speed = {
+    schema: 1, pass: "speed", status: "speed complete", command: "speed", machine, corpus: corpus("speed subset", 166),
+    cpuLock: { file: "/x/cpu-quiet.lock", role: "held for the whole pass" },
+    rows: [speedRow("base", "bracket-first", 0.0425, 7, { p50Rtf: 0.042, p95Rtf: 0.045 }),
+      speedRow("fast", "candidate", 0.0104, 4.5, { p50Rtf: 0.0104, p95Rtf: 0.012 }),
+      speedRow("base", "bracket-last", 0.0429, 8)],
+    ...speedOver,
+  };
+  const accFile = path.join(dir, "acc.json");
+  const speedFile = path.join(dir, "speed.json");
+  fs.writeFileSync(accFile, JSON.stringify(acc));
+  fs.writeFileSync(speedFile, JSON.stringify(speed));
+  return { accFile, speedFile };
+}
+
+test("stt-eval combine: a clean split run merges, judges and reports", () => {
+  const { accFile, speedFile } = passFiles();
+  // The CLI's default baseline is the real one; this fixture names its own.
+  const combined = harness.combine(accFile, [speedFile], { baselineId: "base" });
+  assert.strictEqual(combined.status, "complete");
+  assert.strictEqual(combined.pass, "combined");
+  const fast = combined.rows.find((r) => r.id === "fast");
+  assert.strictEqual(fast.speed.decodeRtf, 0.0104, "the clean speed-pass number, not the accuracy pass's 0.09");
+  assert.strictEqual(fast.verdict, "eligible (rule a)");
+  const md = harness.report(combined);
+  assert.match(md, /Every speed timing was taken while holding cpu-quiet\.lock/);
+  assert.match(md, /\| fast \| candidate \| worker \| 6\.00 \| 12\.00 \|/);
+  assert.match(md, /0\.0104 \(0\.0104 \/ 0\.0120\)/);
+  assert.match(md, /cleanup run idle, load 2\.0–4\.5/);
+  assert.match(md, /eligible \(rule a\) \|$/m);
+  assert.match(md, /default first\/last 0\.0425 \/ 0\.0429 \(drift 0\.9 %/);
+});
+
+test("stt-eval combine: refuses passes that do not belong together", () => {
+  const cases = [
+    [{ speedOver: { pass: "accuracy" } }, /is not a speed pass/],
+    [{ accOver: { pass: "speed" } }, /is not an accuracy pass/],
+    [{ speedOver: { machine: { measuringCode: "h2" }, corpus: { commit: "c0", subset: "s" } } }, /different corpus pins or measuring code/],
+  ];
+  for (const [over, re] of cases) {
+    const { accFile, speedFile } = passFiles(over);
+    assert.throws(() => harness.combine(accFile, [speedFile], { baselineId: "base" }), re);
+  }
+  const { accFile, speedFile } = passFiles();
+  const other = speedFile.replace("speed.json", "other.json");
+  const s = JSON.parse(fs.readFileSync(speedFile, "utf8"));
+  s.corpus.subset = "another subset";
+  fs.writeFileSync(other, JSON.stringify(s));
+  assert.throws(() => harness.combine(accFile, [speedFile, other], { baselineId: "base" }), /a different speed subset/);
+});
+
+test("stt-eval combine: no speed pass, or an unusable one, gives no speed-based verdict", () => {
+  const { accFile } = passFiles();
+  const noSpeed = harness.combine(accFile, [], { baselineId: "base" });
+  assert.match(noSpeed.status, /speed: not measured/);
+  assert.strictEqual(noSpeed.rows[1].verdict, "speed not measured cleanly — no speed-based verdict");
+  const md = harness.report(noSpeed);
+  assert.match(md, /0\.0900\*/, "the accuracy pass's contended time is shown starred");
+  assert.match(md, /measured while the machine was busy/);
+
+  const { accFile: a2, speedFile: s2 } = passFiles({ speedOver: { status: "unstable" } });
+  assert.match(harness.combine(a2, [s2], { baselineId: "base" }).status, /speed: unstable/);
+});
+
+test("stt-eval harness: argument parsing", () => {
+  const o = harness.parseArgs(["--out", "x.json", "--pass=speed", "--limit", "40", "--models", "a,b", "--resume-across-code", "--no-sandbox"]);
+  assert.deepStrictEqual([o.out, o.pass, o.limit, o.models, o.resume, o.resumeAcrossCode], ["x.json", "speed", 40, ["a", "b"], true, true]);
+  assert.throws(() => harness.parseArgs(["--pass", "fast"]), /--pass must be/);
+  assert.throws(() => harness.parseArgs(["--bogus"]), /unknown argument/);
+});

@@ -833,8 +833,8 @@ const plan = (opts) =>
 // Judging lives in scripts/stt-eval.js (judge, speedCleanliness), where it is
 // unit-tested; these are the run's own settings for it.
 const JUDGE = () => ({ baselineId: manifest.BASELINE_ID, quietLoad: QUIET_LOAD, bracketDrift: BRACKET_DRIFT });
-const judge = (acc, spds) =>
-  e.judge(acc, spds.map((res) => ({ res, name: res === acc ? "this run" : path.basename(res.file || "") })), JUDGE());
+const judge = (acc, spds, overrides = {}) =>
+  e.judge(acc, spds.map((res) => ({ res, name: res === acc ? "this run" : path.basename(res.file || "") })), { ...JUDGE(), ...overrides });
 
 function runStatus(result, opts) {
   const rows = result.rows;
@@ -856,7 +856,7 @@ const lockOfPass = (res) => Boolean(res.cpuLock && res.cpuLock.role === "held fo
 
 // Merge a split run: the accuracy pass's rows, judged with the speed pass's
 // clean decode times — and any later re-measures, in the order given.
-function combine(accFile, speedFiles) {
+function combine(accFile, speedFiles, overrides = {}) {
   const acc = JSON.parse(fs.readFileSync(accFile, "utf8"));
   if (acc.pass !== "accuracy") throw new Error(`${accFile} is not an accuracy pass (pass: ${acc.pass})`);
   const spds = speedFiles.map((f) => {
@@ -882,7 +882,7 @@ function combine(accFile, speedFiles) {
       })),
     },
   };
-  judge(out, spds);
+  judge(out, spds, overrides);
   const mainOk = spds[0] && spds[0].status === "speed complete";
   out.status = mainOk && acc.status === "accuracy complete" && out.speedClean
     ? "complete"
@@ -1127,11 +1127,18 @@ async function main() {
   return run(opts);
 }
 
-main().then(
-  (code) => (process.versions.electron ? require("electron").app.exit(code) : process.exit(code)),
-  (err) => {
-    log("failed:", (err && err.stack) || err);
-    if (process.versions.electron) require("electron").app.exit(1);
-    else process.exit(1);
-  }
-);
+// Run as the entry script. Under Electron this file is only ever the entry
+// (and Electron's loader does not make it require.main); tests require it
+// under plain Node for combine()/report() without starting a run.
+if (process.versions.electron || require.main === module) {
+  main().then(
+    (code) => (process.versions.electron ? require("electron").app.exit(code) : process.exit(code)),
+    (err) => {
+      log("failed:", (err && err.stack) || err);
+      if (process.versions.electron) require("electron").app.exit(1);
+      else process.exit(1);
+    }
+  );
+}
+
+module.exports = { parseArgs, combine, report, workerRecognizer, directRecognizer };

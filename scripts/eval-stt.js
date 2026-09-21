@@ -29,6 +29,9 @@
 // model; default 4, "Infinity" to not wait), --pass accuracy|speed (one half
 // of a split run; default both), --combine <acc.json> [speed.json …] (judge
 // a split run; later speed files are re-measures), --cpu-lock <file> (see above),
+// --other-run-pattern <pgrep -f pattern> (processes of a parallel run whose
+// presence during a model's decodes makes its timing contended; default
+// "bench-cleanup|eval-cleanup"),
 // --exploratory (also measure families the worker can't run yet), --resume
 // (reuse the measured rows of an existing --out file, only if it is the same
 // pass, corpus selection, runtime and measuring code, and only rows whose model

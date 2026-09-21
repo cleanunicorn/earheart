@@ -156,19 +156,13 @@ test("registry drops custom models whose paths could leave the model directory",
   }
 });
 
-test("exactly one cleanup model is marked default", () => {
+test("exactly one cleanup model is marked default, and it is Granite 4.0 Micro", () => {
   const defaults = registry.listModels("cleanup").filter((m) => m.default);
   assert.strictEqual(defaults.length, 1);
   assert.strictEqual(defaults[0].id, registry.DEFAULT_CLEANUP_MODEL);
-});
-
-test("Granite 4.0 Micro is the cleanup default; the STT default is unchanged", () => {
+  // Pinned by name, like the STT default below: moving the default moves
+  // every new install, so it has to be a deliberate change here too.
   assert.strictEqual(registry.DEFAULT_CLEANUP_MODEL, "granite-4.0-micro");
-  assert.strictEqual(registry.DEFAULT_STT_MODEL, "parakeet-tdt-0.6b-v3-int8");
-  assert.deepStrictEqual(
-    registry.listModels("cleanup").filter((m) => m.default).map((m) => m.id),
-    ["granite-4.0-micro"]
-  );
 });
 
 // The exact files the cleanup benchmark measured (#167): a wrong byte count

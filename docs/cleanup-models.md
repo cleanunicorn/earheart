@@ -93,6 +93,34 @@ Every other model's numbers are unchanged. One reply (Mistral Nemo, REPORTED)
 became an echo failure it already was for other reasons. The speed rows
 gained two more locked passes of Gemma 3 4B (above).
 
+Both sides can be regenerated from the same saved raw outputs. The "after"
+side is today's scoring (`--rescore`, then `--report`). The "before" side is
+the scoring as it stood before the review, commit `d70e95f`, applied to the
+same outputs; this prints every model's before-cells (it matched all 39
+recorded before the review):
+
+```sh
+git show d70e95f:scripts/cleanup-metrics.js > scripts/.cleanup-metrics.before.js
+node -e '
+const fs = require("fs"), path = require("path");
+const old = require("./scripts/.cleanup-metrics.before.js");
+const { DEFAULTS } = require("./main/settings");
+const { resolveCleanup } = require("./main/cleanup-styles");
+const { SHORT, REPORTED, FLUENT } = require("./scripts/dictation-corpus");
+const inputs = { fluent: [FLUENT.raw], reported: REPORTED, short: SHORT };
+const out = process.argv[1];
+for (const id of fs.readdirSync(out).filter((d) => !d.endsWith("-gpu") && fs.existsSync(path.join(out, d, "runs.jsonl"))).sort()) {
+  const rows = fs.readFileSync(path.join(out, id, "runs.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
+  const scored = rows.map((r) => ({ ...r, score: old.scoreOutput({
+    input: inputs[r.corpus][r.index], stopReason: r.stopReason, corpus: r.corpus,
+    output: fs.readFileSync(path.join(out, id, "raw", `${r.corpus}-${r.style}-${r.index}-s${r.seed}.txt`), "utf8"),
+    systemPrompt: resolveCleanup({ ...DEFAULTS.cleanup, style: r.style }).systemPrompt }) }));
+  const s = old.summarizeRuns(scored), cell = (k) => s[k] ? `${s[k].stumbles}·${s[k].cleanRuns}/${s[k].n}·${s[k].fidelityFails}` : "–";
+  console.log(`| ${id} | ${cell("fluent/clean")} | ${cell("fluent/polished")} | ${cell("reported/clean")} |`);
+}' "$OUT"
+rm scripts/.cleanup-metrics.before.js
+```
+
 The final review changed one more column. "Delivered after backstop" now
 also counts the directive's other fillers. `stripStumbles` never removes
 them, so a model that keeps "kind of like" hands it to the user. Gemma 3

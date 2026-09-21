@@ -36,9 +36,11 @@ import { getLlama, LlamaChatSession } from "node-llama-cpp";
 const require = createRequire(import.meta.url);
 const { DEFAULTS } = require("../main/settings");
 const { STYLES } = require("../main/cleanup-styles");
-const { stripStumbles, collapseRepeats } = require("../main/util/stumble-strip");
+const { stripStumbles } = require("../main/util/stumble-strip");
 const { SHORT, REPORTED, FLUENT } = require("./dictation-corpus");
 const { cleanupUserTurn, cleanupSamplingOptions } = require("../main/util/cleanup-turn");
+// The same filler/repeat counters the model benchmark scores with.
+const { countFillers, countRepeats } = require("./cleanup-metrics");
 
 const BASE = DEFAULTS.cleanup.systemPrompt;
 
@@ -83,25 +85,6 @@ const corpusName = process.env.CORPUS || "fluent";
 const INPUTS = CORPORA[corpusName];
 if (!INPUTS) {
   throw new Error(`CORPUS must be one of ${Object.keys(CORPORA).join(", ")}`);
-}
-
-const FILLER = /(?<![\w-])(?:u[mh]+|erm+)(?![\w-])/gi;
-const REPEAT =
-  /(?<![\p{L}\p{N}'’-])([\p{L}\p{N}][\p{L}\p{N}'’-]*)((?:[^\S\n]+\1)+)(?![\p{L}\p{N}'’-])/giu;
-
-function countFillers(text) {
-  return (text.match(FILLER) || []).length;
-}
-// A "repeat" is what the backstop would collapse — the production rule itself
-// (deliberate doublings, numbers and spelled-out letters are not stutters), so
-// the delivered column can never report a repeat the backstop keeps on purpose.
-function countRepeats(text) {
-  let n = 0;
-  text.replace(REPEAT, (m) => {
-    if (collapseRepeats(m) !== m) n++;
-    return m;
-  });
-  return n;
 }
 
 const modelPath = process.argv[2];

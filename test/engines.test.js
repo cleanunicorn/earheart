@@ -245,6 +245,18 @@ test("registry: every cleanup model resolves to its gguf file", () => {
   }
 });
 
+// The engine loads one path (loadModel({ modelPath })), so a split GGUF
+// (…-00001-of-00002.gguf) would load half a model. One .gguf per entry.
+test("registry: every cleanup model ships exactly one gguf file", () => {
+  for (const model of registry.listModels("cleanup")) {
+    const ggufs = model.files.filter((f) => /\.gguf$/i.test(f.name));
+    assert.strictEqual(
+      ggufs.length, 1,
+      `${model.id}: ${ggufs.length} .gguf files, need exactly one (no split models)`
+    );
+  }
+});
+
 // Opt-in live check: actually reach each URL and assert it is not gated/missing.
 // Skipped by default (network, slow) — run with EARHEART_NET_TESTS=1 to enable.
 test(

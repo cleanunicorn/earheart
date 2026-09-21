@@ -13,17 +13,19 @@
 //
 // Eval-only: nothing in the app requires this file.
 
-const { stripStumbles, collapseRepeats } = require("../main/util/stumble-strip");
+// The production backstop's own filler and repeat rules — imported, not
+// copied, so these counts always describe what it strips.
+const {
+  stripStumbles,
+  collapseRepeats,
+  FILLER,
+  REPEAT,
+  isStrippableFiller,
+} = require("../main/util/stumble-strip");
 
-// The filler family the production backstop removes (main/util/stumble-strip.js).
-const FILLER = /(?<![\w-])(?:u[mh]+|erm+)(?![\w-])/gi;
-const REPEAT =
-  /(?<![\p{L}\p{N}'’-])([\p{L}\p{N}][\p{L}\p{N}'’-]*)((?:[^\S\n]+\1)+)(?![\p{L}\p{N}'’-])/giu;
-
-// Counts what the backstop would strip: an all-caps "UM"/"UH" reads as an
-// acronym there and is kept (main/util/stumble-strip.js), so it isn't counted.
+// Counts what the backstop would strip (an all-caps "UM" is kept as an acronym).
 function countFillers(text) {
-  return (text.match(FILLER) || []).filter((m) => m !== m.toUpperCase()).length;
+  return (text.match(FILLER) || []).filter(isStrippableFiller).length;
 }
 
 // The rest of the fillers the Clean and Polished directives tell the model to
@@ -77,7 +79,8 @@ const FUNCTION_WORDS = new Set(
     "such own same other like well oh okay ok yeah yes kind sort really"
   ).split(" ")
 );
-const FILLER_WORD = /^(?:u[mh]+|erm+)$/;
+// A whole word the backstop would strip ("um", "uhh", "erm").
+const isFillerWord = (w) => (w.match(FILLER) || [])[0] === w;
 const WORD = /[\p{L}\p{N}][\p{L}\p{N}'-]*/gu;
 
 function words(text) {
@@ -85,7 +88,7 @@ function words(text) {
 }
 
 function contentWords(text) {
-  return words(text).filter((w) => !FUNCTION_WORDS.has(w) && !FILLER_WORD.test(w));
+  return words(text).filter((w) => !FUNCTION_WORDS.has(w) && !isFillerWord(w));
 }
 
 function multiset(list) {

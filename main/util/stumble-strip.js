@@ -18,6 +18,11 @@
 // (rather than \b) also keep "uh-huh" and "uh-oh" intact.
 const FILLER = /(?<![\w-])(?:u[mh]+|erm+)(?![\w-])/gi;
 
+// "UM" / "UH" in caps reads as an acronym, not a stumble, so it stays.
+function isStrippableFiller(match) {
+  return match !== match.toUpperCase();
+}
+
 const CUT = "\u0000"; // stands in for a removed filler
 const CAP = "\u0001"; // marks a sentence that lost its opening word
 
@@ -34,8 +39,7 @@ function stripFillers(text) {
 
   let hit = false;
   const marked = text.replace(FILLER, (m) => {
-    // "UM" / "UH" in caps reads as an acronym, not a stumble.
-    if (m === m.toUpperCase()) return m;
+    if (!isStrippableFiller(m)) return m;
     hit = true;
     return CUT;
   });
@@ -171,4 +175,7 @@ function stripStumbles(text) {
   return collapseRepeats(stripFillers(text));
 }
 
-module.exports = { stripStumbles, stripFillers, collapseRepeats };
+// FILLER, REPEAT and isStrippableFiller are exported for the cleanup
+// benchmark (scripts/cleanup-metrics.js), which counts exactly what this
+// backstop strips and so must use the same rules, not a copy of them.
+module.exports = { stripStumbles, stripFillers, collapseRepeats, FILLER, REPEAT, isStrippableFiller };

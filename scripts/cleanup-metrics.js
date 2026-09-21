@@ -26,6 +26,26 @@ function countFillers(text) {
   return (text.match(FILLER) || []).filter((m) => m !== m.toUpperCase()).length;
 }
 
+// The rest of the fillers the Clean and Polished directives tell the model to
+// delete (main/cleanup-styles.js: "er, mm, you know, like, I mean"), which the
+// deterministic backstop leaves alone. "like" and "you know" are ordinary
+// words too ("something like that", "do you know the way"), so only their
+// unmistakably filler uses count — a missed one understates a model's
+// stumbles, a false one would blame it for keeping the speaker's words.
+const MARKERS = [
+  /(?<![\w'’-])(?:[Ee]r+|[Mm]m+|[Hh]mm+)(?![\w'’-])/g, // er, mm, hmm (not all-caps "ER")
+  /\b(?:kind|sort) of like\b/gi, // "kind of like this is where"
+  /,\s*like\s*,/gi, // ", like, "
+  /(?:^|[.!?]\s+)(?:so,?\s+)?like\s*,/gim, // "Like, …" / "So like, …" opening a sentence
+  /\bso,?\s+like\b(?!\s*,)/gi, // "So like how can we"
+  /\bI mean\s*,/g, // "I mean, …"
+  /(?<!\b(?:do|does|did|don't|didn't|if|whether|what|as|that)\s+)\byou know\b(?!\s+(?:that|what|how|why|where|who|when|if|whether|it|him|her|them|the|a|an|about)\b)/gi,
+];
+
+function countMarkers(text) {
+  return MARKERS.reduce((n, re) => n + (text.match(re) || []).length, 0);
+}
+
 // A "repeat" is what the backstop would collapse — the production rule itself
 // (deliberate doublings, numbers and spelled-out letters are not stutters), so
 // the delivered column can never report a repeat the backstop keeps on purpose.
@@ -190,6 +210,7 @@ function scoreOutput({ input, output, stopReason, systemPrompt = "", corpus = "f
   return {
     fillers: countFillers(text),
     repeats: countRepeats(text),
+    markers: countMarkers(text),
     delivered,
     deliveredFillers: countFillers(delivered),
     deliveredRepeats: countRepeats(delivered),
@@ -238,12 +259,15 @@ function summarizeRuns(runs) {
     const [wmin, wmax] = minMax(walls);
     const fillers = sum((r) => r.score.fillers);
     const repeats = sum((r) => r.score.repeats);
+    const markers = sum((r) => r.score.markers ?? 0);
+    const stumbled = (r) => r.score.fillers + r.score.repeats + (r.score.markers ?? 0);
     out[key] = {
       n: rs.length,
       fillers,
       repeats,
-      stumbles: fillers + repeats,
-      cleanRuns: count((r) => r.score.fillers + r.score.repeats === 0 && r.score.fidelityOk),
+      markers,
+      stumbles: fillers + repeats + markers,
+      cleanRuns: count((r) => stumbled(r) === 0 && r.score.fidelityOk),
       deliveredFillers: sum((r) => r.score.deliveredFillers),
       deliveredRepeats: sum((r) => r.score.deliveredRepeats),
       fidelityFails: count((r) => !r.score.fidelityOk),
@@ -360,6 +384,7 @@ module.exports = {
   REPEAT,
   countFillers,
   countRepeats,
+  countMarkers,
   lengthRatio,
   contentWords,
   contentRetention,

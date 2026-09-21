@@ -315,7 +315,7 @@ async function benchModel(modelPath, opts, mod) {
 const fmt = (x, d = 0) => (x === null || x === undefined ? "–" : Number(x).toFixed(d));
 
 const TABLE_HEAD =
-  "| model | FLUENT clean: fillers/repeats (model) | clean runs | FLUENT polished: fillers/repeats | delivered after backstop (clean) | fidelity fails clean/polished | ratio | retention | novel | echo/refusal/runaway | REPORTED: stumbles · fidelity fails | CPU wall ms median [min–max] | load avg | TTFT ms | decode tok/s | load ms | size | chat wrapper |\n" +
+  "| model | FLUENT clean: fillers/repeats/other fillers (model) | clean runs | FLUENT polished: fillers/repeats/other | delivered after backstop (clean) | fidelity fails clean/polished | ratio | retention | novel | echo/refusal/runaway | REPORTED: stumbles · fidelity fails | CPU wall ms median [min–max] | load avg | TTFT ms | decode tok/s | load ms | size | chat wrapper |\n" +
   "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|";
 
 function markdownRow({ manifest: m, summary }) {
@@ -325,7 +325,8 @@ function markdownRow({ manifest: m, summary }) {
   const w = c.wallMs;
   const flags = (x) => `${x.echo}/${x.refusal}/${x.runaway}`;
   return (
-    `| ${m.id} | ${c.fillers}/${c.repeats} | ${c.cleanRuns}/${c.n} | ${p ? `${p.fillers}/${p.repeats}` : "–"} | ` +
+    `| ${m.id} | ${c.fillers}/${c.repeats}/${c.markers ?? 0} | ${c.cleanRuns}/${c.n} | ` +
+    `${p ? `${p.fillers}/${p.repeats}/${p.markers ?? 0}` : "–"} | ` +
     `${c.deliveredFillers}/${c.deliveredRepeats} | ${c.fidelityFails}/${p ? p.fidelityFails : "–"} | ` +
     `${fmt(c.medianRatio, 2)} | ${fmt(c.medianRetention, 2)} | ${fmt(c.medianNovel, 2)} | ${flags(c)}${p ? ` · ${flags(p)}` : ""} | ` +
     `${r ? `${r.stumbles} · ${r.fidelityFails}` : "–"} | ${fmt(w.median)} [${fmt(w.min)}–${fmt(w.max)}] | ${fmt(c.loadAvg1, 1)} | ` +

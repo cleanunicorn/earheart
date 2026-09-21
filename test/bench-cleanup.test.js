@@ -184,7 +184,8 @@ test("markdownRow renders a saved run's FLUENT numbers", async () => {
   writeRun(dir, { id: "m", bytes: 2_000_000_000, s: COPY, wall: 1000 });
   const run = JSON.parse(fs.readFileSync(path.join(dir, "m", "summary.json"), "utf8"));
   const row = markdownRow(run);
-  assert.match(row, /^\| m \| 18\/0 \| 0\/3 \| 18\/0 \|/); // 6 fillers × 3 seeds, clean and polished
+  // 6 fillers and 1 "kind of like" × 3 seeds, clean and polished.
+  assert.match(row, /^\| m \| 18\/0\/3 \| 0\/3 \| 18\/0\/3 \|/);
   assert.match(row, /1002 \[1001–1003\]/);
   assert.match(row, /2\.00 GB \| X \|$/);
 });

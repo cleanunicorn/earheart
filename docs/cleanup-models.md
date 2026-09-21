@@ -20,8 +20,10 @@ and they are the ones to look at next:
 
 - **Granite 4.0 Micro** (ibm-granite, Apache-2.0, 2.10 GB) and **Qwen3 4B
   Instruct 2507** (unsloth, Apache-2.0, 2.50 GB) remove every filler on
-  FLUENT — 0 left over five seeds and 5/5 clean runs, where the shipped
-  Gemma 3 4B leaves all 30 — with no fidelity failure on FLUENT (both styles)
+  FLUENT/`clean` — 0 left over five seeds and 5/5 clean runs, where the
+  shipped Gemma 3 4B leaves 35 (all 30 "um"/"uh" plus "kind of like" in every
+  run); on `polished` Granite keeps "kind of like" twice, Qwen none, Gemma 3 4B
+  leaves 5 — with no fidelity failure on FLUENT (both styles)
   or REPORTED, and are faster than Gemma 3 4B on the CPU under the cross-run
   lock: **18.6 s** and **21.1 s** against **22.0 s** per FLUENT clean (median;
   fastest single cleans 18.4 s and 21.0 s against 21.6 s).
@@ -41,8 +43,8 @@ and they are the ones to look at next:
   (2.10 GB vs 2.50 GB), higher retention (0.95 vs 0.94), and its one real loss
   is a redundant clause.
 - **No default promotion is recommended.** Nothing near the 1B default's size
-  qualifies: Qwen3.5 0.8B leaves 20 fillers against 1B's 30 but regresses on
-  `polished` (4 against 0) and fails fidelity there on 2 of 5 seeds; LFM2 1.2B
+  qualifies: Qwen3.5 0.8B leaves 25 fillers against 1B's 35 but regresses on
+  `polished` (7 against 4) and fails fidelity there on 2 of 5 seeds; LFM2 1.2B
   and 2.6B remove every filler by deleting a quarter to two fifths of the text
   (retention 0.62 / 0.74, every FLUENT run fails) and are not shippable under
   their licence anyway.
@@ -54,27 +56,27 @@ and they are the ones to look at next:
 
 ### Results (first pass, CPU)
 
-Fillers and repeats are counted on the model's own output (five seeds
-summed); "delivered" is after the `stripStumbles` backstop; fidelity fails,
+Fillers, repeats and the directive's other fillers ("kind of like", "you
+know", …) are counted on the model's own output (five seeds summed); "delivered" is after the `stripStumbles` backstop; fidelity fails,
 ratio and retention are FLUENT/`clean` unless labelled; echo/refusal/runaway
 is FLUENT `clean · polished`. The wall-clock column here is the first pass;
 see the next table for how busy the machine was.
 
-| model | FLUENT clean: fillers/repeats (model) | clean runs | FLUENT polished: fillers/repeats | delivered after backstop (clean) | fidelity fails clean/polished | ratio | retention | echo/refusal/runaway | REPORTED: stumbles · fidelity fails | CPU wall ms median [min–max] | load avg | TTFT ms | decode tok/s | load ms | size | chat wrapper |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| qwen3.5-0.8b | 20/0 | 0/5 | 4/0 | 0/0 | 0/2 | 0.99 | 1.00 | 0/0/0 · 0/0/0 | 1 · 2 | 6854 [6573–8151] | 10.7 | 1828 | 43.9 | 1132 | 0.56 GB | JinjaTemplateChatWrapper |
-| lfm2-1.2b | 0/0 | 0/5 | 0/0 | 0/0 | 5/5 | 0.60 | 0.62 | 0/0/0 · 1/0/0 | 8 · 6 | 4891 [4691–5352] | 14.7 | 2232 | 49.3 | 890 | 0.73 GB | ChatMLChatWrapper |
-| gemma-3-1b | 30/0 | 0/5 | 0/0 | 0/0 | 0/5 | 1.00 | 1.00 | 0/0/0 · 0/0/0 | 0 · 5 | 7484 [7417–14594] | – | 2030 | 43.0 | 891 | 0.81 GB | GemmaChatWrapper |
-| lfm2-2.6b | 0/0 | 0/5 | 0/0 | 0/0 | 5/5 | 0.69 | 0.74 | 0/0/0 · 0/0/0 | 0 · 10 | 11294 [8147–12817] | 12.9 | 4999 | 24.3 | 1640 | 1.56 GB | ChatMLChatWrapper |
-| granite-4.0-micro | 0/0 | 5/5 | 0/0 | 0/0 | 0/0 | 0.91 | 0.95 | 0/0/0 · 0/0/0 | 0 · 0 | 19099 [18945–19291] | 10.5 | 6842 | 17.1 | 2114 | 2.10 GB | JinjaTemplateChatWrapper |
-| phi-3.5-mini | 0/0 | 2/5 | 0/0 | 0/0 | 3/5 | 0.87 | 0.89 | 0/0/0 · 0/0/0 | 0 · 2 | 23675 [23330–24913] | 11.6 | 9735 | 14.2 | 2303 | 2.39 GB | JinjaTemplateChatWrapper |
-| gemma-3-4b | 30/0 | 0/5 | 5/0 | 0/0 | 0/0 | 1.00 | 1.00 | 0/0/0 · 0/0/0 | 0 · 0 | 22172 [21888–26722] | 13.1 | 5748 | 14.6 | 2531 | 2.49 GB | GemmaChatWrapper |
-| qwen3-4b-2507 | 0/0 | 5/5 | 0/0 | 0/0 | 0/0 | 0.91 | 0.94 | 0/0/0 · 0/0/0 | 0 · 0 | 21024 [20981–21174] | 11.8 | 7311 | 15.0 | 2641 | 2.50 GB | QwenChatWrapper |
-| gemma-3-4b-qat | 6/0 | 0/5 | 0/0 | 0/0 | 0/5 | 0.93 | 0.98 | 0/0/0 · 0/0/0 | 0 · 5 | 22387 [19861–51366] | 21.7 | 7188 | 14.3 | 2345 | 2.53 GB | GemmaChatWrapper |
-| ministral-3-3b | 0/0 | 0/5 | 0/0 | 0/0 | 5/5 | 0.68 | 0.65 | 0/0/0 · 0/0/0 | 0 · 9 | 36301 [22429–72022] | 33.4 | 8847 | 7.3 | 1304 | 3.65 GB | JinjaTemplateChatWrapper |
-| lfm2.5-8b-a1b | 40/0 | 0/5 | 38/0 | 30/0 | 5/5 | 1.27 | 1.00 | 5/0/5 · 5/0/5 | 111 · 10 | 12572 [11543–19260] | 25.2 | 3866 | 32.6 | 4918 | 5.16 GB | ChatMLChatWrapper |
-| gemma-3-12b | 0/0 | 5/5 | 0/0 | 0/0 | 0/1 | 0.97 | 0.98 | 0/0/0 · 0/0/0 | 0 · 0 | 61879 [60770–94892] | 18.7 | 18894 | 5.3 | 6338 | 7.30 GB | GemmaChatWrapper |
-| mistral-nemo-12b | 0/0 | 0/5 | 0/0 | 0/0 | 5/5 | 0.68 | 0.65 | 0/0/0 · 0/0/0 | 0 · 10 | 116644 [101837–164617] | 37.6 | 71736 | 2.2 | 7387 | 7.48 GB | MistralChatWrapper |
+| model | FLUENT clean: fillers/repeats/other fillers (model) | clean runs | FLUENT polished: fillers/repeats/other | delivered after backstop (clean) | fidelity fails clean/polished | ratio | retention | novel | echo/refusal/runaway | REPORTED: stumbles · fidelity fails | CPU wall ms median [min–max] | load avg | TTFT ms | decode tok/s | load ms | size | chat wrapper |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| qwen3.5-0.8b | 20/0/5 | 0/5 | 4/0/3 | 0/0 | 0/2 | 0.99 | 1.00 | 0.00 | 0/0/0 · 0/0/0 | 2 · 2 | 6854 [6573–8151] | 10.7 | 1828 | 43.9 | 1132 | 0.56 GB | JinjaTemplateChatWrapper |
+| lfm2-1.2b | 0/0/0 | 0/5 | 0/0/0 | 0/0 | 5/5 | 0.60 | 0.62 | 0.15 | 0/0/0 · 1/0/0 | 8 · 6 | 4891 [4691–5352] | 14.7 | 2232 | 49.3 | 890 | 0.73 GB | ChatMLChatWrapper |
+| gemma-3-1b | 30/0/5 | 0/5 | 0/0/4 | 0/0 | 0/5 | 1.00 | 1.00 | 0.00 | 0/0/0 · 0/0/0 | 0 · 5 | 7484 [7417–14594] | – | 2030 | 43.0 | 891 | 0.81 GB | GemmaChatWrapper |
+| lfm2-2.6b | 0/0/0 | 0/5 | 0/0/0 | 0/0 | 5/5 | 0.69 | 0.74 | 0.10 | 0/0/0 · 0/0/0 | 0 · 10 | 11294 [8147–12817] | 12.9 | 4999 | 24.3 | 1640 | 1.56 GB | ChatMLChatWrapper |
+| granite-4.0-micro | 0/0/0 | 5/5 | 0/0/2 | 0/0 | 0/0 | 0.91 | 0.95 | 0.00 | 0/0/0 · 0/0/0 | 0 · 0 | 19099 [18945–19291] | 10.5 | 6842 | 17.1 | 2114 | 2.10 GB | JinjaTemplateChatWrapper |
+| phi-3.5-mini | 0/0/0 | 2/5 | 0/0/0 | 0/0 | 3/5 | 0.87 | 0.89 | 0.00 | 0/0/0 · 0/0/0 | 0 · 2 | 23675 [23330–24913] | 11.6 | 9735 | 14.2 | 2303 | 2.39 GB | JinjaTemplateChatWrapper |
+| gemma-3-4b | 30/0/5 | 0/5 | 5/0/0 | 0/0 | 0/0 | 1.00 | 1.00 | 0.00 | 0/0/0 · 0/0/0 | 15 · 0 | 22172 [21888–26722] | 13.1 | 5748 | 14.6 | 2531 | 2.49 GB | GemmaChatWrapper |
+| qwen3-4b-2507 | 0/0/0 | 5/5 | 0/0/0 | 0/0 | 0/0 | 0.91 | 0.94 | 0.01 | 0/0/0 · 0/0/0 | 5 · 0 | 21024 [20981–21174] | 11.8 | 7311 | 15.0 | 2641 | 2.50 GB | QwenChatWrapper |
+| gemma-3-4b-qat | 6/0/0 | 0/5 | 0/0/0 | 0/0 | 0/5 | 0.93 | 0.98 | 0.00 | 0/0/0 · 0/0/0 | 0 · 5 | 22387 [19861–51366] | 21.7 | 7188 | 14.3 | 2345 | 2.53 GB | GemmaChatWrapper |
+| ministral-3-3b | 0/0/0 | 0/5 | 0/0/0 | 0/0 | 5/5 | 0.68 | 0.65 | 0.20 | 0/0/0 · 0/0/0 | 0 · 9 | 36301 [22429–72022] | 33.4 | 8847 | 7.3 | 1304 | 3.65 GB | JinjaTemplateChatWrapper |
+| lfm2.5-8b-a1b | 40/0/14 | 0/5 | 38/0/9 | 30/0 | 5/5 | 1.27 | 1.00 | 0.26 | 5/0/5 · 5/0/5 | 144 · 10 | 12572 [11543–19260] | 25.2 | 3866 | 32.6 | 4918 | 5.16 GB | ChatMLChatWrapper |
+| gemma-3-12b | 0/0/0 | 5/5 | 0/0/0 | 0/0 | 0/1 | 0.97 | 0.98 | 0.01 | 0/0/0 · 0/0/0 | 0 · 0 | 61879 [60770–94892] | 18.7 | 18894 | 5.3 | 6338 | 7.30 GB | GemmaChatWrapper |
+| mistral-nemo-12b | 0/0/0 | 0/5 | 0/0/0 | 0/0 | 5/5 | 0.68 | 0.65 | 0.19 | 0/0/0 · 0/0/0 | 0 · 10 | 116644 [101837–164617] | 37.6 | 71736 | 2.2 | 7387 | 7.48 GB | MistralChatWrapper |
 
 ### Speed passes and load
 
@@ -123,15 +125,15 @@ single clean across all of a model's passes.
 
 | candidate | vs | licence | quality (clean, strictly fewer) | polished (no more) | fidelity | speed: least-contended median ≤ | speed: min of all passes ≤ | adds to catalog |
 |---|---|---|---|---|---|---|---|---|
-| qwen3.5-0.8b | gemma-3-1b | apache-2.0 ✓ | yes (20 vs 30) | no | no (fails 0/2, retention 1.00 vs 1.00) | yes (6854 [first pass] vs 7484 [first pass]) | yes (6573 vs 7417) | **no** |
-| lfm2-1.2b | gemma-3-1b | lfm1.0 ✗ | yes (0 vs 30) | yes | no (fails 5/5, retention 0.62 vs 1.00) | yes (4891 [first pass] vs 7484 [first pass]) | yes (4691 vs 7417) | **no** |
-| lfm2-2.6b | gemma-3-1b | lfm1.0 ✗ | yes (0 vs 30) | yes | no (fails 5/5, retention 0.74 vs 1.00) | no (11294 [first pass] vs 7484 [first pass]) | no (8147 vs 7417) | **no** |
-| granite-4.0-micro | gemma-3-4b | apache-2.0 ✓ | yes (0 vs 30) | yes | no (fails 0/0, retention 0.95 vs 1.00) | yes (18558 [locked re-run] vs 22009 [locked re-run]) | yes (18372 vs 21571) | **no** |
-| phi-3.5-mini | gemma-3-4b | mit ✓ | yes (0 vs 30) | yes | no (fails 3/5, retention 0.89 vs 1.00) | no (23675 [first pass] vs 22009 [locked re-run]) | no (23330 vs 21571) | **no** |
-| qwen3-4b-2507 | gemma-3-4b | apache-2.0 ✓ | yes (0 vs 30) | yes | no (fails 0/0, retention 0.94 vs 1.00) | yes (21117 [locked re-run] vs 22009 [locked re-run]) | yes (20981 vs 21571) | **no** |
-| gemma-3-4b-qat | gemma-3-4b | gemma ✓ | yes (6 vs 30) | yes | no (fails 0/5, retention 0.98 vs 1.00) | no (22387 [first pass] vs 22009 [locked re-run]) | yes (19861 vs 21571) | **no** |
-| ministral-3-3b | gemma-3-4b | apache-2.0 ✓ | yes (0 vs 30) | yes | no (fails 5/5, retention 0.65 vs 1.00) | no (36301 [first pass] vs 22009 [locked re-run]) | no (22429 vs 21571) | **no** |
-| lfm2.5-8b-a1b | gemma-3-12b | lfm1.0 ✗ | no (40 vs 0) | no | no (fails 5/5, retention 1.00 vs 0.98) | yes (12572 [first pass] vs 61879 [first pass]) | yes (11543 vs 60770) | **no** |
+| qwen3.5-0.8b | gemma-3-1b | apache-2.0 ✓ | yes (25 vs 35) | no | no (fails 0/2, retention 1.00 vs 1.00) | yes (6854 [first pass] vs 7484 [first pass]) | yes (6573 vs 7417) | **no** |
+| lfm2-1.2b | gemma-3-1b | lfm1.0 ✗ | yes (0 vs 35) | yes | no (fails 5/5, retention 0.62 vs 1.00) | yes (4891 [first pass] vs 7484 [first pass]) | yes (4691 vs 7417) | **no** |
+| lfm2-2.6b | gemma-3-1b | lfm1.0 ✗ | yes (0 vs 35) | yes | no (fails 5/5, retention 0.74 vs 1.00) | no (11294 [first pass] vs 7484 [first pass]) | no (8147 vs 7417) | **no** |
+| granite-4.0-micro | gemma-3-4b | apache-2.0 ✓ | yes (0 vs 35) | yes | no (fails 0/0, retention 0.95 vs 1.00) | yes (18558 [locked re-run] vs 22009 [locked re-run]) | yes (18372 vs 21571) | **no** |
+| phi-3.5-mini | gemma-3-4b | mit ✓ | yes (0 vs 35) | yes | no (fails 3/5, retention 0.89 vs 1.00) | no (23675 [first pass] vs 22009 [locked re-run]) | no (23330 vs 21571) | **no** |
+| qwen3-4b-2507 | gemma-3-4b | apache-2.0 ✓ | yes (0 vs 35) | yes | no (fails 0/0, retention 0.94 vs 1.00) | yes (21117 [locked re-run] vs 22009 [locked re-run]) | yes (20981 vs 21571) | **no** |
+| gemma-3-4b-qat | gemma-3-4b | gemma ✓ | yes (6 vs 35) | yes | no (fails 0/5, retention 0.98 vs 1.00) | no (22387 [first pass] vs 22009 [locked re-run]) | yes (19861 vs 21571) | **no** |
+| ministral-3-3b | gemma-3-4b | apache-2.0 ✓ | yes (0 vs 35) | yes | no (fails 5/5, retention 0.65 vs 1.00) | no (36301 [first pass] vs 22009 [locked re-run]) | no (22429 vs 21571) | **no** |
+| lfm2.5-8b-a1b | gemma-3-12b | lfm1.0 ✗ | no (54 vs 0) | no | no (fails 5/5, retention 1.00 vs 0.98) | yes (12572 [first pass] vs 61879 [first pass]) | yes (11543 vs 60770) | **no** |
 | mistral-nemo-12b | gemma-3-12b | apache-2.0 ✓ | no (0 vs 0) | yes | no (fails 5/5, retention 0.65 vs 0.98) | no (116644 [first pass] vs 61879 [first pass]) | no (101837 vs 60770) | **no** |
 
 ### Spot checks
@@ -264,13 +266,18 @@ licence → not addable, 2,019,377,696 B).
   fillers through) under `clean` (the shipped default style) and `polished`;
   REPORTED (two filler-dense paragraphs) under `clean`. Five fixed seeds
   (17, 29, 43, 61, 79) for every model, so runs pair up.
-- **Quality, as the model returned it.** Fillers (`um`/`uh`/`erm`) and
-  repeats the backstop would collapse, counted on the model's own output. The
+- **Quality, as the model returned it.** Fillers (`um`/`uh`/`erm`, skipping
+  an all-caps "UM" as the backstop does), repeats the backstop would collapse,
+  and the directive's other fillers where they are unmistakably fillers (`er`,
+  `mm`, "kind of like", ", like,", a sentence-opening "Like,"/"So like", "I
+  mean," and a filler "you know" — never "something like X" or "do you know"),
+  all counted on the model's own output. The
   delivered count after `stripStumbles` is reported too, but it cannot decide
   anything: the backstop brings every model close to zero.
 - **Fidelity guards**, any failure fails the run: output/input length ratio
   (FLUENT 0.85–1.05, others 0.70–1.10); content-word retention ≥ 0.90 (function
-  words and fillers excluded); every negation, scope word, number and
+  words and fillers excluded); at most 10% of the output's content words new
+  (words the speaker never said); every negation, scope word, number and
   code-like token kept; no echo of the prompt, its labels or `<think>`; no
   preamble or code fence; no refusal; not empty; and no runaway (a `maxTokens`
   stop, which the app answers by delivering the raw transcript). Novel content
@@ -289,7 +296,7 @@ licence → not addable, 2,019,377,696 B).
   passes beside it.
 - **The catalog bar** (`meetsBar`): against the shipped Gemma nearest in file
   size, a candidate must have a shippable licence; strictly fewer model-stage
-  fillers + repeats on FLUENT/`clean` over the five seeds and no fewer clean
+  fillers + repeats + other fillers on FLUENT/`clean` over the five seeds and no fewer clean
   runs; no more on FLUENT/`polished`; no fidelity failure on FLUENT and a
   median retention at least the Gemma's; and a median FLUENT/`clean`
   wall-clock no slower. A quality tie is not a win, even when faster.

@@ -12,6 +12,7 @@ const assert = require("node:assert");
 const {
   countFillers,
   countRepeats,
+  countMarkers,
   lengthRatio,
   contentWords,
   contentRetention,
@@ -68,6 +69,36 @@ test("the counters count exactly what the production backstop removes", () => {
     assert.strictEqual(countRepeats(out), 0, `repeat left in: ${out}`);
   }
   assert.match(stripStumbles("the UM team"), /UM/);
+});
+
+test("countMarkers counts the directive's other fillers, only where they are fillers", () => {
+  // Each family the Clean/Polished directives name, as a filler…
+  assert.strictEqual(countMarkers("so er the build, mm, failed"), 2);
+  assert.strictEqual(countMarkers("Hmm, that's odd"), 1);
+  assert.strictEqual(countMarkers("the user goes kind of like this"), 1);
+  assert.strictEqual(countMarkers("and it's sort of like a queue"), 1);
+  assert.strictEqual(countMarkers("the page is, like, for admins"), 1);
+  assert.strictEqual(countMarkers("Like, why does it fail?"), 1);
+  assert.strictEqual(countMarkers("So like how can we move it"), 1);
+  assert.strictEqual(countMarkers("I mean, it works"), 1);
+  assert.strictEqual(countMarkers("we build it twice you know once in the test job"), 1);
+  // …and never the same words doing their ordinary job.
+  for (const ordinary of [
+    "add something like connect Gmail",
+    "more like the form they see",
+    "it looks like rain",
+    "I like the renderer",
+    "do you know the way",
+    "you know that it fails",
+    "I mean it",
+    "the ER waiting room", // an acronym, not "er"
+    "the summer term",
+  ]) {
+    assert.strictEqual(countMarkers(ordinary), 0, ordinary);
+  }
+  // FLUENT's one: "kind of like this is where the user goes".
+  assert.strictEqual(countMarkers(FLUENT.raw), 1);
+  assert.strictEqual(countMarkers(REPORTED[1]), 2); // "you know" twice
 });
 
 test("lengthRatio compares code points, output over input", () => {
@@ -226,8 +257,10 @@ test("summarizeRuns groups by corpus/style and sums stumbles", () => {
   const fc = sum["fluent/clean"];
   assert.strictEqual(fc.n, 2);
   assert.strictEqual(fc.fillers, 6 + clean.fillers);
-  assert.strictEqual(fc.stumbles, fc.fillers + fc.repeats);
-  assert.strictEqual(fc.cleanRuns, clean.fillers + clean.repeats === 0 ? 1 : 0);
+  // Model-stage stumbles include the directive's other fillers ("kind of like").
+  assert.strictEqual(fc.markers, 1 + clean.markers);
+  assert.strictEqual(fc.stumbles, fc.fillers + fc.repeats + fc.markers);
+  assert.strictEqual(fc.cleanRuns, clean.fillers + clean.repeats + clean.markers === 0 ? 1 : 0);
   assert.deepStrictEqual(fc.wallMs, { median: 2000, min: 1000, max: 3000 });
   // Rows without a load average (older runs) summarize to null, not NaN.
   assert.strictEqual(fc.loadAvg1, null);

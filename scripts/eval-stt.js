@@ -66,8 +66,8 @@
 // THE THRESHOLD (stt-model-eval-Q3, fixed before any number existed): a
 // candidate earns a catalog entry when, against parakeet-tdt-0.6b-v3-int8 in
 // the same run, it is (a) >= 1.3x faster with WER at most 1.0 point worse, or
-// (b) lower WER at most 1.1x slower — and does not drop words on long audio
-// (Q5). WER always comes from the full corpus. Speed counts only from a quiet
+// (b) lower WER at most 1.1x slower — and does not drop more words on long
+// audio than the default does (Q5, revised by Q7: see longFormCompatible). WER always comes from the full corpus. Speed counts only from a quiet
 // machine: each model waits for a 1-minute load average of 4, the default is
 // measured first and last, and if the two disagree by more than 10 % the run
 // is unstable and no speed-based verdict is given. A split run's accuracy
@@ -789,7 +789,7 @@ function judge(acc, spd) {
     if (r.vsDefault.eligible) {
       const baseLong = ref.longForm;
       r.longFormCheck = r.longForm && baseLong
-        ? e.longFormCompatible(r.longForm.map((l, i) => ({ ...l, baseWer: baseLong[i].wer })))
+        ? e.longFormCompatible(r.longForm.map((l, i) => ({ ...l, base: baseLong[i] })))
         : { compatible: false, reasons: ["long-form not measured"] };
       // Q2: an exploratory family is never catalogued from the direct path.
       r.eligible = r.longFormCheck.compatible && r.arm === "wired";

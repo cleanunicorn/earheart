@@ -367,23 +367,45 @@ function classify(base, cand, threshold = THRESHOLD) {
   return { eligible: a || b, rule: a ? "a" : b ? "b" : null, speedup, deltaWer };
 }
 
-// stt-model-eval-Q5: a candidate that clears Q3 on short clips is still
-// incompatible if it drops words on a long single-buffer recording (the path
-// taken with live preview off) — the Whisper 30 s window failure mode.
-const LONG_FORM = { minWordRatio: 0.9, werSlack: 0.05 };
+// stt-model-eval-Q5 as revised by Q7: a candidate that clears Q3 on short
+// clips is still incompatible if it loses words on a long single-buffer
+// recording (the path taken with live preview off) — the Whisper 30 s window
+// failure mode — judged RELATIVE to the shipped default, which itself loses
+// words on long buffers. At any long-form length it is incompatible if
+//   (a) its word ratio is more than 0.10 below the default's,
+//   (b) its wer_norm is more than 5 points above the default's, or
+//   (c) it fails (error or empty output) where the default did not;
+// and at ~60 s alone (where the default holds 0.988) its word ratio must also
+// be at least 0.9 absolute.
+const LONG_FORM = { ratioSlack: 0.1, werSlack: 0.05, minWordRatio: 0.9, absoluteAt: "60s" };
+
+// "More than" is compared with a float tolerance, so 0.45 - 0.10 = 0.35 is a
+// boundary that passes rather than a rounding accident.
+const LONG_FORM_EPS = 1e-9;
+
+const failedClip = (c) => Boolean(c.error) || !(c.wordRatio > 0);
 
 /**
- * @param {Array<{ label: string, wordRatio: number, wer: number, baseWer: number }>} clips
+ * @param {Array<{ label: string, wordRatio: number, wer: number, error?: string,
+ *   base: { wordRatio: number, wer: number, error?: string } }>} clips
  * @returns {{ compatible: boolean, reasons: string[] }}
  */
 function longFormCompatible(clips, limits = LONG_FORM) {
   const reasons = [];
   for (const c of clips) {
-    if (c.wordRatio < limits.minWordRatio) {
-      reasons.push(`${c.label}: hypothesis/reference word ratio ${c.wordRatio.toFixed(3)} < ${limits.minWordRatio}`);
+    const base = c.base;
+    if (failedClip(c)) {
+      if (!failedClip(base)) reasons.push(`${c.label}: failed (${c.error || "empty output"}) where the default did not`);
+      continue;
     }
-    if (c.wer > c.baseWer + limits.werSlack) {
-      reasons.push(`${c.label}: wer_norm ${(c.wer * 100).toFixed(2)} > default ${(c.baseWer * 100).toFixed(2)} + ${limits.werSlack * 100}`);
+    if (c.wordRatio < base.wordRatio - limits.ratioSlack - LONG_FORM_EPS) {
+      reasons.push(`${c.label}: word ratio ${c.wordRatio.toFixed(3)} is more than ${limits.ratioSlack} below the default's ${base.wordRatio.toFixed(3)}`);
+    }
+    if (c.wer > base.wer + limits.werSlack + LONG_FORM_EPS) {
+      reasons.push(`${c.label}: wer_norm ${(c.wer * 100).toFixed(2)} % is more than ${limits.werSlack * 100} points above the default's ${(base.wer * 100).toFixed(2)} %`);
+    }
+    if (c.label === limits.absoluteAt && c.wordRatio < limits.minWordRatio - LONG_FORM_EPS) {
+      reasons.push(`${c.label}: word ratio ${c.wordRatio.toFixed(3)} < ${limits.minWordRatio}`);
     }
   }
   return { compatible: reasons.length === 0, reasons };

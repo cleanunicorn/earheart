@@ -201,17 +201,33 @@ test("stt-eval: Q3 rule (b) — lower WER, at most 1.1x slower", () => {
   assert.throws(() => e.classify(base, { errors: 1, ref: 9, decodeRtf: 0.1 }), /different references/);
 });
 
-test("stt-eval: Q5 long-form compatibility precondition", () => {
-  const ok = e.longFormCompatible([
-    { label: "60s", wordRatio: 0.95, wer: 0.08, baseWer: 0.06 },
-    { label: "300s", wordRatio: 1.0, wer: 0.11, baseWer: 0.06 },
-  ]);
-  assert.deepStrictEqual(ok, { compatible: true, reasons: [] });
-  const truncated = e.longFormCompatible([{ label: "300s", wordRatio: 0.12, wer: 0.9, baseWer: 0.06 }]);
-  assert.strictEqual(truncated.compatible, false);
-  assert.strictEqual(truncated.reasons.length, 2);
-  const worse = e.longFormCompatible([{ label: "60s", wordRatio: 1, wer: 0.1101, baseWer: 0.06 }]);
-  assert.strictEqual(worse.compatible, false);
+test("stt-eval: Q5/Q7 long-form guard is relative to the default", () => {
+  const base60 = { wordRatio: 0.988, wer: 0.05 };
+  const base300 = { wordRatio: 0.45, wer: 0.58 };
+  const clip = (label, wordRatio, wer, base, error) => ({ label, wordRatio, wer, base, ...(error ? { error } : {}) });
+  // Matching the default's own long-buffer loss is compatible.
+  assert.deepStrictEqual(
+    e.longFormCompatible([clip("60s", 0.95, 0.07, base60), clip("300s", 0.45, 0.58, base300)]),
+    { compatible: true, reasons: [] }
+  );
+  // (a) exactly 0.10 below the default passes; just past it fails.
+  assert.strictEqual(e.longFormCompatible([clip("300s", 0.35, 0.58, base300)]).compatible, true);
+  assert.strictEqual(e.longFormCompatible([clip("300s", 0.349, 0.58, base300)]).compatible, false);
+  // (b) exactly 5 points above passes; just past it fails.
+  assert.strictEqual(e.longFormCompatible([clip("300s", 0.45, 0.63, base300)]).compatible, true);
+  assert.strictEqual(e.longFormCompatible([clip("300s", 0.45, 0.6301, base300)]).compatible, false);
+  // (c) failing where the default did not; failing where it also failed is not held against it.
+  const crashed = e.longFormCompatible([clip("300s", 0, 1, base300, "engine process exited")]);
+  assert.strictEqual(crashed.compatible, false);
+  assert.match(crashed.reasons[0], /failed \(engine process exited\) where the default did not/);
+  assert.strictEqual(e.longFormCompatible([clip("300s", 0, 1, base300)]).compatible, false, "empty output counts as failing");
+  const bothFailed = { wordRatio: 0, wer: 1, error: "engine process exited" };
+  assert.strictEqual(e.longFormCompatible([clip("300s", 0, 1, bothFailed, "engine process exited")]).compatible, true);
+  // The absolute 0.9 cut applies at 60 s only.
+  assert.strictEqual(e.longFormCompatible([clip("60s", 0.9, 0.05, base60)]).compatible, true);
+  const low60 = e.longFormCompatible([clip("60s", 0.899, 0.05, { wordRatio: 0.95, wer: 0.05 })]);
+  assert.deepStrictEqual(low60.reasons, ["60s: word ratio 0.899 < 0.9"]);
+  assert.strictEqual(e.longFormCompatible([clip("300s", 0.5, 0.5, { wordRatio: 0.55, wer: 0.5 })]).compatible, true);
 });
 
 test("stt-eval: the speed subset keeps every 4th sentence cluster, all its readings, in a fixed order", () => {

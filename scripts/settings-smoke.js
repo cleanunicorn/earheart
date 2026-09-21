@@ -12,6 +12,10 @@
 //      Tab stop before any interaction.
 //   5. The engine state badge follows the engine radio in both directions, and
 //      swaps inside a live region so the privacy consequence is announced.
+//   6. A fresh profile preselects the registry's default cleanup model, with its
+//      note, in Settings and in the first-run wizard. The default is not the
+//      first catalog entry, so a lost `select.value = …` would show another
+//      model here instead of passing silently.
 //
 // Run under Electron:
 //
@@ -19,8 +23,18 @@
 //   npx electron scripts/settings-smoke.js                            # macOS/Win
 
 const { app, session } = require("electron");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+// A throwaway profile: check 6 needs first-run defaults, and the smoke should
+// never read or write a developer's real settings. Set before anything touches
+// userData (settings.js resolves its path lazily).
+app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "earheart-settings-smoke-")));
+
 const windows = require("../main/windows");
 const ipc = require("../main/ipc");
+const { registry } = require("../main/engines");
 
 // loadMicrophones() calls getUserMedia at init; the fake device keeps that
 // deterministic on headless CI instead of hanging on a permission that will
@@ -262,6 +276,42 @@ app.whenReady().then(async () => {
         JSON.stringify(b)
       );
     }
+
+    // 6. A fresh profile preselects the default cleanup model in both windows.
+    const cleanupDefault = registry.getModel("cleanup", registry.DEFAULT_CLEANUP_MODEL);
+    const readCleanupPick = (wc) =>
+      wc.executeJavaScript(
+        `JSON.stringify({
+          value: document.getElementById("cleanup-builtin-model").value,
+          first: document.getElementById("cleanup-builtin-model").options[0]?.value,
+        })`,
+        true
+      ).then(JSON.parse);
+    const settingsPick = await readCleanupPick(win.webContents);
+    check(
+      "Settings preselects the default cleanup model on a fresh profile",
+      settingsPick.value === cleanupDefault.id,
+      JSON.stringify(settingsPick)
+    );
+    const wizard = windows.openWizard();
+    await new Promise((r) => wizard.webContents.once("did-finish-load", r));
+    await sleep(1200);
+    const wizardPick = await readCleanupPick(wizard.webContents);
+    const wizardNote = await wizard.webContents.executeJavaScript(
+      `document.getElementById("cleanup-builtin-note").textContent`,
+      true
+    );
+    windows.closeWizard();
+    check(
+      "the wizard preselects the default cleanup model on a fresh profile",
+      wizardPick.value === cleanupDefault.id,
+      JSON.stringify(wizardPick)
+    );
+    check(
+      "the wizard shows the default cleanup model's note",
+      wizardNote === cleanupDefault.note,
+      JSON.stringify(wizardNote)
+    );
 
     const failed = checks.filter((c) => !c.ok);
     console.log(

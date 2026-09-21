@@ -458,3 +458,113 @@ test("stt-eval manifest: the corpus and every skipped survey row are pinned down
     assert.ok(s.repo && s.reason && s.reason.length > 10, `unclassified survey row: ${JSON.stringify(s)}`);
   }
 });
+
+/* ---------------- judging a split run ---------------- */
+
+const CFG = { baselineId: "base", quietLoad: 4, bracketDrift: 0.1 };
+const MACHINE = { appThreads: 8 };
+const speedRow = (id, role, decodeRtf, endLoad, extra = {}) => ({
+  id, role, arm: "wired", status: "measured", decodeRtf, contended: false,
+  loadavgBefore: [2, 2, 2], loadavgAfter: [endLoad, 2, 2], quietWait: { limit: 4 }, otherRun: { active: false, samples: 5 },
+  ...extra,
+});
+const speedFile = (rows) => ({ machine: MACHINE, corpus: { subset: "speed" }, rows });
+// Accuracy rows over 2 utterances of 50 words each, one sentence cluster each.
+const accRow = (id, role, errors, extra = {}) => ({
+  id, role, arm: "wired", status: "measured", errors, ref: 100, perUtteranceErrors: [Math.floor(errors / 2), Math.ceil(errors / 2)],
+  longForm: [{ label: "60s", wordRatio: 0.99, wer: 0.05 }, { label: "300s", wordRatio: 0.45, wer: 0.58 }],
+  ...extra,
+});
+const accResult = (rows) => ({
+  corpus: { utteranceIndex: [{ sentenceId: "1", refWords: 50 }, { sentenceId: "2", refWords: 50 }] },
+  rows,
+});
+
+test("stt-eval judge: DV10 end-of-decode load makes a row contended, for every row alike", () => {
+  const res = speedFile([]);
+  assert.strictEqual(e.speedCleanliness(speedRow("x", "candidate", 0.04, 12), res, CFG).clean, true);
+  const busy = e.speedCleanliness(speedRow("x", "candidate", 0.05, 12.1), res, CFG);
+  assert.strictEqual(busy.clean, false);
+  assert.match(busy.reason, /end-of-decode 1-min load 12\.1 > 12 \(DV10\)/);
+  assert.match(e.speedCleanliness(speedRow("x", "c", 0.04, 5, { contended: true, otherRun: { active: true } }), res, CFG).reason, /other run seen/);
+  assert.match(e.speedCleanliness(speedRow("x", "c", 0.04, 5, { contended: true }), res, CFG).reason, /quiet gate/);
+});
+
+test("stt-eval judge: a speed file counts only if its own first/last default runs are clean and stable", () => {
+  const ok = speedFile([speedRow("base", "bracket-first", 0.0425, 7), speedRow("base", "bracket-last", 0.0429, 8)]);
+  assert.strictEqual(e.speedFileBrackets(ok, CFG).stable, true);
+  const drift = speedFile([speedRow("base", "bracket-first", 0.04, 7), speedRow("base", "bracket-last", 0.0441, 8)]);
+  assert.match(e.speedFileBrackets(drift, CFG).reason, /drift 10\.2 % > 10 %/);
+  const busyLast = speedFile([speedRow("base", "bracket-first", 0.04, 7), speedRow("base", "bracket-last", 0.04, 13)]);
+  assert.strictEqual(e.speedFileBrackets(busyLast, CFG).stable, false);
+});
+
+test("stt-eval judge: the first clean attempt is used, against its own file's default, and every attempt is kept", () => {
+  const main = speedFile([
+    speedRow("base", "bracket-first", 0.0425, 7),
+    speedRow("cand", "candidate", 0.0531, 17.9), // contended by DV10
+    speedRow("fast", "candidate", 0.0104, 4.5),
+    speedRow("base", "bracket-last", 0.0429, 8),
+  ]);
+  const remeasure = speedFile([
+    speedRow("base", "bracket-first", 0.05, 8), // a slower machine state, bracketed
+    speedRow("cand", "candidate", 0.05, 6.7),
+    speedRow("base", "bracket-last", 0.05, 8),
+  ]);
+  const acc = accResult([accRow("base", "bracket-first", 6), accRow("cand", "candidate", 5), accRow("fast", "candidate", 6)]);
+  e.judge(acc, [{ res: main, name: "speed.json" }, { res: remeasure, name: "remeasure.json" }], CFG);
+  const cand = acc.rows[1];
+  assert.deepStrictEqual(cand.speedAttempts.map((a) => [a.file, a.usable, a.used]), [["speed.json", false, false], ["remeasure.json", true, true]]);
+  assert.match(cand.speedAttempts[0].reason, /DV10/);
+  // Compared with the re-measure's own default (0.05), not the main pass's (0.0425).
+  assert.strictEqual(cand.speed.refDecodeRtf, 0.05);
+  assert.strictEqual(cand.vsDefault.speedup, 1);
+  assert.strictEqual(cand.verdict, "eligible (rule b)");
+  const fast = acc.rows[2];
+  assert.strictEqual(fast.verdict, "eligible (rule a)");
+  assert.ok(fast.vsDefault.speedup > 4);
+  // The default itself: its first clean attempt, with the re-measure's kept but unused.
+  assert.deepStrictEqual(acc.rows[0].speedAttempts.map((a) => a.used), [true, false]);
+});
+
+test("stt-eval judge: no clean speed means no speed-based verdict; WER alone can still rule a model out", () => {
+  const main = speedFile([speedRow("base", "bracket-first", 0.04, 7), speedRow("slow", "candidate", 0.03, 13), speedRow("bad", "candidate", 0.01, 13), speedRow("base", "bracket-last", 0.04, 7)]);
+  const acc = accResult([accRow("base", "bracket-first", 6), accRow("slow", "candidate", 6), accRow("bad", "candidate", 8)]);
+  e.judge(acc, [{ res: main, name: "speed.json" }], CFG);
+  assert.strictEqual(acc.rows[1].verdict, "speed not measured cleanly — no speed-based verdict");
+  assert.strictEqual(acc.rows[1].eligible, false);
+  assert.match(acc.rows[2].verdict, /WER alone rules out both rules/);
+  // An unstable file gives nobody a speed.
+  const unstable = speedFile([speedRow("base", "bracket-first", 0.04, 7), speedRow("slow", "candidate", 0.02, 5), speedRow("base", "bracket-last", 0.05, 7)]);
+  const acc2 = accResult([accRow("base", "bracket-first", 6), accRow("slow", "candidate", 6)]);
+  e.judge(acc2, [{ res: unstable, name: "u.json" }], CFG);
+  assert.strictEqual(acc2.speedClean, false);
+  assert.strictEqual(acc2.rows[1].verdict, "speed not measured cleanly — no speed-based verdict");
+});
+
+test("stt-eval judge: shipped baselines get no verdict; long-form and the exploratory arm gate eligibility", () => {
+  const main = speedFile([
+    speedRow("base", "bracket-first", 0.04, 7),
+    speedRow("fp32", "baseline", 0.03, 6),
+    speedRow("trunc", "candidate", 0.01, 5),
+    speedRow("base", "calibration", 0.04, 7),
+    speedRow("ctc", "candidate", 0.01, 5, { arm: "exploratory" }),
+    speedRow("base", "bracket-last", 0.04, 7),
+  ]);
+  const acc = accResult([
+    accRow("base", "bracket-first", 6),
+    accRow("fp32", "baseline", 5),
+    accRow("trunc", "candidate", 6, { longForm: [{ label: "60s", wordRatio: 0.66, wer: 0.35 }, { label: "300s", wordRatio: 0.45, wer: 0.58 }] }),
+    accRow("base", "calibration", 6),
+    accRow("ctc", "candidate", 6, { arm: "exploratory" }),
+  ]);
+  e.judge(acc, [{ res: main, name: "speed.json" }], CFG);
+  const [, fp32, trunc, , ctc] = acc.rows;
+  assert.strictEqual(fp32.verdict, "shipped");
+  assert.strictEqual(fp32.eligible, false);
+  assert.strictEqual(trunc.verdict, "incompatible on long audio");
+  assert.ok(trunc.longFormCheck.reasons.length >= 1);
+  assert.strictEqual(ctc.eligible, false, "never catalogued from the exploratory arm");
+  assert.match(ctc.verdict, /exploratory arm \(rule a\) — wire and re-measure/);
+  assert.strictEqual(ctc.vsDefault.against, "calibration (direct path)");
+});

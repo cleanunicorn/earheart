@@ -27,8 +27,8 @@
 // uses all 647), --keep (don't delete a model after measuring it),
 // --quiet-load N (wait for the 1-minute load average to reach N before each
 // model; default 4, "Infinity" to not wait), --pass accuracy|speed (one half
-// of a split run; default both), --combine <acc.json> [speed.json] (judge a
-// split run), --cpu-lock <file> (see above),
+// of a split run; default both), --combine <acc.json> [speed.json …] (judge
+// a split run; later speed files are re-measures), --cpu-lock <file> (see above),
 // --exploratory (also measure families the worker can't run yet), --resume
 // (reuse the measured rows of an existing --out file), --log <file> (append
 // one line per model).
@@ -439,7 +439,14 @@ function workerRecognizer(model, dir) {
       return host.request("load-stt", { dir, sherpa: model.sherpa, modelId: model.id }, { timeoutMs: 600000 });
     },
     async transcribe(wav, audioSec) {
-      return host.request("transcribe", { wav }, { timeoutMs: Math.max(180000, audioSec * 20000) });
+      try {
+        return await host.request("transcribe", { wav }, { timeoutMs: Math.max(180000, audioSec * 20000) });
+      } catch (err) {
+        // A timed-out request leaves the worker decoding; stop it rather than
+        // let it burn CPU under whatever is measured next.
+        if (/timed out/.test(err.message)) host.stop();
+        throw err;
+      }
     },
     close() {
       host.stop();
@@ -481,6 +488,7 @@ function directRecognizer(model, dir) {
       const id = nextId++;
       const timer = setTimeout(() => {
         pending.delete(id);
+        child.kill(); // same as the worker path: never leave a decode running
         reject(new Error(`${type} timed out after ${timeoutMs} ms`));
       }, timeoutMs);
       pending.set(id, { resolve, reject, timer });
@@ -576,7 +584,8 @@ async function measureModel(entry, ctx) {
   }
   row.bytes = row.files.reduce((s, f) => s + f.bytes, 0);
 
-  const rec = row.path === "direct" ? directRecognizer(model, dir) : workerRecognizer(model, dir);
+  const makeRecognizer = () => (row.path === "direct" ? directRecognizer(model, dir) : workerRecognizer(model, dir));
+  let rec = makeRecognizer();
   row.loadavgBefore = os.loadavg();
   const sampler = otherRunSampler(ctx.opts.otherRunPattern);
   try {
@@ -643,8 +652,13 @@ async function measureModel(entry, ctx) {
     const wantLongForm =
       ctx.opts.pass === "accuracy" ? row.status === "measured" : ctx.opts.pass === "both" && (isDefaultRun || passesQ3);
     if (wantLongForm) {
-      if (ctx.opts.pass === "accuracy") {
+      if (ctx.opts.pass === "accuracy" && ctx.opts.cpuLock && lockHeld(ctx.opts.cpuLock)) {
+        // Hold no live worker while someone else times: stop it, wait, then
+        // load the model again for the long-form clips.
+        rec.close();
         row.lockWaitLongFormMs = await waitForLock(ctx.opts.cpuLock, `${model.id} long-form`, ctx.appendLog);
+        rec = makeRecognizer();
+        await rec.load();
       }
       row.longForm = [];
       for (const clip of ctx.longForm) {
@@ -823,80 +837,11 @@ function plan(opts) {
   return opts.models ? list.filter((x) => opts.models.includes(x.model.id)) : list;
 }
 
-// A speed number counts only if it came from a quiet machine: a speed or
-// single run whose quiet gate held. The accuracy pass's decode times are kept
-// (marked contended) but never reach classify().
-const cleanSpeed = (row) => (row && row.status === "measured" && !row.contended ? row : null);
-
-/**
- * Judge every candidate. WER comes from `acc` (the full corpus); decode RTF
- * only from clean rows of `spd` — the same result for a single quiet run, the
- * speed pass's result for a split one, or null when there is none yet.
- */
-function judge(acc, spd) {
-  const key = (r) => `${r.id}|${r.role}`;
-  const speedRows = new Map((spd ? spd.rows : []).map((r) => [key(r), r]));
-  const speedOf = (r) => cleanSpeed(speedRows.get(key(r)));
-  const rows = acc.rows;
-  const first = rows.find((r) => r.role === "bracket-first" && r.status === "measured");
-  const calib = rows.find((r) => r.role === "calibration" && r.status === "measured");
-  const sFirst = spd && spd.rows.find((r) => r.role === "bracket-first" && r.status === "measured");
-  const sLast = spd && spd.rows.find((r) => r.role === "bracket-last" && r.status === "measured");
-  acc.brackets = sFirst && sLast
-    ? { first: sFirst.decodeRtf, last: sLast.decodeRtf, drift: Math.abs(sLast.decodeRtf - sFirst.decodeRtf) / sFirst.decodeRtf }
-    : null;
-  const speedStable = Boolean(acc.brackets && acc.brackets.drift <= BRACKET_DRIFT && cleanSpeed(sFirst) && cleanSpeed(sLast));
-  acc.speedSource = spd === acc ? "this run" : spd ? `speed pass (${spd.corpus.subset}, ${spd.corpus.utterances} utterances)` : "none";
-  acc.speedClean = speedStable;
-  for (const r of rows) {
-    const s = speedOf(r);
-    r.speed = s && speedStable
-      ? {
-        decodeRtf: s.decodeRtf, p50Rtf: s.p50Rtf, p95Rtf: s.p95Rtf, wallRtf: s.wallRtf,
-        coldLoadWallMs: s.coldLoadWallMs, firstDecodeMs: s.firstDecodeMs,
-        otherRunIdle: s.otherRun && s.otherRun.active === false, otherRunSamples: s.otherRun && s.otherRun.samples,
-        loadavg: [s.loadavgBefore[0], s.loadavgAfter[0]],
-      }
-      : null;
-  }
-  const index = acc.corpus.utteranceIndex;
-  for (const r of rows) {
-    if (r.status !== "measured" || r.role === "bracket-first" || r.role === "bracket-last" || r.role === "calibration") continue;
-    const ref = r.arm === "exploratory" ? calib : first;
-    if (!ref) continue;
-    const bootstrap = e.pairedBootstrap(
-      index.map((u, i) => ({ cluster: u.sentenceId, ref: u.refWords, baseErrors: ref.perUtteranceErrors[i], candErrors: r.perUtteranceErrors[i] }))
-    );
-    const deltaWer = (r.errors - ref.errors) / ref.ref;
-    if (!r.speed || !ref.speed) {
-      r.vsDefault = { eligible: false, rule: null, speedup: null, deltaWer, bootstrap, against: ref.role };
-      r.eligible = false;
-      r.verdict = "speed not measured cleanly — no speed-based verdict";
-      continue;
-    }
-    r.vsDefault = {
-      ...e.classify({ errors: ref.errors, ref: ref.ref, decodeRtf: ref.speed.decodeRtf }, { errors: r.errors, ref: r.ref, decodeRtf: r.speed.decodeRtf }),
-      bootstrap,
-      against: r.arm === "exploratory" ? "calibration (direct path)" : "bracket-first (worker)",
-    };
-    if (r.vsDefault.eligible) {
-      const baseLong = ref.longForm;
-      r.longFormCheck = r.longForm && baseLong
-        ? e.longFormCompatible(r.longForm.map((l, i) => ({ ...l, base: baseLong[i] })))
-        : { compatible: false, reasons: ["long-form not measured"] };
-      // Q2: an exploratory family is never catalogued from the direct path.
-      r.eligible = r.longFormCheck.compatible && r.arm === "wired";
-      r.verdict = !r.longFormCheck.compatible
-        ? "incompatible on long audio"
-        : r.arm === "wired"
-          ? `eligible (rule ${r.vsDefault.rule})`
-          : `clears Q3 on the direct path (rule ${r.vsDefault.rule}) — wire and re-measure`;
-    } else {
-      r.eligible = false;
-      r.verdict = "does not clear Q3";
-    }
-  }
-}
+// Judging lives in scripts/stt-eval.js (judge, speedCleanliness), where it is
+// unit-tested; these are the run's own settings for it.
+const JUDGE = () => ({ baselineId: manifest.BASELINE_ID, quietLoad: QUIET_LOAD, bracketDrift: BRACKET_DRIFT });
+const judge = (acc, spds) =>
+  e.judge(acc, spds.map((res) => ({ res, name: res === acc ? "this run" : path.basename(res.file || "") })), JUDGE());
 
 function runStatus(result, opts) {
   const rows = result.rows;
@@ -917,30 +862,40 @@ function runStatus(result, opts) {
 const lockOfPass = (res) => Boolean(res.cpuLock && res.cpuLock.role === "held for the whole pass");
 
 // Merge a split run: the accuracy pass's rows, judged with the speed pass's
-// clean decode times.
-function combine(accFile, speedFile) {
+// clean decode times — and any later re-measures, in the order given.
+function combine(accFile, speedFiles) {
   const acc = JSON.parse(fs.readFileSync(accFile, "utf8"));
-  const spd = speedFile ? JSON.parse(fs.readFileSync(speedFile, "utf8")) : null;
   if (acc.pass !== "accuracy") throw new Error(`${accFile} is not an accuracy pass (pass: ${acc.pass})`);
-  if (spd && spd.pass !== "speed") throw new Error(`${speedFile} is not a speed pass (pass: ${spd.pass})`);
-  if (spd && (spd.corpus.commit !== acc.corpus.commit || spd.machine.measuringCode !== acc.machine.measuringCode)) {
-    throw new Error("accuracy and speed passes come from different corpus pins or measuring code");
+  const spds = speedFiles.map((f) => {
+    const res = JSON.parse(fs.readFileSync(f, "utf8"));
+    if (res.pass !== "speed") throw new Error(`${f} is not a speed pass (pass: ${res.pass})`);
+    if (res.corpus.commit !== acc.corpus.commit || res.machine.measuringCode !== acc.machine.measuringCode) {
+      throw new Error(`${f}: different corpus pins or measuring code than ${accFile}`);
+    }
+    res.file = f;
+    return res;
+  });
+  for (const res of spds) {
+    if (res.corpus.subset !== spds[0].corpus.subset) throw new Error(`${res.file}: a different speed subset`);
   }
   const out = {
     ...acc,
     pass: "combined",
     passes: {
       accuracy: { file: path.basename(accFile), status: acc.status, command: acc.command },
-      speed: spd ? { file: path.basename(speedFile), status: spd.status, command: spd.command, cpuLock: lockOfPass(spd), corpus: { subset: spd.corpus.subset, utterances: spd.corpus.utterances, audioSec: spd.corpus.audioSec } } : null,
+      speed: spds.map((spd) => ({
+        file: path.basename(spd.file), status: spd.status, command: spd.command, cpuLock: lockOfPass(spd),
+        corpus: { subset: spd.corpus.subset, utterances: spd.corpus.utterances, audioSec: spd.corpus.audioSec },
+      })),
     },
   };
-  judge(out, spd);
-  out.status = spd && spd.status === "speed complete" && acc.status === "accuracy complete"
+  judge(out, spds);
+  const mainOk = spds[0] && spds[0].status === "speed complete";
+  out.status = mainOk && acc.status === "accuracy complete" && out.speedClean
     ? "complete"
-    : `accuracy: ${acc.status}; speed: ${spd ? spd.status : "not measured"}`;
+    : `accuracy: ${acc.status}; speed: ${spds[0] ? spds[0].status : "not measured"}`;
   return out;
 }
-
 async function writeJson(file, data) {
   const tmp = `${file}.tmp`;
   await fsp.writeFile(tmp, JSON.stringify(data, null, 1));
@@ -1027,7 +982,7 @@ async function run(opts) {
     if (!opts.keep && !usedLater && entry.model.files) await manager.remove(cacheDir, entry.model);
   }
   result.status = runStatus(result, opts);
-  if (opts.pass === "both") judge(result, result);
+  if (opts.pass === "both") judge(result, [result]);
   await writeJson(out, result);
   process.stderr.write(`\n${report(result)}\n`);
   log(`status: ${result.status} -> ${out}`);
@@ -1046,15 +1001,12 @@ function report(result) {
   lines.push(`Corpus: ${c.source} ${c.id} @ ${c.commit.slice(0, 8)} — ${c.utterances} utterances, ${c.referenceWords} words, ${(c.audioSec / 60).toFixed(1)} min (${c.subset || "all"})`);
   const m = result.machine;
   lines.push(`Machine: ${m.cpu}, ${m.logicalCpus} logical CPUs, ${m.ramGb} GB, ${m.platform}; Electron ${m.versions.electron}, sherpa-onnx-node ${m.versions.sherpaOnnxNode}; CPU, ${m.appThreads} threads`);
-  if (result.passes && result.passes.speed) {
-    const sp = result.passes.speed;
-    lines.push(`Speed from: ${sp.corpus.subset}, ${sp.corpus.utterances} utterances, ${(sp.corpus.audioSec / 60).toFixed(1)} min`);
-  }
-  if (result.brackets) {
-    lines.push(`Default measured first/last: decodeRtf ${num(result.brackets.first, 4)} / ${num(result.brackets.last, 4)} (drift ${pct(result.brackets.drift, 1)} %, limit ${BRACKET_DRIFT * 100} %)`);
+  for (const f of result.speedFiles || []) {
+    const b = f.brackets;
+    lines.push(`Speed from ${f.file}: ${f.subset}, ${f.utterances} utterances; default first/last ${num(b.first, 4)} / ${num(b.last, 4)} (drift ${pct(b.drift, 1)} %, limit ${BRACKET_DRIFT * 100} %)${b.stable ? "" : ` — NOT USABLE: ${b.reason}`}`);
   }
   const lockOf = (x) => x && x.cpuLock && x.cpuLock.role === "held for the whole pass";
-  if (lockOf(result) || (result.passes && result.passes.speed && result.passes.speed.cpuLock)) {
+  if (lockOf(result) || (result.passes && result.passes.speed && result.passes.speed.every((p) => p.cpuLock))) {
     lines.push("Every speed timing was taken while holding cpu-quiet.lock, shared with the parallel cleanup run.");
   }
   lines.push(`Status: ${result.status}`);
@@ -1092,6 +1044,14 @@ function report(result) {
     lines.push(
       `| ${r.id} | ${r.role} | ${r.path} | ${pct(r.werNorm)} | ${pct(r.werVerbatim)} | ${ci} | ${speedCell} | ${v && v.speedup ? `${num(v.speedup, 2)}x` : "—"} | ${loadCell} | ${condCell} | ${pct(r.punctuationRate, 0)} | ${pct(r.capitalisationRate, 0)} | ${Math.round(r.bytes / 1e6)} | ${r.verdict || (r.role.startsWith("bracket") || r.role === "calibration" ? "reference" : "baseline")} |`
     );
+  }
+  const others = result.rows.flatMap((r) =>
+    (r.speedAttempts || []).filter((a) => !a.used).map((a) => `- ${r.id} (${r.role}): decode RTF ${num(a.decodeRtf, 4)} in ${a.file}, end load ${num(a.endLoad, 1)} — not used: ${a.reason || "an earlier clean attempt is used"}`)
+  );
+  if (others.length) {
+    lines.push("");
+    lines.push("Speed attempts not used:");
+    lines.push(...others);
   }
   if (contendedShown) {
     lines.push("");
@@ -1132,7 +1092,7 @@ async function main() {
   if (opts.verifyShipped) return (await verifyShipped()) ? 0 : 1;
   if (opts.combine.length) {
     if (!opts.out) throw new Error("--combine needs --out <file.json>");
-    const merged = combine(opts.combine[0], opts.combine[1]);
+    const merged = combine(opts.combine[0], opts.combine.slice(1));
     await writeJson(path.resolve(opts.out), merged);
     process.stderr.write(`${report(merged)}\n`);
     return 0;

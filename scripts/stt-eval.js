@@ -411,6 +411,158 @@ function longFormCompatible(clips, limits = LONG_FORM) {
   return { compatible: reasons.length === 0, reasons };
 }
 
+/* ---------------- judging a run ---------------- */
+
+// Is a speed row clean, and if not, why. In the pass itself: the quiet gate
+// held and no other-run process was seen (row.contended). At combine time, the
+// same rule for every row (DV10, proposed after one row's number was seen and
+// stated as such in the PR): the 1-minute load at the END of the decodes must
+// not exceed the harness's own threads plus the quiet limit — the gate only
+// looks at the load before a model starts.
+function speedCleanliness(row, res, { quietLoad }) {
+  if (!row || row.status !== "measured") return { clean: false, reason: row ? `${row.status}: ${row.reason}` : "not measured" };
+  if (row.contended) {
+    const other = row.otherRun && row.otherRun.active !== false;
+    return { clean: false, reason: other ? "other run seen during the decodes" : "quiet gate did not hold" };
+  }
+  const limit = res.machine.appThreads + (row.quietWait ? row.quietWait.limit : quietLoad);
+  const end = row.loadavgAfter[0];
+  if (end > limit) return { clean: false, reason: `end-of-decode 1-min load ${end.toFixed(1)} > ${limit} (DV10)` };
+  return { clean: true, reason: null };
+}
+
+// A speed file's own first/last default runs: both clean and within the
+// allowed drift, or none of its rows count.
+function speedFileBrackets(res, cfg) {
+  const first = res.rows.find((r) => r.role === "bracket-first");
+  const last = res.rows.find((r) => r.role === "bracket-last");
+  if (!first || !last || first.status !== "measured" || last.status !== "measured") {
+    return { stable: false, reason: "missing first/last default run" };
+  }
+  const drift = Math.abs(last.decodeRtf - first.decodeRtf) / first.decodeRtf;
+  const cf = speedCleanliness(first, res, cfg);
+  const cl = speedCleanliness(last, res, cfg);
+  const stable = cf.clean && cl.clean && drift <= cfg.bracketDrift;
+  return {
+    stable,
+    first: first.decodeRtf,
+    last: last.decodeRtf,
+    drift,
+    reason: stable ? null : cf.reason || cl.reason || `drift ${(drift * 100).toFixed(1)} % > ${cfg.bracketDrift * 100} %`,
+  };
+}
+
+const speedFields = (s, ref, file, res) => ({
+  decodeRtf: s.decodeRtf, p50Rtf: s.p50Rtf, p95Rtf: s.p95Rtf, wallRtf: s.wallRtf,
+  coldLoadWallMs: s.coldLoadWallMs, firstDecodeMs: s.firstDecodeMs,
+  otherRunIdle: Boolean(s.otherRun && s.otherRun.active === false),
+  otherRunSamples: s.otherRun && s.otherRun.samples,
+  loadavg: [s.loadavgBefore[0], s.loadavgAfter[0]],
+  file,
+  heldCpuLock: Boolean(res.cpuLock && res.cpuLock.role === "held for the whole pass"),
+  refDecodeRtf: ref ? ref.decodeRtf : null,
+});
+
+/**
+ * Judge every candidate of a run, in place. WER comes from `acc` (the full
+ * corpus); decode RTF only from clean rows of the speed results `spds`
+ * ([{ res, name }], in order: the speed pass, then any re-measures — or the run
+ * itself for a single quiet run). A row's speed is its FIRST clean attempt in
+ * a file whose own first/last default runs are clean and stable, compared with
+ * THAT file's default (the calibration row for the exploratory arm) — never
+ * one run's number against another run's default. Every attempt is kept in
+ * row.speedAttempts so the report can show the ones not used.
+ * cfg: { baselineId, quietLoad, bracketDrift }.
+ */
+function judge(acc, spds, cfg) {
+  const key = (r) => `${r.id}|${r.role}`;
+  const files = spds.map(({ res, name }) => ({
+    res,
+    name,
+    brackets: speedFileBrackets(res, cfg),
+    rows: new Map(res.rows.map((r) => [key(r), r])),
+  }));
+  acc.speedFiles = files.map((f) => ({ file: f.name, subset: f.res.corpus.subset, utterances: f.res.corpus.utterances, brackets: f.brackets }));
+  acc.brackets = files[0] ? files[0].brackets : null;
+  acc.speedClean = Boolean(files[0] && files[0].brackets.stable);
+  const refRole = (r) => (r.arm === "exploratory" || r.role === "calibration" ? "calibration" : "bracket-first");
+  for (const r of acc.rows) {
+    r.speedAttempts = [];
+    r.speed = null;
+    for (const f of files) {
+      const s = f.rows.get(key(r));
+      if (!s) continue;
+      const c = speedCleanliness(s, f.res, cfg);
+      const ref = f.rows.get(`${cfg.baselineId}|${refRole(r)}`);
+      const refClean = Boolean(ref && speedCleanliness(ref, f.res, cfg).clean);
+      const usable = c.clean && f.brackets.stable && refClean;
+      const reason = !c.clean
+        ? c.reason
+        : !f.brackets.stable
+          ? `its file's first/last default: ${f.brackets.reason}`
+          : !refClean ? "its reference default run is not clean" : null;
+      const attempt = { file: f.name, decodeRtf: s.decodeRtf, endLoad: s.loadavgAfter[0], usable, reason, used: false };
+      r.speedAttempts.push(attempt);
+      if (usable && !r.speed) {
+        r.speed = speedFields(s, ref, f.name, f.res);
+        attempt.used = true;
+      }
+    }
+  }
+  const first = acc.rows.find((r) => r.role === "bracket-first" && r.status === "measured");
+  const calib = acc.rows.find((r) => r.role === "calibration" && r.status === "measured");
+  const index = acc.corpus.utteranceIndex;
+  for (const r of acc.rows) {
+    if (r.status !== "measured" || r.role === "bracket-first" || r.role === "bracket-last" || r.role === "calibration") continue;
+    const ref = r.arm === "exploratory" ? calib : first;
+    if (!ref) continue;
+    const bootstrap = pairedBootstrap(
+      index.map((u, i) => ({ cluster: u.sentenceId, ref: u.refWords, baseErrors: ref.perUtteranceErrors[i], candErrors: r.perUtteranceErrors[i] }))
+    );
+    const deltaWer = (r.errors - ref.errors) / ref.ref;
+    const against = r.arm === "exploratory" ? "calibration (direct path)" : "bracket-first (worker)";
+    // More than werSlack worse fails (a), and not lower fails (b): no speed
+    // number can rescue it, so the verdict says so rather than "not measured".
+    const werRulesOut = r.errors > ref.errors + THRESHOLD.werSlack * ref.ref;
+    r.eligible = false;
+    if (!r.speed || !ref.speed) {
+      r.vsDefault = { eligible: false, rule: null, speedup: null, deltaWer, bootstrap, against };
+      r.verdict = r.role === "baseline"
+        ? "shipped"
+        : werRulesOut
+          ? "does not clear Q3 (WER alone rules out both rules; speed not measured cleanly)"
+          : "speed not measured cleanly — no speed-based verdict";
+      continue;
+    }
+    r.vsDefault = {
+      ...classify({ errors: ref.errors, ref: ref.ref, decodeRtf: r.speed.refDecodeRtf }, { errors: r.errors, ref: r.ref, decodeRtf: r.speed.decodeRtf }),
+      bootstrap,
+      against,
+    };
+    if (r.role === "baseline") {
+      // Already in the catalog: compared for information, never a verdict.
+      r.verdict = "shipped";
+      continue;
+    }
+    if (!r.vsDefault.eligible) {
+      r.verdict = "does not clear Q3";
+      continue;
+    }
+    const baseLong = ref.longForm;
+    r.longFormCheck = r.longForm && baseLong
+      ? longFormCompatible(r.longForm.map((l, i) => ({ ...l, base: baseLong[i] })))
+      : { compatible: false, reasons: ["long-form not measured"] };
+    // Q2: a family the worker cannot run is never catalogued from the
+    // exploratory arm; it is wired in and re-measured through the worker first.
+    r.eligible = r.longFormCheck.compatible && r.arm === "wired";
+    r.verdict = !r.longFormCheck.compatible
+      ? "incompatible on long audio"
+      : r.arm === "wired"
+        ? `eligible (rule ${r.vsDefault.rule})`
+        : `clears Q3 on the exploratory arm (rule ${r.vsDefault.rule}) — wire and re-measure`;
+  }
+}
+
 /* ---------------- the speed subset ---------------- */
 
 // Speed is measured on a quiet machine, and a shared machine is quiet in short
@@ -708,6 +860,9 @@ module.exports = {
   longFormCompatible,
   SPEED_SUBSET_EVERY,
   speedSubset,
+  speedCleanliness,
+  speedFileBrackets,
+  judge,
   styleRates,
   parseFleursTsv,
   tsvColumnMismatches,

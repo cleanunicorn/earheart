@@ -5,6 +5,13 @@
 //   xvfb-run -a npx electron scripts/eval-stt.js --no-sandbox --out stt-eval.json   # Linux
 //   npx electron scripts/eval-stt.js --out stt-eval.json                            # macOS / Windows
 //
+// On a machine that is not reliably quiet, split it (what produced the PR's
+// numbers): accuracy needs no quiet machine, speed does.
+//
+//   … eval-stt.js --pass accuracy --exploratory --out acc.json   # all 647 clips, load ignored
+//   … eval-stt.js --pass speed --exploratory --out speed.json    # quiet gate, 1/4 of the clips
+//   node scripts/eval-stt.js --combine acc.json speed.json --out stt-eval.json
+//
 //   node scripts/eval-stt.js --report stt-eval.json        # Markdown table from a run
 //   node scripts/eval-stt.js --verify-shipped              # re-derive the catalog's pins
 //   node scripts/eval-stt.js --discover owner/repo[@commit] …   # pins for a new model
@@ -14,7 +21,9 @@
 // development), --limit N (first N utterances, for development — the headline
 // uses all 647), --keep (don't delete a model after measuring it),
 // --quiet-load N (wait for the 1-minute load average to reach N before each
-// model; default 4, "Infinity" to not wait),
+// model; default 4, "Infinity" to not wait), --pass accuracy|speed (one half
+// of a split run; default both), --combine <acc.json> [speed.json] (judge a
+// split run),
 // --exploratory (also measure families the worker can't run yet), --resume
 // (reuse the measured rows of an existing --out file), --log <file> (append
 // one line per model).
@@ -58,8 +67,13 @@
 // candidate earns a catalog entry when, against parakeet-tdt-0.6b-v3-int8 in
 // the same run, it is (a) >= 1.3x faster with WER at most 1.0 point worse, or
 // (b) lower WER at most 1.1x slower — and does not drop words on long audio
-// (Q5). The default is measured first and last; if the two disagree on speed
-// by more than 10 % the machine was busy and the run is marked unstable.
+// (Q5). WER always comes from the full corpus. Speed counts only from a quiet
+// machine: each model waits for a 1-minute load average of 4, the default is
+// measured first and last, and if the two disagree by more than 10 % the run
+// is unstable and no speed-based verdict is given. A split run's accuracy
+// pass records its decode times as contended and they never reach a verdict;
+// its speed pass decodes a declared quarter of the corpus (every 4th sentence,
+// scripts/stt-eval.js speedSubset) so a short quiet window is enough.
 //
 // Numbers are the machine's, not the model's: every run records the CPU, RAM,
 // OS, Electron and sherpa-onnx-node versions, and the load average around each
@@ -102,8 +116,11 @@ const QUIET_TIMEOUT_MS = 4 * 3600 * 1000;
 /* ---------------- arguments ---------------- */
 
 function parseArgs(argv) {
-  const opts = { models: null, limit: 0, keep: false, exploratory: false, resume: false, discover: [], quietLoad: QUIET_LOAD };
-  const valued = new Set(["--out", "--cache-dir", "--models", "--limit", "--report", "--log", "--quiet-load"]);
+  const opts = {
+    models: null, limit: 0, keep: false, exploratory: false, resume: false, discover: [],
+    quietLoad: QUIET_LOAD, pass: "both", combine: [],
+  };
+  const valued = new Set(["--out", "--cache-dir", "--models", "--limit", "--report", "--log", "--quiet-load", "--pass"]);
   for (let i = 0; i < argv.length; i++) {
     let arg = argv[i];
     let value = null;
@@ -121,6 +138,13 @@ function parseArgs(argv) {
       case "--report": opts.report = value; break;
       case "--log": opts.log = value; break;
       case "--quiet-load": opts.quietLoad = Number(value); break;
+      case "--pass":
+        if (!["both", "accuracy", "speed"].includes(value)) throw new Error(`--pass must be accuracy, speed or both`);
+        opts.pass = value;
+        break;
+      case "--combine":
+        while (argv[i + 1] && !argv[i + 1].startsWith("--")) opts.combine.push(argv[++i]);
+        break;
       case "--keep": opts.keep = true; break;
       case "--exploratory": opts.exploratory = true; break;
       case "--resume": opts.resume = true; break;
@@ -234,7 +258,7 @@ async function verifyShipped() {
 
 /* ---------------- corpus ---------------- */
 
-async function prepareCorpus(cacheDir, limit) {
+async function prepareCorpus(cacheDir, limit, { speed = false } = {}) {
   const corpus = manifest.CORPUS;
   const model = { kind: "corpus", id: corpus.id, files: corpus.files };
   log(`corpus: ${corpus.source} @ ${corpus.commit}`);
@@ -318,7 +342,8 @@ async function prepareCorpus(cacheDir, limit) {
   if (Math.abs(got - want) / SAMPLE_RATE > 0.1) {
     throw new Error(`clip durations ${got / SAMPLE_RATE}s != tsv ${want / SAMPLE_RATE}s`);
   }
-  const selected = limit > 0 ? clips.slice(0, limit) : clips;
+  const limited = limit > 0 ? clips.slice(0, limit) : clips;
+  const selected = speed ? e.speedSubset(limited) : limited;
   return {
     allClips: clips,
     id: corpus.id,
@@ -340,6 +365,8 @@ async function prepareCorpus(cacheDir, limit) {
     },
     unmodelledUtterances: selected.filter((c) => c.unmodelled).length,
     limited: limit > 0,
+    subset: speed ? `speed: every ${e.SPEED_SUBSET_EVERY}th sentence cluster by numeric sentence id` : "all",
+    utteranceIndex: selected.map((c) => ({ file: c.file, sentenceId: c.sentenceId, refWords: c.refNorm.length })),
     clips: selected,
   };
 }
@@ -578,17 +605,21 @@ async function measureModel(entry, ctx) {
     } else {
       row.status = "measured";
     }
-    if (role === "baseline" && model.id === manifest.BASELINE_ID && !ctx.ablation) {
+    if (role === "bracket-first" && ctx.opts.pass !== "speed" && !ctx.ablation) {
       ctx.ablation = ablation(ctx.corpus, decodes);
     }
 
-    // Q5: long single buffers, for the default and anything clearing Q3.
+    // Q5: long single buffers. The accuracy pass runs them for every model
+    // (it cannot know yet who clears Q3); a single quiet run only for the
+    // default and anything clearing Q3; the speed pass never.
     const ref = row.path === "direct" ? ctx.calibration : ctx.bracketFirst;
     const passesQ3 =
       row.status === "measured" && ref && role !== "calibration" && model.id !== manifest.BASELINE_ID &&
       e.classify(ref, row).eligible;
     const isDefaultRun = model.id === manifest.BASELINE_ID && (role === "bracket-first" || role === "calibration");
-    if (isDefaultRun || passesQ3) {
+    const wantLongForm =
+      ctx.opts.pass === "accuracy" ? row.status === "measured" : ctx.opts.pass === "both" && (isDefaultRun || passesQ3);
+    if (wantLongForm) {
       row.longForm = [];
       for (const clip of ctx.longForm) {
         try {
@@ -677,36 +708,64 @@ function plan(opts) {
       list.push({ model: c, role: "candidate", arm: "exploratory" });
     }
   }
-  list.push({ model: def, role: "bracket-last", arm: "shipped" });
+  // The closing bracket only checks the machine stayed quiet: speed's concern.
+  if (opts.pass !== "accuracy") list.push({ model: def, role: "bracket-last", arm: "shipped" });
   return opts.models ? list.filter((x) => opts.models.includes(x.model.id)) : list;
 }
 
-function finalise(result, ctx) {
-  const rows = result.rows;
+// A speed number counts only if it came from a quiet machine: a speed or
+// single run whose quiet gate held. The accuracy pass's decode times are kept
+// (marked contended) but never reach classify().
+const cleanSpeed = (row) => (row && row.status === "measured" && !row.contended ? row : null);
+
+/**
+ * Judge every candidate. WER comes from `acc` (the full corpus); decode RTF
+ * only from clean rows of `spd` — the same result for a single quiet run, the
+ * speed pass's result for a split one, or null when there is none yet.
+ */
+function judge(acc, spd) {
+  const key = (r) => `${r.id}|${r.role}`;
+  const speedRows = new Map((spd ? spd.rows : []).map((r) => [key(r), r]));
+  const speedOf = (r) => cleanSpeed(speedRows.get(key(r)));
+  const rows = acc.rows;
   const first = rows.find((r) => r.role === "bracket-first" && r.status === "measured");
-  const last = rows.find((r) => r.role === "bracket-last" && r.status === "measured");
   const calib = rows.find((r) => r.role === "calibration" && r.status === "measured");
-  result.brackets = first && last
-    ? { first: first.decodeRtf, last: last.decodeRtf, drift: Math.abs(last.decodeRtf - first.decodeRtf) / first.decodeRtf }
+  const sFirst = spd && spd.rows.find((r) => r.role === "bracket-first" && r.status === "measured");
+  const sLast = spd && spd.rows.find((r) => r.role === "bracket-last" && r.status === "measured");
+  acc.brackets = sFirst && sLast
+    ? { first: sFirst.decodeRtf, last: sLast.decodeRtf, drift: Math.abs(sLast.decodeRtf - sFirst.decodeRtf) / sFirst.decodeRtf }
     : null;
-  const defaultLong = first && first.longForm;
-  const calibLong = calib && calib.longForm;
+  const speedStable = Boolean(acc.brackets && acc.brackets.drift <= BRACKET_DRIFT && cleanSpeed(sFirst) && cleanSpeed(sLast));
+  acc.speedSource = spd === acc ? "this run" : spd ? `speed pass (${spd.corpus.subset}, ${spd.corpus.utterances} utterances)` : "none";
+  acc.speedClean = speedStable;
+  for (const r of rows) {
+    const s = speedOf(r);
+    r.speed = s && speedStable
+      ? { decodeRtf: s.decodeRtf, p50Rtf: s.p50Rtf, p95Rtf: s.p95Rtf, wallRtf: s.wallRtf, coldLoadWallMs: s.coldLoadWallMs, firstDecodeMs: s.firstDecodeMs }
+      : null;
+  }
+  const index = acc.corpus.utteranceIndex;
   for (const r of rows) {
     if (r.status !== "measured" || r.role === "bracket-first" || r.role === "bracket-last" || r.role === "calibration") continue;
     const ref = r.arm === "exploratory" ? calib : first;
     if (!ref) continue;
-    r.vsDefault = e.classify(ref, r);
-    r.vsDefault.against = r.arm === "exploratory" ? "calibration (direct path)" : "bracket-first (worker)";
-    r.vsDefault.bootstrap = e.pairedBootstrap(
-      ctx.corpus.clips.map((c, i) => ({
-        cluster: c.sentenceId,
-        ref: c.refNorm.length,
-        baseErrors: ref.perUtteranceErrors[i],
-        candErrors: r.perUtteranceErrors[i],
-      }))
+    const bootstrap = e.pairedBootstrap(
+      index.map((u, i) => ({ cluster: u.sentenceId, ref: u.refWords, baseErrors: ref.perUtteranceErrors[i], candErrors: r.perUtteranceErrors[i] }))
     );
+    const deltaWer = (r.errors - ref.errors) / ref.ref;
+    if (!r.speed || !ref.speed) {
+      r.vsDefault = { eligible: false, rule: null, speedup: null, deltaWer, bootstrap, against: ref.role };
+      r.eligible = false;
+      r.verdict = "speed not measured cleanly — no speed-based verdict";
+      continue;
+    }
+    r.vsDefault = {
+      ...e.classify({ errors: ref.errors, ref: ref.ref, decodeRtf: ref.speed.decodeRtf }, { errors: r.errors, ref: r.ref, decodeRtf: r.speed.decodeRtf }),
+      bootstrap,
+      against: r.arm === "exploratory" ? "calibration (direct path)" : "bracket-first (worker)",
+    };
     if (r.vsDefault.eligible) {
-      const baseLong = r.arm === "exploratory" ? calibLong : defaultLong;
+      const baseLong = ref.longForm;
       r.longFormCheck = r.longForm && baseLong
         ? e.longFormCompatible(r.longForm.map((l, i) => ({ ...l, baseWer: baseLong[i].wer })))
         : { compatible: false, reasons: ["long-form not measured"] };
@@ -722,15 +781,47 @@ function finalise(result, ctx) {
       r.verdict = "does not clear Q3";
     }
   }
-  const baselineIds = registry.listModels("stt").map((m) => m.id);
-  const haveBaselines = baselineIds.every((id) =>
-    rows.some((r) => r.id === id && r.status === "measured" && r.role !== "calibration")
+}
+
+function runStatus(result, opts) {
+  const rows = result.rows;
+  const haveBaselines = registry.listModels("stt").every((m) =>
+    rows.some((r) => r.id === m.id && r.status === "measured" && r.role !== "calibration")
   );
-  const failed = rows.filter((r) => r.status === "failed");
-  if (ctx.opts.models || ctx.opts.limit) result.status = "partial (development subset)";
-  else if (!haveBaselines || failed.length) result.status = "incomplete";
-  else if (!result.brackets || result.brackets.drift > BRACKET_DRIFT) result.status = "unstable";
-  else result.status = "complete";
+  const failed = rows.some((r) => r.status === "failed");
+  if (opts.models || opts.limit) return "partial (development subset)";
+  if (!haveBaselines || failed) return "incomplete";
+  if (opts.pass === "accuracy") return "accuracy complete";
+  const first = rows.find((r) => r.role === "bracket-first" && r.status === "measured");
+  const last = rows.find((r) => r.role === "bracket-last" && r.status === "measured");
+  const stable = first && last && !first.contended && !last.contended &&
+    Math.abs(last.decodeRtf - first.decodeRtf) / first.decodeRtf <= BRACKET_DRIFT;
+  return stable ? (opts.pass === "speed" ? "speed complete" : "complete") : "unstable";
+}
+
+// Merge a split run: the accuracy pass's rows, judged with the speed pass's
+// clean decode times.
+function combine(accFile, speedFile) {
+  const acc = JSON.parse(fs.readFileSync(accFile, "utf8"));
+  const spd = speedFile ? JSON.parse(fs.readFileSync(speedFile, "utf8")) : null;
+  if (acc.pass !== "accuracy") throw new Error(`${accFile} is not an accuracy pass (pass: ${acc.pass})`);
+  if (spd && spd.pass !== "speed") throw new Error(`${speedFile} is not a speed pass (pass: ${spd.pass})`);
+  if (spd && (spd.corpus.commit !== acc.corpus.commit || spd.machine.gitHead !== acc.machine.gitHead)) {
+    throw new Error("accuracy and speed passes come from different corpus pins or code");
+  }
+  const out = {
+    ...acc,
+    pass: "combined",
+    passes: {
+      accuracy: { file: path.basename(accFile), status: acc.status, command: acc.command },
+      speed: spd ? { file: path.basename(speedFile), status: spd.status, command: spd.command, corpus: { subset: spd.corpus.subset, utterances: spd.corpus.utterances, audioSec: spd.corpus.audioSec } } : null,
+    },
+  };
+  judge(out, spd);
+  out.status = spd && spd.status === "speed complete" && acc.status === "accuracy complete"
+    ? "complete"
+    : `accuracy: ${acc.status}; speed: ${spd ? spd.status : "not measured"}`;
+  return out;
 }
 
 async function writeJson(file, data) {
@@ -747,11 +838,12 @@ async function run(opts) {
   const out = path.resolve(opts.out);
   const appendLog = (line) => opts.log && fs.appendFileSync(opts.log, `${new Date().toISOString()} ${line}\n`);
 
-  const corpus = await prepareCorpus(cacheDir, opts.limit);
+  const corpus = await prepareCorpus(cacheDir, opts.limit, { speed: opts.pass === "speed" });
   const { clips, allClips, ...corpusInfo } = corpus;
   const previous = opts.resume && fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, "utf8")) : null;
   const result = {
     schema: SCHEMA,
+    pass: opts.pass,
     status: "running",
     command: process.argv.slice(1).join(" "),
     machine: machine(),
@@ -773,10 +865,13 @@ async function run(opts) {
       log(`${entry.model.id} (${entry.role}): reused from ${out}`);
     } else {
       log(`${entry.model.id} (${entry.role}, ${entry.arm}) — free ${Math.round(fs.statfsSync(cacheDir).bavail * fs.statfsSync(cacheDir).bsize / 1e9)} GB`);
-      const waited = await waitForQuiet(opts.quietLoad, appendLog);
+      // The accuracy pass does not wait: its decode times are contended by
+      // definition and never used for speed.
+      const waited = opts.pass === "accuracy" ? null : await waitForQuiet(opts.quietLoad, appendLog);
       appendLog(`start ${entry.model.id} (${entry.role})`);
       row = await measureModel(entry, ctx);
       row.quietWait = waited;
+      row.contended = !waited || !waited.quiet;
     }
     if (row.role === "bracket-first" && row.status === "measured") ctx.bracketFirst = row;
     if (row.role === "calibration" && row.status === "measured") ctx.calibration = row;
@@ -792,12 +887,13 @@ async function run(opts) {
     const usedLater = order.slice(order.indexOf(entry) + 1).some((x) => x.model.id === entry.model.id);
     if (!opts.keep && !usedLater && entry.model.files) await manager.remove(cacheDir, entry.model);
   }
-  finalise(result, ctx);
+  result.status = runStatus(result, opts);
+  if (opts.pass === "both") judge(result, result);
   await writeJson(out, result);
   process.stderr.write(`\n${report(result)}\n`);
   log(`status: ${result.status} -> ${out}`);
   appendLog(`run ${result.status}`);
-  return result.status === "complete" || result.status.startsWith("partial") ? 0 : 1;
+  return /complete$|^partial/.test(result.status) ? 0 : 1;
 }
 
 /* ---------------- report ---------------- */
@@ -807,9 +903,14 @@ const num = (x, d = 3) => (x === undefined || x === null || Number.isNaN(x) ? "�
 
 function report(result) {
   const lines = [];
-  lines.push(`Corpus: ${result.corpus.source} ${result.corpus.id} @ ${result.corpus.commit.slice(0, 8)} — ${result.corpus.utterances} utterances, ${result.corpus.referenceWords} words, ${(result.corpus.audioSec / 60).toFixed(1)} min`);
+  const c = result.corpus;
+  lines.push(`Corpus: ${c.source} ${c.id} @ ${c.commit.slice(0, 8)} — ${c.utterances} utterances, ${c.referenceWords} words, ${(c.audioSec / 60).toFixed(1)} min (${c.subset || "all"})`);
   const m = result.machine;
   lines.push(`Machine: ${m.cpu}, ${m.logicalCpus} logical CPUs, ${m.ramGb} GB, ${m.platform}; Electron ${m.versions.electron}, sherpa-onnx-node ${m.versions.sherpaOnnxNode}; CPU, ${m.appThreads} threads`);
+  if (result.passes && result.passes.speed) {
+    const sp = result.passes.speed;
+    lines.push(`Speed from: ${sp.corpus.subset}, ${sp.corpus.utterances} utterances, ${(sp.corpus.audioSec / 60).toFixed(1)} min`);
+  }
   if (result.brackets) {
     lines.push(`Default measured first/last: decodeRtf ${num(result.brackets.first, 4)} / ${num(result.brackets.last, 4)} (drift ${pct(result.brackets.drift, 1)} %, limit ${BRACKET_DRIFT * 100} %)`);
   }
@@ -817,6 +918,7 @@ function report(result) {
   lines.push("");
   lines.push("| model | role | path | wer_norm % | wer_verbatim % | Δ vs default (95 % CI), pts | decode RTF (p50 / p95) | speedup | cold load s | first decode s | punct % | caps % | size MB | verdict |");
   lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+  let contendedShown = false;
   for (const r of result.rows) {
     if (r.status !== "measured") {
       lines.push(`| ${r.id} | ${r.role} | ${r.path} | — | — | — | — | — | — | — | — | — | — | ${r.status}: ${r.reason} |`);
@@ -824,9 +926,25 @@ function report(result) {
     }
     const v = r.vsDefault;
     const ci = v ? `${pct(v.deltaWer)} (${pct(v.bootstrap.lo)} … ${pct(v.bootstrap.hi)})${v.bootstrap.separable ? "" : " n.s."}` : "—";
+    // Clean speed when there is one; otherwise this row's own (contended) numbers, marked.
+    const sp = r.speed || (r.contended === false ? r : null);
+    let speedCell;
+    let loadCell;
+    if (sp) {
+      speedCell = `${num(sp.decodeRtf, 4)} (${num(sp.p50Rtf, 4)} / ${num(sp.p95Rtf, 4)})`;
+      loadCell = `${num(sp.coldLoadWallMs / 1000, 1)} | ${num(sp.firstDecodeMs / 1000, 2)}`;
+    } else {
+      contendedShown = true;
+      speedCell = `${num(r.decodeRtf, 4)}*`;
+      loadCell = `${num(r.coldLoadWallMs / 1000, 1)}* | ${num(r.firstDecodeMs / 1000, 2)}*`;
+    }
     lines.push(
-      `| ${r.id} | ${r.role} | ${r.path} | ${pct(r.werNorm)} | ${pct(r.werVerbatim)} | ${ci} | ${num(r.decodeRtf, 4)} (${num(r.p50Rtf, 4)} / ${num(r.p95Rtf, 4)}) | ${v ? `${num(v.speedup, 2)}x` : "—"} | ${num(r.coldLoadWallMs / 1000, 1)} | ${num(r.firstDecodeMs / 1000, 2)} | ${pct(r.punctuationRate, 0)} | ${pct(r.capitalisationRate, 0)} | ${Math.round(r.bytes / 1e6)} | ${r.verdict || (r.role.startsWith("bracket") || r.role === "calibration" ? "reference" : "baseline")} |`
+      `| ${r.id} | ${r.role} | ${r.path} | ${pct(r.werNorm)} | ${pct(r.werVerbatim)} | ${ci} | ${speedCell} | ${v && v.speedup ? `${num(v.speedup, 2)}x` : "—"} | ${loadCell} | ${pct(r.punctuationRate, 0)} | ${pct(r.capitalisationRate, 0)} | ${Math.round(r.bytes / 1e6)} | ${r.verdict || (r.role.startsWith("bracket") || r.role === "calibration" ? "reference" : "baseline")} |`
     );
+  }
+  if (contendedShown) {
+    lines.push("");
+    lines.push("\\* measured while the machine was busy (not a clean speed number; never used for a verdict).");
   }
   const long = result.rows.filter((r) => r.longForm);
   if (long.length) {
@@ -835,7 +953,7 @@ function report(result) {
     lines.push("|---|---|---|---|---|---|");
     for (const r of long) {
       for (const l of r.longForm) {
-        lines.push(`| ${r.id} | ${r.role} | ${l.label} (${num(l.audioSec, 0)} s) | ${pct(l.wer)} | ${num(l.wordRatio, 3)} | ${l.error ? `error: ${l.error}` : num(l.decodeRtf, 4)} |`);
+        lines.push(`| ${r.id} | ${r.role} | ${l.label} (${num(l.audioSec, 0)} s) | ${pct(l.wer)} | ${num(l.wordRatio, 3)} | ${l.error ? `error: ${l.error}` : `${num(l.decodeRtf, 4)}${r.contended ? "*" : ""}`} |`);
       }
     }
   }
@@ -861,6 +979,13 @@ async function main() {
     return 0;
   }
   if (opts.verifyShipped) return (await verifyShipped()) ? 0 : 1;
+  if (opts.combine.length) {
+    if (!opts.out) throw new Error("--combine needs --out <file.json>");
+    const merged = combine(opts.combine[0], opts.combine[1]);
+    await writeJson(path.resolve(opts.out), merged);
+    process.stderr.write(`${report(merged)}\n`);
+    return 0;
+  }
   if (opts.discover.length) {
     const found = [];
     for (const spec of opts.discover) found.push(await discover(spec));

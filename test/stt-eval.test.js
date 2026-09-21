@@ -214,6 +214,17 @@ test("stt-eval: Q5 long-form compatibility precondition", () => {
   assert.strictEqual(worse.compatible, false);
 });
 
+test("stt-eval: the speed subset keeps every 4th sentence cluster, all its readings, in a fixed order", () => {
+  const clips = [];
+  for (const id of [10, 2, 7, 1, 30, 4, 5, 9, 8]) {
+    clips.push({ sentenceId: String(id), file: `${id}a` }, { sentenceId: String(id), file: `${id}b` });
+  }
+  // Sorted numerically: 1 2 4 5 7 8 9 10 30 -> indices 0, 4, 8 -> ids 1, 7, 30.
+  assert.deepStrictEqual(e.speedSubset(clips).map((c) => c.file), ["7a", "7b", "1a", "1b", "30a", "30b"]);
+  assert.deepStrictEqual(e.speedSubset(clips), e.speedSubset([...clips].reverse()).reverse());
+  assert.strictEqual(e.SPEED_SUBSET_EVERY, 4);
+});
+
 test("stt-eval: style rates read the raw hypotheses", () => {
   const r = e.styleRates(["Hello, world.", "um so uh yes", ""]);
   assert.strictEqual(r.punctuationRate, 1 / 3);

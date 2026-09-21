@@ -389,6 +389,23 @@ function longFormCompatible(clips, limits = LONG_FORM) {
   return { compatible: reasons.length === 0, reasons };
 }
 
+/* ---------------- the speed subset ---------------- */
+
+// Speed is measured on a quiet machine, and a shared machine is quiet in short
+// windows, so the speed pass decodes a fixed quarter of the corpus rather than
+// all of it: every SPEED_SUBSET_EVERY-th sentence cluster, by numeric FLEURS
+// sentence id, with every reading of a kept sentence. Declared before any
+// number existed; accuracy is always scored on the full corpus.
+const SPEED_SUBSET_EVERY = 4;
+
+function speedSubset(clips, every = SPEED_SUBSET_EVERY) {
+  const ids = [...new Set(clips.map((c) => c.sentenceId))].sort(
+    (a, b) => Number(a) - Number(b) || String(a).localeCompare(String(b))
+  );
+  const keep = new Set(ids.filter((_, i) => i % every === 0));
+  return clips.filter((c) => keep.has(c.sentenceId));
+}
+
 /* ---------------- hypothesis style indicators ---------------- */
 
 /** How a model's raw output looks, before any normalisation hides it. */
@@ -667,6 +684,8 @@ module.exports = {
   pairedBootstrap,
   classify,
   longFormCompatible,
+  SPEED_SUBSET_EVERY,
+  speedSubset,
   styleRates,
   parseFleursTsv,
   tsvColumnMismatches,

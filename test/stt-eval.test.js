@@ -720,17 +720,17 @@ function passFiles({ speedOver = {}, accOver = {} } = {}) {
       speedRow("base", "bracket-last", 0.0429, 8)],
     ...speedOver,
   };
-  const accFile = path.join(dir, "acc.json");
-  const speedFile = path.join(dir, "speed.json");
-  fs.writeFileSync(accFile, JSON.stringify(acc));
-  fs.writeFileSync(speedFile, JSON.stringify(speed));
-  return { accFile, speedFile };
+  const accPath = path.join(dir, "acc.json");
+  const speedPath = path.join(dir, "speed.json");
+  fs.writeFileSync(accPath, JSON.stringify(acc));
+  fs.writeFileSync(speedPath, JSON.stringify(speed));
+  return { accPath, speedPath };
 }
 
 test("stt-eval combine: a clean split run merges, judges and reports", () => {
-  const { accFile, speedFile } = passFiles();
+  const { accPath, speedPath } = passFiles();
   // The CLI's default baseline is the real one; this fixture names its own.
-  const combined = harness.combine(accFile, [speedFile], { baselineId: "base" });
+  const combined = harness.combine(accPath, [speedPath], { baselineId: "base" });
   assert.strictEqual(combined.status, "complete");
   assert.strictEqual(combined.pass, "combined");
   const fast = combined.rows.find((r) => r.id === "fast");
@@ -752,27 +752,27 @@ test("stt-eval combine: refuses passes that do not belong together", () => {
     [{ speedOver: { machine: { measuringCode: "h2" }, corpus: { commit: "c0", subset: "s" } } }, /different corpus pins or measuring code/],
   ];
   for (const [over, re] of cases) {
-    const { accFile, speedFile } = passFiles(over);
-    assert.throws(() => harness.combine(accFile, [speedFile], { baselineId: "base" }), re);
+    const { accPath, speedPath } = passFiles(over);
+    assert.throws(() => harness.combine(accPath, [speedPath], { baselineId: "base" }), re);
   }
-  const { accFile, speedFile } = passFiles();
-  const other = speedFile.replace("speed.json", "other.json");
-  const s = JSON.parse(fs.readFileSync(speedFile, "utf8"));
+  const { accPath, speedPath } = passFiles();
+  const other = speedPath.replace("speed.json", "other.json");
+  const s = JSON.parse(fs.readFileSync(speedPath, "utf8"));
   s.corpus.subset = "another subset";
   fs.writeFileSync(other, JSON.stringify(s));
-  assert.throws(() => harness.combine(accFile, [speedFile, other], { baselineId: "base" }), /a different speed subset/);
+  assert.throws(() => harness.combine(accPath, [speedPath, other], { baselineId: "base" }), /a different speed subset/);
 });
 
 test("stt-eval combine: no speed pass, or an unusable one, gives no speed-based verdict", () => {
-  const { accFile } = passFiles();
-  const noSpeed = harness.combine(accFile, [], { baselineId: "base" });
+  const { accPath } = passFiles();
+  const noSpeed = harness.combine(accPath, [], { baselineId: "base" });
   assert.match(noSpeed.status, /speed: not measured/);
   assert.strictEqual(noSpeed.rows[1].verdict, "speed not measured cleanly — no speed-based verdict");
   const md = harness.report(noSpeed);
   assert.match(md, /0\.0900\*/, "the accuracy pass's contended time is shown starred");
   assert.match(md, /measured while the machine was busy/);
 
-  const { accFile: a2, speedFile: s2 } = passFiles({ speedOver: { status: "unstable" } });
+  const { accPath: a2, speedPath: s2 } = passFiles({ speedOver: { status: "unstable" } });
   assert.match(harness.combine(a2, [s2], { baselineId: "base" }).status, /speed: unstable/);
 });
 

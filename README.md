@@ -250,10 +250,10 @@ The wizard's last step downloads the models that run on your machine — a small
 Parakeet speech model (≈ 670 MB) and the Granite 4.0 Micro cleanup model (≈ 2.1 GB) —
 showing a progress bar as it goes. It's a one-time download; everything after
 that, speech-to-text runs faster than realtime, even on CPU. If a download is interrupted,
-retrying resumes from the saved partial file when possible. You can pick a
-different cleanup model in the wizard or later in Settings → Cleanup: Gemma 3 1B
-(≈ 0.8 GB) if the download or speed matters more than the fillers it leaves in,
-or Qwen3 4B Instruct, Gemma 3 4B, or Gemma 3 12B.
+retrying resumes from the saved partial file when possible. You can pick another
+built-in cleanup model in the wizard or later in Settings → Cleanup — Gemma 3 1B
+(≈ 0.8 GB), for one, if the download or speed matters more than the fillers it
+leaves in.
 
 Every launch after that goes straight to the tray — no window to dismiss — and
 posts a short "ready, press *your hotkey*" notification. Click it to open

@@ -271,7 +271,7 @@ function startRecording() {
   // under the time the user spends speaking instead of being paid after stop.
   // STT: with live preview on this also keeps the first partials from all being
   // dropped while the model loads (the drop-if-busy guard discards every tick
-  // until a decode is free). Cleanup: loading Gemma takes seconds cold and used
+  // until a decode is free). Cleanup: loading the LLM takes seconds cold and used
   // to start only after transcription finished; priming additionally prefills
   // the static prompt prefix so even the first clean of the session skips it.
   // Both are best effort — the final pass re-runs ensureStt/ensureCleanup

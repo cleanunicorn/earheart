@@ -79,7 +79,7 @@ body:
       label: Cleanup engine
       description: Settings → Cleanup.
       options:
-        - Built-in (Gemma, in-process)
+        - Built-in (in-process)
         - Remote / hosted (OpenAI-compatible)
         - Cleanup disabled
         - Not sure

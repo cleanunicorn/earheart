@@ -43,8 +43,8 @@ hotkey ─▶ pipeline.toggle()                         (main/pipeline.js:95)
 
 - **Main process** orchestrates the pipeline and owns engine state.
 - **Overlay renderer** owns the microphone and the UI pill.
-- **Engine workers** (`utilityProcess`) run sherpa-onnx STT and Gemma cleanup off
-  the main thread. *Today this is a single shared worker* (`engine-worker.js`
+- **Engine workers** (`utilityProcess`) run sherpa-onnx STT and node-llama-cpp
+  (GGUF) cleanup off the main thread. *Today this is a single shared worker* (`engine-worker.js`
   hosts both engines, `host.js` routes to one child); Phase 1 splits this into
   two workers — one for STT, one for cleanup — so they run in parallel (see the
   "Split the engine worker" change below).
@@ -330,10 +330,13 @@ A structured read on this plan (Phase 1 first, Phase 2 deferred).
 - **Decode latency may be too high to feel "live."** If a whole-buffer decode on
   the default int8 model takes >1–2 s on typical hardware, the raw tail lags
   enough to feel broken rather than real-time — the core risk to Phase 1.
-- **Cleanup may not keep up.** Gemma 1B cleaning a growing full transcript on
-  every pause may fall far behind on long dictations, leaving a large faint raw
-  tail and a stale cleaned line. Mitigated by the pause trigger and by cleanup
-  being allowed to lag, but worth measuring alongside decode latency.
+- **Cleanup may not keep up.** The cleanup model cleaning a growing full
+  transcript on every pause may fall far behind on long dictations, leaving a
+  large faint raw tail and a stale cleaned line. The risk grew when the default
+  moved from Gemma 3 1B to Granite 4.0 Micro, which is about 2.5× slower per
+  clean on CPU (18.6 s vs 7.5 s median on a Ryzen 9 3900X, #167's benchmark).
+  Mitigated by the pause trigger and by cleanup being allowed to lag, but worth
+  measuring alongside decode latency.
 - **Phase 2 accuracy regression.** Streaming models are less accurate than
   offline Parakeet-TDT; the two-model reconcile (live stream vs. final Parakeet)
   is complex and can surface visible corrections.

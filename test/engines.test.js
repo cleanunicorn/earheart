@@ -156,10 +156,58 @@ test("registry drops custom models whose paths could leave the model directory",
   }
 });
 
-test("exactly one cleanup model is marked default", () => {
+test("exactly one cleanup model is marked default, and it is Granite 4.0 Micro", () => {
   const defaults = registry.listModels("cleanup").filter((m) => m.default);
   assert.strictEqual(defaults.length, 1);
   assert.strictEqual(defaults[0].id, registry.DEFAULT_CLEANUP_MODEL);
+  // Pinned by name, like the STT default below: moving the default moves
+  // every new install, so it has to be a deliberate change here too.
+  assert.strictEqual(registry.DEFAULT_CLEANUP_MODEL, "granite-4.0-micro");
+});
+
+// The exact files the cleanup benchmark measured (#167): a wrong byte count
+// breaks the progress bar, a wrong sha256 rejects every download.
+test("registry pins the benchmarked Granite and Qwen GGUFs", () => {
+  const expected = {
+    "granite-4.0-micro": {
+      label: "Granite 4.0 Micro (recommended)",
+      note: "Runs on this computer · ~2.1 GB, 2.6× the 1B · needs ~6 GB RAM · recommended: removes fillers reliably",
+      file: {
+        name: "granite-4.0-micro-Q4_K_M.gguf",
+        bytes: 2_099_502_528,
+        sha256: "97c417dcc0534b0737c74016fb2af083cb17c3b51eaac621192d23961b7024eb",
+        url: "https://huggingface.co/ibm-granite/granite-4.0-micro-GGUF/resolve/ec48475f0c811d812fbfb61975717a9c36eeb652/granite-4.0-micro-Q4_K_M.gguf",
+      },
+    },
+    "qwen3-4b-2507": {
+      label: "Qwen3 4B Instruct 2507 (alternative)",
+      note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · removes fillers reliably, a little slower than Granite",
+      file: {
+        name: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+        bytes: 2_497_281_120,
+        sha256: "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+        url: "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/a06e946bb6b655725eafa393f4a9745d460374c9/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      },
+    },
+  };
+  for (const [id, want] of Object.entries(expected)) {
+    const m = registry.getModel("cleanup", id);
+    assert.ok(m, `${id} missing from the cleanup catalog`);
+    assert.strictEqual(m.id, id);
+    assert.strictEqual(m.kind, "cleanup");
+    assert.strictEqual(m.engine, "llama-gguf");
+    assert.strictEqual(m.label, want.label);
+    assert.strictEqual(m.note, want.note);
+    assert.deepStrictEqual(m.files, [want.file]);
+    assert.deepStrictEqual(m.gguf, { file: want.file.name });
+  }
+});
+
+test("the cleanup catalog is listed smallest download first", () => {
+  assert.deepStrictEqual(
+    registry.listModels("cleanup").map((m) => m.id),
+    ["gemma-3-1b", "granite-4.0-micro", "gemma-3-4b", "qwen3-4b-2507", "gemma-4-12b"]
+  );
 });
 
 test("exactly one STT model is marked default, and it is still v3 int8", () => {

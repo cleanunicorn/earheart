@@ -37,9 +37,15 @@ function loadSettings(userData) {
   return settings;
 }
 
-test("settings save replaces the file and leaves no partial temp file", (t) => {
+// A temp userData directory that is removed when the test ends.
+function makeSettingsDir(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-settings-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+test("settings save replaces the file and leaves no partial temp file", (t) => {
+  const dir = makeSettingsDir(t);
   const settings = loadSettings(dir);
 
   settings.save({ hotkey: "First" });
@@ -57,8 +63,7 @@ test("settings save replaces the file and leaves no partial temp file", (t) => {
 });
 
 test("a failed replacement preserves the previous settings", (t) => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-settings-"));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const dir = makeSettingsDir(t);
   const settings = loadSettings(dir);
   settings.save({ hotkey: "Working" });
 
@@ -79,4 +84,21 @@ test("a failed replacement preserves the previous settings", (t) => {
     fs.readdirSync(dir).filter((name) => name.includes(".tmp")),
     []
   );
+});
+
+// Changing the cleanup default must not move existing users: every saved
+// settings file already holds the model they had (save() writes the full
+// merged object), and there is deliberately no migration.
+test("a saved cleanup model survives a new default", (t) => {
+  const dir = makeSettingsDir(t);
+  fs.writeFileSync(
+    path.join(dir, "settings.json"),
+    JSON.stringify({ cleanup: { engine: "builtin", builtin: { model: "gemma-3-1b" } } })
+  );
+  const settings = loadSettings(dir);
+
+  assert.strictEqual(settings.get().cleanup.builtin.model, "gemma-3-1b");
+  // A fresh profile, by contrast, gets whatever the registry now defaults to.
+  const fresh = makeSettingsDir(t);
+  assert.strictEqual(loadSettings(fresh).get().cleanup.builtin.model, "cleanup-default");
 });

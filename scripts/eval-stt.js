@@ -825,7 +825,11 @@ function plan(opts) {
   const def = shipped.find((m) => m.id === manifest.BASELINE_ID);
   const list = [{ model: def, role: "bracket-first", arm: "shipped" }];
   for (const m of shipped) if (m.id !== def.id) list.push({ model: m, role: "baseline", arm: "shipped" });
-  for (const c of manifest.CANDIDATES.filter((x) => x.arm === "wired")) list.push({ model: c, role: "candidate", arm: "wired" });
+  // A candidate that has since been catalogued is measured once, as shipped.
+  const isShipped = (c) => shipped.some((m) => m.id === c.id);
+  for (const c of manifest.CANDIDATES.filter((x) => x.arm === "wired" && !isShipped(x))) {
+    list.push({ model: c, role: "candidate", arm: "wired" });
+  }
   if (opts.exploratory) {
     list.push({ model: def, role: "calibration", arm: "exploratory" });
     for (const c of manifest.CANDIDATES.filter((x) => x.arm === "exploratory")) {

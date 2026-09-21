@@ -937,7 +937,8 @@ async function run(opts) {
     rows: [],
   };
   if (previous) {
-    result.resumed = { rows: previous.rows.filter((r) => r.status === "measured").length, measuringCode: previous.machine.measuringCode };
+    // Each reused row keeps its own measuredWith; this names the file it came from.
+    result.resumed = { rows: previous.rows.filter((r) => r.status === "measured").length, fromMeasuringCode: previous.machine.measuringCode };
   }
   if (previous && previous.corpus && previous.corpus.utterances !== corpusInfo.utterances) {
     throw new Error("--resume: the existing file was measured on a different corpus selection");
@@ -972,6 +973,11 @@ async function run(opts) {
       // are row.speedAttempts, written by --combine.
       row.measureAttempts = attempts;
       if (opts.cpuLock && opts.pass === "accuracy") row.lockWaitMs = lockWaitMs + (row.lockWaitLongFormMs || 0);
+    }
+    if (!reused) row.measuredWith = { gitHead: result.machine.gitHead, measuringCode: result.machine.measuringCode };
+    // A reused default row still yields the ablation (from its stored decodes).
+    if (reused && row.role === "bracket-first" && opts.pass !== "speed" && !ctx.ablation && row.decodes) {
+      ctx.ablation = ablation(corpus, row.decodes);
     }
     if (row.role === "bracket-first" && row.status === "measured") ctx.bracketFirst = row;
     if (row.role === "calibration" && row.status === "measured") ctx.calibration = row;

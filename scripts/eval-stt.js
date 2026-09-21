@@ -282,7 +282,8 @@ async function discover(spec) {
 async function verifyShipped() {
   let ok = true;
   for (const model of registry.listModels("stt")) {
-    const [owner, repo, , commit] = new URL(model.files[0].url).pathname.split("/").filter(Boolean);
+    // Catalog URLs are /<owner>/<repo>/resolve/<commit>/<file>.
+    const [owner, repo, /* "resolve" */, commit] = new URL(model.files[0].url).pathname.split("/").filter(Boolean);
     const found = await discover(`${owner}/${repo}@${commit}`);
     const byName = new Map(found.files.map((f) => [f.name, f]));
     for (const file of model.files) {

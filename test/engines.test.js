@@ -171,6 +171,21 @@ test("exactly one STT model is marked default, and it is still v3 int8", () => {
   assert.strictEqual(registry.DEFAULT_STT_MODEL, "parakeet-tdt-0.6b-v3-int8");
 });
 
+test("registry: STT entries added from the evaluation match its pinned candidates exactly", () => {
+  // scripts/stt-eval-manifest.js holds the pins the evaluation downloaded and
+  // re-hashed; a catalogued winner must ship those bytes, not a hand-copied
+  // variant of them.
+  const { CANDIDATES } = require("../scripts/stt-eval-manifest");
+  const catalogued = CANDIDATES.filter((c) => registry.getModel("stt", c.id));
+  assert.deepStrictEqual(catalogued.map((c) => c.id), ["parakeet-tdt-110m-en"]);
+  for (const c of catalogued) {
+    const m = registry.getModel("stt", c.id);
+    assert.deepStrictEqual(m.files, c.files, `${c.id}: files`);
+    assert.deepStrictEqual(m.sherpa, c.sherpa, `${c.id}: sherpa`);
+    assert.ok(!m.default, `${c.id}: never the default`);
+  }
+});
+
 test("registry: every model carries a user-facing note", () => {
   for (const kind of Object.keys(registry.MODELS)) {
     for (const model of registry.listModels(kind)) {

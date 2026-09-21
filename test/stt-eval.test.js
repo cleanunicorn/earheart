@@ -428,7 +428,13 @@ test("stt-eval manifest: candidates are catalog-shaped and wire only files they 
   const ids = manifest.CANDIDATES.map((c) => c.id);
   assert.strictEqual(new Set(ids).size, ids.length, "duplicate candidate id");
   for (const c of manifest.CANDIDATES) {
-    assert.ok(!registry.getModel("stt", c.id), `${c.id}: collides with a shipped id`);
+    // A shipped id is only allowed for a catalogued winner, and then it must be
+    // the very same model (same files and wiring) — never a different one.
+    const shipped = registry.getModel("stt", c.id);
+    if (shipped) {
+      assert.deepStrictEqual(shipped.files, c.files, `${c.id}: shares a shipped id with different files`);
+      assert.deepStrictEqual(shipped.sherpa, c.sherpa, `${c.id}: shares a shipped id with different wiring`);
+    }
     assert.ok(registry.isPathSegment(c.id), `${c.id}: id must be a path segment`);
     assert.strictEqual(c.kind, "stt");
     assert.ok(c.label && c.note && c.licence, `${c.id}: label, note and licence`);

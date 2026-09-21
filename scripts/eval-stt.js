@@ -13,6 +13,8 @@
 // clips land there, never in the repo), --models id,id (subset, for
 // development), --limit N (first N utterances, for development — the headline
 // uses all 647), --keep (don't delete a model after measuring it),
+// --quiet-load N (wait for the 1-minute load average to reach N before each
+// model; default 4, "Infinity" to not wait),
 // --exploratory (also measure families the worker can't run yet), --resume
 // (reuse the measured rows of an existing --out file), --log <file> (append
 // one line per model).
@@ -35,7 +37,10 @@
 // commit and checksum: 647 utterances of 350 sentences, 106.5 min, 16 kHz.
 // It is READ speech of encyclopaedic sentences, not dictation captured
 // through Earheart's microphone path. Clips are re-encoded to exactly the
-// PCM16 the overlay produces, so the worker parses them with its own reader.
+// PCM16 the overlay produces, so the worker parses them with its own reader,
+// after one fixed level normalisation that stands in for the overlay's
+// autoGainControl (-20 dBFS RMS, peak <= 0.99): FLEURS has recordings as
+// quiet as -44 dBFS, which no model in the app would ever be handed.
 // Their length (mean 9.9 s, max 29 s) matches what the app decodes by
 // default: live preview commits 10-20 s chunks and only the tail is decoded at
 // stop. With live preview off, a whole recording (up to 300 s) goes in as one
@@ -86,12 +91,19 @@ const MAX_EMPTY_RATE = 0.05;
 const BRACKET_DRIFT = 0.1;
 const LONG_FORM_TARGETS = [60, 300];
 const LONG_FORM_GAP_SAMPLES = Math.round(0.3 * SAMPLE_RATE);
+// Speed is only comparable on a quiet machine, and this one is shared. Before
+// each model the run waits (up to QUIET_TIMEOUT_MS) for the 1-minute load
+// average to fall to QUIET_LOAD, and records what it saw either way; the
+// default measured first and last is the check that it worked.
+const QUIET_LOAD = 4;
+const QUIET_POLL_MS = 30000;
+const QUIET_TIMEOUT_MS = 4 * 3600 * 1000;
 
 /* ---------------- arguments ---------------- */
 
 function parseArgs(argv) {
-  const opts = { models: null, limit: 0, keep: false, exploratory: false, resume: false, discover: [] };
-  const valued = new Set(["--out", "--cache-dir", "--models", "--limit", "--report", "--log"]);
+  const opts = { models: null, limit: 0, keep: false, exploratory: false, resume: false, discover: [], quietLoad: QUIET_LOAD };
+  const valued = new Set(["--out", "--cache-dir", "--models", "--limit", "--report", "--log", "--quiet-load"]);
   for (let i = 0; i < argv.length; i++) {
     let arg = argv[i];
     let value = null;
@@ -108,6 +120,7 @@ function parseArgs(argv) {
       case "--limit": opts.limit = Number(value); break;
       case "--report": opts.report = value; break;
       case "--log": opts.log = value; break;
+      case "--quiet-load": opts.quietLoad = Number(value); break;
       case "--keep": opts.keep = true; break;
       case "--exploratory": opts.exploratory = true; break;
       case "--resume": opts.resume = true; break;
@@ -225,7 +238,8 @@ async function prepareCorpus(cacheDir, limit) {
   const corpus = manifest.CORPUS;
   const model = { kind: "corpus", id: corpus.id, files: corpus.files };
   log(`corpus: ${corpus.source} @ ${corpus.commit}`);
-  for (const f of corpus.files) log(`  fetch ${f.url} (${f.bytes} B, sha256 ${f.sha256})`);
+  const cached = manager.isInstalled(cacheDir, model);
+  for (const f of corpus.files) log(`  ${cached ? "cached" : "fetch"} ${f.url} (${f.bytes} B, sha256 ${f.sha256})`);
   await manager.download(cacheDir, model);
   const dir = manager.modelDir(cacheDir, model);
   for (const f of corpus.files) {
@@ -247,7 +261,11 @@ async function prepareCorpus(cacheDir, limit) {
   // overlay-identical PCM16, then drop the .tar.
   const clipsDir = path.join(dir, "pcm16");
   const done = path.join(clipsDir, ".complete");
-  if (!fs.existsSync(done) || fs.readFileSync(done, "utf8") !== corpus.files[0].sha256) {
+  // The marker names the archive AND the conversion, so a change to either
+  // re-extracts instead of silently reusing clips made the old way.
+  const stamp = `${corpus.files[0].sha256} level:${e.TARGET_RMS}/${e.PEAK_CEILING}`;
+  const gains = [];
+  if (!fs.existsSync(done) || fs.readFileSync(done, "utf8").split("\n")[0] !== stamp) {
     await fsp.rm(clipsDir, { recursive: true, force: true });
     await fsp.mkdir(clipsDir, { recursive: true });
     const tarPath = path.join(dir, "audio.tar");
@@ -262,8 +280,9 @@ async function prepareCorpus(cacheDir, limit) {
       let n = 0;
       for (const entry of e.tarEntries(readAt, fs.fstatSync(fd).size)) {
         if (!entry.name.endsWith(".wav")) continue;
-        const { wav } = e.toPcm16Wav(readAt(entry.offset, entry.size));
+        const { wav, gain } = e.toPcm16Wav(readAt(entry.offset, entry.size), { level: true });
         fs.writeFileSync(path.join(clipsDir, path.basename(entry.name)), wav);
+        gains.push(gain);
         n++;
       }
       log(`  extracted ${n} clips`);
@@ -271,8 +290,9 @@ async function prepareCorpus(cacheDir, limit) {
       fs.closeSync(fd);
       await fsp.rm(tarPath, { force: true });
     }
-    fs.writeFileSync(done, corpus.files[0].sha256);
+    fs.writeFileSync(done, `${stamp}\n${JSON.stringify(gains)}`);
   }
+  const levelGains = JSON.parse(fs.readFileSync(done, "utf8").split("\n")[1]);
 
   const clips = rows.map((r) => {
     const wavPath = path.join(clipsDir, r.file);
@@ -300,6 +320,7 @@ async function prepareCorpus(cacheDir, limit) {
   }
   const selected = limit > 0 ? clips.slice(0, limit) : clips;
   return {
+    allClips: clips,
     id: corpus.id,
     source: corpus.source,
     commit: corpus.commit,
@@ -310,6 +331,13 @@ async function prepareCorpus(cacheDir, limit) {
     referenceWords: selected.reduce((s, c) => s + c.refNorm.length, 0),
     audioSec: selected.reduce((s, c) => s + c.audioSec, 0),
     columnMismatches: mismatches.length,
+    level: {
+      targetRms: e.TARGET_RMS,
+      peakCeiling: e.PEAK_CEILING,
+      gainP50: e.percentile(levelGains, 50),
+      gainMin: Math.min(...levelGains),
+      gainMax: Math.max(...levelGains),
+    },
     unmodelledUtterances: selected.filter((c) => c.unmodelled).length,
     limited: limit > 0,
     clips: selected,
@@ -496,7 +524,8 @@ async function measureModel(entry, ctx) {
   if (blocked) return { ...row, status: "skipped", reason: blocked };
 
   const dl = Date.now();
-  for (const f of model.files) log(`  fetch ${f.url} (${f.bytes} B)`);
+  const cached = manager.isInstalled(ctx.cacheDir, model);
+  for (const f of model.files) log(`  ${cached ? "cached" : "fetch"} ${f.url} (${f.bytes} B, sha256 ${f.sha256})`);
   await manager.download(ctx.cacheDir, model);
   const dir = manager.modelDir(ctx.cacheDir, model);
   row.downloadMs = Date.now() - dl;
@@ -603,6 +632,22 @@ async function measureModel(entry, ctx) {
 }
 
 /* ---------------- the run ---------------- */
+
+async function waitForQuiet(limit, appendLog) {
+  const started = Date.now();
+  let load = os.loadavg()[0];
+  let announced = false;
+  while (load > limit && Date.now() - started < QUIET_TIMEOUT_MS) {
+    if (!announced) {
+      log(`waiting for a quiet machine: 1-min load ${load.toFixed(1)} > ${limit}`);
+      appendLog(`waiting for quiet (load ${load.toFixed(1)} > ${limit})`);
+      announced = true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, QUIET_POLL_MS));
+    load = os.loadavg()[0];
+  }
+  return { waitedMs: Date.now() - started, load, limit, quiet: load <= limit };
+}
 
 function machine() {
   const cpus = os.cpus();
@@ -715,7 +760,7 @@ async function run(opts) {
   const appendLog = (line) => opts.log && fs.appendFileSync(opts.log, `${new Date().toISOString()} ${line}\n`);
 
   const corpus = await prepareCorpus(cacheDir, opts.limit);
-  const { clips, ...corpusInfo } = corpus;
+  const { clips, allClips, ...corpusInfo } = corpus;
   const previous = opts.resume && fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, "utf8")) : null;
   const result = {
     schema: SCHEMA,
@@ -730,7 +775,7 @@ async function run(opts) {
   if (previous && previous.corpus && previous.corpus.utterances !== corpusInfo.utterances) {
     throw new Error("--resume: the existing file was measured on a different corpus selection");
   }
-  const ctx = { opts, cacheDir, corpus, longForm: buildLongForm(clips), ablation: null, bracketFirst: null, calibration: null };
+  const ctx = { opts, cacheDir, corpus, longForm: buildLongForm(allClips), ablation: null, bracketFirst: null, calibration: null };
   const order = plan(opts);
   for (const entry of order) {
     const reused = previous && previous.rows.find((r) => r.id === entry.model.id && r.role === entry.role && r.status === "measured");
@@ -740,8 +785,10 @@ async function run(opts) {
       log(`${entry.model.id} (${entry.role}): reused from ${out}`);
     } else {
       log(`${entry.model.id} (${entry.role}, ${entry.arm}) — free ${Math.round(fs.statfsSync(cacheDir).bavail * fs.statfsSync(cacheDir).bsize / 1e9)} GB`);
+      const waited = await waitForQuiet(opts.quietLoad, appendLog);
       appendLog(`start ${entry.model.id} (${entry.role})`);
       row = await measureModel(entry, ctx);
+      row.quietWait = waited;
     }
     if (row.role === "bracket-first" && row.status === "measured") ctx.bracketFirst = row;
     if (row.role === "calibration" && row.status === "measured") ctx.calibration = row;

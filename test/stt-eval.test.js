@@ -342,6 +342,25 @@ test("stt-eval: float32 WAV -> the overlay's PCM16, parsed by the worker's own r
   assert.throws(() => e.toPcm16Wav(Buffer.from("nope")), /RIFF/);
 });
 
+test("stt-eval: level normalisation brings quiet clips to the target, never past the peak ceiling", () => {
+  // A -44 dBFS clip (FLEURS has these) is brought up to -20 dBFS RMS.
+  const quiet = Float32Array.from({ length: 1600 }, (_, i) => 0.006 * Math.sin(i / 5));
+  const g = e.levelGain(quiet);
+  const rms = Math.sqrt(quiet.reduce((s, v) => s + (v * g) ** 2, 0) / quiet.length);
+  assert.ok(Math.abs(rms - e.TARGET_RMS) < 1e-6, `rms ${rms}`);
+  // A clip with one loud click is capped by its peak instead.
+  const click = new Float32Array(1600).fill(0.001);
+  click[10] = 0.5;
+  assert.strictEqual(e.levelGain(click), e.PEAK_CEILING / 0.5);
+  assert.strictEqual(e.levelGain(new Float32Array(10)), 1, "silence stays silence");
+
+  const { pcm, gain } = e.toPcm16Wav(floatWav(Array.from(quiet)), { level: true });
+  assert.strictEqual(gain, g);
+  assert.ok(Math.max(...pcm) > 4000, "quantised well above the noise floor");
+  // Off by default: the plain conversion keeps the samples as they are.
+  assert.strictEqual(e.toPcm16Wav(floatWav(Array.from(quiet))).gain, 1);
+});
+
 test("stt-eval: concatenating clips inserts the silence gap", () => {
   const out = e.concatPcm16([new Int16Array([1, 2]), new Int16Array([3])], 2);
   assert.deepStrictEqual([...out], [1, 2, 0, 0, 3]);

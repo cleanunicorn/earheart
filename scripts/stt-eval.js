@@ -535,14 +535,40 @@ function* tarEntries(readAt, totalSize) {
 /** A `readAt` over an in-memory buffer, for tarEntries. */
 const bufferReader = (buf) => (offset, length) => buf.subarray(offset, offset + length);
 
+// Level normalisation, standing in for the overlay's microphone capture: it
+// records with autoGainControl on (renderer/overlay.js), so a model in the app
+// never sees a -44 dBFS recording — and FLEURS has many (peaks of 0.006 full
+// scale), on which Parakeet returns nothing once the buffer passes ~12 s.
+// Every clip, for every model, gets the same gain: to TARGET_RMS, capped so
+// the peak stays under PEAK_CEILING. Applied before quantising to PCM16, as
+// AGC acts before the overlay's encoder does.
+const TARGET_RMS = 0.1; // -20 dBFS
+const PEAK_CEILING = 0.99;
+
+/** The gain that brings `samples` (float, [-1, 1]) to TARGET_RMS, peak-capped. */
+function levelGain(samples) {
+  let sum = 0;
+  let peak = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const v = samples[i];
+    sum += v * v;
+    const a = Math.abs(v);
+    if (a > peak) peak = a;
+  }
+  if (!peak) return 1;
+  const rms = Math.sqrt(sum / samples.length);
+  return Math.min(TARGET_RMS / rms, PEAK_CEILING / peak);
+}
+
 /**
  * Re-encode a mono WAV as the exact PCM16 bytes Earheart's overlay produces
  * (renderer/overlay.js: clamp to [-1, 1], scale by 0x8000 below zero and
  * 0x7fff above, truncate into an Int16Array), so the engine worker parses it
- * with its own wavToFloat32. Accepts IEEE float32 (FLEURS) or PCM16.
- * @returns {{ wav: Buffer, pcm: Int16Array, sampleRate: number }}
+ * with its own wavToFloat32. Accepts IEEE float32 (FLEURS) or PCM16. With
+ * `level: true` the samples are first normalised (see levelGain).
+ * @returns {{ wav: Buffer, pcm: Int16Array, sampleRate: number, gain: number }}
  */
-function toPcm16Wav(buf) {
+function toPcm16Wav(buf, { level = false } = {}) {
   if (buf.length < 12 || buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WAVE") {
     throw new Error("Not a RIFF/WAVE file");
   }
@@ -571,22 +597,28 @@ function toPcm16Wav(buf) {
   if (!fmt || !data) throw new Error("WAV is missing its fmt or data chunk");
   if (fmt.channels !== 1) throw new Error(`expected mono, got ${fmt.channels} channels`);
   if (fmt.sampleRate !== SAMPLE_RATE) throw new Error(`expected ${SAMPLE_RATE} Hz, got ${fmt.sampleRate}`);
-  let pcm;
+  let floats;
   if (fmt.format === 3 && fmt.bits === 32) {
-    const count = Math.floor(data.length / 4);
-    pcm = new Int16Array(count);
-    for (let i = 0; i < count; i++) {
-      const s = Math.max(-1, Math.min(1, data.readFloatLE(i * 4)));
-      pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-    }
+    floats = new Float32Array(Math.floor(data.length / 4));
+    for (let i = 0; i < floats.length; i++) floats[i] = data.readFloatLE(i * 4);
   } else if (fmt.format === 1 && fmt.bits === 16) {
-    const count = Math.floor(data.length / 2);
-    pcm = new Int16Array(count);
-    for (let i = 0; i < count; i++) pcm[i] = data.readInt16LE(i * 2);
+    floats = new Float32Array(Math.floor(data.length / 2));
+    for (let i = 0; i < floats.length; i++) floats[i] = data.readInt16LE(i * 2) / 32768;
   } else {
     throw new Error(`unsupported WAV format ${fmt.format}/${fmt.bits}-bit`);
   }
-  return { wav: encodeWav(pcm, SAMPLE_RATE), pcm, sampleRate: SAMPLE_RATE };
+  const gain = level ? levelGain(floats) : 1;
+  const pcm = new Int16Array(floats.length);
+  if (fmt.format === 1 && gain === 1) {
+    // Already the overlay's format: keep the samples bit-exact.
+    for (let i = 0; i < pcm.length; i++) pcm[i] = data.readInt16LE(i * 2);
+    return { wav: encodeWav(pcm, SAMPLE_RATE), pcm, sampleRate: SAMPLE_RATE, gain };
+  }
+  for (let i = 0; i < floats.length; i++) {
+    const s = Math.max(-1, Math.min(1, floats[i] * gain));
+    pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return { wav: encodeWav(pcm, SAMPLE_RATE), pcm, sampleRate: SAMPLE_RATE, gain };
 }
 
 /* ---------------- pin discovery ---------------- */
@@ -640,6 +672,9 @@ module.exports = {
   tsvColumnMismatches,
   tarEntries,
   bufferReader,
+  TARGET_RMS,
+  PEAK_CEILING,
+  levelGain,
   toPcm16Wav,
   concatPcm16,
   sha256FromLinkedEtag,

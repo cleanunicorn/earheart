@@ -24,10 +24,15 @@ and they are the ones to look at next:
   shipped Gemma 3 4B leaves 35 (all 30 "um"/"uh" plus "kind of like" in every
   run); on `polished` Granite keeps "kind of like" twice, Qwen none, Gemma 3 4B
   leaves 5 — with no fidelity failure on FLUENT (both styles)
-  or REPORTED, and are faster than Gemma 3 4B on the CPU under the cross-run
-  lock: **18.6 s** and **21.1 s** against **22.0 s** per FLUENT clean (median;
-  fastest single clean across all their passes 18.4 s and 21.0 s against
-  21.6 s).
+  or REPORTED. On the CPU they took **18.6 s** and **21.1 s** per FLUENT
+  clean (median of quiet passes taken under the cross-run lock; fastest single
+  clean across all their passes 18.4 s and 21.0 s). **The speed comparison is
+  indicative, not proven:** Gemma 3 4B was never timed on a quiet machine —
+  all five of its passes ran contended, with medians from 22.0 to 30.7 s. Its
+  least contended pass (the first, which started at a 1-minute load of 14.0)
+  took 22.2 s, and its fastest single clean in any pass 21.6 s. Against those,
+  Granite is about 15–16% faster and Qwen about 3–5% — a margin that
+  contention on the comparator alone could produce.
 - They fail one criterion: median content-word retention **0.95** and
   **0.94** against Gemma 3 4B's **1.00**. Gemma reaches 1.00 by copying the
   dictation through, fillers included. What the two drop, read from the saved
@@ -40,9 +45,10 @@ and they are the ones to look at next:
   Whether "retention no lower than the comparator's" should be measured
   against a comparator that copies is the maintainer's call; the bar was frozen
   before the candidates ran and is not changed after seeing them. If one is
-  added, **Granite 4.0 Micro first**: faster (18.6 s vs 21.1 s), smaller
-  (2.10 GB vs 2.50 GB), higher retention (0.95 vs 0.94), and its one real loss
-  is a redundant clause.
+  added, **Granite 4.0 Micro first**: faster (18.6 s vs 21.1 s, both quiet),
+  smaller (2.10 GB vs 2.50 GB), higher retention (0.95 vs 0.94), and its one
+  real loss is a redundant clause. Qwen is the cleaner of the two on
+  `polished` (0 left against Granite's 2 "kind of like").
 - **No default promotion is recommended.** Nothing near the 1B default's size
   qualifies: Qwen3.5 0.8B leaves 25 fillers against 1B's 35 but regresses on
   `polished` (7 against 4) and fails fidelity there on 2 of 5 seeds; LFM2 1.2B
@@ -54,6 +60,31 @@ and they are the ones to look at next:
   (retention 0.65) and is slower; LFM2.5 8B-A1B reasons in a `<think>` block
   until the generation cap on every run, so the app would deliver the raw
   transcript each time.
+
+### What the review changed
+
+After review the scoring was fixed in four places, and every saved run was
+re-scored from its raw output (`--rescore`; no model was re-run): a filler
+the directive names beyond um/uh/erm now counts ("kind of like", "you know",
+"I mean", …); an all-caps "UM" is skipped, as the backstop does; a run fails
+fidelity if more than 10% of its content words are new; and a reply wrapped
+in quotes counts as echo. **No verdict moved** — still 0 of 10 candidates —
+and the Q6 facts stand: Granite and Qwen still leave **0** fillers on
+FLUENT/`clean`, and their retention is unchanged (0.95, 0.94). What did move
+(stumbles · clean runs · fidelity fails, before → after):
+
+| model | FLUENT clean | FLUENT polished | REPORTED clean |
+|---|---|---|---|
+| gemma-3-4b | 30·0/5·0 → **35·0/5·0** | 5·0/5·0 | 0·10/10·0 → **15·0/10·0** |
+| granite-4.0-micro | 0·5/5·0 | 0·5/5·0 → **2·3/5·0** | 0·10/10·0 |
+| qwen3-4b-2507 | 0·5/5·0 | 0·5/5·0 | 0·10/10·0 → **5·5/10·0** |
+| gemma-3-1b | 30·0/5·0 → **35·0/5·0** | 0·0/5·5 → **4·0/5·5** | 0·5/10·5 |
+| qwen3.5-0.8b | 20·0/5·0 → **25·0/5·0** | 4·2/5·2 → **7·0/5·2** | 1·7/10·2 → **2·7/10·2** |
+| lfm2.5-8b-a1b | 40·0/5·5 → **54·0/5·5** | 38·0/5·5 → **47·0/5·5** | 111·0/10·10 → **144·0/10·10** |
+
+Every other model's numbers are unchanged. One reply (Mistral Nemo, REPORTED)
+became an echo failure it already was for other reasons. The speed rows
+gained two more locked passes of Gemma 3 4B (above).
 
 ### Results (first pass, CPU)
 
@@ -86,17 +117,25 @@ Each pass is labelled by the 1-minute load average at its start, its peak
 (sampled after every clean) and its end: **quiet** when it never exceeded
 14 (about what this benchmark's 12 threads produce on their own), otherwise
 **contended**. The verdict trio — Gemma 3 4B, Granite 4.0 Micro and Qwen3 4B
-2507, the rows where speed could decide — was re-run back to back while holding
-the two runs' shared CPU lock (`flock cpu-quiet.lock`), so no other heavy job
-of either run was allowed to start. Those locked passes are the headline
-timings. Gemma 3 4B's locked pass still counts as contended by load: the
-1-minute average was still falling from earlier work when it started (28.2 at
-start, 14.4 at end), and one clean took 107 s. Its median, 22.0 s, matches its
-first pass (22.2 s). The load-gated re-run of Gemma 3 4B (29.8 s) ran under
-peak load 48 and is shown for transparency only. A Granite re-run stopped
-partway (contended from the start) is not shown. Gemma 3 1B's first pass
-predates load recording; the one `uptime` sample taken during it read 24.55,
-so treat it as contended.
+2507, the rows where speed could decide — was re-run while holding the two
+runs' shared CPU lock (`flock cpu-quiet.lock`), which stops the other run
+from *starting* heavy work but not work it already has in flight. Granite's
+and Qwen's locked passes were quiet. **Gemma 3 4B was never timed quiet:**
+its first locked pass started while the 1-minute average was still falling
+from earlier work (28.2 at start; one clean took 107 s), and two more locked
+passes, each started below 14, rose to about 22 while the other run's worker
+(already running, about 7.6 cores) kept going — medians 30.7 and 30.3 s.
+Across its five passes Gemma 3 4B's median ranges from 22.0 to 30.7 s.
+
+The bar's speed rule takes each model's "least contended" pass — a locked
+pass first, then the lowest peak load — which for Gemma 3 4B is locked re-run
+3 at 30.3 s. That makes its speed column read "yes" for Phi-3.5 Mini and the
+QAT control even though no verdict turns on it (both fail fidelity); the
+next column, against Gemma's fastest single clean (21.6 s), is the stricter
+check. The load-gated re-run of Gemma 3 4B (29.8 s) is shown for
+transparency; a Granite re-run stopped partway (contended from the start) is
+not shown. Gemma 3 1B's first pass predates load recording; the one `uptime`
+sample taken during it read 24.55, so treat it as contended.
 
 | model | pass | 1-min load: start · peak · end | load label | FLUENT/clean wall ms median [min–max] |
 |---|---|---|---|---|
@@ -105,13 +144,15 @@ so treat it as contended.
 | gemma-3-1b | first pass | – · – · – | load not recorded | 7484 [7417–14594] |
 | lfm2-2.6b | first pass | 10.0 · 16.7 · 14.9 | contended | 11294 [8147–12817] |
 | granite-4.0-micro | first pass | 4.0 · 13.5 · 13.2 | quiet | 19099 [18945–19291] |
-| granite-4.0-micro | locked re-run | 13.3 · 13.7 · 13.5 | quiet | 18558 [18372–19819] |
+| granite-4.0-micro | locked re-run 1 | 13.3 · 13.7 · 13.5 | quiet | 18558 [18372–19819] |
 | phi-3.5-mini | first pass | 6.7 · 16.7 · 14.0 | contended | 23675 [23330–24913] |
 | gemma-3-4b | first pass | 14.0 · 37.9 · 21.1 | contended | 22172 [21888–26722] |
 | gemma-3-4b | re-run (bench-rerun) | 12.9 · 48.4 · 38.3 | contended | 29793 [28839–86030] |
-| gemma-3-4b | locked re-run | 28.2 · 44.4 · 14.4 | contended | 22009 [21571–107076] |
+| gemma-3-4b | locked re-run 1 | 28.2 · 44.4 · 14.4 | contended | 22009 [21571–107076] |
+| gemma-3-4b | locked re-run 2 | 13.5 · 22.4 · 22.4 | contended | 30726 [30229–31274] |
+| gemma-3-4b | locked re-run 3 | 11.4 · 21.9 · 20.3 | contended | 30339 [30237–30759] |
 | qwen3-4b-2507 | first pass | 6.7 · 35.2 · 23.5 | contended | 21024 [20981–21174] |
-| qwen3-4b-2507 | locked re-run | 8.9 · 13.2 · 13.2 | quiet | 21117 [21079–21212] |
+| qwen3-4b-2507 | locked re-run 1 | 8.9 · 13.2 · 13.2 | quiet | 21117 [21079–21212] |
 | gemma-3-4b-qat | first pass | 8.6 · 43.2 · 43.2 | contended | 22387 [19861–51366] |
 | ministral-3-3b | first pass | 17.9 · 49.6 · 43.1 | contended | 36301 [22429–72022] |
 | lfm2.5-8b-a1b | first pass | 12.7 · 44.5 · 44.5 | contended | 12572 [11543–19260] |
@@ -129,11 +170,11 @@ single clean across all of a model's passes.
 | qwen3.5-0.8b | gemma-3-1b | apache-2.0 ✓ | yes (25 vs 35) | no | no (fails 0/2, retention 1.00 vs 1.00) | yes (6854 [first pass] vs 7484 [first pass]) | yes (6573 vs 7417) | **no** |
 | lfm2-1.2b | gemma-3-1b | lfm1.0 ✗ | yes (0 vs 35) | yes | no (fails 5/5, retention 0.62 vs 1.00) | yes (4891 [first pass] vs 7484 [first pass]) | yes (4691 vs 7417) | **no** |
 | lfm2-2.6b | gemma-3-1b | lfm1.0 ✗ | yes (0 vs 35) | yes | no (fails 5/5, retention 0.74 vs 1.00) | no (11294 [first pass] vs 7484 [first pass]) | no (8147 vs 7417) | **no** |
-| granite-4.0-micro | gemma-3-4b | apache-2.0 ✓ | yes (0 vs 35) | yes | no (fails 0/0, retention 0.95 vs 1.00) | yes (18558 [locked re-run] vs 22009 [locked re-run]) | yes (18372 vs 21571) | **no** |
-| phi-3.5-mini | gemma-3-4b | mit ✓ | yes (0 vs 35) | yes | no (fails 3/5, retention 0.89 vs 1.00) | no (23675 [first pass] vs 22009 [locked re-run]) | no (23330 vs 21571) | **no** |
-| qwen3-4b-2507 | gemma-3-4b | apache-2.0 ✓ | yes (0 vs 35) | yes | no (fails 0/0, retention 0.94 vs 1.00) | yes (21117 [locked re-run] vs 22009 [locked re-run]) | yes (20981 vs 21571) | **no** |
-| gemma-3-4b-qat | gemma-3-4b | gemma ✓ | yes (6 vs 35) | yes | no (fails 0/5, retention 0.98 vs 1.00) | no (22387 [first pass] vs 22009 [locked re-run]) | yes (19861 vs 21571) | **no** |
-| ministral-3-3b | gemma-3-4b | apache-2.0 ✓ | yes (0 vs 35) | yes | no (fails 5/5, retention 0.65 vs 1.00) | no (36301 [first pass] vs 22009 [locked re-run]) | no (22429 vs 21571) | **no** |
+| granite-4.0-micro | gemma-3-4b | apache-2.0 ✓ | yes (0 vs 35) | yes | no (fails 0/0, retention 0.95 vs 1.00) | yes (18558 [locked re-run 1] vs 30339 [locked re-run 3]) | yes (18372 vs 21571) | **no** |
+| phi-3.5-mini | gemma-3-4b | mit ✓ | yes (0 vs 35) | yes | no (fails 3/5, retention 0.89 vs 1.00) | yes (23675 [first pass] vs 30339 [locked re-run 3]) | no (23330 vs 21571) | **no** |
+| qwen3-4b-2507 | gemma-3-4b | apache-2.0 ✓ | yes (0 vs 35) | yes | no (fails 0/0, retention 0.94 vs 1.00) | yes (21117 [locked re-run 1] vs 30339 [locked re-run 3]) | yes (20981 vs 21571) | **no** |
+| gemma-3-4b-qat | gemma-3-4b | gemma ✓ | yes (6 vs 35) | yes | no (fails 0/5, retention 0.98 vs 1.00) | yes (22387 [first pass] vs 30339 [locked re-run 3]) | yes (19861 vs 21571) | **no** |
+| ministral-3-3b | gemma-3-4b | apache-2.0 ✓ | yes (0 vs 35) | yes | no (fails 5/5, retention 0.65 vs 1.00) | no (36301 [first pass] vs 30339 [locked re-run 3]) | no (22429 vs 21571) | **no** |
 | lfm2.5-8b-a1b | gemma-3-12b | lfm1.0 ✗ | no (54 vs 0) | no | no (fails 5/5, retention 1.00 vs 0.98) | yes (12572 [first pass] vs 61879 [first pass]) | yes (11543 vs 60770) | **no** |
 | mistral-nemo-12b | gemma-3-12b | apache-2.0 ✓ | no (0 vs 0) | yes | no (fails 5/5, retention 0.65 vs 0.98) | no (116644 [first pass] vs 61879 [first pass]) | no (101837 vs 60770) | **no** |
 
@@ -456,8 +497,8 @@ node scripts/bench-cleanup.mjs --report "$OUT" --locked="$OUT-locked" \
 The shipped Gemmas need no `--licences` entry (they are "gemma"); a candidate
 missing from it reports as "unknown", which the bar treats as not shippable.
 The speed table on this page also lists a load-gated re-run of Gemma 3 4B
-that turned out contended (`--also=<dir>` adds such a pass); it decides
-nothing.
+(`--also=<dir>`) and two more locked passes of it (one `--locked=<dir>` per
+pass, numbered in order); all of Gemma 3 4B's passes were contended.
 
 Check a candidate on Hugging Face without downloading it:
 

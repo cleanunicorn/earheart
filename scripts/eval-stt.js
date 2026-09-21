@@ -1035,8 +1035,7 @@ function report(result) {
     const b = f.brackets;
     lines.push(`Speed from ${f.file}: ${f.subset}, ${f.utterances} utterances; default first/last ${num(b.first, 4)} / ${num(b.last, 4)} (drift ${pct(b.drift, 1)} %, limit ${BRACKET_DRIFT * 100} %)${b.stable ? "" : ` — NOT USABLE: ${b.reason}`}`);
   }
-  const lockOf = (x) => x && x.cpuLock && x.cpuLock.role === "held for the whole pass";
-  if (lockOf(result) || (result.passes && result.passes.speed && result.passes.speed.every((p) => p.cpuLock))) {
+  if (lockOfPass(result) || (result.passes && result.passes.speed && result.passes.speed.every((p) => p.cpuLock))) {
     lines.push("Every speed timing was taken while holding cpu-quiet.lock, shared with the parallel cleanup run.");
   }
   if (result.resumed && result.resumed.acrossCode) {

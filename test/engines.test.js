@@ -162,6 +162,24 @@ test("exactly one cleanup model is marked default", () => {
   assert.strictEqual(defaults[0].id, registry.DEFAULT_CLEANUP_MODEL);
 });
 
+test("exactly one STT model is marked default, and it is still v3 int8", () => {
+  const defaults = registry.listModels("stt").filter((m) => m.default);
+  assert.strictEqual(defaults.length, 1);
+  assert.strictEqual(defaults[0].id, registry.DEFAULT_STT_MODEL);
+  // Pinned by name: adding a model to the catalog must never move the default
+  // for every user as a side effect — promoting one is a deliberate change.
+  assert.strictEqual(registry.DEFAULT_STT_MODEL, "parakeet-tdt-0.6b-v3-int8");
+});
+
+test("registry: every model carries a user-facing note", () => {
+  for (const kind of Object.keys(registry.MODELS)) {
+    for (const model of registry.listModels(kind)) {
+      assert.strictEqual(typeof model.note, "string", `${kind}/${model.id}: missing note`);
+      assert.ok(model.note.trim().length > 0, `${kind}/${model.id}: empty note`);
+    }
+  }
+});
+
 // Every concrete download URL across every model, paired with its model id so a
 // failure points at the offending entry.
 function allModelFiles() {
@@ -216,6 +234,13 @@ test("registry: every model file is checksum-pinned to an immutable commit", () 
         /\/resolve\/main\//,
         `${where}: pins resolve/main (a moving ref); use resolve/<commit>`
       );
+      // …and positively name a full 40-hex commit: a tag or any other branch
+      // name moves just the same.
+      assert.match(
+        url.pathname,
+        /\/resolve\/[0-9a-f]{40}\//,
+        `${where}: must pin resolve/<40-hex commit>`
+      );
     }
   }
 });
@@ -231,6 +256,23 @@ test("registry: no model file is hosted on a gated Hugging Face repo", () => {
       `${kind}/${id} -> ${file.name}: hosted on gated HF owner "${owner}"; ` +
         `anonymous download returns HTTP 401. Use an ungated mirror.`
     );
+  }
+});
+
+test("registry: every STT model resolves its sherpa files", () => {
+  for (const model of registry.listModels("stt")) {
+    assert.ok(model.sherpa, `${model.id}: missing sherpa block`);
+    const names = model.files.map((f) => f.name);
+    for (const role of ["encoder", "decoder", "tokens"]) {
+      assert.ok(model.sherpa[role], `${model.id}: missing sherpa.${role}`);
+    }
+    for (const role of ["encoder", "decoder", "joiner", "tokens"]) {
+      if (!model.sherpa[role]) continue;
+      assert.ok(
+        names.includes(model.sherpa[role]),
+        `${model.id}: sherpa.${role} "${model.sherpa[role]}" is not among downloaded files ${JSON.stringify(names)}`
+      );
+    }
   }
 });
 

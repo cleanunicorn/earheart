@@ -8,6 +8,7 @@
 //     [--seeds=17,29,43,61,79] [--corpus=fluent,reported[,short]] [--gpu] \
 //     <model.gguf>
 //   node scripts/bench-cleanup.mjs --probe <owner/repo> <file.gguf>
+//   node scripts/bench-cleanup.mjs --rescore <out dir>
 //   node scripts/bench-cleanup.mjs --report <out dir> [--licences=<id>=<licence>,…]
 //
 // Every clean is prompted exactly as the app prompts: the default config's
@@ -37,7 +38,9 @@
 // every output, for spot checks. stdout gets the model's markdown table row.
 // --probe prints one survey row from Hugging Face (architecture, template,
 // licence, gating, pinned commit, sha256, bytes) without downloading weights.
-// --report reads every summary under an --out directory and prints the
+// --rescore re-scores every saved run under an --out directory from its raw
+// outputs with the current scoring (timings kept), so a scoring fix reaches
+// every model alike. --report reads every summary under an --out directory and prints the
 // results table, each candidate against its byte-nearest shipped Gemma through
 // the catalog bar (meetsBar in scripts/cleanup-metrics.js), and the GPU
 // footnote — the tables in docs/cleanup-models.md and the PR. Re-measured
@@ -72,6 +75,7 @@ const USAGE =
   "usage: node scripts/bench-cleanup.mjs --out=<dir> [--id=<label>] [--seeds=17,29,43,61,79]\n" +
   "         [--corpus=fluent,reported[,short]] [--gpu] <model.gguf>\n" +
   "       node scripts/bench-cleanup.mjs --probe <owner/repo> <file.gguf>\n" +
+  "       node scripts/bench-cleanup.mjs --rescore <out dir>\n" +
   "       node scripts/bench-cleanup.mjs --report <out dir> [--licences=<id>=<licence>,...]\n" +
   "         [--baselines=gemma-3-1b,gemma-3-4b,gemma-3-12b] [--also=<out dir>]... [--locked=<out dir>]...";
 
@@ -99,6 +103,7 @@ function parseArgs(argv) {
     const [k, v] = a.startsWith("--") ? a.slice(2).split(/=(.*)/s) : [null, null];
     if (k === "probe") opts.probe = { repo: argv[++i], file: argv[++i] };
     else if (k === "report") opts.report = argv[++i];
+    else if (k === "rescore") opts.rescore = argv[++i];
     else if (k === "licences") opts.licences = Object.fromEntries(v.split(",").map((kv) => kv.split("=")));
     else if (k === "baselines") opts.baselines = v.split(",");
     else if (k === "also") opts.also.push(v);
@@ -113,6 +118,10 @@ function parseArgs(argv) {
   }
   if (opts.probe) {
     if (!opts.probe.repo || !opts.probe.file) usage("--probe needs <owner/repo> <file.gguf>");
+    return opts;
+  }
+  if (opts.rescore !== undefined) {
+    if (!opts.rescore || !fs.existsSync(opts.rescore)) usage("--rescore needs the --out directory of earlier runs");
     return opts;
   }
   if (opts.report !== undefined) {
@@ -306,8 +315,8 @@ async function benchModel(modelPath, opts, mod) {
 const fmt = (x, d = 0) => (x === null || x === undefined ? "–" : Number(x).toFixed(d));
 
 const TABLE_HEAD =
-  "| model | FLUENT clean: fillers/repeats (model) | clean runs | FLUENT polished: fillers/repeats | delivered after backstop (clean) | fidelity fails clean/polished | ratio | retention | echo/refusal/runaway | REPORTED: stumbles · fidelity fails | CPU wall ms median [min–max] | load avg | TTFT ms | decode tok/s | load ms | size | chat wrapper |\n" +
-  "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|";
+  "| model | FLUENT clean: fillers/repeats (model) | clean runs | FLUENT polished: fillers/repeats | delivered after backstop (clean) | fidelity fails clean/polished | ratio | retention | novel | echo/refusal/runaway | REPORTED: stumbles · fidelity fails | CPU wall ms median [min–max] | load avg | TTFT ms | decode tok/s | load ms | size | chat wrapper |\n" +
+  "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|";
 
 function markdownRow({ manifest: m, summary }) {
   const c = summary["fluent/clean"];
@@ -318,7 +327,7 @@ function markdownRow({ manifest: m, summary }) {
   return (
     `| ${m.id} | ${c.fillers}/${c.repeats} | ${c.cleanRuns}/${c.n} | ${p ? `${p.fillers}/${p.repeats}` : "–"} | ` +
     `${c.deliveredFillers}/${c.deliveredRepeats} | ${c.fidelityFails}/${p ? p.fidelityFails : "–"} | ` +
-    `${fmt(c.medianRatio, 2)} | ${fmt(c.medianRetention, 2)} | ${flags(c)}${p ? ` · ${flags(p)}` : ""} | ` +
+    `${fmt(c.medianRatio, 2)} | ${fmt(c.medianRetention, 2)} | ${fmt(c.medianNovel, 2)} | ${flags(c)}${p ? ` · ${flags(p)}` : ""} | ` +
     `${r ? `${r.stumbles} · ${r.fidelityFails}` : "–"} | ${fmt(w.median)} [${fmt(w.min)}–${fmt(w.max)}] | ${fmt(c.loadAvg1, 1)} | ` +
     `${fmt(c.ttftMs)} | ${fmt(c.decodeTps, 1)} | ${m.loadMs} | ${(m.bytes / 1e9).toFixed(2)} GB | ${m.chatWrapper} |`
   );
@@ -334,6 +343,40 @@ function markdownRow({ manifest: m, summary }) {
 // Every pass is labelled by its load (classifyPass); the bar's speed criterion
 // uses each model's least-contended pass, and the table also shows whether the
 // verdict survives the fastest clean of every pass (speedEstimates).
+// Re-score every saved run under an --out directory from its raw outputs with
+// the current scoring, keeping its timings and manifest. Scoring changes after
+// a benchmark (a new guard, a counter fix) are then applied to every model
+// alike, and the tables regenerate from the same raw text.
+function rescore(dir) {
+  let models = 0;
+  let runs = 0;
+  for (const d of fs.readdirSync(dir).map((x) => path.join(dir, x))) {
+    const runsFile = path.join(d, "runs.jsonl");
+    const summaryFile = path.join(d, "summary.json");
+    if (!fs.existsSync(runsFile) || !fs.existsSync(summaryFile)) continue;
+    const rows = fs.readFileSync(runsFile, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    for (const row of rows) {
+      const raw = path.join(d, "raw", `${row.corpus}-${row.style}-${row.index}-s${row.seed}.txt`);
+      const { systemPrompt } = resolveCleanup({ ...DEFAULTS.cleanup, style: row.style });
+      const score = metrics.scoreOutput({
+        input: CORPORA[row.corpus][row.index],
+        output: fs.readFileSync(raw, "utf8"),
+        stopReason: row.stopReason,
+        systemPrompt,
+        corpus: row.corpus,
+      });
+      row.score = { ...score, delivered: undefined };
+      runs++;
+    }
+    const { manifest } = JSON.parse(fs.readFileSync(summaryFile, "utf8"));
+    manifest.rescoredAt = new Date().toISOString();
+    fs.writeFileSync(runsFile, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    fs.writeFileSync(summaryFile, JSON.stringify({ manifest, summary: metrics.summarizeRuns(rows) }, null, 2) + "\n");
+    models++;
+  }
+  return { models, runs };
+}
+
 function readRuns(dir) {
   return fs
     .readdirSync(dir)
@@ -462,6 +505,9 @@ async function main(argv) {
   }
   if (opts.probe) {
     await probe(opts.probe);
+  } else if (opts.rescore) {
+    const n = rescore(opts.rescore);
+    console.log(`re-scored ${n.runs} runs of ${n.models} models under ${opts.rescore}`);
   } else if (opts.report) {
     console.log(report(opts));
   } else {
@@ -482,4 +528,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   await main(process.argv.slice(2));
 }
 
-export { UsageError, parseArgs, plan, markdownRow, report };
+export { UsageError, parseArgs, plan, markdownRow, report, rescore };

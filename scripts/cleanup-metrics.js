@@ -5,7 +5,7 @@
 //
 // Filler counts alone would reward a model for deleting the user's words, so
 // every output is also held to fidelity guards: length ratio, content-word
-// retention, critical tokens (negations, scope words, numbers, code), prompt
+// retention, words the speaker never said, critical tokens (negations, scope words, numbers, code), prompt
 // echo (including visible <think> reasoning), refusal, empty output and a
 // runaway. A runaway is scored the way production delivers it: the engine
 // throws on a maxTokens stop and the user gets the raw transcript
@@ -160,10 +160,14 @@ function detectRefusal(output) {
 
 // Frozen at the plumbing run (M5) before any candidate was measured. FLUENT is
 // mostly fluent, so an honest cleanup keeps nearly all of it; SHORT/REPORTED
-// are filler-dense and legitimately shrink more.
+// are filler-dense and legitimately shrink more. Retention only sees words the
+// model dropped, so maxNovel bounds the words it added: every run that passed
+// the other guards on 2026-09-21 stayed at or below 0.07, and the rewrites the
+// spot checks flagged start around 0.15.
 const FIDELITY = {
   ratio: { fluent: [0.85, 1.05], other: [0.7, 1.1] },
   minRetention: 0.9,
+  maxNovel: 0.1,
 };
 
 function scoreOutput({ input, output, stopReason, systemPrompt = "", corpus = "fluent" }) {
@@ -176,10 +180,11 @@ function scoreOutput({ input, output, stopReason, systemPrompt = "", corpus = "f
   const empty = text === "";
   const echo = detectEcho(text, systemPrompt);
   const refusal = detectRefusal(text);
+  const novel = novelContentRatio(input, text);
   const [lo, hi] = corpus === "fluent" ? FIDELITY.ratio.fluent : FIDELITY.ratio.other;
   const fidelityOk =
     !runaway && !empty && !echo && !refusal && critical.lost === 0 &&
-    ratio >= lo && ratio <= hi && retention >= FIDELITY.minRetention;
+    ratio >= lo && ratio <= hi && retention >= FIDELITY.minRetention && novel <= FIDELITY.maxNovel;
   return {
     fillers: countFillers(text),
     repeats: countRepeats(text),
@@ -188,7 +193,7 @@ function scoreOutput({ input, output, stopReason, systemPrompt = "", corpus = "f
     deliveredRepeats: countRepeats(delivered),
     ratio,
     retention,
-    novel: novelContentRatio(input, text),
+    novel,
     criticalLost: critical.lost,
     echo,
     refusal,

@@ -135,6 +135,25 @@ test("echo, refusal, empty and critical loss each fail fidelity", () => {
   assert.strictEqual(lossy.fidelityOk, false);
 });
 
+test("a model that keeps every word but adds its own fails the novelty guard", () => {
+  const input = "so um I think that the the parser uh is broken and we we should fix it";
+  const s = scoreOutput({
+    input,
+    output: "I think the parser is broken; we should fix it in postgres tomorrow.",
+    systemPrompt: PROMPT,
+    corpus: "short",
+  });
+  // Length, retention and critical tokens all pass; only the invented words fail it.
+  assert.ok(s.ratio >= FIDELITY.ratio.other[0] && s.ratio <= FIDELITY.ratio.other[1], String(s.ratio));
+  assert.strictEqual(s.retention, 1);
+  assert.strictEqual(s.criticalLost, 0);
+  assert.ok(s.novel > FIDELITY.maxNovel, String(s.novel));
+  assert.strictEqual(s.fidelityOk, false);
+  // At the threshold it still passes.
+  assert.strictEqual(FIDELITY.maxNovel, 0.1);
+  assert.strictEqual(fluent(FLUENT.modelOutput).novel, 0);
+});
+
 test("a runaway delivers the raw input, as production does", () => {
   const s = fluent("I want to I want to I want to", { stopReason: "maxTokens" });
   assert.strictEqual(s.runaway, true);

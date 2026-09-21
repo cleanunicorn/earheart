@@ -188,3 +188,31 @@ test("markdownRow renders a saved run's FLUENT numbers", async () => {
   assert.match(row, /1002 \[1001–1003\]/);
   assert.match(row, /2\.00 GB \| X \|$/);
 });
+
+test("rescore re-scores saved runs from their raw outputs and keeps the timings", async () => {
+  const { rescore } = await load();
+  const dir = tmpdir();
+  const d = path.join(dir, "m");
+  fs.mkdirSync(path.join(d, "raw"), { recursive: true });
+  // A stale score (as if an older scorer wrote it) next to the real raw text.
+  const stale = { ...CLEAN, fillers: 99, fidelityOk: true };
+  const rows = [
+    { corpus: "fluent", style: "clean", index: 0, seed: 1, stopReason: "eogToken", wallMs: 1234, loadAvg1: 9, score: stale },
+    { corpus: "fluent", style: "clean", index: 0, seed: 2, stopReason: "maxTokens", wallMs: 5678, loadAvg1: 9, score: stale },
+  ];
+  fs.writeFileSync(path.join(d, "raw", "fluent-clean-0-s1.txt"), FLUENT.modelOutput + "\n");
+  fs.writeFileSync(path.join(d, "raw", "fluent-clean-0-s2.txt"), "I want to I want to\n");
+  fs.writeFileSync(path.join(d, "runs.jsonl"), rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+  fs.writeFileSync(path.join(d, "summary.json"), JSON.stringify({ manifest: { id: "m" }, summary: {} }));
+
+  assert.deepStrictEqual(rescore(dir), { models: 1, runs: 2 });
+  const after = fs.readFileSync(path.join(d, "runs.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  assert.strictEqual(after[0].score.fillers, 6); // FLUENT.modelOutput's six
+  assert.strictEqual(after[0].wallMs, 1234);
+  assert.strictEqual(after[1].score.runaway, true); // stopReason is honoured
+  const { manifest, summary } = JSON.parse(fs.readFileSync(path.join(d, "summary.json"), "utf8"));
+  assert.strictEqual(manifest.id, "m");
+  assert.ok(manifest.rescoredAt);
+  assert.strictEqual(summary["fluent/clean"].fillers, 6);
+  assert.strictEqual(summary["fluent/clean"].fidelityFails, 1);
+});

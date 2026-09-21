@@ -585,25 +585,25 @@ function judge(acc, spds, cfg) {
  * Only shipped models that were never candidates are verdict-free baselines.
  */
 function planModels(shipped, candidates, { baselineId, exploratory = false, pass = "both", models = null }) {
-  const def = shipped.find((m) => m.id === baselineId);
-  if (!def) throw new Error(`the baseline ${baselineId} is not in the catalog`);
+  const defaultModel = shipped.find((m) => m.id === baselineId);
+  if (!defaultModel) throw new Error(`the baseline ${baselineId} is not in the catalog`);
   const candidateIds = new Set(candidates.map((c) => c.id));
-  const list = [{ model: def, role: "bracket-first", arm: "shipped" }];
+  const list = [{ model: defaultModel, role: "bracket-first", arm: "shipped" }];
   for (const m of shipped) {
-    if (m.id !== def.id && !candidateIds.has(m.id)) list.push({ model: m, role: "baseline", arm: "shipped" });
+    if (m.id !== defaultModel.id && !candidateIds.has(m.id)) list.push({ model: m, role: "baseline", arm: "shipped" });
   }
   for (const c of candidates.filter((x) => x.arm === "wired")) {
     const catalogued = shipped.find((m) => m.id === c.id);
     list.push({ model: catalogued || c, role: "candidate", arm: "wired", catalogued: Boolean(catalogued) });
   }
   if (exploratory) {
-    list.push({ model: def, role: "calibration", arm: "exploratory" });
+    list.push({ model: defaultModel, role: "calibration", arm: "exploratory" });
     for (const c of candidates.filter((x) => x.arm === "exploratory")) {
       list.push({ model: c, role: "candidate", arm: "exploratory", catalogued: false });
     }
   }
   // The closing bracket only checks the machine stayed quiet: speed's concern.
-  if (pass !== "accuracy") list.push({ model: def, role: "bracket-last", arm: "shipped" });
+  if (pass !== "accuracy") list.push({ model: defaultModel, role: "bracket-last", arm: "shipped" });
   return models ? list.filter((x) => models.includes(x.model.id)) : list;
 }
 

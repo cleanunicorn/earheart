@@ -955,3 +955,28 @@ test("stt-eval worker: load reports the app's runtime; transcribe before load fa
     process.parentPort = savedPort;
   }
 });
+
+test("stt-eval harness: a run is only 'complete' if its first/last default runs pass the judge's bracket rule", () => {
+  // Every shipped model measured, as runStatus requires; the default opens and closes the run.
+  const shippedRows = registry.listModels("stt")
+    .filter((m) => m.id !== manifest.BASELINE_ID)
+    .map((m) => speedRow(m.id, m.id === "parakeet-tdt-110m-en" ? "candidate" : "baseline", 0.03, 6));
+  const run = (lastEndLoad, lastRtf = 0.0429) => ({
+    machine: MACHINE,
+    rows: [
+      speedRow(manifest.BASELINE_ID, "bracket-first", 0.0425, 7),
+      ...shippedRows,
+      speedRow(manifest.BASELINE_ID, "bracket-last", lastRtf, lastEndLoad),
+    ],
+  });
+  assert.strictEqual(harness.runStatus(run(8), { pass: "both" }), "complete");
+  assert.strictEqual(harness.runStatus(run(8), { pass: "speed" }), "speed complete");
+  // Clean by the in-pass flags and within drift, but the closing default ended at load 17.9 (> 8 + 4):
+  // the judge rejects the brackets, so the run must not claim to be complete.
+  assert.strictEqual(harness.runStatus(run(17.9), { pass: "both" }), "unstable");
+  assert.strictEqual(harness.runStatus(run(17.9), { pass: "speed" }), "unstable");
+  // Drift past 10 % is unstable too, as before.
+  assert.strictEqual(harness.runStatus(run(8, 0.05), { pass: "both" }), "unstable");
+  // The accuracy pass has no brackets to judge.
+  assert.strictEqual(harness.runStatus(run(17.9), { pass: "accuracy" }), "accuracy complete");
+});

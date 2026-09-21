@@ -859,10 +859,10 @@ function runStatus(result, opts) {
   if (opts.models || opts.limit) return "partial (development subset)";
   if (!haveBaselines || failed) return "incomplete";
   if (opts.pass === "accuracy") return "accuracy complete";
-  const first = rows.find((r) => r.role === "bracket-first" && r.status === "measured");
-  const last = rows.find((r) => r.role === "bracket-last" && r.status === "measured");
-  const stable = first && last && !first.contended && !last.contended &&
-    Math.abs(last.decodeRtf - first.decodeRtf) / first.decodeRtf <= BRACKET_DRIFT;
+  // The same test the judge applies to the first/last default runs (clean,
+  // DV10 end-of-decode load, drift), so a run is never "complete" while its
+  // speed numbers are unusable.
+  const { stable } = e.speedFileBrackets(result, judgeDefaults());
   return stable ? (opts.pass === "speed" ? "speed complete" : "complete") : "unstable";
 }
 
@@ -1190,4 +1190,4 @@ if (process.versions.electron || require.main === module) {
   );
 }
 
-module.exports = { parseArgs, combine, report, workerRecognizer, directRecognizer };
+module.exports = { parseArgs, combine, report, runStatus, workerRecognizer, directRecognizer };

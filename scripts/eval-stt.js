@@ -399,61 +399,49 @@ function workerRecognizer(model, dir) {
 }
 
 // The exploratory path, for families the worker has no config for yet: the
-// same recognizer settings the worker uses (16 kHz, 80-dim features, the app's
-// thread count, CPU), built in this process. Rows from here are labelled and
-// compared only against the default measured the same way (the calibration
-// row); a winner is wired into the worker and re-measured through it before
-// it can reach the catalog.
+// same recognizer settings in scripts/stt-eval-worker.js, forked the same way
+// (a utilityProcess). Rows from here are labelled and compared only against
+// the default measured through the same file (the calibration row); a winner
+// is wired into the real worker and re-measured there before it can reach the
+// catalog.
 function directRecognizer(model, dir) {
-  const sherpaOnnx = require("sherpa-onnx-node");
-  const { wavToFloat32 } = require("../main/util/wav");
-  const p = (f) => path.join(dir, f);
-  const s = model.sherpa;
-  const families = {
-    transducer: () => ({ transducer: { encoder: p(s.encoder), decoder: p(s.decoder), joiner: p(s.joiner) } }),
-    whisper: () => ({ whisper: { encoder: p(s.encoder), decoder: p(s.decoder) } }),
-    moonshine: () => ({
-      moonshine: {
-        preprocessor: p(s.preprocessor),
-        encoder: p(s.encoder),
-        uncachedDecoder: p(s.uncachedDecoder),
-        cachedDecoder: p(s.cachedDecoder),
-      },
-    }),
-    nemoCtc: () => ({ nemoCtc: { model: p(s.model) } }),
-    canary: () => ({ canary: { encoder: p(s.encoder), decoder: p(s.decoder), srcLang: "en", tgtLang: "en", usePnc: 1 } }),
-  };
-  const family = s.family || (s.joiner ? "transducer" : "whisper");
-  const runtime = { numThreads: APP_THREADS, provider: "cpu" };
-  let recognizer = null;
+  const { utilityProcess } = require("electron");
+  const child = utilityProcess.fork(path.join(__dirname, "stt-eval-worker.js"), [], {
+    serviceName: "earheart-stt-eval-direct",
+    stdio: "inherit",
+  });
+  let nextId = 1;
+  const pending = new Map();
+  child.on("message", (msg) => {
+    const entry = pending.get(msg.id);
+    if (!entry) return;
+    pending.delete(msg.id);
+    clearTimeout(entry.timer);
+    if (msg.ok) entry.resolve(msg.result);
+    else entry.reject(new Error(msg.error));
+  });
+  child.on("exit", () => {
+    for (const entry of pending.values()) {
+      clearTimeout(entry.timer);
+      entry.reject(new Error("exploratory worker exited"));
+    }
+    pending.clear();
+  });
+  const request = (type, args, timeoutMs) =>
+    new Promise((resolve, reject) => {
+      const id = nextId++;
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`${type} timed out after ${timeoutMs} ms`));
+      }, timeoutMs);
+      pending.set(id, { resolve, reject, timer });
+      child.postMessage({ id, type, ...args });
+    });
   return {
     path: "direct",
-    async load() {
-      recognizer = new sherpaOnnx.OfflineRecognizer({
-        featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
-        modelConfig: {
-          ...families[family](),
-          tokens: p(s.tokens),
-          ...runtime,
-          ...(s.modelType ? { modelType: s.modelType } : family === "transducer" ? { modelType: "nemo_transducer" } : {}),
-          debug: false,
-        },
-      });
-      return { ready: true, ...runtime };
-    },
-    async transcribe(wav) {
-      const { samples, sampleRate } = wavToFloat32(wav);
-      const stream = recognizer.createStream();
-      stream.acceptWaveform({ sampleRate, samples });
-      const startedAt = Date.now();
-      recognizer.decode(stream);
-      const decodeMs = Date.now() - startedAt;
-      const result = recognizer.getResult(stream);
-      return { text: (result && result.text ? result.text : "").trim(), decodeMs };
-    },
-    close() {
-      recognizer = null;
-    },
+    load: () => request("load", { dir, sherpa: model.sherpa }, 600000),
+    transcribe: (wav, audioSec) => request("transcribe", { wav }, Math.max(180000, audioSec * 20000)),
+    close: () => child.kill(),
   };
 }
 

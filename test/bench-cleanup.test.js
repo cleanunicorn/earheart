@@ -7,7 +7,7 @@
 // FLUENT can't be dropped, the GPU pass never feeds the bar, a locked re-run
 // wins over a contended one, and an unknown licence never reaches the catalog.
 
-const { test } = require("node:test");
+const { test, after } = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -20,9 +20,15 @@ const { resolveCleanup } = require("../main/cleanup-styles");
 
 const load = () => import("../scripts/bench-cleanup.mjs");
 
+const made = [];
 function tmpdir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "bench-cleanup-test-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bench-cleanup-test-"));
+  made.push(dir);
+  return dir;
 }
+after(() => {
+  for (const dir of made) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 test("parseArgs: measure mode defaults and validation", async () => {
   const { parseArgs, UsageError } = await load();

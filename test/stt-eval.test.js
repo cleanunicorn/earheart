@@ -59,6 +59,15 @@ test("stt-eval: constructs N3 does not model are left alone and flagged", () => 
   }
   // Alphanumerics are not spelled out, so both sides keep the same token.
   assert.deepStrictEqual(e.normalise("F1 and M16"), ["f1", "and", "m16"]);
+  // A number before a "." glued to more characters IS partly spelled out — the
+  // behaviour the published numbers were measured with, pinned as it is — and
+  // every such token is flagged as unmodelled.
+  assert.deepStrictEqual(e.normalise("the 802.11n standard"), ["the", "eight", "hundred", "two", "11n", "standard"]);
+  assert.deepStrictEqual(e.normalise("5.0Ghz and 2.4Ghz"), ["five", "0ghz", "and", "two", "4ghz"]);
+  assert.deepStrictEqual(e.normalise("v1.2 build"), ["v1", "2", "build"]);
+  for (const raw of ["the 802.11n standard", "5.0Ghz and 2.4Ghz", "v1.2 build"]) {
+    assert.ok(e.hasUnmodelledConstruct(raw), raw);
+  }
 });
 
 test("stt-eval: each normalisation stage does one thing and can be switched off", () => {

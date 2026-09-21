@@ -23,9 +23,13 @@
 // Digits are spelled out, never parsed back: spelling a number is a total
 // function, while reading "forty thousand" back into 40000 needs a grammar.
 // Constructs N3 does not model (clock times, ranges, alphanumerics like "F1",
-// fractions) are left alone and flagged by hasUnmodelledConstruct, so the
-// harness can report WER with and without them — if the ranking holds on both,
-// the normalisation is not what decided it.
+// fractions) are flagged by hasUnmodelledConstruct, so the harness can report
+// WER with and without them — if the ranking holds on both, the normalisation
+// is not what decided it. Most are left as they are; a number glued to a "."
+// that is itself glued to more characters is partly spelled out ("802.11n" ->
+// "eight hundred two 11n", "5.0Ghz" -> "five 0ghz", "v1.2" -> "v1 2"). That is
+// the same on both sides and always flagged, and it is kept as measured rather
+// than changed after the numbers existed.
 //
 // `wer_verbatim` is N0 + N5 only: case and punctuation intact, which is what
 // Earheart actually pastes.
@@ -111,8 +115,10 @@ const toPlural = (w) => (w.endsWith("y") ? `${w.slice(0, -1)}ies` : `${w}s`);
 
 // One number-ish token: optional "$", an integer (optionally with thousands
 // separators), an optional decimal part, and an optional %, ordinal, or decade
-// suffix. Never glued to a letter, digit, or "." on either side — "F1",
-// "802.11n" and "70km" stay as they are (and are flagged as unmodelled).
+// suffix. Never preceded by a letter, digit or ".", nor followed by a letter
+// or digit — so "F1", "M16" and "70km" stay whole. A following "." is allowed
+// (it ends sentences), which is why "802.11n" becomes "eight hundred two 11n";
+// such tokens are flagged as unmodelled (see the header).
 const NUMBER_RE =
   /(?<![\p{L}\p{N}.])(\$)?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(%|st|nd|rd|th|s)?(?![\p{L}\p{N}])/gu;
 

@@ -36,9 +36,12 @@
 // measuring-code change — recorded in the result), --log <file> (append one
 // line per model).
 //
-// WHAT IT MEASURES. Every model is measured through the app's own engine
-// worker (main/engines/engine-worker.js, forked by main/engines/host.js),
-// never a copy of its recognizer config: the speed number is the worker's own
+// WHAT IT MEASURES. Every shipped and wired candidate model is measured
+// through the app's own engine worker (main/engines/engine-worker.js, forked
+// by main/engines/host.js), never a copy of its recognizer config. The one
+// exception is --exploratory's families the worker can't run yet, which go
+// through a copy (scripts/stt-eval-worker.js) and are compared only with the
+// default measured the same way. The speed number is the worker's own
 // `decodeMs` around recognizer.decode(), the same number that paces the
 // overlay's transcribing bar. load-stt reports the thread count and provider
 // it used, and a model is refused unless that is CPU at the app's

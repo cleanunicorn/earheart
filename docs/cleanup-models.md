@@ -73,18 +73,33 @@ and the Q6 facts stand: Granite and Qwen still leave **0** fillers on
 FLUENT/`clean`, and their retention is unchanged (0.95, 0.94). What did move
 (stumbles · clean runs · fidelity fails, before → after):
 
-| model | FLUENT clean | FLUENT polished | REPORTED clean |
-|---|---|---|---|
-| gemma-3-4b | 30·0/5·0 → **35·0/5·0** | 5·0/5·0 | 0·10/10·0 → **15·0/10·0** |
-| granite-4.0-micro | 0·5/5·0 | 0·5/5·0 → **2·3/5·0** | 0·10/10·0 |
-| qwen3-4b-2507 | 0·5/5·0 | 0·5/5·0 | 0·10/10·0 → **5·5/10·0** |
-| gemma-3-1b | 30·0/5·0 → **35·0/5·0** | 0·0/5·5 → **4·0/5·5** | 0·5/10·5 |
-| qwen3.5-0.8b | 20·0/5·0 → **25·0/5·0** | 4·2/5·2 → **7·0/5·2** | 1·7/10·2 → **2·7/10·2** |
-| lfm2.5-8b-a1b | 40·0/5·5 → **54·0/5·5** | 38·0/5·5 → **47·0/5·5** | 111·0/10·10 → **144·0/10·10** |
+| model | FLUENT clean: fillers/repeats/other fillers (model) | clean runs | FLUENT polished: fillers/repeats/other | delivered after backstop (clean): fillers/repeats/other | fidelity fails clean/polished | ratio | retention | novel | echo/refusal/runaway | REPORTED: stumbles · fidelity fails | CPU wall ms median [min–max] | load avg | TTFT ms | decode tok/s | load ms | size | chat wrapper |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| qwen3.5-0.8b | 20/0/5 | 0/5 | 4/0/3 | 0/0/5 | 0/2 | 0.99 | 1.00 | 0.00 | 0/0/0 · 0/0/0 | 2 · 2 | 6854 [6573–8151] | 10.7 | 1828 | 43.9 | 1132 | 0.56 GB | JinjaTemplateChatWrapper |
+| lfm2-1.2b | 0/0/0 | 0/5 | 0/0/0 | 0/0/0 | 5/5 | 0.60 | 0.62 | 0.15 | 0/0/0 · 1/0/0 | 8 · 6 | 4891 [4691–5352] | 14.7 | 2232 | 49.3 | 890 | 0.73 GB | ChatMLChatWrapper |
+| gemma-3-1b | 30/0/5 | 0/5 | 0/0/4 | 0/0/5 | 0/5 | 1.00 | 1.00 | 0.00 | 0/0/0 · 0/0/0 | 0 · 5 | 7484 [7417–14594] | – | 2030 | 43.0 | 891 | 0.81 GB | GemmaChatWrapper |
+| lfm2-2.6b | 0/0/0 | 0/5 | 0/0/0 | 0/0/0 | 5/5 | 0.69 | 0.74 | 0.10 | 0/0/0 · 0/0/0 | 0 · 10 | 11294 [8147–12817] | 12.9 | 4999 | 24.3 | 1640 | 1.56 GB | ChatMLChatWrapper |
+| granite-4.0-micro | 0/0/0 | 5/5 | 0/0/2 | 0/0/0 | 0/0 | 0.91 | 0.95 | 0.00 | 0/0/0 · 0/0/0 | 0 · 0 | 19099 [18945–19291] | 10.5 | 6842 | 17.1 | 2114 | 2.10 GB | JinjaTemplateChatWrapper |
+| phi-3.5-mini | 0/0/0 | 2/5 | 0/0/0 | 0/0/0 | 3/5 | 0.87 | 0.89 | 0.00 | 0/0/0 · 0/0/0 | 0 · 2 | 23675 [23330–24913] | 11.6 | 9735 | 14.2 | 2303 | 2.39 GB | JinjaTemplateChatWrapper |
+| gemma-3-4b | 30/0/5 | 0/5 | 5/0/0 | 0/0/5 | 0/0 | 1.00 | 1.00 | 0.00 | 0/0/0 · 0/0/0 | 15 · 0 | 22172 [21888–26722] | 13.1 | 5748 | 14.6 | 2531 | 2.49 GB | GemmaChatWrapper |
+| qwen3-4b-2507 | 0/0/0 | 5/5 | 0/0/0 | 0/0/0 | 0/0 | 0.91 | 0.94 | 0.01 | 0/0/0 · 0/0/0 | 5 · 0 | 21024 [20981–21174] | 11.8 | 7311 | 15.0 | 2641 | 2.50 GB | QwenChatWrapper |
+| gemma-3-4b-qat | 6/0/0 | 0/5 | 0/0/0 | 0/0/0 | 0/5 | 0.93 | 0.98 | 0.00 | 0/0/0 · 0/0/0 | 0 · 5 | 22387 [19861–51366] | 21.7 | 7188 | 14.3 | 2345 | 2.53 GB | GemmaChatWrapper |
+| ministral-3-3b | 0/0/0 | 0/5 | 0/0/0 | 0/0/0 | 5/5 | 0.68 | 0.65 | 0.20 | 0/0/0 · 0/0/0 | 0 · 9 | 36301 [22429–72022] | 33.4 | 8847 | 7.3 | 1304 | 3.65 GB | JinjaTemplateChatWrapper |
+| lfm2.5-8b-a1b | 40/0/14 | 0/5 | 38/0/9 | 30/0/5 | 5/5 | 1.27 | 1.00 | 0.26 | 5/0/5 · 5/0/5 | 144 · 10 | 12572 [11543–19260] | 25.2 | 3866 | 32.6 | 4918 | 5.16 GB | ChatMLChatWrapper |
+| gemma-3-12b | 0/0/0 | 5/5 | 0/0/0 | 0/0/0 | 0/1 | 0.97 | 0.98 | 0.01 | 0/0/0 · 0/0/0 | 0 · 0 | 61879 [60770–94892] | 18.7 | 18894 | 5.3 | 6338 | 7.30 GB | GemmaChatWrapper |
+| mistral-nemo-12b | 0/0/0 | 0/5 | 0/0/0 | 0/0/0 | 5/5 | 0.68 | 0.65 | 0.19 | 0/0/0 · 0/0/0 | 0 · 10 | 116644 [101837–164617] | 37.6 | 71736 | 2.2 | 7387 | 7.48 GB | MistralChatWrapper |
 
 Every other model's numbers are unchanged. One reply (Mistral Nemo, REPORTED)
 became an echo failure it already was for other reasons. The speed rows
 gained two more locked passes of Gemma 3 4B (above).
+
+The final review changed one more column. "Delivered after backstop" now
+also counts the directive's other fillers. `stripStumbles` never removes
+them, so a model that keeps "kind of like" hands it to the user. Gemma 3
+1B, Gemma 3 4B and Qwen3.5 0.8B went from 0/0 to **0/0/5** (one per
+FLUENT/`clean` run). LFM2.5 8B-A1B shows 30/0/5 because every one of its
+runs hit the cap, so the raw transcript is what gets delivered. No verdict
+moved: the bar reads the model's own output, never the delivered column.
 
 ### Results (first pass, CPU)
 
@@ -419,7 +434,10 @@ again.
   token history is cleared before each timed clean, so every clean pays full
   prefill; in the app, prime-cleanup can hide the prompt's share of that, so
   these are upper bounds, equal for every model. Load time is model + 4096
-  context. A GPU pass (FLUENT/`clean` only) is a footnote and never decides
+  context. Decode tokens/s leaves out the first `onToken` batch, whose size
+  is recorded per clean; on this engine it was 1 token in every clean checked
+  (8 of 8, gemma-3-1b and qwen3.5-0.8b), so the published rates, which
+  assumed 1, stand. A GPU pass (FLUENT/`clean` only) is a footnote and never decides
   anything. Where speed could decide a verdict, the pass was repeated holding a
   CPU lock shared with the other benchmark on the machine; the bar uses each
   model's least-contended pass and the report shows the fastest clean of all

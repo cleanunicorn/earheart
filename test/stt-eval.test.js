@@ -574,3 +574,56 @@ test("stt-eval judge: shipped baselines get no verdict; long-form and the explor
   assert.match(ctc.verdict, /exploratory arm \(rule a\) — wire and re-measure/);
   assert.strictEqual(ctc.vsDefault.against, "calibration (direct path)");
 });
+
+/* ---------------- resuming a run ---------------- */
+
+const runFile = (over = {}) => ({
+  schema: 1,
+  pass: "accuracy",
+  corpus: { commit: "c0", files: [{ sha256: "a" }, { sha256: "b" }], subset: "all", utterances: 647 },
+  machine: { cpu: "Ryzen", logicalCpus: 24, appThreads: 8, versions: { electron: "42", sherpaOnnxNode: "1.13.3" }, measuringCode: "h1" },
+  ...over,
+});
+
+test("stt-eval resume: an identical run may be resumed", () => {
+  assert.deepStrictEqual(e.resumeCompatibility(runFile(), runFile()), { ok: true, problems: [] });
+});
+
+test("stt-eval resume: every field that decides a number must match", () => {
+  const cases = {
+    schema: runFile({ schema: 2 }),
+    pass: runFile({ pass: "speed" }),
+    "corpus commit": runFile({ corpus: { ...runFile().corpus, commit: "c1" } }),
+    "corpus files": runFile({ corpus: { ...runFile().corpus, files: [{ sha256: "a" }, { sha256: "x" }] } }),
+    "corpus subset": runFile({ corpus: { ...runFile().corpus, subset: "speed" } }),
+    utterances: runFile({ corpus: { ...runFile().corpus, utterances: 40 } }),
+    "machine.appThreads": runFile({ machine: { ...runFile().machine, appThreads: 4 } }),
+    "versions.sherpaOnnxNode": runFile({ machine: { ...runFile().machine, versions: { electron: "42", sherpaOnnxNode: "1.14.0" } } }),
+    "measuring code": runFile({ machine: { ...runFile().machine, measuringCode: "h2" } }),
+  };
+  for (const [field, previous] of Object.entries(cases)) {
+    const r = e.resumeCompatibility(previous, runFile());
+    assert.strictEqual(r.ok, false, field);
+    assert.strictEqual(r.problems.length, 1, `${field}: ${r.problems}`);
+    assert.ok(r.problems[0].startsWith(field), `${field}: ${r.problems[0]}`);
+  }
+});
+
+test("stt-eval resume: --resume-across-code waives the code hash only", () => {
+  const otherCode = runFile({ machine: { ...runFile().machine, measuringCode: "h0" } });
+  assert.strictEqual(e.resumeCompatibility(otherCode, runFile(), { acrossCode: true }).ok, true);
+  const otherPass = runFile({ pass: "speed", machine: { ...runFile().machine, measuringCode: "h0" } });
+  assert.deepStrictEqual(
+    e.resumeCompatibility(otherPass, runFile(), { acrossCode: true }).problems.map((p) => p.split(":")[0]),
+    ["pass"]
+  );
+});
+
+test("stt-eval resume: a row is reused only for the very files the model pins now", () => {
+  const model = { files: [{ name: "enc", sha256: "1" }, { name: "tok", sha256: "2" }] };
+  const row = { status: "measured", files: [{ name: "tok", sha256: "2", bytes: 9 }, { name: "enc", sha256: "1", bytes: 9 }] };
+  assert.strictEqual(e.rowReusable(row, model), true);
+  assert.strictEqual(e.rowReusable({ ...row, files: [{ name: "enc", sha256: "9" }, { name: "tok", sha256: "2" }] }, model), false);
+  assert.strictEqual(e.rowReusable({ ...row, status: "failed" }, model), false);
+  assert.strictEqual(e.rowReusable(undefined, model), false);
+});

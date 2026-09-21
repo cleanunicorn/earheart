@@ -30,8 +30,11 @@
 // of a split run; default both), --combine <acc.json> [speed.json …] (judge
 // a split run; later speed files are re-measures), --cpu-lock <file> (see above),
 // --exploratory (also measure families the worker can't run yet), --resume
-// (reuse the measured rows of an existing --out file), --log <file> (append
-// one line per model).
+// (reuse the measured rows of an existing --out file, only if it is the same
+// pass, corpus selection, runtime and measuring code, and only rows whose model
+// files are unchanged), --resume-across-code (the same, but allowing a
+// measuring-code change — recorded in the result), --log <file> (append one
+// line per model).
 //
 // WHAT IT MEASURES. Every model is measured through the app's own engine
 // worker (main/engines/engine-worker.js, forked by main/engines/host.js),
@@ -139,6 +142,7 @@ function parseArgs(argv) {
   const opts = {
     models: null, limit: 0, keep: false, exploratory: false, resume: false, discover: [],
     quietLoad: QUIET_LOAD, pass: "both", combine: [], otherRunPattern: OTHER_RUN_PATTERN, cpuLock: null,
+    resumeAcrossCode: false,
   };
   const valued = new Set(["--out", "--cache-dir", "--models", "--limit", "--report", "--log", "--quiet-load", "--pass", "--other-run-pattern", "--cpu-lock"]);
   for (let i = 0; i < argv.length; i++) {
@@ -170,6 +174,7 @@ function parseArgs(argv) {
       case "--keep": opts.keep = true; break;
       case "--exploratory": opts.exploratory = true; break;
       case "--resume": opts.resume = true; break;
+      case "--resume-across-code": opts.resume = true; opts.resumeAcrossCode = true; break;
       case "--verify-shipped": opts.verifyShipped = true; break;
       case "--discover":
         while (argv[i + 1] && !argv[i + 1].startsWith("--")) opts.discover.push(argv[++i]);
@@ -937,16 +942,24 @@ async function run(opts) {
     rows: [],
   };
   if (previous) {
-    // Each reused row keeps its own measuredWith; this names the file it came from.
-    result.resumed = { rows: previous.rows.filter((r) => r.status === "measured").length, fromMeasuringCode: previous.machine.measuringCode };
-  }
-  if (previous && previous.corpus && previous.corpus.utterances !== corpusInfo.utterances) {
-    throw new Error("--resume: the existing file was measured on a different corpus selection");
+    const compat = e.resumeCompatibility(previous, result, { acrossCode: opts.resumeAcrossCode });
+    if (!compat.ok) {
+      throw new Error(`--resume: ${out} is not this run:\n  ${compat.problems.join("\n  ")}` +
+        (compat.problems.every((p) => p.startsWith("measuring code")) ? "\n  (--resume-across-code carries rows across a code change, recorded)" : ""));
+    }
+    // Each reused row keeps its own measuredWith; this names the file they came from.
+    result.resumed = {
+      fromMeasuringCode: previous.machine.measuringCode,
+      acrossCode: previous.machine.measuringCode !== result.machine.measuringCode,
+      rows: 0,
+    };
   }
   const ctx = { opts, appendLog, cacheDir, corpus, longForm: buildLongForm(allClips), ablation: null, bracketFirst: null, calibration: null };
   const order = plan(opts);
   for (const entry of order) {
-    const reused = previous && previous.rows.find((r) => r.id === entry.model.id && r.role === entry.role && r.status === "measured");
+    const earlier = previous && previous.rows.find((r) => r.id === entry.model.id && r.role === entry.role);
+    const reused = e.rowReusable(earlier, entry.model) ? earlier : null;
+    if (earlier && !reused && earlier.status === "measured") log(`${entry.model.id} (${entry.role}): files changed since ${out}, measuring again`);
     let row;
     if (reused) {
       row = reused;
@@ -975,6 +988,12 @@ async function run(opts) {
       if (opts.cpuLock && opts.pass === "accuracy") row.lockWaitMs = lockWaitMs + (row.lockWaitLongFormMs || 0);
     }
     if (!reused) row.measuredWith = { gitHead: result.machine.gitHead, measuringCode: result.machine.measuringCode };
+    if (reused) {
+      result.resumed.rows++;
+      // Rows from before per-row provenance existed can only be traced to the
+      // file they were reused from, which may itself have been resumed.
+      if (!row.measuredWith) row.measuredWith = { unknown: `resumed from a file measured with ${previous.machine.measuringCode.slice(0, 8)}` };
+    }
     // A reused default row still yields the ablation (from its stored decodes).
     if (reused && row.role === "bracket-first" && opts.pass !== "speed" && !ctx.ablation && row.decodes) {
       ctx.ablation = ablation(corpus, row.decodes);
@@ -1020,6 +1039,9 @@ function report(result) {
   const lockOf = (x) => x && x.cpuLock && x.cpuLock.role === "held for the whole pass";
   if (lockOf(result) || (result.passes && result.passes.speed && result.passes.speed.every((p) => p.cpuLock))) {
     lines.push("Every speed timing was taken while holding cpu-quiet.lock, shared with the parallel cleanup run.");
+  }
+  if (result.resumed && result.resumed.acrossCode) {
+    lines.push(`Resumed across a code change: ${result.resumed.rows} rows were measured by code ${result.resumed.fromMeasuringCode.slice(0, 8)}, not this run's (see each row's measuredWith).`);
   }
   lines.push(`Status: ${result.status}`);
   lines.push("");

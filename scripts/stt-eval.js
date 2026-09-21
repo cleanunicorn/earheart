@@ -563,6 +563,49 @@ function judge(acc, spds, cfg) {
   }
 }
 
+/* ---------------- resuming a run ---------------- */
+
+// What must match before --resume may reuse a single row of an earlier --out
+// file: the same kind of pass over the same corpus selection, on the same
+// runtime, by the same measuring code. `acrossCode` (--resume-across-code) is
+// the one deliberate exception, for the measuring code only; it is recorded in
+// the result, never silent.
+const RUNTIME_FIELDS = ["cpu", "logicalCpus", "appThreads"];
+const RUNTIME_VERSIONS = ["electron", "sherpaOnnxNode"];
+
+/**
+ * @returns {{ ok: boolean, problems: string[] }}
+ */
+function resumeCompatibility(previous, current, { acrossCode = false } = {}) {
+  const problems = [];
+  const same = (label, a, b) => {
+    if (JSON.stringify(a) !== JSON.stringify(b)) problems.push(`${label}: ${JSON.stringify(a)} in the file, ${JSON.stringify(b)} now`);
+  };
+  const pc = previous.corpus || {};
+  const pm = previous.machine || {};
+  same("schema", previous.schema, current.schema);
+  same("pass", previous.pass, current.pass);
+  same("corpus commit", pc.commit, current.corpus.commit);
+  same("corpus files", (pc.files || []).map((f) => f.sha256), current.corpus.files.map((f) => f.sha256));
+  same("corpus subset", pc.subset, current.corpus.subset);
+  same("utterances", pc.utterances, current.corpus.utterances);
+  for (const k of RUNTIME_FIELDS) same(`machine.${k}`, pm[k], current.machine[k]);
+  for (const k of RUNTIME_VERSIONS) same(`versions.${k}`, (pm.versions || {})[k], current.machine.versions[k]);
+  if (!acrossCode) same("measuring code", pm.measuringCode, current.machine.measuringCode);
+  return { ok: problems.length === 0, problems };
+}
+
+/**
+ * May this earlier row stand in for measuring `model` now? Only a measured row
+ * whose files are the very files the model pins today (a re-pinned model is
+ * a different model).
+ */
+function rowReusable(row, model) {
+  if (!row || row.status !== "measured" || !Array.isArray(row.files)) return false;
+  const pins = (files) => files.map((f) => `${f.name}:${f.sha256}`).sort().join("|");
+  return pins(row.files) === pins(model.files);
+}
+
 /* ---------------- the speed subset ---------------- */
 
 // Speed is measured on a quiet machine, and a shared machine is quiet in short
@@ -863,6 +906,8 @@ module.exports = {
   speedCleanliness,
   speedFileBrackets,
   judge,
+  resumeCompatibility,
+  rowReusable,
   styleRates,
   parseFleursTsv,
   tsvColumnMismatches,

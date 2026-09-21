@@ -202,7 +202,10 @@ const MODELS = {
       // fillers left over five runs where both Gemma 3 1B and 4B left all 30,
       // at 0.95 content-word retention. The price is the download, ~2.6x the
       // 1B's, and a slower clean on CPU (18.6 s vs 7.5 s median there).
-      note: "Runs on this computer · ~2.1 GB, 2.6× the 1B · recommended: removes fillers reliably",
+      // RAM is stated on the same scale as Gemma 3 4B's "~6 GB": measured the
+      // same way (CPU, default 4096 context, peak RSS), Granite used 3,987 MiB
+      // against Gemma 3 4B's 4,289 MiB, 0.93x of it.
+      note: "Runs on this computer · ~2.1 GB, 2.6× the 1B · needs ~6 GB RAM · recommended: removes fillers reliably",
       files: [
         { name: "granite-4.0-micro-Q4_K_M.gguf", bytes: 2_099_502_528,
           sha256: "97c417dcc0534b0737c74016fb2af083cb17c3b51eaac621192d23961b7024eb",
@@ -230,7 +233,8 @@ const MODELS = {
       engine: "llama-gguf",
       // Same benchmark: also no fillers left, but a little slower than Granite
       // (21.1 s vs 18.6 s median) and a little lower retention (0.94 vs 0.95).
-      note: "Runs on this computer · ~2.5 GB · removes fillers reliably, a little slower than Granite",
+      // RAM on the Gemma 3 4B scale: 4,817 MiB peak vs 4,289 MiB, 1.12x of it.
+      note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · removes fillers reliably, a little slower than Granite",
       files: [
         { name: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf", bytes: 2_497_281_120,
           sha256: "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",

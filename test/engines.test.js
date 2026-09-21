@@ -171,7 +171,7 @@ test("registry pins the benchmarked Granite and Qwen GGUFs", () => {
   const expected = {
     "granite-4.0-micro": {
       label: "Granite 4.0 Micro (recommended)",
-      note: "Runs on this computer · ~2.1 GB, 2.6× the 1B · recommended: removes fillers reliably",
+      note: "Runs on this computer · ~2.1 GB, 2.6× the 1B · needs ~6 GB RAM · recommended: removes fillers reliably",
       file: {
         name: "granite-4.0-micro-Q4_K_M.gguf",
         bytes: 2_099_502_528,
@@ -181,7 +181,7 @@ test("registry pins the benchmarked Granite and Qwen GGUFs", () => {
     },
     "qwen3-4b-2507": {
       label: "Qwen3 4B Instruct 2507 (alternative)",
-      note: "Runs on this computer · ~2.5 GB · removes fillers reliably, a little slower than Granite",
+      note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · removes fillers reliably, a little slower than Granite",
       file: {
         name: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
         bytes: 2_497_281_120,

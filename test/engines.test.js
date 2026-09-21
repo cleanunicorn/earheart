@@ -180,7 +180,7 @@ test("registry pins the benchmarked Granite and Qwen GGUFs", () => {
       },
     },
     "qwen3-4b-2507": {
-      label: "Qwen3 4B Instruct 2507",
+      label: "Qwen3 4B Instruct 2507 (alternative)",
       note: "Runs on this computer · ~2.5 GB · removes fillers reliably, a little slower than Granite",
       file: {
         name: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",

@@ -225,7 +225,7 @@ const MODELS = {
     },
     "qwen3-4b-2507": {
       id: "qwen3-4b-2507",
-      label: "Qwen3 4B Instruct 2507",
+      label: "Qwen3 4B Instruct 2507 (alternative)",
       kind: "cleanup",
       engine: "llama-gguf",
       // Same benchmark: also no fillers left, but a little slower than Granite

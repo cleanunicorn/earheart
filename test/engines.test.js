@@ -1737,3 +1737,81 @@ test("transcribe/clean reject early on an already-aborted signal without touchin
   );
   assert.strictEqual(cleanup.calls.length, 0, "no cleanup worker request for a pre-aborted clean");
 });
+
+/* ---------------- engine worker: STT load ---------------- */
+
+// Load main/engines/engine-worker.js outside a utilityProcess: a fake
+// parentPort stands in for Electron's, and sherpa-onnx-node is replaced by a
+// recorder, so loadStt's recognizer config can be checked without a model.
+function loadWorkerWith(sherpaStub) {
+  const workerPath = require.resolve("../main/engines/engine-worker");
+  const sherpaPath = require.resolve("sherpa-onnx-node", { paths: [path.dirname(workerPath)] });
+  const savedSherpa = require.cache[sherpaPath];
+  const savedPort = process.parentPort;
+  const stub = new Module(sherpaPath, null);
+  stub.filename = sherpaPath;
+  stub.loaded = true;
+  stub.exports = sherpaStub;
+  require.cache[sherpaPath] = stub;
+  let onMessage = null;
+  const replies = [];
+  process.parentPort = {
+    on: (event, fn) => {
+      if (event === "message") onMessage = fn;
+    },
+    postMessage: (msg) => replies.push(msg),
+  };
+  delete require.cache[workerPath];
+  require(workerPath);
+  const send = (data) =>
+    new Promise((resolve) => {
+      const seen = replies.length;
+      onMessage({ data });
+      const poll = () => (replies.length > seen ? resolve(replies[seen]) : setImmediate(poll));
+      poll();
+    });
+  const restore = () => {
+    delete require.cache[workerPath];
+    if (savedSherpa) require.cache[sherpaPath] = savedSherpa;
+    else delete require.cache[sherpaPath];
+    process.parentPort = savedPort;
+  };
+  return { send, restore };
+}
+
+test("engine worker: load-stt reports the thread count and provider it built the recognizer with", async () => {
+  const built = [];
+  const worker = loadWorkerWith({
+    OfflineRecognizer: class {
+      constructor(config) {
+        built.push(config);
+      }
+    },
+  });
+  try {
+    const request = {
+      type: "load-stt",
+      dir: "/models/x",
+      sherpa: { encoder: "e.onnx", decoder: "d.onnx", joiner: "j.onnx", tokens: "t.txt" },
+      modelId: "x",
+    };
+    const expectedThreads = Math.max(1, Math.min(8, os.cpus().length - 1));
+    const first = await worker.send({ id: 1, ...request });
+    assert.deepStrictEqual(first, {
+      id: 1,
+      ok: true,
+      result: { ready: true, numThreads: expectedThreads, provider: "cpu" },
+    });
+    // The reply describes the recognizer that was actually configured.
+    assert.strictEqual(built.length, 1);
+    assert.strictEqual(built[0].modelConfig.numThreads, expectedThreads);
+    assert.strictEqual(built[0].modelConfig.provider, "cpu");
+
+    // Re-loading the resident model is a no-op that still reports the runtime.
+    const again = await worker.send({ id: 2, ...request });
+    assert.deepStrictEqual(again.result, first.result);
+    assert.strictEqual(built.length, 1);
+  } finally {
+    worker.restore();
+  }
+});

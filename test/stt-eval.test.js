@@ -770,3 +770,59 @@ test("stt-eval harness: argument parsing", () => {
   assert.throws(() => harness.parseArgs(["--pass", "fast"]), /--pass must be/);
   assert.throws(() => harness.parseArgs(["--bogus"]), /unknown argument/);
 });
+
+/* ---------------- the harness's recognizers: a timed-out decode never keeps running ---------------- */
+
+const { mock } = require("node:test");
+const Module = require("node:module");
+
+test("stt-eval harness: a worker request that times out stops the worker; other errors do not", async () => {
+  const hostModule = require("../main/engines/host");
+  const realCreateHost = hostModule.createHost;
+  let stops = 0;
+  let reply = () => Promise.reject(new Error("engine request 'transcribe' timed out"));
+  hostModule.createHost = () => ({ request: () => reply(), stop: () => { stops++; } });
+  try {
+    const rec = harness.workerRecognizer({ id: "m", sherpa: {} }, "/models/m");
+    await assert.rejects(rec.transcribe(Buffer.alloc(0), 10), /timed out/);
+    assert.strictEqual(stops, 1, "the timed-out worker is stopped");
+    reply = () => Promise.reject(new Error("STT model not loaded"));
+    await assert.rejects(rec.transcribe(Buffer.alloc(0), 10), /not loaded/);
+    assert.strictEqual(stops, 1, "an ordinary failure leaves the worker alone");
+  } finally {
+    hostModule.createHost = realCreateHost;
+  }
+});
+
+test("stt-eval harness: an exploratory request that times out kills its utility process", async () => {
+  const electronPath = require.resolve("electron", { paths: [path.join(__dirname, "../scripts")] });
+  const saved = require.cache[electronPath];
+  const killed = [];
+  const posted = [];
+  const child = {
+    on() {},
+    postMessage: (msg) => posted.push(msg),
+    kill: () => killed.push(true),
+  };
+  const stub = new Module(electronPath, null);
+  stub.filename = electronPath;
+  stub.loaded = true;
+  stub.exports = { utilityProcess: { fork: (file) => { child.file = file; return child; } } };
+  require.cache[electronPath] = stub;
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const rec = harness.directRecognizer({ id: "m", sherpa: { family: "moonshine" } }, "/models/m");
+    assert.match(child.file, /stt-eval-worker\.js$/);
+    const pending = rec.transcribe(Buffer.alloc(0), 5); // timeout: max(180 s, 5 s × 20 000)
+    assert.strictEqual(posted[0].type, "transcribe");
+    mock.timers.tick(179999);
+    assert.deepStrictEqual(killed, [], "not before its deadline");
+    mock.timers.tick(1);
+    await assert.rejects(pending, /transcribe timed out after 180000 ms/);
+    assert.deepStrictEqual(killed, [true]);
+  } finally {
+    mock.timers.reset();
+    if (saved) require.cache[electronPath] = saved;
+    else delete require.cache[electronPath];
+  }
+});

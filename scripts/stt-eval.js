@@ -607,6 +607,24 @@ function planModels(shipped, candidates, { baselineId, exploratory = false, pass
   return models ? list.filter((x) => models.includes(x.model.id)) : list;
 }
 
+/* ---------------- same machine, same runtime ---------------- */
+
+// The machine and runtime a timing depends on. Two results may be paired
+// (--combine) or continued (--resume) only if these are all equal.
+const RUNTIME_FIELDS = ["cpu", "logicalCpus", "appThreads", "platform"];
+const RUNTIME_VERSIONS = ["electron", "sherpaOnnxNode"];
+
+/** The machine/runtime fields on which result machine blocks `a` and `b` differ. */
+function runtimeMismatches(a = {}, b = {}) {
+  const out = [];
+  const same = (label, x, y) => {
+    if (JSON.stringify(x) !== JSON.stringify(y)) out.push(`${label}: ${JSON.stringify(x)} vs ${JSON.stringify(y)}`);
+  };
+  for (const k of RUNTIME_FIELDS) same(`machine.${k}`, a[k], b[k]);
+  for (const k of RUNTIME_VERSIONS) same(`versions.${k}`, (a.versions || {})[k], (b.versions || {})[k]);
+  return out;
+}
+
 /* ---------------- resuming a run ---------------- */
 
 // What must match before --resume may reuse a single row of an earlier --out
@@ -614,9 +632,6 @@ function planModels(shipped, candidates, { baselineId, exploratory = false, pass
 // runtime, by the same measuring code. `acrossCode` (--resume-across-code) is
 // the one deliberate exception, for the measuring code only; it is recorded in
 // the result, never silent.
-const RUNTIME_FIELDS = ["cpu", "logicalCpus", "appThreads"];
-const RUNTIME_VERSIONS = ["electron", "sherpaOnnxNode"];
-
 /**
  * @returns {{ ok: boolean, problems: string[] }}
  */
@@ -1008,6 +1023,7 @@ module.exports = {
   resumeCompatibility,
   rowReusable,
   planModels,
+  runtimeMismatches,
   sherpaRecognizerConfig,
   styleRates,
   parseFleursTsv,

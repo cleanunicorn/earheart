@@ -879,6 +879,10 @@ function combine(accFile, speedFiles, overrides = {}) {
     if (res.corpus.commit !== acc.corpus.commit || res.machine.measuringCode !== acc.machine.measuringCode) {
       throw new Error(`${f}: different corpus pins or measuring code than ${accFile}`);
     }
+    // Speed numbers are published as the accuracy pass's machine's: refuse
+    // any pass measured on another machine or runtime.
+    const differs = e.runtimeMismatches(acc.machine, res.machine);
+    if (differs.length) throw new Error(`${f}: measured on a different machine or runtime than ${accFile}: ${differs.join("; ")}`);
     res.file = f;
     return res;
   });
@@ -889,9 +893,9 @@ function combine(accFile, speedFiles, overrides = {}) {
     ...acc,
     pass: "combined",
     passes: {
-      accuracy: { file: path.basename(accFile), status: acc.status, command: acc.command },
+      accuracy: { file: path.basename(accFile), status: acc.status, command: acc.command, machine: acc.machine },
       speed: spds.map((spd) => ({
-        file: path.basename(spd.file), status: spd.status, command: spd.command, cpuLock: lockOfPass(spd),
+        file: path.basename(spd.file), status: spd.status, command: spd.command, cpuLock: lockOfPass(spd), machine: spd.machine,
         corpus: { subset: spd.corpus.subset, utterances: spd.corpus.utterances, audioSec: spd.corpus.audioSec },
       })),
     },

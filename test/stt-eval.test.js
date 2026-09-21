@@ -764,6 +764,32 @@ test("stt-eval combine: refuses passes that do not belong together", (t) => {
   assert.throws(() => harness.combine(accPath, [speedPath, other], { baselineId: "base" }), /a different speed subset/);
 });
 
+test("stt-eval combine: refuses a speed pass measured on another machine or runtime", (t) => {
+  const machine = { cpu: "cpu", logicalCpus: 24, ramGb: 60, platform: "linux", appThreads: 8,
+    versions: { electron: "42", sherpaOnnxNode: "1.13.3" }, gitHead: "abc", measuringCode: "h1" };
+  const cases = {
+    "machine.cpu": { cpu: "another cpu" },
+    "machine.logicalCpus": { logicalCpus: 8 },
+    "machine.appThreads": { appThreads: 7 },
+    "machine.platform": { platform: "darwin" },
+    "versions.electron": { versions: { electron: "43", sherpaOnnxNode: "1.13.3" } },
+    "versions.sherpaOnnxNode": { versions: { electron: "42", sherpaOnnxNode: "1.14.0" } },
+  };
+  for (const [field, over] of Object.entries(cases)) {
+    const { accPath, speedPath } = passFiles(t, { speedOver: { machine: { ...machine, ...over } } });
+    assert.throws(
+      () => harness.combine(accPath, [speedPath], { baselineId: "base" }),
+      new RegExp(`different machine or runtime.*${field.replace(".", "\\.")}`),
+      field
+    );
+  }
+  // RAM and git HEAD are not timing conditions and may differ.
+  const { accPath, speedPath } = passFiles(t, { speedOver: { machine: { ...machine, ramGb: 32, gitHead: "def" } } });
+  const combined = harness.combine(accPath, [speedPath], { baselineId: "base" });
+  assert.strictEqual(combined.passes.speed[0].machine.ramGb, 32, "each pass keeps its own machine block");
+  assert.strictEqual(combined.passes.accuracy.machine.ramGb, 60);
+});
+
 test("stt-eval combine: no speed pass, or an unusable one, gives no speed-based verdict", (t) => {
   const { accPath } = passFiles(t);
   const noSpeed = harness.combine(accPath, [], { baselineId: "base" });

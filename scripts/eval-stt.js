@@ -25,8 +25,8 @@
 // clips land there, never in the repo), --models id,id (subset, for
 // development), --limit N (first N utterances, for development — the headline
 // uses all 647), --keep (don't delete a model after measuring it),
-// --quiet-load N (wait for the 1-minute load average to reach N before each
-// model; default 4, "Infinity" to not wait), --pass accuracy|speed (one half
+// --quiet-load N (before each model, wait for the 1-minute load average to
+// fall to N; default 4, "Infinity" to not wait), --pass accuracy|speed (one half
 // of a split run; default both), --combine <acc.json> [speed.json …] (judge
 // a split run; later speed files are re-measures), --cpu-lock <file> (see above),
 // --other-run-pattern <pgrep -f pattern> (processes of a parallel run whose

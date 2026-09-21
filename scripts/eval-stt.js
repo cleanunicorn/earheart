@@ -673,6 +673,8 @@ async function measureModel(entry, ctx) {
           row.longForm.push({
             label: clip.label,
             audioSec: clip.audioSec,
+            // Which clips were joined into this buffer: the number depends on it.
+            utterances: clip.utterances,
             decodeMs: r.decodeMs,
             decodeRtf: r.decodeMs / 1000 / clip.audioSec,
             wer: counts.errors / counts.ref,
@@ -680,7 +682,7 @@ async function measureModel(entry, ctx) {
             text: r.text,
           });
         } catch (err) {
-          row.longForm.push({ label: clip.label, audioSec: clip.audioSec, error: String(err.message || err), wer: 1, wordRatio: 0 });
+          row.longForm.push({ label: clip.label, audioSec: clip.audioSec, utterances: clip.utterances, error: String(err.message || err), wer: 1, wordRatio: 0 });
         }
       }
     }

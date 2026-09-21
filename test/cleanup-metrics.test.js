@@ -161,8 +161,11 @@ test("FLUENT's known model output passes every fidelity guard", () => {
   assert.strictEqual(s.fillers, 6);
   assert.strictEqual(s.fidelityOk, true, JSON.stringify(s));
   assert.strictEqual(s.runaway, false);
-  // The backstop removes what the model left.
+  // The backstop removes the um/uh the model left, but not "kind of like":
+  // that one is still in what the user gets.
   assert.strictEqual(s.deliveredFillers, 0);
+  assert.strictEqual(s.markers, 1);
+  assert.strictEqual(s.deliveredMarkers, 1);
 });
 
 test("a model that deletes half the dictation fails retention and length", () => {
@@ -259,6 +262,7 @@ test("summarizeRuns groups by corpus/style and sums stumbles", () => {
   assert.strictEqual(fc.fillers, 6 + clean.fillers);
   // Model-stage stumbles include the directive's other fillers ("kind of like").
   assert.strictEqual(fc.markers, 1 + clean.markers);
+  assert.strictEqual(fc.deliveredMarkers, fc.markers); // the backstop never removes them
   assert.strictEqual(fc.stumbles, fc.fillers + fc.repeats + fc.markers);
   assert.strictEqual(fc.cleanRuns, clean.fillers + clean.repeats + clean.markers === 0 ? 1 : 0);
   assert.deepStrictEqual(fc.wallMs, { median: 2000, min: 1000, max: 3000 });

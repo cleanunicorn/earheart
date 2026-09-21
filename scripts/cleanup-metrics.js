@@ -217,6 +217,8 @@ function scoreOutput({ input, output, stopReason, systemPrompt = "", corpus = "f
     delivered,
     deliveredFillers: countFillers(delivered),
     deliveredRepeats: countRepeats(delivered),
+    // The backstop leaves these alone, so whatever the model kept is delivered.
+    deliveredMarkers: countMarkers(delivered),
     ratio,
     retention,
     novel,
@@ -273,6 +275,7 @@ function summarizeRuns(runs) {
       cleanRuns: count((r) => stumbled(r) === 0 && r.score.fidelityOk),
       deliveredFillers: sum((r) => r.score.deliveredFillers),
       deliveredRepeats: sum((r) => r.score.deliveredRepeats),
+      deliveredMarkers: sum((r) => r.score.deliveredMarkers ?? 0),
       fidelityFails: count((r) => !r.score.fidelityOk),
       echo: count((r) => r.score.echo),
       refusal: count((r) => r.score.refusal),

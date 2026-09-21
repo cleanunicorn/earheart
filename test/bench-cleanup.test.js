@@ -203,6 +203,7 @@ test("markdownRow renders a saved run's FLUENT numbers", async () => {
   const row = markdownRow(run);
   // 6 fillers and 1 "kind of like" × 3 seeds, clean and polished.
   assert.match(row, /^\| m \| 18\/0\/3 \| 0\/3 \| 18\/0\/3 \|/);
+  assert.match(row, /\| 0\/0\/3 \|/); // delivered: backstop took the fillers, "kind of like" stays
   assert.match(row, /1002 \[1001–1003\]/);
   assert.match(row, /2\.00 GB \| X \|$/);
 });

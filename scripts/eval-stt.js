@@ -121,6 +121,10 @@ const MAX_EMPTY_RATE = 0.05;
 const BRACKET_DRIFT = 0.1;
 const LONG_FORM_TARGETS = [60, 300];
 const LONG_FORM_GAP_SAMPLES = Math.round(0.3 * SAMPLE_RATE);
+// Request deadlines for both recognizer paths: a model load (fp32 0.6B takes
+// seconds, not minutes), and a decode, scaled for the ~300 s long-form clips.
+const LOAD_TIMEOUT_MS = 600000;
+const transcribeTimeoutMs = (audioSec) => Math.max(180000, audioSec * 20000);
 // Speed is only comparable on a quiet machine, and this one is shared. Before
 // each model the run waits (up to QUIET_TIMEOUT_MS) for the 1-minute load
 // average to fall to QUIET_LOAD, and records what it saw either way; the
@@ -449,11 +453,11 @@ function workerRecognizer(model, dir) {
   return {
     path: "worker",
     async load() {
-      return host.request("load-stt", { dir, sherpa: model.sherpa, modelId: model.id }, { timeoutMs: 600000 });
+      return host.request("load-stt", { dir, sherpa: model.sherpa, modelId: model.id }, { timeoutMs: LOAD_TIMEOUT_MS });
     },
     async transcribe(wav, audioSec) {
       try {
-        return await host.request("transcribe", { wav }, { timeoutMs: Math.max(180000, audioSec * 20000) });
+        return await host.request("transcribe", { wav }, { timeoutMs: transcribeTimeoutMs(audioSec) });
       } catch (err) {
         // A timed-out request leaves the worker decoding; stop it rather than
         // let it burn CPU under whatever is measured next.
@@ -509,8 +513,8 @@ function directRecognizer(model, dir) {
     });
   return {
     path: "direct",
-    load: () => request("load", { dir, sherpa: model.sherpa }, 600000),
-    transcribe: (wav, audioSec) => request("transcribe", { wav }, Math.max(180000, audioSec * 20000)),
+    load: () => request("load", { dir, sherpa: model.sherpa }, LOAD_TIMEOUT_MS),
+    transcribe: (wav, audioSec) => request("transcribe", { wav }, transcribeTimeoutMs(audioSec)),
     close: () => child.kill(),
   };
 }

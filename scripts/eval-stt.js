@@ -968,7 +968,9 @@ async function run(opts) {
         if (opts.pass === "accuracy" || row.status !== "measured" || !row.contended || attempts.length >= SPEED_ATTEMPTS) break;
         log(`${entry.model.id} (${entry.role}): contended (other run ${row.otherRun.active}), re-measuring when quiet`);
       }
-      row.speedAttempts = attempts;
+      // The pass's own tries at this row; the judged attempts across passes
+      // are row.speedAttempts, written by --combine.
+      row.measureAttempts = attempts;
       if (opts.cpuLock && opts.pass === "accuracy") row.lockWaitMs = lockWaitMs + (row.lockWaitLongFormMs || 0);
     }
     if (row.role === "bracket-first" && row.status === "measured") ctx.bracketFirst = row;
@@ -1050,7 +1052,7 @@ function report(result) {
     );
   }
   const others = result.rows.flatMap((r) =>
-    (r.speedAttempts || []).filter((a) => !a.used).map((a) => `- ${r.id} (${r.role}): decode RTF ${num(a.decodeRtf, 4)} in ${a.file}, end load ${num(a.endLoad, 1)} — not used: ${a.reason || "an earlier clean attempt is used"}`)
+    (r.speedAttempts || []).filter((a) => a.used === false).map((a) => `- ${r.id} (${r.role}): decode RTF ${num(a.decodeRtf, 4)} in ${a.file}, end load ${num(a.endLoad, 1)} — not used: ${a.reason || "an earlier clean attempt is used"}`)
   );
   if (others.length) {
     lines.push("");

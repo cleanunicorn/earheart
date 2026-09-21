@@ -398,10 +398,21 @@ test("benchModel: a batched first token callback is recorded and left out of dec
   fs.writeFileSync(model, "w");
   const { mod } = fakeLlamaModule(() => ({ text: FLUENT.modelOutput, batches: [4, 3, 4] }));
   const opts = { out: dir, id: "tiny", seeds: [1], corpora: ["fluent"], gpu: false };
-  await quietly(() => benchModel(model, opts, mod));
+  // A clock that moves 100 ms per reading. Within one clean the reads are:
+  // start, one per token callback (3), end — so callbacks land at 100, 200
+  // and 300 ms, and the clean takes 400 ms.
+  let t = 0;
+  const clock = () => (t += 100);
+  await quietly(() => benchModel(model, opts, mod, clock));
   const runs = fs.readFileSync(path.join(dir, "tiny", "runs.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  assert.strictEqual(runs.length, 2); // FLUENT under clean and polished
   for (const r of runs) {
     assert.strictEqual(r.genTokens, 11);
     assert.strictEqual(r.firstBatch, 4);
+    assert.strictEqual(r.ttftMs, 100);
+    assert.strictEqual(r.wallMs, 400);
+    // The 7 tokens after the first batch, over the 200 ms from first to last
+    // callback: 35 tok/s. Counting the first batch as one token would say 50.
+    assert.strictEqual(r.decodeTps, 35);
   }
 });

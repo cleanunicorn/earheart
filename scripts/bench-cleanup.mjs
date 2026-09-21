@@ -191,7 +191,8 @@ function plan(opts) {
   return turns;
 }
 
-async function benchModel(modelPath, opts, mod) {
+// `now` is the clock the timings read; a test passes a fake one.
+async function benchModel(modelPath, opts, mod, now = () => performance.now()) {
   const id = opts.id || path.basename(modelPath, ".gguf");
   const dir = path.join(opts.out, opts.gpu ? `${id}-gpu` : id);
   fs.mkdirSync(path.join(dir, "raw"), { recursive: true });
@@ -201,13 +202,13 @@ async function benchModel(modelPath, opts, mod) {
   log(`hashing ${bytes} bytes`);
   const sha256 = sha256File(modelPath);
 
-  const tInit = performance.now();
+  const tInit = now();
   const llama = await mod.getLlama(opts.gpu ? {} : { gpu: false });
-  const backendMs = performance.now() - tInit;
-  const tLoad = performance.now();
+  const backendMs = now() - tInit;
+  const tLoad = now();
   const model = await llama.loadModel({ modelPath });
   const context = await model.createContext({ contextSize: CONTEXT_SIZE });
-  const loadMs = performance.now() - tLoad;
+  const loadMs = now() - tLoad;
   const sequence = context.getSequence();
   const session = new mod.LlamaChatSession({ contextSequence: sequence });
   const turns = plan(opts);
@@ -256,22 +257,22 @@ async function benchModel(modelPath, opts, mod) {
     let firstBatch = 0;
     let firstMs = null;
     let lastMs = null;
-    const t0 = performance.now();
+    const t0 = now();
     const { responseText, stopReason } = await session.promptWithMeta(userTurn, {
       ...cleanupSamplingOptions(t.sampling),
       seed: t.seed,
       maxTokens: cleanMaxTokens(model.tokenize(t.input).length),
       onToken: (tokens) => {
-        const now = performance.now() - t0;
+        const at = now() - t0;
         if (firstMs === null) {
-          firstMs = now;
+          firstMs = at;
           firstBatch = tokens.length;
         }
-        lastMs = now;
+        lastMs = at;
         genTokens += tokens.length;
       },
     });
-    const wallMs = performance.now() - t0;
+    const wallMs = now() - t0;
     return { output: (responseText || "").trim(), stopReason, wallMs, firstMs, lastMs, genTokens, firstBatch };
   }
 

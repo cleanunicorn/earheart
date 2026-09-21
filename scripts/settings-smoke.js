@@ -10,9 +10,13 @@
 //      and glides the panel back to the top.
 //   4. The roving tabindex is seated at load: exactly one index button is a
 //      Tab stop before any interaction.
-//   5. The engine state badge follows the engine radio in both directions, and
+//   5. The update card renders the full release notes, as text, never markup,
+//      and clears them when the update does.
+//   6. The engine state badge follows the engine radio in both directions, and
 //      swaps inside a live region so the privacy consequence is announced.
-//   6. A fresh profile preselects the registry's default cleanup model, with its
+//   7. Both custom-model sections offer a "Browse Hugging Face" button beside
+//      "Find versions".
+//   8. A fresh profile preselects the registry's default cleanup model, with its
 //      note, in Settings and in the first-run wizard. The default is not the
 //      first catalog entry, so a lost `select.value = …` would show another
 //      model here instead of passing silently.
@@ -251,7 +255,7 @@ app.whenReady().then(async () => {
       );
     }
 
-    // 6. Both custom-model sections offer a way to find a compatible repo
+    // 7. Both custom-model sections offer a way to find a compatible repo
     //    without leaving the flow: an enabled "Browse Hugging Face" pill in
     //    the same action row as "Find versions".
     const browse = JSON.parse(
@@ -277,7 +281,7 @@ app.whenReady().then(async () => {
       );
     }
 
-    // 6. A fresh profile preselects the default cleanup model in both windows.
+    // 8. A fresh profile preselects the default cleanup model in both windows.
     const cleanupDefault = registry.getModel("cleanup", registry.DEFAULT_CLEANUP_MODEL);
     const readCleanupPick = (wc) =>
       wc.executeJavaScript(

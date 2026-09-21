@@ -1,5 +1,5 @@
 // Runs in an Electron utilityProcess: hosts the in-process STT (sherpa-onnx /
-// Parakeet) and cleanup (node-llama-cpp / Gemma) engines, off the main process
+// Parakeet) and cleanup (node-llama-cpp / GGUF) engines, off the main process
 // so a long inference or a native crash never freezes the UI.
 //
 // The native modules are required lazily and defensively: if they aren't
@@ -135,7 +135,7 @@ async function transcribe({ wav, language }) {
   // auto-detects, so it is not forwarded.
 }
 
-/* ---------------- cleanup (node-llama-cpp / Gemma) ---------------- */
+/* ---------------- cleanup (node-llama-cpp / GGUF) ---------------- */
 
 async function loadCleanup({ modelPath, contextSize, cpuOnly }) {
   const wanted = contextSize || DEFAULT_CONTEXT_SIZE;

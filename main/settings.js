@@ -103,7 +103,7 @@ const DEFAULTS = {
   cleanup: {
     // On by default now that cleanup can run in-process with no setup.
     enabled: true,
-    // "builtin" = run Gemma in-process, "remote" = OpenAI-compatible chat API.
+    // "builtin" = run a GGUF model in-process, "remote" = OpenAI-compatible chat API.
     engine: "builtin",
     builtin: { model: registry.DEFAULT_CLEANUP_MODEL },
     baseUrl: "http://127.0.0.1:11434/v1",

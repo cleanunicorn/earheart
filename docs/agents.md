@@ -22,7 +22,7 @@ free.
 The privacy angle is sharper here than for ordinary dictation. An agent prompt
 *is* your proprietary context: file paths, service names, architecture,
 unshipped work. Out of the box both models run on your machine (Parakeet for
-speech, Gemma for cleanup) — no network hop, no account, no telemetry. Nothing
+speech, Granite for cleanup) — no network hop, no account, no telemetry. Nothing
 you say to an agent leaves your computer unless you deliberately point Earheart
 at a hosted endpoint.
 

@@ -89,7 +89,7 @@ shipped.
   (single-instance).
 - First run: a wizard walks through hotkey → microphone → speech-to-text →
   cleanup → output, then downloads the on-device models (≈670 MB Parakeet +
-  ≈800 MB Gemma) with a progress bar. One-time download.
+  ≈2.1 GB Granite 4.0 Micro) with a progress bar. One-time download.
 - Distributed via GitHub releases: Windows installer + portable exe, macOS
   dmg (arm64 + Intel), Linux AppImage + deb. Self-updates from GitHub releases
   with checksum verification.
@@ -101,8 +101,9 @@ shipped.
 ## Capabilities and Constraints
 
 - In-process engines by default: Parakeet TDT 0.6B v3 via sherpa-onnx
-  (multilingual, 25 languages, faster than realtime on CPU) and a small Gemma
-  cleanup model via node-llama-cpp. Larger cleanup models selectable.
+  (multilingual, 25 languages, faster than realtime on CPU) and IBM's Granite
+  4.0 Micro cleanup model via node-llama-cpp. Gemma 3 (1B, 4B, 12B) and Qwen3
+  4B Instruct cleanup models selectable.
 - Every stage is modular: any OpenAI-compatible endpoint works — STT via
   `{base}/audio/transcriptions`, cleanup via `{base}/chat/completions`
   (Ollama, llama.cpp, LM Studio, vLLM, Groq, OpenRouter, OpenAI, …).

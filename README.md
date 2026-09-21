@@ -31,7 +31,7 @@ several turns correcting it.
 
 Earheart turns that part into talking. Press a global hotkey, say what you
 want, press it again: your speech is transcribed on-device (NVIDIA Parakeet),
-tidied up on-device (a small Gemma model drops the *ums*, false starts and
+tidied up on-device (IBM's Granite 4.0 Micro drops the *ums*, false starts and
 backtracking), and **pasted straight into whatever app has focus** — the
 terminal running Claude Code, the Codex composer, Cursor's chat box, a GitHub
 issue, an email.
@@ -42,8 +42,8 @@ layout, your architecture, your unshipped work. Out of the box both models run
 **inside the app, on your computer** — no separate program, no Python, no
 account, no telemetry. The setup wizard downloads a small
 [Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) speech model and
-a small [Gemma](https://huggingface.co/google) cleanup model (with a progress
-bar) and runs them in-process.
+a [Granite 4.0 Micro](https://huggingface.co/ibm-granite/granite-4.0-micro)
+cleanup model (with a progress bar) and runs them in-process.
 
 It is still a general-purpose dictation app: the same hotkey works in email,
 notes, issues, and any other focused text field.
@@ -115,7 +115,7 @@ label, and opinions are welcome.
 - **Cleanup built for spoken prompts** — the default **Clean** style fixes
   punctuation and removes filler words and false starts without polishing away
   your intent. Choose **Verbatim** or **Polished** with the style slider and edit
-  the prompt underneath. Gemma runs in-process by default; any OpenAI-compatible
+  the prompt underneath. Granite 4.0 Micro runs in-process by default; any OpenAI-compatible
   chat API also works. If cleanup fails, Earheart delivers the raw transcript.
 - **A dictionary for technical names** — teach Earheart the exact spelling of
   repo and product names, `pnpm`, `kubectl`, `useEffect`, or colleagues' names.
@@ -247,11 +247,13 @@ private with nothing to configure. Prefer a remote service? Switch any time in
 Settings → Speech-to-text or Settings → Cleanup.
 
 The wizard's last step downloads the models that run on your machine — a small
-Parakeet speech model (≈ 670 MB) and a small Gemma cleanup model (≈ 800 MB) —
+Parakeet speech model (≈ 670 MB) and the Granite 4.0 Micro cleanup model (≈ 2.1 GB) —
 showing a progress bar as it goes. It's a one-time download; everything after
 that, speech-to-text runs faster than realtime, even on CPU. If a download is interrupted,
 retrying resumes from the saved partial file when possible. You can pick a
-larger, higher-quality cleanup model in the wizard or later in Settings → Cleanup.
+different cleanup model in the wizard or later in Settings → Cleanup: Gemma 3 1B
+(≈ 0.8 GB) if the download or speed matters more than the fillers it leaves in,
+or Qwen3 4B Instruct, Gemma 3 4B, or Gemma 3 12B.
 
 Every launch after that goes straight to the tray — no window to dismiss — and
 posts a short "ready, press *your hotkey*" notification. Click it to open
@@ -259,9 +261,9 @@ Settings, or ignore it and start dictating. Settings is always in the tray menu.
 
 ### Transcript cleanup
 
-Cleanup is **on by default** and runs the built-in Gemma model in-process: a
+Cleanup is **on by default** and runs the built-in Granite 4.0 Micro model in-process: a
 language model fixes punctuation and removes filler words and false starts,
-with no network hop. You can disable it, pick a larger built-in model, or edit
+with no network hop. You can disable it, pick another built-in model, or edit
 the prompt in Settings → Cleanup.
 
 Prefer to run cleanup elsewhere? Any OpenAI-compatible chat endpoint works. A
@@ -302,7 +304,7 @@ keeps recent transcriptions in a local file (you can turn this off).
 Both speech-to-text and cleanup steps are also **modular,
 OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
 
-- **Built-in (default)**: Parakeet + Gemma run in-process — fully private,
+- **Built-in (default)**: Parakeet + Granite run in-process — fully private,
   nothing to install.
 - **Local server**: run the [Parakeet STT server](stt-server/) and an
   [Ollama](https://ollama.com)/llama.cpp model yourself.
@@ -389,7 +391,7 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
   memory and sent only to the STT endpoint **you** configure (e.g. `127.0.0.1`
   for the optional local Parakeet server).
 - Transcripts go to an external cleanup endpoint only if you switch cleanup to
-  a remote service; the default Gemma cleanup stays on your machine.
+  a remote service; the default built-in cleanup stays on your machine.
 - History and settings live in plain local files (Electron's user data
   directory). API keys are stored in that settings file — on shared machines,
   prefer local services or OS-level disk encryption.

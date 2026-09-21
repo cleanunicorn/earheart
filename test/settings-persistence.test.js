@@ -80,3 +80,22 @@ test("a failed replacement preserves the previous settings", (t) => {
     []
   );
 });
+
+// Changing the cleanup default must not move existing users: every saved
+// settings file already holds the model they had (save() writes the full
+// merged object), and there is deliberately no migration.
+test("a saved cleanup model survives a new default", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-settings-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(
+    path.join(dir, "settings.json"),
+    JSON.stringify({ cleanup: { engine: "builtin", builtin: { model: "gemma-3-1b" } } })
+  );
+  const settings = loadSettings(dir);
+
+  assert.strictEqual(settings.get().cleanup.builtin.model, "gemma-3-1b");
+  // A fresh profile, by contrast, gets whatever the registry now defaults to.
+  const fresh = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-settings-"));
+  t.after(() => fs.rmSync(fresh, { recursive: true, force: true }));
+  assert.strictEqual(loadSettings(fresh).get().cleanup.builtin.model, "cleanup-default");
+});

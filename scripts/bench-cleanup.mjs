@@ -474,12 +474,12 @@ function verdictTable(cpu, passes, opts) {
     );
     const robust = cs.min <= gs.min;
     const c = r.summary["fluent/clean"];
-    const q = g.summary["fluent/clean"];
+    const gc = g.summary["fluent/clean"];
     out.push(
       `| ${r.manifest.id} | ${g.manifest.id} | ${licence(r.manifest.id)} ${bar.licence ? "✓" : "✗"} | ` +
-        `${yn(bar.quality)} (${c.stumbles} vs ${q.stumbles}) | ${yn(bar.polished)} | ` +
+        `${yn(bar.quality)} (${c.stumbles} vs ${gc.stumbles}) | ${yn(bar.polished)} | ` +
         `${yn(bar.fidelity)} (fails ${c.fidelityFails}/${r.summary["fluent/polished"]?.fidelityFails ?? "–"}, ` +
-        `retention ${fmt(c.medianRetention, 2)} vs ${fmt(q.medianRetention, 2)}) | ` +
+        `retention ${fmt(c.medianRetention, 2)} vs ${fmt(gc.medianRetention, 2)}) | ` +
         `${yn(bar.speed)} (${fmt(cs.median)} [${cs.from}] vs ${fmt(gs.median)} [${gs.from}]) | ` +
         `${yn(robust)} (${fmt(cs.min)} vs ${fmt(gs.min)}) | **${yn(bar.pass)}**${bar.pass && !robust ? " (not robust)" : ""} |`
     );

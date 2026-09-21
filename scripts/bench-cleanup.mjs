@@ -555,9 +555,10 @@ async function main(argv) {
 }
 
 // Run as a command; imported (by test/bench-cleanup.test.js) it only exports
-// its pure parts.
+// its parts — benchModel takes the node-llama-cpp module as an argument, so a
+// test can hand it a fake one.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await main(process.argv.slice(2));
 }
 
-export { UsageError, parseArgs, plan, markdownRow, report, rescore };
+export { UsageError, parseArgs, plan, benchModel, markdownRow, report, rescore };

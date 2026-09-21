@@ -14,6 +14,8 @@ const os = require("node:os");
 const path = require("node:path");
 
 const metrics = require("../scripts/cleanup-metrics");
+const { cleanupUserTurn, cleanupSamplingOptions } = require("../main/util/cleanup-turn");
+const { cleanMaxTokens } = require("../main/util/clean-budget");
 const { FLUENT } = require("../scripts/dictation-corpus");
 const { DEFAULTS } = require("../main/settings");
 const { resolveCleanup } = require("../main/cleanup-styles");
@@ -250,4 +252,136 @@ test("rescore re-scores saved runs from their raw outputs and keeps the timings"
   assert.ok(manifest.rescoredAt);
   assert.strictEqual(summary["fluent/clean"].fillers, 6);
   assert.strictEqual(summary["fluent/clean"].fidelityFails, 1);
+});
+
+// ---- the runner, against a fake node-llama-cpp ---------------------------------
+
+// Just enough of node-llama-cpp for benchModel, recording what it was asked.
+// reply(turn, options, n) → { text, stopReason, batches } where batches is the
+// token count of each onToken callback.
+function fakeLlamaModule(reply) {
+  const calls = { getLlama: [], createContext: [], clears: 0, resets: 0, prompts: [] };
+  class GemmaChatWrapper {}
+  class LlamaChatSession {
+    constructor({ contextSequence }) {
+      this.sequence = contextSequence;
+      this.chatWrapper = new GemmaChatWrapper();
+    }
+    resetChatHistory() {
+      calls.resets++;
+    }
+    async promptWithMeta(turn, options) {
+      calls.prompts.push({ turn, options, clearsBefore: calls.clears, resetsBefore: calls.resets });
+      const { text, stopReason = "eogToken", batches = [1, 1, 1] } = reply(turn, options, calls.prompts.length);
+      for (const n of batches) options.onToken(new Array(n).fill(0));
+      return { responseText: text, stopReason };
+    }
+  }
+  const mod = {
+    LlamaChatSession,
+    async getLlama(options) {
+      calls.getLlama.push(options);
+      return {
+        gpu: options.gpu === false ? false : "cuda",
+        cpuMathCores: 12,
+        maxThreads: 12,
+        async loadModel() {
+          return {
+            tokenize: (text) => text.split(/\s+/),
+            async createContext(options) {
+              calls.createContext.push(options);
+              return {
+                idealThreads: 12,
+                currentThreads: 12,
+                getSequence: () => ({ clearHistory: async () => void calls.clears++ }),
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+  return { mod, calls };
+}
+
+async function quietly(fn) {
+  const error = console.error;
+  console.error = () => {};
+  try {
+    return await fn();
+  } finally {
+    console.error = error;
+  }
+}
+
+test("benchModel: the CPU pass prompts as the app does, fresh each time, and saves everything", async () => {
+  const { benchModel, plan } = await load();
+  const dir = tmpdir();
+  const model = path.join(dir, "tiny.gguf");
+  fs.writeFileSync(model, "not really weights");
+  // FLUENT gets the known model output; REPORTED "runs away" to the cap.
+  const { mod, calls } = fakeLlamaModule((turn) =>
+    turn.includes(FLUENT.raw)
+      ? { text: FLUENT.modelOutput }
+      : { text: "so so so", stopReason: "maxTokens" }
+  );
+  const opts = { out: dir, id: "tiny", seeds: [1, 2], corpora: ["fluent", "reported"], gpu: false };
+  const { manifest, summary } = await quietly(() => benchModel(model, opts, mod));
+
+  // CPU backend, no thread override, the app's 4096-token context.
+  assert.deepStrictEqual(calls.getLlama, [{ gpu: false }]);
+  assert.deepStrictEqual(calls.createContext, [{ contextSize: 4096 }]);
+
+  // One untimed warm-up, then every planned clean; each one starts from an
+  // empty chat and an empty KV sequence.
+  const turns = plan(opts);
+  assert.strictEqual(turns.length, 8);
+  assert.strictEqual(calls.prompts.length, 1 + turns.length);
+  calls.prompts.forEach((p, i) => {
+    assert.strictEqual(p.clearsBefore, i + 1, `clean ${i} reused the KV cache`);
+    assert.strictEqual(p.resetsBefore, i + 1, `clean ${i} kept chat history`);
+  });
+
+  // The app's own turn, sampling, seed and generation cap.
+  turns.forEach((t, i) => {
+    const { turn, options } = calls.prompts[i + 1];
+    assert.strictEqual(turn, cleanupUserTurn(t.systemPrompt, t.input));
+    const { onToken, seed, maxTokens, ...sampling } = options;
+    assert.deepStrictEqual(sampling, cleanupSamplingOptions(t.sampling));
+    assert.strictEqual(seed, t.seed);
+    assert.strictEqual(maxTokens, cleanMaxTokens(t.input.split(/\s+/).length));
+  });
+
+  // Every artifact, one raw file per clean.
+  const out = path.join(dir, "tiny");
+  const runs = fs.readFileSync(path.join(out, "runs.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  assert.strictEqual(runs.length, 8);
+  for (const r of runs) {
+    const raw = fs.readFileSync(path.join(out, "raw", `${r.corpus}-${r.style}-${r.index}-s${r.seed}.txt`), "utf8");
+    assert.strictEqual(raw, (r.corpus === "fluent" ? FLUENT.modelOutput : "so so so") + "\n");
+    assert.strictEqual(r.genTokens, 3);
+  }
+  // A cap hit is a runaway, delivered raw — never scored as the looping text.
+  assert.ok(runs.filter((r) => r.corpus === "reported").every((r) => r.score.runaway && !r.score.fidelityOk));
+  assert.strictEqual(summary["fluent/clean"].fillers, 12); // 6 per seed, 2 seeds
+  const saved = JSON.parse(fs.readFileSync(path.join(out, "summary.json"), "utf8"));
+  assert.deepStrictEqual(saved.summary, summary);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(out, "manifest.json"), "utf8")), manifest);
+  assert.strictEqual(manifest.backend, "cpu");
+  assert.strictEqual(manifest.chatWrapper, "GemmaChatWrapper");
+  assert.strictEqual(manifest.sha256, require("node:crypto").createHash("sha256").update("not really weights").digest("hex"));
+});
+
+test("benchModel: the GPU pass auto-detects the backend and times FLUENT/clean only", async () => {
+  const { benchModel } = await load();
+  const dir = tmpdir();
+  const model = path.join(dir, "tiny.gguf");
+  fs.writeFileSync(model, "w");
+  const { mod, calls } = fakeLlamaModule(() => ({ text: FLUENT.modelOutput }));
+  const opts = { out: dir, id: "tiny", seeds: [1, 2, 3], corpora: ["fluent", "reported"], gpu: true };
+  const { manifest } = await quietly(() => benchModel(model, opts, mod));
+  assert.deepStrictEqual(calls.getLlama, [{}]);
+  assert.strictEqual(calls.prompts.length, 1 + 3);
+  assert.strictEqual(manifest.backend, "cuda");
+  assert.ok(fs.existsSync(path.join(dir, "tiny-gpu", "summary.json")));
 });

@@ -32,7 +32,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-// A throwaway profile: check 6 needs first-run defaults, and the smoke should
+// A throwaway profile: check 8 needs first-run defaults, and the smoke should
 // never read or write a developer's real settings. One directory per checkout,
 // wiped at the start of every run: removing it on the way out doesn't work,
 // because Chromium writes Local State, Preferences and friends back while it

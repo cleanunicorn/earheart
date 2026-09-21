@@ -30,6 +30,7 @@
 // `wer_verbatim` is N0 + N5 only: case and punctuation intact, which is what
 // Earheart actually pastes.
 
+const { join: joinPath } = require("node:path");
 const { encodeWav, SAMPLE_RATE } = require("../main/util/wav");
 
 /* ---------------- normalisation ---------------- */
@@ -643,6 +644,61 @@ function rowReusable(row, model) {
   return pins(row.files) === pins(model.files);
 }
 
+/* ---------------- the exploratory recognizer config ---------------- */
+
+// scripts/stt-eval-worker.js builds sherpa-onnx recognizers for families the
+// app's worker has no config for yet. The settings copy the app's worker
+// (16 kHz, 80-dim features, the given runtime) — a copy, which is why its rows
+// are compared only with the default measured the same way.
+const FEATURE_DIM = 80;
+
+/**
+ * The OfflineRecognizer config for a model's `sherpa` block, by family:
+ * transducer (has a joiner), whisper, moonshine, nemoCtc, canary.
+ */
+function sherpaRecognizerConfig(dir, s, runtime) {
+  const p = (f) => joinPath(dir, f);
+  const family = s.family || (s.joiner ? "transducer" : "whisper");
+  let modelFiles;
+  switch (family) {
+    case "transducer":
+      modelFiles = { transducer: { encoder: p(s.encoder), decoder: p(s.decoder), joiner: p(s.joiner) } };
+      break;
+    case "whisper":
+      modelFiles = { whisper: { encoder: p(s.encoder), decoder: p(s.decoder) } };
+      break;
+    case "moonshine":
+      modelFiles = {
+        moonshine: {
+          preprocessor: p(s.preprocessor),
+          encoder: p(s.encoder),
+          uncachedDecoder: p(s.uncachedDecoder),
+          cachedDecoder: p(s.cachedDecoder),
+        },
+      };
+      break;
+    case "nemoCtc":
+      modelFiles = { nemoCtc: { model: p(s.model) } };
+      break;
+    case "canary":
+      modelFiles = { canary: { encoder: p(s.encoder), decoder: p(s.decoder), srcLang: "en", tgtLang: "en", usePnc: 1 } };
+      break;
+    default:
+      throw new Error(`unknown sherpa family: ${s.family}`);
+  }
+  const modelType = s.modelType || (family === "transducer" ? "nemo_transducer" : undefined);
+  return {
+    featConfig: { sampleRate: SAMPLE_RATE, featureDim: FEATURE_DIM },
+    modelConfig: {
+      ...modelFiles,
+      tokens: p(s.tokens),
+      ...runtime,
+      ...(modelType ? { modelType } : {}),
+      debug: false,
+    },
+  };
+}
+
 /* ---------------- the speed subset ---------------- */
 
 // Speed is measured on a quiet machine, and a shared machine is quiet in short
@@ -946,6 +1002,7 @@ module.exports = {
   resumeCompatibility,
   rowReusable,
   planModels,
+  sherpaRecognizerConfig,
   styleRates,
   parseFleursTsv,
   tsvColumnMismatches,

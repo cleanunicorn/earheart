@@ -826,3 +826,77 @@ test("stt-eval harness: an exploratory request that times out kills its utility 
     else delete require.cache[electronPath];
   }
 });
+
+/* ---------------- the exploratory worker (scripts/stt-eval-worker.js) ---------------- */
+
+test("stt-eval worker config: the exact recognizer config for every sherpa family", () => {
+  const rt = { numThreads: 8, provider: "cpu" };
+  const cfg = (sherpa) => e.sherpaRecognizerConfig("/m", sherpa, rt);
+  const common = { tokens: "/m/tokens.txt", numThreads: 8, provider: "cpu", debug: false };
+  assert.deepStrictEqual(cfg({ encoder: "e", decoder: "d", joiner: "j", tokens: "tokens.txt" }), {
+    featConfig: { sampleRate: 16000, featureDim: 80 },
+    modelConfig: { transducer: { encoder: "/m/e", decoder: "/m/d", joiner: "/m/j" }, ...common, modelType: "nemo_transducer" },
+  });
+  assert.deepStrictEqual(cfg({ encoder: "e", decoder: "d", joiner: "j", tokens: "tokens.txt", modelType: "transducer" }).modelConfig.modelType, "transducer");
+  assert.deepStrictEqual(cfg({ encoder: "e", decoder: "d", tokens: "tokens.txt", modelType: "whisper" }).modelConfig, {
+    whisper: { encoder: "/m/e", decoder: "/m/d" }, ...common, modelType: "whisper",
+  });
+  assert.deepStrictEqual(cfg({ family: "moonshine", preprocessor: "p", encoder: "e", uncachedDecoder: "u", cachedDecoder: "c", tokens: "tokens.txt" }).modelConfig, {
+    moonshine: { preprocessor: "/m/p", encoder: "/m/e", uncachedDecoder: "/m/u", cachedDecoder: "/m/c" }, ...common,
+  });
+  assert.deepStrictEqual(cfg({ family: "nemoCtc", model: "model.onnx", tokens: "tokens.txt" }).modelConfig, {
+    nemoCtc: { model: "/m/model.onnx" }, ...common,
+  });
+  assert.deepStrictEqual(cfg({ family: "canary", encoder: "e", decoder: "d", tokens: "tokens.txt" }).modelConfig, {
+    canary: { encoder: "/m/e", decoder: "/m/d", srcLang: "en", tgtLang: "en", usePnc: 1 }, ...common,
+  });
+  assert.throws(() => cfg({ family: "senseVoice", tokens: "t" }), /unknown sherpa family: senseVoice/);
+  // Every exploratory manifest entry builds, with every file it names.
+  for (const c of manifest.CANDIDATES.filter((x) => x.arm === "exploratory")) {
+    const mc = e.sherpaRecognizerConfig("/m", c.sherpa, rt).modelConfig;
+    assert.ok(mc[c.sherpa.family], `${c.id}: ${c.sherpa.family} sub-config`);
+    for (const v of Object.values(mc[c.sherpa.family])) {
+      if (typeof v === "string" && v.startsWith("/m/")) assert.ok(c.files.some((f) => `/m/${f.name}` === v), `${c.id}: ${v} is downloaded`);
+    }
+  }
+});
+
+test("stt-eval worker: load reports the app's runtime; transcribe before load fails", async () => {
+  const workerPath = require.resolve("../scripts/stt-eval-worker");
+  const sherpaPath = require.resolve("sherpa-onnx-node", { paths: [path.dirname(workerPath)] });
+  const savedSherpa = require.cache[sherpaPath];
+  const savedPort = process.parentPort;
+  const built = [];
+  const stub = new Module(sherpaPath, null);
+  stub.filename = sherpaPath;
+  stub.loaded = true;
+  stub.exports = { OfflineRecognizer: class { constructor(c) { built.push(c); } } };
+  require.cache[sherpaPath] = stub;
+  let onMessage = null;
+  const replies = [];
+  process.parentPort = { on: (ev, fn) => { if (ev === "message") onMessage = fn; }, postMessage: (m) => replies.push(m) };
+  delete require.cache[workerPath];
+  try {
+    require(workerPath);
+    const send = (data) => new Promise((resolve) => {
+      const seen = replies.length;
+      onMessage({ data });
+      const poll = () => (replies.length > seen ? resolve(replies[seen]) : setImmediate(poll));
+      poll();
+    });
+    const early = await send({ id: 1, type: "transcribe", wav: Buffer.alloc(0) });
+    assert.deepStrictEqual(early, { id: 1, ok: false, error: "STT model not loaded" });
+    const threads = Math.max(1, Math.min(8, os.cpus().length - 1));
+    const loaded = await send({ id: 2, type: "load", dir: "/m", sherpa: { family: "nemoCtc", model: "model.onnx", tokens: "tokens.txt" } });
+    assert.deepStrictEqual(loaded, { id: 2, ok: true, result: { ready: true, numThreads: threads, provider: "cpu" } });
+    assert.deepStrictEqual(built[0].featConfig, { sampleRate: 16000, featureDim: 80 });
+    assert.strictEqual(built[0].modelConfig.numThreads, threads);
+    const unknown = await send({ id: 3, type: "nope" });
+    assert.match(unknown.error, /Unknown request: nope/);
+  } finally {
+    delete require.cache[workerPath];
+    if (savedSherpa) require.cache[sherpaPath] = savedSherpa;
+    else delete require.cache[sherpaPath];
+    process.parentPort = savedPort;
+  }
+});

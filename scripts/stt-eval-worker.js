@@ -11,54 +11,18 @@
 // file (the calibration row). A family that wins here is wired into the real
 // worker and re-measured there before it can reach the catalog.
 
-const path = require("node:path");
 const os = require("node:os");
-const { wavToFloat32, SAMPLE_RATE } = require("../main/util/wav");
+const { wavToFloat32 } = require("../main/util/wav");
+const { sherpaRecognizerConfig } = require("./stt-eval");
 
 const port = process.parentPort;
-const FEATURE_DIM = 80;
 
 let recognizer = null;
-
-function familyConfig(dir, s) {
-  const p = (f) => path.join(dir, f);
-  switch (s.family || (s.joiner ? "transducer" : "whisper")) {
-    case "transducer":
-      return { transducer: { encoder: p(s.encoder), decoder: p(s.decoder), joiner: p(s.joiner) } };
-    case "whisper":
-      return { whisper: { encoder: p(s.encoder), decoder: p(s.decoder) } };
-    case "moonshine":
-      return {
-        moonshine: {
-          preprocessor: p(s.preprocessor),
-          encoder: p(s.encoder),
-          uncachedDecoder: p(s.uncachedDecoder),
-          cachedDecoder: p(s.cachedDecoder),
-        },
-      };
-    case "nemoCtc":
-      return { nemoCtc: { model: p(s.model) } };
-    case "canary":
-      return { canary: { encoder: p(s.encoder), decoder: p(s.decoder), srcLang: "en", tgtLang: "en", usePnc: 1 } };
-    default:
-      throw new Error(`unknown sherpa family: ${s.family}`);
-  }
-}
 
 async function load({ dir, sherpa }) {
   const sherpaOnnx = require("sherpa-onnx-node");
   const runtime = { numThreads: Math.max(1, Math.min(8, os.cpus().length - 1)), provider: "cpu" };
-  const modelType = sherpa.modelType || (sherpa.joiner && !sherpa.family ? "nemo_transducer" : undefined);
-  recognizer = new sherpaOnnx.OfflineRecognizer({
-    featConfig: { sampleRate: SAMPLE_RATE, featureDim: FEATURE_DIM },
-    modelConfig: {
-      ...familyConfig(dir, sherpa),
-      tokens: path.join(dir, sherpa.tokens),
-      ...runtime,
-      ...(modelType ? { modelType } : {}),
-      debug: false,
-    },
-  });
+  recognizer = new sherpaOnnx.OfflineRecognizer(sherpaRecognizerConfig(dir, sherpa, runtime));
   return { ready: true, ...runtime };
 }
 

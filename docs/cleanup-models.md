@@ -26,7 +26,8 @@ and they are the ones to look at next:
   leaves 5 — with no fidelity failure on FLUENT (both styles)
   or REPORTED, and are faster than Gemma 3 4B on the CPU under the cross-run
   lock: **18.6 s** and **21.1 s** against **22.0 s** per FLUENT clean (median;
-  fastest single cleans 18.4 s and 21.0 s against 21.6 s).
+  fastest single clean across all their passes 18.4 s and 21.0 s against
+  21.6 s).
 - They fail one criterion: median content-word retention **0.95** and
   **0.94** against Gemma 3 4B's **1.00**. Gemma reaches 1.00 by copying the
   dictation through, fillers included. What the two drop, read from the saved
@@ -303,19 +304,77 @@ licence → not addable, 2,019,377,696 B).
 
 ## Reproduce
 
-```sh
-# one model (download it first; outputs go outside the repo)
-node scripts/bench-cleanup.mjs --out=/tmp/bench --id=gemma-3-4b gemma-3-4b-it-Q4_K_M.gguf
-# GPU footnote
-node scripts/bench-cleanup.mjs --out=/tmp/bench --id=gemma-3-4b --gpu gemma-3-4b-it-Q4_K_M.gguf
-# check a candidate on Hugging Face without downloading it
-node scripts/bench-cleanup.mjs --probe unsloth/Qwen3-4B-Instruct-2507-GGUF Qwen3-4B-Instruct-2507-Q4_K_M.gguf
-```
+Everything below runs from the repository root and writes outside it. It is
+the exact sequence behind this page: 13 models, one at a time (download,
+check, CPU pass, GPU pass, delete), then the verdict trio re-timed under a CPU
+lock, then the tables. The whole run takes about two and a half hours on the
+hardware above and never holds more than one model's weights (at most
+7.5 GB) on disk.
 
 ```sh
-# the tables on this page, from saved runs (extra passes: --also / --locked)
-node scripts/bench-cleanup.mjs --report /tmp/bench --locked=/tmp/bench-locked \
-  --licences=granite-4.0-micro=apache-2.0,qwen3-4b-2507=apache-2.0,…
+OUT=/tmp/cleanup-bench          # saved runs: manifests, scores, raw outputs
+MODELS=/tmp/cleanup-models      # weights, one model at a time
+LOCK=/tmp/cpu-quiet.lock        # any lock file every heavy job on the machine agrees on
+mkdir -p "$OUT" "$OUT-locked" "$MODELS"
+
+fetch() {  # <repo> <commit> <file>: download a pinned file after a disk check
+  df -h /                        # the run kept eval weights under ~20 GB
+  curl -fL -o "$MODELS/$3" "https://huggingface.co/$1/resolve/$2/$3" </dev/null
+  sha256sum "$MODELS/$3"         # compare with the Pins table below
+}
+
+# 1. Every measured model: id, repo, pinned commit, file.
+while read -r id repo commit file; do
+  fetch "$repo" "$commit" "$file"
+  node scripts/bench-cleanup.mjs --out="$OUT" --id="$id" "$MODELS/$file" </dev/null
+  node scripts/bench-cleanup.mjs --out="$OUT" --id="$id" --gpu "$MODELS/$file" </dev/null
+  rm "$MODELS/$file"             # delete before the next download
+done <<'PINS'
+gemma-3-1b ggml-org/gemma-3-1b-it-GGUF f9c28bcd85737ffc5aef028638d3341d49869c27 gemma-3-1b-it-Q4_K_M.gguf
+gemma-3-4b ggml-org/gemma-3-4b-it-GGUF d0976223747697cb51e056d85c532013931fe52e gemma-3-4b-it-Q4_K_M.gguf
+gemma-3-12b ggml-org/gemma-3-12b-it-GGUF ec0cbabd8dbff316f659876a50202295c3c4a314 gemma-3-12b-it-Q4_K_M.gguf
+qwen3.5-0.8b ggml-org/Qwen3.5-0.8B-GGUF 8fea620810c4afa23dd6443f999a48574c1611a3 Qwen3.5-0.8B-Q4_0.gguf
+lfm2-1.2b LiquidAI/LFM2-1.2B-GGUF 5399e76c648f4eb8c053feb1ab747277dea5bf8b LFM2-1.2B-Q4_K_M.gguf
+lfm2-2.6b LiquidAI/LFM2-2.6B-GGUF a759abdc5955d4ca97763e5cb7ff3940589ba898 LFM2-2.6B-Q4_K_M.gguf
+granite-4.0-micro ibm-granite/granite-4.0-micro-GGUF ec48475f0c811d812fbfb61975717a9c36eeb652 granite-4.0-micro-Q4_K_M.gguf
+phi-3.5-mini bartowski/Phi-3.5-mini-instruct-GGUF 6d70da17e749a471ccb62ade694486011a75cda3 Phi-3.5-mini-instruct-Q4_K_M.gguf
+qwen3-4b-2507 unsloth/Qwen3-4B-Instruct-2507-GGUF a06e946bb6b655725eafa393f4a9745d460374c9 Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+gemma-3-4b-qat ggml-org/gemma-3-4b-it-qat-GGUF bbcac0d065076c47042838c0675c602411b0dd4c gemma-3-4b-it-qat-Q4_0.gguf
+ministral-3-3b ggml-org/Ministral-3-3B-Instruct-2512-GGUF 742ab8db17d5c8ee5dc8f5afb5acfc2da1c33b26 Ministral-3-3B-Instruct-2512-Q8_0.gguf
+lfm2.5-8b-a1b LiquidAI/LFM2.5-8B-A1B-GGUF 49c14831707011e64d70b2ebd8462ba08d608434 LFM2.5-8B-A1B-Q4_K_M.gguf
+mistral-nemo-12b bartowski/Mistral-Nemo-Instruct-2407-GGUF a2dd64a0a76ea1bdb2bb6ab6fa5496b003c7c908 Mistral-Nemo-Instruct-2407-Q4_K_M.gguf
+PINS
+
+# 2. Re-time the rows where speed could decide a verdict, FLUENT only, each
+#    pass holding the shared CPU lock so no other heavy job runs beside it.
+while read -r id repo commit file; do
+  fetch "$repo" "$commit" "$file"
+  flock "$LOCK" node scripts/bench-cleanup.mjs --out="$OUT-locked" --id="$id" --corpus=fluent "$MODELS/$file" </dev/null
+  rm "$MODELS/$file"
+done <<'PINS'
+gemma-3-4b ggml-org/gemma-3-4b-it-GGUF d0976223747697cb51e056d85c532013931fe52e gemma-3-4b-it-Q4_K_M.gguf
+granite-4.0-micro ibm-granite/granite-4.0-micro-GGUF ec48475f0c811d812fbfb61975717a9c36eeb652 granite-4.0-micro-Q4_K_M.gguf
+qwen3-4b-2507 unsloth/Qwen3-4B-Instruct-2507-GGUF a06e946bb6b655725eafa393f4a9745d460374c9 Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+PINS
+
+# 3. Re-score with the current scoring (only needed if it changed since the
+#    runs), then print every table on this page.
+node scripts/bench-cleanup.mjs --rescore "$OUT"
+node scripts/bench-cleanup.mjs --rescore "$OUT-locked"
+node scripts/bench-cleanup.mjs --report "$OUT" --locked="$OUT-locked" \
+  --licences=qwen3.5-0.8b=apache-2.0,lfm2-1.2b=lfm1.0,lfm2-2.6b=lfm1.0,granite-4.0-micro=apache-2.0,phi-3.5-mini=mit,qwen3-4b-2507=apache-2.0,gemma-3-4b-qat=gemma,ministral-3-3b=apache-2.0,lfm2.5-8b-a1b=lfm1.0,mistral-nemo-12b=apache-2.0
+```
+
+The shipped Gemmas need no `--licences` entry (they are "gemma"); a candidate
+missing from it reports as "unknown", which the bar treats as not shippable.
+The speed table on this page also lists a load-gated re-run of Gemma 3 4B
+that turned out contended (`--also=<dir>` adds such a pass); it decides
+nothing.
+
+Check a candidate on Hugging Face without downloading it:
+
+```sh
+node scripts/bench-cleanup.mjs --probe unsloth/Qwen3-4B-Instruct-2507-GGUF Qwen3-4B-Instruct-2507-Q4_K_M.gguf
 ```
 
 Each run writes `manifest.json` (file, sha256, backend, threads, chat

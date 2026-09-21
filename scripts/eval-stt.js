@@ -47,8 +47,9 @@
 // it used, and a model is refused unless that is CPU at the app's
 // min(8, cpus-1). Each model gets a fresh worker (a replaced recognizer's
 // native memory is only reclaimed when the worker exits): cold load, one
-// first decode and one discarded warm-up of a declared clip (their texts must
-// match), then the scored pass over every utterance. Headline speed is the
+// first decode and one discarded warm-up of a declared clip (their texts are
+// compared and recorded as row.deterministic, not enforced), then the scored
+// pass over every utterance. Headline speed is the
 // aggregate decode RTF (total decode time / total audio); p50/p95 per
 // utterance and the harness's own wall clock around each request are reported
 // beside it, so IPC overhead is visible and never folded in.

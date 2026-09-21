@@ -660,10 +660,10 @@ async function measureModel(entry, ctx) {
     // Q5: long single buffers. The accuracy pass runs them for every model
     // (it cannot know yet who clears Q3); a single quiet run only for the
     // default and anything clearing Q3; the speed pass never.
-    const ref = row.path === "direct" ? ctx.calibration : ctx.bracketFirst;
+    const baseline = row.path === "direct" ? ctx.calibration : ctx.bracketFirst;
     const passesQ3 =
-      row.status === "measured" && ref && role !== "calibration" && model.id !== manifest.BASELINE_ID &&
-      e.classify(ref, row).eligible;
+      row.status === "measured" && baseline && role !== "calibration" && model.id !== manifest.BASELINE_ID &&
+      e.classify(baseline, row).eligible;
     const isDefaultRun = model.id === manifest.BASELINE_ID && (role === "bracket-first" || role === "calibration");
     const wantLongForm =
       ctx.opts.pass === "accuracy" ? row.status === "measured" : ctx.opts.pass === "both" && (isDefaultRun || passesQ3);

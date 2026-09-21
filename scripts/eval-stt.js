@@ -12,6 +12,11 @@
 //   … eval-stt.js --pass speed --exploratory --out speed.json    # quiet gate, 1/4 of the clips
 //   node scripts/eval-stt.js --combine acc.json speed.json --out stt-eval.json
 //
+// Sharing the CPU with another benchmark? Agree on a lock file: run the timed
+// pass as `flock LOCK xvfb-run … --pass speed --cpu-lock LOCK …` (it refuses
+// to start without the lock), and give the accuracy pass `--cpu-lock LOCK` so
+// it pauses before each model while anyone holds it.
+//
 //   node scripts/eval-stt.js --report stt-eval.json        # Markdown table from a run
 //   node scripts/eval-stt.js --verify-shipped              # re-derive the catalog's pins
 //   node scripts/eval-stt.js --discover owner/repo[@commit] …   # pins for a new model
@@ -23,7 +28,7 @@
 // --quiet-load N (wait for the 1-minute load average to reach N before each
 // model; default 4, "Infinity" to not wait), --pass accuracy|speed (one half
 // of a split run; default both), --combine <acc.json> [speed.json] (judge a
-// split run),
+// split run), --cpu-lock <file> (see above),
 // --exploratory (also measure families the worker can't run yet), --resume
 // (reuse the measured rows of an existing --out file), --log <file> (append
 // one line per model).
@@ -121,15 +126,21 @@ const QUIET_TIMEOUT_MS = 4 * 3600 * 1000;
 const OTHER_RUN_PATTERN = "bench-cleanup|eval-cleanup";
 const OTHER_RUN_SAMPLE_MS = 10000;
 const SPEED_ATTEMPTS = 3;
+// Cross-run CPU lock (--cpu-lock <file>). A timed pass (speed / both) runs
+// under `flock <file> …` for its whole duration, and refuses to start if the
+// lock is not held; the accuracy pass, which is untimed, waits before every
+// model and every long-form set while ANYONE holds it, so it never loads the
+// CPU under another run's timings (or this run's own speed pass).
+const LOCK_POLL_MS = 30000;
 
 /* ---------------- arguments ---------------- */
 
 function parseArgs(argv) {
   const opts = {
     models: null, limit: 0, keep: false, exploratory: false, resume: false, discover: [],
-    quietLoad: QUIET_LOAD, pass: "both", combine: [], otherRunPattern: OTHER_RUN_PATTERN,
+    quietLoad: QUIET_LOAD, pass: "both", combine: [], otherRunPattern: OTHER_RUN_PATTERN, cpuLock: null,
   };
-  const valued = new Set(["--out", "--cache-dir", "--models", "--limit", "--report", "--log", "--quiet-load", "--pass", "--other-run-pattern"]);
+  const valued = new Set(["--out", "--cache-dir", "--models", "--limit", "--report", "--log", "--quiet-load", "--pass", "--other-run-pattern", "--cpu-lock"]);
   for (let i = 0; i < argv.length; i++) {
     let arg = argv[i];
     let value = null;
@@ -148,6 +159,7 @@ function parseArgs(argv) {
       case "--log": opts.log = value; break;
       case "--quiet-load": opts.quietLoad = Number(value); break;
       case "--other-run-pattern": opts.otherRunPattern = value; break;
+      case "--cpu-lock": opts.cpuLock = path.resolve(value); break;
       case "--pass":
         if (!["both", "accuracy", "speed"].includes(value)) throw new Error(`--pass must be accuracy, speed or both`);
         opts.pass = value;
@@ -631,6 +643,9 @@ async function measureModel(entry, ctx) {
     const wantLongForm =
       ctx.opts.pass === "accuracy" ? row.status === "measured" : ctx.opts.pass === "both" && (isDefaultRun || passesQ3);
     if (wantLongForm) {
+      if (ctx.opts.pass === "accuracy") {
+        row.lockWaitLongFormMs = await waitForLock(ctx.opts.cpuLock, `${model.id} long-form`, ctx.appendLog);
+      }
       row.longForm = [];
       for (const clip of ctx.longForm) {
         try {
@@ -692,6 +707,34 @@ function otherRunSampler(pattern) {
       return { pattern, samples: samples.length, hits, unknown, active: hits > 0 ? true : unknown ? null : false };
     },
   };
+}
+
+// Is the cross-run lock held right now (by anyone, us included)? Read-only:
+// a non-blocking `flock -n` that takes and drops it at once if free.
+function lockHeld(file) {
+  try {
+    execFileSync("flock", ["-n", file, "true"], { stdio: "ignore" });
+    return false;
+  } catch (err) {
+    if (err.status === 1) return true;
+    throw new Error(`cannot check --cpu-lock ${file}: ${err.message}`);
+  }
+}
+
+// The accuracy pass's side of the lock: wait while it is held.
+async function waitForLock(file, what, appendLog) {
+  if (!file) return 0;
+  const started = Date.now();
+  let announced = false;
+  while (lockHeld(file)) {
+    if (!announced) {
+      log(`cpu lock held — waiting before ${what}`);
+      appendLog(`waiting: cpu lock held (before ${what})`);
+      announced = true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_MS));
+  }
+  return Date.now() - started;
 }
 
 async function waitForQuiet(limit, pattern, appendLog) {
@@ -871,6 +914,8 @@ function runStatus(result, opts) {
   return stable ? (opts.pass === "speed" ? "speed complete" : "complete") : "unstable";
 }
 
+const lockOfPass = (res) => Boolean(res.cpuLock && res.cpuLock.role === "held for the whole pass");
+
 // Merge a split run: the accuracy pass's rows, judged with the speed pass's
 // clean decode times.
 function combine(accFile, speedFile) {
@@ -886,7 +931,7 @@ function combine(accFile, speedFile) {
     pass: "combined",
     passes: {
       accuracy: { file: path.basename(accFile), status: acc.status, command: acc.command },
-      speed: spd ? { file: path.basename(speedFile), status: spd.status, command: spd.command, corpus: { subset: spd.corpus.subset, utterances: spd.corpus.utterances, audioSec: spd.corpus.audioSec } } : null,
+      speed: spd ? { file: path.basename(speedFile), status: spd.status, command: spd.command, cpuLock: lockOfPass(spd), corpus: { subset: spd.corpus.subset, utterances: spd.corpus.utterances, audioSec: spd.corpus.audioSec } } : null,
     },
   };
   judge(out, spd);
@@ -910,6 +955,9 @@ async function run(opts) {
   const out = path.resolve(opts.out);
   const appendLog = (line) => opts.log && fs.appendFileSync(opts.log, `${new Date().toISOString()} ${line}\n`);
 
+  if (opts.cpuLock && opts.pass !== "accuracy" && !lockHeld(opts.cpuLock)) {
+    throw new Error(`a timed pass must run under the lock: flock ${opts.cpuLock} npx electron scripts/eval-stt.js …`);
+  }
   const corpus = await prepareCorpus(cacheDir, opts.limit, { speed: opts.pass === "speed" });
   const { clips, allClips, ...corpusInfo } = corpus;
   const previous = opts.resume && fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, "utf8")) : null;
@@ -922,12 +970,20 @@ async function run(opts) {
     corpus: corpusInfo,
     threshold: { ...e.THRESHOLD, against: manifest.BASELINE_ID, longForm: e.LONG_FORM, bracketDrift: BRACKET_DRIFT },
     skipped: manifest.SKIPPED,
+    // A timed pass verified at start that the lock was held (by the flock it
+    // runs under); the accuracy pass only yields to it.
+    cpuLock: opts.cpuLock
+      ? { file: opts.cpuLock, role: opts.pass === "accuracy" ? "yields to holders" : "held for the whole pass" }
+      : null,
     rows: [],
   };
+  if (previous) {
+    result.resumed = { rows: previous.rows.filter((r) => r.status === "measured").length, measuringCode: previous.machine.measuringCode };
+  }
   if (previous && previous.corpus && previous.corpus.utterances !== corpusInfo.utterances) {
     throw new Error("--resume: the existing file was measured on a different corpus selection");
   }
-  const ctx = { opts, cacheDir, corpus, longForm: buildLongForm(allClips), ablation: null, bracketFirst: null, calibration: null };
+  const ctx = { opts, appendLog, cacheDir, corpus, longForm: buildLongForm(allClips), ablation: null, bracketFirst: null, calibration: null };
   const order = plan(opts);
   for (const entry of order) {
     const reused = previous && previous.rows.find((r) => r.id === entry.model.id && r.role === entry.role && r.status === "measured");
@@ -939,6 +995,7 @@ async function run(opts) {
       log(`${entry.model.id} (${entry.role}, ${entry.arm}) — free ${Math.round(fs.statfsSync(cacheDir).bavail * fs.statfsSync(cacheDir).bsize / 1e9)} GB`);
       // The accuracy pass does not wait: its decode times are contended by
       // definition and never used for speed.
+      const lockWaitMs = opts.pass === "accuracy" ? await waitForLock(opts.cpuLock, entry.model.id, appendLog) : 0;
       const attempts = [];
       for (;;) {
         const waited = opts.pass === "accuracy" ? null : await waitForQuiet(opts.quietLoad, opts.otherRunPattern, appendLog);
@@ -953,6 +1010,7 @@ async function run(opts) {
         log(`${entry.model.id} (${entry.role}): contended (other run ${row.otherRun.active}), re-measuring when quiet`);
       }
       row.speedAttempts = attempts;
+      if (opts.cpuLock && opts.pass === "accuracy") row.lockWaitMs = lockWaitMs + (row.lockWaitLongFormMs || 0);
     }
     if (row.role === "bracket-first" && row.status === "measured") ctx.bracketFirst = row;
     if (row.role === "calibration" && row.status === "measured") ctx.calibration = row;
@@ -994,6 +1052,10 @@ function report(result) {
   }
   if (result.brackets) {
     lines.push(`Default measured first/last: decodeRtf ${num(result.brackets.first, 4)} / ${num(result.brackets.last, 4)} (drift ${pct(result.brackets.drift, 1)} %, limit ${BRACKET_DRIFT * 100} %)`);
+  }
+  const lockOf = (x) => x && x.cpuLock && x.cpuLock.role === "held for the whole pass";
+  if (lockOf(result) || (result.passes && result.passes.speed && result.passes.speed.cpuLock)) {
+    lines.push("Every speed timing was taken while holding cpu-quiet.lock, shared with the parallel cleanup run.");
   }
   lines.push(`Status: ${result.status}`);
   lines.push("");

@@ -1,8 +1,11 @@
-// Tests for the speech-to-text evaluation's pure helpers (scripts/stt-eval.js):
-// the normalisation and WER that decide the accuracy column, the statistics,
-// the Q3 catalog threshold, and the corpus plumbing. The harness itself
-// (scripts/eval-stt.js) needs Electron, the network and multi-GB models, so it
-// is not in the suite; everything it computes a number with is pinned here.
+// Tests for the speech-to-text evaluation. Most cover the pure helpers in
+// scripts/stt-eval.js — the normalisation and WER that decide the accuracy
+// column, the statistics, the Q3/Q5 rules and judging, planning and resume
+// checks, and the corpus plumbing. The rest drive what can run without models:
+// scripts/eval-stt.js's combine/report/argument parsing and its recognizers'
+// timeout handling (against stubs), and scripts/stt-eval-worker.js with a
+// stubbed addon. A real measurement run needs Electron, the network and
+// multi-GB models, so it is not in the suite.
 
 const { test } = require("node:test");
 const assert = require("node:assert");

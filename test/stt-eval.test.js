@@ -841,23 +841,25 @@ test("stt-eval harness: an exploratory request that times out kills its utility 
 test("stt-eval worker config: the exact recognizer config for every sherpa family", () => {
   const rt = { numThreads: 8, provider: "cpu" };
   const cfg = (sherpa) => e.sherpaRecognizerConfig("/m", sherpa, rt);
-  const common = { tokens: "/m/tokens.txt", numThreads: 8, provider: "cpu", debug: false };
+  // Expected paths are joined the platform's way, as the builder does.
+  const P = (f) => path.join("/m", f);
+  const common = { tokens: P("tokens.txt"), numThreads: 8, provider: "cpu", debug: false };
   assert.deepStrictEqual(cfg({ encoder: "e", decoder: "d", joiner: "j", tokens: "tokens.txt" }), {
     featConfig: { sampleRate: 16000, featureDim: 80 },
-    modelConfig: { transducer: { encoder: "/m/e", decoder: "/m/d", joiner: "/m/j" }, ...common, modelType: "nemo_transducer" },
+    modelConfig: { transducer: { encoder: P("e"), decoder: P("d"), joiner: P("j") }, ...common, modelType: "nemo_transducer" },
   });
   assert.deepStrictEqual(cfg({ encoder: "e", decoder: "d", joiner: "j", tokens: "tokens.txt", modelType: "transducer" }).modelConfig.modelType, "transducer");
   assert.deepStrictEqual(cfg({ encoder: "e", decoder: "d", tokens: "tokens.txt", modelType: "whisper" }).modelConfig, {
-    whisper: { encoder: "/m/e", decoder: "/m/d" }, ...common, modelType: "whisper",
+    whisper: { encoder: P("e"), decoder: P("d") }, ...common, modelType: "whisper",
   });
   assert.deepStrictEqual(cfg({ family: "moonshine", preprocessor: "p", encoder: "e", uncachedDecoder: "u", cachedDecoder: "c", tokens: "tokens.txt" }).modelConfig, {
-    moonshine: { preprocessor: "/m/p", encoder: "/m/e", uncachedDecoder: "/m/u", cachedDecoder: "/m/c" }, ...common,
+    moonshine: { preprocessor: P("p"), encoder: P("e"), uncachedDecoder: P("u"), cachedDecoder: P("c") }, ...common,
   });
   assert.deepStrictEqual(cfg({ family: "nemoCtc", model: "model.onnx", tokens: "tokens.txt" }).modelConfig, {
-    nemoCtc: { model: "/m/model.onnx" }, ...common,
+    nemoCtc: { model: P("model.onnx") }, ...common,
   });
   assert.deepStrictEqual(cfg({ family: "canary", encoder: "e", decoder: "d", tokens: "tokens.txt" }).modelConfig, {
-    canary: { encoder: "/m/e", decoder: "/m/d", srcLang: "en", tgtLang: "en", usePnc: 1 }, ...common,
+    canary: { encoder: P("e"), decoder: P("d"), srcLang: "en", tgtLang: "en", usePnc: 1 }, ...common,
   });
   assert.throws(() => cfg({ family: "senseVoice", tokens: "t" }), /unknown sherpa family: senseVoice/);
   // Every exploratory manifest entry builds, with every file it names.
@@ -865,7 +867,7 @@ test("stt-eval worker config: the exact recognizer config for every sherpa famil
     const mc = e.sherpaRecognizerConfig("/m", c.sherpa, rt).modelConfig;
     assert.ok(mc[c.sherpa.family], `${c.id}: ${c.sherpa.family} sub-config`);
     for (const v of Object.values(mc[c.sherpa.family])) {
-      if (typeof v === "string" && v.startsWith("/m/")) assert.ok(c.files.some((f) => `/m/${f.name}` === v), `${c.id}: ${v} is downloaded`);
+      if (typeof v === "string" && v.startsWith(P(""))) assert.ok(c.files.some((f) => P(f.name) === v), `${c.id}: ${v} is downloaded`);
     }
   }
 });

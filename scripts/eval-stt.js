@@ -845,9 +845,9 @@ const plan = (opts) =>
 
 // Judging lives in scripts/stt-eval.js (judge, speedCleanliness), where it is
 // unit-tested; these are the run's own settings for it.
-const JUDGE = () => ({ baselineId: manifest.BASELINE_ID, quietLoad: QUIET_LOAD, bracketDrift: BRACKET_DRIFT });
+const judgeDefaults = () => ({ baselineId: manifest.BASELINE_ID, quietLoad: QUIET_LOAD, bracketDrift: BRACKET_DRIFT });
 const judge = (acc, spds, overrides = {}) =>
-  e.judge(acc, spds.map((res) => ({ res, name: res === acc ? "this run" : path.basename(res.file || "") })), { ...JUDGE(), ...overrides });
+  e.judge(acc, spds.map((res) => ({ res, name: res === acc ? "this run" : path.basename(res.file || "") })), { ...judgeDefaults(), ...overrides });
 
 function runStatus(result, opts) {
   const rows = result.rows;

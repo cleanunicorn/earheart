@@ -27,14 +27,25 @@
 //   npx electron scripts/settings-smoke.js                            # macOS/Win
 
 const { app, session } = require("electron");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
 // A throwaway profile: check 6 needs first-run defaults, and the smoke should
-// never read or write a developer's real settings. Set before anything touches
-// userData (settings.js resolves its path lazily).
-app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "earheart-settings-smoke-")));
+// never read or write a developer's real settings. One directory per checkout,
+// wiped at the start of every run: removing it on the way out doesn't work,
+// because Chromium writes Local State, Preferences and friends back while it
+// shuts down (even after process "exit"), so a per-run directory would pile up
+// in the temp dir. Keyed on the checkout so parallel worktrees don't share one.
+// Set before anything touches userData (settings.js resolves its path lazily).
+const userData = path.join(
+  os.tmpdir(),
+  `earheart-settings-smoke-${crypto.createHash("sha1").update(__dirname).digest("hex").slice(0, 8)}`
+);
+fs.rmSync(userData, { recursive: true, force: true });
+fs.mkdirSync(userData, { recursive: true });
+app.setPath("userData", userData);
 
 const windows = require("../main/windows");
 const ipc = require("../main/ipc");

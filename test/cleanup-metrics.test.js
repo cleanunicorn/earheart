@@ -25,6 +25,8 @@ const {
   minMax,
   decodeTokensPerSecond,
   summarizeRuns,
+  classifyPass,
+  speedEstimates,
   nearestComparator,
   meetsBar,
   summarizeProbe,
@@ -87,6 +89,10 @@ test("echo detection: prompt fragments, labels, thinking and preambles", () => {
     true
   );
   assert.strictEqual(detectEcho("Editing style: tidy", PROMPT), true);
+  // "No quotes": a reply wrapped whole in quotation marks.
+  assert.strictEqual(detectEcho('"I wanted to ask about the pipeline."', PROMPT), true);
+  assert.strictEqual(detectEcho("“I wanted to ask.”", PROMPT), true);
+  assert.strictEqual(detectEcho('He said "stop" and left.', PROMPT), false);
 });
 
 test("refusal detection is anchored at the start", () => {
@@ -275,4 +281,34 @@ test("summarizeProbe reads arch, template, licence and the pin from HF", () => {
   });
   assert.strictEqual(summarizeProbe({}, new Map(), "m-00001-of-00002.gguf").split, true);
   assert.strictEqual(summarizeProbe({ cardData: { license: "mit" } }, {}, "m.gguf").licence, "mit");
+});
+
+test("classifyPass calls a pass quiet only if start, end and every clean stayed low", () => {
+  assert.deepStrictEqual(
+    classifyPass({ loadAvgAtStart: [12.6, 20, 20], loadAvgAtEnd: [13, 1, 1], runLoads: [12.7, 13.9] }),
+    { recorded: true, maxLoad: 13.9, contended: false }
+  );
+  // Quiet at start, contended by the end: contended.
+  assert.strictEqual(
+    classifyPass({ loadAvgAtStart: [13.15], loadAvgAtEnd: [38.31], runLoads: [21.7] }).contended,
+    true
+  );
+  assert.deepStrictEqual(classifyPass({}), { recorded: false, maxLoad: null, contended: null });
+});
+
+test("speedEstimates prefers the locked pass, then the quietest, and takes the min over all", () => {
+  const passes = [
+    { label: "first", locked: false, maxLoad: 17.3, wallMedian: 22172, wallMin: 21888 },
+    { label: "rerun", locked: false, maxLoad: 38.3, wallMedian: 29793, wallMin: 28839 },
+    { label: "locked", locked: true, maxLoad: 15.1, wallMedian: 21500, wallMin: 21300 },
+  ];
+  assert.deepStrictEqual(speedEstimates(passes), { median: 21500, from: "locked", min: 21300 });
+  assert.deepStrictEqual(speedEstimates(passes.slice(0, 2)), { median: 22172, from: "first", min: 21888 });
+  // An unrecorded load ranks after any recorded one.
+  const e = speedEstimates([
+    { label: "old", locked: false, maxLoad: null, wallMedian: 100, wallMin: 90 },
+    { label: "new", locked: false, maxLoad: 30, wallMedian: 120, wallMin: 95 },
+  ]);
+  assert.strictEqual(e.from, "new");
+  assert.strictEqual(e.min, 90);
 });

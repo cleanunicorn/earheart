@@ -40,7 +40,9 @@
 // --report reads every summary under an --out directory and prints the
 // results table, each candidate against its byte-nearest shipped Gemma through
 // the catalog bar (meetsBar in scripts/cleanup-metrics.js), and the GPU
-// footnote — the tables in docs/cleanup-models.md and the PR.
+// footnote — the tables in docs/cleanup-models.md and the PR. Re-measured
+// speed passes join through --also=<dir> or, for passes taken while holding a
+// cross-run CPU lock, --locked=<dir>; each pass is labelled by its load.
 // Not in the test suite: it needs multi-GB models. The scoring is pinned in
 // test/cleanup-metrics.test.js.
 
@@ -71,7 +73,7 @@ function usage(msg) {
       "         [--corpus=fluent,reported[,short]] [--gpu] <model.gguf>\n" +
       "       node scripts/bench-cleanup.mjs --probe <owner/repo> <file.gguf>\n" +
       "       node scripts/bench-cleanup.mjs --report <out dir> [--licences=<id>=<licence>,...]\n" +
-      "         [--baselines=gemma-3-1b,gemma-3-4b,gemma-3-12b]"
+      "         [--baselines=gemma-3-1b,gemma-3-4b,gemma-3-12b] [--also=<out dir>]... [--locked=<out dir>]..."
   );
   process.exit(2);
 }
@@ -84,6 +86,8 @@ function parseArgs(argv) {
     models: [],
     licences: {},
     baselines: ["gemma-3-1b", "gemma-3-4b", "gemma-3-12b"],
+    also: [],
+    locked: [],
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -92,6 +96,8 @@ function parseArgs(argv) {
     else if (k === "report") opts.report = argv[++i];
     else if (k === "licences") opts.licences = Object.fromEntries(v.split(",").map((kv) => kv.split("=")));
     else if (k === "baselines") opts.baselines = v.split(",");
+    else if (k === "also") opts.also.push(v);
+    else if (k === "locked") opts.locked.push(v);
     else if (k === "out") opts.out = v;
     else if (k === "id") opts.id = v;
     else if (k === "gpu") opts.gpu = true;
@@ -106,6 +112,7 @@ function parseArgs(argv) {
   }
   if (opts.report !== undefined) {
     if (!opts.report || !fs.existsSync(opts.report)) usage("--report needs the --out directory of earlier runs");
+    for (const d of [...opts.also, ...opts.locked]) if (!fs.existsSync(d)) usage(`no such directory: ${d}`);
     return opts;
   }
   if (!opts.out) usage("--out=<dir> is required (outputs never go in the repo)");
@@ -316,21 +323,76 @@ function markdownRow({ manifest: m, summary }) {
 // candidate against its byte-nearest shipped Gemma through the catalog bar,
 // and the GPU footnote. Licences come from --licences (the harness can't read
 // them from a GGUF); the shipped Gemmas are "gemma".
+//
+// Speed can be re-measured: --also=<dir> adds more passes, --locked=<dir>
+// passes taken while holding a cross-run CPU lock (nothing else heavy running).
+// Every pass is labelled by its load (classifyPass); the bar's speed criterion
+// uses each model's least-contended pass, and the table also shows whether the
+// verdict survives the fastest clean of every pass (speedEstimates).
+function readRuns(dir) {
+  return fs
+    .readdirSync(dir)
+    .map((d) => path.join(dir, d))
+    .filter((d) => fs.existsSync(path.join(d, "summary.json")))
+    .map((d) => {
+      const r = JSON.parse(fs.readFileSync(path.join(d, "summary.json"), "utf8"));
+      const runs = fs.readFileSync(path.join(d, "runs.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+      return { ...r, runLoads: runs.map((x) => x.loadAvg1) };
+    });
+}
+
 function report(opts) {
-  const all = fs
-    .readdirSync(opts.report)
-    .map((d) => path.join(opts.report, d, "summary.json"))
-    .filter((f) => fs.existsSync(f))
-    .map((f) => JSON.parse(fs.readFileSync(f, "utf8")));
+  const all = readRuns(opts.report);
   const cpu = all.filter((r) => r.manifest.backend === "cpu").sort((a, b) => a.manifest.bytes - b.manifest.bytes);
   const gpu = all.filter((r) => r.manifest.backend !== "cpu").sort((a, b) => a.manifest.bytes - b.manifest.bytes);
   const gemmas = cpu.filter((r) => opts.baselines.includes(r.manifest.id));
   const licence = (id) => (opts.baselines.includes(id) ? "gemma" : opts.licences[id] || "unknown");
 
+  // Every CPU pass per model id: the first pass, then --also, then --locked.
+  const sources = [
+    { label: "first pass", locked: false, runs: cpu },
+    ...opts.also.map((d) => ({ label: `re-run (${path.basename(d)})`, locked: false, runs: readRuns(d) })),
+    ...opts.locked.map((d) => ({ label: "locked re-run", locked: true, runs: readRuns(d) })),
+  ];
+  const passes = {};
+  for (const src of sources) {
+    for (const r of src.runs) {
+      if (r.manifest.backend !== "cpu") continue;
+      const w = r.summary["fluent/clean"].wallMs;
+      const load = metrics.classifyPass({ ...r.manifest, runLoads: r.runLoads });
+      (passes[r.manifest.id] ||= []).push({
+        label: src.label,
+        locked: src.locked,
+        maxLoad: load.maxLoad,
+        load,
+        start: r.manifest.loadAvgAtStart?.[0],
+        end: r.manifest.loadAvgAtEnd?.[0],
+        wallMedian: w.median,
+        wallMin: w.min,
+        wallMax: w.max,
+      });
+    }
+  }
+  const speed = (id) => metrics.speedEstimates(passes[id]);
+
   const out = [TABLE_HEAD, ...cpu.map(markdownRow), ""];
   out.push(
-    "| candidate | vs | licence | quality (clean, strictly fewer) | polished (no more) | fidelity | speed (median wall ≤) | adds to catalog |",
-    "|---|---|---|---|---|---|---|---|"
+    "| model | pass | 1-min load: start · peak · end | load label | FLUENT/clean wall ms median [min–max] |",
+    "|---|---|---|---|---|"
+  );
+  for (const r of cpu) {
+    for (const p of passes[r.manifest.id]) {
+      const label = !p.load.recorded ? "load not recorded" : p.load.contended ? "contended" : "quiet";
+      out.push(
+        `| ${r.manifest.id} | ${p.label} | ${fmt(p.start, 1)} · ${fmt(p.maxLoad, 1)} · ${fmt(p.end, 1)} | ${label} | ` +
+          `${fmt(p.wallMedian)} [${fmt(p.wallMin)}–${fmt(p.wallMax)}] |`
+      );
+    }
+  }
+  out.push(
+    "",
+    "| candidate | vs | licence | quality (clean, strictly fewer) | polished (no more) | fidelity | speed: least-contended median ≤ | speed: min of all passes ≤ | adds to catalog |",
+    "|---|---|---|---|---|---|---|---|---|"
   );
   const yn = (b) => (b ? "yes" : "no");
   for (const r of cpu) {
@@ -339,16 +401,27 @@ function report(opts) {
       r.manifest.bytes,
       gemmas.map((x) => ({ id: x.manifest.id, bytes: x.manifest.bytes, run: x }))
     ).run;
+    const cs = speed(r.manifest.id);
+    const gs = speed(g.manifest.id);
+    // The bar reads wall-clock from the summary: hand it the least-contended pass.
+    const withSpeed = (x, sp) => ({
+      ...x.summary,
+      "fluent/clean": { ...x.summary["fluent/clean"], wallMs: { ...x.summary["fluent/clean"].wallMs, median: sp.median } },
+    });
     const bar = metrics.meetsBar(
-      { licence: licence(r.manifest.id), summary: r.summary },
-      { licence: "gemma", summary: g.summary }
+      { licence: licence(r.manifest.id), summary: withSpeed(r, cs) },
+      { licence: "gemma", summary: withSpeed(g, gs) }
     );
-    const cs = r.summary["fluent/clean"];
-    const gs = g.summary["fluent/clean"];
+    const robust = cs.min <= gs.min;
+    const c = r.summary["fluent/clean"];
+    const q = g.summary["fluent/clean"];
     out.push(
       `| ${r.manifest.id} | ${g.manifest.id} | ${licence(r.manifest.id)} ${bar.licence ? "✓" : "✗"} | ` +
-        `${yn(bar.quality)} (${cs.stumbles} vs ${gs.stumbles}) | ${yn(bar.polished)} | ${yn(bar.fidelity)} | ` +
-        `${yn(bar.speed)} (${fmt(cs.wallMs.median)} vs ${fmt(gs.wallMs.median)} ms) | **${yn(bar.pass)}** |`
+        `${yn(bar.quality)} (${c.stumbles} vs ${q.stumbles}) | ${yn(bar.polished)} | ` +
+        `${yn(bar.fidelity)} (fails ${c.fidelityFails}/${r.summary["fluent/polished"]?.fidelityFails ?? "–"}, ` +
+        `retention ${fmt(c.medianRetention, 2)} vs ${fmt(q.medianRetention, 2)}) | ` +
+        `${yn(bar.speed)} (${fmt(cs.median)} [${cs.from}] vs ${fmt(gs.median)} [${gs.from}]) | ` +
+        `${yn(robust)} (${fmt(cs.min)} vs ${fmt(gs.min)}) | **${yn(bar.pass)}**${bar.pass && !robust ? " (not robust)" : ""} |`
     );
   }
   if (gpu.length) {

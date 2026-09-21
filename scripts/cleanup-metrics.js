@@ -132,11 +132,15 @@ function criticalRetention(input, output) {
 const ECHO_LABEL = /(^|\n)\s*(cleaned transcript:|transcript:|editing style:)/i;
 const THINK = /<\/?think>/i;
 const PREAMBLE = /^\s*(here(?:'|’)?s\b|here is\b|sure[,!.]|certainly[,!.]|```)/i;
+const QUOTED = /^["“][\s\S]*["”]$/;
 const PROMPT_SLICE = 40;
 
 function detectEcho(output, systemPrompt = "") {
   if (ECHO_LABEL.test(output) || THINK.test(output) || PREAMBLE.test(output)) return true;
   if (output.includes("```")) return true;
+  // The prompt says "no quotes": a reply wrapped whole in quotation marks is
+  // the model presenting the text rather than returning it.
+  if (QUOTED.test(output.trim())) return true;
   const hay = output.toLowerCase();
   for (const line of systemPrompt.split("\n")) {
     const text = line.replace(/^\s*-\s*/, "").trim();
@@ -255,6 +259,38 @@ function summarizeRuns(runs) {
   return out;
 }
 
+// The benchmark host can be shared, so a timing is only as good as the load it
+// was taken under. A pass is quiet when its load — the 1-minute average at
+// start, at end, and after every clean — never exceeds QUIET_LOAD (about what
+// the benchmark alone produces with its 12 threads); a pass with no recorded
+// load can't be called either.
+const QUIET_LOAD = 14;
+
+function classifyPass({ loadAvgAtStart, loadAvgAtEnd, runLoads = [] }) {
+  const loads = [loadAvgAtStart?.[0], loadAvgAtEnd?.[0], ...runLoads].filter((x) => Number.isFinite(x));
+  if (loads.length === 0) return { recorded: false, maxLoad: null, contended: null };
+  const maxLoad = Math.max(...loads);
+  return { recorded: true, maxLoad, contended: maxLoad > QUIET_LOAD };
+}
+
+// Two speed estimates for one model across its passes ({label, locked,
+// maxLoad, wallMedian, wallMin}): the median of its least-contended pass —
+// a pass run under the cross-run CPU lock first, then the lowest peak load —
+// and the fastest single clean across every pass, the least-interfered sample.
+function speedEstimates(passes) {
+  const rank = (p) => [p.locked ? 0 : 1, p.maxLoad ?? Infinity];
+  const best = [...passes].sort((a, b) => {
+    const [la, ma] = rank(a);
+    const [lb, mb] = rank(b);
+    return la - lb || ma - mb;
+  })[0];
+  return {
+    median: best.wallMedian,
+    from: best.label,
+    min: Math.min(...passes.map((p) => p.wallMin)),
+  };
+}
+
 // AC6 compares a candidate with the shipped Gemma nearest in file size: bytes
 // drive download size, RAM and speed; parameter labels don't compare across
 // architectures and quantizations. A tie goes to the smaller Gemma.
@@ -331,6 +367,9 @@ module.exports = {
   minMax,
   decodeTokensPerSecond,
   summarizeRuns,
+  QUIET_LOAD,
+  classifyPass,
+  speedEstimates,
   nearestComparator,
   SHIPPABLE_LICENCES,
   meetsBar,

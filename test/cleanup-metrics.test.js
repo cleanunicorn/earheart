@@ -236,6 +236,9 @@ test("median, minMax and decode tokens/s", () => {
   assert.strictEqual(decodeTokensPerSecond(11, 100, 1100), 10);
   assert.strictEqual(decodeTokensPerSecond(1, 100, 1100), null);
   assert.strictEqual(decodeTokensPerSecond(5, 100, 100), null);
+  // A first callback carrying 4 tokens: only the 7 after it count.
+  assert.strictEqual(decodeTokensPerSecond(11, 100, 1100, 4), 7);
+  assert.strictEqual(decodeTokensPerSecond(4, 100, 1100, 4), null);
 });
 
 // A run row as the harness writes it.

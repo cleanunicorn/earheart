@@ -243,12 +243,14 @@ function minMax(xs) {
   return v.length ? [Math.min(...v), Math.max(...v)] : [null, null];
 }
 
-// Decode speed: tokens after the first, over the time since the first. Prefill
-// is what time-to-first-token already reports.
-function decodeTokensPerSecond(genTokens, firstTokenMs, endMs) {
+// Decode speed: the tokens that arrived after the first callback, over the time
+// since it. node-llama-cpp can hand several tokens to one onToken call, so the
+// whole first batch (firstBatch tokens, already there at firstTokenMs) is left
+// out. Prefill is what time-to-first-token already reports.
+function decodeTokensPerSecond(genTokens, firstTokenMs, endMs, firstBatch = 1) {
   const dt = endMs - firstTokenMs;
-  if (!(genTokens > 1) || !(dt > 0)) return null;
-  return (genTokens - 1) / (dt / 1000);
+  if (!(genTokens > firstBatch) || !(dt > 0)) return null;
+  return (genTokens - firstBatch) / (dt / 1000);
 }
 
 // Aggregate run rows ({corpus, style, wallMs, ttftMs, genTokens, decodeTps,

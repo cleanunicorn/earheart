@@ -385,3 +385,18 @@ test("benchModel: the GPU pass auto-detects the backend and times FLUENT/clean o
   assert.strictEqual(manifest.backend, "cuda");
   assert.ok(fs.existsSync(path.join(dir, "tiny-gpu", "summary.json")));
 });
+
+test("benchModel: a batched first token callback is recorded and left out of decode speed", async () => {
+  const { benchModel } = await load();
+  const dir = tmpdir();
+  const model = path.join(dir, "tiny.gguf");
+  fs.writeFileSync(model, "w");
+  const { mod } = fakeLlamaModule(() => ({ text: FLUENT.modelOutput, batches: [4, 3, 4] }));
+  const opts = { out: dir, id: "tiny", seeds: [1], corpora: ["fluent"], gpu: false };
+  await quietly(() => benchModel(model, opts, mod));
+  const runs = fs.readFileSync(path.join(dir, "tiny", "runs.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  for (const r of runs) {
+    assert.strictEqual(r.genTokens, 11);
+    assert.strictEqual(r.firstBatch, 4);
+  }
+});

@@ -250,6 +250,7 @@ async function benchModel(modelPath, opts, mod) {
     const need = cleanContextNeed(model.tokenize(userTurn).length, model.tokenize(t.input).length);
     if (need > CONTEXT_SIZE) throw new Error(`turn needs ${need} tokens > context ${CONTEXT_SIZE}`);
     let genTokens = 0;
+    let firstBatch = 0;
     let firstMs = null;
     let lastMs = null;
     const t0 = performance.now();
@@ -259,13 +260,16 @@ async function benchModel(modelPath, opts, mod) {
       maxTokens: cleanMaxTokens(model.tokenize(t.input).length),
       onToken: (tokens) => {
         const now = performance.now() - t0;
-        if (firstMs === null) firstMs = now;
+        if (firstMs === null) {
+          firstMs = now;
+          firstBatch = tokens.length;
+        }
         lastMs = now;
         genTokens += tokens.length;
       },
     });
     const wallMs = performance.now() - t0;
-    return { output: (responseText || "").trim(), stopReason, wallMs, firstMs, lastMs, genTokens };
+    return { output: (responseText || "").trim(), stopReason, wallMs, firstMs, lastMs, genTokens, firstBatch };
   }
 
   const turns = plan(opts);
@@ -293,7 +297,8 @@ async function benchModel(modelPath, opts, mod) {
       wallMs: Math.round(r.wallMs),
       ttftMs: r.firstMs === null ? null : Math.round(r.firstMs),
       genTokens: r.genTokens,
-      decodeTps: metrics.decodeTokensPerSecond(r.genTokens, r.firstMs, r.lastMs),
+      firstBatch: r.firstBatch,
+      decodeTps: metrics.decodeTokensPerSecond(r.genTokens, r.firstMs, r.lastMs, r.firstBatch),
       // The machine may be shared: record how busy it was, next to the time.
       loadAvg1: Number(os.loadavg()[0].toFixed(2)),
       score: { ...score, delivered: undefined },

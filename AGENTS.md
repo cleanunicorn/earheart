@@ -46,7 +46,8 @@ The Makefile wraps most tasks; `make help` lists them all.
 - **Cleanup model benchmark** (optional; needs a downloaded GGUF, not part of
   the gate): `node scripts/bench-cleanup.mjs --out=<dir outside the repo>
   <model.gguf>`; `--probe <owner/repo> <file.gguf>` checks a candidate on
-  Hugging Face without downloading it. Method and recorded numbers:
+  Hugging Face without downloading it, and `--report <dir>` rebuilds the
+  comparison tables from saved runs. Method and recorded numbers:
   [docs/cleanup-models.md](docs/cleanup-models.md)
 - **Build:** `make dist` (current platform)
 

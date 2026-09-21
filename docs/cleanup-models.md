@@ -36,7 +36,10 @@ and they are the ones to look at next:
   writes "multi-step", which the word count scores as losing "multiple step".
   Whether "retention no lower than the comparator's" should be measured
   against a comparator that copies is the maintainer's call; the bar was frozen
-  before the candidates ran and is not changed after seeing them.
+  before the candidates ran and is not changed after seeing them. If one is
+  added, **Granite 4.0 Micro first**: faster (18.6 s vs 21.1 s), smaller
+  (2.10 GB vs 2.50 GB), higher retention (0.95 vs 0.94), and its one real loss
+  is a redundant clause.
 - **No default promotion is recommended.** Nothing near the 1B default's size
   qualifies: Qwen3.5 0.8B leaves 20 fillers against 1B's 30 but regresses on
   `polished` (4 against 0) and fails fidelity there on 2 of 5 seeds; LFM2 1.2B

@@ -139,11 +139,44 @@ single clean across all of a model's passes.
 
 ### Spot checks
 
-All 325 saved outputs were checked by script for text the guards could miss
-(quotes, preambles, labels, `<think>`, "Note"), and every failed run was
-tallied by the guard that failed it. By hand: every FLUENT output of Granite
-4.0 Micro and Qwen3 4B 2507 (above), and at least one flagged output of every
-model. What they showed:
+Two model-free passes over the saved runs (`$OUT` as in Reproduce), then
+reading by hand.
+
+Outputs that open like a reply rather than the cleaned text, or carry
+reasoning — the shapes a guard could miss — listed per model for reading:
+
+```sh
+grep -lE '^\s*("|“|Note|Here|Sure|Cleaned|Transcript)|<think>|\(Note' "$OUT"/*/raw/*.txt |
+  awk -F/ '{print $(NF-2)}' | sort | uniq -c
+```
+
+On this run's 325 outputs: lfm2.5-8b-a1b 20 (and 5 on the GPU pass), all
+`<think>`; lfm2-1.2b 1 (a summary opening "User wants to…", already failed);
+mistral-nemo-12b 1 (wrapped in quotes, which no guard caught — see below).
+
+Every failed run by the guard that failed it (a run can fail several):
+
+```sh
+cat "$OUT"/*/runs.jsonl | node -e '
+const { FIDELITY } = require("./scripts/cleanup-metrics");
+const rows = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse);
+const failed = rows.filter((r) => !r.score.fidelityOk), by = {};
+for (const { corpus, score: s } of failed) {
+  const [lo, hi] = corpus === "fluent" ? FIDELITY.ratio.fluent : FIDELITY.ratio.other;
+  const hits = { runaway: s.runaway, echo: s.echo, refusal: s.refusal, empty: s.empty,
+    critical: s.criticalLost > 0, ratio: s.ratio < lo || s.ratio > hi,
+    retention: s.retention < FIDELITY.minRetention, novel: s.novel > FIDELITY.maxNovel };
+  for (const [k, v] of Object.entries(hits)) if (v) by[k] = (by[k] || 0) + 1;
+}
+console.log(`${rows.length} runs, ${failed.length} failed fidelity; failures by guard:`, by);'
+```
+
+On this run: 325 runs, 162 failed — retention 135, ratio 126, novel 97,
+echo 27, runaway 27, critical 8.
+
+By hand: every FLUENT output of Granite 4.0 Micro and Qwen3 4B 2507 (above),
+every output the first command listed, and at least one failed output of
+every model. What they showed:
 
 - The guards' failures are real. Gemma 3 1B on REPORTED dropped the closing
   sentence ("They just need to provide access to the Gmail account") and turned

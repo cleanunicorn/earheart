@@ -249,6 +249,7 @@ function summarizeRuns(runs) {
       ttftMs: median(rs.map((r) => r.ttftMs)),
       decodeTps: median(rs.map((r) => r.decodeTps)),
       genTokens: median(rs.map((r) => r.genTokens)),
+      loadAvg1: median(rs.map((r) => r.loadAvg1)),
     };
   }
   return out;

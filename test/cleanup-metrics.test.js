@@ -181,6 +181,8 @@ test("summarizeRuns groups by corpus/style and sums stumbles", () => {
   assert.strictEqual(fc.stumbles, fc.fillers + fc.repeats);
   assert.strictEqual(fc.cleanRuns, clean.fillers + clean.repeats === 0 ? 1 : 0);
   assert.deepStrictEqual(fc.wallMs, { median: 2000, min: 1000, max: 3000 });
+  // Rows without a load average (older runs) summarize to null, not NaN.
+  assert.strictEqual(fc.loadAvg1, null);
   assert.strictEqual(sum["fluent/polished"].n, 1);
 });
 

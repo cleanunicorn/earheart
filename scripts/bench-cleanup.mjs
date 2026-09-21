@@ -190,6 +190,7 @@ async function benchModel(modelPath, opts, mod) {
     loadMs: Math.round(loadMs),
     gitCommit: gitCommit(),
     startedAt: new Date().toISOString(),
+    loadAvgAtStart: os.loadavg().map((x) => Number(x.toFixed(2))),
   };
   log(`loaded in ${manifest.loadMs} ms · backend ${manifest.backend} · wrapper ${manifest.chatWrapper} · threads ${JSON.stringify(manifest.threads)}`);
 
@@ -246,6 +247,8 @@ async function benchModel(modelPath, opts, mod) {
       ttftMs: r.firstMs === null ? null : Math.round(r.firstMs),
       genTokens: r.genTokens,
       decodeTps: metrics.decodeTokensPerSecond(r.genTokens, r.firstMs, r.lastMs),
+      // The machine may be shared: record how busy it was, next to the time.
+      loadAvg1: Number(os.loadavg()[0].toFixed(2)),
       score: { ...score, delivered: undefined },
     };
     runs.push(row);
@@ -260,6 +263,7 @@ async function benchModel(modelPath, opts, mod) {
 
   const summary = metrics.summarizeRuns(runs);
   manifest.finishedAt = new Date().toISOString();
+  manifest.loadAvgAtEnd = os.loadavg().map((x) => Number(x.toFixed(2)));
   fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
   fs.writeFileSync(path.join(dir, "summary.json"), JSON.stringify({ manifest, summary }, null, 2) + "\n");
 

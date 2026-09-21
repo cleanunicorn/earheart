@@ -627,3 +627,52 @@ test("stt-eval resume: a row is reused only for the very files the model pins no
   assert.strictEqual(e.rowReusable({ ...row, status: "failed" }, model), false);
   assert.strictEqual(e.rowReusable(undefined, model), false);
 });
+
+/* ---------------- what a run measures ---------------- */
+
+test("stt-eval plan: a catalogued candidate is planned once, as a candidate, and keeps its verdict", () => {
+  const shipped = registry.listModels("stt");
+  const plan = e.planModels(shipped, manifest.CANDIDATES, { baselineId: manifest.BASELINE_ID, exploratory: true, pass: "both" });
+  const key = (x) => `${x.model.id}|${x.role}`;
+  assert.strictEqual(new Set(plan.map(key)).size, plan.length, "no model planned twice in one role");
+  const rows110m = plan.filter((x) => x.model.id === "parakeet-tdt-110m-en");
+  assert.deepStrictEqual(rows110m.map((x) => [x.role, x.arm, x.catalogued]), [["candidate", "wired", true]]);
+  // It is measured from the catalog payload (identical to its manifest pins).
+  assert.strictEqual(rows110m[0].model, registry.getModel("stt", "parakeet-tdt-110m-en"));
+  // Shipped models that were never candidates stay verdict-free baselines.
+  assert.deepStrictEqual(
+    plan.filter((x) => x.role === "baseline").map((x) => x.model.id).sort(),
+    ["parakeet-tdt-0.6b-v2", "parakeet-tdt-0.6b-v3"]
+  );
+  // The default opens and (for a timed pass) closes the run; accuracy has no closing run.
+  assert.strictEqual(plan[0].role, "bracket-first");
+  assert.strictEqual(plan[plan.length - 1].role, "bracket-last");
+  const acc = e.planModels(shipped, manifest.CANDIDATES, { baselineId: manifest.BASELINE_ID, pass: "accuracy" });
+  assert.ok(!acc.some((x) => x.role === "bracket-last" || x.arm === "exploratory"));
+
+  // Judged from its own measurements, the catalogued 110M still earns its entry.
+  const measured = speedFile([
+    speedRow(manifest.BASELINE_ID, "bracket-first", 0.0425, 7),
+    speedRow("parakeet-tdt-110m-en", "candidate", 0.0104, 4.5),
+    speedRow(manifest.BASELINE_ID, "bracket-last", 0.0429, 8),
+  ]);
+  const accRows = accResult([
+    accRow(manifest.BASELINE_ID, "bracket-first", 6),
+    accRow("parakeet-tdt-110m-en", "candidate", 6, { catalogued: true, longForm: [{ label: "60s", wordRatio: 1.006, wer: 0.0432 }, { label: "300s", wordRatio: 0, wer: 1, error: "engine process exited" }] }),
+  ]);
+  accRows.rows[0].longForm = [{ label: "60s", wordRatio: 0.988, wer: 0.0494 }, { label: "300s", wordRatio: 0, wer: 1, error: "engine process exited" }];
+  e.judge(accRows, [{ res: measured, name: "speed.json" }], { baselineId: manifest.BASELINE_ID, quietLoad: 4, bracketDrift: 0.1 });
+  assert.strictEqual(accRows.rows[1].verdict, "eligible (rule a)");
+  assert.strictEqual(accRows.rows[1].eligible, true);
+});
+
+test("stt-eval plan: --models narrows the plan and the baseline must exist", () => {
+  const shipped = registry.listModels("stt");
+  const some = e.planModels(shipped, manifest.CANDIDATES, {
+    baselineId: manifest.BASELINE_ID, pass: "speed", models: [manifest.BASELINE_ID, "parakeet-tdt-0.6b-v2-int8"],
+  });
+  assert.deepStrictEqual(some.map((x) => `${x.model.id}|${x.role}`), [
+    `${manifest.BASELINE_ID}|bracket-first`, "parakeet-tdt-0.6b-v2-int8|candidate", `${manifest.BASELINE_ID}|bracket-last`,
+  ]);
+  assert.throws(() => e.planModels(shipped, [], { baselineId: "nope" }), /not in the catalog/);
+});

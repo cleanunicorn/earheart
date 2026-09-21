@@ -821,30 +821,14 @@ function machine() {
   };
 }
 
-// The measurement order: the default first (it is the reference every
-// candidate is judged against as soon as it is measured), the other shipped
-// models, the wired candidates, the exploratory arm behind its calibration
-// row, and the default again to show the machine stayed as quiet as it began.
-function plan(opts) {
-  const shipped = registry.listModels("stt");
-  const def = shipped.find((m) => m.id === manifest.BASELINE_ID);
-  const list = [{ model: def, role: "bracket-first", arm: "shipped" }];
-  for (const m of shipped) if (m.id !== def.id) list.push({ model: m, role: "baseline", arm: "shipped" });
-  // A candidate that has since been catalogued is measured once, as shipped.
-  const isShipped = (c) => shipped.some((m) => m.id === c.id);
-  for (const c of manifest.CANDIDATES.filter((x) => x.arm === "wired" && !isShipped(x))) {
-    list.push({ model: c, role: "candidate", arm: "wired" });
-  }
-  if (opts.exploratory) {
-    list.push({ model: def, role: "calibration", arm: "exploratory" });
-    for (const c of manifest.CANDIDATES.filter((x) => x.arm === "exploratory")) {
-      list.push({ model: c, role: "candidate", arm: "exploratory" });
-    }
-  }
-  // The closing bracket only checks the machine stayed quiet: speed's concern.
-  if (opts.pass !== "accuracy") list.push({ model: def, role: "bracket-last", arm: "shipped" });
-  return opts.models ? list.filter((x) => opts.models.includes(x.model.id)) : list;
-}
+// The measurement order lives in scripts/stt-eval.js (planModels), tested.
+const plan = (opts) =>
+  e.planModels(registry.listModels("stt"), manifest.CANDIDATES, {
+    baselineId: manifest.BASELINE_ID,
+    exploratory: opts.exploratory,
+    pass: opts.pass,
+    models: opts.models,
+  });
 
 // Judging lives in scripts/stt-eval.js (judge, speedCleanliness), where it is
 // unit-tested; these are the run's own settings for it.
@@ -987,6 +971,7 @@ async function run(opts) {
       row.measureAttempts = attempts;
       if (opts.cpuLock && opts.pass === "accuracy") row.lockWaitMs = lockWaitMs + (row.lockWaitLongFormMs || 0);
     }
+    if (entry.catalogued) row.catalogued = true;
     if (!reused) row.measuredWith = { gitHead: result.machine.gitHead, measuringCode: result.machine.measuringCode };
     if (reused) {
       result.resumed.rows++;
@@ -1076,7 +1061,7 @@ function report(result) {
       loadCell = `${num(r.coldLoadWallMs / 1000, 1)}* | ${num(r.firstDecodeMs / 1000, 2)}*`;
     }
     lines.push(
-      `| ${r.id} | ${r.role} | ${r.path} | ${pct(r.werNorm)} | ${pct(r.werVerbatim)} | ${ci} | ${speedCell} | ${v && v.speedup ? `${num(v.speedup, 2)}x` : "—"} | ${loadCell} | ${condCell} | ${pct(r.punctuationRate, 0)} | ${pct(r.capitalisationRate, 0)} | ${Math.round(r.bytes / 1e6)} | ${r.verdict || (r.role.startsWith("bracket") || r.role === "calibration" ? "reference" : "baseline")} |`
+      `| ${r.id} | ${r.role} | ${r.path} | ${pct(r.werNorm)} | ${pct(r.werVerbatim)} | ${ci} | ${speedCell} | ${v && v.speedup ? `${num(v.speedup, 2)}x` : "—"} | ${loadCell} | ${condCell} | ${pct(r.punctuationRate, 0)} | ${pct(r.capitalisationRate, 0)} | ${Math.round(r.bytes / 1e6)} | ${r.verdict || (r.role.startsWith("bracket") || r.role === "calibration" ? "reference" : "baseline")}${r.catalogued ? " (catalogued)" : ""} |`
     );
   }
   const others = result.rows.flatMap((r) =>

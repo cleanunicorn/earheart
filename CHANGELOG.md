@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.31.7 — 2026-09-21
+
+- Show the recording overlay on whichever macOS Space is active (#164)
+
 ## v0.31.6 — 2026-09-16
 
 - Keep macOS auto-paste permissions across updates by signing releases (#160)

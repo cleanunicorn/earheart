@@ -45,6 +45,7 @@ const DEFAULT_CLEANUP_TEMPERATURE = 0.2;
 
 let recognizer = null; // sherpa-onnx OfflineRecognizer
 let sttModelId = null;
+let sttRuntime = null; // { numThreads, provider } the recognizer was built with
 
 let llama = null; // node-llama-cpp instance
 let llamaGpuMode; // undefined until first load; null = auto, false = CPU
@@ -81,7 +82,7 @@ function makeProgressEmitter(id) {
 /* ---------------- speech-to-text (sherpa-onnx / Parakeet) ---------------- */
 
 async function loadStt({ dir, sherpa, modelId }) {
-  if (recognizer && sttModelId === modelId) return { ready: true };
+  if (recognizer && sttModelId === modelId) return { ready: true, ...sttRuntime };
   let sherpaOnnx;
   try {
     sherpaOnnx = require("sherpa-onnx-node");
@@ -99,21 +100,28 @@ async function loadStt({ dir, sherpa, modelId }) {
   const family = sherpa.joiner
     ? { transducer: { encoder, decoder, joiner: path.join(dir, sherpa.joiner) } }
     : { whisper: { encoder, decoder } };
+  const runtime = {
+    // Cap 8, not 4: decode is memory-bound and stops scaling there (~20%
+    // faster than 4 threads on an 8+-core desktop; more threads regress).
+    numThreads: Math.max(1, Math.min(8, require("node:os").cpus().length - 1)),
+    provider: "cpu",
+  };
   recognizer = new sherpaOnnx.OfflineRecognizer({
     featConfig: { sampleRate: SAMPLE_RATE, featureDim: FEATURE_DIM },
     modelConfig: {
       ...family,
       tokens: path.join(dir, sherpa.tokens),
-      // Cap 8, not 4: decode is memory-bound and stops scaling there (~20%
-      // faster than 4 threads on an 8+-core desktop; more threads regress).
-      numThreads: Math.max(1, Math.min(8, require("node:os").cpus().length - 1)),
-      provider: "cpu",
+      ...runtime,
       modelType: sherpa.modelType || (sherpa.joiner ? "nemo_transducer" : "whisper"),
       debug: false,
     },
   });
   sttModelId = modelId;
-  return { ready: true };
+  sttRuntime = runtime;
+  // Reported back so a caller can record the thread count the recognizer
+  // actually got (scripts/eval-stt.js refuses a measurement that doesn't
+  // match the app's), rather than assume it.
+  return { ready: true, ...runtime };
 }
 
 async function transcribe({ wav, language }) {
@@ -359,6 +367,7 @@ async function disposeCleanup() {
 async function disposeStt() {
   recognizer = null;
   sttModelId = null;
+  sttRuntime = null;
 }
 
 /* ---------------- dispatch ---------------- */

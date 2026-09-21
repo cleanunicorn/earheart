@@ -162,6 +162,39 @@ test("exactly one cleanup model is marked default", () => {
   assert.strictEqual(defaults[0].id, registry.DEFAULT_CLEANUP_MODEL);
 });
 
+test("exactly one STT model is marked default, and it is still v3 int8", () => {
+  const defaults = registry.listModels("stt").filter((m) => m.default);
+  assert.strictEqual(defaults.length, 1);
+  assert.strictEqual(defaults[0].id, registry.DEFAULT_STT_MODEL);
+  // Pinned by name: adding a model to the catalog must never move the default
+  // for every user as a side effect — promoting one is a deliberate change.
+  assert.strictEqual(registry.DEFAULT_STT_MODEL, "parakeet-tdt-0.6b-v3-int8");
+});
+
+test("registry: STT entries added from the evaluation match its pinned candidates exactly", () => {
+  // scripts/stt-eval-manifest.js holds the pins the evaluation downloaded and
+  // re-hashed; a catalogued winner must ship those bytes, not a hand-copied
+  // variant of them.
+  const { CANDIDATES } = require("../scripts/stt-eval-manifest");
+  const catalogued = CANDIDATES.filter((c) => registry.getModel("stt", c.id));
+  assert.deepStrictEqual(catalogued.map((c) => c.id), ["parakeet-tdt-110m-en"]);
+  for (const c of catalogued) {
+    const m = registry.getModel("stt", c.id);
+    assert.deepStrictEqual(m.files, c.files, `${c.id}: files`);
+    assert.deepStrictEqual(m.sherpa, c.sherpa, `${c.id}: sherpa`);
+    assert.ok(!m.default, `${c.id}: never the default`);
+  }
+});
+
+test("registry: every model carries a user-facing note", () => {
+  for (const kind of Object.keys(registry.MODELS)) {
+    for (const model of registry.listModels(kind)) {
+      assert.strictEqual(typeof model.note, "string", `${kind}/${model.id}: missing note`);
+      assert.ok(model.note.trim().length > 0, `${kind}/${model.id}: empty note`);
+    }
+  }
+});
+
 // Every concrete download URL across every model, paired with its model id so a
 // failure points at the offending entry.
 function allModelFiles() {
@@ -216,6 +249,13 @@ test("registry: every model file is checksum-pinned to an immutable commit", () 
         /\/resolve\/main\//,
         `${where}: pins resolve/main (a moving ref); use resolve/<commit>`
       );
+      // …and positively name a full 40-hex commit: a tag or any other branch
+      // name moves just the same.
+      assert.match(
+        url.pathname,
+        /\/resolve\/[0-9a-f]{40}\//,
+        `${where}: must pin resolve/<40-hex commit>`
+      );
     }
   }
 });
@@ -231,6 +271,23 @@ test("registry: no model file is hosted on a gated Hugging Face repo", () => {
       `${kind}/${id} -> ${file.name}: hosted on gated HF owner "${owner}"; ` +
         `anonymous download returns HTTP 401. Use an ungated mirror.`
     );
+  }
+});
+
+test("registry: every STT model resolves its sherpa files", () => {
+  for (const model of registry.listModels("stt")) {
+    assert.ok(model.sherpa, `${model.id}: missing sherpa block`);
+    const names = model.files.map((f) => f.name);
+    for (const role of ["encoder", "decoder", "tokens"]) {
+      assert.ok(model.sherpa[role], `${model.id}: missing sherpa.${role}`);
+    }
+    for (const role of ["encoder", "decoder", "joiner", "tokens"]) {
+      if (!model.sherpa[role]) continue;
+      assert.ok(
+        names.includes(model.sherpa[role]),
+        `${model.id}: sherpa.${role} "${model.sherpa[role]}" is not among downloaded files ${JSON.stringify(names)}`
+      );
+    }
   }
 });
 
@@ -1736,4 +1793,82 @@ test("transcribe/clean reject early on an already-aborted signal without touchin
     /abort/i
   );
   assert.strictEqual(cleanup.calls.length, 0, "no cleanup worker request for a pre-aborted clean");
+});
+
+/* ---------------- engine worker: STT load ---------------- */
+
+// Load main/engines/engine-worker.js outside a utilityProcess: a fake
+// parentPort stands in for Electron's, and sherpa-onnx-node is replaced by a
+// recorder, so loadStt's recognizer config can be checked without a model.
+function loadWorkerWith(sherpaStub) {
+  const workerPath = require.resolve("../main/engines/engine-worker");
+  const sherpaPath = require.resolve("sherpa-onnx-node", { paths: [path.dirname(workerPath)] });
+  const savedSherpa = require.cache[sherpaPath];
+  const savedPort = process.parentPort;
+  const stub = new Module(sherpaPath, null);
+  stub.filename = sherpaPath;
+  stub.loaded = true;
+  stub.exports = sherpaStub;
+  require.cache[sherpaPath] = stub;
+  let onMessage = null;
+  const replies = [];
+  process.parentPort = {
+    on: (event, fn) => {
+      if (event === "message") onMessage = fn;
+    },
+    postMessage: (msg) => replies.push(msg),
+  };
+  delete require.cache[workerPath];
+  require(workerPath);
+  const send = (data) =>
+    new Promise((resolve) => {
+      const seen = replies.length;
+      onMessage({ data });
+      const poll = () => (replies.length > seen ? resolve(replies[seen]) : setImmediate(poll));
+      poll();
+    });
+  const restore = () => {
+    delete require.cache[workerPath];
+    if (savedSherpa) require.cache[sherpaPath] = savedSherpa;
+    else delete require.cache[sherpaPath];
+    process.parentPort = savedPort;
+  };
+  return { send, restore };
+}
+
+test("engine worker: load-stt reports the thread count and provider it built the recognizer with", async () => {
+  const built = [];
+  const worker = loadWorkerWith({
+    OfflineRecognizer: class {
+      constructor(config) {
+        built.push(config);
+      }
+    },
+  });
+  try {
+    const request = {
+      type: "load-stt",
+      dir: "/models/x",
+      sherpa: { encoder: "e.onnx", decoder: "d.onnx", joiner: "j.onnx", tokens: "t.txt" },
+      modelId: "x",
+    };
+    const expectedThreads = Math.max(1, Math.min(8, os.cpus().length - 1));
+    const first = await worker.send({ id: 1, ...request });
+    assert.deepStrictEqual(first, {
+      id: 1,
+      ok: true,
+      result: { ready: true, numThreads: expectedThreads, provider: "cpu" },
+    });
+    // The reply describes the recognizer that was actually configured.
+    assert.strictEqual(built.length, 1);
+    assert.strictEqual(built[0].modelConfig.numThreads, expectedThreads);
+    assert.strictEqual(built[0].modelConfig.provider, "cpu");
+
+    // Re-loading the resident model is a no-op that still reports the runtime.
+    const again = await worker.send({ id: 2, ...request });
+    assert.deepStrictEqual(again.result, first.result);
+    assert.strictEqual(built.length, 1);
+  } finally {
+    worker.restore();
+  }
 });

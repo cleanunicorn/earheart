@@ -287,6 +287,18 @@ ggml-org/SmolLM3-3B-GGUF (smollm3, apache-2.0, hybrid thinking,
 1,915,305,312 B), bartowski/Llama-3.2-3B-Instruct-GGUF (llama, `llama3.2`
 licence → not addable, 2,019,377,696 B).
 
+## Disk
+
+The run had a ~20 GB budget for model weights on a disk shared with another
+evaluation. It kept to it: `df -h /` before every download (free space never
+below 119 GB), each file sha256-checked against its pin after download, and
+deleted as soon as its `summary.json` was written. The only time more than
+one model sat on disk was the start, when the three shipped Gemmas were
+fetched together — a peak of **10.6 GB**. No candidate was skipped for disk
+(or for time: all 13 finished inside the window), and **no weights were left
+on disk at hand-back**. Every download and deletion is in the run log; only
+the raw outputs and JSON (a few MB) were kept, outside the repository.
+
 ## Pins (probed 2026-09-21)
 
 What every row above was judged on: the Hugging Face commit `resolve/main`

@@ -962,7 +962,8 @@ async function run(opts) {
       row = reused;
       log(`${entry.model.id} (${entry.role}): reused from ${out}`);
     } else {
-      log(`${entry.model.id} (${entry.role}, ${entry.arm}) — free ${Math.round(fs.statfsSync(cacheDir).bavail * fs.statfsSync(cacheDir).bsize / 1e9)} GB`);
+      const disk = fs.statfsSync(cacheDir);
+      log(`${entry.model.id} (${entry.role}, ${entry.arm}) — free ${Math.round((disk.bavail * disk.bsize) / 1e9)} GB`);
       // The accuracy pass does not wait: its decode times are contended by
       // definition and never used for speed.
       const lockWaitMs = opts.pass === "accuracy" ? await waitForLock(opts.cpuLock, entry.model.id, appendLog) : 0;

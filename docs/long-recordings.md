@@ -25,16 +25,20 @@ app's), through the app's own engine worker.
 ## Result
 
 The default model on FLEURS en_us recordings: distinct sentences from one
-speaker, 300 ms apart. The baseline is the same 35 sentences decoded one clip
-at a time: **WER 6.2 %, word ratio 0.989**. (The whole 647-clip corpus gives
-6.07 % with `scripts/eval-stt.js`.) The gate is word ratio ≥ 0.95 and WER no
-more than 3 points above the baseline (≤ 9.2 %).
+speaker, 300 ms apart. Each recording is held to its own sentences decoded one
+clip at a time (the short-clip WER below; the whole 647-clip corpus gives
+6.07 % with `scripts/eval-stt.js`). The gate is word ratio ≥ 0.95 and WER no
+more than 3 points above that baseline.
 
-| audio | one buffer (before) | pauses + 20 s cap (now) | worker decode time, before → now |
-| --- | --- | --- | --- |
-| 124.5 s | ratio 0.839, WER 20.6 % | **ratio 1.010, WER 5.8 %** (38 pieces, longest 9.6 s) | 8.3 s → 6.6 s |
-| 182.9 s | worker exits (code 133) | **ratio 1.017, WER 6.7 %** (58 pieces, longest 13.1 s) | — → 10.0 s |
-| 310.9 s | worker exits (code 133) | **ratio 1.016, WER 8.3 %** (93 pieces, longest 14.7 s) | — → 16.7 s |
+| audio | short-clip WER (gate) | one buffer (before) | pauses + 20 s cap (now) | worker decode time, before → now |
+| --- | --- | --- | --- | --- |
+| 124.5 s | 4.5 % (≤ 7.5 %) | ratio 0.839, WER 20.6 % | **ratio 1.016, WER 6.8 %** (38 pieces, longest 9.6 s, 1 accepted empty) | 8.9 s → 7.0 s |
+| 182.9 s | 4.4 % (≤ 7.4 %) | worker exits (code 133) | **ratio 1.017, WER 6.9 %** (54 pieces, longest 13.0 s, 2 accepted empty) | — → 10.1 s |
+| 310.9 s | 6.2 % (≤ 9.2 %) | worker exits (code 133) | **ratio 1.013, WER 8.2 %** (87 pieces, longest 14.7 s, 4 accepted empty) | — → 18.1 s |
+
+"Accepted empty" pieces heard sound the speech probe calls speech but decoded
+to nothing even with silence around them (see below); in these runs they were
+breaths and clicks after finished sentences.
 
 After each run, the same worker answered a short decode, so it survives.
 

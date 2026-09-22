@@ -31,10 +31,9 @@ const QUIET_RMS = 0.012;
 // found a 150 ms pause only when it started on a frame boundary).
 const WINDOW_SEC = 0.05;
 const HOP_SEC = 0.005;
-// Shortest pause that is a cut. Measured through this detector
-// (docs/long-recordings.md): 200 ms held word ratio and WER at 150-400 ms
-// sentence gaps, 250 ms missed 150 ms gaps (WER 9.1 %), and 150 ms cut often
-// enough inside sentences to leave fragments the model decodes to nothing.
+// Shortest pause that is a cut: long enough not to split sentences at a
+// breath, short enough to catch tight sentence gaps ("How short a pause
+// counts" in docs/long-recordings.md).
 const MIN_PAUSE_SEC = 0.2;
 
 // Middles of the pauses between stretches of speech. A pause is a run of quiet

@@ -13,6 +13,7 @@ on:
 permissions:
   contents: write
   actions: write
+  issues: read
   pull-requests: read
 
 jobs:
@@ -30,12 +31,17 @@ jobs:
       - name: Release every merged PR not yet in the changelog
         env:
           GH_TOKEN: ${{ github.token }}
+          TRIGGER_PR: ${{ github.event.pull_request.number }}
+          TRIGGER_TITLE: ${{ github.event.pull_request.title }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           prs_file="$RUNNER_TEMP/merged-prs.json"
+          candidates_file="$RUNNER_TEMP/release-candidates.jsonl"
+          resolved_file="$RUNNER_TEMP/resolved-candidates.json"
+          resolved_jsonl="$RUNNER_TEMP/resolved-candidates.jsonl"
           pending_file="$RUNNER_TEMP/pending-releases.jsonl"
 
           # Paginate to the end rather than imposing a burst-size ceiling. The
@@ -46,8 +52,30 @@ jobs:
             "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100" \
             --jq '.[] | select(.merged_at != null) | {number, title, mergedAt: .merged_at}' \
             | jq -s '.' > "$prs_file"
+          node scripts/auto-release.js select \
+            --prs "$prs_file" --changelog CHANGELOG.md > "$candidates_file"
+
+          : > "$resolved_jsonl"
+          while IFS= read -r candidate_json; do
+            number="$(jq -r '.number' <<<"$candidate_json")"
+            if [[ "$number" == "$TRIGGER_PR" ]]; then
+              jq -c --arg titleAtMerge "$TRIGGER_TITLE" \
+                '. + {titleAtMerge: $titleAtMerge}' <<<"$candidate_json" >> "$resolved_jsonl"
+              continue
+            fi
+
+            events_file="$RUNNER_TEMP/pr-$number-events.json"
+            gh api --paginate \
+              -H "Accept: application/vnd.github+json" \
+              "repos/$GITHUB_REPOSITORY/issues/$number/events?per_page=100" \
+              --jq '.[]' | jq -s '.' > "$events_file"
+            jq -c --slurpfile events "$events_file" \
+              '. + {events: $events[0]}' <<<"$candidate_json" >> "$resolved_jsonl"
+          done < "$candidates_file"
+
+          jq -s '.' "$resolved_jsonl" > "$resolved_file"
           node scripts/auto-release.js pending \
-            --prs "$prs_file" --changelog CHANGELOG.md > "$pending_file"
+            --prs "$resolved_file" > "$pending_file"
 
           if [[ ! -s "$pending_file" ]]; then
             echo "No release-affecting merged PR is waiting."

@@ -11,8 +11,12 @@ const {
 
 const BOUNDARY_CHANGELOG = "## v1.0.0\n\n- Boundary (#100)\n";
 
+function withMergeTitles(prs) {
+  return prs.map((pr) => ({ titleAtMerge: pr.title, ...pr }));
+}
+
 function pendingNumbers(prs) {
-  return pendingReleases({ prs, changelog: BOUNDARY_CHANGELOG }).releases.map(
+  return pendingReleases({ prs: withMergeTitles(prs), changelog: BOUNDARY_CHANGELOG }).releases.map(
     (release) => release.number,
   );
 }
@@ -89,7 +93,7 @@ test("pendingReleases catches up a burst in merge order", () => {
     { number: 101, title: "fix: first", mergedAt: "2026-09-22T10:00:30Z" },
   ];
 
-  assert.deepStrictEqual(pendingReleases({ prs, changelog }), {
+  assert.deepStrictEqual(pendingReleases({ prs: withMergeTitles(prs), changelog }), {
     boundary: { number: 100, mergedAt: "2026-09-22T10:00:00Z" },
     releases: [
       { number: 101, title: "fix: first", bump: "patch" },
@@ -120,7 +124,7 @@ test("pendingReleases skips released and valid no-release PRs and warns on inval
     { number: 105, title: "feat: .", mergedAt: "2026-09-22T10:05:00Z" },
   ];
 
-  const result = pendingReleases({ prs, changelog });
+  const result = pendingReleases({ prs: withMergeTitles(prs), changelog });
   assert.deepStrictEqual(result.releases, [
     { number: 104, title: "fix: pending", bump: "patch" },
   ]);
@@ -182,5 +186,55 @@ test("pendingReleases fails visibly when the changelog boundary cannot be resolv
         changelog: "## v1.1.0\n\n- Manual entry\n\n## v1.0.0\n\n- Old boundary (#100)\n",
       }),
     /no numbered release boundary/,
+  );
+});
+
+test("pendingReleases sizes retitled PRs from their titles at merge", () => {
+  const prs = [
+    {
+      number: 100,
+      title: "fix: boundary",
+      titleAtMerge: "fix: boundary",
+      mergedAt: "2026-09-22T10:00:00Z",
+    },
+    {
+      number: 101,
+      title: "feat!: unreviewed major",
+      mergedAt: "2026-09-22T10:01:00Z",
+      events: [
+        {
+          event: "renamed",
+          created_at: "2026-09-22T10:02:00Z",
+          rename: { from: "chore: reviewed title", to: "feat!: unreviewed major" },
+        },
+      ],
+    },
+    {
+      number: 102,
+      title: "chore: hide the release",
+      titleAtMerge: "fix: reviewed fix",
+      mergedAt: "2026-09-22T10:03:00Z",
+    },
+  ];
+
+  assert.deepStrictEqual(pendingReleases({ prs, changelog: BOUNDARY_CHANGELOG }).releases, [
+    { number: 102, title: "fix: reviewed fix", bump: "patch" },
+  ]);
+});
+
+test("pendingReleases fails visibly without merge-title provenance", () => {
+  const prs = [
+    {
+      number: 100,
+      title: "fix: boundary",
+      titleAtMerge: "fix: boundary",
+      mergedAt: "2026-09-22T10:00:00Z",
+    },
+    { number: 101, title: "fix: current", mergedAt: "2026-09-22T10:01:00Z" },
+  ];
+
+  assert.throws(
+    () => pendingReleases({ prs, changelog: BOUNDARY_CHANGELOG }),
+    /PR #101 is missing merge-title provenance/,
   );
 });

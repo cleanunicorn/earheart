@@ -40,6 +40,7 @@ test("release sizing uses exactly the PR-title workflow regex", () => {
   assert.ok(match, "pr-title.yml should define title_re");
   assert.equal(TITLE_RE.source, match[1]);
   assert.doesNotMatch(workflow, /^\s*(major|minor|patch)_re=/m);
+  assert.match(workflow, /node scripts\/auto-release\.js select/);
   assert.match(workflow, /node scripts\/auto-release\.js pending/);
 });
 
@@ -52,7 +53,8 @@ test("release sizing comments name the helper that owns the policy", () => {
 });
 
 test("the release selector documents its command and stream contract", () => {
-  assert.match(autoReleaseScript, /Usage: auto-release\.js pending --prs <file> --changelog <file>/);
+  assert.match(autoReleaseScript, /Usage: auto-release\.js select --prs <file> --changelog <file>/);
+  assert.match(autoReleaseScript, /auto-release\.js pending --prs <file>/);
   assert.match(autoReleaseScript, /standard output.*JSON Lines/i);
   assert.match(autoReleaseScript, /standard error[^]*workflow warnings and errors/i);
 });
@@ -85,9 +87,17 @@ test("only merged pull-request jobs enter the static release concurrency group",
 
 test("catch-up reads every merged PR with the explicit token permission", () => {
   assert.match(workflow, /^  pull-requests: read$/m);
+  assert.match(workflow, /^  issues: read$/m);
   assert.match(workflow, /gh api --paginate/);
   assert.match(workflow, /pulls\?state=closed&base=main/);
   assert.match(workflow, /select\(\.merged_at != null\)/);
+});
+
+test("catch-up freezes titles from the trigger payload or post-merge rename events", () => {
+  assert.match(workflow, /TRIGGER_TITLE: \$\{\{ github\.event\.pull_request\.title \}\}/);
+  assert.match(workflow, /issues\/\$number\/events\?per_page=100/);
+  assert.match(workflow, /\. \+ \{titleAtMerge: \$titleAtMerge\}/);
+  assert.match(workflow, /\. \+ \{events: \$events\[0\]\}/);
 });
 
 test("every release attempt refreshes main and pushes its exact tag atomically", () => {

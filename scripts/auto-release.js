@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 // Selects merged pull requests that still need releases.
-// Usage: auto-release.js pending --prs <file> --changelog <file>
+// Usage: auto-release.js select --prs <file> --changelog <file>
+//        auto-release.js pending --prs <file>
 // Standard output is JSON Lines for the workflow loop; standard error carries
 // workflow warnings and errors.
 
@@ -55,11 +56,25 @@ function compareMergeOrder(left, right) {
   return byTime || left.number - right.number;
 }
 
-/**
- * Returns `{ boundary, releases, warnings }` for merged PRs after the latest release.
- * @throws When the latest boundary is unnumbered or absent from merged PR history.
- */
-function pendingReleases({ prs, changelog }) {
+function titleAtMerge(pr) {
+  if (Object.hasOwn(pr, "titleAtMerge")) return String(pr.titleAtMerge || "");
+  if (!Array.isArray(pr.events)) {
+    throw new Error(`PR #${pr.number} is missing merge-title provenance`);
+  }
+
+  const mergedAt = Date.parse(pr.mergedAt);
+  const firstRename = pr.events
+    .filter(
+      (event) =>
+        event?.event === "renamed" &&
+        Date.parse(event.created_at) > mergedAt &&
+        typeof event.rename?.from === "string",
+    )
+    .sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at))[0];
+  return firstRename ? firstRename.rename.from : pr.title;
+}
+
+function pendingCandidates({ prs, changelog }) {
   const { boundaryNumber, released } = releaseState(changelog);
   if (boundaryNumber === null) {
     throw new Error("no numbered release boundary was found in CHANGELOG.md");
@@ -68,6 +83,7 @@ function pendingReleases({ prs, changelog }) {
   const merged = prs
     .filter((pr) => pr && pr.mergedAt)
     .map((pr) => ({
+      ...pr,
       number: Number(pr.number),
       title: String(pr.title || ""),
       mergedAt: String(pr.mergedAt),
@@ -78,11 +94,20 @@ function pendingReleases({ prs, changelog }) {
     throw new Error(`boundary PR #${boundaryNumber} was not found in merged PR history`);
   }
 
+  return {
+    boundary: { number: boundary.number, mergedAt: boundary.mergedAt },
+    candidates: merged.filter(
+      (pr) => compareMergeOrder(pr, boundary) > 0 && !released.has(pr.number),
+    ),
+  };
+}
+
+function releasesForCandidates(candidates) {
   const releases = [];
   const warnings = [];
-  for (const pr of merged) {
-    if (compareMergeOrder(pr, boundary) <= 0 || released.has(pr.number)) continue;
-    const { bump, reason } = bumpFor(pr.title);
+  for (const pr of candidates) {
+    const title = titleAtMerge(pr);
+    const { bump, reason } = bumpFor(title);
     if (reason === "invalid") {
       warnings.push(
         `PR #${pr.number} has an invalid Conventional Commits title; no release was created`,
@@ -90,14 +115,18 @@ function pendingReleases({ prs, changelog }) {
     } else if (reason === "empty") {
       warnings.push(`PR #${pr.number} has no readable release note; no release was created`);
     }
-    if (bump) releases.push({ number: pr.number, title: pr.title, bump });
+    if (bump) releases.push({ number: pr.number, title, bump });
   }
+  return { releases, warnings };
+}
 
-  return {
-    boundary: { number: boundary.number, mergedAt: boundary.mergedAt },
-    releases,
-    warnings,
-  };
+/**
+ * Returns `{ boundary, releases, warnings }` for merged PRs after the latest release.
+ * @throws When the latest boundary is unnumbered or absent from merged PR history.
+ */
+function pendingReleases({ prs, changelog }) {
+  const { boundary, candidates } = pendingCandidates({ prs, changelog });
+  return { boundary, ...releasesForCandidates(candidates) };
 }
 
 function parseArgs(argv) {
@@ -122,16 +151,29 @@ function escapeWorkflowCommandData(message) {
 function main(argv) {
   const [command, ...rest] = argv;
   const args = parseArgs(rest);
-  if (command !== "pending" || !args.prs || !args.changelog) {
-    console.error("usage: auto-release.js pending --prs <file> --changelog <file>");
+  const valid =
+    (command === "select" && args.prs && args.changelog) ||
+    (command === "pending" && args.prs && !args.changelog);
+  if (!valid) {
+    console.error(
+      "usage: auto-release.js select --prs <file> --changelog <file>\n" +
+        "       auto-release.js pending --prs <file>",
+    );
     return 2;
   }
 
   try {
-    const result = pendingReleases({
-      prs: JSON.parse(fs.readFileSync(args.prs, "utf8")),
-      changelog: fs.readFileSync(args.changelog, "utf8"),
-    });
+    const prs = JSON.parse(fs.readFileSync(args.prs, "utf8"));
+    if (command === "select") {
+      const result = pendingCandidates({
+        prs,
+        changelog: fs.readFileSync(args.changelog, "utf8"),
+      });
+      for (const candidate of result.candidates) console.log(JSON.stringify(candidate));
+      return 0;
+    }
+
+    const result = releasesForCandidates(prs);
     for (const warning of result.warnings) {
       console.error(`::warning title=No release::${escapeWorkflowCommandData(warning)}`);
     }

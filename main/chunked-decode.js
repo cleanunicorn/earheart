@@ -5,10 +5,9 @@
 //
 // Why: one decode over several utterances is unsafe twice over. The shipped
 // Parakeet int8 model drops whole sentences when two of them share a decode,
-// so a long buffer silently loses a growing share of the words (word ratio
-// 0.839 at 124.5 s, 0.449 at 310.9 s — #168); and under Electron's
-// utilityProcess the worker exits outright on a single buffer of ~3 minutes
-// (#169). Both the final transcription and the live preview's chunk decodes
+// so a long buffer silently loses a growing share of the words (#168); and
+// under Electron's utilityProcess the worker exits outright on a single
+// buffer of ~3 minutes (#169). Measurements: docs/long-recordings.md. Both the final transcription and the live preview's chunk decodes
 // (whose committed text is reused verbatim in the final transcript) go
 // through here.
 //

@@ -17,6 +17,7 @@ function readText(...parts) {
 
 const workflow = readText(".github", "workflows", "auto-release.yml");
 const titleWorkflow = readText(".github", "workflows", "pr-title.yml");
+const autoReleaseScript = readText("scripts", "auto-release.js");
 const makefile = readText("Makefile");
 const contributing = readText("CONTRIBUTING.md");
 const agents = readText("AGENTS.md");
@@ -39,6 +40,12 @@ test("release sizing uses exactly the PR-title workflow regex", () => {
   assert.equal(TITLE_RE.source, match[1]);
   assert.doesNotMatch(workflow, /^\s*(major|minor|patch)_re=/m);
   assert.match(workflow, /node scripts\/auto-release\.js pending/);
+});
+
+test("the release selector documents its command and stream contract", () => {
+  assert.match(autoReleaseScript, /Usage: auto-release\.js pending --prs <file> --changelog <file>/);
+  assert.match(autoReleaseScript, /standard output.*JSON Lines/i);
+  assert.match(autoReleaseScript, /standard error[^]*workflow warnings and errors/i);
 });
 
 test("contract sources normalize Windows checkout newlines", () => {

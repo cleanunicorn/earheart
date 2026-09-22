@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 
+// Selects merged pull requests that still need releases.
+// Usage: auto-release.js pending --prs <file> --changelog <file>
+// Standard output is JSON Lines for the workflow loop; standard error carries
+// workflow warnings and errors.
+
 const fs = require("node:fs");
 
 const releaseNotes = require("../main/services/release-notes");

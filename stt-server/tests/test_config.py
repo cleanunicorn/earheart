@@ -6,6 +6,7 @@ load_asr_model (and cli.main) can be exercised against fakes.
 
 import os
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -149,3 +150,18 @@ def test_cli_flags_override_env(monkeypatch):
     cli.main()
 
     assert configs[0].provider == "cuda"
+
+
+BARE_PYPI_FORMS = [
+    "uvx earheart-stt",
+    "pip install earheart-stt",
+    'pip install "earheart-stt',
+]
+
+
+def test_docs_do_not_advertise_bare_pypi_install():
+    root = Path(__file__).resolve().parents[1]
+    for path in (root / "README.md", root / "pyproject.toml"):
+        text = path.read_text()
+        for form in BARE_PYPI_FORMS:
+            assert form not in text, f"{form!r} advertised in {path.name}"

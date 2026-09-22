@@ -103,3 +103,5 @@ jobs:
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
       - name: Endpoint tests (no model downloads)
         run: uv run --locked --extra test python -m pytest
+      - name: Entry-point smoke
+        run: uv run --locked earheart-stt --help

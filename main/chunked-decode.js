@@ -24,8 +24,9 @@
 // bare worker host.
 
 const { splitPoints } = require("./util/split-silence");
-// Loaded by the overlay as a plain <script> (renderer/overlay.html); its
-// CommonJS export guard lets the main process apply the same speech verdict.
+// The overlay loads renderer/speech-probe.js as a plain <script>
+// (renderer/overlay.html); its CommonJS export guard lets the main process
+// apply the same speech verdict.
 const { containsSpeech } = require("../renderer/speech-probe");
 const { wavSlice, wavToFloat32, wavSampleFrames, SAMPLE_RATE } = require("./util/wav");
 

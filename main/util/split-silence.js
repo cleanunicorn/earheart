@@ -17,8 +17,9 @@
 // renderer's own forced-boundary search (renderer/chunk-boundary.js), reused
 // rather than copied, so the cut is as unlikely as possible to split a word.
 
-// The renderer loads this file as a plain <script>; its CommonJS export guard
-// is what lets the main process share the one implementation.
+// The overlay loads renderer/chunk-boundary.js as a plain <script>
+// (renderer/overlay.html); its CommonJS export guard is what lets the main
+// process reuse that one dependency-free implementation.
 const { quietestOffset } = require("../../renderer/chunk-boundary");
 
 // Same silence level as the overlay's pause detector (renderer/overlay.js

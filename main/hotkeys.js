@@ -7,6 +7,7 @@
 // exits (see main.js).
 
 const { globalShortcut } = require("electron");
+const logger = require("./util/logger");
 
 // Named slots ("record", "pause"), each holding at most one accelerator and
 // the callback needed to restore it if a pair update has to roll back.
@@ -117,9 +118,11 @@ function applyPair(next) {
       }
       if (restoreError) {
         registered.delete(name);
+        const unboundError = `${restoreError}. The ${name} hotkey is now unbound until you save again or restart.`;
+        logger.warn(unboundError);
         results[name] = {
           ok: false,
-          error: `${results[name].error}; ${restoreError}`,
+          error: `${results[name].error}\n${unboundError}`,
         };
       } else {
         registered.set(name, entry);

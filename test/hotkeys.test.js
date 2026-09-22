@@ -8,9 +8,11 @@ const C = "CommandOrControl+Alt+C";
 
 function loadHotkeys({ registerImpl = () => true, occupied = [] } = {}) {
   const hotkeysPath = require.resolve("../main/hotkeys");
+  const loggerPath = require.resolve("../main/util/logger");
   const electronPath = require.resolve("electron");
+  const savedLogger = require.cache[loggerPath];
   const savedElectron = require.cache[electronPath];
-  const calls = { registered: [], unregistered: [], events: [] };
+  const calls = { registered: [], unregistered: [], events: [], warnings: [] };
   const bindings = new Map();
   const attempts = new Map();
   const electron = new Module(electronPath, null);
@@ -38,12 +40,19 @@ function loadHotkeys({ registerImpl = () => true, occupied = [] } = {}) {
       },
     },
   };
+  const logger = new Module(loggerPath, null);
+  logger.filename = loggerPath;
+  logger.loaded = true;
+  logger.exports = { warn: (message) => calls.warnings.push(message) };
+  require.cache[loggerPath] = logger;
   require.cache[electronPath] = electron;
   delete require.cache[hotkeysPath];
   const hotkeys = require(hotkeysPath);
   delete require.cache[hotkeysPath];
   if (savedElectron) require.cache[electronPath] = savedElectron;
   else delete require.cache[electronPath];
+  if (savedLogger) require.cache[loggerPath] = savedLogger;
+  else delete require.cache[loggerPath];
   return { hotkeys, calls, bindings };
 }
 
@@ -286,7 +295,11 @@ test("a rollback re-registration failure is reported and removed from state", ()
 
   const failed = hotkeys.applyPair(pair(B, A));
 
-  assert.match(failed.pause.error, /restore/);
+  assert.match(failed.pause.error, /Could not restore/);
+  assert.match(failed.pause.error, /pause hotkey is now unbound until you save again or restart/);
+  assert.deepStrictEqual(calls.warnings, [
+    `Could not restore "${B}" after rollback. The pause hotkey is now unbound until you save again or restart.`,
+  ]);
   clearCalls(calls);
   hotkeys.applyPair(pair(A, B));
   assert.deepStrictEqual(calls.registered.map(({ accelerator }) => accelerator), [B]);

@@ -8,10 +8,29 @@
 
 const { globalShortcut } = require("electron");
 const logger = require("./util/logger");
+const NAMES = ["record", "pause"];
 
 // Named slots ("record", "pause"), each holding at most one accelerator and
 // the callback needed to restore it if a pair update has to roll back.
 const registered = new Map();
+
+function collisionPlan(target, previous, changed, results) {
+  if (!target.record.accelerator || target.record.accelerator !== target.pause.accelerator) {
+    return null;
+  }
+  if (NAMES.every((name) => !previous.get(name))) {
+    return { registerRecordOnly: true };
+  }
+  const collisionResults = { ...results };
+  for (const name of changed) {
+    const otherName = name === "record" ? "pause" : "record";
+    collisionResults[name] = {
+      ok: false,
+      error: `"${target[name].accelerator}" is already used by the ${otherName} hotkey`,
+    };
+  }
+  return { results: collisionResults };
+}
 
 /**
  * Apply the record and pause hotkeys as one transaction.
@@ -25,17 +44,16 @@ const registered = new Map();
  * @returns {{record: {ok: boolean, empty?: boolean, error?: string}, pause: {ok: boolean, empty?: boolean, error?: string}}}
  */
 function applyPair(next) {
-  const names = ["record", "pause"];
   const target = {
     record: { accelerator: next.record || "", onTrigger: next.onRecord },
     pause: { accelerator: next.pause || "", onTrigger: next.onPause },
   };
-  const previous = new Map(names.map((name) => [name, registered.get(name)]));
-  const changed = names.filter(
+  const previous = new Map(NAMES.map((name) => [name, registered.get(name)]));
+  const changed = NAMES.filter(
     (name) => (previous.get(name)?.accelerator || "") !== target[name].accelerator
   );
   const results = Object.fromEntries(
-    names.map((name) => [
+    NAMES.map((name) => [
       name,
       target[name].accelerator ? { ok: true } : { ok: true, empty: true },
     ])
@@ -43,37 +61,29 @@ function applyPair(next) {
 
   // Validate the requested final pair, rather than comparing one requested
   // slot with the other slot's current registration (which rejects swaps).
-  if (target.record.accelerator && target.record.accelerator === target.pause.accelerator) {
+  const collision = collisionPlan(target, previous, changed, results);
+  if (collision?.registerRecordOnly) {
     // Older versions could persist a rejected colliding pair. On a cold start,
     // preserve their record-first behavior so dictation still has its required
     // shortcut while Settings asks the user to choose a different pause key.
-    if (names.every((name) => !previous.get(name))) {
-      const recordOnly = applyPair({ ...next, pause: "" });
-      return {
-        record: recordOnly.record,
-        pause: recordOnly.record.ok
-          ? {
-              ok: false,
-              error: `"${target.pause.accelerator}" is already used by the record hotkey`,
-            }
-          : {
-              ok: false,
-              error: "Not changed: the record hotkey could not be registered",
-            },
-      };
-    }
-    for (const name of changed) {
-      const otherName = name === "record" ? "pause" : "record";
-      results[name] = {
-        ok: false,
-        error: `"${target[name].accelerator}" is already used by the ${otherName} hotkey`,
-      };
-    }
-    return results;
+    const recordOnly = applyPair({ ...next, pause: "" });
+    return {
+      record: recordOnly.record,
+      pause: recordOnly.record.ok
+        ? {
+            ok: false,
+            error: `"${target.pause.accelerator}" is already used by the record hotkey`,
+          }
+        : {
+            ok: false,
+            error: "Not changed: the record hotkey could not be registered",
+          },
+    };
   }
+  if (collision) return collision.results;
 
   const currentAccelerators = new Set(
-    names.map((name) => previous.get(name)?.accelerator).filter(Boolean)
+    NAMES.map((name) => previous.get(name)?.accelerator).filter(Boolean)
   );
   const nonEmpty = changed.filter((name) => target[name].accelerator);
   const freeNames = nonEmpty.filter((name) => !currentAccelerators.has(target[name].accelerator));
@@ -139,7 +149,7 @@ function applyPair(next) {
 
   // Only crossed targets require an early release (including a direct swap).
   const crossedTargets = new Set(crossedNames.map((name) => target[name].accelerator));
-  for (const name of names) {
+  for (const name of NAMES) {
     const entry = previous.get(name);
     if (entry && crossedTargets.has(entry.accelerator)) {
       globalShortcut.unregister(entry.accelerator);

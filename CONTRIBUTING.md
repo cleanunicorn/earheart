@@ -144,7 +144,8 @@ only supported release path.
 **Your PR title is the release note.** It's what the app shows people — in the
 update prompt before they update, and in the "what's new" card after. Write it
 for them, not for the log: `feat: paginate the settings history list`, not
-`feat: pagination`.
+`feat: pagination`. The title at merge time is used; editing it after merge
+does not change the release.
 
 ### Release notes
 

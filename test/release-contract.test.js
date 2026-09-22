@@ -180,5 +180,11 @@ test("contributor and agent guides explain serialized catch-up releases", () => 
     assert.match(guide, /serializ/i, `${name} should explain serialization`);
     assert.match(guide, /catch(?:es)? up/i, `${name} should explain catch-up`);
     assert.match(guide, /invalid\s+title/i, `${name} should explain invalid titles`);
+    assert.match(guide, /title at merge time/i, `${name} should explain title provenance`);
+    assert.match(
+      guide,
+      /editing it after merge\s+does not change the\s+release/i,
+      `${name} should explain post-merge edits`,
+    );
   }
 });

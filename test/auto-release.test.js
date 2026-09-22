@@ -9,6 +9,14 @@ const {
   pendingReleases,
 } = require("../scripts/auto-release");
 
+const BOUNDARY_CHANGELOG = "## v1.0.0\n\n- Boundary (#100)\n";
+
+function pendingNumbers(prs) {
+  return pendingReleases({ prs, changelog: BOUNDARY_CHANGELOG }).releases.map(
+    (release) => release.number,
+  );
+}
+
 test("release title regex matches the PR-title contract", () => {
   assert.equal(
     TITLE_RE.source,
@@ -123,45 +131,33 @@ test("pendingReleases skips released and valid no-release PRs and warns on inval
 });
 
 test("pendingReleases uses PR number to break equal mergedAt ties", () => {
-  const changelog = "## v1.0.0\n\n- Boundary (#100)\n";
   const prs = [
     { number: 102, title: "fix: later number", mergedAt: "2026-09-22T10:01:00Z" },
     { number: 100, title: "fix: boundary", mergedAt: "2026-09-22T10:00:00Z" },
     { number: 101, title: "fix: earlier number", mergedAt: "2026-09-22T10:01:00Z" },
   ];
 
-  assert.deepStrictEqual(
-    pendingReleases({ prs, changelog }).releases.map((release) => release.number),
-    [101, 102],
-  );
+  assert.deepStrictEqual(pendingNumbers(prs), [101, 102]);
 });
 
 test("pendingReleases orders equivalent ISO timestamps chronologically", () => {
-  const changelog = "## v1.0.0\n\n- Boundary (#100)\n";
   const prs = [
     { number: 101, title: "fix: fractional", mergedAt: "2026-09-22T10:00:00.100Z" },
     { number: 100, title: "fix: boundary", mergedAt: "2026-09-22T10:00:00Z" },
     { number: 102, title: "fix: tied", mergedAt: "2026-09-22T10:00:00Z" },
   ];
 
-  assert.deepStrictEqual(
-    pendingReleases({ prs, changelog }).releases.map((release) => release.number),
-    [102, 101],
-  );
+  assert.deepStrictEqual(pendingNumbers(prs), [102, 101]);
 });
 
 test("pendingReleases excludes candidates before the released boundary", () => {
-  const changelog = "## v1.0.0\n\n- Boundary (#100)\n";
   const prs = [
     { number: 99, title: "fix: historical gap", mergedAt: "2026-09-21T10:00:00Z" },
     { number: 100, title: "feat: boundary", mergedAt: "2026-09-22T10:00:00Z" },
     { number: 101, title: "fix: current", mergedAt: "2026-09-22T11:00:00Z" },
   ];
 
-  assert.deepStrictEqual(
-    pendingReleases({ prs, changelog }).releases.map((release) => release.number),
-    [101],
-  );
+  assert.deepStrictEqual(pendingNumbers(prs), [101]);
 });
 
 test("pendingReleases fails visibly when the changelog boundary cannot be resolved", () => {
@@ -169,7 +165,7 @@ test("pendingReleases fails visibly when the changelog boundary cannot be resolv
     () =>
       pendingReleases({
         prs: [{ number: 101, title: "fix: current", mergedAt: "2026-09-22T11:00:00Z" }],
-        changelog: "## v1.0.0\n\n- Boundary (#100)\n",
+        changelog: BOUNDARY_CHANGELOG,
       }),
     /boundary PR #100 was not found/,
   );

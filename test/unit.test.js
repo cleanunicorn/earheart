@@ -987,6 +987,28 @@ test("wavSliceFromFrame clamps a past-the-end offset to an empty wav", () => {
   assert.strictEqual(wavSampleFrames(wavSliceFromFrame(wav, -5)), 100);
 });
 
+test("wavSlice keeps exactly the [from, to) samples of the range", () => {
+  const { wavSlice } = require("../main/util/wav");
+  const samples = new Int16Array(2000);
+  for (let i = 0; i < samples.length; i++) samples[i] = i - 1000;
+  const piece = wavSlice(encodeWav(samples, 16000), 600, 1400);
+  const { samples: decoded, sampleRate } = wavToFloat32(piece);
+  assert.strictEqual(sampleRate, 16000);
+  assert.strictEqual(decoded.length, 800);
+  // First sample is original frame 600 (value -400), last is frame 1399 (399).
+  assert.ok(Math.abs(decoded[0] - -400 / 32768) < 1e-6);
+  assert.ok(Math.abs(decoded[799] - 399 / 32768) < 1e-6);
+});
+
+test("wavSlice clamps its range and never returns a negative length", () => {
+  const { wavSlice, wavSampleFrames } = require("../main/util/wav");
+  const wav = encodeWav(new Int16Array(100), 16000);
+  assert.strictEqual(wavSampleFrames(wavSlice(wav, -5, 40)), 40);
+  assert.strictEqual(wavSampleFrames(wavSlice(wav, 60, 5000)), 40);
+  assert.strictEqual(wavSampleFrames(wavSlice(wav, 70, 30)), 0);
+  assert.strictEqual(wavSampleFrames(wavSlice(wav, 0, Infinity)), 100);
+});
+
 // acceleratorFromEvent reads the page-global `platform` (classic-script
 // sharing in the renderer); tests provide it via global and reset after.
 test("acceleratorFromEvent maps modifiers per platform and names keys", () => {

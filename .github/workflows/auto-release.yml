@@ -48,11 +48,22 @@ jobs:
           # Paginate to the end rather than imposing a burst-size ceiling. The
           # helper finds the newest numbered changelog boundary, so historical
           # gaps before that release are never recreated.
-          gh api --paginate \
-            -H "Accept: application/vnd.github+json" \
-            "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=main&sort=created&direction=desc&per_page=100" \
-            --jq '.[] | select(.merged_at != null) | {number, title, mergedAt: .merged_at}' \
-            | jq -s '.' > "$prs_file"
+          pulls_loaded=false
+          for ((api_attempt = 1; api_attempt <= max_attempts; api_attempt++)); do
+            if gh api --paginate \
+              -H "Accept: application/vnd.github+json" \
+              "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=main&sort=created&direction=desc&per_page=100" \
+              --jq '.[] | select(.merged_at != null) | {number, title, mergedAt: .merged_at}' \
+              | jq -s '.' > "$prs_file"; then
+              pulls_loaded=true
+              break
+            fi
+            echo "::warning title=Pull list retry::Merged PR lookup attempt $api_attempt failed"
+          done
+          if [[ "$pulls_loaded" != true ]]; then
+            echo "::error title=Pull list failed::Could not load merged PRs after $max_attempts attempts"
+            exit 1
+          fi
           node scripts/auto-release.js select \
             --prs "$prs_file" --changelog CHANGELOG.md > "$candidates_file"
 
@@ -66,10 +77,21 @@ jobs:
             fi
 
             events_file="$RUNNER_TEMP/pr-$number-events.json"
-            gh api --paginate \
-              -H "Accept: application/vnd.github+json" \
-              "repos/$GITHUB_REPOSITORY/issues/$number/events?per_page=100" \
-              --jq '.[]' | jq -s '.' > "$events_file"
+            events_loaded=false
+            for ((api_attempt = 1; api_attempt <= max_attempts; api_attempt++)); do
+              if gh api --paginate \
+                -H "Accept: application/vnd.github+json" \
+                "repos/$GITHUB_REPOSITORY/issues/$number/events?per_page=100" \
+                --jq '.[]' | jq -s '.' > "$events_file"; then
+                events_loaded=true
+                break
+              fi
+              echo "::warning title=PR event retry::PR #$number event lookup attempt $api_attempt failed"
+            done
+            if [[ "$events_loaded" != true ]]; then
+              echo "::error title=PR event lookup failed::Could not load events for PR #$number after $max_attempts attempts"
+              exit 1
+            fi
             jq -c --slurpfile events "$events_file" \
               '. + {events: $events[0]}' <<<"$candidate_json" >> "$resolved_jsonl"
           done < "$candidates_file"

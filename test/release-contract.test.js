@@ -99,6 +99,20 @@ test("catch-up reads every merged PR with the explicit token permission", () => 
   assert.match(workflow, /select\(\.merged_at != null\)/);
 });
 
+test("catch-up API reads retry transient failures and then fail visibly", () => {
+  assert.equal(workflow.match(/if gh api --paginate/g)?.length, 2);
+  assert.equal(
+    workflow.match(
+      /for \(\(api_attempt = 1; api_attempt <= max_attempts; api_attempt\+\+\)\); do/g,
+    )?.length,
+    2,
+  );
+  assert.match(workflow, /::warning title=Pull list retry::/);
+  assert.match(workflow, /Could not load merged PRs after \$max_attempts attempts/);
+  assert.match(workflow, /::warning title=PR event retry::/);
+  assert.match(workflow, /Could not load events for PR #\$number after \$max_attempts attempts/);
+});
+
 test("catch-up freezes titles from the trigger payload or post-merge rename events", () => {
   assert.match(workflow, /TRIGGER_TITLE: \$\{\{ github\.event\.pull_request\.title \}\}/);
   assert.match(workflow, /issues\/\$number\/events\?per_page=100/);

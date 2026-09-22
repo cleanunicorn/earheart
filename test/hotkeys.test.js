@@ -242,6 +242,24 @@ test("a later free-target failure rolls back an earlier successful target", () =
   assert.strictEqual(bindings.has(B), true);
 });
 
+test("two free replacements register before either previous binding is released", () => {
+  const D = "CommandOrControl+Alt+D";
+  const { hotkeys, calls, bindings } = loadHotkeys();
+  hotkeys.applyPair(pair(A, B));
+  clearCalls(calls);
+
+  const result = hotkeys.applyPair(pair(C, D));
+
+  assert.deepStrictEqual(result, { record: { ok: true }, pause: { ok: true } });
+  assert.deepStrictEqual(calls.events, [
+    `register:${C}`,
+    `register:${D}`,
+    `unregister:${A}`,
+    `unregister:${B}`,
+  ]);
+  assert.deepStrictEqual([...bindings.keys()], [C, D]);
+});
+
 test("a mixed free and crossed change registers in no-drop order", () => {
   const triggered = [];
   const { hotkeys, calls, bindings } = loadHotkeys();

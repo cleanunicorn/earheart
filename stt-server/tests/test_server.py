@@ -168,19 +168,6 @@ def test_resampling_keeps_a_nonempty_tiny_clip():
     np.testing.assert_array_equal(actual, waveform)
 
 
-def test_model_not_loaded(loader):
-    # TestClient without a context deliberately skips startup, leaving the
-    # app in its initial model-loading state.
-    client = TestClient(server.create_app())
-    try:
-        response = transcribe(client)
-        assert response.status_code == 503
-        assert response.json() == {"detail": "Model still loading"}
-        loader.assert_not_called()
-    finally:
-        client.close()
-
-
 def test_supported_language(client, recognizer):
     response = transcribe(client, language="ro", response_format="verbose_json")
     assert response.status_code == 200

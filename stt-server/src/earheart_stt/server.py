@@ -4,7 +4,7 @@ behind the OpenAI-compatible audio transcription API.
 Endpoints:
     POST /v1/audio/transcriptions  - multipart upload, returns {"text": ...}
     GET  /v1/models                - lists the loaded model
-    GET  /health                   - readiness probe
+    GET  /health                   - liveness probe (the server only listens once the model is loaded)
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import logging
 import threading
 import time
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 import soundfile as sf
@@ -30,10 +30,6 @@ class ServerConfig:
     quantization: str | None = None
     provider: str = "cpu"
     cache_dir: str | None = None
-    # Languages Parakeet v3 supports are auto-detected; the `language` form
-    # field is accepted for API compatibility and passed through when the
-    # loaded model supports it.
-    extra: dict = field(default_factory=dict)
 
 
 PROVIDER_MAP = {
@@ -139,12 +135,13 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
     def transcribe(
         file: UploadFile = File(...),
         model: str = Form(""),  # accepted for API compatibility; ignored
+        # Languages Parakeet v3 supports are auto-detected; the `language` form
+        # field is accepted for API compatibility and passed through when the
+        # loaded model supports it.
         language: str = Form(""),
         response_format: str = Form("json"),
     ):
         asr = state["model"]
-        if asr is None:
-            raise HTTPException(status_code=503, detail="Model still loading")
         if response_format not in ("json", "text", "verbose_json"):
             raise HTTPException(
                 status_code=400,

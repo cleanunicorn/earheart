@@ -464,3 +464,27 @@ test("pipeline: a broken snapshot's words fill the range a failed final piece le
   assert.strictEqual(rig.log.history[0].incomplete, true);
   assert.strictEqual(rig.log.notifications.length, 1);
 });
+
+test("pipeline: a tail under 0.05 s after the committed text is not decoded", async () => {
+  // Stop landed right on a chunk boundary: the committed text IS the
+  // transcript. The early return also has to keep the { text, partial } shape,
+  // or process() reads the dictation as empty.
+  const framesWav = (frames) => {
+    const samples = new Int16Array(frames);
+    for (let i = 0; i < frames; i++) samples[i] = i % 2 ? 8000 : -8000;
+    return encodeWav(samples, SR);
+  };
+  const snap = { committedRaw: "said so far", decodedSamples: 30 * SR, broken: false, chunks: [] };
+
+  const under = dictationRig({ transcribe: async (n) => `w${n}` });
+  await under.dictate(framesWav(30 * SR + 799), snap); // 0.0499 s of tail
+  assert.strictEqual(under.log.transcribe.length, 0, "nothing decoded");
+  assert.deepStrictEqual(under.log.delivered, ["said so far"]);
+  assert.strictEqual(under.log.history[0].incomplete, undefined);
+  assert.strictEqual(under.log.notifications.length, 0);
+
+  const at = dictationRig({ transcribe: async (n) => `w${n}` });
+  await at.dictate(framesWav(30 * SR + 800), snap); // exactly 0.05 s: decoded
+  assert.strictEqual(at.log.transcribe.length, 1);
+  assert.deepStrictEqual(at.log.delivered, ["said so far w0"]);
+});

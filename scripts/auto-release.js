@@ -41,7 +41,7 @@ function releaseState(changelog) {
     entry.items.map((item) => markerFromText(item.text)).filter((number) => number !== null),
   );
   return {
-    boundaryNumber: markersByEntry[0]?.[0] ?? null,
+    boundaryNumbers: markersByEntry[0] || [],
     released: new Set(markersByEntry.flat()),
   };
 }
@@ -75,8 +75,8 @@ function titleAtMerge(pr) {
 }
 
 function pendingCandidates({ prs, changelog }) {
-  const { boundaryNumber, released } = releaseState(changelog);
-  if (boundaryNumber === null) {
+  const { boundaryNumbers, released } = releaseState(changelog);
+  if (boundaryNumbers.length === 0) {
     throw new Error("no numbered release boundary was found in CHANGELOG.md");
   }
 
@@ -89,10 +89,12 @@ function pendingCandidates({ prs, changelog }) {
       mergedAt: String(pr.mergedAt),
     }))
     .sort(compareMergeOrder);
-  const boundary = merged.find((pr) => pr.number === boundaryNumber);
-  if (!boundary) {
-    throw new Error(`boundary PR #${boundaryNumber} was not found in merged PR history`);
-  }
+  const boundaries = boundaryNumbers.map((number) => {
+    const pr = merged.find((candidate) => candidate.number === number);
+    if (!pr) throw new Error(`boundary PR #${number} was not found in merged PR history`);
+    return pr;
+  });
+  const boundary = boundaries.sort(compareMergeOrder).at(-1);
 
   return {
     boundary: { number: boundary.number, mergedAt: boundary.mergedAt },

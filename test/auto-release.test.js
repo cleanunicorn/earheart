@@ -173,6 +173,30 @@ test("pendingReleases excludes candidates before the released boundary", () => {
   assert.deepStrictEqual(pendingNumbers(prs), [101]);
 });
 
+test("pendingReleases uses the latest merge in a multi-item newest entry", () => {
+  const changelog = `## v1.2.0
+
+- Listed first but merged earlier (#102)
+- Listed second but merged later (#104)
+
+## v1.0.0
+
+- Old boundary (#100)
+`;
+  const prs = withMergeTitles([
+    { number: 100, title: "fix: old boundary", mergedAt: "2026-09-22T10:00:00Z" },
+    { number: 102, title: "fix: earlier release", mergedAt: "2026-09-22T10:02:00Z" },
+    { number: 103, title: "fix: between markers", mergedAt: "2026-09-22T10:03:00Z" },
+    { number: 104, title: "fix: latest release", mergedAt: "2026-09-22T10:04:00Z" },
+    { number: 105, title: "fix: actually pending", mergedAt: "2026-09-22T10:05:00Z" },
+  ]);
+
+  assert.deepStrictEqual(
+    pendingReleases({ prs, changelog }).releases.map((release) => release.number),
+    [105],
+  );
+});
+
 test("pendingReleases fails visibly when the changelog boundary cannot be resolved", () => {
   assert.throws(
     () =>
@@ -185,6 +209,16 @@ test("pendingReleases fails visibly when the changelog boundary cannot be resolv
   assert.throws(
     () => pendingReleases({ prs: [], changelog: "# Changelog\n" }),
     /no numbered release boundary/,
+  );
+  assert.throws(
+    () =>
+      pendingReleases({
+        prs: withMergeTitles([
+          { number: 102, title: "fix: one marker", mergedAt: "2026-09-22T10:02:00Z" },
+        ]),
+        changelog: "## v1.2.0\n\n- One (#102)\n- Missing (#104)\n",
+      }),
+    /boundary PR #104 was not found/,
   );
   assert.throws(
     () =>

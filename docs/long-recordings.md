@@ -116,12 +116,17 @@ decoded once more with 250 ms of silence around it (less when that would
 pass the 20 s cap; none, and no retry, for a piece already at the cap). In the lab that rescued
 the words lost that way; what still came back empty were breaths and clicks
 after finished sentences, which the probe (biased toward "speech" on
-purpose) also calls speech. Those are accepted as empty but counted — and,
-like a failed piece, filled from a broken live-preview snapshot's chunk
-over them (see below), without marking the result incomplete — unless
-nothing in the recording decoded at all, when they count as lost: the
-dictation is incomplete, and the live preview's words or an error follow,
-never a silent empty result.
+purpose) also calls speech. Checked against each sentence decoded alone
+with token timestamps, none of those pieces held a word missing from the
+final transcript; all were 0.7–1.2 s long. So a still-empty piece of up to
+2 s (`EMPTY_SPEECH_MAX_SEC`) is accepted as empty, logged with its range and
+length, and — like a failed piece — filled from a broken live-preview
+snapshot's chunk over it (see below), without marking the result
+incomplete. A longer one is too long to be a breath: it counts as lost, and
+the dictation is marked incomplete. The same happens when nothing in the
+recording decoded at all: the live preview's words or an error follow,
+never a silent empty result. The limit: a missed utterance of 2 s or less
+still isn't reported.
 Whatever was recovered is delivered: the committed live-preview text and the
 finished pieces. With a broken snapshot, its committed chunks' boundaries are
 cut points of the final pass too, so each chunk covers whole pieces; a chunk

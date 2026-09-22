@@ -492,3 +492,19 @@ test("pipeline: a tail under 0.05 s after the committed text is not decoded", as
   assert.strictEqual(at.log.transcribe.length, 1);
   assert.deepStrictEqual(at.log.delivered, ["said so far w0"]);
 });
+
+test("pipeline: a long stretch of speech that decodes to nothing makes the dictation incomplete", async () => {
+  // 50 s of pause-less speech, the middle 20 s piece decoding "" (it is at the
+  // cap, so there's no padded retry): the user is told the transcript is incomplete.
+  const samples = new Int16Array(50 * SR);
+  for (let i = 0; i < samples.length; i++) {
+    const amp = i >= 20 * SR && i < 40 * SR ? 6000 : 8000;
+    samples[i] = i % 2 ? amp : -amp;
+  }
+  const holdsMarked = (w) => wavToFloat32(w).samples.some((x) => Math.abs(x * 32768 - 6000) < 1);
+  const rig = dictationRig({ transcribe: async (n, w) => (holdsMarked(w) ? "" : `w${n}`) });
+  await rig.dictate(encodeWav(samples, SR));
+  assert.deepStrictEqual(rig.log.delivered, ["w0 w2"]);
+  assert.strictEqual(rig.log.history[0].incomplete, true);
+  assert.strictEqual(rig.log.notifications.length, 1);
+});

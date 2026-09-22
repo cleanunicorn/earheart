@@ -73,6 +73,13 @@ function planPieces(wav, maxSec, minPauseSec, salvageChunks) {
 // purpose — also calls speech.
 const EMPTY_RETRY_PAD_SEC = 0.25;
 
+// Longest piece that may stay empty after that retry and still be taken for a
+// breath or click. Every such piece the lab recorded was 0.7-1.2 s and held no
+// missing word; past 2 s a silent result is more likely words the model
+// missed, so it counts as lost and the dictation is marked incomplete. The
+// limit: a missed utterance of 2 s or less still isn't reported.
+const EMPTY_SPEECH_MAX_SEC = 2;
+
 // Up to EMPTY_RETRY_PAD_SEC a side, but never past maxSec in total: the
 // padded retry is a worker input like any other. Null when there is no room —
 // then the retry would be the same audio, and decode the same.
@@ -202,7 +209,15 @@ async function transcribeChunked(
             piece.attempts++;
             text = ((await runTranscribe(paddedWav, { onDecodeMs })) || "").trim();
           }
-          if (!text) piece.unconfirmed = true;
+          if (!text) {
+            const sec = (piece.toFrame - piece.fromFrame) / SAMPLE_RATE;
+            if (sec > EMPTY_SPEECH_MAX_SEC) throw emptySpeechError(); // lost: fails the piece below
+            piece.unconfirmed = true;
+            log?.warn(
+              `STT decode: piece ${(piece.fromFrame / SAMPLE_RATE).toFixed(1)}-${(piece.toFrame / SAMPLE_RATE).toFixed(1)}s ` +
+                `(${sec.toFixed(1)} s) heard speech but decoded to no text; accepted as a breath or click`
+            );
+          }
         }
         piece.ok = true;
         piece.text = text;

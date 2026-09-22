@@ -40,6 +40,19 @@ function fakeWorker(failures = {}) {
   };
 }
 
+// Loud audio whose [deadFrom, deadTo) seconds carry a different amplitude,
+// so a fake worker can tell which pieces hold that stretch whatever the cuts.
+function markedWav(seconds, deadFrom, deadTo) {
+  const samples = new Int16Array(Math.round(seconds * SR));
+  for (let i = 0; i < samples.length; i++) {
+    const amp = i >= deadFrom * SR && i < deadTo * SR ? 6000 : 8000;
+    samples[i] = i % 2 ? amp : -amp;
+  }
+  return encodeWav(samples, SR);
+}
+const holdsMarked = (w) => wavToFloat32(w).samples.some((x) => Math.abs(x * 32768 - 6000) < 1);
+const salvage = (fromSec, toSec, text) => ({ from: fromSec * SR, to: toSec * SR, text });
+
 test("chunked decode: the backstop cap is 20 s", () => {
   assert.strictEqual(MAX_DECODE_SECONDS, 20);
 });
@@ -223,18 +236,52 @@ test("chunked decode: a speech piece that decodes to no text is re-decoded with 
   assert.deepStrictEqual([r.text, r.partial, r.pieces[0].ok, r.pieces[0].attempts], ["rescued", false, true, 2]);
 });
 
-test("chunked decode: an empty piece among decoded ones is accepted, marked unconfirmed", async () => {
+// 10 s of speech, a 0.4 s pause, 1.2 s of amplitude-marked speech, a 0.4 s
+// pause, 10 s of speech: the middle piece is short (about 1.6 s with its
+// half-pauses), the length of every empty piece the lab recorded.
+function shortMarkedWav() {
+  const parts = [[10, 8000], [0.4, 0], [1.2, 6000], [0.4, 0], [10, 8000]];
+  const samples = new Int16Array(Math.round(parts.reduce((n, [sec]) => n + sec, 0) * SR));
+  let at = 0;
+  for (const [sec, amp] of parts) {
+    const n = Math.round(sec * SR);
+    for (let i = 0; i < n; i++) samples[at + i] = i % 2 ? amp : -amp;
+    at += n;
+  }
+  return encodeWav(samples, SR);
+}
+
+test("chunked decode: a short empty piece among decoded ones is accepted, marked unconfirmed, and logged", async () => {
   // The speech probe leans "speech" on purpose, so a breath or click after a
-  // sentence also reads as speech; the lab's remaining empty pieces were all
-  // such tails. Calling every one of them lost words would mark nearly every
-  // long dictation incomplete.
-  // Replies in call order: piece 0, piece 1 plain, piece 1 padded, piece 2.
-  const replies = ["a0", "", "", "a3"];
-  let call = 0;
-  const r = await transcribeChunked(wav(50), { runTranscribe: async () => replies[call++] });
-  assert.strictEqual(r.text, "a0 a3");
+  // sentence also reads as speech; every empty piece the lab recorded was one
+  // of those, 0.7-1.2 s long, and none held a missing word. Flagging them would
+  // mark every benchmark recording incomplete.
+  const warned = [];
+  let ok = 0;
+  const r = await transcribeChunked(shortMarkedWav(), {
+    runTranscribe: async (w) => (holdsMarked(w) ? "" : `w${ok++}`),
+    log: { warn: (...a) => warned.push(a.join(" ")) },
+  });
+  assert.strictEqual(r.text, "w0 w1");
   assert.strictEqual(r.partial, false);
-  assert.deepStrictEqual(r.pieces.map((p) => [p.ok, !!p.unconfirmed]), [[true, false], [true, true], [true, false]]);
+  const empty = r.pieces.filter((p) => p.unconfirmed);
+  assert.strictEqual(empty.length, 1);
+  assert.ok((empty[0].toFrame - empty[0].fromFrame) / SR < 2);
+  assert.ok(warned.some((m) => /no text/.test(m) && /1\.[0-9]+ s/.test(m)), `logged with its length: ${warned}`);
+});
+
+test("chunked decode: a long empty piece among decoded ones counts as lost", async () => {
+  // Past EMPTY_SPEECH_MAX_SEC a still-empty speech piece is too long to be a
+  // breath (reviews A:correctness-1, final:correctness-1): the transcript is
+  // incomplete, so the user is told.
+  let ok = 0;
+  const r = await transcribeChunked(markedWav(50, 20, 40), {
+    runTranscribe: async (w) => (holdsMarked(w) ? "" : `w${ok++}`),
+  });
+  assert.strictEqual(r.text, "w0 w1");
+  assert.strictEqual(r.partial, true);
+  const lost = r.pieces.filter((p) => !p.ok);
+  assert.deepStrictEqual(lost.map((p) => [p.fromFrame / SR, p.toFrame / SR, p.code]), [[20, 40, "EMPTY_SPEECH"]]);
 });
 
 test("chunked decode: speech that yields no text anywhere is never a silent empty dictation", async () => {
@@ -254,18 +301,6 @@ test("chunked decode: silence that decodes to no text is fine, with no second tr
   assert.deepStrictEqual([r.text, r.partial, r.pieces[0].ok, calls], ["", false, true, 1]);
 });
 
-// Loud audio whose [deadFrom, deadTo) seconds carry a different amplitude,
-// so a fake worker can tell which pieces hold that stretch whatever the cuts.
-function markedWav(seconds, deadFrom, deadTo) {
-  const samples = new Int16Array(Math.round(seconds * SR));
-  for (let i = 0; i < samples.length; i++) {
-    const amp = i >= deadFrom * SR && i < deadTo * SR ? 6000 : 8000;
-    samples[i] = i % 2 ? amp : -amp;
-  }
-  return encodeWav(samples, SR);
-}
-const holdsMarked = (w) => wavToFloat32(w).samples.some((x) => Math.abs(x * 32768 - 6000) < 1);
-const salvage = (fromSec, toSec, text) => ({ from: fromSec * SR, to: toSec * SR, text });
 
 test("chunked decode: a failed piece is filled from the committed live-preview chunk over it", async () => {
   // A broken snapshot's words can't lead the transcript, but the chunks over
@@ -321,14 +356,14 @@ test("chunked decode: an unconfirmed empty piece is filled from committed live-p
   // Heard speech, decoded to nothing even padded: if the live preview had
   // words for that range, they are the user's (manager audit M-1).
   let ok = 0;
-  const r = await transcribeChunked(markedWav(50, 22, 26), {
+  const r = await transcribeChunked(shortMarkedWav(), {
     runTranscribe: async (w) => (holdsMarked(w) ? "" : `w${ok++}`),
-    salvageChunks: [salvage(5, 15, "early"), salvage(22, 26, "live words"), salvage(38, 45, "straddle")],
+    // Committed chunk over the short marked stretch (10.2-11.8 s with its half-pauses).
+    salvageChunks: [salvage(10.2, 11.8, "live words")],
   });
   const empty = r.pieces.filter((p) => p.unconfirmed);
-  assert.deepStrictEqual(empty.map((p) => [p.fromFrame / SR, p.toFrame / SR]), [[22, 26]]);
-  assert.ok(r.text.includes("live words"), r.text);
-  assert.strictEqual(r.text.split("live words").length, 2, "exactly once");
+  assert.deepStrictEqual(empty.map((p) => [p.fromFrame / SR, p.toFrame / SR]), [[10.2, 11.8]]);
+  assert.strictEqual(r.text, "w0 live words w1");
   // The words were delivered, so the transcript is not incomplete.
   assert.strictEqual(r.partial, false);
 });

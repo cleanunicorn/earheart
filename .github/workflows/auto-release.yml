@@ -37,6 +37,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          max_attempts=3
 
           prs_file="$RUNNER_TEMP/merged-prs.json"
           candidates_file="$RUNNER_TEMP/release-candidates.jsonl"
@@ -89,7 +90,7 @@ jobs:
             pushed=false
             already_released=false
 
-            for attempt in 1 2 3; do
+            for ((attempt = 1; attempt <= max_attempts; attempt++)); do
               # A normal PR merge can move main while this job owns the release
               # concurrency group, so every attempt starts from the remote tip.
               if ! git fetch origin main; then
@@ -126,7 +127,7 @@ jobs:
               continue
             fi
             if [[ "$pushed" != true ]]; then
-              echo "::error title=Release push failed::Could not release PR #$number after 3 attempts"
+              echo "::error title=Release push failed::Could not release PR #$number after $max_attempts attempts"
               exit 1
             fi
 
@@ -134,7 +135,7 @@ jobs:
             # so request the build explicitly and fail visibly if it cannot be
             # dispatched after bounded retries.
             dispatched=false
-            for dispatch_attempt in 1 2 3; do
+            for ((dispatch_attempt = 1; dispatch_attempt <= max_attempts; dispatch_attempt++)); do
               if gh workflow run release.yml --ref "$tag"; then
                 dispatched=true
                 break

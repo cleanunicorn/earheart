@@ -107,7 +107,8 @@ test("catch-up freezes titles from the trigger payload or post-merge rename even
 });
 
 test("every release attempt refreshes main and pushes its exact tag atomically", () => {
-  assert.match(workflow, /for attempt in 1 2 3/);
+  assert.match(workflow, /max_attempts=3/);
+  assert.match(workflow, /for \(\(attempt = 1; attempt <= max_attempts; attempt\+\+\)\); do/);
   assert.match(
     workflow,
     /if ! git fetch origin main; then\n\s+echo "::warning title=Release fetch retry::PR #\$number fetch attempt \$attempt failed"\n\s+continue\n\s+fi/,
@@ -134,9 +135,14 @@ test("release retries recognize only exact trailing PR markers", () => {
 });
 
 test("each pushed tag gets a bounded release-build dispatch", () => {
-  assert.match(workflow, /for dispatch_attempt in 1 2 3/);
+  assert.match(
+    workflow,
+    /for \(\(dispatch_attempt = 1; dispatch_attempt <= max_attempts; dispatch_attempt\+\+\)\); do/,
+  );
   assert.match(workflow, /gh workflow run release\.yml --ref "\$tag"/);
+  assert.match(workflow, /after \$max_attempts attempts/);
   assert.match(workflow, /Release build dispatch failed for \$tag/);
+  assert.doesNotMatch(workflow, /in 1 2 3/);
 });
 
 test("the unsafe manual release target and its documentation are gone", () => {

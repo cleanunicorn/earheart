@@ -97,6 +97,19 @@ def honours_language(asr) -> bool:
 
 
 MAX_DECODED_BYTES = 256 * 1024 * 1024
+FLOAT32_BYTES = np.dtype(np.float32).itemsize
+
+
+def _undecodable(exc: Exception) -> HTTPException:
+    logger.warning("Could not decode audio upload: %s", exc)
+    return HTTPException(status_code=400, detail="Could not decode audio file")
+
+
+def _too_large() -> HTTPException:
+    return HTTPException(
+        status_code=413,
+        detail=f"Decoded audio exceeds the {MAX_DECODED_BYTES // (1024 * 1024)} MiB limit",
+    )
 
 
 def decode_audio(data: bytes) -> tuple[np.ndarray, int]:
@@ -105,33 +118,18 @@ def decode_audio(data: bytes) -> tuple[np.ndarray, int]:
     try:
         info = sf.info(buffer)
     except Exception as exc:
-        logger.warning("Could not decode audio upload: %s", exc)
-        raise HTTPException(
-            status_code=400, detail="Could not decode audio file"
-        ) from exc
+        raise _undecodable(exc) from exc
 
-    max_frames = MAX_DECODED_BYTES // (4 * max(info.channels, 1))
+    max_frames = MAX_DECODED_BYTES // (FLOAT32_BYTES * max(info.channels, 1))
     if info.frames > max_frames:
-        raise HTTPException(
-            status_code=413,
-            detail=(
-                f"Decoded audio exceeds the "
-                f"{MAX_DECODED_BYTES // (1024 * 1024)} MiB limit"
-            ),
-        )
+        raise _too_large()
 
     # The source bound above misses the 16 kHz resample: low-rate audio (e.g.
     # 8 kHz) projects to more output frames than it decodes. Bound the
     # projected mono output too, so resample_linear cannot expand past budget.
     projected_frames = int(round(info.frames * TARGET_SAMPLE_RATE / info.samplerate))
-    if projected_frames * 4 > MAX_DECODED_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=(
-                f"Decoded audio exceeds the "
-                f"{MAX_DECODED_BYTES // (1024 * 1024)} MiB limit"
-            ),
-        )
+    if projected_frames * FLOAT32_BYTES > MAX_DECODED_BYTES:
+        raise _too_large()
 
     buffer.seek(0)
     try:
@@ -139,19 +137,10 @@ def decode_audio(data: bytes) -> tuple[np.ndarray, int]:
             buffer, dtype="float32", frames=max_frames + 1
         )
     except Exception as exc:
-        logger.warning("Could not decode audio upload: %s", exc)
-        raise HTTPException(
-            status_code=400, detail="Could not decode audio file"
-        ) from exc
+        raise _undecodable(exc) from exc
 
     if waveform.shape[0] > max_frames:
-        raise HTTPException(
-            status_code=413,
-            detail=(
-                f"Decoded audio exceeds the "
-                f"{MAX_DECODED_BYTES // (1024 * 1024)} MiB limit"
-            ),
-        )
+        raise _too_large()
 
     if waveform.ndim > 1:
         waveform = waveform.mean(axis=1)

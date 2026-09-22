@@ -58,6 +58,10 @@ def load_asr_model(config: ServerConfig):
         # download — so set the env var before importing onnx_asr. This turns
         # --cache-dir into a real download cache root that several models can
         # share, instead of onnx-asr's model-files directory.
+        # The var is process-global and never cleared: load_asr_model runs
+        # once per process (lifespan), and huggingface_hub bakes HF_HUB_CACHE
+        # into a module constant at first import, so clearing it later would
+        # have no effect anyway.
         os.environ["HF_HUB_CACHE"] = str(Path(config.cache_dir).expanduser())
 
     import onnx_asr

@@ -78,6 +78,15 @@ $("hotkey-clear").addEventListener("click", () => {
 
 async function loadMicrophones() {
   const select = $("mic-device");
+  // Preserve the saved device before permission or enumeration can finish, so
+  // saving the wizard cannot silently replace it with the system default.
+  if (current.audio.deviceId) {
+    const saved = document.createElement("option");
+    saved.value = current.audio.deviceId;
+    saved.textContent = "Configured microphone";
+    select.appendChild(saved);
+    select.value = current.audio.deviceId;
+  }
   try {
     // Ask for permission once so device labels are populated.
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -86,11 +95,17 @@ async function loadMicrophones() {
     devices
       .filter((d) => d.kind === "audioinput" && d.deviceId !== "default")
       .forEach((d) => {
+        const existing = [...select.options].find((option) => option.value === d.deviceId);
+        if (existing) {
+          existing.textContent = d.label || existing.textContent;
+          return;
+        }
         const option = document.createElement("option");
         option.value = d.deviceId;
         option.textContent = d.label || `Microphone ${select.length}`;
         select.appendChild(option);
       });
+    select.value = current.audio.deviceId || "";
   } catch {
     $("mic-hint").textContent =
       "No microphone found (or access was denied). You can pick one later in Settings.";

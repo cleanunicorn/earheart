@@ -173,6 +173,13 @@ test("hotkey-capture.js loads before each page's own script", () => {
   }
 });
 
+test("wizard preserves the saved microphone during enumeration", () => {
+  const normalized = wizardJs.replace(/\s+/g, " ");
+  assert.match(normalized, /if \(current\.audio\.deviceId\) \{.*saved\.value = current\.audio\.deviceId/);
+  assert.match(normalized, /select\.value = current\.audio\.deviceId \|\| ""/);
+  assert.match(normalized, /existing\.textContent = d\.label \|\| existing\.textContent/);
+});
+
 test("permission-status.js loads before settings.js, which uses it", () => {
   // settings.js only reaches for these when Fix is clicked or the window
   // regains focus, so a dropped tag passes the smoke checks and throws later.

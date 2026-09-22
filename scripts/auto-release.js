@@ -51,7 +51,7 @@ function releasedPrNumbers(changelog) {
 }
 
 function compareMergeOrder(left, right) {
-  const byTime = left.mergedAt.localeCompare(right.mergedAt);
+  const byTime = Date.parse(left.mergedAt) - Date.parse(right.mergedAt);
   return byTime || left.number - right.number;
 }
 

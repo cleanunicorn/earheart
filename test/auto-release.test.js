@@ -136,6 +136,20 @@ test("pendingReleases uses PR number to break equal mergedAt ties", () => {
   );
 });
 
+test("pendingReleases orders equivalent ISO timestamps chronologically", () => {
+  const changelog = "## v1.0.0\n\n- Boundary (#100)\n";
+  const prs = [
+    { number: 101, title: "fix: fractional", mergedAt: "2026-09-22T10:00:00.100Z" },
+    { number: 100, title: "fix: boundary", mergedAt: "2026-09-22T10:00:00Z" },
+    { number: 102, title: "fix: tied", mergedAt: "2026-09-22T10:00:00Z" },
+  ];
+
+  assert.deepStrictEqual(
+    pendingReleases({ prs, changelog }).releases.map((release) => release.number),
+    [102, 101],
+  );
+});
+
 test("pendingReleases excludes candidates before the released boundary", () => {
   const changelog = "## v1.0.0\n\n- Boundary (#100)\n";
   const prs = [

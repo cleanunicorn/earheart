@@ -1,0 +1,321 @@
+// What scripts/eval-stt.js measures, pinned: the corpus, the candidate
+// models, and the models surveyed but not measured (with why). Data only.
+//
+// Candidates are shaped exactly like MODELS.stt entries in
+// main/engines/registry.js, so a winner moves into the catalog as-is. Their
+// pins were produced by `node scripts/eval-stt.js --discover <repo>` (the
+// commit from the Hugging Face API; bytes and sha256 from the LFS headers, or
+// by downloading and hashing a git-stored file like tokens.txt), and the run
+// re-hashes every downloaded file against them. The shipped baselines are
+// NOT copied here: the harness reads them from the registry, so it always
+// measures what the app ships.
+//
+// `arm: "wired"` models load through the engine worker as it is today
+// (transducer or Whisper). `arm: "exploratory"` models belong to sherpa-onnx
+// families the worker has no config for yet; they are measured on a direct
+// path (--exploratory) and can only reach the catalog after being wired in
+// and re-measured through the worker.
+
+const hf = (repo, commit, file) => `https://huggingface.co/csukuangfj/${repo}/resolve/${commit}/${file}`;
+const FLEURS_COMMIT = "70bb2e84b976b7e960aa89f1c648e09c59f894dd";
+const fleurs = (file) => `https://huggingface.co/datasets/google/fleurs/resolve/${FLEURS_COMMIT}/data/en_us/${file}`;
+
+const CORPUS = {
+  id: "fleurs-en_us-test",
+  source: "google/fleurs",
+  commit: FLEURS_COMMIT,
+  licence: "CC BY 4.0",
+  archive: "test.tar.gz",
+  tsv: "test.tsv",
+  utterances: 647,
+  files: [
+    { name: "test.tar.gz", bytes: 289851356, sha256: "d9c2e37b41aacd41bc283554a0a82b5476b36887049774ecb2819dcaaa55a356",
+      url: fleurs("audio/test.tar.gz") },
+    { name: "test.tsv", bytes: 367864, sha256: "74c046239374deeb60fa63f258f907388093a32bcaa3140965f70ef05c79f7ca",
+      url: fleurs("test.tsv") },
+  ],
+};
+
+// Every candidate is judged against this one (stt-model-eval-Q3).
+const BASELINE_ID = "parakeet-tdt-0.6b-v3-int8";
+
+const CANDIDATES = [
+  {
+    id: "parakeet-tdt-0.6b-v2-int8",
+    kind: "stt",
+    label: "Parakeet TDT 0.6B v2 · int8",
+    note: "Runs on this computer · English only · ~660 MB · English accuracy at the default's size",
+    engine: "sherpa-parakeet",
+    arm: "wired",
+    repo: "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
+    licence: "CC BY 4.0 (nvidia/parakeet-tdt-0.6b-v2)",
+    files: [
+      { name: "encoder.int8.onnx", bytes: 652184296, sha256: "a32b12d17bbbc309d0686fbbcc2987b5e9b8333a7da83fa6b089f0a2acd651ab",
+        url: hf("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "1ab9323565ddb038682214b292f588070a538ce2", "encoder.int8.onnx") },
+      { name: "decoder.int8.onnx", bytes: 7257753, sha256: "b6bb64963457237b900e496ee9994b59294526439fbcc1fecf705b31a15c6b4e",
+        url: hf("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "1ab9323565ddb038682214b292f588070a538ce2", "decoder.int8.onnx") },
+      { name: "joiner.int8.onnx", bytes: 1739080, sha256: "7946164367946e7f9f29a122407c3252b680dbae9a51343eb2488d057c3c43d2",
+        url: hf("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "1ab9323565ddb038682214b292f588070a538ce2", "joiner.int8.onnx") },
+      { name: "tokens.txt", bytes: 9384, sha256: "ec182b70dd42113aff6c5372c75cac58c952443eb22322f57bbd7f53977d497d",
+        url: hf("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "1ab9323565ddb038682214b292f588070a538ce2", "tokens.txt") },
+    ],
+    sherpa: { encoder: "encoder.int8.onnx", decoder: "decoder.int8.onnx", joiner: "joiner.int8.onnx", tokens: "tokens.txt", modelType: "nemo_transducer" },
+  },
+  {
+    id: "parakeet-tdt-110m-en",
+    kind: "stt",
+    label: "Parakeet TDT 110M",
+    note: "Runs on this computer · English only · ~480 MB · smallest Parakeet",
+    engine: "sherpa-parakeet",
+    arm: "wired",
+    repo: "csukuangfj/sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000",
+    licence: "CC BY 4.0 (nvidia/parakeet-tdt_ctc-110m)",
+    files: [
+      { name: "encoder.onnx", bytes: 456050698, sha256: "db260f1073c654c37dd65006885d1ee98ff16c22463b1ef992bbcabc29780a3f",
+        url: hf("sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000", "e9bea5a06247dc3f55319ff23d34b0328f2f5ddf", "encoder.onnx") },
+      { name: "decoder.onnx", bytes: 15753086, sha256: "3da156bde41a04c94ef783e0bd92928e9974e08645b976a22d0c3e1063510249",
+        url: hf("sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000", "e9bea5a06247dc3f55319ff23d34b0328f2f5ddf", "decoder.onnx") },
+      { name: "joiner.onnx", bytes: 5596854, sha256: "b603765c0724a0768c378a23326dabbeb9cfea932d260e4fcc14384fa5fd5aff",
+        url: hf("sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000", "e9bea5a06247dc3f55319ff23d34b0328f2f5ddf", "joiner.onnx") },
+      { name: "tokens.txt", bytes: 9953, sha256: "450e56bd2f036fe5b6aa821865838cc5aa9d8b0106134ce9a9ba0664abe6cd10",
+        url: hf("sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000", "e9bea5a06247dc3f55319ff23d34b0328f2f5ddf", "tokens.txt") },
+    ],
+    sherpa: { encoder: "encoder.onnx", decoder: "decoder.onnx", joiner: "joiner.onnx", tokens: "tokens.txt", modelType: "nemo_transducer" },
+  },
+  {
+    id: "zipformer-libriheavy-punct-case-int8",
+    kind: "stt",
+    label: "Zipformer large (LibriHeavy) · int8",
+    note: "Runs on this computer · English only · ~70 MB · punctuated and cased",
+    engine: "sherpa-parakeet",
+    arm: "wired",
+    repo: "csukuangfj/sherpa-onnx-zipformer-en-libriheavy-20230830-large-punct-case",
+    licence: "Apache-2.0 (k2-fsa/icefall)",
+    files: [
+      { name: "encoder-epoch-16-avg-2.int8.onnx", bytes: 68780141, sha256: "0d8f093dbff6eb912b097f82d632e591811c6fa91cd6a641b0186adef56cf3e2",
+        url: hf("sherpa-onnx-zipformer-en-libriheavy-20230830-large-punct-case", "bbee2bb4d877c2f7378343c39f5fcfe594d66ac4", "encoder-epoch-16-avg-2.int8.onnx") },
+      { name: "decoder-epoch-16-avg-2.int8.onnx", bytes: 670318, sha256: "8e3cb91d6f343bf9df29a0b4b8ba118a03943d862daf2846d8366e70e8803a7e",
+        url: hf("sherpa-onnx-zipformer-en-libriheavy-20230830-large-punct-case", "bbee2bb4d877c2f7378343c39f5fcfe594d66ac4", "decoder-epoch-16-avg-2.int8.onnx") },
+      { name: "joiner-epoch-16-avg-2.int8.onnx", bytes: 391431, sha256: "4f92d4e2300943c7380f157a982216dee4d5a698ee5744c48c95beae5b08fcef",
+        url: hf("sherpa-onnx-zipformer-en-libriheavy-20230830-large-punct-case", "bbee2bb4d877c2f7378343c39f5fcfe594d66ac4", "joiner-epoch-16-avg-2.int8.onnx") },
+      { name: "tokens.txt", bytes: 7368, sha256: "8eb972ab97543df33e055e10934fc48fd827116760ea11c7ed29214e0dec4e3b",
+        url: hf("sherpa-onnx-zipformer-en-libriheavy-20230830-large-punct-case", "bbee2bb4d877c2f7378343c39f5fcfe594d66ac4", "tokens.txt") },
+    ],
+    sherpa: { encoder: "encoder-epoch-16-avg-2.int8.onnx", decoder: "decoder-epoch-16-avg-2.int8.onnx", joiner: "joiner-epoch-16-avg-2.int8.onnx", tokens: "tokens.txt", modelType: "transducer" },
+  },
+  {
+    id: "zipformer-libriheavy-punct-case",
+    kind: "stt",
+    label: "Zipformer large (LibriHeavy)",
+    note: "Runs on this computer · English only · ~265 MB · punctuated and cased",
+    engine: "sherpa-parakeet",
+    arm: "wired",
+    repo: "csukuangfj/sherpa-onnx-zipformer-en-libriheavy-20230830-large-punct-case",
+    licence: "Apache-2.0 (k2-fsa/icefall)",
+    files: [
+      { name: "encoder-epoch-16-avg-2.onnx", bytes: 259807148, sha256: "8e577fc2fc6405796014e0607887f01ab345e98f564e3f7a27ce2bb729a5dea9",
+        url: hf("sherpa-onnx-zipformer-en-libriheavy-20230830-large-punct-case", "bbee2bb4d877c2f7378343c39f5fcfe594d66ac4", "encoder-epoch-16-avg-2.onnx") },
+      { name: "decoder-epoch-16-avg-2.onnx", bytes: 2616855, sha256: "17e90d074fac07490d83c6731f1a24decd6dd46b0e4680a784535a3f7581a0e0",
+        url: hf("sherpa-onnx-zipformer-en-libriheavy-20230830-large-punct-case", "bbee2bb4d877c2f7378343c39f5fcfe594d66ac4", "decoder-epoch-16-avg-2.onnx") },
+      { name: "joiner-epoch-16-avg-2.onnx", bytes: 1551717, sha256: "96d71335d7fe9bd3acca7399ab021e570bcbb53b04e162c1103efbe3985d917a",
+        url: hf("sherpa-onnx-zipformer-en-libriheavy-20230830-large-punct-case", "bbee2bb4d877c2f7378343c39f5fcfe594d66ac4", "joiner-epoch-16-avg-2.onnx") },
+      { name: "tokens.txt", bytes: 7368, sha256: "8eb972ab97543df33e055e10934fc48fd827116760ea11c7ed29214e0dec4e3b",
+        url: hf("sherpa-onnx-zipformer-en-libriheavy-20230830-large-punct-case", "bbee2bb4d877c2f7378343c39f5fcfe594d66ac4", "tokens.txt") },
+    ],
+    sherpa: { encoder: "encoder-epoch-16-avg-2.onnx", decoder: "decoder-epoch-16-avg-2.onnx", joiner: "joiner-epoch-16-avg-2.onnx", tokens: "tokens.txt", modelType: "transducer" },
+  },
+  {
+    id: "whisper-tiny.en-int8",
+    kind: "stt",
+    label: "Whisper tiny.en · int8",
+    note: "Runs on this computer · English only · ~105 MB · OpenAI Whisper",
+    engine: "sherpa-parakeet",
+    arm: "wired",
+    repo: "csukuangfj/sherpa-onnx-whisper-tiny.en",
+    licence: "MIT (openai/whisper)",
+    files: [
+      { name: "tiny.en-encoder.int8.onnx", bytes: 12937772, sha256: "0ce578b827c94a961aacb8fa14b02f096504b337e5c94be37c36238cbe3e8bc6",
+        url: hf("sherpa-onnx-whisper-tiny.en", "d026532c022fa99fd789d6b32446a1df7b6bfc43", "tiny.en-encoder.int8.onnx") },
+      { name: "tiny.en-decoder.int8.onnx", bytes: 89853865, sha256: "06c0e6ff6348d427e51839219d1c886c18cfdf411e629e33f5e1679bff9c1527",
+        url: hf("sherpa-onnx-whisper-tiny.en", "d026532c022fa99fd789d6b32446a1df7b6bfc43", "tiny.en-decoder.int8.onnx") },
+      { name: "tiny.en-tokens.txt", bytes: 835554, sha256: "306cd27f03c1a714eca7108e03d66b7dc042abe8c258b44c199a7ed9838dd930",
+        url: hf("sherpa-onnx-whisper-tiny.en", "d026532c022fa99fd789d6b32446a1df7b6bfc43", "tiny.en-tokens.txt") },
+    ],
+    sherpa: { encoder: "tiny.en-encoder.int8.onnx", decoder: "tiny.en-decoder.int8.onnx", tokens: "tiny.en-tokens.txt", modelType: "whisper" },
+  },
+  {
+    id: "whisper-base.en-int8",
+    kind: "stt",
+    label: "Whisper base.en · int8",
+    note: "Runs on this computer · English only · ~160 MB · OpenAI Whisper",
+    engine: "sherpa-parakeet",
+    arm: "wired",
+    repo: "csukuangfj/sherpa-onnx-whisper-base.en",
+    licence: "MIT (openai/whisper)",
+    files: [
+      { name: "base.en-encoder.int8.onnx", bytes: 29120534, sha256: "ef6b936f4c9b1d90a3b68634b60c4ed8576b26172b33c2535ec0e933c9edb823",
+        url: hf("sherpa-onnx-whisper-base.en", "59eea950fc76df2453efb57e6c0fd334548e8ffe", "base.en-encoder.int8.onnx") },
+      { name: "base.en-decoder.int8.onnx", bytes: 130669978, sha256: "f7162ad6db2dbef16cfaeaa7f945b9d7dd9c1b8d472f6aca82f2273d185e4d41",
+        url: hf("sherpa-onnx-whisper-base.en", "59eea950fc76df2453efb57e6c0fd334548e8ffe", "base.en-decoder.int8.onnx") },
+      { name: "base.en-tokens.txt", bytes: 835554, sha256: "306cd27f03c1a714eca7108e03d66b7dc042abe8c258b44c199a7ed9838dd930",
+        url: hf("sherpa-onnx-whisper-base.en", "59eea950fc76df2453efb57e6c0fd334548e8ffe", "base.en-tokens.txt") },
+    ],
+    sherpa: { encoder: "base.en-encoder.int8.onnx", decoder: "base.en-decoder.int8.onnx", tokens: "base.en-tokens.txt", modelType: "whisper" },
+  },
+  {
+    id: "whisper-small.en-int8",
+    kind: "stt",
+    label: "Whisper small.en · int8",
+    note: "Runs on this computer · English only · ~375 MB · OpenAI Whisper",
+    engine: "sherpa-parakeet",
+    arm: "wired",
+    repo: "csukuangfj/sherpa-onnx-whisper-small.en",
+    licence: "MIT (openai/whisper)",
+    files: [
+      { name: "small.en-encoder.int8.onnx", bytes: 112442483, sha256: "8bdac288f369aa94ee2194059238c465ed82ea9d47ee8fa4a8c0a891873e462f",
+        url: hf("sherpa-onnx-whisper-small.en", "d9533f69affd85061aee349af7fea5cb2996dbbe", "small.en-encoder.int8.onnx") },
+      { name: "small.en-decoder.int8.onnx", bytes: 262223042, sha256: "710ccf890e10f3faa15f51ec346081a2723c9f3adb6e4da81c6573a5a6f877fb",
+        url: hf("sherpa-onnx-whisper-small.en", "d9533f69affd85061aee349af7fea5cb2996dbbe", "small.en-decoder.int8.onnx") },
+      { name: "small.en-tokens.txt", bytes: 835554, sha256: "306cd27f03c1a714eca7108e03d66b7dc042abe8c258b44c199a7ed9838dd930",
+        url: hf("sherpa-onnx-whisper-small.en", "d9533f69affd85061aee349af7fea5cb2996dbbe", "small.en-tokens.txt") },
+    ],
+    sherpa: { encoder: "small.en-encoder.int8.onnx", decoder: "small.en-decoder.int8.onnx", tokens: "small.en-tokens.txt", modelType: "whisper" },
+  },
+  {
+    id: "whisper-distil-small.en-int8",
+    kind: "stt",
+    label: "Whisper distil-small.en · int8",
+    note: "Runs on this computer · English only · ~300 MB · OpenAI Whisper",
+    engine: "sherpa-parakeet",
+    arm: "wired",
+    repo: "csukuangfj/sherpa-onnx-whisper-distil-small.en",
+    licence: "MIT (distil-whisper/distil-small.en)",
+    files: [
+      { name: "distil-small.en-encoder.int8.onnx", bytes: 102961431, sha256: "397a76d2308c2c1ec91a4ecc12f20fede69bb17be41a1cef050993520328beca",
+        url: hf("sherpa-onnx-whisper-distil-small.en", "0492324bca9e12a6fca0089bb846f2dd723b50d8", "distil-small.en-encoder.int8.onnx") },
+      { name: "distil-small.en-decoder.int8.onnx", bytes: 195079097, sha256: "3074092bca078786ecda9c9e88449f14e9ebde1d60be4d41de8cacda55e065e0",
+        url: hf("sherpa-onnx-whisper-distil-small.en", "0492324bca9e12a6fca0089bb846f2dd723b50d8", "distil-small.en-decoder.int8.onnx") },
+      { name: "distil-small.en-tokens.txt", bytes: 835554, sha256: "306cd27f03c1a714eca7108e03d66b7dc042abe8c258b44c199a7ed9838dd930",
+        url: hf("sherpa-onnx-whisper-distil-small.en", "0492324bca9e12a6fca0089bb846f2dd723b50d8", "distil-small.en-tokens.txt") },
+    ],
+    sherpa: { encoder: "distil-small.en-encoder.int8.onnx", decoder: "distil-small.en-decoder.int8.onnx", tokens: "distil-small.en-tokens.txt", modelType: "whisper" },
+  },
+  {
+    id: "parakeet-tdt-0.6b-v2-fp16",
+    kind: "stt",
+    label: "Parakeet TDT 0.6B v2 · fp16",
+    note: "Runs on this computer · English only · ~1.3 GB · half-precision v2",
+    engine: "sherpa-parakeet",
+    arm: "wired",
+    repo: "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-fp16",
+    licence: "CC BY 4.0 (nvidia/parakeet-tdt-0.6b-v2)",
+    files: [
+      { name: "encoder.fp16.onnx", bytes: 1239245548, sha256: "bb1cc16e8223472b36bd637e2f77725d62b9895eaf609fec6cc91183e2753e38",
+        url: hf("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-fp16", "a6cc4e24ed264a93a17575dad416dacc4238497a", "encoder.fp16.onnx") },
+      { name: "decoder.fp16.onnx", bytes: 14446596, sha256: "45b04b71eb29dddeeb560e13a515291615bc541f8f5e9e336004956c0ce1a538",
+        url: hf("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-fp16", "a6cc4e24ed264a93a17575dad416dacc4238497a", "decoder.fp16.onnx") },
+      { name: "joiner.fp16.onnx", bytes: 3456459, sha256: "5d9d840eff9a3f3724ebce6d84c52038ee4664a08955c5a69d277f2d9733f9b1",
+        url: hf("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-fp16", "a6cc4e24ed264a93a17575dad416dacc4238497a", "joiner.fp16.onnx") },
+      { name: "tokens.txt", bytes: 9384, sha256: "ec182b70dd42113aff6c5372c75cac58c952443eb22322f57bbd7f53977d497d",
+        url: hf("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-fp16", "a6cc4e24ed264a93a17575dad416dacc4238497a", "tokens.txt") },
+    ],
+    sherpa: { encoder: "encoder.fp16.onnx", decoder: "decoder.fp16.onnx", joiner: "joiner.fp16.onnx", tokens: "tokens.txt", modelType: "nemo_transducer" },
+  },
+  {
+    id: "moonshine-tiny-en-int8",
+    kind: "stt",
+    label: "Moonshine tiny · int8",
+    note: "Runs on this computer · English only · Moonshine tiny",
+    engine: "sherpa-parakeet",
+    arm: "exploratory",
+    repo: "csukuangfj/sherpa-onnx-moonshine-tiny-en-int8",
+    licence: "MIT (UsefulSensors/moonshine)",
+    files: [
+      { name: "preprocess.onnx", bytes: 6800738, sha256: "f33addce61a143460fe753b5ee5b7db255e5140b5b779c065b94f6c83ff0bf4e",
+        url: hf("sherpa-onnx-moonshine-tiny-en-int8", "bf2b762c076d8ea61e2af0b3851c9564fb77552e", "preprocess.onnx") },
+      { name: "encode.int8.onnx", bytes: 18249187, sha256: "8774dfba578de027ec6595c2c654a0836434489bc963a0db124a7f181f571acb",
+        url: hf("sherpa-onnx-moonshine-tiny-en-int8", "bf2b762c076d8ea61e2af0b3851c9564fb77552e", "encode.int8.onnx") },
+      { name: "uncached_decode.int8.onnx", bytes: 53216096, sha256: "216737000dd5881a17aa043f6bbd286add33e4c3b0ae257153e2ec15438bdc41",
+        url: hf("sherpa-onnx-moonshine-tiny-en-int8", "bf2b762c076d8ea61e2af0b3851c9564fb77552e", "uncached_decode.int8.onnx") },
+      { name: "cached_decode.int8.onnx", bytes: 45264830, sha256: "2aff28bba6a03d8dcf5c9feac45462629bae37317442299f28115ad09da773f6",
+        url: hf("sherpa-onnx-moonshine-tiny-en-int8", "bf2b762c076d8ea61e2af0b3851c9564fb77552e", "cached_decode.int8.onnx") },
+      { name: "tokens.txt", bytes: 436688, sha256: "1165c2aeb9f72f457a83be2d459a09054f27490acd9b41bd43794dfd25e296ea",
+        url: hf("sherpa-onnx-moonshine-tiny-en-int8", "bf2b762c076d8ea61e2af0b3851c9564fb77552e", "tokens.txt") },
+    ],
+    sherpa: { family: "moonshine", preprocessor: "preprocess.onnx", encoder: "encode.int8.onnx", uncachedDecoder: "uncached_decode.int8.onnx", cachedDecoder: "cached_decode.int8.onnx", tokens: "tokens.txt" },
+  },
+  {
+    id: "moonshine-base-en-int8",
+    kind: "stt",
+    label: "Moonshine base · int8",
+    note: "Runs on this computer · English only · Moonshine base",
+    engine: "sherpa-parakeet",
+    arm: "exploratory",
+    repo: "csukuangfj/sherpa-onnx-moonshine-base-en-int8",
+    licence: "MIT (UsefulSensors/moonshine)",
+    files: [
+      { name: "preprocess.onnx", bytes: 14077290, sha256: "ffa630d395c5ccf76f5d4954be5b882df76aaf6491519ec01fd82ea7a3819fb2",
+        url: hf("sherpa-onnx-moonshine-base-en-int8", "052b0798ad1bf046a140fdd4efcd9426530fa3f5", "preprocess.onnx") },
+      { name: "encode.int8.onnx", bytes: 50311494, sha256: "7e38770f776f2e5583a53b052936005df2ba5c833d7e09c2a5fd796b94bf73e2",
+        url: hf("sherpa-onnx-moonshine-base-en-int8", "052b0798ad1bf046a140fdd4efcd9426530fa3f5", "encode.int8.onnx") },
+      { name: "uncached_decode.int8.onnx", bytes: 122120451, sha256: "c01f4b35093bcac20d352d23a75a539e772964579f9d024a90e5e6f09cae9987",
+        url: hf("sherpa-onnx-moonshine-base-en-int8", "052b0798ad1bf046a140fdd4efcd9426530fa3f5", "uncached_decode.int8.onnx") },
+      { name: "cached_decode.int8.onnx", bytes: 99983837, sha256: "2db74e51cedf64a8b1be3c8192e0bb5e4923af0e90bd9e87f8e8771873f8ea03",
+        url: hf("sherpa-onnx-moonshine-base-en-int8", "052b0798ad1bf046a140fdd4efcd9426530fa3f5", "cached_decode.int8.onnx") },
+      { name: "tokens.txt", bytes: 436688, sha256: "1165c2aeb9f72f457a83be2d459a09054f27490acd9b41bd43794dfd25e296ea",
+        url: hf("sherpa-onnx-moonshine-base-en-int8", "052b0798ad1bf046a140fdd4efcd9426530fa3f5", "tokens.txt") },
+    ],
+    sherpa: { family: "moonshine", preprocessor: "preprocess.onnx", encoder: "encode.int8.onnx", uncachedDecoder: "uncached_decode.int8.onnx", cachedDecoder: "cached_decode.int8.onnx", tokens: "tokens.txt" },
+  },
+  {
+    id: "parakeet-ctc-110m-en",
+    kind: "stt",
+    label: "Parakeet CTC 110M",
+    note: "Runs on this computer · English only · Parakeet CTC",
+    engine: "sherpa-parakeet",
+    arm: "exploratory",
+    repo: "csukuangfj/sherpa-onnx-nemo-parakeet_tdt_ctc_110m-en-36000",
+    licence: "CC BY 4.0 (nvidia/parakeet-tdt_ctc-110m)",
+    files: [
+      { name: "model.onnx", bytes: 458161021, sha256: "936806cf3dd0db5aba53f8c7410bb5632d7a8ad6b2c51009f5e4fc0890ec76bf",
+        url: hf("sherpa-onnx-nemo-parakeet_tdt_ctc_110m-en-36000", "3af92f152d32c836acabf38f4c993bc96b80eb2d", "model.onnx") },
+      { name: "tokens.txt", bytes: 9953, sha256: "450e56bd2f036fe5b6aa821865838cc5aa9d8b0106134ce9a9ba0664abe6cd10",
+        url: hf("sherpa-onnx-nemo-parakeet_tdt_ctc_110m-en-36000", "3af92f152d32c836acabf38f4c993bc96b80eb2d", "tokens.txt") },
+    ],
+    sherpa: { family: "nemoCtc", model: "model.onnx", tokens: "tokens.txt" },
+  },
+  {
+    id: "canary-180m-flash",
+    kind: "stt",
+    label: "Canary 180M Flash",
+    note: "Runs on this computer · English, German, Spanish, French · Canary",
+    engine: "sherpa-parakeet",
+    arm: "exploratory",
+    repo: "csukuangfj/sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr",
+    licence: "CC BY 4.0 (nvidia/canary-180m-flash)",
+    files: [
+      { name: "encoder.onnx", bytes: 461454900, sha256: "7b43326c56fe621e6fa9c1e876bd8bc912aa5e1d934b6695a329466ebbf9ca3f",
+        url: hf("sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr", "f938439a315c5bf63dad25f1827af4e095a280dc", "encoder.onnx") },
+      { name: "decoder.onnx", bytes: 295099727, sha256: "95224f6f181dba1ba502ac3507a1d66e6dc4150418e977e87f0049cb9047ca5d",
+        url: hf("sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr", "f938439a315c5bf63dad25f1827af4e095a280dc", "decoder.onnx") },
+      { name: "tokens.txt", bytes: 53555, sha256: "2dae6fc7815f9640645e0c765522b278ee0cef49b482d91f6913e334628d3e77",
+        url: hf("sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr", "f938439a315c5bf63dad25f1827af4e095a280dc", "tokens.txt") },
+    ],
+    sherpa: { family: "canary", encoder: "encoder.onnx", decoder: "decoder.onnx", tokens: "tokens.txt" },
+  },
+];
+
+// Surveyed, not measured. Each reason is one AC4 allows: no files, licence,
+// size, or a family the offline engine cannot load at all.
+const SKIPPED = [
+  { repo: "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-fp16", reason: "empty repository (only .gitattributes at abb5c91f)" },
+  { repo: "csukuangfj/sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000-int8", reason: "empty repository (only .gitattributes at 09886b8f)" },
+  { repo: "csukuangfj/sherpa-onnx-nemo-parakeet_tdt_ctc_110m-en-36000-int8", reason: "empty repository (only .gitattributes at a42c4220); the fp32 build is measured in the exploratory arm" },
+  { repo: "csukuangfj/sherpa-onnx-whisper-{tiny.en,base.en,small.en,distil-small.en} fp32", reason: "size: the int8 build of each is measured; fp32 is 1.5-2.6x the download for the same weights" },
+  { repo: "csukuangfj/sherpa-onnx-whisper-{medium,large-v3,turbo}", reason: "size: 1-3 GB int8 and several times slower than small on CPU; large-v3/turbo also use 128 mel bins where the worker fixes 80" },
+  { repo: "csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17", reason: "licence: FunASR model licence (\"other\"), not a standard open licence — needs a human read before any catalog entry" },
+  { repo: "csukuangfj/sherpa-onnx-streaming-zipformer-*", reason: "streaming models load through OnlineRecognizer; the engine only builds an OfflineRecognizer" },
+  { repo: "csukuangfj/sherpa-onnx-paraformer-*, -dolphin-*, -fire-red-asr-*, -telespeech-*", reason: "unwired family, and not English-first (Chinese / multilingual Asian models)" },
+];
+
+module.exports = { CORPUS, BASELINE_ID, CANDIDATES, SKIPPED };

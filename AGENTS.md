@@ -278,8 +278,7 @@ main/                Electron main process (pipeline, hotkeys, settings, tray, w
   output/deliver.js  clipboard + per-OS paste injection
 renderer/            overlay (mic → 16 kHz WAV, live preview), settings, wizard
 stt-server/          optional Python FastAPI Parakeet server
-scripts/             icons, screenshots, release notes, smoke tests,
-                     cleanup evals (bench-cleanup.mjs compares models)
+scripts/             icons, screenshots, release notes, smoke tests, model evals
 docs/                agent setup recipes, feature write-ups, cleanup-model survey
 test/                unit tests (node --test)
 .github/workflows/   ci, pr-title, auto-release, release

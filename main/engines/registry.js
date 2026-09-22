@@ -2,7 +2,7 @@
 //
 // Two kinds:
 //   - "stt"     speech-to-text, run by sherpa-onnx (NVIDIA Parakeet, ONNX)
-//   - "cleanup" transcript cleanup, run by node-llama-cpp (Gemma, GGUF)
+//   - "cleanup" transcript cleanup, run by node-llama-cpp (GGUF chat models)
 //
 // Each model is just a list of files to fetch. We download individual files
 // (rather than an archive) so there is nothing to extract: the download
@@ -22,19 +22,23 @@
 
 // Sherpa-onnx hosts ready-to-run ONNX bundles of the NeMo Parakeet models on
 // Hugging Face; we pull the encoder/decoder/joiner and the token table. Each
-// bundle lives in its own repo (int8 vs fp32, v3 multilingual vs v2 English),
-// so pin a repo + commit per model. The fp32 builds store the encoder weights
-// in a separate `encoder.weights` external-data file alongside `encoder.onnx`;
-// both must be downloaded into the same directory for the loader to find them.
+// bundle lives in its own repo (int8 vs fp32, v3 multilingual vs v2 English,
+// 0.6B vs 110M), so pin a repo + commit per model. scripts/eval-stt.js
+// --discover produces these pins, and --verify-shipped re-derives them. The
+// fp32 builds store the encoder weights in a separate `encoder.weights`
+// external-data file alongside `encoder.onnx`; both must be downloaded into
+// the same directory for the loader to find them.
 const sttUrl = (repo, commit, file) =>
   `https://huggingface.co/csukuangfj/${repo}/resolve/${commit}/${file}`;
 
-// The ggml-org (llama.cpp) org publishes ungated GGUF builds of the Gemma 3
-// instruct models, which is exactly what node-llama-cpp / llama.cpp load. We
-// avoid google/* here because those repos are gated and return HTTP 401 to
-// anonymous downloads. Each model lives in its own repo, so pin per model.
-const gemmaUrl = (repo, commit, file) =>
-  `https://huggingface.co/ggml-org/${repo}/resolve/${commit}/${file}`;
+// Cleanup models are single-file GGUF builds, which is exactly what
+// node-llama-cpp / llama.cpp load. Each lives in its own `owner/repo`, so pin a
+// repo + commit per model, and only from ungated owners: the ggml-org
+// (llama.cpp) org for Gemma 3, because google/* repos are gated and return
+// HTTP 401 to anonymous downloads; IBM's own ibm-granite org for Granite; and
+// unsloth for Qwen3.
+const ggufUrl = (repo, commit, file) =>
+  `https://huggingface.co/${repo}/resolve/${commit}/${file}`;
 
 const MODELS = {
   stt: {
@@ -135,6 +139,40 @@ const MODELS = {
         modelType: "nemo_transducer",
       },
     },
+    "parakeet-tdt-110m-en": {
+      id: "parakeet-tdt-110m-en",
+      label: "Parakeet TDT 110M (English only, fastest)",
+      kind: "stt",
+      engine: "sherpa-parakeet",
+      // English-only 110M-parameter Parakeet TDT, fp32 (there is no int8 build
+      // of it). Measured by scripts/eval-stt.js against the default on FLEURS
+      // en_us test, CPU at the app's 8 threads (Ryzen 9 3900X, Linux): decode
+      // ~4x faster (RTF 0.0104 vs 0.0425) at WER 6.29 % vs 6.07 % — a gap the
+      // corpus can't separate — and it keeps every word on a ~60 s single
+      // buffer. It does not punctuate every utterance (96 %).
+      note: "Runs on this computer · English only · ~480 MB · fastest, near-default accuracy",
+      files: [
+        { name: "encoder.onnx", bytes: 456_050_698,
+          sha256: "db260f1073c654c37dd65006885d1ee98ff16c22463b1ef992bbcabc29780a3f",
+          url: sttUrl("sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000", "e9bea5a06247dc3f55319ff23d34b0328f2f5ddf", "encoder.onnx") },
+        { name: "decoder.onnx", bytes: 15_753_086,
+          sha256: "3da156bde41a04c94ef783e0bd92928e9974e08645b976a22d0c3e1063510249",
+          url: sttUrl("sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000", "e9bea5a06247dc3f55319ff23d34b0328f2f5ddf", "decoder.onnx") },
+        { name: "joiner.onnx", bytes: 5_596_854,
+          sha256: "b603765c0724a0768c378a23326dabbeb9cfea932d260e4fcc14384fa5fd5aff",
+          url: sttUrl("sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000", "e9bea5a06247dc3f55319ff23d34b0328f2f5ddf", "joiner.onnx") },
+        { name: "tokens.txt", bytes: 9_953,
+          sha256: "450e56bd2f036fe5b6aa821865838cc5aa9d8b0106134ce9a9ba0664abe6cd10",
+          url: sttUrl("sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000", "e9bea5a06247dc3f55319ff23d34b0328f2f5ddf", "tokens.txt") },
+      ],
+      sherpa: {
+        encoder: "encoder.onnx",
+        decoder: "decoder.onnx",
+        joiner: "joiner.onnx",
+        tokens: "tokens.txt",
+        modelType: "nemo_transducer",
+      },
+    },
   },
   cleanup: {
     "gemma-3-1b": {
@@ -142,7 +180,6 @@ const MODELS = {
       label: "Gemma 3 1B (fast, small)",
       kind: "cleanup",
       engine: "llama-gguf",
-      default: true,
       // Honest about where it falls down. Measured on a 150-word dictation:
       // 1B leaves most "um"/"uh" in place and misses the spoken-code rule
       // ("src slash main dot pie"), where 4B gets both right. Someone picking a
@@ -151,9 +188,30 @@ const MODELS = {
       files: [
         { name: "gemma-3-1b-it-Q4_K_M.gguf", bytes: 806_058_240,
           sha256: "8ccc5cd1f1b3602548715ae25a66ed73fd5dc68a210412eea643eb20eb75a135",
-          url: gemmaUrl("gemma-3-1b-it-GGUF", "f9c28bcd85737ffc5aef028638d3341d49869c27", "gemma-3-1b-it-Q4_K_M.gguf") },
+          url: ggufUrl("ggml-org/gemma-3-1b-it-GGUF", "f9c28bcd85737ffc5aef028638d3341d49869c27", "gemma-3-1b-it-Q4_K_M.gguf") },
       ],
       gguf: { file: "gemma-3-1b-it-Q4_K_M.gguf" },
+    },
+    "granite-4.0-micro": {
+      id: "granite-4.0-micro",
+      label: "Granite 4.0 Micro (recommended)",
+      kind: "cleanup",
+      engine: "llama-gguf",
+      default: true,
+      // The default since the cleanup benchmark (#167, Ryzen 9 3900X CPU): no
+      // fillers left over five runs where both Gemma 3 1B and 4B left all 30,
+      // at 0.95 content-word retention. The price is the download, ~2.6x the
+      // 1B's, and a slower clean on CPU (18.6 s vs 7.5 s median there).
+      // RAM is stated on the same scale as Gemma 3 4B's "~6 GB": measured the
+      // same way (CPU, default 4096 context, peak RSS), Granite used 3,987 MiB
+      // against Gemma 3 4B's 4,289 MiB, 0.93x of it.
+      note: "Runs on this computer · ~2.1 GB, 2.6× the 1B · needs ~6 GB RAM · recommended: removes fillers reliably",
+      files: [
+        { name: "granite-4.0-micro-Q4_K_M.gguf", bytes: 2_099_502_528,
+          sha256: "97c417dcc0534b0737c74016fb2af083cb17c3b51eaac621192d23961b7024eb",
+          url: ggufUrl("ibm-granite/granite-4.0-micro-GGUF", "ec48475f0c811d812fbfb61975717a9c36eeb652", "granite-4.0-micro-Q4_K_M.gguf") },
+      ],
+      gguf: { file: "granite-4.0-micro-Q4_K_M.gguf" },
     },
     "gemma-3-4b": {
       id: "gemma-3-4b",
@@ -164,9 +222,25 @@ const MODELS = {
       files: [
         { name: "gemma-3-4b-it-Q4_K_M.gguf", bytes: 2_489_757_856,
           sha256: "882e8d2db44dc554fb0ea5077cb7e4bc49e7342a1f0da57901c0802ea21a0863",
-          url: gemmaUrl("gemma-3-4b-it-GGUF", "d0976223747697cb51e056d85c532013931fe52e", "gemma-3-4b-it-Q4_K_M.gguf") },
+          url: ggufUrl("ggml-org/gemma-3-4b-it-GGUF", "d0976223747697cb51e056d85c532013931fe52e", "gemma-3-4b-it-Q4_K_M.gguf") },
       ],
       gguf: { file: "gemma-3-4b-it-Q4_K_M.gguf" },
+    },
+    "qwen3-4b-2507": {
+      id: "qwen3-4b-2507",
+      label: "Qwen3 4B Instruct 2507 (alternative)",
+      kind: "cleanup",
+      engine: "llama-gguf",
+      // Same benchmark: also no fillers left, but a little slower than Granite
+      // (21.1 s vs 18.6 s median) and a little lower retention (0.94 vs 0.95).
+      // RAM on the Gemma 3 4B scale: 4,817 MiB peak vs 4,289 MiB, 1.12x of it.
+      note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · removes fillers reliably, a little slower than Granite",
+      files: [
+        { name: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf", bytes: 2_497_281_120,
+          sha256: "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+          url: ggufUrl("unsloth/Qwen3-4B-Instruct-2507-GGUF", "a06e946bb6b655725eafa393f4a9745d460374c9", "Qwen3-4B-Instruct-2507-Q4_K_M.gguf") },
+      ],
+      gguf: { file: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf" },
     },
     "gemma-4-12b": {
       id: "gemma-4-12b",
@@ -177,7 +251,7 @@ const MODELS = {
       files: [
         { name: "gemma-3-12b-it-Q4_K_M.gguf", bytes: 7_300_574_976,
           sha256: "7bb69bff3f48a7b642355d64a90e481182a7794707b3133890646b1efa778ff5",
-          url: gemmaUrl("gemma-3-12b-it-GGUF", "ec0cbabd8dbff316f659876a50202295c3c4a314", "gemma-3-12b-it-Q4_K_M.gguf") },
+          url: ggufUrl("ggml-org/gemma-3-12b-it-GGUF", "ec0cbabd8dbff316f659876a50202295c3c4a314", "gemma-3-12b-it-Q4_K_M.gguf") },
       ],
       gguf: { file: "gemma-3-12b-it-Q4_K_M.gguf" },
     },
@@ -185,7 +259,7 @@ const MODELS = {
 };
 
 const DEFAULT_STT_MODEL = "parakeet-tdt-0.6b-v3-int8";
-const DEFAULT_CLEANUP_MODEL = "gemma-3-1b";
+const DEFAULT_CLEANUP_MODEL = "granite-4.0-micro";
 
 // User-added models (cleanup GGUFs or STT bundles from a Hugging Face repo
 // the user pasted). Kept in

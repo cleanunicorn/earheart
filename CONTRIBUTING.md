@@ -31,7 +31,6 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | `make dist` | Build installers for the current platform |
 | `make dist-linux` / `dist-mac` / `dist-win` | Per-platform packages |
 | `make dist-win-docker` | Cross-build Windows packages from Linux via Docker+Wine |
-| `make release` | Cut a release manually (`BUMP=patch\|minor\|major`) |
 | `make install-stt` | Create the stt-server virtualenv and install it (uv) |
 | `make run-stt` | Run the local Parakeet STT server |
 | `make clean` | Remove build output |
@@ -136,19 +135,16 @@ builds. Those builds create the GitHub release as a draft, each platform
 uploads its installers into it, and the release is flipped live only after all
 three platforms succeed — so a half-built release is never published.
 
+Release jobs are serialized. Because GitHub retains only one pending job in a
+concurrency group, each surviving run catches up every release-affecting PR
+merged since the newest numbered changelog entry, in merge order. An invalid
+title emits a warning and creates no release. This automatic workflow is the
+only supported release path.
+
 **Your PR title is the release note.** It's what the app shows people — in the
 update prompt before they update, and in the "what's new" card after. Write it
 for them, not for the log: `feat: paginate the settings history list`, not
 `feat: pagination`.
-
-To cut a release manually instead:
-
-```bash
-make release BUMP=minor NOTE="fix: stop the tray menu flickering"
-```
-
-`NOTE` is the changelog line (it defaults to the last commit subject, which is
-rarely what you want to publish).
 
 ### Release notes
 

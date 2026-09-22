@@ -14,6 +14,19 @@ const titleWorkflow = fs.readFileSync(
   path.join(ROOT, ".github", "workflows", "pr-title.yml"),
   "utf8",
 );
+const makefile = fs.readFileSync(path.join(ROOT, "Makefile"), "utf8");
+const contributing = fs.readFileSync(path.join(ROOT, "CONTRIBUTING.md"), "utf8");
+const agents = fs.readFileSync(path.join(ROOT, "AGENTS.md"), "utf8");
+
+function markdownUnder(directory) {
+  let text = "";
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const location = path.join(directory, entry.name);
+    if (entry.isDirectory()) text += markdownUnder(location);
+    else if (entry.name.endsWith(".md")) text += fs.readFileSync(location, "utf8");
+  }
+  return text;
+}
 
 test("release sizing uses exactly the PR-title workflow regex", () => {
   const match = titleWorkflow.match(/^\s*title_re='([^']+)'$/m);
@@ -50,7 +63,7 @@ test("every release attempt refreshes main and pushes its exact tag atomically",
     workflow,
     /git push --atomic origin HEAD:main "refs\/tags\/v\$version:refs\/tags\/v\$version"/,
   );
-  assert.doesNotMatch(workflow, /git push origin main/);
+  assert.doesNotMatch(workflow, new RegExp("git push origin " + "main"));
   assert.match(workflow, /git tag -d "v\$version"/);
 });
 
@@ -58,4 +71,28 @@ test("each pushed tag gets a bounded release-build dispatch", () => {
   assert.match(workflow, /for dispatch_attempt in 1 2 3/);
   assert.match(workflow, /gh workflow run release\.yml --ref "v\$version"/);
   assert.match(workflow, /Release build dispatch failed for v\$version/);
+});
+
+test("the unsafe manual release target and its documentation are gone", () => {
+  assert.doesNotMatch(makefile, new RegExp("^\\.PHONY: " + "release$", "m"));
+  assert.doesNotMatch(makefile, new RegExp("^release" + ":", "m"));
+
+  const releaseDocs = [
+    fs.readFileSync(path.join(ROOT, "README.md"), "utf8"),
+    contributing,
+    agents,
+    markdownUnder(path.join(ROOT, "docs")),
+  ].join("\n");
+  assert.doesNotMatch(releaseDocs, new RegExp("make " + "release"));
+});
+
+test("contributor and agent guides explain serialized catch-up releases", () => {
+  for (const [name, guide] of [
+    ["CONTRIBUTING.md", contributing],
+    ["AGENTS.md", agents],
+  ]) {
+    assert.match(guide, /serializ/i, `${name} should explain serialization`);
+    assert.match(guide, /catch(?:es)? up/i, `${name} should explain catch-up`);
+    assert.match(guide, /invalid\s+title/i, `${name} should explain invalid titles`);
+  }
 });

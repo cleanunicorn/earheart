@@ -249,7 +249,9 @@ Keep it short and useful:
   [auto-release.yml](.github/workflows/auto-release.yml) bumps `package.json`,
   writes the PR title into `CHANGELOG.md`, commits `release: vX.Y.Z`, tags it,
   and dispatches the multi-platform release builds. The release goes live only
-  after all three platforms build successfully.
+  after all three platforms build successfully. Release jobs are serialized;
+  each surviving run catches up release-affecting merges that lost their own
+  pending run, in merge order. An invalid title warns and creates no release.
 - **Does the PR title/prefix decide the bump?** Yes.
 
 | PR title prefix | Release effect |

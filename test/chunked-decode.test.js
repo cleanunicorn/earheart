@@ -389,3 +389,26 @@ test("chunked decode: the padded retry never sends more than the cap", async () 
   assert.deepStrictEqual(under.seen.map((s) => +s.toFixed(3)), [19.7, 20]);
   assert.strictEqual(under.r.text, "committed rescued");
 });
+
+test("chunked decode: salvage cut points don't spend the dead-worker budget twice on one range", async () => {
+  // Review final:correctness-4's probe. Committed chunk edges split the
+  // capped range [20,40) into two pieces; both die. Counted per piece that is
+  // two failures in a row, the stop kicked in and the decodable [40,50) tail
+  // was never tried — words the snapshot doesn't have. One original range
+  // counts once.
+  const dead = engineError("ENGINE_EXITED", 134);
+  const calls = [];
+  let ok = 0;
+  const r = await transcribeChunked(markedWav(50, 20, 40), {
+    runTranscribe: async (w) => {
+      calls.push(wavDurationSec(w));
+      if (holdsMarked(w)) throw dead;
+      return `w${ok++}`;
+    },
+    salvageChunks: [salvage(0, 10, "c0"), salvage(10, 20, "c1"), salvage(20, 30, "c2"), salvage(30, 40, "c3")],
+  });
+  assert.deepStrictEqual(calls, [10, 10, 10, 10, 10, 10, 10], "the tail is decoded too");
+  assert.strictEqual(r.text, "w0 w1 c2 c3 w2");
+  assert.deepStrictEqual([r.pieces.at(-1).ok, !!r.pieces.at(-1).skipped], [true, false]);
+  assert.strictEqual(r.partial, true);
+});

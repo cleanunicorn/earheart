@@ -52,17 +52,21 @@ function retryable(failure) {
 // between pauses, each at most maxSec — and the samples they index.
 // Committed chunk boundaries are cut points too, so every salvage chunk
 // covers whole pieces (see assemble). Extra cuts only shorten pieces, so the
-// cap still holds.
+// cap still holds. Each range keeps the index of the pause/cap range it came
+// from (`group`): a dead worker is counted once per group, so salvage cuts
+// can't make one bad stretch look like two.
 function planPieces(wav, maxSec, minPauseSec, salvageChunks) {
   const frames = wavSampleFrames(wav);
-  if (!frames) return { ranges: [[0, 0]], samples: new Float32Array(0) };
+  if (!frames) return { ranges: [[0, 0, 0]], samples: new Float32Array(0) };
   const { samples, sampleRate } = wavToFloat32(wav);
-  const cuts = new Set(splitPoints(samples, sampleRate, { maxSec, minPauseSec }));
+  const natural = splitPoints(samples, sampleRate, { maxSec, minPauseSec });
+  const cuts = new Set(natural);
   for (const c of salvageChunks) {
     for (const edge of [c.from, c.to]) if (edge > 0 && edge < frames) cuts.add(edge);
   }
   const edges = [0, ...[...cuts].sort((a, b) => a - b), frames];
-  return { ranges: edges.slice(1).map((to, i) => [edges[i], to]), samples };
+  const groupOf = (from) => natural.filter((cut) => cut <= from).length;
+  return { ranges: edges.slice(1).map((to, i) => [edges[i], to, groupOf(edges[i])]), samples };
 }
 
 // Silence put around a piece that heard speech but decoded to nothing, for
@@ -179,14 +183,16 @@ async function transcribeChunked(
   }
 ) {
   const plan = planPieces(wav, maxSec, minPauseSec, salvageChunks);
-  const pieces = plan.ranges.map(([fromFrame, toFrame]) => ({
+  const pieces = plan.ranges.map(([fromFrame, toFrame, group]) => ({
     fromFrame,
     toFrame,
+    group,
     ok: false,
     attempts: 0,
   }));
   let firstError = null;
   let consecutiveFailures = 0;
+  let lastFailedGroup = null; // the group the budget last counted
 
   for (const piece of pieces) {
     if (stale()) return { text: "", partial: false, stale: true, pieces };
@@ -244,8 +250,14 @@ async function transcribeChunked(
         break;
       }
     }
-    // Only a worker that keeps dying stops the run.
-    consecutiveFailures = piece.ok || !retryable(piece) ? 0 : consecutiveFailures + 1;
+    // Only a worker that keeps dying stops the run, counted once per group.
+    if (piece.ok || !retryable(piece)) {
+      consecutiveFailures = 0;
+      lastFailedGroup = null;
+    } else if (piece.group !== lastFailedGroup) {
+      consecutiveFailures++;
+      lastFailedGroup = piece.group;
+    }
   }
 
   let decoded = assemble(pieces, salvageChunks);

@@ -1,5 +1,7 @@
-// Tests for the pipeline's idle-unload timer: when models get evicted, and what
-// happens when a worker is busy at the moment the window elapses.
+// Tests for the pipeline: the idle-unload timer (when models get evicted, and
+// what happens when a worker is busy at the moment the window elapses), and the
+// final transcription driven end to end through the registered IPC handlers
+// (bounded built-in decodes, and delivery when the STT worker dies mid-way).
 //
 // main/pipeline.js requires Electron and most of the main process at load, so
 // this uses the same require.cache stubbing that engines.test.js uses for the
@@ -23,7 +25,7 @@ const resolveFrom = (spec) => require.resolve(spec, { paths: [dir] });
 // Load main/pipeline.js against fakes for everything it pulls in. `engines` and
 // `settings` are the two the caller actually drives; the rest exist only so the
 // module can finish loading.
-function loadPipelineWith({ engines, settings }) {
+function loadPipelineWith({ engines, settings, overrides = {} }) {
   const stubs = {
     [resolveFrom("electron")]: {
       app: { getPath: () => os.tmpdir() },
@@ -43,6 +45,7 @@ function loadPipelineWith({ engines, settings }) {
     },
     [resolveFrom("./util/logger")]: { info() {}, warn() {}, error() {} },
   };
+  for (const [spec, stub] of Object.entries(overrides)) stubs[resolveFrom(spec)] = stub;
 
   const saved = {};
   for (const p of Object.keys(stubs)) {
@@ -191,4 +194,201 @@ test("pipeline: an idle window of 0 never arms at all", (t) => {
   pipeline.onSettingsChanged();
   t.mock.timers.tick(WINDOW_MS * 5);
   assert.strictEqual(engines.calls.length, 0, "0 keeps models resident");
+});
+
+/* ---------------- final transcription ---------------- */
+
+const { encodeWav, wavDurationSec } = require("../main/util/wav");
+
+const SR = 16000;
+
+// `seconds` of loud "speech" with a short pause every 7 s, so the final
+// decode's splitter has somewhere quiet to cut.
+function speechWav(seconds) {
+  const samples = new Int16Array(Math.round(seconds * SR));
+  for (let i = 0; i < samples.length; i++) {
+    samples[i] = (i / SR) % 7 > 6.6 ? 0 : i % 2 ? 8000 : -8000;
+  }
+  return encodeWav(samples, SR);
+}
+
+const exited = () => Object.assign(new Error("engine process exited"), { code: "ENGINE_EXITED", exitCode: 134 });
+
+// A pipeline wired to recording fakes, driven through its real IPC handlers:
+// toggle() starts a dictation, `dictate()` hands it the captured WAV and waits
+// for the pipeline to return to idle. `transcribe` scripts the STT backend per
+// call; `snapshot` is what the live preview hands the final pass.
+function dictationRig({ engine = "builtin", display = true, cleanup = false, transcribe, ensureStt } = {}) {
+  const log = { transcribe: [], delivered: [], history: [], notifications: [], statuses: [], settingsEvents: [] };
+  let snapshot = null;
+  let lastStart = null;
+  const handlers = {};
+  const cfg = {
+    stt: { engine, builtin: { model: "stt-model" }, language: "", livePreview: { enabled: display } },
+    cleanup: { enabled: cleanup, engine: "builtin" },
+    output: {},
+    history: { enabled: true, limit: 100 },
+    audio: { deviceId: "", maxRecordingSeconds: 300 },
+    engines: { idleUnloadMinutes: 0 },
+  };
+  let calls = 0;
+  const pipeline = loadPipelineWith({
+    engines: {
+      ensureStt: ensureStt || (async () => {}),
+      restartStt() {},
+      unloadIdle: () => true,
+      cancelClean() {},
+      primeCleanup: async () => {},
+    },
+    settings: { get: () => cfg },
+    overrides: {
+      electron: {
+        app: { getPath: () => os.tmpdir() },
+        ipcMain: { on: (channel, fn) => (handlers[channel] = fn) },
+        Notification: class {
+          constructor(opts) {
+            this.opts = opts;
+          }
+          show() {
+            log.notifications.push(this.opts);
+          }
+        },
+      },
+      "./windows": {
+        createOverlay: () => ({ webContents: { isLoading: () => false } }),
+        showOverlay() {},
+        hideOverlay() {},
+        sendToSettings: (channel) => log.settingsEvents.push(channel),
+        sendToOverlay(channel, payload) {
+          if (channel === "record:start") lastStart = payload;
+          if (channel === "pipeline:status") log.statuses.push(payload.status);
+        },
+      },
+      "./services/route": {
+        async transcribe(wav, sttCfg, signal, opts) {
+          const n = calls++;
+          log.transcribe.push({ engine: sttCfg.engine, sec: wavDurationSec(wav) });
+          const text = await transcribe(n, wav);
+          opts?.onDecodeMs?.(10);
+          return text;
+        },
+        clean: async (raw) => `cleaned(${raw})`,
+      },
+      "./output/deliver": {
+        deliver: async (text) => {
+          log.delivered.push(text);
+          return { method: "paste" };
+        },
+      },
+      "./history": { add: (entry) => log.history.push(entry) },
+      "./live-preview": {
+        createLivePreview: () => ({ cancel() {}, handleAudio() {}, snapshotFinal: () => snapshot }),
+      },
+      "./util/rtf": {
+        createPersistedRtfEstimator: () => ({ record() {}, progressAt: () => 0.5, estimate: () => 0.1 }),
+      },
+    },
+  });
+  pipeline.init();
+  async function dictate(wav, snap = { committedRaw: "", decodedSamples: 0, broken: false }) {
+    snapshot = engine === "builtin" ? snap : null;
+    pipeline.toggle();
+    assert.strictEqual(pipeline.getState(), "recording");
+    const idle = new Promise((resolve) => {
+      pipeline.onStateChange((s) => s === "idle" && resolve());
+    });
+    handlers["audio:captured"]({}, { sid: lastStart.sid, wav });
+    await idle;
+  }
+  return { log, dictate, pipeline };
+}
+
+test("pipeline: no built-in final decode exceeds 60 s, on every assembly path", async () => {
+  const ok = async (n) => `w${n}`;
+  const cases = [
+    { name: "no committed chunk", wav: 200, snap: { committedRaw: "", decodedSamples: 0, broken: false }, decoded: 200 },
+    { name: "broken snapshot", wav: 200, snap: { committedRaw: "holey", decodedSamples: 30 * SR, broken: true }, decoded: 200 },
+    { name: "long tail after a trusted prefix", wav: 200, snap: { committedRaw: "said", decodedSamples: 10 * SR, broken: false }, decoded: 190 },
+  ];
+  for (const display of [true, false]) {
+    for (const c of cases) {
+      const rig = dictationRig({ display, transcribe: ok });
+      await rig.dictate(speechWav(c.wav), c.snap);
+      const secs = rig.log.transcribe.map((t) => t.sec);
+      assert.ok(secs.length > 1, `${c.name}: split into pieces`);
+      for (const sec of secs) assert.ok(sec <= 60, `${c.name} (display ${display}): a ${sec}s decode`);
+      const total = secs.reduce((a, b) => a + b, 0);
+      assert.ok(Math.abs(total - c.decoded) < 0.01, `${c.name}: decoded ${total}s of ${c.decoded}s`);
+      assert.strictEqual(rig.log.delivered.length, 1);
+      const expected = secs.map((_, i) => `w${i}`).join(" ");
+      assert.strictEqual(rig.log.delivered[0], c.snap.broken || !c.snap.committedRaw ? expected : `said ${expected}`);
+      assert.strictEqual(rig.log.history[0].incomplete, undefined);
+      assert.strictEqual(rig.log.notifications.length, 0);
+    }
+  }
+});
+
+test("pipeline: remote STT still gets the whole recording in one request", async () => {
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "remote text" });
+  await rig.dictate(speechWav(200));
+  assert.deepStrictEqual(rig.log.transcribe.map((t) => [t.engine, t.sec]), [["remote", 200]]);
+  assert.deepStrictEqual(rig.log.delivered, ["remote text"]);
+});
+
+test("pipeline: an STT worker death mid-transcription delivers what decoded, then the next dictation works", async () => {
+  // Dictation 1: 150 s → three pieces; the worker dies on piece 2 and again on
+  // its retry. Pieces 1 and 3 are the user's words and must be delivered.
+  let dead = true;
+  const rig = dictationRig({
+    cleanup: true,
+    transcribe: async (n) => {
+      if (dead && (n === 1 || n === 2)) throw exited();
+      return `w${n}`;
+    },
+  });
+  await rig.dictate(speechWav(150));
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+  assert.strictEqual(rig.log.notifications.length, 1, "one notification says the transcript is incomplete");
+  assert.match(rig.log.notifications[0].title, /interrupted/);
+  assert.deepStrictEqual(rig.log.delivered, ["cleaned(w0 w3)"], "delivered once, through the normal cleanup");
+  assert.strictEqual(rig.log.history.length, 1);
+  assert.strictEqual(rig.log.history[0].raw, "w0 w3");
+  assert.strictEqual(rig.log.history[0].incomplete, true);
+  assert.deepStrictEqual(rig.log.settingsEvents, ["history:changed"]);
+  assert.ok(!rig.log.statuses.includes("error") && !rig.log.statuses.includes("empty"));
+
+  // Dictation 2: the worker is back; a normal dictation, nothing stale carried over.
+  dead = false;
+  await rig.dictate(speechWav(20));
+  assert.deepStrictEqual(rig.log.delivered, ["cleaned(w0 w3)", "cleaned(w4)"]);
+  assert.strictEqual(rig.log.history[1].incomplete, undefined);
+  assert.strictEqual(rig.log.notifications.length, 1, "no second notification");
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+});
+
+test("pipeline: a transcription that recovers nothing is an error, not an empty dictation", async () => {
+  const rig = dictationRig({ transcribe: async () => { throw exited(); } });
+  await rig.dictate(speechWav(20));
+  assert.ok(rig.log.statuses.includes("error"));
+  assert.ok(!rig.log.statuses.includes("empty"));
+  assert.deepStrictEqual(rig.log.delivered, []);
+  assert.deepStrictEqual(rig.log.history, []);
+});
+
+test("pipeline: a model that fails to load still delivers the committed live-preview text", async () => {
+  const rig = dictationRig({
+    ensureStt: async () => { throw new Error("model load failed"); },
+    transcribe: async () => { throw new Error("model load failed"); },
+  });
+  await rig.dictate(speechWav(40), { committedRaw: "words said so far", decodedSamples: 30 * SR, broken: false });
+  assert.deepStrictEqual(rig.log.delivered, ["words said so far"]);
+  assert.strictEqual(rig.log.history[0].incomplete, true);
+  assert.strictEqual(rig.log.notifications.length, 1);
+});
+
+test("pipeline: a broken snapshot's text is delivered when the final decode recovers nothing", async () => {
+  const rig = dictationRig({ transcribe: async () => { throw exited(); } });
+  await rig.dictate(speechWav(40), { committedRaw: "chunk words", decodedSamples: 10 * SR, broken: true });
+  assert.deepStrictEqual(rig.log.delivered, ["chunk words"]);
+  assert.strictEqual(rig.log.history[0].incomplete, true);
 });

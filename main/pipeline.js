@@ -23,6 +23,7 @@ const history = require("./history");
 const { createLivePreview } = require("./live-preview");
 const { createPersistedRtfEstimator } = require("./util/rtf");
 const { wavDurationSec, wavSliceFromFrame } = require("./util/wav");
+const { transcribeChunked } = require("./final-decode");
 const logger = require("./util/logger");
 
 let state = "idle"; // idle | recording | processing
@@ -153,28 +154,50 @@ function getSttRtf() {
 // then only the tail past that coverage is decoded and joined onto the
 // committed text, so stop→transcript stays near-constant however long the
 // dictation ran. Without a usable snapshot (preview machinery broken, remote
-// STT, no chunk committed yet) the whole recording decodes as before.
+// STT, no chunk committed yet) the whole recording is decoded.
+//
+// The builtin decode never takes one bite longer than MAX_DECODE_SECONDS: a
+// long tail or whole recording goes through final-decode.js in bounded pieces
+// (one long decode loses words and can kill the worker — #168, #169). If the
+// worker dies part-way, every word already decoded — the committed text, the
+// finished pieces, or failing all else a broken snapshot's text — comes back
+// with `partial: true` instead of an error. Resolves to { text, partial }.
 async function transcribeWithEstimate(wav, sttCfg, signal, stale, assembly) {
   const rtf = sttCfg.engine === "builtin" ? getSttRtf() : null;
+  let decodeWav = wav;
+  let tailOnly = false;
+  let prefixText = ""; // trusted: precedes decodeWav exactly
+  let salvageText = ""; // a broken snapshot's words: holes, last resort only
+  if (rtf && assembly) {
+    if (!assembly.broken && assembly.decodedSamples > 0) {
+      decodeWav = wavSliceFromFrame(wav, assembly.decodedSamples);
+      tailOnly = true;
+      prefixText = assembly.committedRaw;
+    } else {
+      salvageText = assembly.committedRaw;
+    }
+  }
   if (rtf) {
     // Load the model BEFORE starting the clock: a cold load (first dictation,
     // post-idle-unload, worker restart) takes seconds and would both freeze
     // the bar at its cap and poison the persisted RTF sample with load time
     // that isn't decode speed. Idempotent — route.transcribe re-runs it as a
-    // no-op; errors land in the caller's catch either way.
-    await engines.ensureStt(sttCfg.builtin.model);
-    if (stale()) return "";
-  }
-  let decodeWav = wav;
-  let committedText = "";
-  if (rtf && assembly && !assembly.broken && assembly.decodedSamples > 0) {
-    decodeWav = wavSliceFromFrame(wav, assembly.decodedSamples);
-    committedText = assembly.committedRaw;
+    // no-op. A load that fails can't decode anything, but the words the live
+    // preview already decoded are still the user's: deliver those.
+    try {
+      await engines.ensureStt(sttCfg.builtin.model);
+    } catch (err) {
+      const recovered = prefixText || salvageText;
+      if (!recovered) throw err;
+      logger.error("STT model load failed; delivering the live-preview text:", err.message);
+      return { text: recovered, partial: true };
+    }
+    if (stale()) return { text: "", partial: false };
     // An effectively empty tail (stop landed right on a chunk boundary):
     // the committed text IS the transcript, no decode needed.
-    if (wavDurationSec(decodeWav) < 0.05) {
+    if (tailOnly && wavDurationSec(decodeWav) < 0.05) {
       if (!stale()) sendProgress("transcribing", 1);
-      return committedText;
+      return { text: prefixText, partial: false };
     }
   }
   const durationSec = wavDurationSec(decodeWav);
@@ -187,36 +210,39 @@ async function transcribeWithEstimate(wav, sttCfg, signal, stale, assembly) {
       }, STT_PROGRESS_TICK_MS)
     : null;
   try {
+    if (!rtf) {
+      // Remote STT: one upload, as the HTTP API expects.
+      return { text: await route.transcribe(decodeWav, sttCfg, signal), partial: false };
+    }
     // The RTF sample comes from the worker's own decode timing, not wall
     // clock: elapsed here also contains queueing behind an in-flight
     // live-preview decode on the single STT worker, which would drag the
     // estimate high on exactly the common case (live preview is on by
     // default). The bar's ticker above still runs on wall clock — that IS
-    // what the user is waiting through.
+    // what the user is waiting through. Pieces' timings add up to the whole.
     let decodeMs = null;
-    const raw = await route.transcribe(decodeWav, sttCfg, signal, {
+    const result = await transcribeChunked(decodeWav, {
+      runTranscribe: (piece, opts) => route.transcribe(piece, sttCfg, signal, opts),
+      restartStt: engines.restartStt,
+      prefixText,
+      salvageText,
+      stale,
       onDecodeMs: (ms) => {
-        decodeMs = ms;
+        decodeMs = (decodeMs || 0) + ms;
       },
+      log: logger,
     });
-    if (rtf && !stale()) {
-      if (decodeMs !== null) rtf.record(durationSec, decodeMs / 1000);
+    if (!stale()) {
+      // A partial run's timings cover only some of the audio: don't learn from it.
+      if (decodeMs !== null && !result.partial) rtf.record(durationSec, decodeMs / 1000);
       // The estimate never reaches 1 on its own (capped); on success, let the
       // bar visibly complete instead of always vanishing short of the end.
       sendProgress("transcribing", 1);
     }
-    return joinRaw(committedText, raw);
+    return { text: result.text, partial: result.partial };
   } finally {
     if (tick) clearInterval(tick);
   }
-}
-
-// Join the committed live-preview text with the decoded tail. Mirrors the
-// live preview's own joinText: a space, and either side may be empty.
-function joinRaw(a, b) {
-  if (!a) return b || "";
-  if (!b) return a;
-  return `${a} ${b}`;
 }
 
 // Sibling of transcribeWithEstimate: run cleanup with its streamed progress.
@@ -367,13 +393,29 @@ async function process(sid, wavArrayBuffer) {
 
   try {
     overlayStatus("transcribing");
-    const raw = await transcribeWithEstimate(wav, cfg.stt, signal, stale, assembly);
+    const { text: raw, partial } = await transcribeWithEstimate(
+      wav,
+      cfg.stt,
+      signal,
+      stale,
+      assembly
+    );
     if (stale()) return;
 
     if (!raw) {
       overlayStatus("empty");
       hideOverlaySoon(sid, 1800);
       return;
+    }
+    if (partial) {
+      // Some of the audio could not be decoded (the STT engine died or failed
+      // part-way). What was recovered still goes through cleanup and delivery
+      // like any dictation; this says it is not the whole thing.
+      logger.warn("transcription incomplete: delivering the recovered text");
+      new Notification({
+        title: "Earheart: transcription interrupted",
+        body: "The speech engine stopped part-way; delivered the text recovered so far.",
+      }).show();
     }
 
     let text = raw;
@@ -400,7 +442,10 @@ async function process(sid, wavArrayBuffer) {
     const result = await deliver(text, cfg.output, signal);
     if (stale()) return;
     if (cfg.history.enabled) {
-      history.add({ raw, text, cleaned, delivered: result.method }, cfg.history);
+      history.add(
+        { raw, text, cleaned, delivered: result.method, ...(partial ? { incomplete: true } : {}) },
+        cfg.history
+      );
       windows.sendToSettings("history:changed");
     }
 

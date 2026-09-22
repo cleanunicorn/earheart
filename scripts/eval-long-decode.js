@@ -209,9 +209,9 @@ async function measureMode(m, { worker, wav, audioSec, ref, target, utterances, 
   const row = { target, audioSec, utterances, baseline, ...m };
   const inputs = [];
   let decodeMs = 0;
-  const runTranscribe = (piece, o) => {
+  const runTranscribe = (piece, decodeOpts) => {
     inputs.push(wavDurationSec(piece));
-    return worker.transcribe(piece, { onDecodeMs: (ms) => { decodeMs += ms; o?.onDecodeMs?.(ms); } });
+    return worker.transcribe(piece, { onDecodeMs: (ms) => { decodeMs += ms; decodeOpts?.onDecodeMs?.(ms); } });
   };
   const startedAt = Date.now();
   let text = "";

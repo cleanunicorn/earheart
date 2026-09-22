@@ -43,6 +43,24 @@ function applyPair(next) {
   // Validate the requested final pair, rather than comparing one requested
   // slot with the other slot's current registration (which rejects swaps).
   if (target.record.accelerator && target.record.accelerator === target.pause.accelerator) {
+    // Older versions could persist a rejected colliding pair. On a cold start,
+    // preserve their record-first behavior so dictation still has its required
+    // shortcut while Settings asks the user to choose a different pause key.
+    if (names.every((name) => !previous.get(name))) {
+      const recordOnly = applyPair({ ...next, pause: "" });
+      return {
+        record: recordOnly.record,
+        pause: recordOnly.record.ok
+          ? {
+              ok: false,
+              error: `"${target.pause.accelerator}" is already used by the record hotkey`,
+            }
+          : {
+              ok: false,
+              error: "Not changed: the record hotkey could not be registered",
+            },
+      };
+    }
     for (const name of changed) {
       const otherName = name === "record" ? "pause" : "record";
       results[name] = {

@@ -131,6 +131,23 @@ test("a collision reports only the changed slot when the owner is unchanged", ()
   assert.deepStrictEqual(calls.events, []);
 });
 
+test("a cold-start collision keeps the required record hotkey working", () => {
+  const X = "CommandOrControl+Shift+Space";
+  const triggered = [];
+  const { hotkeys, calls, bindings } = loadHotkeys();
+
+  const result = hotkeys.applyPair(
+    pair(X, X, () => triggered.push("record"), () => triggered.push("pause"))
+  );
+
+  assert.deepStrictEqual(result.record, { ok: true });
+  assert.strictEqual(result.pause.ok, false);
+  assert.match(result.pause.error, /already used by the record hotkey/);
+  assert.deepStrictEqual(calls.registered.map(({ accelerator }) => accelerator), [X]);
+  bindings.get(X)();
+  assert.deepStrictEqual(triggered, ["record"]);
+});
+
 test("reapplying the same pair does not drop and reacquire either hotkey", () => {
   const A = "CommandOrControl+Shift+Space";
   const B = "CommandOrControl+Alt+P";

@@ -62,6 +62,13 @@ function parseArgs(argv) {
     minRatio: 0.95,
   };
   const numbers = (v) => v.split(",").filter(Boolean).map(Number);
+  // A threshold that isn't a finite number in [0, 1] would turn its check off:
+  // every comparison against NaN is false.
+  const fraction = (name, v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0 || n > 1) throw new Error(`${name} needs a number from 0 to 1 (got ${v})`);
+    return n;
+  };
   for (let i = 0; i < argv.length; i++) {
     let arg = argv[i];
     let value = null;
@@ -70,7 +77,11 @@ function parseArgs(argv) {
       value = arg.slice(eq + 1);
       arg = arg.slice(0, eq);
     }
-    const next = () => (value !== null ? value : argv[++i]);
+    const next = () => {
+      const v = value !== null ? value : argv[++i];
+      if (v === undefined || v.startsWith("--")) throw new Error(`${arg} needs a value`);
+      return v;
+    };
     switch (arg) {
       case "--cache-dir": opts.cacheDir = next(); break;
       case "--out": opts.out = next(); break;
@@ -79,8 +90,8 @@ function parseArgs(argv) {
       case "--caps": opts.caps = numbers(next()); break;
       case "--single": opts.single = true; break;
       case "--no-pauses": opts.pauses = false; break;
-      case "--max-wer-over-short": opts.maxWerOverShort = Number(next()); break;
-      case "--min-ratio": opts.minRatio = Number(next()); break;
+      case "--max-wer-over-short": opts.maxWerOverShort = fraction(arg, next()); break;
+      case "--min-ratio": opts.minRatio = fraction(arg, next()); break;
       default:
         // Chromium's own switches (--no-sandbox, …) reach the script too.
         if (!arg.startsWith("--no-sandbox") && !arg.startsWith("--enable-") && !arg.startsWith("--disable-")) {
@@ -89,7 +100,7 @@ function parseArgs(argv) {
     }
   }
   for (const [name, list] of [["--targets", opts.targets], ["--caps", opts.caps]]) {
-    if (!list.length || list.some((n) => !(n > 0))) throw new Error(`${name} needs positive numbers`);
+    if (!list.length || list.some((n) => !Number.isFinite(n) || n <= 0)) throw new Error(`${name} needs positive finite numbers`);
   }
   return opts;
 }

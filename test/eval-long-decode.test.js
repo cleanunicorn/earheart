@@ -83,3 +83,29 @@ test("eval-long-decode: each recording is held to its own sentences' short-clip 
   assert.ok(judgePieces(run, { ...GATE, shortWer: short.wer }).some((r) => /WER/.test(r)));
   assert.throws(() => prefixBaseline(scores, 5), /only 4 clips/);
 });
+
+test("eval-long-decode: values that would disable the gate are rejected", () => {
+  // Every comparison against NaN is false, so --min-ratio NaN used to let a
+  // run with ratio 0.1 pass; --caps Infinity turned the cap check off
+  // (review A:testing-3).
+  const bad = [
+    [["--caps", "Infinity"], /--caps/],
+    [["--caps", "20,NaN"], /--caps/],
+    [["--targets", "Infinity"], /--targets/],
+    [["--targets", "-5"], /--targets/],
+    [["--min-ratio", "NaN"], /--min-ratio/],
+    [["--min-ratio", "1.5"], /--min-ratio/],
+    [["--min-ratio", "-0.1"], /--min-ratio/],
+    [["--max-wer-over-short", "NaN"], /--max-wer-over-short/],
+    [["--max-wer-over-short", "Infinity"], /--max-wer-over-short/],
+    [["--caps"], /--caps needs a value/],
+    [["--min-ratio"], /--min-ratio needs a value/],
+    [["--cache-dir"], /--cache-dir needs a value/],
+  ];
+  for (const [argv, message] of bad) {
+    assert.throws(() => parseArgs(argv), message, argv.join(" "));
+  }
+  // The documented range's ends are fine.
+  const ok = parseArgs(["--min-ratio", "0", "--max-wer-over-short", "1", "--caps", "0.5"]);
+  assert.deepStrictEqual([ok.minRatio, ok.maxWerOverShort, ok.caps], [0, 1, [0.5]]);
+});

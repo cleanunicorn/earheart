@@ -146,6 +146,7 @@ function parseArgs(argv) {
   return args;
 }
 
+/** Escapes untrusted data for a GitHub Actions workflow command. */
 function escapeWorkflowCommandData(message) {
   return String(message).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
 }
@@ -191,6 +192,7 @@ module.exports = {
   TITLE_RE,
   bumpFor,
   releasedPrNumbers,
+  escapeWorkflowCommandData,
   pendingReleases,
 };
 

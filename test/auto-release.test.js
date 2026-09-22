@@ -10,6 +10,7 @@ const {
   TITLE_RE,
   bumpFor,
   releasedPrNumbers,
+  escapeWorkflowCommandData,
   pendingReleases,
 } = require("../scripts/auto-release");
 
@@ -58,6 +59,10 @@ test("bumpFor validates before sizing a release", () => {
   for (const [title, bump, reason] of cases) {
     assert.deepStrictEqual(bumpFor(title), { bump, reason }, title);
   }
+});
+
+test("workflow command data escapes percent and line breaks", () => {
+  assert.equal(escapeWorkflowCommandData("a%b\r\nc"), "a%25b%0D%0Ac");
 });
 
 test("releasedPrNumbers reads only exact trailing PR markers", () => {

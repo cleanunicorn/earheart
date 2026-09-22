@@ -64,6 +64,10 @@ test("exported release helpers document their contracts", () => {
   assert.match(autoReleaseScript, /\/\*\*[^]*reason[^]*\*\/\nfunction bumpFor/);
   assert.match(autoReleaseScript, /\/\*\*[^]*trailing[^]*\*\/\nfunction releasedPrNumbers/);
   assert.match(autoReleaseScript, /\/\*\*[^]*throws[^]*\*\/\nfunction pendingReleases/);
+  assert.match(
+    autoReleaseScript,
+    /\/\*\*[^]*GitHub Actions workflow command[^]*\*\/\nfunction escapeWorkflowCommandData/,
+  );
 });
 
 test("release selection parses changelog markers through one shared traversal", () => {

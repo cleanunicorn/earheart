@@ -297,12 +297,22 @@ function collect() {
     audio: {
       ...current.audio,
       deviceId: $("mic-device").value,
-      maxRecordingSeconds: parseInt($("max-seconds").value, 10) || 300,
+      maxRecordingSeconds: clampNumber(
+        $("max-seconds").value,
+        10,
+        3600,
+        current.audio.maxRecordingSeconds ?? 300
+      ),
     },
     engines: {
       ...current.engines,
-      // 0 (or blank) = never unload; otherwise the idle window in minutes.
-      idleUnloadMinutes: Math.max(0, parseInt($("idle-unload").value, 10) || 0),
+      // 0 = never unload; blank or invalid input keeps the saved value.
+      idleUnloadMinutes: clampNumber(
+        $("idle-unload").value,
+        0,
+        240,
+        current.engines?.idleUnloadMinutes ?? 2
+      ),
     },
     history: {
       ...current.history,

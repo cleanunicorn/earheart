@@ -36,6 +36,7 @@ const {
   MAC_BUNDLE_ID,
 } = require("../main/output/deliver");
 const { permissionFixStatus, permissionCheckStatus } = require("../renderer/permission-status");
+const { clampNumber } = require("../renderer/value-range");
 
 test("encodeWav produces a valid RIFF header", () => {
   const samples = new Int16Array([0, 1000, -1000, 32767, -32768]);
@@ -947,6 +948,16 @@ test("listRemoteModels times out when a service never responds", async () => {
     server.closeAllConnections();
     server.close();
   }
+});
+
+test("settings numeric values are rounded, clamped, and safely defaulted", () => {
+  assert.strictEqual(clampNumber("-5", 10, 3600, 300), 10);
+  assert.strictEqual(clampNumber("1", 10, 3600, 300), 10);
+  assert.strictEqual(clampNumber("99999", 10, 3600, 300), 3600);
+  assert.strictEqual(clampNumber("12.6", 0, 240, 2), 13);
+  assert.strictEqual(clampNumber("9999", 0, 240, 2), 240);
+  assert.strictEqual(clampNumber("", 0, 240, 2), 2);
+  assert.strictEqual(clampNumber("not-a-number", 0, 240, 2), 2);
 });
 
 test("idle model unload defaults to a finite window and is overridable", () => {

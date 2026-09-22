@@ -23,6 +23,7 @@ const css = fs.readFileSync(path.join(RENDERER, "settings.css"), "utf8");
 const wizardCss = fs.readFileSync(path.join(RENDERER, "wizard.css"), "utf8");
 const wizardHtml = fs.readFileSync(path.join(RENDERER, "wizard.html"), "utf8");
 const wizardJs = fs.readFileSync(path.join(RENDERER, "wizard.js"), "utf8");
+const valueRangeJs = fs.readFileSync(path.join(RENDERER, "value-range.js"), "utf8");
 
 const htmlIds = new Set([...html.matchAll(/id="([a-z0-9-]+)"/g)].map((m) => m[1]));
 const htmlNames = new Set([...html.matchAll(/name="([a-z0-9-]+)"/g)].map((m) => m[1]));
@@ -154,6 +155,16 @@ test("every radio/checkbox group name settings.js uses exists in settings.html",
 
   const missing = [...referenced].filter((n) => !htmlNames.has(n)).sort();
   assert.deepStrictEqual(missing, [], `settings.html is missing radio groups: ${missing.join(", ")}`);
+});
+
+test("value-range.js loads before settings.js, which validates numeric fields", () => {
+  const shared = html.indexOf('src="value-range.js"');
+  const own = html.indexOf('src="settings.js"');
+  assert.notStrictEqual(shared, -1, "settings.html must load value-range.js");
+  assert.ok(shared < own, "settings.html must load value-range.js before settings.js");
+  assert.ok(fs.existsSync(path.join(RENDERER, "value-range.js")));
+  assert.match(js, /clampNumber\(/);
+  assert.match(valueRangeJs, /function clampNumber\(/);
 });
 
 test("hotkey-capture.js loads before each page's own script", () => {

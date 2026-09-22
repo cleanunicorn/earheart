@@ -112,7 +112,8 @@ out is retried once on a fresh worker. If it still fails, it is skipped and
 the rest continue. After two pieces in a row fail because the worker died,
 the rest are not tried. A piece that holds audible speech (by the overlay's
 own speech probe, `renderer/speech-probe.js`) but decodes to no text is
-decoded once more with 250 ms of silence around it. In the lab that rescued
+decoded once more with 250 ms of silence around it (less when that would
+pass the 20 s cap; none, and no retry, for a piece already at the cap). In the lab that rescued
 the words lost that way; what still came back empty were breaths and clicks
 after finished sentences, which the probe (biased toward "speech" on
 purpose) also calls speech. Those are accepted as empty but counted — and,

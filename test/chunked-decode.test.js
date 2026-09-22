@@ -312,3 +312,25 @@ test("chunked decode: an unconfirmed empty piece is filled from committed live-p
   assert.strictEqual(r.partial, false);
   assert.strictEqual(r.pieces[1].unconfirmed, true);
 });
+
+test("chunked decode: the padded retry never sends more than the cap", async () => {
+  // Padding went on after planning, so a cap-sized piece reached the worker
+  // as 20.5 s (review final:correctness-3).
+  const run = (seconds) => {
+    const seen = [];
+    return transcribeChunked(wav(seconds), {
+      prefixText: "committed", // nothing else decodes at the cap; keep it from being an all-empty error
+      runTranscribe: async (w) => {
+        seen.push(wavDurationSec(w));
+        return seen.length === 1 ? "" : "rescued";
+      },
+    }).then((r) => ({ seen, r }));
+  };
+  // At the cap there is no room to pad: the same audio decodes the same, so no second try.
+  const atCap = await run(20);
+  assert.deepStrictEqual(atCap.seen, [20]);
+  // Just under it the pad shrinks to what fits: 0.15 s a side.
+  const under = await run(19.7);
+  assert.deepStrictEqual(under.seen.map((s) => +s.toFixed(3)), [19.7, 20]);
+  assert.strictEqual(under.r.text, "committed rescued");
+});

@@ -66,8 +66,13 @@ function planPieces(wav, maxSec, minPauseSec) {
 // purpose — also calls speech.
 const EMPTY_RETRY_PAD_SEC = 0.25;
 
-function padded(samples, fromFrame, toFrame) {
-  const pad = Math.round(EMPTY_RETRY_PAD_SEC * SAMPLE_RATE);
+// Up to EMPTY_RETRY_PAD_SEC a side, but never past maxSec in total: the
+// padded retry is a worker input like any other. Null when there is no room —
+// then the retry would be the same audio, and decode the same.
+function padded(samples, fromFrame, toFrame, maxSec) {
+  const room = Math.floor((maxSec * SAMPLE_RATE - (toFrame - fromFrame)) / 2);
+  const pad = Math.min(Math.round(EMPTY_RETRY_PAD_SEC * SAMPLE_RATE), room);
+  if (pad <= 0) return null;
   const pcm = new Int16Array(toFrame - fromFrame + 2 * pad);
   for (let i = fromFrame; i < toFrame; i++) {
     pcm[pad + i - fromFrame] = Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32768)));
@@ -174,9 +179,11 @@ async function transcribeChunked(
           // Speech in, nothing out: one more try with room around it. Still
           // empty is accepted (see EMPTY_RETRY_PAD_SEC) but marked, and it
           // counts as lost once nothing else in the recording decoded either.
-          piece.attempts++;
-          const paddedWav = padded(plan.samples, piece.fromFrame, piece.toFrame);
-          text = ((await runTranscribe(paddedWav, { onDecodeMs })) || "").trim();
+          const paddedWav = padded(plan.samples, piece.fromFrame, piece.toFrame, maxSec);
+          if (paddedWav) {
+            piece.attempts++;
+            text = ((await runTranscribe(paddedWav, { onDecodeMs })) || "").trim();
+          }
           if (!text) piece.unconfirmed = true;
         }
         piece.ok = true;

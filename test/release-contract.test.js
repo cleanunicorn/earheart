@@ -102,6 +102,10 @@ test("catch-up freezes titles from the trigger payload or post-merge rename even
 
 test("every release attempt refreshes main and pushes its exact tag atomically", () => {
   assert.match(workflow, /for attempt in 1 2 3/);
+  assert.match(
+    workflow,
+    /if ! git fetch origin main; then\n\s+echo "::warning title=Release fetch retry::PR #\$number fetch attempt \$attempt failed"\n\s+continue\n\s+fi/,
+  );
   const fetchAt = workflow.indexOf("git fetch origin main");
   const resetAt = workflow.indexOf("git reset --hard origin/main");
   const bumpAt = workflow.indexOf('npm version "$bump" --no-git-tag-version');

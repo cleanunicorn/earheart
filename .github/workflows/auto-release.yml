@@ -92,7 +92,10 @@ jobs:
             for attempt in 1 2 3; do
               # A normal PR merge can move main while this job owns the release
               # concurrency group, so every attempt starts from the remote tip.
-              git fetch origin main
+              if ! git fetch origin main; then
+                echo "::warning title=Release fetch retry::PR #$number fetch attempt $attempt failed"
+                continue
+              fi
               git reset --hard origin/main
 
               if grep -qE "\\(#$number\\)[[:space:]]*$" CHANGELOG.md; then

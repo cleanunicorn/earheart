@@ -228,9 +228,10 @@ test("chunked decode: an empty piece among decoded ones is accepted, marked unco
   // sentence also reads as speech; the lab's remaining empty pieces were all
   // such tails. Calling every one of them lost words would mark nearly every
   // long dictation incomplete.
-  let n = 0;
-  const r = await transcribeChunked(wav(50), { runTranscribe: async () => (n++ === 1 || n === 3 ? "" : `a${n - 1}`) });
-  // piece 1 decodes "" twice (plain, padded); pieces 0 and 2 decode.
+  // Replies in call order: piece 0, piece 1 plain, piece 1 padded, piece 2.
+  const replies = ["a0", "", "", "a3"];
+  let call = 0;
+  const r = await transcribeChunked(wav(50), { runTranscribe: async () => replies[call++] });
   assert.strictEqual(r.text, "a0 a3");
   assert.strictEqual(r.partial, false);
   assert.deepStrictEqual(r.pieces.map((p) => [p.ok, !!p.unconfirmed]), [[true, false], [true, true], [true, false]]);
@@ -298,11 +299,12 @@ test("chunked decode: a timeout on the retry retires that worker too", async () 
 test("chunked decode: an unconfirmed empty piece is filled from committed live-preview chunks too", async () => {
   // Heard speech, decoded to nothing even padded: if the live preview had
   // words for that range, they are the user's (manager audit M-1).
-  let n = 0;
   const chunk = (fromSec, toSec, text) => ({ from: fromSec * SR, to: toSec * SR, text });
+  // Replies in call order: piece 0, piece 1 (20-40 s) plain, padded, piece 2.
+  const replies = ["a0", "", "", "a3"];
+  let call = 0;
   const r = await transcribeChunked(wav(50), {
-    // piece 1 (20-40 s) decodes "" plain and padded; pieces 0 and 2 decode.
-    runTranscribe: async () => (n++ === 1 || n === 3 ? "" : `a${n - 1}`),
+    runTranscribe: async () => replies[call++],
     salvageChunks: [chunk(5, 15, "early"), chunk(22, 36, "live words"), chunk(38, 45, "straddle")],
   });
   assert.strictEqual(r.text, "a0 live words a3");

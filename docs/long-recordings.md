@@ -115,7 +115,9 @@ own speech probe, `renderer/speech-probe.js`) but decodes to no text is
 decoded once more with 250 ms of silence around it. In the lab that rescued
 the words lost that way; what still came back empty were breaths and clicks
 after finished sentences, which the probe (biased toward "speech" on
-purpose) also calls speech. Those are accepted as empty but counted — unless
+purpose) also calls speech. Those are accepted as empty but counted — and,
+like a failed piece, filled from a broken live-preview snapshot's chunks
+that lie wholly inside them, without marking the result incomplete — unless
 nothing in the recording decoded at all, when they count as lost: the
 dictation is incomplete, and the live preview's words or an error follow,
 never a silent empty result.

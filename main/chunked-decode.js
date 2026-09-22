@@ -114,8 +114,11 @@ function emptySpeechError() {
  * @param {{warn: Function}} [deps.log]
  * @returns {Promise<{text: string, partial: boolean, stale?: boolean, pieces: object[]}>}
  */
-// The decoded pieces' text in recording order, each failed span filled with
-// the salvage chunks that lie wholly inside it.
+// The decoded pieces' text in recording order, each gap filled with the
+// salvage chunks that lie wholly inside it. A gap is a failed piece, or an
+// unconfirmed one (speech heard, nothing decoded even padded): if the live
+// preview had words there, they are the user's. Filling an unconfirmed gap
+// doesn't make the result partial — those words are delivered.
 function assemble(pieces, salvageChunks) {
   let text = "";
   let failedFrom = null;
@@ -127,7 +130,7 @@ function assemble(pieces, salvageChunks) {
     failedFrom = null;
   };
   for (const p of pieces) {
-    if (!p.ok) {
+    if (!p.ok || p.unconfirmed) {
       if (failedFrom === null) failedFrom = p.fromFrame;
       continue;
     }

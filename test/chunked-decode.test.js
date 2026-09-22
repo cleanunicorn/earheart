@@ -293,3 +293,19 @@ test("chunked decode: a timeout on the retry retires that worker too", async () 
   assert.strictEqual(r.text, "a2");
   assert.strictEqual(r.partial, true);
 });
+
+test("chunked decode: an unconfirmed empty piece is filled from committed live-preview chunks too", async () => {
+  // Heard speech, decoded to nothing even padded: if the live preview had
+  // words for that range, they are the user's (manager audit M-1).
+  let n = 0;
+  const chunk = (fromSec, toSec, text) => ({ from: fromSec * SR, to: toSec * SR, text });
+  const r = await transcribeChunked(wav(50), {
+    // piece 1 (20-40 s) decodes "" plain and padded; pieces 0 and 2 decode.
+    runTranscribe: async () => (n++ === 1 || n === 3 ? "" : `a${n - 1}`),
+    salvageChunks: [chunk(5, 15, "early"), chunk(22, 36, "live words"), chunk(38, 45, "straddle")],
+  });
+  assert.strictEqual(r.text, "a0 live words a3");
+  // The words were delivered, so the transcript is not incomplete.
+  assert.strictEqual(r.partial, false);
+  assert.strictEqual(r.pieces[1].unconfirmed, true);
+});

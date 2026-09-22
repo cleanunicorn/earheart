@@ -66,11 +66,11 @@
 // after one fixed level normalisation that stands in for the overlay's
 // autoGainControl (-20 dBFS RMS, peak <= 0.99): FLEURS has recordings as
 // quiet as -44 dBFS, which no model in the app would ever be handed.
-// Their length (mean 9.9 s, max 29 s) matches what the app decodes by
-// default: live preview commits 10-20 s chunks and only the tail is decoded at
-// stop. With live preview off, a whole recording (up to 300 s) goes in as one
-// buffer; a candidate that clears the threshold is also run on ~60 s and
-// ~300 s concatenations to catch a model that drops words there.
+// Their length (mean 9.9 s, max 29 s) matches what the app decodes: every
+// built-in decode is cut at the pauses in the speech, never over 20 s
+// (main/chunked-decode.js, docs/long-recordings.md). A candidate that clears
+// the threshold is also run on ~60 s and ~300 s single-buffer concatenations,
+// the shape the app used to send, to catch a model that drops words there.
 //
 // ACCURACY is WER after the normalisation spelled out in scripts/stt-eval.js
 // (wer_norm, the threshold metric), with wer_verbatim (case and punctuation

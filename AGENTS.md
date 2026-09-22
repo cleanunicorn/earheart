@@ -49,6 +49,12 @@ The Makefile wraps most tasks; `make help` lists them all.
   Hugging Face without downloading it, and `--report <dir>` rebuilds the
   comparison tables from saved runs. Method and recorded numbers:
   [docs/cleanup-models.md](docs/cleanup-models.md)
+- **Long-recording STT measurement** (optional; needs Electron and the
+  `scripts/eval-stt.js` corpus/model cache, not part of the gate):
+  `xvfb-run -a npx electron scripts/eval-long-decode.js --no-sandbox
+  --cache-dir <cache> --out <file outside the repo> --single`; exits 1 when a
+  long recording loses words. Method and recorded numbers:
+  [docs/long-recordings.md](docs/long-recordings.md)
 - **Build:** `make dist` (current platform)
 
 Always run the tests and smoke checks before opening a PR.

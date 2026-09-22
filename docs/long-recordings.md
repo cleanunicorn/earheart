@@ -1,0 +1,159 @@
+# Long recordings: why built-in speech is decoded one utterance at a time
+
+A long dictation used to reach the built-in speech engine as one buffer in two
+cases: when the live preview's snapshot was unusable (a chunk failed, or heard
+speech and decoded nothing), and when no chunk had committed yet. That broke
+two ways:
+
+- **Words went missing** (#168). The shipped model, Parakeet TDT 0.6B v3
+  int8, kept 0.839 of the words over 124.5 s and 0.449 over 310.9 s.
+- **The engine died** (#169). Under Electron's `utilityProcess` the STT
+  worker exited on any single buffer over ~163 s. The dictation was lost.
+
+Both are fixed by
+[`main/chunked-decode.js`](../main/chunked-decode.js): every built-in decode,
+final and live preview alike, is split at the pauses in the speech (and never
+longer than 20 s), decoded one piece at a time, and joined. This page records
+the evidence behind that design. The harness is
+[`scripts/eval-long-decode.js`](../scripts/eval-long-decode.js); its gate is
+pinned by `test/eval-long-decode.test.js`.
+
+Measured 2026-09-22 on an **AMD Ryzen 9 3900X (24 logical threads), 60 GB RAM,
+Linux 6.17**, Electron 42.4.1, sherpa-onnx-node 1.13.3, 8 decode threads (the
+app's), through the app's own engine worker.
+
+## Result
+
+The default model on FLEURS en_us recordings: distinct sentences from one
+speaker, 300 ms apart. The baseline is the same 35 sentences decoded one clip
+at a time: **WER 6.2 %, word ratio 0.989**. (The whole 647-clip corpus gives
+6.07 % with `scripts/eval-stt.js`.) The gate is word ratio ≥ 0.95 and WER no
+more than 3 points above the baseline (≤ 9.2 %).
+
+| audio | one buffer (before) | pauses + 20 s cap (now) | worker decode time, before → now |
+| --- | --- | --- | --- |
+| 124.5 s | ratio 0.839, WER 20.6 % | **ratio 1.010, WER 5.8 %** (38 pieces, longest 9.6 s) | 8.3 s → 6.6 s |
+| 182.9 s | worker exits (code 133) | **ratio 1.017, WER 6.7 %** (58 pieces, longest 13.1 s) | — → 10.0 s |
+| 310.9 s | worker exits (code 133) | **ratio 1.016, WER 8.3 %** (93 pieces, longest 14.7 s) | — → 16.7 s |
+
+After each run, the same worker answered a short decode, so it survives.
+
+## Why pauses, not just a shorter buffer
+
+The first plan was to cap each decode at 60 s. That fixes the crash but not the
+lost words, and a smaller cap doesn't fix them either:
+
+| audio | cap 20 s, no pause cuts | cap 60 s, no pause cuts |
+| --- | --- | --- |
+| 124.5 s | ratio 0.862, WER 16.7 % | ratio 0.621, WER 39.5 % |
+| 182.9 s | ratio 0.871, WER 16.2 % | ratio 0.551, WER 46.6 % |
+| 310.9 s | ratio 0.837, WER 21.4 % | ratio 0.534, WER 49.8 % |
+
+The loss is not about length. It happens at the boundary between utterances.
+Two sentences that each transcribe correctly on their own come back as only
+one of them when joined in one 10.5 s buffer. Joined with a 300 ms gap, they
+come back as nothing at all:
+
+| buffer | int8 (shipped) | fp32 |
+| --- | --- | --- |
+| A alone (4.6 s), B alone (5.6 s) | both correct | both correct |
+| A + 300 ms + B | **"" (nothing)** | both sentences |
+| A + 1 s + B | only A | both sentences |
+| B + 300 ms + A | only B | both sentences |
+
+A longer buffer holds more such boundaries, which is why the loss grows with
+length. The fp32 model survives that pair, but it also loses words over long
+buffers: 0.772 on one 124.5 s buffer, and 0.79–0.88 with 60 s pieces. Only
+pieces of ≤ 20 s pass. So switching models would not fix this (and fp32 is a
+3.8× larger download). Decoding one utterance at a time works, and it works
+with the shipped model.
+
+How short a pause counts. The clips' own leading and trailing silence was
+trimmed and the sentences joined with shorter gaps. Plain Node, int8, ~165 s:
+
+| gap between sentences | cut at pauses ≥ 150 ms | ≥ 200 ms | ≥ 250 ms |
+| --- | --- | --- | --- |
+| 150 ms | ratio 1.019, WER 7.5 % | 0.973, 8.5 % | 0.938, 11.2 % |
+| 250 ms | ratio 1.021, WER 7.3 % | 1.017, 6.0 % | 1.017, 5.8 % |
+| 400 ms | ratio 1.023, WER 7.7 % | — | 1.019, 5.8 % |
+
+A 150 ms threshold survives the tightest gaps, at the price of about 1.5 WER
+points from cutting at breaths inside a sentence. "Quiet" is the overlay's own
+silence level (RMS < 0.012 after auto gain control), measured over 50 ms
+frames. The cut goes to the middle of the pause. Speech that runs past 20 s
+without a pause is cut at the quietest moment in the 10 s before the ceiling,
+using the same search the overlay uses for its forced chunk boundaries
+(`renderer/chunk-boundary.js`).
+
+The live preview's chunk decodes use the same splitter. Their committed text
+becomes the start of the final transcript verbatim, and a 10–20 s chunk often
+holds two sentences: the exact case above. If a live chunk decodes only in
+part, the decode throws. That breaks the snapshot, so the final pass decodes
+the audio again instead of committing a hole.
+
+**What this doesn't cover.** A speaker who never pauses for 150 ms (or a room
+too noisy to reach the silence level) gets 20 s pieces only. That is the
+0.84–0.87 column above. FLEURS is read speech with clean gaps, not dictation
+through Earheart's microphone path.
+
+## When the worker dies anyway
+
+Pieces are decoded from the main process, so a finished piece is text that
+survives a worker crash on a later one. A piece whose worker exited or timed
+out is retried once on a fresh worker. If it still fails, it is skipped and
+the rest continue. After two failed pieces in a row, the rest are not tried.
+Whatever was recovered is delivered: the committed live-preview text, the
+finished pieces, or as a last resort a broken snapshot's text. It goes through
+the normal cleanup and paste, with a notification ("transcription
+interrupted"), and the history entry is marked `incomplete: true`. Only a run
+that recovers nothing at all is an error. Engine failures carry stable codes
+(`ENGINE_EXITED` with the process exit code, `ENGINE_TIMEOUT`).
+`engines.restartStt()` retires a wedged STT worker without touching cleanup.
+
+## Why the worker died (#169)
+
+**Diagnosis: the worker crashes when ONNX Runtime asks for its first 1 GiB
+block.** That happens on any single buffer over ~163 s.
+
+- Electron's exit code is **133 = 128 + SIGTRAP**. That is how Chromium's
+  deliberate `IMMEDIATE_CRASH` shows up (CHECK failures, allocator
+  out-of-memory). The kernel's OOM killer would show SIGKILL (137). The host
+  has 60 GB, and plain Node decodes the same buffers without trouble.
+- Bisected through the app's host: **162 s decodes, 165 s exits.**
+- In plain Node, `strace -e mmap` gives the largest single allocation during
+  the decode. It grows in powers of two, the way ORT's arena extends: 256 MiB
+  at 20–60 s, 512 MiB at 120–162 s, **1 GiB from 165 s**. The 1 GiB request
+  appears at exactly the length where the Electron worker starts dying.
+- Electron routes the utility process's `malloc` through Chromium's allocator
+  rather than glibc. The likely mechanism is that allocator refusing the
+  1 GiB request and crashing. That last step is inferred: no native stack was
+  captured (`ELECTRON_ENABLE_STACK_DUMPING` printed nothing for the utility
+  process).
+
+A piece of ≤ 20 s peaks at 256 MiB, a quarter of the size that crashes.
+
+## Reproduce
+
+Build the corpus and model cache once (outside the repo), then run the
+measurement:
+
+```sh
+xvfb-run -a npx electron scripts/eval-stt.js --no-sandbox --pass accuracy \
+  --models parakeet-tdt-0.6b-v3-int8 --keep --cache-dir <cache> --out <acc.json>
+
+# before/after table (exit 1 if a pieces run misses the gate)
+xvfb-run -a npx electron scripts/eval-long-decode.js --no-sandbox \
+  --cache-dir <cache> --out <run.json> --single
+# cap-only table
+xvfb-run -a npx electron scripts/eval-long-decode.js --no-sandbox \
+  --cache-dir <cache> --out <run.json> --no-pauses --caps 20,60
+# another model (download it into <cache> first)
+… --model parakeet-tdt-0.6b-v3 --single --caps 20,60 --no-pauses
+```
+
+On macOS and Windows, drop `xvfb-run -a`. The two-sentence pair is FLEURS
+sentences 10 and 11 of the 120 s recording ("The governor's office said…",
+"In some areas boiling water…"). The pause-threshold and allocation numbers
+come from short lab scripts over the same cache (plain Node,
+`sherpa-onnx-node` directly). The allocation numbers use `strace -f -e
+trace=mmap`.

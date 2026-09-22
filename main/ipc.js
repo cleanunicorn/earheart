@@ -80,12 +80,13 @@ function init({ applyHotkeys, onSettingsChanged }) {
     const previous = settings.get();
     const candidate = { ...next, overlay: previous.overlay };
     const hotkeyResults = applyHotkeys(candidate);
+    const rejectedFields = ["hotkey", "pauseHotkey"].filter((field) => {
+      const result = hotkeyResults[field];
+      return !result.ok && !result.empty;
+    });
     const persistedCandidate = { ...candidate };
-    if (!hotkeyResults.hotkey.ok && !hotkeyResults.hotkey.empty) {
-      persistedCandidate.hotkey = previous.hotkey;
-    }
-    if (!hotkeyResults.pauseHotkey.ok && !hotkeyResults.pauseHotkey.empty) {
-      persistedCandidate.pauseHotkey = previous.pauseHotkey;
+    for (const field of rejectedFields) {
+      persistedCandidate[field] = previous[field];
     }
 
     let saved;
@@ -111,11 +112,8 @@ function init({ applyHotkeys, onSettingsChanged }) {
     // Disk keeps only working values; the form keeps the attempted values so
     // the user can see each error and correct the field without re-entering it.
     const shown = { ...saved };
-    if (!hotkeyResults.hotkey.ok && !hotkeyResults.hotkey.empty) {
-      shown.hotkey = candidate.hotkey;
-    }
-    if (!hotkeyResults.pauseHotkey.ok && !hotkeyResults.pauseHotkey.empty) {
-      shown.pauseHotkey = candidate.pauseHotkey;
+    for (const field of rejectedFields) {
+      shown[field] = candidate[field];
     }
     return { saved, shown, hotkeyResults };
   };

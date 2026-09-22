@@ -6,7 +6,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 
-const { parseArgs, pickSentences, score, judgePieces } = require("../scripts/eval-long-decode");
+const { parseArgs, pickSentences, score, judgePieces, prefixBaseline } = require("../scripts/eval-long-decode");
 
 const GATE = { shortWer: 0.05, cap: 60, minRatio: 0.95, maxWerOverShort: 0.03 };
 const good = { hypWords: 900, ratio: 0.99, wer: 0.06, maxPieceSec: 58, failedPieces: 0, alive: true };
@@ -65,4 +65,21 @@ test("eval-long-decode: requiring it for its helpers never starts a run", () => 
   // Loaded under plain Node from a test, the module must just export.
   const mod = require("../scripts/eval-long-decode");
   assert.strictEqual(typeof mod.judgePieces, "function");
+});
+
+test("eval-long-decode: each recording is held to its own sentences' short-clip baseline", () => {
+  // The 120 s recording's sentences are a prefix of the 300 s one's; holding
+  // both to the longer set's WER would apply a ceiling measured on different
+  // sentences (review A:testing-2).
+  const clip = (errors, ref, hypWords) => ({ counts: { errors, ref }, hypWords });
+  const scores = [clip(0, 10, 10), clip(0, 10, 10), clip(6, 10, 7), clip(6, 10, 7)];
+  const short = prefixBaseline(scores, 2);
+  const long = prefixBaseline(scores, 4);
+  assert.deepStrictEqual(short, { clips: 2, wer: 0, ratio: 1 });
+  assert.deepStrictEqual(long, { clips: 4, wer: 0.3, ratio: 0.85 });
+  // The same run passes against its own baseline and fails against the other's.
+  const run = { hypWords: 20, ratio: 0.97, wer: 0.3, maxPieceSec: 10, failedPieces: 0, alive: true };
+  assert.deepStrictEqual(judgePieces(run, { ...GATE, shortWer: long.wer }), []);
+  assert.ok(judgePieces(run, { ...GATE, shortWer: short.wer }).some((r) => /WER/.test(r)));
+  assert.throws(() => prefixBaseline(scores, 5), /only 4 clips/);
 });

@@ -24,8 +24,8 @@
 //   single   (--single) one worker request for the whole buffer: the shape
 //            the issues reported. Informational; never gates.
 //
-// The baseline is the same sentences decoded one clip at a time (mean 10 s):
-// the "short buffer" accuracy the long runs are held to. A pieces run fails
+// Each recording's baseline is its own sentences decoded one clip at a time
+// (mean 10 s): the "short buffer" accuracy that recording is held to. A pieces run fails
 // the script (exit 1) on word ratio < 0.95, WER more than 3 points above the
 // baseline, any worker input over the cap, a failed piece, empty text, or a
 // worker that no longer answers a short decode afterwards.
@@ -119,6 +119,17 @@ function score(refText, hypText) {
   return { refWords: ref.length, hypWords: hyp.length, ratio: ref.length ? hyp.length / ref.length : 0, wer: ref.length ? counts.errors / ref.length : 0, counts };
 }
 
+// Short-clip baseline of the first `n` clips — a recording's own sentences,
+// since every target's sentences are a prefix of the longest target's.
+// `scores` holds each clip's edit counts and hypothesis word count.
+function prefixBaseline(scores, n) {
+  if (n > scores.length) throw new Error(`baseline for ${n} clips, but only ${scores.length} clips were decoded`);
+  const counts = scores.slice(0, n).map((s) => s.counts);
+  const refWords = counts.reduce((sum, c) => sum + c.ref, 0);
+  const hypWords = scores.slice(0, n).reduce((sum, s) => sum + s.hypWords, 0);
+  return { clips: n, wer: e.corpusWer(counts), ratio: refWords ? hypWords / refWords : 0 };
+}
+
 // Why a pieces run fails the gate; empty when it passes.
 function judgePieces(run, { shortWer, cap, minRatio, maxWerOverShort }) {
   const reasons = [];
@@ -136,16 +147,16 @@ function judgePieces(run, { shortWer, cap, minRatio, maxWerOverShort }) {
 function markdown(result) {
   const pct = (x) => `${(x * 100).toFixed(1)}%`;
   const lines = [
-    `Model ${result.model}; short-clip baseline over ${result.baseline.clips} clips: WER ${pct(result.baseline.wer)}, word ratio ${result.baseline.ratio.toFixed(3)}`,
+    `Model ${result.model}; each recording is held to its own sentences decoded one clip at a time (short-clip WER)`,
     "",
-    "| audio | decode | pieces | longest piece | word ratio | WER | worker | result |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| audio | short-clip WER | decode | pieces | longest piece | word ratio | WER | worker | result |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
   ];
   for (const r of result.runs) {
     const worker = r.error ? `${r.error}${r.exitCode !== undefined ? ` (exit code ${r.exitCode})` : ""}` : r.alive === false ? "dead after" : "ok";
     const verdict = r.mode === "single" ? "(before)" : r.reasons.length ? `FAIL: ${r.reasons.join("; ")}` : "pass";
     const shape = r.mode === "single" ? "one buffer" : `${r.pauses ? "pauses + " : ""}≤ ${r.cap} s cap`;
-    lines.push(`| ${r.audioSec.toFixed(1)} s | ${shape} | ${r.pieces} | ${r.maxPieceSec.toFixed(1)} s | ${r.ratio.toFixed(3)} | ${pct(r.wer)} | ${worker} | ${verdict} |`);
+    lines.push(`| ${r.audioSec.toFixed(1)} s | ${pct(r.baseline.wer)} (${r.baseline.clips} clips) | ${shape} | ${r.pieces} | ${r.maxPieceSec.toFixed(1)} s | ${r.ratio.toFixed(3)} | ${pct(r.wer)} | ${worker} | ${verdict} |`);
   }
   return lines.join("\n");
 }
@@ -200,27 +211,23 @@ async function run(opts) {
   const worker = createWorker(model, manager.modelDir(cacheDir, model));
   const result = { model: model.id, electron: process.versions.electron, at: new Date().toISOString(), options: opts, runs: [] };
   try {
-    // Baseline: every sentence the longest recording uses, one clip per decode.
+    // Baseline: every sentence the longest recording uses, one clip per
+    // decode, scored per clip so each recording's own prefix can be summed.
     const longest = pickSentences(rows, Math.max(...opts.targets));
-    const counts = [];
-    let hypWords = 0;
-    for (const r of longest) {
-      const s = score(r.raw, await worker.transcribe(encodeWav(clip(r))));
-      counts.push(s.counts);
-      hypWords += s.hypWords;
-    }
-    const refWords = counts.reduce((n, c) => n + c.ref, 0);
-    result.baseline = { clips: longest.length, wer: e.corpusWer(counts), ratio: hypWords / refWords };
-    log(`baseline: ${longest.length} clips, WER ${(result.baseline.wer * 100).toFixed(2)}%, ratio ${result.baseline.ratio.toFixed(3)}`);
+    const clipScores = [];
+    for (const r of longest) clipScores.push(score(r.raw, await worker.transcribe(encodeWav(clip(r)))));
 
     for (const target of opts.targets) {
       const picked = pickSentences(rows, target);
+      if (picked.some((r, i) => r.file !== longest[i].file)) throw new Error(`${target} s sentences are not a prefix of the baseline set`);
+      const baseline = prefixBaseline(clipScores, picked.length);
+      log(`${target} s baseline: ${baseline.clips} clips, WER ${(baseline.wer * 100).toFixed(2)}%, ratio ${baseline.ratio.toFixed(3)}`);
       const wav = encodeWav(e.concatPcm16(picked.map(clip), GAP_SAMPLES));
       const audioSec = wavDurationSec(wav);
       const ref = picked.map((r) => r.raw).join(" ");
       const modes = [...(opts.single ? [{ mode: "single" }] : []), ...opts.caps.map((cap) => ({ mode: "pieces", cap, pauses: opts.pauses }))];
       for (const m of modes) {
-        const row = { target, audioSec, utterances: picked.length, ...m };
+        const row = { target, audioSec, utterances: picked.length, baseline, ...m };
         const inputs = [];
         let decodeMs = 0;
         const runTranscribe = (piece, o) => {
@@ -267,7 +274,7 @@ async function run(opts) {
           row.aliveError = err.message;
         }
         row.reasons = m.mode === "pieces"
-          ? judgePieces(row, { shortWer: result.baseline.wer, cap: m.cap, minRatio: opts.minRatio, maxWerOverShort: opts.maxWerOverShort })
+          ? judgePieces(row, { shortWer: baseline.wer, cap: m.cap, minRatio: opts.minRatio, maxWerOverShort: opts.maxWerOverShort })
           : [];
         log(`${audioSec.toFixed(1)} s ${m.mode}${m.cap ? ` cap ${m.cap}` : ""}: ratio ${row.ratio.toFixed(3)}, WER ${(row.wer * 100).toFixed(1)}%, pieces ${row.pieces}, max ${row.maxPieceSec.toFixed(1)} s${row.error ? `, ${row.error}${row.exitCode !== undefined ? ` (exit code ${row.exitCode})` : ""}` : ""}${row.reasons.length ? ` — FAIL ${row.reasons.join("; ")}` : ""}`);
         result.runs.push(row);
@@ -305,4 +312,4 @@ if (isEntry) {
   );
 }
 
-module.exports = { parseArgs, pickSentences, score, judgePieces, markdown };
+module.exports = { parseArgs, pickSentences, score, prefixBaseline, judgePieces, markdown };

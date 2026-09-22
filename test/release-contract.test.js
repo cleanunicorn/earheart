@@ -48,6 +48,13 @@ test("the release selector documents its command and stream contract", () => {
   assert.match(autoReleaseScript, /standard error[^]*workflow warnings and errors/i);
 });
 
+test("exported release helpers document their contracts", () => {
+  assert.match(autoReleaseScript, /\/\*\*[^]*PR-title contract[^]*\*\/\nconst TITLE_RE/);
+  assert.match(autoReleaseScript, /\/\*\*[^]*reason[^]*\*\/\nfunction bumpFor/);
+  assert.match(autoReleaseScript, /\/\*\*[^]*trailing[^]*\*\/\nfunction releasedPrNumbers/);
+  assert.match(autoReleaseScript, /\/\*\*[^]*throws[^]*\*\/\nfunction pendingReleases/);
+});
+
 test("contract sources normalize Windows checkout newlines", () => {
   assert.equal(normalizeNewlines("first\r\nsecond\r\n"), "first\nsecond\n");
   assert.doesNotMatch(workflow, /\r/);

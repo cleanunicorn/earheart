@@ -9,8 +9,12 @@ const fs = require("node:fs");
 
 const releaseNotes = require("../main/services/release-notes");
 
+/** The Conventional Commits PR-title contract shared with pr-title.yml. */
 const TITLE_RE = /^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .+/;
 
+/**
+ * Returns the semantic bump and a reason: release, skip, invalid, empty, or no-release.
+ */
 function bumpFor(title) {
   const value = String(title || "");
   if (/\[skip release\]/i.test(value)) return { bump: "", reason: "skip" };
@@ -31,6 +35,7 @@ function markerFromText(text) {
   return match ? Number(match[1]) : null;
 }
 
+/** Returns the PR numbers from exact trailing `(#N)` changelog markers. */
 function releasedPrNumbers(changelog) {
   const numbers = new Set();
   for (const entry of releaseNotes.parseChangelog(changelog)) {
@@ -56,6 +61,10 @@ function compareMergeOrder(left, right) {
   return byTime || left.number - right.number;
 }
 
+/**
+ * Returns `{ boundary, releases, warnings }` for merged PRs after the latest release.
+ * @throws When the latest boundary is unnumbered or absent from merged PR history.
+ */
 function pendingReleases({ prs, changelog }) {
   const boundaryNumber = newestReleasePrNumber(changelog);
   if (boundaryNumber === null) {

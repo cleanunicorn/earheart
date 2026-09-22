@@ -9,6 +9,8 @@ import sys
 from types import SimpleNamespace
 
 import pytest
+from onnx_asr.models.nemo import NemoConformerAED, NemoConformerTdt
+from onnx_asr.models.whisper import WhisperHf, WhisperOrt
 
 from earheart_stt import server
 
@@ -65,3 +67,11 @@ def test_unknown_provider_raises(monkeypatch):
 
     with pytest.raises(ValueError, match="Unknown provider 'gpu'"):
         server.load_asr_model(server.ServerConfig(provider="gpu"))
+
+
+def test_honours_language_detects_whisper_and_canary():
+    assert server.honours_language(SimpleNamespace(asr=object.__new__(WhisperHf)))
+    assert server.honours_language(SimpleNamespace(asr=object.__new__(WhisperOrt)))
+    assert server.honours_language(SimpleNamespace(asr=object.__new__(NemoConformerAED)))
+    assert not server.honours_language(SimpleNamespace(asr=object.__new__(NemoConformerTdt)))
+    assert not server.honours_language(SimpleNamespace())

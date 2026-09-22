@@ -168,27 +168,50 @@ def test_resampling_keeps_a_nonempty_tiny_clip():
     np.testing.assert_array_equal(actual, waveform)
 
 
-def test_supported_language(client, recognizer):
-    response = transcribe(client, language="ro", response_format="verbose_json")
+@pytest.mark.parametrize("honours", [False, True])
+def test_supported_language(client_factory, recognizer, monkeypatch, honours):
+    monkeypatch.setattr(server, "honours_language", lambda asr: honours)
+    with client_factory(recognizer) as client:
+        response = transcribe(client, language="ro", response_format="verbose_json")
     assert response.status_code == 200
-    assert response.json()["language"] == "ro"
-    assert recognizer.recognize.call_args.kwargs == {"sample_rate": 16000, "language": "ro"}
+    if honours:
+        assert response.json()["language"] == "ro"
+        assert recognizer.recognize.call_args.kwargs == {
+            "sample_rate": 16000,
+            "language": "ro",
+        }
+    else:
+        assert response.json()["language"] == "auto"
+        assert recognizer.recognize.call_args.kwargs == {"sample_rate": 16000}
 
 
-def test_unsupported_language(client, recognizer):
-    recognizer.recognize.side_effect = ValueError("Unsupported language: xx")
-    response = transcribe(client, language="xx")
+def test_unsupported_language(client_factory, recognizer, monkeypatch):
+    monkeypatch.setattr(server, "honours_language", lambda asr: True)
+    recognizer.recognize.side_effect = KeyError("<|xx|>")
+    with client_factory(recognizer) as client:
+        response = transcribe(client, language="xx")
     assert response.status_code == 400
-    assert response.json() == {"detail": "Unsupported language: xx"}
+    assert response.json() == {"detail": "Unsupported language 'xx'"}
     recognizer.recognize.assert_called_once()
     assert recognizer.recognize.call_args.kwargs["language"] == "xx"
 
 
-def test_model_without_language_parameter(client_factory):
+def test_internal_type_error_is_not_retried(client_factory, recognizer, monkeypatch):
+    monkeypatch.setattr(server, "honours_language", lambda asr: True)
+    recognizer.recognize.side_effect = TypeError("internal")
+    with client_factory(recognizer) as client:
+        response = transcribe(client, language="en")
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Transcription failed"}
+    recognizer.recognize.assert_called_once()
+
+
+def test_model_without_language_parameter(client_factory, monkeypatch):
+    monkeypatch.setattr(server, "honours_language", lambda asr: False)
     calls = []
 
-    def recognize(waveform, *, sample_rate):
-        calls.append((waveform, sample_rate))
+    def recognize(waveform, *, sample_rate=16000, **kwargs):
+        calls.append((waveform, sample_rate, kwargs))
         return "English only."
 
     with client_factory(SimpleNamespace(recognize=recognize)) as client:
@@ -197,6 +220,7 @@ def test_model_without_language_parameter(client_factory):
     assert response.json() == {"text": "English only."}
     assert len(calls) == 1
     assert calls[0][1] == 16000
+    assert calls[0][2] == {}
 
 
 @pytest.mark.parametrize("result", [None, "", " \n "])
@@ -230,7 +254,7 @@ def test_concurrent_inference_is_serialized(client_factory, monkeypatch):
     # Replace only the server's namespace, never threading.Lock globally.
     monkeypatch.setattr(server, "threading", SimpleNamespace(Lock=ObservedLock))
 
-    def recognize(waveform, *, sample_rate):
+    def recognize(waveform, *, sample_rate=16000, **kwargs):
         calls.append(sample_rate)
         entered.set()
         assert release.wait(10), "Timed out waiting to release inference"

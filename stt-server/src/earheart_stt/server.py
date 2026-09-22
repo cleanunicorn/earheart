@@ -78,6 +78,20 @@ def load_asr_model(config: ServerConfig):
     return model
 
 
+def honours_language(asr) -> bool:
+    """Whether a model's recognize() honours the `language` kwarg.
+
+    onnx-asr documents `language` as "only for Whisper and Canary models"
+    (RecognizeOptions). Detect those by the concrete model class the adapter
+    wraps, rather than by model name, so custom Hugging Face repos typed by
+    their config.json are handled too.
+    """
+    from onnx_asr.models.nemo import NemoConformerAED
+    from onnx_asr.models.whisper import WhisperHf, WhisperOrt
+
+    return isinstance(getattr(asr, "asr", None), (WhisperHf, WhisperOrt, NemoConformerAED))
+
+
 def decode_audio(data: bytes) -> tuple[np.ndarray, int]:
     """Decode an uploaded audio file to float32 mono."""
     try:
@@ -128,6 +142,7 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         state["model"] = load_asr_model(config)
+        state["honours_language"] = honours_language(state["model"])
         yield
 
     app = FastAPI(title="earheart-stt", lifespan=lifespan)
@@ -147,9 +162,8 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
     def transcribe(
         file: UploadFile = File(...),
         model: str = Form(""),  # accepted for API compatibility; ignored
-        # Languages Parakeet v3 supports are auto-detected; the `language` form
-        # field is accepted for API compatibility and passed through when the
-        # loaded model supports it.
+        # Passed to recognize() only for models that honour it (Whisper and
+        # Canary); ignored — and echoed as "auto" in verbose_json — for others.
         language: str = Form(""),
         response_format: str = Form("json"),
     ):
@@ -168,7 +182,7 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
 
         started = time.monotonic()
         kwargs = {}
-        if language:
+        if language and state["honours_language"]:
             kwargs["language"] = language
         # onnxruntime sessions are thread-safe, but serializing inference
         # keeps memory bounded when several requests land at once.
@@ -177,12 +191,16 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
                 text = asr.recognize(
                     waveform, sample_rate=TARGET_SAMPLE_RATE, **kwargs
                 )
-            except TypeError:
-                # Model doesn't take a language hint (e.g. English-only v2).
-                text = asr.recognize(waveform, sample_rate=TARGET_SAMPLE_RATE)
-            except ValueError as exc:
-                # e.g. a language code the model doesn't support.
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            except Exception as exc:
+                if isinstance(exc, KeyError) and language:
+                    # e.g. a language code the model doesn't support.
+                    raise HTTPException(
+                        status_code=400, detail=f"Unsupported language {language!r}"
+                    ) from None
+                logger.exception("Transcription failed")
+                raise HTTPException(
+                    status_code=500, detail="Transcription failed"
+                ) from None
         elapsed = time.monotonic() - started
         audio_seconds = waveform.shape[0] / TARGET_SAMPLE_RATE
         logger.info(
@@ -199,7 +217,9 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
             return {
                 "task": "transcribe",
                 "duration": audio_seconds,
-                "language": language or "auto",
+                "language": (
+                    language if (language and state["honours_language"]) else "auto"
+                ),
                 "text": text,
             }
         return {"text": text}

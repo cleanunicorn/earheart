@@ -49,12 +49,7 @@ function applyHotkeys(cfg) {
     onRecord: () => pipeline.toggle(),
     onPause: () => pipeline.pauseToggle(),
   });
-  return {
-    hotkey: pair.record.empty
-      ? { ok: false, empty: true, error: "No hotkey configured" }
-      : pair.record,
-    pauseHotkey: pair.pause,
-  };
+  return hotkeys.toHotkeyResults(pair);
 }
 
 // Held past show() so the click handler survives: a Notification that only the

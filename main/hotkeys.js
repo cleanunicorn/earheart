@@ -163,4 +163,15 @@ function unregisterAll() {
   registered.clear();
 }
 
-module.exports = { applyPair, unregisterAll };
+// The pair layer treats either empty slot as a valid unbound state. Adapt that
+// result to the app contract, where record is required but pause is optional.
+function toHotkeyResults(pair) {
+  return {
+    hotkey: pair.record.empty
+      ? { ok: false, empty: true, error: "No hotkey configured" }
+      : pair.record,
+    pauseHotkey: pair.pause,
+  };
+}
+
+module.exports = { applyPair, toHotkeyResults, unregisterAll };

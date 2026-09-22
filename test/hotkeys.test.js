@@ -326,3 +326,28 @@ test("empty targets are valid unbound states", () => {
   });
   assert.strictEqual(bindings.size, 0);
 });
+
+test("an empty record maps to the required-hotkey error without losing its marker", () => {
+  const { hotkeys } = loadHotkeys();
+
+  assert.deepStrictEqual(
+    hotkeys.toHotkeyResults({
+      record: { ok: true, empty: true },
+      pause: { ok: true, empty: true },
+    }),
+    {
+      hotkey: { ok: false, empty: true, error: "No hotkey configured" },
+      pauseHotkey: { ok: true, empty: true },
+    }
+  );
+});
+
+test("a non-empty record failure passes through without an empty marker", () => {
+  const { hotkeys } = loadHotkeys();
+  const record = { ok: false, error: "record rejected" };
+
+  assert.deepStrictEqual(
+    hotkeys.toHotkeyResults({ record, pause: { ok: true } }),
+    { hotkey: record, pauseHotkey: { ok: true } }
+  );
+});

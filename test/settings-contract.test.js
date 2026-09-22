@@ -156,6 +156,14 @@ test("every radio/checkbox group name settings.js uses exists in settings.html",
   assert.deepStrictEqual(missing, [], `settings.html is missing radio groups: ${missing.join(", ")}`);
 });
 
+test("custom model version selects have accessible names", () => {
+  for (const id of ["stt-hf-variant", "cleanup-hf-variant"]) {
+    const select = html.match(new RegExp(`<select id="${id}"[^>]*>`));
+    assert.ok(select, `${id} must exist`);
+    assert.match(select[0], /aria-label="Model version"/);
+  }
+});
+
 test("hotkey-capture.js loads before each page's own script", () => {
   // Both pages call wireHotkeyCapture at top level; if the shared script's
   // tag is dropped or reordered, the page script throws a ReferenceError

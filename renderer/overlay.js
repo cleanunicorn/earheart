@@ -553,6 +553,8 @@ function syncOverlayHeight() {
 // actually being captured from here on, so NOW the card may invite the user to
 // talk. Everything that says "you are being heard" — the Listening… status,
 // the waveform row, the timer — keys off this moment, not off setup starting.
+let microphoneNotice = "";
+
 function micLive() {
   if (!recording || recording.startedAt) return;
   recording.startedAt = Date.now();
@@ -565,7 +567,7 @@ function micLive() {
     () => stopRecording(),
     recording.maxSeconds * 1000
   );
-  setStatus("recording", "Listening…");
+  setStatus("recording", "Listening…", microphoneNotice);
 }
 
 async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) {
@@ -588,20 +590,27 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
   wavePushAt = 0;
   drawMeter(); // repaint blank; the rAF loop starts once mic is live
   timerEl.textContent = "0:00";
+  microphoneNotice = "";
 
   let streamPromise = null;
   try {
     // The two independent waits overlap: opening the mic and readying the
     // shared context. getUserMedia dominates; the context is usually warm.
-    streamPromise = navigator.mediaDevices.getUserMedia({
-      audio: {
-        deviceId: deviceId ? { exact: deviceId } : undefined,
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
+    streamPromise = (async () => {
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          audio: microphoneConstraints(deviceId),
+        });
+      } catch (err) {
+        // A saved USB/Bluetooth device can disappear between sessions. Retry
+        // once with the system default instead of making every dictation fail.
+        if (!deviceId || !isMissingMicrophone(err)) throw err;
+        microphoneNotice = "Selected microphone not found — using system default";
+        return navigator.mediaDevices.getUserMedia({
+          audio: microphoneConstraints(),
+        });
+      }
+    })();
     let [stream, context] = await Promise.all([
       streamPromise,
       ensureAudioEngine(),
@@ -726,7 +735,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
       audioContext?.suspend().catch(() => {});
       earheart.send("record:error", {
         sid,
-        message: `Microphone unavailable: ${err.message}`,
+        message: microphoneErrorMessage(err),
       });
     }
   }

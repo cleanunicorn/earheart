@@ -173,19 +173,27 @@ async function loadMicrophones() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach((t) => t.stop());
     const devices = await navigator.mediaDevices.enumerateDevices();
-    devices
-      .filter((d) => d.kind === "audioinput" && d.deviceId !== "default")
-      .forEach((d) => {
-        const existing = select.querySelector(`option[value="${CSS.escape(d.deviceId)}"]`);
-        if (existing) {
-          existing.textContent = d.label || existing.textContent;
-          return;
-        }
-        const option = document.createElement("option");
-        option.value = d.deviceId;
-        option.textContent = d.label || `Microphone ${select.length}`;
-        select.appendChild(option);
-      });
+    const microphones = devices.filter(
+      (d) => d.kind === "audioinput" && d.deviceId !== "default"
+    );
+    microphones.forEach((d) => {
+      const existing = select.querySelector(`option[value="${CSS.escape(d.deviceId)}"]`);
+      if (existing) {
+        existing.textContent = d.label || existing.textContent;
+        return;
+      }
+      const option = document.createElement("option");
+      option.value = d.deviceId;
+      option.textContent = d.label || `Microphone ${select.length}`;
+      select.appendChild(option);
+    });
+    if (
+      current.audio.deviceId &&
+      !microphones.some((d) => d.deviceId === current.audio.deviceId)
+    ) {
+      const configured = select.querySelector(`option[value="${CSS.escape(current.audio.deviceId)}"]`);
+      if (configured) configured.textContent = "Configured microphone (not connected)";
+    }
     select.value = current.audio.deviceId || "";
   } catch {
     // No microphone permission/device; leave "System default".

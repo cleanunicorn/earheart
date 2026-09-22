@@ -118,6 +118,22 @@ def test_invalid_audio(client, recognizer, audio, caplog):
     assert "Could not decode audio upload" in caplog.text
 
 
+def test_read_failure_returns_fixed_message(client, recognizer, monkeypatch, caplog):
+    # Valid metadata, then a read failure: exercise the sf.read error branch,
+    # which must also return the fixed message and keep the raw text server-side.
+    def boom(*args, **kwargs):
+        raise RuntimeError("sentinel-libsndfile-detail")
+
+    monkeypatch.setattr(server.sf, "read", boom)
+    response = transcribe(client, wav())
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Could not decode audio file"}
+    assert "sentinel-libsndfile-detail" not in response.text
+    recognizer.recognize.assert_not_called()
+    assert "Could not decode audio upload" in caplog.text
+
+
 def test_empty_wav(client, recognizer):
     response = transcribe(client, wav(np.zeros(0, dtype=np.float32)))
     assert response.status_code == 400

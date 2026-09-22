@@ -54,10 +54,10 @@ jobs:
             exit 0
           fi
 
-          while IFS= read -r release; do
-            number="$(jq -r '.number' <<<"$release")"
-            title="$(jq -r '.title' <<<"$release")"
-            bump="$(jq -r '.bump' <<<"$release")"
+          while IFS= read -r release_json; do
+            number="$(jq -r '.number' <<<"$release_json")"
+            title="$(jq -r '.title' <<<"$release_json")"
+            bump="$(jq -r '.bump' <<<"$release_json")"
             pushed=false
             already_released=false
 

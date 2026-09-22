@@ -105,12 +105,17 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index++) {
     const match = argv[index].match(/^--([a-z-]+)(?:=(.*))?$/);
     if (!match) continue;
-    args[match[1]] = match[2] === undefined ? argv[++index] || "" : match[2];
+    if (match[2] !== undefined) {
+      args[match[1]] = match[2];
+      continue;
+    }
+    index++;
+    args[match[1]] = argv[index] || "";
   }
   return args;
 }
 
-function workflowMessage(message) {
+function escapeWorkflowCommandData(message) {
   return String(message).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
 }
 
@@ -128,12 +133,12 @@ function main(argv) {
       changelog: fs.readFileSync(args.changelog, "utf8"),
     });
     for (const warning of result.warnings) {
-      console.error(`::warning title=No release::${workflowMessage(warning)}`);
+      console.error(`::warning title=No release::${escapeWorkflowCommandData(warning)}`);
     }
     for (const release of result.releases) console.log(JSON.stringify(release));
     return 0;
   } catch (error) {
-    console.error(`::error title=Auto release::${workflowMessage(error.message)}`);
+    console.error(`::error title=Auto release::${escapeWorkflowCommandData(error.message)}`);
     return 1;
   }
 }

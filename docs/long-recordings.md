@@ -69,23 +69,25 @@ pieces of ≤ 20 s pass. So switching models would not fix this (and fp32 is a
 with the shipped model.
 
 How short a pause counts. The clips' own leading and trailing silence was
-trimmed and the sentences joined with shorter gaps. Plain Node, int8, ~165 s:
+trimmed and the sentences joined with shorter gaps; cut with the shipped
+`splitPoints` at each threshold. Plain Node, int8, ~165 s:
 
-| gap between sentences | cut at pauses ≥ 150 ms | ≥ 200 ms | ≥ 250 ms |
+| gap between sentences | cut at pauses ≥ 150 ms | ≥ 200 ms (shipped) | ≥ 250 ms |
 | --- | --- | --- | --- |
-| 150 ms | ratio 1.019, WER 7.5 % | 0.973, 8.5 % | 0.938, 11.2 % |
-| 250 ms | ratio 1.021, WER 7.3 % | 1.017, 6.0 % | 1.017, 5.8 % |
-| 400 ms | ratio 1.023, WER 7.7 % | — | 1.019, 5.8 % |
+| 150 ms | ratio 1.017, WER 6.2 % | 1.015, 6.2 % | 0.979, 9.1 % |
+| 250 ms | ratio 1.023, WER 7.3 % | 1.023, 6.9 % | 1.023, 6.7 % |
+| 400 ms | ratio 1.029, WER 7.1 % | 1.021, 6.0 % | 1.017, 5.4 % |
 
-A 150 ms threshold survives the tightest gaps, at the price of about 1.5 WER
-points from cutting at breaths inside a sentence. "Quiet" is the overlay's own
-silence level (RMS < 0.012 after auto gain control), scored with a 50 ms
-window sliding in 5 ms steps, so a pause's length decides and its alignment
-doesn't: 150 ms is always a cut, 130 ms never. The cut goes to the middle of
-the pause. Speech that runs past 20 s
-without a pause is cut at the quietest moment in the 10 s before the ceiling,
-using the same search the overlay uses for its forced chunk boundaries
-(`renderer/chunk-boundary.js`).
+On the recordings above, 150 ms also cut inside sentences often enough to
+leave fragments the model decodes to nothing: 3 such pieces in 124.5 s (WER
+10.9 %) against 1 at 200 ms (6.8 %); 6 against 4 in 310.9 s (9.6 % vs 8.2 %).
+So a pause counts from 200 ms. "Quiet" is the overlay's own silence level
+(RMS < 0.012 after auto gain control), scored with a 50 ms window sliding in
+5 ms steps, so a pause's length decides and its alignment doesn't: 200 ms is
+always a cut, 180 ms never. The cut goes to the middle of the pause. Speech
+that runs past 20 s without a pause is cut at the quietest moment in the 10 s
+before the ceiling, using the same search the overlay uses for its forced
+chunk boundaries (`renderer/chunk-boundary.js`).
 
 The live preview's chunk decodes use the same splitter. Their committed text
 becomes the start of the final transcript verbatim, and a 10–20 s chunk often
@@ -93,7 +95,7 @@ holds two sentences: the exact case above. If a live chunk decodes only in
 part, the decode throws. That breaks the snapshot, so the final pass decodes
 the audio again instead of committing a hole.
 
-**What this doesn't cover.** A speaker who never pauses for 150 ms (or a room
+**What this doesn't cover.** A speaker who never pauses for 200 ms (or a room
 too noisy to reach the silence level) gets 20 s pieces only. That is the
 0.84–0.87 column above. FLEURS is read speech with clean gaps, not dictation
 through Earheart's microphone path.

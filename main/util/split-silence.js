@@ -31,6 +31,11 @@ const QUIET_RMS = 0.012;
 // found a 150 ms pause only when it started on a frame boundary).
 const WINDOW_SEC = 0.05;
 const HOP_SEC = 0.005;
+// Shortest pause that is a cut. Measured through this detector
+// (docs/long-recordings.md): 200 ms held word ratio and WER at 150-400 ms
+// sentence gaps, 250 ms missed 150 ms gaps (WER 9.1 %), and 150 ms cut often
+// enough inside sentences to leave fragments the model decodes to nothing.
+const MIN_PAUSE_SEC = 0.2;
 
 // Middles of the pauses between stretches of speech. A pause is a run of quiet
 // windows; the span they cover sits within one hop of the true silence on each
@@ -95,7 +100,7 @@ function capCuts(samples, from, to, max, lookback, windowSamples, hopSamples) {
 function splitPoints(
   samples,
   sampleRate,
-  { maxSec, minPauseSec = 0.15, quietRms = QUIET_RMS, lookbackSec = 10, windowSec = 0.3, hopSec = 0.05 }
+  { maxSec, minPauseSec = MIN_PAUSE_SEC, quietRms = QUIET_RMS, lookbackSec = 10, windowSec = 0.3, hopSec = 0.05 }
 ) {
   const max = Math.floor(maxSec * sampleRate);
   if (!(max > 0)) throw new Error(`splitPoints: maxSec must be positive (got ${maxSec})`);

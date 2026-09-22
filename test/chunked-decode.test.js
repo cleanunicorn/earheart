@@ -261,3 +261,21 @@ test("chunked decode: a failed piece is filled from committed live-preview chunk
   assert.strictEqual(r.text, "a0 c2 c3 a3");
   assert.strictEqual(r.partial, true);
 });
+
+test("chunked decode: a timeout on the retry retires that worker too", async () => {
+  // Otherwise the replacement stays inside its native decode and the next
+  // piece — or the next dictation — queues behind it for another full timeout.
+  const timeout = engineError("ENGINE_TIMEOUT");
+  const w = fakeWorker({ 0: timeout, 1: timeout });
+  let restarts = 0;
+  const restartsSeenBy = [];
+  const run = async (input, opts) => {
+    restartsSeenBy.push(restarts);
+    return w.runTranscribe(input, opts);
+  };
+  const r = await transcribeChunked(wav(30), { runTranscribe: run, restartStt: () => restarts++ });
+  assert.strictEqual(restarts, 2, "one restart per timed-out worker");
+  assert.deepStrictEqual(restartsSeenBy, [0, 1, 2], "the next piece is sent after both restarts");
+  assert.strictEqual(r.text, "a2");
+  assert.strictEqual(r.partial, true);
+});

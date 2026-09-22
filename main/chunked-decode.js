@@ -175,12 +175,12 @@ async function transcribeChunked(
           err?.message,
           err?.code ? `(${err.code}${err.exitCode !== undefined ? `, exit code ${err.exitCode}` : ""})` : ""
         );
-        if (piece.attempts < 2 && retryable(err)) {
-          // An exited worker is already gone (the host re-forks on the next
-          // request); a timed-out one is still stuck in the native decode.
-          if (err.code === "ENGINE_TIMEOUT") restartStt();
-          continue;
-        }
+        // A timed-out worker is still stuck in the native decode: retire it
+        // every time, or the retry — and on a last attempt, the next piece or
+        // dictation — queues behind it. An exited one is already gone (the
+        // host re-forks on the next request).
+        if (err?.code === "ENGINE_TIMEOUT") restartStt();
+        if (piece.attempts < 2 && retryable(err)) continue;
         piece.error = err?.message || String(err);
         piece.code = err?.code;
         piece.exitCode = err?.exitCode;

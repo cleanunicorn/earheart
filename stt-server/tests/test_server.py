@@ -110,11 +110,12 @@ def test_unsupported_response_format(client, recognizer, response_format):
 
 
 @pytest.mark.parametrize("audio", [b"", b"not an audio file"])
-def test_invalid_audio(client, recognizer, audio):
+def test_invalid_audio(client, recognizer, audio, caplog):
     response = transcribe(client, audio)
     assert response.status_code == 400
-    assert response.json()["detail"].startswith("Could not decode audio file:")
+    assert response.json() == {"detail": "Could not decode audio file"}
     recognizer.recognize.assert_not_called()
+    assert "Could not decode audio upload" in caplog.text
 
 
 def test_empty_wav(client, recognizer):
@@ -136,6 +137,44 @@ def test_oversized_upload_is_rejected_before_decode(
     response = transcribe(client, b"x" * (1024 * 1024 + 1))
     assert response.status_code == 413
     assert response.json() == {"detail": "Audio upload exceeds the 1 MiB limit"}
+    recognizer.recognize.assert_not_called()
+
+
+def test_decoded_size_rejected_before_decode(client, recognizer, monkeypatch):
+    # 300 s of silence encodes to a few bytes of FLAC but decodes to 4.8M
+    # float32 frames; the decoded budget must reject it before sf.read runs.
+    monkeypatch.setattr(server, "MAX_DECODED_BYTES", 16 * 1024 * 1024)
+    real_read = server.sf.read
+    read_calls = []
+
+    def spy_read(*args, **kwargs):
+        read_calls.append(1)
+        return real_read(*args, **kwargs)
+
+    monkeypatch.setattr(server.sf, "read", spy_read)
+    silent = io.BytesIO()
+    sf.write(silent, np.zeros(300 * 16000, dtype=np.float32), 16000, format="FLAC")
+
+    response = transcribe(client, silent.getvalue())
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "Decoded audio exceeds the 16 MiB limit"}
+    assert read_calls == []
+    recognizer.recognize.assert_not_called()
+
+
+def test_decode_is_bounded_when_header_underreports(client, recognizer, monkeypatch):
+    # A malformed header that under-reports frames must not let an oversized
+    # decode through: the bounded sf.read still catches it.
+    monkeypatch.setattr(server, "MAX_DECODED_BYTES", 1024)
+    monkeypatch.setattr(
+        server.sf, "info", lambda buffer: SimpleNamespace(frames=1, channels=1)
+    )
+
+    response = transcribe(client, wav(np.zeros(1600, dtype=np.float32)))
+
+    assert response.status_code == 413
+    assert "Decoded audio exceeds" in response.json()["detail"]
     recognizer.recognize.assert_not_called()
 
 

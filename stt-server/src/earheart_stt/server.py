@@ -92,15 +92,50 @@ def honours_language(asr) -> bool:
     return isinstance(getattr(asr, "asr", None), (WhisperHf, WhisperOrt, NemoConformerAED))
 
 
+MAX_DECODED_BYTES = 256 * 1024 * 1024
+
+
 def decode_audio(data: bytes) -> tuple[np.ndarray, int]:
-    """Decode an uploaded audio file to float32 mono."""
+    """Decode an uploaded audio file to float32 mono, bounded before decode."""
+    buffer = io.BytesIO(data)
     try:
-        waveform, sample_rate = sf.read(io.BytesIO(data), dtype="float32")
+        info = sf.info(buffer)
     except Exception as exc:
+        logger.warning("Could not decode audio upload: %s", exc)
         raise HTTPException(
-            status_code=400,
-            detail=f"Could not decode audio file: {exc}",
+            status_code=400, detail="Could not decode audio file"
         ) from exc
+
+    max_frames = MAX_DECODED_BYTES // (4 * max(info.channels, 1))
+    if info.frames > max_frames:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Decoded audio exceeds the "
+                f"{MAX_DECODED_BYTES // (1024 * 1024)} MiB limit"
+            ),
+        )
+
+    buffer.seek(0)
+    try:
+        waveform, sample_rate = sf.read(
+            buffer, dtype="float32", frames=max_frames + 1
+        )
+    except Exception as exc:
+        logger.warning("Could not decode audio upload: %s", exc)
+        raise HTTPException(
+            status_code=400, detail="Could not decode audio file"
+        ) from exc
+
+    if waveform.shape[0] > max_frames:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Decoded audio exceeds the "
+                f"{MAX_DECODED_BYTES // (1024 * 1024)} MiB limit"
+            ),
+        )
+
     if waveform.ndim > 1:
         waveform = waveform.mean(axis=1)
     return waveform, sample_rate

@@ -78,7 +78,7 @@ Anything with a "custom OpenAI-compatible endpoint" option works. Point it at
 
 ## Tests
 
-From `stt-server/`, run `uv run --extra test python -m pytest` (or install
+From `stt-server/`, run `uv run --locked --extra test python -m pytest` (or install
 `pip install -e ".[test]"` and run `python -m pytest`). The endpoint tests use
 synthetic WAV uploads and replace the model loader with fake recognizers;
 they do not download model weights or initialize a speech engine.

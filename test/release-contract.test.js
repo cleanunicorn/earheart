@@ -96,12 +96,13 @@ test("every release attempt refreshes main and pushes its exact tag atomically",
   const resetAt = workflow.indexOf("git reset --hard origin/main");
   const bumpAt = workflow.indexOf('npm version "$bump" --no-git-tag-version');
   assert.ok(fetchAt >= 0 && fetchAt < resetAt && resetAt < bumpAt);
+  assert.match(workflow, /tag="v\$version"/);
   assert.match(
     workflow,
-    /git push --atomic origin HEAD:main "refs\/tags\/v\$version:refs\/tags\/v\$version"/,
+    /git push --atomic origin HEAD:main "refs\/tags\/\$tag:refs\/tags\/\$tag"/,
   );
   assert.doesNotMatch(workflow, new RegExp("git push origin " + "main"));
-  assert.match(workflow, /git tag -d "v\$version"/);
+  assert.match(workflow, /git tag -d "\$tag"/);
 });
 
 test("release retries recognize only exact trailing PR markers", () => {
@@ -114,8 +115,8 @@ test("release retries recognize only exact trailing PR markers", () => {
 
 test("each pushed tag gets a bounded release-build dispatch", () => {
   assert.match(workflow, /for dispatch_attempt in 1 2 3/);
-  assert.match(workflow, /gh workflow run release\.yml --ref "v\$version"/);
-  assert.match(workflow, /Release build dispatch failed for v\$version/);
+  assert.match(workflow, /gh workflow run release\.yml --ref "\$tag"/);
+  assert.match(workflow, /Release build dispatch failed for \$tag/);
 });
 
 test("the unsafe manual release target and its documentation are gone", () => {

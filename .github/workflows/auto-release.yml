@@ -75,18 +75,19 @@ jobs:
 
               npm version "$bump" --no-git-tag-version
               version="$(node -p 'require("./package.json").version')"
+              tag="v$version"
               node scripts/changelog.js \
                 --version "$version" --title "$title" --pr "$number" --date "$(date -u +%F)"
               git add package.json package-lock.json CHANGELOG.md
-              git commit -m "release: v$version"
-              git tag -a "v$version" -m "v$version"
+              git commit -m "release: $tag"
+              git tag -a "$tag" -m "$tag"
 
-              if git push --atomic origin HEAD:main "refs/tags/v$version:refs/tags/v$version"; then
+              if git push --atomic origin HEAD:main "refs/tags/$tag:refs/tags/$tag"; then
                 pushed=true
                 break
               fi
 
-              git tag -d "v$version"
+              git tag -d "$tag"
               echo "::warning title=Release push retry::PR #$number push attempt $attempt failed"
             done
 
@@ -103,14 +104,14 @@ jobs:
             # dispatched after bounded retries.
             dispatched=false
             for dispatch_attempt in 1 2 3; do
-              if gh workflow run release.yml --ref "v$version"; then
+              if gh workflow run release.yml --ref "$tag"; then
                 dispatched=true
                 break
               fi
-              echo "::warning title=Release dispatch retry::v$version attempt $dispatch_attempt failed"
+              echo "::warning title=Release dispatch retry::$tag attempt $dispatch_attempt failed"
             done
             if [[ "$dispatched" != true ]]; then
-              echo "::error title=Release build dispatch failed::Release build dispatch failed for v$version"
+              echo "::error title=Release build dispatch failed::Release build dispatch failed for $tag"
               exit 1
             fi
           done < "$pending_file"

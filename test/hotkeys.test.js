@@ -191,6 +191,26 @@ test("a failed swap restores both previous bindings and callbacks", () => {
   assert.deepStrictEqual(calls.events, []);
 });
 
+test("an invalid crossed target restores both previous bindings", () => {
+  const A = "CommandOrControl+Shift+Space";
+  const B = "CommandOrControl+Alt+P";
+  const { hotkeys, bindings } = loadHotkeys({
+    registerImpl(accelerator, attempt) {
+      if (accelerator === A && attempt === 2) throw new Error("bad accelerator");
+      return true;
+    },
+  });
+  hotkeys.applyPair(pair(A, B));
+
+  const result = hotkeys.applyPair(pair(B, A));
+
+  assert.strictEqual(result.record.ok, false);
+  assert.strictEqual(result.pause.ok, false);
+  assert.match(result.pause.error, /Invalid hotkey.*bad accelerator/);
+  assert.strictEqual(bindings.has(A), true);
+  assert.strictEqual(bindings.has(B), true);
+});
+
 test("a later free-target failure rolls back an earlier successful target", () => {
   const A = "CommandOrControl+Shift+Space";
   const B = "CommandOrControl+Alt+P";

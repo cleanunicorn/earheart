@@ -35,25 +35,19 @@ function markerFromText(text) {
   return match ? Number(match[1]) : null;
 }
 
-/** Returns the PR numbers from exact trailing `(#N)` changelog markers. */
-function releasedPrNumbers(changelog) {
-  const numbers = new Set();
-  for (const entry of releaseNotes.parseChangelog(changelog)) {
-    for (const item of entry.items) {
-      const number = markerFromText(item.text);
-      if (number !== null) numbers.add(number);
-    }
-  }
-  return numbers;
+function releaseState(changelog) {
+  const markersByEntry = releaseNotes.parseChangelog(changelog).map((entry) =>
+    entry.items.map((item) => markerFromText(item.text)).filter((number) => number !== null),
+  );
+  return {
+    boundaryNumber: markersByEntry[0]?.[0] ?? null,
+    released: new Set(markersByEntry.flat()),
+  };
 }
 
-function newestReleasePrNumber(changelog) {
-  const [newestEntry] = releaseNotes.parseChangelog(changelog);
-  for (const item of newestEntry?.items || []) {
-    const number = markerFromText(item.text);
-    if (number !== null) return number;
-  }
-  return null;
+/** Returns the PR numbers from exact trailing `(#N)` changelog markers. */
+function releasedPrNumbers(changelog) {
+  return releaseState(changelog).released;
 }
 
 function compareMergeOrder(left, right) {
@@ -66,7 +60,7 @@ function compareMergeOrder(left, right) {
  * @throws When the latest boundary is unnumbered or absent from merged PR history.
  */
 function pendingReleases({ prs, changelog }) {
-  const boundaryNumber = newestReleasePrNumber(changelog);
+  const { boundaryNumber, released } = releaseState(changelog);
   if (boundaryNumber === null) {
     throw new Error("no numbered release boundary was found in CHANGELOG.md");
   }
@@ -84,7 +78,6 @@ function pendingReleases({ prs, changelog }) {
     throw new Error(`boundary PR #${boundaryNumber} was not found in merged PR history`);
   }
 
-  const released = releasedPrNumbers(changelog);
   const releases = [];
   const warnings = [];
   for (const pr of merged) {

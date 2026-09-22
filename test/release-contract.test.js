@@ -64,6 +64,10 @@ test("exported release helpers document their contracts", () => {
   assert.match(autoReleaseScript, /\/\*\*[^]*throws[^]*\*\/\nfunction pendingReleases/);
 });
 
+test("release selection parses changelog markers through one shared traversal", () => {
+  assert.equal(autoReleaseScript.match(/releaseNotes\.parseChangelog/g)?.length, 1);
+});
+
 test("contract sources normalize Windows checkout newlines", () => {
   assert.equal(normalizeNewlines("first\r\nsecond\r\n"), "first\nsecond\n");
   assert.doesNotMatch(workflow, /\r/);

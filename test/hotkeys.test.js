@@ -2,6 +2,10 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 const Module = require("node:module");
 
+const A = "CommandOrControl+Shift+Space";
+const B = "CommandOrControl+Alt+P";
+const C = "CommandOrControl+Alt+C";
+
 function loadHotkeys({ registerImpl = () => true, occupied = [] } = {}) {
   const hotkeysPath = require.resolve("../main/hotkeys");
   const electronPath = require.resolve("electron");
@@ -100,9 +104,6 @@ test("a successful replacement releases the previous hotkey afterwards", () => {
 });
 
 test("a final-pair collision does not touch either existing hotkey", () => {
-  const A = "CommandOrControl+Shift+Space";
-  const B = "CommandOrControl+Alt+P";
-  const C = "CommandOrControl+Alt+C";
   const { hotkeys, calls } = loadHotkeys();
   hotkeys.applyPair(pair(A, B));
   clearCalls(calls);
@@ -117,8 +118,6 @@ test("a final-pair collision does not touch either existing hotkey", () => {
 });
 
 test("a collision reports only the changed slot when the owner is unchanged", () => {
-  const A = "CommandOrControl+Shift+Space";
-  const B = "CommandOrControl+Alt+P";
   const { hotkeys, calls } = loadHotkeys();
   hotkeys.applyPair(pair(A, B));
   clearCalls(calls);
@@ -149,8 +148,6 @@ test("a cold-start collision keeps the required record hotkey working", () => {
 });
 
 test("reapplying the same pair does not drop and reacquire either hotkey", () => {
-  const A = "CommandOrControl+Shift+Space";
-  const B = "CommandOrControl+Alt+P";
   const { hotkeys, calls } = loadHotkeys();
   hotkeys.applyPair(pair(A, B));
   clearCalls(calls);
@@ -163,8 +160,6 @@ test("reapplying the same pair does not drop and reacquire either hotkey", () =>
 });
 
 test("swapping record and pause succeeds with the callbacks exchanged", () => {
-  const A = "CommandOrControl+Shift+Space";
-  const B = "CommandOrControl+Alt+P";
   const triggered = [];
   const { hotkeys, calls, bindings } = loadHotkeys();
   hotkeys.applyPair(pair(A, B));
@@ -183,8 +178,6 @@ test("swapping record and pause succeeds with the callbacks exchanged", () => {
 });
 
 test("a failed swap restores both previous bindings and callbacks", () => {
-  const A = "CommandOrControl+Shift+Space";
-  const B = "CommandOrControl+Alt+P";
   const triggered = [];
   const { hotkeys, calls, bindings } = loadHotkeys({
     registerImpl: (accelerator, attempt) => !(accelerator === A && attempt === 2),
@@ -209,8 +202,6 @@ test("a failed swap restores both previous bindings and callbacks", () => {
 });
 
 test("an invalid crossed target restores both previous bindings", () => {
-  const A = "CommandOrControl+Shift+Space";
-  const B = "CommandOrControl+Alt+P";
   const { hotkeys, bindings } = loadHotkeys({
     registerImpl(accelerator, attempt) {
       if (accelerator === A && attempt === 2) throw new Error("bad accelerator");
@@ -229,9 +220,6 @@ test("an invalid crossed target restores both previous bindings", () => {
 });
 
 test("a later free-target failure rolls back an earlier successful target", () => {
-  const A = "CommandOrControl+Shift+Space";
-  const B = "CommandOrControl+Alt+P";
-  const C = "CommandOrControl+Alt+C";
   const D = "CommandOrControl+Alt+D";
   const { hotkeys, bindings } = loadHotkeys({ occupied: [D] });
   hotkeys.applyPair(pair(A, B));
@@ -246,9 +234,6 @@ test("a later free-target failure rolls back an earlier successful target", () =
 });
 
 test("a mixed free and crossed change registers in no-drop order", () => {
-  const A = "CommandOrControl+Shift+Space";
-  const B = "CommandOrControl+Alt+P";
-  const C = "CommandOrControl+Alt+C";
   const triggered = [];
   const { hotkeys, calls, bindings } = loadHotkeys();
   hotkeys.applyPair(pair(A, B));
@@ -271,9 +256,6 @@ test("a mixed free and crossed change registers in no-drop order", () => {
 });
 
 test("a mixed crossed failure removes the free addition and restores its owner", () => {
-  const A = "CommandOrControl+Shift+Space";
-  const B = "CommandOrControl+Alt+P";
-  const C = "CommandOrControl+Alt+C";
   const triggered = [];
   const { hotkeys, bindings } = loadHotkeys({
     registerImpl: (accelerator, attempt) => !(accelerator === B && attempt === 2),
@@ -293,8 +275,6 @@ test("a mixed crossed failure removes the free addition and restores its owner",
 });
 
 test("a rollback re-registration failure is reported and removed from state", () => {
-  const A = "CommandOrControl+Shift+Space";
-  const B = "CommandOrControl+Alt+P";
   const { hotkeys, calls } = loadHotkeys({
     registerImpl(accelerator, attempt) {
       if (accelerator === A && attempt === 2) return false;
@@ -313,8 +293,6 @@ test("a rollback re-registration failure is reported and removed from state", ()
 });
 
 test("empty targets are valid unbound states", () => {
-  const A = "CommandOrControl+Shift+Space";
-  const B = "CommandOrControl+Alt+P";
   const { hotkeys, bindings } = loadHotkeys();
   hotkeys.applyPair(pair(A, B));
 

@@ -19,11 +19,12 @@ const TITLE_RE = /^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert
 function bumpFor(title) {
   const value = String(title || "");
   if (/\[skip release\]/i.test(value)) return { bump: "", reason: "skip" };
-  if (!TITLE_RE.test(value)) return { bump: "", reason: "invalid" };
+  const match = TITLE_RE.exec(value);
+  if (!match) return { bump: "", reason: "invalid" };
   if (!releaseNotes.titleToItem(value)) return { bump: "", reason: "empty" };
 
-  const [, type, , bang] = value.match(/^([a-z]+)(\([^)]+\))?(!)?: /);
-  if (bang) return { bump: "major", reason: "release" };
+  const [, type] = match;
+  if (/^[a-z]+(?:\([^)]+\))?!: /.test(value)) return { bump: "major", reason: "release" };
   if (type === "feat") return { bump: "minor", reason: "release" };
   if (["fix", "perf", "refactor"].includes(type)) {
     return { bump: "patch", reason: "release" };

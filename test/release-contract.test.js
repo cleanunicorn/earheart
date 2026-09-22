@@ -18,6 +18,7 @@ function readText(...parts) {
 const workflow = readText(".github", "workflows", "auto-release.yml");
 const titleWorkflow = readText(".github", "workflows", "pr-title.yml");
 const autoReleaseScript = readText("scripts", "auto-release.js");
+const releaseNotesSource = readText("main", "services", "release-notes.js");
 const makefile = readText("Makefile");
 const contributing = readText("CONTRIBUTING.md");
 const agents = readText("AGENTS.md");
@@ -40,6 +41,14 @@ test("release sizing uses exactly the PR-title workflow regex", () => {
   assert.equal(TITLE_RE.source, match[1]);
   assert.doesNotMatch(workflow, /^\s*(major|minor|patch)_re=/m);
   assert.match(workflow, /node scripts\/auto-release\.js pending/);
+});
+
+test("release sizing comments name the helper that owns the policy", () => {
+  assert.match(titleWorkflow, /scripts\/auto-release\.js reads its conventional-commit/);
+  assert.match(titleWorkflow, /because scripts\/auto-release\.js\n\s+turns its prefix/);
+  assert.doesNotMatch(titleWorkflow, /same reason as auto-release\.yml/);
+  assert.match(releaseNotesSource, /scripts\/auto-release\.js sizes the/);
+  assert.match(releaseNotesSource, /see scripts\/auto-release\.js/);
 });
 
 test("the release selector documents its command and stream contract", () => {

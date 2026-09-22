@@ -6,24 +6,29 @@ const path = require("node:path");
 const { TITLE_RE } = require("../scripts/auto-release");
 
 const ROOT = path.join(__dirname, "..");
-const workflow = fs.readFileSync(
-  path.join(ROOT, ".github", "workflows", "auto-release.yml"),
-  "utf8",
-);
-const titleWorkflow = fs.readFileSync(
-  path.join(ROOT, ".github", "workflows", "pr-title.yml"),
-  "utf8",
-);
-const makefile = fs.readFileSync(path.join(ROOT, "Makefile"), "utf8");
-const contributing = fs.readFileSync(path.join(ROOT, "CONTRIBUTING.md"), "utf8");
-const agents = fs.readFileSync(path.join(ROOT, "AGENTS.md"), "utf8");
+
+function normalizeNewlines(text) {
+  return text.replace(/\r\n/g, "\n");
+}
+
+function readText(...parts) {
+  return normalizeNewlines(fs.readFileSync(path.join(ROOT, ...parts), "utf8"));
+}
+
+const workflow = readText(".github", "workflows", "auto-release.yml");
+const titleWorkflow = readText(".github", "workflows", "pr-title.yml");
+const makefile = readText("Makefile");
+const contributing = readText("CONTRIBUTING.md");
+const agents = readText("AGENTS.md");
 
 function markdownUnder(directory) {
   let text = "";
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const location = path.join(directory, entry.name);
     if (entry.isDirectory()) text += markdownUnder(location);
-    else if (entry.name.endsWith(".md")) text += fs.readFileSync(location, "utf8");
+    else if (entry.name.endsWith(".md")) {
+      text += normalizeNewlines(fs.readFileSync(location, "utf8"));
+    }
   }
   return text;
 }
@@ -34,6 +39,11 @@ test("release sizing uses exactly the PR-title workflow regex", () => {
   assert.equal(TITLE_RE.source, match[1]);
   assert.doesNotMatch(workflow, /^\s*(major|minor|patch)_re=/m);
   assert.match(workflow, /node scripts\/auto-release\.js pending/);
+});
+
+test("contract sources normalize Windows checkout newlines", () => {
+  assert.equal(normalizeNewlines("first\r\nsecond\r\n"), "first\nsecond\n");
+  assert.doesNotMatch(workflow, /\r/);
 });
 
 test("only merged pull-request jobs enter the static release concurrency group", () => {
@@ -78,7 +88,7 @@ test("the unsafe manual release target and its documentation are gone", () => {
   assert.doesNotMatch(makefile, new RegExp("^release" + ":", "m"));
 
   const releaseDocs = [
-    fs.readFileSync(path.join(ROOT, "README.md"), "utf8"),
+    readText("README.md"),
     contributing,
     agents,
     markdownUnder(path.join(ROOT, "docs")),

@@ -141,3 +141,14 @@ test("the hand-duplicated color constants match their CSS tokens", () => {
     "main/windows.js INK_COLOR must equal overlay.css --ink"
   );
 });
+
+test("the overlay and the decode splitter share one silence level", () => {
+  // The overlay commits a live chunk at a pause below QUIET_RMS, and
+  // main/util/split-silence.js cuts decodes at pauses below its own copy of
+  // it (overlay.js is a DOM script with nothing to import). Tuning one alone
+  // would split live and final pause policy without any other test noticing.
+  const m = js.match(/^const QUIET_RMS = ([0-9.]+);/m);
+  assert.ok(m, "overlay.js defines QUIET_RMS as a numeric literal");
+  const { QUIET_RMS } = require("../main/util/split-silence");
+  assert.strictEqual(Number(m[1]), QUIET_RMS);
+});

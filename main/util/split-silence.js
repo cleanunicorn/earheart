@@ -22,7 +22,8 @@
 const { quietestOffset } = require("../../renderer/chunk-boundary");
 
 // Same silence level as the overlay's pause detector (renderer/overlay.js
-// QUIET_RMS): audio reaches both after the same auto gain control.
+// QUIET_RMS): audio reaches both after the same auto gain control. The two
+// copies are pinned equal by test/overlay-contract.test.js.
 const QUIET_RMS = 0.012;
 // Pauses are scored with a WINDOW_SEC RMS window sliding by HOP_SEC, so a
 // pause is measured to within one hop wherever it falls (a fixed 50 ms grid
@@ -110,4 +111,4 @@ function splitPoints(
   return cuts;
 }
 
-module.exports = { splitPoints };
+module.exports = { splitPoints, QUIET_RMS };

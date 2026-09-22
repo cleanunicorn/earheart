@@ -159,28 +159,6 @@ function getSttRtf() {
   return sttRtf;
 }
 
-// Run the final transcription with the estimated transcribing bar. The builtin
-// decoder is one opaque blocking call, so the bar is elapsed time against the
-// audio duration times the learned decode speed; this helper owns that plumbing
-// (model preload, ticker lifecycle, RTF sample) so process() stays a readable
-// phase list. Remote STT (network-bound, no meaningful local estimate) skips
-// the estimate and keeps the indeterminate pulse. `stale` mutes sends from a
-// cancelled/superseded session; the ticker itself dies in `finally` regardless.
-//
-// `assembly` (builtin only) is the live-preview snapshot when its committed
-// chunk decodes cover the recording's first `decodedSamples` samples intact:
-// then only the tail past that coverage is decoded and joined onto the
-// committed text, so stop→transcript stays near-constant however long the
-// dictation ran. Without a usable snapshot (preview machinery broken, remote
-// STT, no chunk committed yet) the whole recording is decoded.
-//
-// The builtin decode goes through chunked-decode.js: one stretch of speech per
-// worker request, cut at pauses and never over MAX_DECODE_SECONDS (a decode
-// spanning several utterances loses words, and one long enough kills the
-// worker — #168, #169). If the
-// worker dies part-way, every word already decoded — the committed text, the
-// finished pieces, and a broken snapshot's chunks for the ranges that failed —
-// comes back with `partial: true` instead of an error. Resolves to { text, partial }.
 // What the final pass decodes, and what it falls back to, given the live
 // preview's snapshot (null for remote STT). A trusted snapshot leaves only the
 // tail past its committed text (`prefixText`, which precedes `decodeWav`
@@ -200,6 +178,26 @@ function decodePlan(wav, assembly) {
   return { ...plan, salvageText: assembly.committedRaw, salvageChunks: assembly.chunks || [] };
 }
 
+// Run the final transcription with the estimated transcribing bar. The builtin
+// decoder is one opaque blocking call, so the bar is elapsed time against the
+// audio duration times the learned decode speed; this helper owns that plumbing
+// (model preload, ticker lifecycle, RTF sample) so process() stays a readable
+// phase list. Remote STT (network-bound, no meaningful local estimate) skips
+// the estimate and keeps the indeterminate pulse. `stale` mutes sends from a
+// cancelled/superseded session; the ticker itself dies in `finally` regardless.
+//
+// `assembly` (builtin only) is the live-preview snapshot when its committed
+// chunk decodes cover the recording's first `decodedSamples` samples intact:
+// then only the tail past that coverage is decoded and joined onto the
+// committed text, so stop→transcript stays near-constant however long the
+// dictation ran. Without a usable snapshot (preview machinery broken, remote
+// STT, no chunk committed yet) the whole recording is decoded.
+//
+// The builtin decode goes through chunked-decode.js (why: see there). If the
+// worker dies part-way, every word already decoded — the committed text, the
+// finished pieces, and a broken snapshot's chunks for the ranges that failed —
+// comes back with `partial: true` instead of an error. Resolves to
+// { text, partial }.
 async function transcribeWithEstimate(wav, sttCfg, signal, stale, assembly) {
   const rtf = sttCfg.engine === "builtin" ? getSttRtf() : null;
   const { decodeWav, tailOnly, prefixText, salvageText, salvageChunks } = decodePlan(

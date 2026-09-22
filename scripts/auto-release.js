@@ -38,11 +38,10 @@ function releasedPrNumbers(changelog) {
 }
 
 function newestReleasePrNumber(changelog) {
-  for (const entry of releaseNotes.parseChangelog(changelog)) {
-    for (const item of entry.items) {
-      const number = markerFromText(item.text);
-      if (number !== null) return number;
-    }
+  const [newestEntry] = releaseNotes.parseChangelog(changelog);
+  for (const item of newestEntry?.items || []) {
+    const number = markerFromText(item.text);
+    if (number !== null) return number;
   }
   return null;
 }

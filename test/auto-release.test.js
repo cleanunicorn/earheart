@@ -150,4 +150,14 @@ test("pendingReleases fails visibly when the changelog boundary cannot be resolv
     () => pendingReleases({ prs: [], changelog: "# Changelog\n" }),
     /no numbered release boundary/,
   );
+  assert.throws(
+    () =>
+      pendingReleases({
+        prs: [
+          { number: 100, title: "fix: old boundary", mergedAt: "2026-09-21T10:00:00Z" },
+        ],
+        changelog: "## v1.1.0\n\n- Manual entry\n\n## v1.0.0\n\n- Old boundary (#100)\n",
+      }),
+    /no numbered release boundary/,
+  );
 });

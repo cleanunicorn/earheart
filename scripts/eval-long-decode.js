@@ -167,7 +167,7 @@ function markdown(result) {
     const worker = r.error ? `${r.error}${r.exitCode !== undefined ? ` (exit code ${r.exitCode})` : ""}` : r.alive === false ? "dead after" : "ok";
     const verdict = r.mode === "single" ? "(before)" : r.reasons.length ? `FAIL: ${r.reasons.join("; ")}` : "pass";
     const shape = r.mode === "single" ? "one buffer" : `${r.pauses ? "pauses + " : ""}≤ ${r.cap} s cap`;
-    lines.push(`| ${r.audioSec.toFixed(1)} s | ${pct(r.baseline.wer)} (${r.baseline.clips} clips) | ${shape} | ${r.pieces} | ${r.maxPieceSec.toFixed(1)} s | ${r.ratio.toFixed(3)} | ${pct(r.wer)} | ${worker} | ${verdict} |`);
+    lines.push(`| ${r.audioSec.toFixed(1)} s | ${pct(r.baseline.wer)} (${r.baseline.clips} clips) | ${shape} | ${r.pieces}${r.unconfirmedPieces ? ` (${r.unconfirmedPieces} empty)` : ""} | ${r.maxPieceSec.toFixed(1)} s | ${r.ratio.toFixed(3)} | ${pct(r.wer)} | ${worker} | ${verdict} |`);
   }
   return lines.join("\n");
 }
@@ -263,6 +263,8 @@ async function run(opts) {
             text = r.text;
             row.pieces = r.pieces.length;
             row.failedPieces = r.pieces.filter((p) => !p.ok).length;
+            // Heard speech, decoded to nothing even padded: accepted, but counted.
+            row.unconfirmedPieces = r.pieces.filter((p) => p.ok && p.unconfirmed).length;
             row.pieceSeconds = r.pieces.map((p) => +((p.toFrame - p.fromFrame) / SAMPLE_RATE).toFixed(2));
             const failed = r.pieces.find((p) => !p.ok);
             if (failed) Object.assign(row, { error: failed.error, exitCode: failed.exitCode });

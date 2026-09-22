@@ -28,7 +28,7 @@ const { splitPoints } = require("./util/split-silence");
 // (renderer/overlay.html); its CommonJS export guard lets the main process
 // apply the same speech verdict.
 const { containsSpeech } = require("../renderer/speech-probe");
-const { wavSlice, wavToFloat32, wavSampleFrames, SAMPLE_RATE } = require("./util/wav");
+const { encodeWav, wavSlice, wavToFloat32, wavSampleFrames, SAMPLE_RATE } = require("./util/wav");
 
 // Longest audio one worker decode may receive when the speech has no pause to
 // cut at. Pauses do the real work; this is the backstop. Measured through this
@@ -66,9 +66,23 @@ function planPieces(wav, maxSec, minPauseSec) {
   return { ranges: edges.slice(1).map((to, i) => [edges[i], to]), samples };
 }
 
-// Audible speech that decoded to no text: the words are still in the audio,
-// so the piece counts as failed, not done — the same rule live-preview.js
-// applies to a committed chunk. Not retried: the same audio decodes the same.
+// Silence put around a piece that heard speech but decoded to nothing, for
+// its one second try: a fragment cut out mid-flow can come back once it has
+// room to start and stop. Measured (docs/long-recordings.md) it rescued the
+// words the lab lost that way; what stayed empty was a breath or click after
+// a finished sentence, which the speech probe — biased toward "speech" on
+// purpose — also calls speech.
+const EMPTY_RETRY_PAD_SEC = 0.25;
+
+function padded(samples, fromFrame, toFrame) {
+  const pad = Math.round(EMPTY_RETRY_PAD_SEC * SAMPLE_RATE);
+  const pcm = new Int16Array(toFrame - fromFrame + 2 * pad);
+  for (let i = fromFrame; i < toFrame; i++) {
+    pcm[pad + i - fromFrame] = Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32768)));
+  }
+  return encodeWav(pcm, SAMPLE_RATE);
+}
+
 function emptySpeechError() {
   return Object.assign(new Error("speech decoded to no text"), { code: "EMPTY_SPEECH" });
 }
@@ -160,9 +174,15 @@ async function transcribeChunked(
     for (;;) {
       piece.attempts++;
       try {
-        const text = ((await runTranscribe(pieceWav, { onDecodeMs })) || "").trim();
+        let text = ((await runTranscribe(pieceWav, { onDecodeMs })) || "").trim();
         if (!text && containsSpeech(plan.samples.subarray(piece.fromFrame, piece.toFrame), SAMPLE_RATE)) {
-          throw emptySpeechError();
+          // Speech in, nothing out: one more try with room around it. Still
+          // empty is accepted (see EMPTY_RETRY_PAD_SEC) but marked, and it
+          // counts as lost once nothing else in the recording decoded either.
+          piece.attempts++;
+          const paddedWav = padded(plan.samples, piece.fromFrame, piece.toFrame);
+          text = ((await runTranscribe(paddedWav, { onDecodeMs })) || "").trim();
+          if (!text) piece.unconfirmed = true;
         }
         piece.ok = true;
         piece.text = text;
@@ -189,13 +209,20 @@ async function transcribeChunked(
         break;
       }
     }
-    // Only a worker that keeps dying stops the run; a piece the model couldn't
-    // transcribe says nothing about the next one.
+    // Only a worker that keeps dying stops the run.
     consecutiveFailures = piece.ok || !retryable(piece) ? 0 : consecutiveFailures + 1;
   }
 
+  let decoded = assemble(pieces, salvageChunks);
+  if (!decoded && pieces.some((p) => p.unconfirmed)) {
+    // Speech heard and no text anywhere: that is not an empty dictation.
+    for (const p of pieces.filter((q) => q.unconfirmed)) {
+      Object.assign(p, { ok: false, code: "EMPTY_SPEECH", error: "speech decoded to no text" });
+    }
+    firstError = firstError || emptySpeechError();
+    decoded = assemble(pieces, salvageChunks);
+  }
   const partial = pieces.some((p) => !p.ok);
-  const decoded = assemble(pieces, salvageChunks);
   const recovered = partial && !decoded ? salvageText : decoded;
   const text = joinRaw(prefixText, recovered);
   if (partial && !text) throw firstError;

@@ -428,10 +428,12 @@ test("pipeline: a live chunk that decodes only in part fails, so the final pass 
   await assert.rejects(rig.liveTranscribe(loudWav(50), rig.cfg.stt, new AbortController().signal), /incomplete/);
 });
 
-test("pipeline: a piece of speech that decodes to nothing makes the transcript incomplete, not silently shorter", async () => {
-  const rig = dictationRig({ transcribe: async (n) => (n === 1 ? "" : `w${n}`) });
-  await rig.dictate(loudWav(50));
-  assert.deepStrictEqual(rig.log.delivered, ["w0 w2"]);
+test("pipeline: speech that decodes to nothing at all falls back to the live-preview words", async () => {
+  // Every piece empty is exactly the dictation review A:correctness-1 saw
+  // vanish: it is incomplete and delivers what the live preview had.
+  const rig = dictationRig({ transcribe: async () => "" });
+  await rig.dictate(loudWav(10), { committedRaw: "live words", decodedSamples: 0, broken: true, chunks: [] });
+  assert.deepStrictEqual(rig.log.delivered, ["live words"]);
   assert.strictEqual(rig.log.history[0].incomplete, true);
   assert.strictEqual(rig.log.notifications.length, 1);
 });

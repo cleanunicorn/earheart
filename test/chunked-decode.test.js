@@ -208,34 +208,48 @@ test("chunked decode: joinRaw spaces two non-empty sides and passes either alone
   assert.strictEqual(joinRaw("", ""), "");
 });
 
-test("chunked decode: speech that decodes to no text is a failed piece, not a complete one", async () => {
-  // The int8 model can return "" for audible speech (two utterances in one
-  // decode came back empty — docs/long-recordings.md). Counting that as done
-  // would drop the words without a trace.
-  const r = await transcribeChunked(wav(10), { runTranscribe: async () => "", salvageText: "already decoded live words" });
-  assert.strictEqual(r.partial, true);
-  assert.strictEqual(r.text, "already decoded live words");
-  assert.strictEqual(r.pieces[0].ok, false);
-  assert.strictEqual(r.pieces[0].code, "EMPTY_SPEECH");
-  assert.strictEqual(r.pieces[0].attempts, 1, "a deterministic empty result is not retried");
-  // Nothing to salvage: an error, never a silent empty dictation.
-  await assert.rejects(transcribeChunked(wav(10), { runTranscribe: async () => "" }), /no text/);
+test("chunked decode: a speech piece that decodes to no text is re-decoded with silence around it", async () => {
+  // A fragment cut out mid-flow can decode to "" and come back once it has
+  // room to start and stop (docs/long-recordings.md).
+  const seen = [];
+  const r = await transcribeChunked(wav(10), {
+    runTranscribe: async (w) => {
+      seen.push(wavDurationSec(w));
+      return seen.length === 1 ? "" : "rescued";
+    },
+  });
+  assert.deepStrictEqual(seen, [10, 10.5], "second attempt carries 250 ms of silence each side");
+  assert.deepStrictEqual([r.text, r.partial, r.pieces[0].ok, r.pieces[0].attempts], ["rescued", false, true, 2]);
 });
 
-test("chunked decode: silence that decodes to no text is fine", async () => {
-  const silent = encodeWav(new Int16Array(10 * SR));
-  const r = await transcribeChunked(silent, { runTranscribe: async () => "" });
-  assert.deepStrictEqual([r.text, r.partial, r.pieces[0].ok], ["", false, true]);
-});
-
-test("chunked decode: empty speech pieces don't stop the run the way a dead worker does", async () => {
-  // The consecutive-failure stop is for a worker that keeps dying; a piece the
-  // model can't transcribe says nothing about the next one.
+test("chunked decode: an empty piece among decoded ones is accepted, marked unconfirmed", async () => {
+  // The speech probe leans "speech" on purpose, so a breath or click after a
+  // sentence also reads as speech; the lab's remaining empty pieces were all
+  // such tails. Calling every one of them lost words would mark nearly every
+  // long dictation incomplete.
   let n = 0;
-  const r = await transcribeChunked(wav(100), { runTranscribe: async () => (n++ < 3 ? "" : `a${n - 1}`) });
-  assert.strictEqual(n, 5, "every piece was tried");
-  assert.strictEqual(r.text, "a3 a4");
-  assert.strictEqual(r.partial, true);
+  const r = await transcribeChunked(wav(50), { runTranscribe: async () => (n++ === 1 || n === 3 ? "" : `a${n - 1}`) });
+  // piece 1 decodes "" twice (plain, padded); pieces 0 and 2 decode.
+  assert.strictEqual(r.text, "a0 a3");
+  assert.strictEqual(r.partial, false);
+  assert.deepStrictEqual(r.pieces.map((p) => [p.ok, !!p.unconfirmed]), [[true, false], [true, true], [true, false]]);
+});
+
+test("chunked decode: speech that yields no text anywhere is never a silent empty dictation", async () => {
+  // Review A:correctness-1's case: every piece empty would otherwise pass as
+  // "nobody spoke" — the salvage is used, or it is an error.
+  const r = await transcribeChunked(wav(10), { runTranscribe: async () => "", salvageText: "already decoded live words" });
+  assert.deepStrictEqual([r.text, r.partial, r.pieces[0].ok, r.pieces[0].code], ["already decoded live words", true, false, "EMPTY_SPEECH"]);
+  await assert.rejects(transcribeChunked(wav(10), { runTranscribe: async () => "" }), /no text/);
+  const kept = await transcribeChunked(wav(10), { runTranscribe: async () => "", prefixText: "committed" });
+  assert.deepStrictEqual([kept.text, kept.partial], ["committed", true]);
+});
+
+test("chunked decode: silence that decodes to no text is fine, with no second try", async () => {
+  const silent = encodeWav(new Int16Array(10 * SR));
+  let calls = 0;
+  const r = await transcribeChunked(silent, { runTranscribe: async () => (calls++, "") });
+  assert.deepStrictEqual([r.text, r.partial, r.pieces[0].ok, calls], ["", false, true, 1]);
 });
 
 test("chunked decode: a failed piece is filled from committed live-preview chunks inside it", async () => {

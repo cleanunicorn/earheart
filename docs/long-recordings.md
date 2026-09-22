@@ -105,9 +105,14 @@ survives a worker crash on a later one. A piece whose worker exited or timed
 out is retried once on a fresh worker. If it still fails, it is skipped and
 the rest continue. After two pieces in a row fail because the worker died,
 the rest are not tried. A piece that holds audible speech (by the overlay's
-own speech probe, `renderer/speech-probe.js`) but decodes to no text also
-counts as failed rather than done — the words are still in the audio — and
-is not retried, since the same audio decodes the same.
+own speech probe, `renderer/speech-probe.js`) but decodes to no text is
+decoded once more with 250 ms of silence around it. In the lab that rescued
+the words lost that way; what still came back empty were breaths and clicks
+after finished sentences, which the probe (biased toward "speech" on
+purpose) also calls speech. Those are accepted as empty but counted — unless
+nothing in the recording decoded at all, when they count as lost: the
+dictation is incomplete, and the live preview's words or an error follow,
+never a silent empty result.
 Whatever was recovered is delivered: the committed live-preview text and the
 finished pieces, with any range the final pass failed filled from a broken
 snapshot's committed chunks that lie wholly inside it (a chunk overlapping a

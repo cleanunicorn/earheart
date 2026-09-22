@@ -45,8 +45,9 @@ const MAX_CONSECUTIVE_FAILURES = 2;
 
 // The worker itself died or wedged — worth one more try on a fresh process.
 // Anything else is an error the worker replied with, and would just repeat.
-function retryable(err) {
-  return err?.code === "ENGINE_EXITED" || err?.code === "ENGINE_TIMEOUT";
+// Takes the caught error or a failed piece, which keeps that error's code.
+function retryable(failure) {
+  return failure?.code === "ENGINE_EXITED" || failure?.code === "ENGINE_TIMEOUT";
 }
 
 // [from, to) frame ranges covering the whole WAV — one per stretch of speech

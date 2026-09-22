@@ -412,3 +412,30 @@ test("chunked decode: salvage cut points don't spend the dead-worker budget twic
   assert.deepStrictEqual([r.pieces.at(-1).ok, !!r.pieces.at(-1).skipped], [true, false]);
   assert.strictEqual(r.partial, true);
 });
+
+test("chunked decode: an empty speech piece of exactly 2 s is accepted, one frame more is lost", async () => {
+  // EMPTY_SPEECH_MAX_SEC is inclusive (review final:testing-1): pin the
+  // comparison at frame precision. Salvage chunk edges force the piece to
+  // exactly `frames`; the stretch is louder than the rest, so the cap's
+  // quietest-window search can't land inside it.
+  const run = async (frames) => {
+    const samples = new Int16Array(30 * SR);
+    for (let i = 0; i < samples.length; i++) {
+      const amp = i >= 10 * SR && i < 10 * SR + frames ? 9000 : 8000;
+      samples[i] = i % 2 ? amp : -amp;
+    }
+    const holdsLoud = (w) => wavToFloat32(w).samples.some((x) => Math.abs(x * 32768 - 9000) < 1);
+    let ok = 0;
+    const r = await transcribeChunked(encodeWav(samples, SR), {
+      runTranscribe: async (w) => (holdsLoud(w) ? "" : `w${ok++}`),
+      salvageChunks: [{ from: 10 * SR, to: 10 * SR + frames, text: "live" }],
+    });
+    const piece = r.pieces.find((p) => p.fromFrame === 10 * SR);
+    assert.strictEqual(piece.toFrame - piece.fromFrame, frames);
+    return { r, piece };
+  };
+  const exact = await run(32000);
+  assert.deepStrictEqual([exact.piece.ok, exact.piece.unconfirmed, exact.r.partial], [true, true, false]);
+  const over = await run(32001);
+  assert.deepStrictEqual([over.piece.ok, over.piece.code, over.r.partial], [false, "EMPTY_SPEECH", true]);
+});

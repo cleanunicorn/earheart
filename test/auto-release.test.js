@@ -1,5 +1,9 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
+const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const releaseNotes = require("../main/services/release-notes");
 
 const {
@@ -10,6 +14,11 @@ const {
 } = require("../scripts/auto-release");
 
 const BOUNDARY_CHANGELOG = "## v1.0.0\n\n- Boundary (#100)\n";
+const AUTO_RELEASE_SCRIPT = path.join(__dirname, "..", "scripts", "auto-release.js");
+
+function runCli(...args) {
+  return spawnSync(process.execPath, [AUTO_RELEASE_SCRIPT, ...args], { encoding: "utf8" });
+}
 
 function withMergeTitles(prs) {
   return prs.map((pr) => ({ titleAtMerge: pr.title, ...pr }));
@@ -237,4 +246,48 @@ test("pendingReleases fails visibly without merge-title provenance", () => {
     () => pendingReleases({ prs, changelog: BOUNDARY_CHANGELOG }),
     /PR #101 is missing merge-title provenance/,
   );
+});
+
+test("auto-release CLI keeps candidates and releases as JSONL and warnings on stderr", (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-release-cli-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const prsFile = path.join(directory, "prs.json");
+  const changelogFile = path.join(directory, "CHANGELOG.md");
+  const candidatesFile = path.join(directory, "candidates.json");
+  const prs = withMergeTitles([
+    { number: 100, title: "fix: boundary", mergedAt: "2026-09-22T10:00:00Z" },
+    { number: 101, title: "wip!: invalid", mergedAt: "2026-09-22T10:01:00Z" },
+    { number: 102, title: "fix: pending", mergedAt: "2026-09-22T10:02:00Z" },
+  ]);
+  fs.writeFileSync(prsFile, JSON.stringify(prs));
+  fs.writeFileSync(changelogFile, BOUNDARY_CHANGELOG);
+
+  const selected = runCli("select", "--prs", prsFile, "--changelog", changelogFile);
+  assert.equal(selected.status, 0);
+  assert.equal(selected.stderr, "");
+  const candidates = selected.stdout.trim().split("\n").map(JSON.parse);
+  assert.deepStrictEqual(
+    candidates.map((candidate) => candidate.number),
+    [101, 102],
+  );
+  fs.writeFileSync(candidatesFile, JSON.stringify(candidates));
+
+  const pending = runCli("pending", "--prs", candidatesFile);
+  assert.equal(pending.status, 0);
+  assert.deepStrictEqual(pending.stdout.trim().split("\n").map(JSON.parse), [
+    { number: 102, title: "fix: pending", bump: "patch" },
+  ]);
+  assert.match(pending.stderr, /^::warning title=No release::PR #101 /);
+});
+
+test("auto-release CLI fails visibly for usage and input errors", () => {
+  const usage = runCli("pending");
+  assert.equal(usage.status, 2);
+  assert.equal(usage.stdout, "");
+  assert.match(usage.stderr, /^usage: auto-release\.js select/);
+
+  const missing = runCli("pending", "--prs", "/missing/release-prs.json");
+  assert.equal(missing.status, 1);
+  assert.equal(missing.stdout, "");
+  assert.match(missing.stderr, /^::error title=Auto release::/);
 });

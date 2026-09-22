@@ -8,7 +8,7 @@ const TITLE_RE = /^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert
 
 function bumpFor(title) {
   const value = String(title || "");
-  if (value.includes("[skip release]")) return { bump: "", reason: "skip" };
+  if (/\[skip release\]/i.test(value)) return { bump: "", reason: "skip" };
   if (!TITLE_RE.test(value)) return { bump: "", reason: "invalid" };
   if (!releaseNotes.titleToItem(value)) return { bump: "", reason: "empty" };
 

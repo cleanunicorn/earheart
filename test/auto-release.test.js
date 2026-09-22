@@ -29,6 +29,7 @@ test("bumpFor validates before sizing a release", () => {
     ["refactor: x", "patch", "release"],
     ["ci: x", "", "no-release"],
     ["feat: y [skip release]", "", "skip"],
+    ["fix: y [SKIP RELEASE]", "", "skip"],
     ["feat: .", "", "empty"],
   ];
 

@@ -131,6 +131,23 @@ function submitted(overrides = {}) {
   };
 }
 
+test("successful settings save persists and returns both hotkeys", () => {
+  const attempt = submitted();
+  const results = { hotkey: { ok: true }, pauseHotkey: { ok: true } };
+  const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: results });
+
+  const reply = handlers["settings:save"]({}, attempt);
+
+  assert.strictEqual(calls.saved[0].hotkey, attempt.hotkey);
+  assert.strictEqual(calls.saved[0].pauseHotkey, attempt.pauseHotkey);
+  assert.strictEqual(reply.settings.hotkey, attempt.hotkey);
+  assert.strictEqual(reply.settings.pauseHotkey, attempt.pauseHotkey);
+  assert.strictEqual(reply.hotkey.ok, true);
+  assert.strictEqual(reply.pauseHotkey.ok, true);
+  assert.deepStrictEqual(calls.autostart, [true]);
+  assert.strictEqual(calls.settingsChanged, 1);
+});
+
 test("settings save keeps a rejected record off disk but in the reply", () => {
   const attempt = submitted();
   const results = {

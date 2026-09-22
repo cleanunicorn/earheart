@@ -101,7 +101,11 @@ through Earheart's microphone path.
 Pieces are decoded from the main process, so a finished piece is text that
 survives a worker crash on a later one. A piece whose worker exited or timed
 out is retried once on a fresh worker. If it still fails, it is skipped and
-the rest continue. After two failed pieces in a row, the rest are not tried.
+the rest continue. After two pieces in a row fail because the worker died,
+the rest are not tried. A piece that holds audible speech (by the overlay's
+own speech probe, `renderer/speech-probe.js`) but decodes to no text also
+counts as failed rather than done — the words are still in the audio — and
+is not retried, since the same audio decodes the same.
 Whatever was recovered is delivered: the committed live-preview text, the
 finished pieces, or as a last resort a broken snapshot's text. It goes through
 the normal cleanup and paste, with a notification ("transcription

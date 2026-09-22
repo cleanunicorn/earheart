@@ -24,6 +24,9 @@
 // bare worker host.
 
 const { splitPoints } = require("./util/split-silence");
+// Loaded by the overlay as a plain <script> (renderer/overlay.html); its
+// CommonJS export guard lets the main process apply the same speech verdict.
+const { containsSpeech } = require("../renderer/speech-probe");
 const { wavSlice, wavToFloat32, wavSampleFrames, SAMPLE_RATE } = require("./util/wav");
 
 // Longest audio one worker decode may receive when the speech has no pause to
@@ -52,14 +55,21 @@ function retryable(err) {
   return err?.code === "ENGINE_EXITED" || err?.code === "ENGINE_TIMEOUT";
 }
 
-// [from, to) frame ranges covering the whole WAV: one per stretch of speech
-// between pauses, each at most maxSec.
+// [from, to) frame ranges covering the whole WAV — one per stretch of speech
+// between pauses, each at most maxSec — and the samples they index.
 function planPieces(wav, maxSec, minPauseSec) {
   const frames = wavSampleFrames(wav);
-  if (!frames) return [[0, 0]];
+  if (!frames) return { ranges: [[0, 0]], samples: new Float32Array(0) };
   const { samples, sampleRate } = wavToFloat32(wav);
   const edges = [0, ...splitPoints(samples, sampleRate, { maxSec, minPauseSec }), frames];
-  return edges.slice(1).map((to, i) => [edges[i], to]);
+  return { ranges: edges.slice(1).map((to, i) => [edges[i], to]), samples };
+}
+
+// Audible speech that decoded to no text: the words are still in the audio,
+// so the piece counts as failed, not done — the same rule live-preview.js
+// applies to a committed chunk. Not retried: the same audio decodes the same.
+function emptySpeechError() {
+  return Object.assign(new Error("speech decoded to no text"), { code: "EMPTY_SPEECH" });
 }
 
 /**
@@ -100,7 +110,8 @@ async function transcribeChunked(
     log,
   }
 ) {
-  const pieces = planPieces(wav, maxSec, minPauseSec).map(([fromFrame, toFrame]) => ({
+  const plan = planPieces(wav, maxSec, minPauseSec);
+  const pieces = plan.ranges.map(([fromFrame, toFrame]) => ({
     fromFrame,
     toFrame,
     ok: false,
@@ -121,9 +132,12 @@ async function transcribeChunked(
     for (;;) {
       piece.attempts++;
       try {
-        const text = await runTranscribe(pieceWav, { onDecodeMs });
+        const text = ((await runTranscribe(pieceWav, { onDecodeMs })) || "").trim();
+        if (!text && containsSpeech(plan.samples.subarray(piece.fromFrame, piece.toFrame), SAMPLE_RATE)) {
+          throw emptySpeechError();
+        }
         piece.ok = true;
-        decoded = joinRaw(decoded, (text || "").trim());
+        decoded = joinRaw(decoded, text);
         break;
       } catch (err) {
         if (stale()) return { text: "", partial: false, stale: true, pieces };
@@ -147,7 +161,9 @@ async function transcribeChunked(
         break;
       }
     }
-    consecutiveFailures = piece.ok ? 0 : consecutiveFailures + 1;
+    // Only a worker that keeps dying stops the run; a piece the model couldn't
+    // transcribe says nothing about the next one.
+    consecutiveFailures = piece.ok || !retryable(piece) ? 0 : consecutiveFailures + 1;
   }
 
   const partial = pieces.some((p) => !p.ok);

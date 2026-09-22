@@ -207,3 +207,33 @@ test("chunked decode: joinRaw spaces two non-empty sides and passes either alone
   assert.strictEqual(joinRaw("a", ""), "a");
   assert.strictEqual(joinRaw("", ""), "");
 });
+
+test("chunked decode: speech that decodes to no text is a failed piece, not a complete one", async () => {
+  // The int8 model can return "" for audible speech (two utterances in one
+  // decode came back empty — docs/long-recordings.md). Counting that as done
+  // would drop the words without a trace.
+  const r = await transcribeChunked(wav(10), { runTranscribe: async () => "", salvageText: "already decoded live words" });
+  assert.strictEqual(r.partial, true);
+  assert.strictEqual(r.text, "already decoded live words");
+  assert.strictEqual(r.pieces[0].ok, false);
+  assert.strictEqual(r.pieces[0].code, "EMPTY_SPEECH");
+  assert.strictEqual(r.pieces[0].attempts, 1, "a deterministic empty result is not retried");
+  // Nothing to salvage: an error, never a silent empty dictation.
+  await assert.rejects(transcribeChunked(wav(10), { runTranscribe: async () => "" }), /no text/);
+});
+
+test("chunked decode: silence that decodes to no text is fine", async () => {
+  const silent = encodeWav(new Int16Array(10 * SR));
+  const r = await transcribeChunked(silent, { runTranscribe: async () => "" });
+  assert.deepStrictEqual([r.text, r.partial, r.pieces[0].ok], ["", false, true]);
+});
+
+test("chunked decode: empty speech pieces don't stop the run the way a dead worker does", async () => {
+  // The consecutive-failure stop is for a worker that keeps dying; a piece the
+  // model can't transcribe says nothing about the next one.
+  let n = 0;
+  const r = await transcribeChunked(wav(100), { runTranscribe: async () => (n++ < 3 ? "" : `a${n - 1}`) });
+  assert.strictEqual(n, 5, "every piece was tried");
+  assert.strictEqual(r.text, "a3 a4");
+  assert.strictEqual(r.partial, true);
+});

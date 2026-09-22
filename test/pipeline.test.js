@@ -434,3 +434,11 @@ test("pipeline: remote live decodes (never sent today) would go straight through
   assert.strictEqual(text, "remote");
   assert.strictEqual(rig.log.transcribe.length, 1);
 });
+
+test("pipeline: a piece of speech that decodes to nothing makes the transcript incomplete, not silently shorter", async () => {
+  const rig = dictationRig({ transcribe: async (n) => (n === 1 ? "" : `w${n}`) });
+  await rig.dictate(loudWav(50));
+  assert.deepStrictEqual(rig.log.delivered, ["w0 w2"]);
+  assert.strictEqual(rig.log.history[0].incomplete, true);
+  assert.strictEqual(rig.log.notifications.length, 1);
+});

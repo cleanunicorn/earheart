@@ -77,6 +77,14 @@ test("every release attempt refreshes main and pushes its exact tag atomically",
   assert.match(workflow, /git tag -d "v\$version"/);
 });
 
+test("release retries recognize only exact trailing PR markers", () => {
+  assert.match(
+    workflow,
+    /grep -qE "\\\\\(#\$number\\\\\)\[\[:space:\]\]\*\$" CHANGELOG\.md/,
+  );
+  assert.doesNotMatch(workflow, /grep -qF "\(#\$number\)" CHANGELOG\.md/);
+});
+
 test("each pushed tag gets a bounded release-build dispatch", () => {
   assert.match(workflow, /for dispatch_attempt in 1 2 3/);
   assert.match(workflow, /gh workflow run release\.yml --ref "v\$version"/);

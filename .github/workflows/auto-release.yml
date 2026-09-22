@@ -67,7 +67,7 @@ jobs:
               git fetch origin main
               git reset --hard origin/main
 
-              if grep -qF "(#$number)" CHANGELOG.md; then
+              if grep -qE "\\(#$number\\)[[:space:]]*$" CHANGELOG.md; then
                 echo "PR #$number was released by another run; skipping."
                 already_released=true
                 break

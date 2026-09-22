@@ -555,6 +555,25 @@ test("a gap between committed chunks breaks the snapshot (fallback to full decod
   assert.strictEqual(snap.committedRaw, "chunk zero chunk two");
 });
 
+test("snapshotFinal keeps each committed chunk's sample range, even across a gap", async () => {
+  // A broken snapshot can't stand in for the transcript's prefix, but its
+  // chunks are still words the user said: the final pass uses them to fill
+  // any range it fails to decode itself (chunked-decode.js).
+  const h = harness();
+  h.setTranscribe(async () => "chunk zero");
+  await h.lp.handleAudio(1, finalChunk(0, 0, 16000));
+  h.setTranscribe(async () => "chunk two");
+  await h.lp.handleAudio(1, finalChunk(2, 32000, 16000));
+  h.setTranscribe(async () => "");
+  await h.lp.handleAudio(1, finalChunk(3, 48000, 16000, false)); // silent: nothing to keep
+  assert.deepStrictEqual(h.lp.snapshotFinal().chunks, [
+    { from: 0, to: 16000, text: "chunk zero" },
+    { from: 32000, to: 48000, text: "chunk two" },
+  ]);
+  h.lp.cancel();
+  assert.deepStrictEqual(h.lp.snapshotFinal().chunks, [], "reset with the rest of the session");
+});
+
 test("a failed final-chunk decode breaks the snapshot", async () => {
   const h = harness();
   h.setTranscribe(async () => {

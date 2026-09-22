@@ -237,3 +237,27 @@ test("chunked decode: empty speech pieces don't stop the run the way a dead work
   assert.strictEqual(r.text, "a3 a4");
   assert.strictEqual(r.partial, true);
 });
+
+test("chunked decode: a failed piece is filled from committed live-preview chunks inside it", async () => {
+  // A broken snapshot's words can't lead the transcript, but the chunks that
+  // lie wholly inside a range the final pass failed to decode are exactly
+  // what the user said there. Chunks that overlap a decoded piece are left
+  // out: that would repeat words.
+  const dead = engineError("ENGINE_EXITED", 134);
+  const w = fakeWorker({ 1: dead, 2: dead }); // pieces 0-20 s ok, 20-40 s fails twice, 40-50 s ok
+  const chunk = (fromSec, toSec, text) => ({ from: fromSec * SR, to: toSec * SR, text });
+  const r = await transcribeChunked(wav(50), {
+    runTranscribe: w.runTranscribe,
+    salvageText: "c0 c1 c2 c3 straddle c4",
+    salvageChunks: [
+      chunk(0, 10, "c0"),
+      chunk(10, 20, "c1"),
+      chunk(20, 30, "c2"),
+      chunk(30, 38, "c3"),
+      chunk(38, 45, "straddle"),
+      chunk(45, 50, "c4"),
+    ],
+  });
+  assert.strictEqual(r.text, "a0 c2 c3 a3");
+  assert.strictEqual(r.partial, true);
+});

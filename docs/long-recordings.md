@@ -106,8 +106,10 @@ the rest are not tried. A piece that holds audible speech (by the overlay's
 own speech probe, `renderer/speech-probe.js`) but decodes to no text also
 counts as failed rather than done — the words are still in the audio — and
 is not retried, since the same audio decodes the same.
-Whatever was recovered is delivered: the committed live-preview text, the
-finished pieces, or as a last resort a broken snapshot's text. It goes through
+Whatever was recovered is delivered: the committed live-preview text and the
+finished pieces, with any range the final pass failed filled from a broken
+snapshot's committed chunks that lie wholly inside it (a chunk overlapping a
+decoded piece is left out rather than repeated). It goes through
 the normal cleanup and paste, with a notification ("transcription
 interrupted"), and the history entry is marked `incomplete: true`. Only a run
 that recovers nothing at all is an error. Engine failures carry stable codes

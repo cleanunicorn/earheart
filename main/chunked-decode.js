@@ -76,9 +76,11 @@ function emptySpeechError() {
  * Decode `wav` one stretch of speech at a time.
  *
  * `prefixText` is trusted committed live-preview text that precedes `wav`
- * (always kept, even if every piece fails). `salvageText` is a broken
- * snapshot's committed text: it has holes, so it is used only when no piece
- * produced any words — mixing it with decoded pieces would repeat them.
+ * (always kept, even if every piece fails). `salvageChunks` are a broken
+ * snapshot's committed chunks ({from, to, text}, in `wav` frames): a range the
+ * decode fails is filled with the chunks lying wholly inside it — never one
+ * that overlaps a decoded piece, which would repeat its words. `salvageText`
+ * is that snapshot's whole text, the last resort when nothing else came back.
  *
  * Throws only when nothing at all was recovered, so a model that isn't
  * installed still surfaces as an error rather than as an empty dictation.
@@ -90,12 +92,37 @@ function emptySpeechError() {
  * @param {number} [deps.maxSec]
  * @param {number} [deps.minPauseSec] shortest pause cut at (Infinity: none)
  * @param {string} [deps.prefixText]
+ * @param {{from: number, to: number, text: string}[]} [deps.salvageChunks]
  * @param {string} [deps.salvageText]
  * @param {() => boolean} [deps.stale] true once the session was cancelled
  * @param {(ms: number) => void} [deps.onDecodeMs] each piece's worker decode time
  * @param {{warn: Function}} [deps.log]
  * @returns {Promise<{text: string, partial: boolean, stale?: boolean, pieces: object[]}>}
  */
+// The decoded pieces' text in recording order, each failed span filled with
+// the salvage chunks that lie wholly inside it.
+function assemble(pieces, salvageChunks) {
+  let text = "";
+  let failedFrom = null;
+  const fill = (to) => {
+    if (failedFrom === null) return;
+    for (const c of salvageChunks) {
+      if (c.from >= failedFrom && c.to <= to) text = joinRaw(text, c.text);
+    }
+    failedFrom = null;
+  };
+  for (const p of pieces) {
+    if (!p.ok) {
+      if (failedFrom === null) failedFrom = p.fromFrame;
+      continue;
+    }
+    fill(p.fromFrame);
+    text = joinRaw(text, p.text);
+  }
+  fill(pieces.at(-1).toFrame);
+  return text;
+}
+
 async function transcribeChunked(
   wav,
   {
@@ -104,6 +131,7 @@ async function transcribeChunked(
     maxSec = MAX_DECODE_SECONDS,
     minPauseSec,
     prefixText = "",
+    salvageChunks = [],
     salvageText = "",
     stale = () => false,
     onDecodeMs,
@@ -117,7 +145,6 @@ async function transcribeChunked(
     ok: false,
     attempts: 0,
   }));
-  let decoded = "";
   let firstError = null;
   let consecutiveFailures = 0;
 
@@ -137,7 +164,7 @@ async function transcribeChunked(
           throw emptySpeechError();
         }
         piece.ok = true;
-        decoded = joinRaw(decoded, text);
+        piece.text = text;
         break;
       } catch (err) {
         if (stale()) return { text: "", partial: false, stale: true, pieces };
@@ -167,6 +194,7 @@ async function transcribeChunked(
   }
 
   const partial = pieces.some((p) => !p.ok);
+  const decoded = assemble(pieces, salvageChunks);
   const recovered = partial && !decoded ? salvageText : decoded;
   const text = joinRaw(prefixText, recovered);
   if (partial && !text) throw firstError;

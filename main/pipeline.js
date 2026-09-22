@@ -179,14 +179,15 @@ function getSttRtf() {
 // spanning several utterances loses words, and one long enough kills the
 // worker — #168, #169). If the
 // worker dies part-way, every word already decoded — the committed text, the
-// finished pieces, or failing all else a broken snapshot's text — comes back
-// with `partial: true` instead of an error. Resolves to { text, partial }.
+// finished pieces, and a broken snapshot's chunks for the ranges that failed —
+// comes back with `partial: true` instead of an error. Resolves to { text, partial }.
 async function transcribeWithEstimate(wav, sttCfg, signal, stale, assembly) {
   const rtf = sttCfg.engine === "builtin" ? getSttRtf() : null;
   let decodeWav = wav;
   let tailOnly = false;
   let prefixText = ""; // trusted: precedes decodeWav exactly
   let salvageText = ""; // a broken snapshot's words: holes, last resort only
+  let salvageChunks = []; // the same words with their sample ranges
   if (rtf && assembly) {
     if (!assembly.broken && assembly.decodedSamples > 0) {
       decodeWav = wavSliceFromFrame(wav, assembly.decodedSamples);
@@ -194,6 +195,7 @@ async function transcribeWithEstimate(wav, sttCfg, signal, stale, assembly) {
       prefixText = assembly.committedRaw;
     } else {
       salvageText = assembly.committedRaw;
+      salvageChunks = assembly.chunks || [];
     }
   }
   if (rtf) {
@@ -244,6 +246,7 @@ async function transcribeWithEstimate(wav, sttCfg, signal, stale, assembly) {
       runTranscribe: (piece, opts) => route.transcribe(piece, sttCfg, signal, opts),
       restartStt: engines.restartStt,
       prefixText,
+      salvageChunks,
       salvageText,
       stale,
       onDecodeMs: (ms) => {

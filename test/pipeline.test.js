@@ -442,3 +442,25 @@ test("pipeline: a piece of speech that decodes to nothing makes the transcript i
   assert.strictEqual(rig.log.history[0].incomplete, true);
   assert.strictEqual(rig.log.notifications.length, 1);
 });
+
+test("pipeline: a broken snapshot's words fill the range a failed final piece left out", async () => {
+  const rig = dictationRig({
+    transcribe: async (n) => {
+      if (n === 1 || n === 2) throw exited();
+      return `w${n}`;
+    },
+  });
+  await rig.dictate(loudWav(50), {
+    committedRaw: "early middle late",
+    decodedSamples: 0,
+    broken: true,
+    chunks: [
+      { from: 0, to: 15 * SR, text: "early" },
+      { from: 22 * SR, to: 38 * SR, text: "middle" },
+      { from: 41 * SR, to: 50 * SR, text: "late" },
+    ],
+  });
+  assert.deepStrictEqual(rig.log.delivered, ["w0 middle w3"]);
+  assert.strictEqual(rig.log.history[0].incomplete, true);
+  assert.strictEqual(rig.log.notifications.length, 1);
+});

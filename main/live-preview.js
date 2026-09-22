@@ -102,6 +102,10 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   // that coverage (a final chunk dropped, failed, or arriving out of order).
   let decodedSamples = 0;
   let broken = false;
+  // Every committed chunk that produced text, with the samples it covers —
+  // kept even once `broken`: those are still words the user said, and the
+  // final pass fills any range it fails to decode from them.
+  let committedChunks = [];
   // Cleanup change marker — the trimmed committedRaw snapshot the last cleanup
   // pass consumed. The cleaned text isn't stored (it's sent straight to the
   // overlay); this is all the cleanup side keeps. Always a trimmed value, so the
@@ -116,6 +120,7 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
     lastCleanedRaw = "";
     decodedSamples = 0;
     broken = false;
+    committedChunks = [];
   }
 
   function cancel() {
@@ -139,7 +144,12 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   // The committed transcript and the exact sample coverage it stands for, for
   // the pipeline's final assembly. Read BEFORE cancel() (which resets it).
   function snapshotFinal() {
-    return { committedRaw: committedRaw.trim(), decodedSamples, broken };
+    return {
+      committedRaw: committedRaw.trim(),
+      decodedSamples,
+      broken,
+      chunks: committedChunks.map((c) => ({ ...c })),
+    };
   }
 
   // A partial is stale the moment its session ends, recording stops, or its work
@@ -210,6 +220,9 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
         // field on the way, or a renderer too old to send it, arrives as
         // undefined and must not be read as a promise that nobody spoke.
         const lostWords = !text && hasSpeech !== false;
+        if (text && Number.isInteger(fromSample) && fromSample >= 0 && frames > 0) {
+          committedChunks.push({ from: fromSample, to: fromSample + frames, text });
+        }
         if (!broken && !lostWords && fromSample === decodedSamples && frames > 0) {
           decodedSamples = fromSample + frames;
         } else {

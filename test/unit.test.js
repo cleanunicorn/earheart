@@ -993,13 +993,19 @@ test("acceleratorFromEvent maps modifiers per platform and names keys", () => {
   const ev = (o) => ({ ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...o });
   try {
     global.platform = "linux";
-    assert.strictEqual(acceleratorFromEvent(ev({ key: "k", ctrlKey: true })), "CommandOrControl+K");
     assert.strictEqual(
-      acceleratorFromEvent(ev({ key: " ", ctrlKey: true, shiftKey: true })),
+      acceleratorFromEvent(ev({ key: "k", code: "KeyK", ctrlKey: true })),
+      "CommandOrControl+K"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: " ", code: "Space", ctrlKey: true, shiftKey: true })),
       "CommandOrControl+Shift+Space"
     );
     assert.strictEqual(acceleratorFromEvent(ev({ key: "ArrowUp", ctrlKey: true })), "CommandOrControl+Up");
-    assert.strictEqual(acceleratorFromEvent(ev({ key: "k", metaKey: true })), "Super+K");
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "k", code: "KeyK", metaKey: true })),
+      "Super+K"
+    );
     assert.strictEqual(acceleratorFromEvent(ev({ key: "k" })), null, "requires a modifier");
     assert.strictEqual(
       acceleratorFromEvent(ev({ key: "Control", ctrlKey: true })),
@@ -1009,11 +1015,30 @@ test("acceleratorFromEvent maps modifiers per platform and names keys", () => {
     // macOS: physical Ctrl stays Ctrl (CommandOrControl would register Cmd),
     // and Meta is the Command key.
     global.platform = "darwin";
-    assert.strictEqual(acceleratorFromEvent(ev({ key: "k", ctrlKey: true })), "Control+K");
-    assert.strictEqual(acceleratorFromEvent(ev({ key: "k", metaKey: true })), "Command+K");
     assert.strictEqual(
-      acceleratorFromEvent(ev({ key: "p", ctrlKey: true, altKey: true })),
+      acceleratorFromEvent(ev({ key: "k", code: "KeyK", ctrlKey: true })),
+      "Control+K"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "k", code: "KeyK", metaKey: true })),
+      "Command+K"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "π", code: "KeyP", ctrlKey: true, altKey: true })),
       "Control+Alt+P"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "ö", code: "Semicolon", ctrlKey: true })),
+      "Control+;"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "Ö", code: "Semicolon", altKey: true, shiftKey: true })),
+      "Alt+Shift+;"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "?", code: "IntlBackslash", ctrlKey: true })),
+      null,
+      "unknown printable physical keys are rejected"
     );
   } finally {
     delete global.platform;

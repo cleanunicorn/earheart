@@ -115,36 +115,30 @@ function init({ applyHotkeys, onSettingsChanged }) {
     for (const field of rejectedFields) {
       responseSettings[field] = candidate[field];
     }
-    return { saved, responseSettings, hotkeyResults };
-  };
-
-  ipcMain.handle("settings:save", (event, next) => {
-    const { saved, responseSettings, hotkeyResults } = saveWithHotkeys(next);
     applyAutostart(saved);
     onSettingsChanged?.();
     return {
-      settings: responseSettings,
-      hotkey: hotkeyResults.hotkey,
-      pauseHotkey: hotkeyResults.pauseHotkey,
+      hotkeyResults,
+      response: {
+        settings: responseSettings,
+        hotkey: hotkeyResults.hotkey,
+        pauseHotkey: hotkeyResults.pauseHotkey,
+      },
     };
-  });
+  };
+
+  ipcMain.handle("settings:save", (event, next) => saveWithHotkeys(next).response);
 
   // The setup wizard saves its choices, then hands over to the settings
   // window so the user can review what was pre-configured. If the chosen
   // hotkey can't be registered, the wizard stays open to let them fix it.
   ipcMain.handle("wizard:complete", (event, next) => {
-    const { saved, responseSettings, hotkeyResults } = saveWithHotkeys(next);
-    applyAutostart(saved);
-    onSettingsChanged?.();
+    const { response, hotkeyResults } = saveWithHotkeys(next);
     if (hotkeyResults.hotkey.ok) {
       windows.openSettings({ fromWizard: true });
       windows.closeWizard();
     }
-    return {
-      settings: responseSettings,
-      hotkey: hotkeyResults.hotkey,
-      pauseHotkey: hotkeyResults.pauseHotkey,
-    };
+    return response;
   });
 
   // Close the settings window. The renderer calls this only after a clean save

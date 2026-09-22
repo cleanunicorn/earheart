@@ -324,6 +324,22 @@ def test_model_without_language_parameter(client_factory, monkeypatch):
     assert calls[0][2] == {}
 
 
+def test_honours_language_true_branch_end_to_end(client_factory, recognizer):
+    # Drive the real honours_language through the lifespan wiring (no
+    # monkeypatch): a Whisper-wrapping recognizer must receive and echo the hint.
+    from onnx_asr.models.whisper import WhisperHf
+
+    recognizer.asr = object.__new__(WhisperHf)
+    with client_factory(recognizer) as client:
+        response = transcribe(client, language="ro", response_format="verbose_json")
+    assert response.status_code == 200
+    assert response.json()["language"] == "ro"
+    assert recognizer.recognize.call_args.kwargs == {
+        "sample_rate": 16000,
+        "language": "ro",
+    }
+
+
 @pytest.mark.parametrize("result", [None, "", " \n "])
 def test_silent_recognition(client, recognizer, result):
     recognizer.recognize.return_value = result

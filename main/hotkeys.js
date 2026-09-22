@@ -14,6 +14,14 @@ const NAMES = ["record", "pause"];
 // the callback needed to restore it if a pair update has to roll back.
 const registered = new Map();
 
+function attemptRegister(accelerator, onTrigger) {
+  try {
+    return globalShortcut.register(accelerator, onTrigger) ? { ok: true } : { ok: false };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
 function collisionPlan(target, previous, changed, results) {
   if (!target.record.accelerator || target.record.accelerator !== target.pause.accelerator) {
     return null;
@@ -93,15 +101,14 @@ function applyPair(next) {
 
   function tryRegister(name) {
     const { accelerator, onTrigger } = target[name];
-    try {
-      if (!globalShortcut.register(accelerator, onTrigger)) {
-        return `Could not register "${accelerator}" (already in use, or your desktop blocks global shortcuts — see the Wayland note in Settings).`;
-      }
-      addedNames.push(name);
-      return null;
-    } catch (err) {
-      return `Invalid hotkey "${accelerator}": ${err.message}`;
+    const attempt = attemptRegister(accelerator, onTrigger);
+    if (!attempt.ok) {
+      return attempt.error
+        ? `Invalid hotkey "${accelerator}": ${attempt.error.message}`
+        : `Could not register "${accelerator}" (already in use, or your desktop blocks global shortcuts — see the Wayland note in Settings).`;
     }
+    addedNames.push(name);
+    return null;
   }
 
   function rollBack(failedName, failure) {
@@ -118,14 +125,12 @@ function applyPair(next) {
             };
     }
     for (const [name, entry] of releasedEntries) {
-      let restoreError = null;
-      try {
-        if (!globalShortcut.register(entry.accelerator, entry.onTrigger)) {
-          restoreError = `Could not restore "${entry.accelerator}" after rollback`;
-        }
-      } catch (err) {
-        restoreError = `Could not restore "${entry.accelerator}" after rollback: ${err.message}`;
-      }
+      const attempt = attemptRegister(entry.accelerator, entry.onTrigger);
+      const restoreError = attempt.ok
+        ? null
+        : `Could not restore "${entry.accelerator}" after rollback${
+            attempt.error ? `: ${attempt.error.message}` : ""
+          }`;
       if (restoreError) {
         registered.delete(name);
         const unboundError = `${restoreError}. The ${name} hotkey is now unbound until you save again or restart.`;

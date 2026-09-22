@@ -135,9 +135,11 @@ function applyPair(next) {
         registered.delete(name);
         const unboundError = `${restoreError}. The ${name} hotkey is now unbound until you save again or restart.`;
         logger.warn(unboundError);
+        const priorError = results[name].error.replace(/^Not changed: the /, "The ");
+        const separator = /[.!?]$/.test(priorError) ? " " : ". ";
         results[name] = {
           ok: false,
-          error: `${results[name].error}\n${unboundError}`,
+          error: `${priorError}${separator}${unboundError}`,
         };
       } else {
         registered.set(name, entry);

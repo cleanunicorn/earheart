@@ -323,6 +323,29 @@ test("a rollback re-registration failure is reported and removed from state", ()
   assert.deepStrictEqual(calls.registered.map(({ accelerator }) => accelerator), [B]);
 });
 
+test("a collateral rollback failure reports the unbound slot without contradiction", () => {
+  const { hotkeys, calls, bindings } = loadHotkeys({
+    registerImpl(accelerator, attempt) {
+      if (accelerator === A && (attempt === 2 || attempt === 3)) return false;
+      return true;
+    },
+  });
+  hotkeys.applyPair(pair(A, B));
+
+  const failed = hotkeys.applyPair(pair(B, A));
+
+  assert.strictEqual(
+    failed.record.error.replace(/\s+/g, " "),
+    `The pause hotkey could not be registered. Could not restore "${A}" after rollback. The record hotkey is now unbound until you save again or restart.`
+  );
+  assert.doesNotMatch(failed.record.error, /Not changed/);
+  assert.deepStrictEqual(calls.warnings, [
+    `Could not restore "${A}" after rollback. The record hotkey is now unbound until you save again or restart.`,
+  ]);
+  assert.strictEqual(bindings.has(A), false);
+  assert.strictEqual(bindings.has(B), true);
+});
+
 test("empty targets are valid unbound states", () => {
   const { hotkeys, bindings } = loadHotkeys();
   hotkeys.applyPair(pair(A, B));

@@ -31,11 +31,10 @@ const { containsSpeech } = require("../renderer/speech-probe");
 const { encodeWav, wavSlice, wavToFloat32, wavSampleFrames, SAMPLE_RATE } = require("./util/wav");
 
 // Longest audio one worker decode may receive when the speech has no pause to
-// cut at. Pauses do the real work; this is the backstop. Measured through this
-// code by scripts/eval-long-decode.js (docs/long-recordings.md): capping alone
-// at 60 s kept only 0.53-0.62 of the words on 2-5 minute recordings, and even
-// the fp32 model needed pieces of at most 20 s to pass. Also well clear of the
-// ~3-minute single buffer that kills the worker (#169).
+// cut at. Pauses do the real work; this is the backstop — a cap alone, even at
+// 20 s, still loses words ("Why pauses, not just a shorter buffer" in
+// docs/long-recordings.md). Also well clear of the ~3-minute single buffer
+// that kills the worker (#169).
 const MAX_DECODE_SECONDS = 20;
 
 // After this many pieces in a row failed even their retry, the worker is not

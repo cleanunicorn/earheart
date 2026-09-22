@@ -246,6 +246,11 @@ def test_resampling_keeps_a_nonempty_tiny_clip():
     np.testing.assert_array_equal(actual, waveform)
 
 
+def test_shipped_limits_are_pinned():
+    assert server.MAX_DECODED_BYTES == 256 * 1024 * 1024
+    assert server.MAX_UPLOAD_BYTES == 64 * 1024 * 1024
+
+
 @pytest.mark.parametrize("honours", [False, True])
 def test_supported_language(client_factory, recognizer, monkeypatch, honours):
     monkeypatch.setattr(server, "honours_language", lambda asr: honours)

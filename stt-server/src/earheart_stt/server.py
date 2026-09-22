@@ -243,7 +243,7 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
                 if isinstance(exc, KeyError) and exc.args == (f"<|{language}|>",):
                     # e.g. a language code the model doesn't support.
                     raise HTTPException(
-                        status_code=400, detail=f"Unsupported language {language!r}"
+                        status_code=400, detail=f"Unsupported language {language[:32]!r}"
                     ) from None
                 logger.exception("Transcription failed")
                 raise HTTPException(

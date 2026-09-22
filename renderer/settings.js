@@ -665,7 +665,10 @@ saveButton.addEventListener("click", async () => {
   // A hotkey couldn't be registered: keep the window open so the error is
   // visible and the user can pick a combination that works.
   saveButton.disabled = false;
-  save.textContent = `Saved, but the ${result.hotkey.ok ? "pause hotkey" : "hotkey"} could not be registered`;
+  save.textContent =
+    !result.hotkey.ok && !pauseResult.ok
+      ? "Saved, but the hotkeys could not be changed"
+      : `Saved, but the ${result.hotkey.ok ? "pause hotkey" : "hotkey"} could not be registered`;
   save.className = "status err";
   hotkeyStatus.textContent = result.hotkey.ok ? "" : result.hotkey.error;
   hotkeyStatus.className = "status err";

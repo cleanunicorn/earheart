@@ -1717,6 +1717,26 @@ test("an STT worker crash forgets only STT loaded-state, not cleanup", async () 
   assert.strictEqual(count(cleanup, "load-cleanup"), 1, "cleanup must not re-load when only STT died");
 });
 
+test("restartStt retires only the STT worker, and the next transcribe reloads", async () => {
+  // A timed-out decode leaves the STT worker decoding; the final transcription
+  // retires it so its retry (and the next dictation) doesn't queue behind a
+  // wedged native call. Cleanup must be left alone.
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  await facade.transcribe(Buffer.from("wav"), STT_CFG);
+  await facade.clean("hello", CLEANUP_CFG);
+  const stt = hostsBySvc["earheart-stt"];
+  const cleanup = hostsBySvc["earheart-cleanup"];
+
+  facade.restartStt();
+  assert.strictEqual(stt.stopped, true);
+  assert.strictEqual(cleanup.stopped, false, "cleanup worker must survive an STT restart");
+
+  await facade.transcribe(Buffer.from("wav"), STT_CFG);
+  await facade.clean("hello", CLEANUP_CFG);
+  assert.strictEqual(count(stt, "load-stt"), 2, "STT reloads after the restart");
+  assert.strictEqual(count(cleanup, "load-cleanup"), 1);
+});
+
 test("unloadIdle exits only the workers that are actually resident", async () => {
   // A transcribe-only user (never cleaned) must have the STT worker exited but
   // never the cleanup worker, which was never loaded and holds no memory.

@@ -11,9 +11,9 @@
 // IPC layer and the settings UI treat the two kinds identically.
 //
 // Built-in models are pinned to an immutable commit + sha256 (see
-// engines/registry.js). A user repo can't be pre-verified, so custom models are
-// downloaded without a checksum — we still pin the resolved commit so the
-// download is reproducible, and we surface gated/private/404 errors clearly.
+// engines/registry.js). Custom Hugging Face files use the published LFS
+// sha256 when available; we still pin the resolved commit so the download is
+// reproducible, and we surface gated/private/404 errors clearly.
 
 const HF_HOSTS = new Set(["huggingface.co", "hf.co"]);
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
@@ -84,7 +84,11 @@ function parseRepoInput(input) {
   const [owner, repo] = parts;
   let ref;
   if (["tree", "blob", "resolve"].includes(parts[2]) && parts[3]) {
-    ref = decodeURIComponent(parts[3]);
+    try {
+      ref = decodeURIComponent(parts[3]);
+    } catch {
+      throw new Error(`Not a Hugging Face URL or owner/model: ${input.trim()}`);
+    }
   }
   return { owner, repo, ref };
 }
@@ -130,7 +134,7 @@ async function hfJson(fetchImpl, url, signal, timeoutMs = DEFAULT_REQUEST_TIMEOU
 
 // Fetch a repo's file listing pinned to an immutable commit, so the files we
 // download match what we listed even if the repo is updated in between.
-// Returns { commit, files: [{ path, name, bytes }] }.
+// Returns { commit, files: [{ path, name, bytes, sha256 }] }.
 async function repoTree({ owner, repo, ref }, fetchImpl, { signal, timeoutMs } = {}) {
   const base = `https://huggingface.co/api/models/${owner}/${repo}`;
   const info = await hfJson(
@@ -155,6 +159,9 @@ async function repoTree({ owner, repo, ref }, fetchImpl, { signal, timeoutMs } =
       path: e.path,
       name: e.path.split("/").pop(),
       bytes: e.size || (e.lfs && e.lfs.size) || 0,
+      ...(typeof e.lfs?.oid === "string" && /^[\da-f]{64}$/i.test(e.lfs.oid)
+        ? { sha256: e.lfs.oid.toLowerCase() }
+        : {}),
     }));
   return { commit, files };
 }
@@ -206,8 +213,14 @@ function recommendedVariant(variants) {
  */
 async function listGgufQuants({ owner, repo, ref }, fetchImpl, options = {}) {
   const { commit, files } = await repoTree({ owner, repo, ref }, fetchImpl, options);
-  const ggufs = files.filter((f) => /\.gguf$/i.test(f.path));
-  if (ggufs.length === 0) throw new Error("No GGUF files found in this repository");
+  const ggufs = files.filter(
+    (f) =>
+      /\.gguf$/i.test(f.path) &&
+      !/(?:^|[-_.])(?:mmproj|projector|imatrix)(?:[-_.]|$)/i.test(f.name)
+  );
+  if (ggufs.length === 0) {
+    throw new Error("No language-model GGUF files found in this repository");
+  }
 
   // Group by quantization. Sharded quants ("...-00001-of-00003.gguf") collapse
   // into one entry whose files are all the shards in name order; node-llama-cpp
@@ -227,6 +240,7 @@ async function listGgufQuants({ owner, repo, ref }, fetchImpl, options = {}) {
       files: group.map((f) => ({
         name: f.name,
         bytes: f.bytes || undefined,
+        ...(f.sha256 ? { sha256: f.sha256 } : {}),
         url: resolveUrl(owner, repo, commit, f.path),
       })),
     };
@@ -251,17 +265,20 @@ function humanGb(totalBytes) {
 
 function customNote(repoFull, variant) {
   const gb = humanGb(variant.totalBytes);
+  const files = variant.files || [];
+  const checksumNote = files.some((f) => f.sha256)
+    ? files.every((f) => f.sha256) ? " · checksum-verified" : " · partially checksum-verified"
+    : " · not checksum-verified";
   return (
     `Runs on this computer · Hugging Face · ${repoFull} · ${variant.label}` +
-    (gb ? ` · ~${gb} GB` : "") +
-    " · not checksum-verified"
+    (gb ? ` · ~${gb} GB` : "") + checksumNote
   );
 }
 
 /**
  * Build a registry-shaped cleanup model entry from a chosen quantization, so
- * the download manager / engines / IPC treat it exactly like a built-in (minus
- * the sha256 we can't know).
+ * the download manager / engines / IPC treat it exactly like a built-in. LFS
+ * SHA-256 values are retained when Hugging Face publishes them.
  */
 function buildCleanupModel(repoFull, variant) {
   const repoName = repoFull.split("/")[1] || repoFull;
@@ -273,7 +290,12 @@ function buildCleanupModel(repoFull, variant) {
     engine: "llama-gguf",
     custom: true,
     source: { repo: repoFull, quant: variant.label },
-    files: variant.files.map((f) => ({ name: f.name, url: f.url, bytes: f.bytes })),
+    files: variant.files.map((f) => ({
+      name: f.name,
+      url: f.url,
+      bytes: f.bytes,
+      ...(f.sha256 ? { sha256: f.sha256 } : {}),
+    })),
     gguf: { file: variant.files[0].name },
   };
 }
@@ -465,6 +487,7 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, options = {}) {
   const toFile = (f) => ({
     name: f.name,
     bytes: f.bytes || undefined,
+    ...(f.sha256 ? { sha256: f.sha256 } : {}),
     url: resolveUrl(owner, repo, commit, f.path),
   });
 
@@ -544,7 +567,12 @@ function buildSttModel(repoFull, variant) {
     engine: "sherpa-parakeet",
     custom: true,
     source: { repo: repoFull, variant: variant.label },
-    files: variant.files.map((f) => ({ name: f.name, url: f.url, bytes: f.bytes })),
+    files: variant.files.map((f) => ({
+      name: f.name,
+      url: f.url,
+      bytes: f.bytes,
+      ...(f.sha256 ? { sha256: f.sha256 } : {}),
+    })),
     sherpa: variant.sherpa,
   };
 }

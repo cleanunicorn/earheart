@@ -10,9 +10,9 @@
 // this brings the word ratio back to the short-clip level
 // (docs/long-recordings.md).
 //
-// A pause is a run of 50 ms frames below the overlay's own silence level
-// (renderer/overlay.js QUIET_RMS) lasting at least `minPauseSec`, and the cut
-// goes to its middle. Speech that runs past `maxSec` without a pause is cut at
+// A pause is at least `minPauseSec` below the overlay's own silence level
+// (renderer/overlay.js QUIET_RMS), scored with a sliding 50 ms window, and the
+// cut goes to its middle. Speech that runs past `maxSec` without a pause is cut at
 // the end of the quietest window in the `lookbackSec` before the ceiling — the
 // renderer's own forced-boundary search (renderer/chunk-boundary.js), reused
 // rather than copied, so the cut is as unlikely as possible to split a word.
@@ -24,29 +24,41 @@ const { quietestOffset } = require("../../renderer/chunk-boundary");
 // Same silence level as the overlay's pause detector (renderer/overlay.js
 // QUIET_RMS): audio reaches both after the same auto gain control.
 const QUIET_RMS = 0.012;
-const FRAME_SEC = 0.05;
+// Pauses are scored with a WINDOW_SEC RMS window sliding by HOP_SEC, so a
+// pause is measured to within one hop wherever it falls (a fixed 50 ms grid
+// found a 150 ms pause only when it started on a frame boundary).
+const WINDOW_SEC = 0.05;
+const HOP_SEC = 0.005;
 
-// Middles of the pauses between stretches of speech. A quiet run touching the
-// start or end of the buffer separates nothing, so it is not a cut.
+// Middles of the pauses between stretches of speech. A pause is a run of quiet
+// windows; the span they cover sits within one hop of the true silence on each
+// side, so it counts when that span reaches minPauseSec less one hop. A quiet
+// run touching the start or end of the buffer separates nothing: not a cut.
 function pauseCuts(samples, sampleRate, minPauseSec, quietRms) {
-  const frame = Math.max(1, Math.round(FRAME_SEC * sampleRate));
-  const minFrames = Math.ceil(minPauseSec / FRAME_SEC - 1e-9);
+  const win = Math.max(1, Math.round(WINDOW_SEC * sampleRate));
+  const hop = Math.max(1, Math.round(HOP_SEC * sampleRate));
+  const minSpan = minPauseSec * sampleRate - hop;
+  const quietSum = quietRms * quietRms * win; // compare sums, not roots
   const cuts = [];
-  let runStart = -1; // first frame of the current quiet run
+  let runFrom = -1; // start of the first quiet window in the current run
+  let runTo = -1; // end of the last one
   let heardSpeech = false;
-  for (let f = 0; f * frame < samples.length; f++) {
-    const from = f * frame;
-    const to = Math.min(samples.length, from + frame);
-    let sum = 0;
-    for (let i = from; i < to; i++) sum += samples[i] * samples[i];
-    const quiet = Math.sqrt(sum / (to - from)) < quietRms;
-    if (quiet) {
-      if (runStart < 0) runStart = f;
+  let sum = 0;
+  for (let i = 0; i < Math.min(win, samples.length); i++) sum += samples[i] * samples[i];
+  for (let start = 0; start + win <= samples.length; start += hop) {
+    if (start > 0) {
+      // Slide the window by one hop: drop what left, add what arrived.
+      for (let i = start - hop; i < start; i++) sum -= samples[i] * samples[i];
+      for (let i = start + win - hop; i < start + win; i++) sum += samples[i] * samples[i];
+    }
+    if (sum < quietSum) {
+      if (runFrom < 0) runFrom = start;
+      runTo = start + win;
     } else {
-      if (runStart >= 0 && heardSpeech && f - runStart >= minFrames) {
-        cuts.push(Math.round(((runStart + f) / 2) * frame));
+      if (runFrom >= 0 && heardSpeech && runTo - runFrom >= minSpan) {
+        cuts.push(Math.round((runFrom + runTo) / 2));
       }
-      runStart = -1;
+      runFrom = -1;
       heardSpeech = true;
     }
   }

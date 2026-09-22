@@ -79,8 +79,10 @@ trimmed and the sentences joined with shorter gaps. Plain Node, int8, ~165 s:
 
 A 150 ms threshold survives the tightest gaps, at the price of about 1.5 WER
 points from cutting at breaths inside a sentence. "Quiet" is the overlay's own
-silence level (RMS < 0.012 after auto gain control), measured over 50 ms
-frames. The cut goes to the middle of the pause. Speech that runs past 20 s
+silence level (RMS < 0.012 after auto gain control), scored with a 50 ms
+window sliding in 5 ms steps, so a pause's length decides and its alignment
+doesn't: 150 ms is always a cut, 130 ms never. The cut goes to the middle of
+the pause. Speech that runs past 20 s
 without a pause is cut at the quietest moment in the 10 s before the ceiling,
 using the same search the overlay uses for its forced chunk boundaries
 (`renderer/chunk-boundary.js`).

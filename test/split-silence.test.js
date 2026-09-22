@@ -45,6 +45,19 @@ test("splitPoints: a pause shorter than minPauseSec is not a cut", () => {
   assert.strictEqual(splitPoints(speech(10, [[3, 3.1]]), SR, { maxSec: 20, minPauseSec: 0.1 }).length, 1);
 });
 
+test("splitPoints: a pause's length, not its alignment, decides whether it is a cut", () => {
+  // Scored on a fixed 50 ms grid, a 150 ms pause was found only when it
+  // happened to start on a frame boundary (review A:correctness-3).
+  for (const offsetMs of [0, 1, 10, 25, 37, 49]) {
+    const at = 3 + offsetMs / 1000;
+    const long = splitPoints(speech(10, [[at, at + 0.15]]), SR, { maxSec: 20 });
+    assert.strictEqual(long.length, 1, `150 ms pause at +${offsetMs} ms is a cut`);
+    assert.ok(Math.abs(long[0] / SR - (at + 0.075)) <= 0.01, `cut in the middle, got ${long[0] / SR}s`);
+    const short = splitPoints(speech(10, [[at, at + 0.13]]), SR, { maxSec: 20 });
+    assert.deepStrictEqual(short, [], `130 ms pause at +${offsetMs} ms is not`);
+  }
+});
+
 test("splitPoints: leading and trailing silence are not boundaries", () => {
   // Quiet at both ends of the buffer separates nothing from nothing.
   assert.deepStrictEqual(splitPoints(speech(10, [[0, 1], [9, 10]]), SR, { maxSec: 20 }), []);

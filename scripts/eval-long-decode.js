@@ -203,6 +203,64 @@ function createWorker(model, dir) {
   };
 }
 
+// One (recording, mode) measurement: decode, score against the reference,
+// check the worker still answers, and judge a pieces run against the gate.
+async function measureMode(m, { worker, wav, audioSec, ref, target, utterances, baseline, aliveWav, opts }) {
+  const row = { target, audioSec, utterances, baseline, ...m };
+  const inputs = [];
+  let decodeMs = 0;
+  const runTranscribe = (piece, o) => {
+    inputs.push(wavDurationSec(piece));
+    return worker.transcribe(piece, { onDecodeMs: (ms) => { decodeMs += ms; o?.onDecodeMs?.(ms); } });
+  };
+  const startedAt = Date.now();
+  let text = "";
+  try {
+    if (m.mode === "single") {
+      text = await runTranscribe(wav);
+      row.pieces = 1;
+      row.failedPieces = 0;
+    } else {
+      const r = await transcribeChunked(wav, {
+        runTranscribe,
+        restartStt: worker.restart,
+        maxSec: m.cap,
+        minPauseSec: m.pauses ? undefined : Infinity,
+        log: { warn: (...a) => log(...a) },
+      });
+      text = r.text;
+      row.pieces = r.pieces.length;
+      row.failedPieces = r.pieces.filter((p) => !p.ok).length;
+      // Heard speech, decoded to nothing even padded: accepted, but counted.
+      row.unconfirmedPieces = r.pieces.filter((p) => p.ok && p.unconfirmed).length;
+      row.pieceSeconds = r.pieces.map((p) => +((p.toFrame - p.fromFrame) / SAMPLE_RATE).toFixed(2));
+      const failed = r.pieces.find((p) => !p.ok);
+      if (failed) Object.assign(row, { error: failed.error, exitCode: failed.exitCode });
+    }
+  } catch (err) {
+    Object.assign(row, { error: err.message, code: err.code, exitCode: err.exitCode, pieces: row.pieces || inputs.length, failedPieces: 1 });
+  }
+  row.wallMs = Date.now() - startedAt;
+  row.decodeMs = decodeMs;
+  row.workerInputs = inputs.length;
+  row.maxPieceSec = inputs.length ? Math.max(...inputs) : 0;
+  Object.assign(row, score(ref, text));
+  delete row.counts;
+  row.text = text;
+  // Is the worker still usable? A short decode through the same host.
+  try {
+    row.alive = !!(await worker.transcribe(aliveWav));
+  } catch (err) {
+    row.alive = false;
+    row.aliveError = err.message;
+  }
+  row.reasons = m.mode === "pieces"
+    ? judgePieces(row, { shortWer: baseline.wer, cap: m.cap, minRatio: opts.minRatio, maxWerOverShort: opts.maxWerOverShort })
+    : [];
+  log(`${audioSec.toFixed(1)} s ${m.mode}${m.cap ? ` cap ${m.cap}` : ""}: ratio ${row.ratio.toFixed(3)}, WER ${(row.wer * 100).toFixed(1)}%, pieces ${row.pieces}, max ${row.maxPieceSec.toFixed(1)} s${row.error ? `, ${row.error}${row.exitCode !== undefined ? ` (exit code ${row.exitCode})` : ""}` : ""}${row.reasons.length ? ` — FAIL ${row.reasons.join("; ")}` : ""}`);
+  return row;
+}
+
 async function run(opts) {
   const { app } = require("electron");
   await app.whenReady();
@@ -237,60 +295,11 @@ async function run(opts) {
       const audioSec = wavDurationSec(wav);
       const ref = picked.map((r) => r.raw).join(" ");
       const modes = [...(opts.single ? [{ mode: "single" }] : []), ...opts.caps.map((cap) => ({ mode: "pieces", cap, pauses: opts.pauses }))];
+      const aliveWav = encodeWav(clip(picked[0]));
       for (const m of modes) {
-        const row = { target, audioSec, utterances: picked.length, baseline, ...m };
-        const inputs = [];
-        let decodeMs = 0;
-        const runTranscribe = (piece, o) => {
-          inputs.push(wavDurationSec(piece));
-          return worker.transcribe(piece, { onDecodeMs: (ms) => { decodeMs += ms; o?.onDecodeMs?.(ms); } });
-        };
-        const startedAt = Date.now();
-        let text = "";
-        try {
-          if (m.mode === "single") {
-            text = await runTranscribe(wav);
-            row.pieces = 1;
-            row.failedPieces = 0;
-          } else {
-            const r = await transcribeChunked(wav, {
-              runTranscribe,
-              restartStt: worker.restart,
-              maxSec: m.cap,
-              minPauseSec: m.pauses ? undefined : Infinity,
-              log: { warn: (...a) => log(...a) },
-            });
-            text = r.text;
-            row.pieces = r.pieces.length;
-            row.failedPieces = r.pieces.filter((p) => !p.ok).length;
-            // Heard speech, decoded to nothing even padded: accepted, but counted.
-            row.unconfirmedPieces = r.pieces.filter((p) => p.ok && p.unconfirmed).length;
-            row.pieceSeconds = r.pieces.map((p) => +((p.toFrame - p.fromFrame) / SAMPLE_RATE).toFixed(2));
-            const failed = r.pieces.find((p) => !p.ok);
-            if (failed) Object.assign(row, { error: failed.error, exitCode: failed.exitCode });
-          }
-        } catch (err) {
-          Object.assign(row, { error: err.message, code: err.code, exitCode: err.exitCode, pieces: row.pieces || inputs.length, failedPieces: 1 });
-        }
-        row.wallMs = Date.now() - startedAt;
-        row.decodeMs = decodeMs;
-        row.workerInputs = inputs.length;
-        row.maxPieceSec = inputs.length ? Math.max(...inputs) : 0;
-        Object.assign(row, score(ref, text));
-        delete row.counts;
-        row.text = text;
-        // Is the worker still usable? A short decode through the same host.
-        try {
-          row.alive = !!(await worker.transcribe(encodeWav(clip(picked[0]))));
-        } catch (err) {
-          row.alive = false;
-          row.aliveError = err.message;
-        }
-        row.reasons = m.mode === "pieces"
-          ? judgePieces(row, { shortWer: baseline.wer, cap: m.cap, minRatio: opts.minRatio, maxWerOverShort: opts.maxWerOverShort })
-          : [];
-        log(`${audioSec.toFixed(1)} s ${m.mode}${m.cap ? ` cap ${m.cap}` : ""}: ratio ${row.ratio.toFixed(3)}, WER ${(row.wer * 100).toFixed(1)}%, pieces ${row.pieces}, max ${row.maxPieceSec.toFixed(1)} s${row.error ? `, ${row.error}${row.exitCode !== undefined ? ` (exit code ${row.exitCode})` : ""}` : ""}${row.reasons.length ? ` — FAIL ${row.reasons.join("; ")}` : ""}`);
-        result.runs.push(row);
+        result.runs.push(
+          await measureMode(m, { worker, wav, audioSec, ref, target, utterances: picked.length, baseline, aliveWav, opts })
+        );
       }
     }
   } finally {

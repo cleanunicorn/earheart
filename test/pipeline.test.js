@@ -198,7 +198,7 @@ test("pipeline: an idle window of 0 never arms at all", (t) => {
 
 /* ---------------- final transcription ---------------- */
 
-const { encodeWav, wavDurationSec } = require("../main/util/wav");
+const { encodeWav, wavDurationSec, wavToFloat32 } = require("../main/util/wav");
 
 const SR = 16000;
 
@@ -439,13 +439,21 @@ test("pipeline: speech that decodes to nothing at all falls back to the live-pre
 });
 
 test("pipeline: a broken snapshot's words fill the range a failed final piece left out", async () => {
+  // 50 s where 25-30 s is audio the worker dies on (amplitude-marked, so the
+  // fake knows it whatever the cuts); the committed "middle" chunk covers it.
+  const samples = new Int16Array(50 * SR);
+  for (let i = 0; i < samples.length; i++) {
+    const amp = i >= 25 * SR && i < 30 * SR ? 6000 : 8000;
+    samples[i] = i % 2 ? amp : -amp;
+  }
+  const holdsMarked = (w) => wavToFloat32(w).samples.some((x) => Math.abs(x * 32768 - 6000) < 1);
   const rig = dictationRig({
-    transcribe: async (n) => {
-      if (n === 1 || n === 2) throw exited();
+    transcribe: async (n, w) => {
+      if (holdsMarked(w)) throw exited();
       return `w${n}`;
     },
   });
-  await rig.dictate(loudWav(50), {
+  await rig.dictate(encodeWav(samples, SR), {
     committedRaw: "early middle late",
     decodedSamples: 0,
     broken: true,
@@ -455,7 +463,8 @@ test("pipeline: a broken snapshot's words fill the range a failed final piece le
       { from: 41 * SR, to: 50 * SR, text: "late" },
     ],
   });
-  assert.deepStrictEqual(rig.log.delivered, ["w0 middle w3"]);
+  // Pieces 0-15, 15-20, 20-22, 22-38 (dies twice: calls 3, 4), 38-40, 40-41, 41-50.
+  assert.deepStrictEqual(rig.log.delivered, ["w0 w1 w2 middle w5 w6 w7"]);
   assert.strictEqual(rig.log.history[0].incomplete, true);
   assert.strictEqual(rig.log.notifications.length, 1);
 });

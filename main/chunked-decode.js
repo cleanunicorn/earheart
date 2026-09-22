@@ -50,11 +50,18 @@ function retryable(failure) {
 
 // [from, to) frame ranges covering the whole WAV — one per stretch of speech
 // between pauses, each at most maxSec — and the samples they index.
-function planPieces(wav, maxSec, minPauseSec) {
+// Committed chunk boundaries are cut points too, so every salvage chunk
+// covers whole pieces (see assemble). Extra cuts only shorten pieces, so the
+// cap still holds.
+function planPieces(wav, maxSec, minPauseSec, salvageChunks) {
   const frames = wavSampleFrames(wav);
   if (!frames) return { ranges: [[0, 0]], samples: new Float32Array(0) };
   const { samples, sampleRate } = wavToFloat32(wav);
-  const edges = [0, ...splitPoints(samples, sampleRate, { maxSec, minPauseSec }), frames];
+  const cuts = new Set(splitPoints(samples, sampleRate, { maxSec, minPauseSec }));
+  for (const c of salvageChunks) {
+    for (const edge of [c.from, c.to]) if (edge > 0 && edge < frames) cuts.add(edge);
+  }
+  const edges = [0, ...[...cuts].sort((a, b) => a - b), frames];
   return { ranges: edges.slice(1).map((to, i) => [edges[i], to]), samples };
 }
 
@@ -84,14 +91,52 @@ function emptySpeechError() {
   return Object.assign(new Error("speech decoded to no text"), { code: "EMPTY_SPEECH" });
 }
 
+// A piece whose words are missing: failed, or unconfirmed (speech heard,
+// nothing decoded even padded).
+const isGap = (p) => !p.ok || p.unconfirmed;
+
+// Salvage chunks in recording order, without overlaps: an overlapping chunk
+// (only possible from out-of-order commits) is dropped rather than repeated.
+function orderedChunks(salvageChunks) {
+  const out = [];
+  for (const c of [...salvageChunks].sort((a, b) => a.from - b.from)) {
+    if (!out.length || c.from >= out.at(-1).to) out.push(c);
+  }
+  return out;
+}
+
+// The pieces' text in recording order. A committed live-preview chunk that
+// covers a gap stands in for every piece under it: planPieces cut at its
+// boundaries, so those pieces lie inside it — its words replace theirs,
+// nothing lost, nothing repeated. Filling an unconfirmed gap doesn't make the
+// result partial — those words are delivered; a failed piece still does.
+function assemble(pieces, salvageChunks) {
+  const chunks = orderedChunks(salvageChunks);
+  const owner = pieces.map((p) => chunks.find((c) => c.from <= p.fromFrame && p.toFrame <= c.to) || null);
+  const standsIn = new Set();
+  pieces.forEach((p, i) => {
+    if (owner[i] && isGap(p)) standsIn.add(owner[i]);
+  });
+  let text = "";
+  pieces.forEach((p, i) => {
+    const c = owner[i];
+    if (c && standsIn.has(c)) {
+      if (i === 0 || owner[i - 1] !== c) text = joinText(text, c.text);
+    } else if (!isGap(p)) {
+      text = joinText(text, p.text);
+    }
+  });
+  return text;
+}
+
 /**
  * Decode `wav` one stretch of speech at a time.
  *
  * `prefixText` is trusted committed live-preview text that precedes `wav`
  * (always kept, even if every piece fails). `salvageChunks` are a broken
- * snapshot's committed chunks ({from, to, text}, in `wav` frames): a range the
- * decode fails is filled with the chunks lying wholly inside it — never one
- * that overlaps a decoded piece, which would repeat its words. `salvageText`
+ * snapshot's committed chunks ({from, to, text}, in `wav` frames): a chunk
+ * over a range the decode fails stands in for the pieces it covers (see
+ * assemble). `salvageText`
  * is that snapshot's whole text, the last resort when nothing else came back.
  *
  * Throws only when nothing at all was recovered, so a model that isn't
@@ -111,33 +156,6 @@ function emptySpeechError() {
  * @param {{warn: Function}} [deps.log]
  * @returns {Promise<{text: string, partial: boolean, stale?: boolean, pieces: object[]}>}
  */
-// The decoded pieces' text in recording order, each gap filled with the
-// salvage chunks that lie wholly inside it. A gap is a failed piece, or an
-// unconfirmed one (speech heard, nothing decoded even padded): if the live
-// preview had words there, they are the user's. Filling an unconfirmed gap
-// doesn't make the result partial — those words are delivered.
-function assemble(pieces, salvageChunks) {
-  let text = "";
-  let failedFrom = null;
-  const fill = (to) => {
-    if (failedFrom === null) return;
-    for (const c of salvageChunks) {
-      if (c.from >= failedFrom && c.to <= to) text = joinText(text, c.text);
-    }
-    failedFrom = null;
-  };
-  for (const p of pieces) {
-    if (!p.ok || p.unconfirmed) {
-      if (failedFrom === null) failedFrom = p.fromFrame;
-      continue;
-    }
-    fill(p.fromFrame);
-    text = joinText(text, p.text);
-  }
-  fill(pieces.at(-1).toFrame);
-  return text;
-}
-
 async function transcribeChunked(
   wav,
   {
@@ -153,7 +171,7 @@ async function transcribeChunked(
     log,
   }
 ) {
-  const plan = planPieces(wav, maxSec, minPauseSec);
+  const plan = planPieces(wav, maxSec, minPauseSec, salvageChunks);
   const pieces = plan.ranges.map(([fromFrame, toFrame]) => ({
     fromFrame,
     toFrame,

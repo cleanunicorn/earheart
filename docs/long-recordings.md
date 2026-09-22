@@ -117,15 +117,16 @@ pass the 20 s cap; none, and no retry, for a piece already at the cap). In the l
 the words lost that way; what still came back empty were breaths and clicks
 after finished sentences, which the probe (biased toward "speech" on
 purpose) also calls speech. Those are accepted as empty but counted — and,
-like a failed piece, filled from a broken live-preview snapshot's chunks
-that lie wholly inside them, without marking the result incomplete — unless
+like a failed piece, filled from a broken live-preview snapshot's chunk
+over them (see below), without marking the result incomplete — unless
 nothing in the recording decoded at all, when they count as lost: the
 dictation is incomplete, and the live preview's words or an error follow,
 never a silent empty result.
 Whatever was recovered is delivered: the committed live-preview text and the
-finished pieces, with any range the final pass failed filled from a broken
-snapshot's committed chunks that lie wholly inside it (a chunk overlapping a
-decoded piece is left out rather than repeated). It goes through
+finished pieces. With a broken snapshot, its committed chunks' boundaries are
+cut points of the final pass too, so each chunk covers whole pieces; a chunk
+over a piece that failed stands in for every piece under it, so its words are
+neither lost nor repeated. It goes through
 the normal cleanup and paste, with a notification ("transcription
 interrupted"), and the history entry is marked `incomplete: true`. Only a run
 that recovers nothing at all is an error. Engine failures carry stable codes

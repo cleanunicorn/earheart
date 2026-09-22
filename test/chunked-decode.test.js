@@ -8,7 +8,7 @@ const assert = require("node:assert");
 
 const { transcribeChunked, MAX_DECODE_SECONDS } = require("../main/chunked-decode");
 const { joinText } = require("../main/util/join-text");
-const { encodeWav, wavDurationSec, wavSampleFrames } = require("../main/util/wav");
+const { encodeWav, wavDurationSec, wavSampleFrames, wavToFloat32 } = require("../main/util/wav");
 
 const SR = 16000;
 
@@ -254,27 +254,48 @@ test("chunked decode: silence that decodes to no text is fine, with no second tr
   assert.deepStrictEqual([r.text, r.partial, r.pieces[0].ok, calls], ["", false, true, 1]);
 });
 
-test("chunked decode: a failed piece is filled from committed live-preview chunks inside it", async () => {
-  // A broken snapshot's words can't lead the transcript, but the chunks that
-  // lie wholly inside a range the final pass failed to decode are exactly
-  // what the user said there. Chunks that overlap a decoded piece are left
-  // out: that would repeat words.
+// Loud audio whose [deadFrom, deadTo) seconds carry a different amplitude,
+// so a fake worker can tell which pieces hold that stretch whatever the cuts.
+function markedWav(seconds, deadFrom, deadTo) {
+  const samples = new Int16Array(Math.round(seconds * SR));
+  for (let i = 0; i < samples.length; i++) {
+    const amp = i >= deadFrom * SR && i < deadTo * SR ? 6000 : 8000;
+    samples[i] = i % 2 ? amp : -amp;
+  }
+  return encodeWav(samples, SR);
+}
+const holdsMarked = (w) => wavToFloat32(w).samples.some((x) => Math.abs(x * 32768 - 6000) < 1);
+const salvage = (fromSec, toSec, text) => ({ from: fromSec * SR, to: toSec * SR, text });
+
+test("chunked decode: a failed piece is filled from the committed live-preview chunk over it", async () => {
+  // A broken snapshot's words can't lead the transcript, but the chunks over
+  // a range the final pass failed to decode are what the user said there.
+  // Committed chunk boundaries become cut points, so a chunk always covers
+  // whole pieces: one that covers a failed piece stands in for every piece
+  // under it — nothing lost, nothing repeated (review final:correctness-2).
   const dead = engineError("ENGINE_EXITED", 134);
-  const w = fakeWorker({ 1: dead, 2: dead }); // pieces 0-20 s ok, 20-40 s fails twice, 40-50 s ok
-  const chunk = (fromSec, toSec, text) => ({ from: fromSec * SR, to: toSec * SR, text });
-  const r = await transcribeChunked(wav(50), {
-    runTranscribe: w.runTranscribe,
+  let ok = 0;
+  const inputs = [];
+  const r = await transcribeChunked(markedWav(50, 38, 40), {
+    runTranscribe: async (w) => {
+      inputs.push(+wavDurationSec(w).toFixed(2));
+      if (holdsMarked(w)) throw dead;
+      return `w${ok++}`;
+    },
     salvageText: "c0 c1 c2 c3 straddle c4",
     salvageChunks: [
-      chunk(0, 10, "c0"),
-      chunk(10, 20, "c1"),
-      chunk(20, 30, "c2"),
-      chunk(30, 38, "c3"),
-      chunk(38, 45, "straddle"),
-      chunk(45, 50, "c4"),
+      salvage(0, 10, "c0"),
+      salvage(10, 20, "c1"),
+      salvage(20, 30, "c2"),
+      salvage(30, 38, "c3"),
+      salvage(38, 45, "straddle"),
+      salvage(45, 50, "c4"),
     ],
   });
-  assert.strictEqual(r.text, "a0 c2 c3 a3");
+  // Pieces 0-10, 10-20, 20-30, 30-38, 38-40 (dies twice), 40-45, 45-50.
+  assert.deepStrictEqual(inputs, [10, 10, 10, 8, 2, 2, 5, 5]);
+  // "straddle" covers the dead 38-40 and the decoded 40-45: it replaces both.
+  assert.strictEqual(r.text, "w0 w1 w2 w3 straddle w5");
   assert.strictEqual(r.partial, true);
 });
 
@@ -299,18 +320,17 @@ test("chunked decode: a timeout on the retry retires that worker too", async () 
 test("chunked decode: an unconfirmed empty piece is filled from committed live-preview chunks too", async () => {
   // Heard speech, decoded to nothing even padded: if the live preview had
   // words for that range, they are the user's (manager audit M-1).
-  const chunk = (fromSec, toSec, text) => ({ from: fromSec * SR, to: toSec * SR, text });
-  // Replies in call order: piece 0, piece 1 (20-40 s) plain, padded, piece 2.
-  const replies = ["a0", "", "", "a3"];
-  let call = 0;
-  const r = await transcribeChunked(wav(50), {
-    runTranscribe: async () => replies[call++],
-    salvageChunks: [chunk(5, 15, "early"), chunk(22, 36, "live words"), chunk(38, 45, "straddle")],
+  let ok = 0;
+  const r = await transcribeChunked(markedWav(50, 22, 26), {
+    runTranscribe: async (w) => (holdsMarked(w) ? "" : `w${ok++}`),
+    salvageChunks: [salvage(5, 15, "early"), salvage(22, 26, "live words"), salvage(38, 45, "straddle")],
   });
-  assert.strictEqual(r.text, "a0 live words a3");
+  const empty = r.pieces.filter((p) => p.unconfirmed);
+  assert.deepStrictEqual(empty.map((p) => [p.fromFrame / SR, p.toFrame / SR]), [[22, 26]]);
+  assert.ok(r.text.includes("live words"), r.text);
+  assert.strictEqual(r.text.split("live words").length, 2, "exactly once");
   // The words were delivered, so the transcript is not incomplete.
   assert.strictEqual(r.partial, false);
-  assert.strictEqual(r.pieces[1].unconfirmed, true);
 });
 
 test("chunked decode: the padded retry never sends more than the cap", async () => {

@@ -38,12 +38,7 @@
 //   isCurrent(sid) -> true iff sid is the active, still-recording session
 
 const { wavSampleFrames } = require("./util/wav");
-
-function joinText(a, b) {
-  if (!a) return b;
-  if (!b) return a;
-  return `${a} ${b}`;
-}
+const { joinText } = require("./util/join-text");
 
 // Words compared for content only: two decodes of the same audio agree on the
 // words but not always on their capitalization or punctuation.

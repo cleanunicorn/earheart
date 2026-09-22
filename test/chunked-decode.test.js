@@ -6,7 +6,8 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 
-const { transcribeChunked, joinRaw, MAX_DECODE_SECONDS } = require("../main/chunked-decode");
+const { transcribeChunked, MAX_DECODE_SECONDS } = require("../main/chunked-decode");
+const { joinText } = require("../main/util/join-text");
 const { encodeWav, wavDurationSec, wavSampleFrames } = require("../main/util/wav");
 
 const SR = 16000;
@@ -201,11 +202,11 @@ test("chunked decode: an empty recording is one (empty) decode", async () => {
   assert.strictEqual(r.partial, false);
 });
 
-test("chunked decode: joinRaw spaces two non-empty sides and passes either alone", () => {
-  assert.strictEqual(joinRaw("a", "b"), "a b");
-  assert.strictEqual(joinRaw("", "b"), "b");
-  assert.strictEqual(joinRaw("a", ""), "a");
-  assert.strictEqual(joinRaw("", ""), "");
+test("joinText spaces two non-empty sides and passes either alone", () => {
+  assert.strictEqual(joinText("a", "b"), "a b");
+  assert.strictEqual(joinText("", "b"), "b");
+  assert.strictEqual(joinText("a", ""), "a");
+  assert.strictEqual(joinText("", ""), "");
 });
 
 test("chunked decode: a speech piece that decodes to no text is re-decoded with silence around it", async () => {

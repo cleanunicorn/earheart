@@ -24,6 +24,7 @@
 // bare worker host.
 
 const { splitPoints } = require("./util/split-silence");
+const { joinText } = require("./util/join-text");
 // The overlay loads renderer/speech-probe.js as a plain <script>
 // (renderer/overlay.html); its CommonJS export guard lets the main process
 // apply the same speech verdict.
@@ -41,14 +42,6 @@ const MAX_DECODE_SECONDS = 20;
 // After this many pieces in a row failed even their retry, the worker is not
 // coming back for this recording: stop paying a model reload per piece.
 const MAX_CONSECUTIVE_FAILURES = 2;
-
-// Join transcript fragments with a space; either side may be empty. Mirrors
-// the live preview's own joinText.
-function joinRaw(a, b) {
-  if (!a) return b || "";
-  if (!b) return a;
-  return `${a} ${b}`;
-}
 
 // The worker itself died or wedged — worth one more try on a fresh process.
 // Anything else is an error the worker replied with, and would just repeat.
@@ -125,7 +118,7 @@ function assemble(pieces, salvageChunks) {
   const fill = (to) => {
     if (failedFrom === null) return;
     for (const c of salvageChunks) {
-      if (c.from >= failedFrom && c.to <= to) text = joinRaw(text, c.text);
+      if (c.from >= failedFrom && c.to <= to) text = joinText(text, c.text);
     }
     failedFrom = null;
   };
@@ -135,7 +128,7 @@ function assemble(pieces, salvageChunks) {
       continue;
     }
     fill(p.fromFrame);
-    text = joinRaw(text, p.text);
+    text = joinText(text, p.text);
   }
   fill(pieces.at(-1).toFrame);
   return text;
@@ -227,9 +220,9 @@ async function transcribeChunked(
   }
   const partial = pieces.some((p) => !p.ok);
   const recovered = partial && !decoded ? salvageText : decoded;
-  const text = joinRaw(prefixText, recovered);
+  const text = joinText(prefixText, recovered);
   if (partial && !text) throw firstError;
   return { text, partial, pieces };
 }
 
-module.exports = { transcribeChunked, joinRaw, MAX_DECODE_SECONDS };
+module.exports = { transcribeChunked, MAX_DECODE_SECONDS };

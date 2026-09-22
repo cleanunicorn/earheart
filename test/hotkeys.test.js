@@ -245,6 +245,53 @@ test("a later free-target failure rolls back an earlier successful target", () =
   assert.strictEqual(bindings.has(B), true);
 });
 
+test("a mixed free and crossed change registers in no-drop order", () => {
+  const A = "CommandOrControl+Shift+Space";
+  const B = "CommandOrControl+Alt+P";
+  const C = "CommandOrControl+Alt+C";
+  const triggered = [];
+  const { hotkeys, calls, bindings } = loadHotkeys();
+  hotkeys.applyPair(pair(A, B));
+  clearCalls(calls);
+
+  const result = hotkeys.applyPair(
+    pair(B, C, () => triggered.push("record"), () => triggered.push("pause"))
+  );
+
+  assert.deepStrictEqual(result, { record: { ok: true }, pause: { ok: true } });
+  assert.deepStrictEqual(calls.events, [
+    `register:${C}`,
+    `unregister:${B}`,
+    `register:${B}`,
+    `unregister:${A}`,
+  ]);
+  bindings.get(B)();
+  bindings.get(C)();
+  assert.deepStrictEqual(triggered, ["record", "pause"]);
+});
+
+test("a mixed crossed failure removes the free addition and restores its owner", () => {
+  const A = "CommandOrControl+Shift+Space";
+  const B = "CommandOrControl+Alt+P";
+  const C = "CommandOrControl+Alt+C";
+  const triggered = [];
+  const { hotkeys, bindings } = loadHotkeys({
+    registerImpl: (accelerator, attempt) => !(accelerator === B && attempt === 2),
+  });
+  hotkeys.applyPair(
+    pair(A, B, () => triggered.push("old-record"), () => triggered.push("old-pause"))
+  );
+
+  const result = hotkeys.applyPair(pair(B, C));
+
+  assert.strictEqual(result.record.ok, false);
+  assert.strictEqual(result.pause.ok, false);
+  assert.strictEqual(bindings.has(C), false);
+  assert.strictEqual(bindings.has(A), true);
+  bindings.get(B)();
+  assert.deepStrictEqual(triggered, ["old-pause"]);
+});
+
 test("a rollback re-registration failure is reported and removed from state", () => {
   const A = "CommandOrControl+Shift+Space";
   const B = "CommandOrControl+Alt+P";

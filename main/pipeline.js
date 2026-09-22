@@ -181,23 +181,31 @@ function getSttRtf() {
 // worker dies part-way, every word already decoded — the committed text, the
 // finished pieces, and a broken snapshot's chunks for the ranges that failed —
 // comes back with `partial: true` instead of an error. Resolves to { text, partial }.
+// What the final pass decodes, and what it falls back to, given the live
+// preview's snapshot (null for remote STT). A trusted snapshot leaves only the
+// tail past its committed text (`prefixText`, which precedes `decodeWav`
+// exactly); otherwise the whole recording is decoded, and a broken snapshot's
+// words — which have holes — are only salvage for ranges that fail.
+function decodePlan(wav, assembly) {
+  const plan = { decodeWav: wav, tailOnly: false, prefixText: "", salvageText: "", salvageChunks: [] };
+  if (!assembly) return plan;
+  if (!assembly.broken && assembly.decodedSamples > 0) {
+    return {
+      ...plan,
+      decodeWav: wavSliceFromFrame(wav, assembly.decodedSamples),
+      tailOnly: true,
+      prefixText: assembly.committedRaw,
+    };
+  }
+  return { ...plan, salvageText: assembly.committedRaw, salvageChunks: assembly.chunks || [] };
+}
+
 async function transcribeWithEstimate(wav, sttCfg, signal, stale, assembly) {
   const rtf = sttCfg.engine === "builtin" ? getSttRtf() : null;
-  let decodeWav = wav;
-  let tailOnly = false;
-  let prefixText = ""; // trusted: precedes decodeWav exactly
-  let salvageText = ""; // a broken snapshot's words: holes, last resort only
-  let salvageChunks = []; // the same words with their sample ranges
-  if (rtf && assembly) {
-    if (!assembly.broken && assembly.decodedSamples > 0) {
-      decodeWav = wavSliceFromFrame(wav, assembly.decodedSamples);
-      tailOnly = true;
-      prefixText = assembly.committedRaw;
-    } else {
-      salvageText = assembly.committedRaw;
-      salvageChunks = assembly.chunks || [];
-    }
-  }
+  const { decodeWav, tailOnly, prefixText, salvageText, salvageChunks } = decodePlan(
+    wav,
+    rtf ? assembly : null
+  );
   if (rtf) {
     // Load the model BEFORE starting the clock: a cold load (first dictation,
     // post-idle-unload, worker restart) takes seconds and would both freeze

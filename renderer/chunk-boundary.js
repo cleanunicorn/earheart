@@ -16,8 +16,8 @@
 //
 // Kept in its own file (like transcript.js) so the arithmetic is unit-testable
 // without a DOM; overlay.html loads it as a plain script. The main process
-// requires it too (main/util/split-silence.js cuts long recordings for the
-// final decode with the same search), so keep it dependency-free.
+// requires it too (main/util/split-silence.js cuts built-in decodes with the
+// same search), so keep it dependency-free.
 
 // Offset just past the quietest `windowSamples`-long window of `samples`,
 // scanning every `hopSamples`. Ties go to the LATEST window, so a forced cut
@@ -42,8 +42,7 @@ function quietestOffset(samples, windowSamples, hopSamples) {
   return bestEnd;
 }
 
-// Unit tests and main/util/split-silence.js require this file; the overlay
-// loads it as a plain script, where `module` doesn't exist.
+// `module` doesn't exist when the overlay loads this as a plain script.
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { quietestOffset };
 }

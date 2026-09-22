@@ -281,6 +281,16 @@ def test_keyerror_on_non_honouring_model_is_500(client_factory, recognizer, monk
     assert recognizer.recognize.call_args.kwargs == {"sample_rate": 16000}
 
 
+def test_unrelated_keyerror_on_honouring_model_is_500(client_factory, recognizer, monkeypatch):
+    monkeypatch.setattr(server, "honours_language", lambda asr: True)
+    recognizer.recognize.side_effect = KeyError("some_token_id")
+    with client_factory(recognizer) as client:
+        response = transcribe(client, language="en")
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Transcription failed"}
+    recognizer.recognize.assert_called_once()
+
+
 def test_model_without_language_parameter(client_factory, monkeypatch):
     monkeypatch.setattr(server, "honours_language", lambda asr: False)
     calls = []

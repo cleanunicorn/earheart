@@ -1,16 +1,9 @@
 name: Auto release
 
-# Cuts a release automatically when a PR merges to main, sized by the
-# conventional-commit prefix of the PR title:
-#
-#   feat!: / fix!: / any `type!:`  → major
-#   feat:                          → minor
-#   fix: / perf: / refactor:       → patch
-#   anything else (chore:, docs:, ci:, free-form, "[skip release]") → no release
-#
-# The version bump lands as a commit on main plus a `v<version>` tag, and
-# the Release builds workflow is dispatched on that tag to build and publish
-# the installers.
+# Release jobs are serialized, but GitHub keeps only one pending job in a
+# concurrency group. Every surviving job therefore catches up all merged PRs
+# after the newest numbered changelog entry. Each release is rebuilt on the
+# current origin/main and pushed with its tag atomically.
 
 on:
   pull_request:
@@ -20,70 +13,104 @@ on:
 permissions:
   contents: write
   actions: write
+  pull-requests: read
 
 jobs:
   release:
     if: github.event.pull_request.merged == true
+    concurrency:
+      group: auto-release
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
 
-      - name: Decide version bump from the PR title
-        id: bump
-        env:
-          TITLE: ${{ github.event.pull_request.title }}
-        run: |
-          # The regexes live in variables: bash cannot parse `[^)]` inside
-          # an inline [[ =~ ]] expression.
-          major_re='^[a-z]+(\([^)]*\))?!:'
-          minor_re='^feat(\([^)]*\))?:'
-          patch_re='^(fix|perf|refactor)(\([^)]*\))?:'
-          bump=""
-          if [[ "$TITLE" == *"[skip release]"* ]]; then
-            bump=""
-          elif [[ "$TITLE" =~ $major_re ]]; then
-            bump=major
-          elif [[ "$TITLE" =~ $minor_re ]]; then
-            bump=minor
-          elif [[ "$TITLE" =~ $patch_re ]]; then
-            bump=patch
-          fi
-          echo "bump=$bump" >> "$GITHUB_OUTPUT"
-          echo "PR title: $TITLE → bump: ${bump:-none}"
-
-      - name: Bump version, record the changelog, commit and tag
-        if: steps.bump.outputs.bump != ''
-        env:
-          TITLE: ${{ github.event.pull_request.title }}
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          # --no-git-tag-version so the changelog entry can ride along in the
-          # same release commit: `npm version` refuses to run with anything
-          # else staged, and it must not tag before CHANGELOG.md is written.
-          npm version "${{ steps.bump.outputs.bump }}" --no-git-tag-version
-          version="$(node -p 'require("./package.json").version')"
-          # This PR *is* the release (one merged PR per version, see the bump
-          # rules above), so its title is the release note. The app shows this
-          # entry — from the published release-notes.json before updating, and
-          # from the copy inside its own bundle right after.
-          node scripts/changelog.js \
-            --version "$version" --title "$TITLE" --pr "$PR" --date "$(date -u +%F)"
-          git add package.json package-lock.json CHANGELOG.md
-          git commit -m "release: v$version"
-          git tag -a "v$version" -m "v$version"
-          git push origin main --follow-tags
-
-      - name: Trigger release builds
-        if: steps.bump.outputs.bump != ''
+      - name: Release every merged PR not yet in the changelog
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Tags pushed with the workflow's GITHUB_TOKEN do not fire on:push
-          # workflows (GitHub recursion guard), so dispatch the build
-          # workflow on the new tag explicitly.
-          gh workflow run release.yml \
-            --ref "v$(node -p 'require("./package.json").version')"
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          prs_file="$RUNNER_TEMP/merged-prs.json"
+          pending_file="$RUNNER_TEMP/pending-releases.jsonl"
+
+          # Paginate to the end rather than imposing a burst-size ceiling. The
+          # helper finds the newest numbered changelog boundary, so historical
+          # gaps before that release are never recreated.
+          gh api --paginate \
+            -H "Accept: application/vnd.github+json" \
+            "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100" \
+            --jq '.[] | select(.merged_at != null) | {number, title, mergedAt: .merged_at}' \
+            | jq -s '.' > "$prs_file"
+          node scripts/auto-release.js pending \
+            --prs "$prs_file" --changelog CHANGELOG.md > "$pending_file"
+
+          if [[ ! -s "$pending_file" ]]; then
+            echo "No release-affecting merged PR is waiting."
+            exit 0
+          fi
+
+          while IFS= read -r release; do
+            number="$(jq -r '.number' <<<"$release")"
+            title="$(jq -r '.title' <<<"$release")"
+            bump="$(jq -r '.bump' <<<"$release")"
+            pushed=false
+            already_released=false
+
+            for attempt in 1 2 3; do
+              # A normal PR merge can move main while this job owns the release
+              # concurrency group, so every attempt starts from the remote tip.
+              git fetch origin main
+              git reset --hard origin/main
+
+              if grep -qF "(#$number)" CHANGELOG.md; then
+                echo "PR #$number was released by another run; skipping."
+                already_released=true
+                break
+              fi
+
+              npm version "$bump" --no-git-tag-version
+              version="$(node -p 'require("./package.json").version')"
+              node scripts/changelog.js \
+                --version "$version" --title "$title" --pr "$number" --date "$(date -u +%F)"
+              git add package.json package-lock.json CHANGELOG.md
+              git commit -m "release: v$version"
+              git tag -a "v$version" -m "v$version"
+
+              if git push --atomic origin HEAD:main "refs/tags/v$version:refs/tags/v$version"; then
+                pushed=true
+                break
+              fi
+
+              git tag -d "v$version"
+              echo "::warning title=Release push retry::PR #$number push attempt $attempt failed"
+            done
+
+            if [[ "$already_released" == true ]]; then
+              continue
+            fi
+            if [[ "$pushed" != true ]]; then
+              echo "::error title=Release push failed::Could not release PR #$number after 3 attempts"
+              exit 1
+            fi
+
+            # Tags pushed with GITHUB_TOKEN do not trigger tag-push workflows,
+            # so request the build explicitly and fail visibly if it cannot be
+            # dispatched after bounded retries.
+            dispatched=false
+            for dispatch_attempt in 1 2 3; do
+              if gh workflow run release.yml --ref "v$version"; then
+                dispatched=true
+                break
+              fi
+              echo "::warning title=Release dispatch retry::v$version attempt $dispatch_attempt failed"
+            done
+            if [[ "$dispatched" != true ]]; then
+              echo "::error title=Release build dispatch failed::Release build dispatch failed for v$version"
+              exit 1
+            fi
+          done < "$pending_file"

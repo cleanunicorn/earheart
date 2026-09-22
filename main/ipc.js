@@ -37,6 +37,14 @@ function applyAutostart(cfg) {
   }
 }
 
+function withFields(base, source, fields) {
+  const result = { ...base };
+  for (const field of fields) {
+    result[field] = source[field];
+  }
+  return result;
+}
+
 function init({ applyHotkeys, onSettingsChanged }) {
   // Register any models the user added from a custom Hugging Face URL so they
   // resolve for download and for loading into the cleanup worker after a
@@ -84,10 +92,7 @@ function init({ applyHotkeys, onSettingsChanged }) {
       const result = hotkeyResults[field];
       return !result.ok && !result.empty;
     });
-    const persistedCandidate = { ...candidate };
-    for (const field of rejectedFields) {
-      persistedCandidate[field] = previous[field];
-    }
+    const persistedCandidate = withFields(candidate, previous, rejectedFields);
 
     let saved;
     try {
@@ -111,10 +116,7 @@ function init({ applyHotkeys, onSettingsChanged }) {
 
     // Disk keeps only working values; the form keeps the attempted values so
     // the user can see each error and correct the field without re-entering it.
-    const responseSettings = { ...saved };
-    for (const field of rejectedFields) {
-      responseSettings[field] = candidate[field];
-    }
+    const responseSettings = withFields(saved, candidate, rejectedFields);
     applyAutostart(saved);
     onSettingsChanged?.();
     return {

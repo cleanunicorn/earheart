@@ -111,19 +111,19 @@ function init({ applyHotkeys, onSettingsChanged }) {
 
     // Disk keeps only working values; the form keeps the attempted values so
     // the user can see each error and correct the field without re-entering it.
-    const shown = { ...saved };
+    const responseSettings = { ...saved };
     for (const field of rejectedFields) {
-      shown[field] = candidate[field];
+      responseSettings[field] = candidate[field];
     }
-    return { saved, shown, hotkeyResults };
+    return { saved, responseSettings, hotkeyResults };
   };
 
   ipcMain.handle("settings:save", (event, next) => {
-    const { saved, shown, hotkeyResults } = saveWithHotkeys(next);
+    const { saved, responseSettings, hotkeyResults } = saveWithHotkeys(next);
     applyAutostart(saved);
     onSettingsChanged?.();
     return {
-      settings: shown,
+      settings: responseSettings,
       hotkey: hotkeyResults.hotkey,
       pauseHotkey: hotkeyResults.pauseHotkey,
     };
@@ -133,7 +133,7 @@ function init({ applyHotkeys, onSettingsChanged }) {
   // window so the user can review what was pre-configured. If the chosen
   // hotkey can't be registered, the wizard stays open to let them fix it.
   ipcMain.handle("wizard:complete", (event, next) => {
-    const { saved, shown, hotkeyResults } = saveWithHotkeys(next);
+    const { saved, responseSettings, hotkeyResults } = saveWithHotkeys(next);
     applyAutostart(saved);
     onSettingsChanged?.();
     if (hotkeyResults.hotkey.ok) {
@@ -141,7 +141,7 @@ function init({ applyHotkeys, onSettingsChanged }) {
       windows.closeWizard();
     }
     return {
-      settings: shown,
+      settings: responseSettings,
       hotkey: hotkeyResults.hotkey,
       pauseHotkey: hotkeyResults.pauseHotkey,
     };

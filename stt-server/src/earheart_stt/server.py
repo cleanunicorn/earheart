@@ -177,7 +177,7 @@ def read_upload(file: UploadFile) -> bytes:
 
 def create_app(config: ServerConfig | None = None) -> FastAPI:
     config = config or ServerConfig()
-    state: dict = {"model": None}
+    state: dict = {}
     inference_lock = threading.Lock()
 
     @asynccontextmanager

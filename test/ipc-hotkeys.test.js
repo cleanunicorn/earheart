@@ -249,3 +249,39 @@ test("a settings write failure restores the pair that remains on disk", () => {
   assert.deepStrictEqual(calls.autostart, []);
   assert.strictEqual(calls.settingsChanged, 0);
 });
+
+test("a failed write keeps its error when hotkey rollback reports a failure", () => {
+  const attempt = submitted();
+  const { handlers, calls } = loadIpcHandlers({
+    previous: working,
+    saveError: new Error("disk full"),
+    hotkeyResults(cfg, call) {
+      return call === 1
+        ? { hotkey: { ok: true }, pauseHotkey: { ok: true } }
+        : {
+            hotkey: { ok: false, error: "record restore failed" },
+            pauseHotkey: { ok: true },
+          };
+    },
+  });
+
+  assert.throws(() => handlers["settings:save"]({}, attempt), /disk full/);
+  assert.strictEqual(calls.warnings.length, 1);
+  assert.match(calls.warnings[0], /could not restore hotkeys.*record restore failed/);
+});
+
+test("a failed write keeps its error when hotkey rollback throws", () => {
+  const attempt = submitted();
+  const { handlers, calls } = loadIpcHandlers({
+    previous: working,
+    saveError: new Error("disk full"),
+    hotkeyResults(cfg, call) {
+      if (call === 2) throw new Error("rollback blew up");
+      return { hotkey: { ok: true }, pauseHotkey: { ok: true } };
+    },
+  });
+
+  assert.throws(() => handlers["settings:save"]({}, attempt), /disk full/);
+  assert.strictEqual(calls.warnings.length, 1);
+  assert.match(calls.warnings[0], /could not restore hotkeys.*rollback blew up/);
+});

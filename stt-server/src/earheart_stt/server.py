@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import threading
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import soundfile as sf
@@ -46,9 +48,20 @@ PROVIDER_MAP = {
 
 
 def load_asr_model(config: ServerConfig):
+    if config.provider not in PROVIDER_MAP:
+        raise ValueError(f"Unknown provider {config.provider!r}")
+    providers = PROVIDER_MAP[config.provider]
+
+    if config.cache_dir is not None:
+        # huggingface_hub reads HF_HUB_CACHE when its constants module is
+        # imported, and onnx-asr imports huggingface_hub lazily on first
+        # download — so set the env var before importing onnx_asr. This turns
+        # --cache-dir into a real download cache root that several models can
+        # share, instead of onnx-asr's model-files directory.
+        os.environ["HF_HUB_CACHE"] = str(Path(config.cache_dir).expanduser())
+
     import onnx_asr
 
-    providers = PROVIDER_MAP.get(config.provider, ["CPUExecutionProvider"])
     logger.info(
         "Loading model %s (quantization=%s, providers=%s) — first run downloads it...",
         config.model,
@@ -58,7 +71,6 @@ def load_asr_model(config: ServerConfig):
     started = time.monotonic()
     model = onnx_asr.load_model(
         config.model,
-        config.cache_dir,
         quantization=config.quantization,
         providers=providers,
     )

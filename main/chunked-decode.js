@@ -1,15 +1,16 @@
-// The final transcription's built-in decode, bounded: a recording longer than
-// MAX_DECODE_SECONDS reaches the STT worker as a sequence of pieces, each cut
-// at a quiet moment (see util/split-silence.js), decoded one after another and
-// joined in order.
+// Built-in STT decoding in pieces: a recording reaches the worker one stretch
+// of speech at a time — cut at every pause, and never more than
+// MAX_DECODE_SECONDS at once (see util/split-silence.js) — decoded one after
+// another and joined in order.
 //
-// Why bounded: one decode over a long buffer is unsafe twice over. The shipped
-// Parakeet model silently drops a growing share of the words (word ratio 0.839
-// at 124.5 s, 0.449 at 310.9 s — #168), and under Electron's utilityProcess
-// the worker exits outright on a single buffer of ~3 minutes (#169). The live
-// preview's committed chunks normally cover all but the last few seconds, but
-// a broken snapshot (a chunk failed, or heard speech and decoded nothing) or
-// no committed chunk at all still hands the whole recording to this decode.
+// Why: one decode over several utterances is unsafe twice over. The shipped
+// Parakeet int8 model drops whole sentences when two of them share a decode,
+// so a long buffer silently loses a growing share of the words (word ratio
+// 0.839 at 124.5 s, 0.449 at 310.9 s — #168); and under Electron's
+// utilityProcess the worker exits outright on a single buffer of ~3 minutes
+// (#169). Both the final transcription and the live preview's chunk decodes
+// (whose committed text is reused verbatim in the final transcript) go
+// through here.
 //
 // Why the pieces are driven from here rather than inside the worker: a piece
 // that finished is text in this process, so it survives the worker dying on a
@@ -25,12 +26,13 @@
 const { splitPoints } = require("./util/split-silence");
 const { wavSlice, wavToFloat32, wavSampleFrames, SAMPLE_RATE } = require("./util/wav");
 
-// Longest audio one worker decode may receive. Evidence (#168, default model,
-// one decode): 69 s kept a 0.988 word ratio at 4.9% WER, 124.5 s already
-// dropped to 0.839. 60 s stays under the known-good point with margin while
-// keeping a 5-minute dictation to ~5 decodes. Measured through this code by
-// scripts/eval-long-decode.js — see docs/long-recordings.md.
-const MAX_DECODE_SECONDS = 60;
+// Longest audio one worker decode may receive when the speech has no pause to
+// cut at. Pauses do the real work; this is the backstop. Measured through this
+// code by scripts/eval-long-decode.js (docs/long-recordings.md): capping alone
+// at 60 s kept only 0.53-0.62 of the words on 2-5 minute recordings, and even
+// the fp32 model needed pieces of at most 20 s to pass. Also well clear of the
+// ~3-minute single buffer that kills the worker (#169).
+const MAX_DECODE_SECONDS = 20;
 
 // After this many pieces in a row failed even their retry, the worker is not
 // coming back for this recording: stop paying a model reload per piece.
@@ -50,18 +52,18 @@ function retryable(err) {
   return err?.code === "ENGINE_EXITED" || err?.code === "ENGINE_TIMEOUT";
 }
 
-// [from, to) frame ranges covering the whole WAV, each at most maxSec. A
-// recording under the cap is one range and is never decoded here.
-function planPieces(wav, maxSec) {
+// [from, to) frame ranges covering the whole WAV: one per stretch of speech
+// between pauses, each at most maxSec.
+function planPieces(wav, maxSec, minPauseSec) {
   const frames = wavSampleFrames(wav);
-  if (frames <= maxSec * SAMPLE_RATE) return [[0, frames]];
+  if (!frames) return [[0, 0]];
   const { samples, sampleRate } = wavToFloat32(wav);
-  const edges = [0, ...splitPoints(samples, sampleRate, { maxSec }), frames];
+  const edges = [0, ...splitPoints(samples, sampleRate, { maxSec, minPauseSec }), frames];
   return edges.slice(1).map((to, i) => [edges[i], to]);
 }
 
 /**
- * Decode `wav` in bounded pieces.
+ * Decode `wav` one stretch of speech at a time.
  *
  * `prefixText` is trusted committed live-preview text that precedes `wav`
  * (always kept, even if every piece fails). `salvageText` is a broken
@@ -76,6 +78,7 @@ function planPieces(wav, maxSec) {
  * @param {(wav: Buffer, opts: {onDecodeMs?: (ms: number) => void}) => Promise<string>} deps.runTranscribe
  * @param {() => void} [deps.restartStt] retire a wedged worker before retrying
  * @param {number} [deps.maxSec]
+ * @param {number} [deps.minPauseSec] shortest pause cut at (Infinity: none)
  * @param {string} [deps.prefixText]
  * @param {string} [deps.salvageText]
  * @param {() => boolean} [deps.stale] true once the session was cancelled
@@ -89,6 +92,7 @@ async function transcribeChunked(
     runTranscribe,
     restartStt = () => {},
     maxSec = MAX_DECODE_SECONDS,
+    minPauseSec,
     prefixText = "",
     salvageText = "",
     stale = () => false,
@@ -96,7 +100,7 @@ async function transcribeChunked(
     log,
   }
 ) {
-  const pieces = planPieces(wav, maxSec).map(([fromFrame, toFrame]) => ({
+  const pieces = planPieces(wav, maxSec, minPauseSec).map(([fromFrame, toFrame]) => ({
     fromFrame,
     toFrame,
     ok: false,
@@ -126,7 +130,7 @@ async function transcribeChunked(
         const fromSec = (piece.fromFrame / SAMPLE_RATE).toFixed(1);
         const toSec = (piece.toFrame / SAMPLE_RATE).toFixed(1);
         log?.warn(
-          `final decode: piece ${fromSec}-${toSec}s attempt ${piece.attempts} failed:`,
+          `STT decode: piece ${fromSec}-${toSec}s attempt ${piece.attempts} failed:`,
           err?.message,
           err?.code ? `(${err.code}${err.exitCode !== undefined ? `, exit code ${err.exitCode}` : ""})` : ""
         );

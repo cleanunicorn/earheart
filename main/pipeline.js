@@ -23,7 +23,7 @@ const history = require("./history");
 const { createLivePreview } = require("./live-preview");
 const { createPersistedRtfEstimator } = require("./util/rtf");
 const { wavDurationSec, wavSliceFromFrame } = require("./util/wav");
-const { transcribeChunked } = require("./final-decode");
+const { transcribeChunked } = require("./chunked-decode");
 const logger = require("./util/logger");
 
 let state = "idle"; // idle | recording | processing
@@ -36,8 +36,26 @@ const stateListeners = new Set();
 // lifecycle points. Dependencies are injected so it stays free of our private
 // session/state — `isCurrent(sid)` is the single source of truth for "this sid
 // is still the active recording".
+// Live-preview chunk decodes go through the same piecewise decoding as the
+// final pass (chunked-decode.js): a committed chunk's text is reused verbatim
+// in the final transcript, and a chunk holding two sentences is exactly what
+// makes the built-in model drop one of them. A chunk that decodes only in part
+// throws, so live-preview.js marks the snapshot broken and the final pass
+// decodes that audio again rather than committing a hole.
+async function transcribeLive(wav, sttCfg, signal) {
+  if (sttCfg.engine !== "builtin") return route.transcribe(wav, sttCfg, signal);
+  const result = await transcribeChunked(wav, {
+    runTranscribe: (piece, opts) => route.transcribe(piece, sttCfg, signal, opts),
+    restartStt: engines.restartStt,
+    stale: () => !!signal?.aborted,
+  });
+  if (result.stale) throw new Error("aborted");
+  if (result.partial) throw new Error("live chunk decode incomplete");
+  return result.text;
+}
+
 const livePreview = createLivePreview({
-  runTranscribe: route.transcribe,
+  runTranscribe: transcribeLive,
   runCleanup: route.clean,
   sendToOverlay: windows.sendToOverlay,
   getSettings: settings.get,
@@ -156,9 +174,10 @@ function getSttRtf() {
 // dictation ran. Without a usable snapshot (preview machinery broken, remote
 // STT, no chunk committed yet) the whole recording is decoded.
 //
-// The builtin decode never takes one bite longer than MAX_DECODE_SECONDS: a
-// long tail or whole recording goes through final-decode.js in bounded pieces
-// (one long decode loses words and can kill the worker — #168, #169). If the
+// The builtin decode goes through chunked-decode.js: one stretch of speech per
+// worker request, cut at pauses and never over MAX_DECODE_SECONDS (a decode
+// spanning several utterances loses words, and one long enough kills the
+// worker — #168, #169). If the
 // worker dies part-way, every word already decoded — the committed text, the
 // finished pieces, or failing all else a broken snapshot's text — comes back
 // with `partial: true` instead of an error. Resolves to { text, partial }.

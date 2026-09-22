@@ -174,7 +174,7 @@ function wavSampleFrames(buf) {
 /**
  * Re-encode the samples `[fromFrame, toFrame)` of a mono PCM16 WAV as a new
  * WAV buffer — how the final transcription hands the STT worker a bounded
- * piece of a long recording (see main/final-decode.js). Clamped to the
+ * piece of a long recording (see main/chunked-decode.js). Clamped to the
  * recording: a range past the end, or one whose end precedes its start,
  * yields a valid zero-sample WAV.
  * @param {Buffer} buf

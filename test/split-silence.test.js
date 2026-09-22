@@ -1,6 +1,7 @@
-// Tests for the final-decode splitter: where a long recording is cut so no
-// single STT decode receives more than the cap, and that the cuts land in the
-// quietest available moment rather than through a word.
+// Tests for the decode splitter: where a recording is cut so each STT decode
+// gets one stretch of speech between pauses, and no decode exceeds the cap.
+// The shipped Parakeet int8 model drops whole sentences when two utterances
+// share one decode (docs/long-recordings.md), so pauses are the primary cut.
 
 const { test } = require("node:test");
 const assert = require("node:assert");
@@ -23,56 +24,76 @@ function pieces(cuts, total) {
   return edges.slice(1).map((to, i) => [edges[i], to]);
 }
 
-test("splitPoints: a buffer at or under the cap is not cut", () => {
-  assert.deepStrictEqual(splitPoints(speech(59), SR, { maxSec: 60 }), []);
-  assert.deepStrictEqual(splitPoints(speech(60), SR, { maxSec: 60 }), []);
-  assert.deepStrictEqual(splitPoints(new Float32Array(0), SR, { maxSec: 60 }), []);
+const NO_PAUSES = { minPauseSec: Infinity };
+
+test("splitPoints: uninterrupted speech at or under the cap is not cut", () => {
+  assert.deepStrictEqual(splitPoints(speech(19), SR, { maxSec: 20 }), []);
+  assert.deepStrictEqual(splitPoints(speech(20), SR, { maxSec: 20 }), []);
+  assert.deepStrictEqual(splitPoints(new Float32Array(0), SR, { maxSec: 20 }), []);
 });
 
-test("splitPoints: pieces cover the buffer contiguously and none exceeds the cap", () => {
-  for (const seconds of [60.01, 61, 119, 120, 121, 183, 311, 600]) {
-    const samples = speech(seconds);
-    const cuts = splitPoints(samples, SR, { maxSec: 60 });
-    const ps = pieces(cuts, samples.length);
-    assert.strictEqual(ps[0][0], 0, `${seconds}s starts at 0`);
-    assert.strictEqual(ps[ps.length - 1][1], samples.length, `${seconds}s ends at the end`);
+test("splitPoints: every pause between words is a cut, at its middle", () => {
+  // Pauses of 0.5 s at 3 s and 0.2 s at 7 s: two utterance boundaries.
+  const cuts = splitPoints(speech(10, [[3, 3.5], [7, 7.2]]), SR, { maxSec: 20 });
+  assert.strictEqual(cuts.length, 2);
+  assert.ok(Math.abs(cuts[0] / SR - 3.25) <= 0.05, `first cut at ${cuts[0] / SR}s`);
+  assert.ok(Math.abs(cuts[1] / SR - 7.1) <= 0.05, `second cut at ${cuts[1] / SR}s`);
+});
+
+test("splitPoints: a pause shorter than minPauseSec is not a cut", () => {
+  assert.deepStrictEqual(splitPoints(speech(10, [[3, 3.1]]), SR, { maxSec: 20 }), []);
+  assert.strictEqual(splitPoints(speech(10, [[3, 3.1]]), SR, { maxSec: 20, minPauseSec: 0.1 }).length, 1);
+});
+
+test("splitPoints: leading and trailing silence are not boundaries", () => {
+  // Quiet at both ends of the buffer separates nothing from nothing.
+  assert.deepStrictEqual(splitPoints(speech(10, [[0, 1], [9, 10]]), SR, { maxSec: 20 }), []);
+});
+
+test("splitPoints: quiet but not silent audio counts as a pause below quietRms", () => {
+  const s = speech(10);
+  for (let i = 3 * SR; i < 3.5 * SR; i++) s[i] = i % 2 ? 0.005 : -0.005; // RMS 0.005 < 0.012
+  assert.strictEqual(splitPoints(s, SR, { maxSec: 20 }).length, 1);
+  for (let i = 3 * SR; i < 3.5 * SR; i++) s[i] = i % 2 ? 0.05 : -0.05; // RMS 0.05: still speech
+  assert.strictEqual(splitPoints(s, SR, { maxSec: 20 }).length, 0);
+});
+
+test("splitPoints: pieces tile the buffer and none exceeds the cap", () => {
+  const cases = [
+    speech(61),
+    speech(183),
+    speech(311, [[5, 5.3], [100, 101], [250, 250.2]]),
+    speech(600, Array.from({ length: 40 }, (_, i) => [i * 13 + 6, i * 13 + 6.4])),
+  ];
+  for (const samples of cases) {
+    const ps = pieces(splitPoints(samples, SR, { maxSec: 20 }), samples.length);
+    assert.strictEqual(ps[0][0], 0);
+    assert.strictEqual(ps.at(-1)[1], samples.length);
+    for (let i = 1; i < ps.length; i++) assert.strictEqual(ps[i][0], ps[i - 1][1]);
     for (const [from, to] of ps) {
-      assert.ok(to > from, `${seconds}s: empty piece`);
-      assert.ok(to - from <= 60 * SR, `${seconds}s: piece of ${(to - from) / SR}s`);
+      assert.ok(to > from, "empty piece");
+      assert.ok(to - from <= 20 * SR, `piece of ${(to - from) / SR}s`);
     }
   }
 });
 
-test("splitPoints: a cut lands in the pause before the ceiling, not through speech", () => {
-  // A half-second pause at 55.0-55.5 s: the cut goes to the end of the quiet
-  // window inside it (the latest all-silent window), never at the 60 s ceiling.
-  const cuts = splitPoints(speech(100, [[55, 55.5]]), SR, { maxSec: 60 });
+test("splitPoints: past the cap with no pause, the cut goes to the quietest moment before the ceiling", () => {
+  // A dip too short to be a pause (0.1 s) 6 s before the 20 s ceiling: the
+  // backstop cut lands there rather than through the loudest part.
+  const s = speech(30, [[13.9, 14.0]]);
+  const cuts = splitPoints(s, SR, { maxSec: 20 });
   assert.strictEqual(cuts.length, 1);
-  const at = cuts[0] / SR;
-  assert.ok(at > 55.25 && at <= 55.5, `cut at ${at}s`);
+  assert.ok(cuts[0] / SR > 13.9 && cuts[0] / SR <= 14.2, `cut at ${cuts[0] / SR}s`);
 });
 
-test("splitPoints: a pause further back than the live 3 s window is still found", () => {
-  // Final decoding has no latency budget, so it looks back 10 s by default:
-  // a sentence gap 8 s before the ceiling beats cutting mid-word at 60 s.
-  const cuts = splitPoints(speech(100, [[51.7, 52.1]]), SR, { maxSec: 60 });
-  const at = cuts[0] / SR;
-  assert.ok(at > 51.9 && at <= 52.1, `cut at ${at}s`);
-  // With the live preview's 3 s window it would not be.
-  const narrow = splitPoints(speech(100, [[51.7, 52.1]]), SR, { maxSec: 60, lookbackSec: 3 });
-  assert.ok(narrow[0] / SR >= 57, `narrow cut at ${narrow[0] / SR}s`);
-});
-
-test("splitPoints: uninterrupted sound still cuts, as late as possible", () => {
+test("splitPoints: uninterrupted sound past the cap still cuts, as late as possible", () => {
   // Equal energy everywhere: ties go to the latest window, i.e. the ceiling.
-  const cuts = splitPoints(speech(150), SR, { maxSec: 60 });
-  assert.deepStrictEqual(cuts, [60 * SR, 120 * SR]);
+  assert.deepStrictEqual(splitPoints(speech(50), SR, { maxSec: 20, ...NO_PAUSES }), [20 * SR, 40 * SR]);
 });
 
 test("splitPoints: a lookback longer than the cap still makes progress", () => {
   const samples = speech(30);
-  const cuts = splitPoints(samples, SR, { maxSec: 5, lookbackSec: 20 });
-  const ps = pieces(cuts, samples.length);
+  const ps = pieces(splitPoints(samples, SR, { maxSec: 5, lookbackSec: 20 }), samples.length);
   for (const [from, to] of ps) assert.ok(to > from && to - from <= 5 * SR);
 });
 

@@ -41,9 +41,9 @@ const stateListeners = new Set();
 // in the final transcript, and a chunk holding two sentences is exactly what
 // makes the built-in model drop one of them. A chunk that decodes only in part
 // throws, so live-preview.js marks the snapshot broken and the final pass
-// decodes that audio again rather than committing a hole.
+// decodes that audio again rather than committing a hole. Built-in only:
+// live-preview.js never decodes for remote STT.
 async function transcribeLive(wav, sttCfg, signal) {
-  if (sttCfg.engine !== "builtin") return route.transcribe(wav, sttCfg, signal);
   const result = await transcribeChunked(wav, {
     runTranscribe: (piece, opts) => route.transcribe(piece, sttCfg, signal, opts),
     restartStt: engines.restartStt,

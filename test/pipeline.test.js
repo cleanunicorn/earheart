@@ -428,13 +428,6 @@ test("pipeline: a live chunk that decodes only in part fails, so the final pass 
   await assert.rejects(rig.liveTranscribe(loudWav(50), rig.cfg.stt, new AbortController().signal), /incomplete/);
 });
 
-test("pipeline: remote live decodes (never sent today) would go straight through", async () => {
-  const rig = dictationRig({ engine: "remote", transcribe: async () => "remote" });
-  const text = await rig.liveTranscribe(loudWav(50), rig.cfg.stt, new AbortController().signal);
-  assert.strictEqual(text, "remote");
-  assert.strictEqual(rig.log.transcribe.length, 1);
-});
-
 test("pipeline: a piece of speech that decodes to nothing makes the transcript incomplete, not silently shorter", async () => {
   const rig = dictationRig({ transcribe: async (n) => (n === 1 ? "" : `w${n}`) });
   await rig.dictate(loudWav(50));

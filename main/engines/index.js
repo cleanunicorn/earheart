@@ -11,6 +11,7 @@ const hostModule = require("./host");
 const settings = require("../settings");
 const { resolveCleanup } = require("../cleanup-styles");
 const { cleanContextFor } = require("../util/clean-budget");
+const { cleanupTurnPrefix } = require("../util/cleanup-turn");
 
 // STT and cleanup each get their own worker process so they run in parallel and
 // a crash in one engine can't take down the other (see host.js). Each lazily
@@ -151,13 +152,14 @@ async function ensureCleanup(modelId) {
 // prefix — the static instructions plus whatever transcript prefix is already
 // known (the live preview's committed text) — into the worker's context, so
 // the next clean() only prefills what follows before generating. The prompt
-// built here MUST stay a strict string prefix of clean()'s user turn for the
-// KV reuse to hit. Best effort: callers fire-and-forget it.
+// is a strict string prefix of clean()'s user turn (main/util/cleanup-turn.js
+// builds both), which is what lets the KV reuse hit. Best effort: callers
+// fire-and-forget it.
 async function primeCleanup(cfg, transcriptPrefix = "") {
   await ensureCleanup(cfg.builtin.model);
   const { systemPrompt } = resolveCleanup(cfg);
   return cleanupHost.request("prime-cleanup", {
-    text: `${systemPrompt}\n\nTranscript:\n${transcriptPrefix}`,
+    text: cleanupTurnPrefix(systemPrompt, transcriptPrefix),
   });
 }
 

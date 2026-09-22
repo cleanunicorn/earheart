@@ -43,6 +43,12 @@ The Makefile wraps most tasks; `make help` lists them all.
   `npx electron . --smoke-test --no-sandbox`, then
   `npx electron scripts/<engine|overlay|settings>-smoke.js --no-sandbox`
 - **STT server tests:** `cd stt-server && uv run --extra test python -m pytest`
+- **Cleanup model benchmark** (optional; needs a downloaded GGUF, not part of
+  the gate): `node scripts/bench-cleanup.mjs --out=<dir outside the repo>
+  <model.gguf>`; `--probe <owner/repo> <file.gguf>` checks a candidate on
+  Hugging Face without downloading it, and `--report <dir>` rebuilds the
+  comparison tables from saved runs. Method and recorded numbers:
+  [docs/cleanup-models.md](docs/cleanup-models.md)
 - **Build:** `make dist` (current platform)
 
 Always run the tests and smoke checks before opening a PR.
@@ -273,6 +279,7 @@ main/                Electron main process (pipeline, hotkeys, settings, tray, w
 renderer/            overlay (mic → 16 kHz WAV, live preview), settings, wizard
 stt-server/          optional Python FastAPI Parakeet server
 scripts/             icons, screenshots, release notes, smoke tests, model evals
+docs/                agent setup recipes, feature write-ups, cleanup-model survey
 test/                unit tests (node --test)
 .github/workflows/   ci, pr-title, auto-release, release
 DESIGN.md            the UI design system — read before changing renderer CSS

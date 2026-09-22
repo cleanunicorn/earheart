@@ -26,9 +26,10 @@
 //
 // Each arm reproduces production exactly: the prompt assembly from
 // main/cleanup-styles.js (base prompt + style directive) and the single-user-
-// turn shape from main/engines/engine-worker.js. Only the directive text and
-// the sampling profile differ between arms. Not in the test suite: it needs a
-// multi-GB model. The shapes themselves are pinned in test/unit.test.js.
+// turn shape the engine worker sends (main/util/cleanup-turn.js). Only the
+// directive text and the sampling profile differ between arms. Not in the
+// test suite: it needs a multi-GB model. The shapes themselves are pinned in
+// test/unit.test.js.
 
 import { createRequire } from "node:module";
 import { getLlama, LlamaChatSession } from "node-llama-cpp";
@@ -36,8 +37,11 @@ import { getLlama, LlamaChatSession } from "node-llama-cpp";
 const require = createRequire(import.meta.url);
 const { DEFAULTS } = require("../main/settings");
 const { STYLES } = require("../main/cleanup-styles");
-const { stripStumbles, collapseRepeats } = require("../main/util/stumble-strip");
+const { stripStumbles } = require("../main/util/stumble-strip");
 const { SHORT, REPORTED, FLUENT } = require("./dictation-corpus");
+const { cleanupUserTurn, cleanupSamplingOptions } = require("../main/util/cleanup-turn");
+// The same filler/repeat counters the model benchmark scores with.
+const { countFillers, countRepeats } = require("./cleanup-metrics");
 
 const BASE = DEFAULTS.cleanup.systemPrompt;
 
@@ -84,33 +88,6 @@ if (!INPUTS) {
   throw new Error(`CORPUS must be one of ${Object.keys(CORPORA).join(", ")}`);
 }
 
-const FILLER = /(?<![\w-])(?:u[mh]+|erm+)(?![\w-])/gi;
-const REPEAT =
-  /(?<![\p{L}\p{N}'’-])([\p{L}\p{N}][\p{L}\p{N}'’-]*)((?:[^\S\n]+\1)+)(?![\p{L}\p{N}'’-])/giu;
-
-function countFillers(text) {
-  return (text.match(FILLER) || []).length;
-}
-// A "repeat" is what the backstop would collapse — the production rule itself
-// (deliberate doublings, numbers and spelled-out letters are not stutters), so
-// the delivered column can never report a repeat the backstop keeps on purpose.
-function countRepeats(text) {
-  let n = 0;
-  text.replace(REPEAT, (m) => {
-    if (collapseRepeats(m) !== m) n++;
-    return m;
-  });
-  return n;
-}
-
-function samplingOptions(s) {
-  const o = { temperature: s.temperature };
-  if (s.topP != null) o.topP = s.topP;
-  if (s.topK != null && s.topK > 0) o.topK = s.topK;
-  if (s.minP != null && s.minP > 0) o.minP = s.minP;
-  return o;
-}
-
 const modelPath = process.argv[2];
 const seeds = (process.argv[3] || "1").split(",").map(Number);
 
@@ -127,10 +104,10 @@ for (const arm of ARMS) {
   for (const [i, transcript] of INPUTS.entries()) {
     for (const seed of seeds) {
       session.resetChatHistory();
-      const userTurn = `${systemPrompt}\n\nTranscript:\n${transcript}\n\nCleaned transcript:`;
+      const userTurn = cleanupUserTurn(systemPrompt, transcript);
       const out = (
         await session.prompt(userTurn, {
-          ...samplingOptions(arm.sampling),
+          ...cleanupSamplingOptions(arm.sampling),
           seed,
           maxTokens: 1024,
         })

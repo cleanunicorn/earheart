@@ -75,10 +75,10 @@ function applyPair(next) {
     names.map((name) => previous.get(name)?.accelerator).filter(Boolean)
   );
   const nonEmpty = changed.filter((name) => target[name].accelerator);
-  const free = nonEmpty.filter((name) => !currentAccelerators.has(target[name].accelerator));
-  const crossed = nonEmpty.filter((name) => currentAccelerators.has(target[name].accelerator));
-  const added = [];
-  const released = [];
+  const freeNames = nonEmpty.filter((name) => !currentAccelerators.has(target[name].accelerator));
+  const crossedNames = nonEmpty.filter((name) => currentAccelerators.has(target[name].accelerator));
+  const addedNames = [];
+  const releasedEntries = [];
 
   function tryRegister(name) {
     const { accelerator, onTrigger } = target[name];
@@ -86,7 +86,7 @@ function applyPair(next) {
       if (!globalShortcut.register(accelerator, onTrigger)) {
         return `Could not register "${accelerator}" (already in use, or your desktop blocks global shortcuts — see the Wayland note in Settings).`;
       }
-      added.push(name);
+      addedNames.push(name);
       return null;
     } catch (err) {
       return `Invalid hotkey "${accelerator}": ${err.message}`;
@@ -94,7 +94,7 @@ function applyPair(next) {
   }
 
   function rollBack(failedName, failure) {
-    for (const name of added) {
+    for (const name of addedNames) {
       globalShortcut.unregister(target[name].accelerator);
     }
     for (const name of changed) {
@@ -106,7 +106,7 @@ function applyPair(next) {
               error: `Not changed: the ${failedName} hotkey could not be registered`,
             };
     }
-    for (const [name, entry] of released) {
+    for (const [name, entry] of releasedEntries) {
       let restoreError = null;
       try {
         if (!globalShortcut.register(entry.accelerator, entry.onTrigger)) {
@@ -129,26 +129,26 @@ function applyPair(next) {
   }
 
   // Preserve #132's no-drop behavior wherever the new accelerator is free.
-  for (const name of free) {
+  for (const name of freeNames) {
     const failure = tryRegister(name);
     if (failure) return rollBack(name, failure);
   }
 
   // Only crossed targets require an early release (including a direct swap).
-  const crossedTargets = new Set(crossed.map((name) => target[name].accelerator));
+  const crossedTargets = new Set(crossedNames.map((name) => target[name].accelerator));
   for (const name of names) {
     const entry = previous.get(name);
     if (entry && crossedTargets.has(entry.accelerator)) {
       globalShortcut.unregister(entry.accelerator);
-      released.push([name, entry]);
+      releasedEntries.push([name, entry]);
     }
   }
-  for (const name of crossed) {
+  for (const name of crossedNames) {
     const failure = tryRegister(name);
     if (failure) return rollBack(name, failure);
   }
 
-  const releasedNames = new Set(released.map(([name]) => name));
+  const releasedNames = new Set(releasedEntries.map(([name]) => name));
   for (const name of changed) {
     const entry = previous.get(name);
     if (entry && !releasedNames.has(name)) globalShortcut.unregister(entry.accelerator);

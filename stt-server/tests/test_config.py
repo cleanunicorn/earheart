@@ -16,6 +16,14 @@ from onnx_asr.models.whisper import WhisperHf, WhisperOrt
 from earheart_stt import cli, server
 
 
+@pytest.fixture(autouse=True)
+def _isolate_hf_hub_cache(monkeypatch):
+    # load_asr_model writes os.environ["HF_HUB_CACHE"] directly, which
+    # monkeypatch never sees, so it can leak into the next test. Record the key
+    # here so monkeypatch's teardown owns it and restores the original value.
+    monkeypatch.setenv("HF_HUB_CACHE", os.environ.get("HF_HUB_CACHE", ""))
+
+
 def test_cache_dir_sets_hf_hub_cache_and_omits_path(tmp_path, monkeypatch):
     calls = {}
 

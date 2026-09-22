@@ -39,18 +39,21 @@ if (!gotLock) {
   main();
 }
 
-// Register both global hotkeys from settings. The record hotkey is required
-// (empty is a misconfiguration); the pause hotkey is optional (empty simply
-// leaves it unbound). Record registers first so a pause combo colliding with
-// it is the one that loses.
+// Register both global hotkeys from settings as one transaction. The record
+// hotkey is required (empty is a misconfiguration); the pause hotkey is
+// optional (empty simply leaves it unbound).
 function applyHotkeys(cfg) {
-  const record = hotkeys.register("record", cfg.hotkey, () => pipeline.toggle());
-  const pause = hotkeys.register("pause", cfg.pauseHotkey, () =>
-    pipeline.pauseToggle()
-  );
+  const pair = hotkeys.applyPair({
+    record: cfg.hotkey,
+    pause: cfg.pauseHotkey,
+    onRecord: () => pipeline.toggle(),
+    onPause: () => pipeline.pauseToggle(),
+  });
   return {
-    hotkey: record.empty ? { ok: false, error: "No hotkey configured" } : record,
-    pauseHotkey: pause,
+    hotkey: pair.record.empty
+      ? { ok: false, empty: true, error: "No hotkey configured" }
+      : pair.record,
+    pauseHotkey: pair.pause,
   };
 }
 

@@ -76,15 +76,56 @@ function init({ applyHotkeys, onSettingsChanged }) {
   // with, so their `overlay` can be stale — dragging the card while a form is
   // open, then saving the form, would roll the position back. Re-inject the
   // live value on every form save.
-  const keepLiveOverlay = (next) => ({ ...next, overlay: settings.get().overlay });
+  const saveWithHotkeys = (next) => {
+    const previous = settings.get();
+    const candidate = { ...next, overlay: previous.overlay };
+    const hotkeyResults = applyHotkeys(candidate);
+    const persistedCandidate = { ...candidate };
+    if (!hotkeyResults.hotkey.ok && !hotkeyResults.hotkey.empty) {
+      persistedCandidate.hotkey = previous.hotkey;
+    }
+    if (!hotkeyResults.pauseHotkey.ok && !hotkeyResults.pauseHotkey.empty) {
+      persistedCandidate.pauseHotkey = previous.pauseHotkey;
+    }
+
+    let saved;
+    try {
+      saved = settings.save(persistedCandidate);
+    } catch (err) {
+      // The disk still contains `previous`, so put the live shortcuts back in
+      // the same state before surfacing the write failure to the renderer.
+      try {
+        const rollback = applyHotkeys(previous);
+        const failures = [rollback.hotkey, rollback.pauseHotkey]
+          .filter((result) => !result.ok)
+          .map((result) => result.error);
+        if (failures.length) {
+          logger.warn(`could not restore hotkeys after settings save failed: ${failures.join("; ")}`);
+        }
+      } catch (rollbackError) {
+        logger.warn(`could not restore hotkeys after settings save failed: ${rollbackError.message}`);
+      }
+      throw err;
+    }
+
+    // Disk keeps only working values; the form keeps the attempted values so
+    // the user can see each error and correct the field without re-entering it.
+    const shown = { ...saved };
+    if (!hotkeyResults.hotkey.ok && !hotkeyResults.hotkey.empty) {
+      shown.hotkey = candidate.hotkey;
+    }
+    if (!hotkeyResults.pauseHotkey.ok && !hotkeyResults.pauseHotkey.empty) {
+      shown.pauseHotkey = candidate.pauseHotkey;
+    }
+    return { saved, shown, hotkeyResults };
+  };
 
   ipcMain.handle("settings:save", (event, next) => {
-    const saved = settings.save(keepLiveOverlay(next));
-    const hotkeyResults = applyHotkeys(saved);
+    const { saved, shown, hotkeyResults } = saveWithHotkeys(next);
     applyAutostart(saved);
     onSettingsChanged?.();
     return {
-      settings: saved,
+      settings: shown,
       hotkey: hotkeyResults.hotkey,
       pauseHotkey: hotkeyResults.pauseHotkey,
     };
@@ -94,8 +135,7 @@ function init({ applyHotkeys, onSettingsChanged }) {
   // window so the user can review what was pre-configured. If the chosen
   // hotkey can't be registered, the wizard stays open to let them fix it.
   ipcMain.handle("wizard:complete", (event, next) => {
-    const saved = settings.save(keepLiveOverlay(next));
-    const hotkeyResults = applyHotkeys(saved);
+    const { saved, shown, hotkeyResults } = saveWithHotkeys(next);
     applyAutostart(saved);
     onSettingsChanged?.();
     if (hotkeyResults.hotkey.ok) {
@@ -103,7 +143,7 @@ function init({ applyHotkeys, onSettingsChanged }) {
       windows.closeWizard();
     }
     return {
-      settings: saved,
+      settings: shown,
       hotkey: hotkeyResults.hotkey,
       pauseHotkey: hotkeyResults.pauseHotkey,
     };

@@ -49,8 +49,9 @@ curl -s http://127.0.0.1:8484/v1/audio/transcriptions \
 ```
 
 Audio uploads are limited to 64 MiB (encoded). Decoded audio is capped at
-256 MiB — about 70 minutes of 16 kHz mono — and rejected with `413` before it
-is decoded.
+256 MiB of float32 samples at the file's own rate and channel count — about
+70 minutes of 16 kHz mono, about 13 minutes of 44.1 kHz stereo — and rejected
+with `413` before it is decoded.
 
 ## Options
 

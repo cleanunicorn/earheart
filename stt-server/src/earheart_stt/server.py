@@ -116,6 +116,19 @@ def decode_audio(data: bytes) -> tuple[np.ndarray, int]:
             ),
         )
 
+    # The source bound above misses the 16 kHz resample: low-rate audio (e.g.
+    # 8 kHz) projects to more output frames than it decodes. Bound the
+    # projected mono output too, so resample_linear cannot expand past budget.
+    projected_frames = int(round(info.frames * TARGET_SAMPLE_RATE / info.samplerate))
+    if projected_frames * 4 > MAX_DECODED_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Decoded audio exceeds the "
+                f"{MAX_DECODED_BYTES // (1024 * 1024)} MiB limit"
+            ),
+        )
+
     buffer.seek(0)
     try:
         waveform, sample_rate = sf.read(

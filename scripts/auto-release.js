@@ -81,6 +81,8 @@ function pendingReleases({ prs, changelog }) {
       warnings.push(
         `PR #${pr.number} has an invalid Conventional Commits title; no release was created`,
       );
+    } else if (reason === "empty") {
+      warnings.push(`PR #${pr.number} has no readable release note; no release was created`);
     }
     if (bump) releases.push({ number: pr.number, title: pr.title, bump });
   }

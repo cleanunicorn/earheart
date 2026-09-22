@@ -95,6 +95,7 @@ test("pendingReleases skips released and valid no-release PRs and warns on inval
     { number: 102, title: "fix: already done", mergedAt: "2026-09-22T10:02:00Z" },
     { number: 103, title: "wip!: invalid", mergedAt: "2026-09-22T10:03:00Z" },
     { number: 104, title: "fix: pending", mergedAt: "2026-09-22T10:04:00Z" },
+    { number: 105, title: "feat: .", mergedAt: "2026-09-22T10:05:00Z" },
   ];
 
   const result = pendingReleases({ prs, changelog });
@@ -103,6 +104,7 @@ test("pendingReleases skips released and valid no-release PRs and warns on inval
   ]);
   assert.deepStrictEqual(result.warnings, [
     "PR #103 has an invalid Conventional Commits title; no release was created",
+    "PR #105 has no readable release note; no release was created",
   ]);
 });
 

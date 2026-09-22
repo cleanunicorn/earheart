@@ -247,6 +247,17 @@ def test_internal_type_error_is_not_retried(client_factory, recognizer, monkeypa
     assert "internal" not in response.json()["detail"]
 
 
+def test_keyerror_on_non_honouring_model_is_500(client_factory, recognizer, monkeypatch):
+    monkeypatch.setattr(server, "honours_language", lambda asr: False)
+    recognizer.recognize.side_effect = KeyError("some token")
+    with client_factory(recognizer) as client:
+        response = transcribe(client, language="en")
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Transcription failed"}
+    recognizer.recognize.assert_called_once()
+    assert recognizer.recognize.call_args.kwargs == {"sample_rate": 16000}
+
+
 def test_model_without_language_parameter(client_factory, monkeypatch):
     monkeypatch.setattr(server, "honours_language", lambda asr: False)
     calls = []

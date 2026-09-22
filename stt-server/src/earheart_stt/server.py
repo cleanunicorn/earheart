@@ -227,7 +227,7 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
                     waveform, sample_rate=TARGET_SAMPLE_RATE, **kwargs
                 )
             except Exception as exc:
-                if isinstance(exc, KeyError) and language:
+                if isinstance(exc, KeyError) and "language" in kwargs:
                     # e.g. a language code the model doesn't support.
                     raise HTTPException(
                         status_code=400, detail=f"Unsupported language {language!r}"

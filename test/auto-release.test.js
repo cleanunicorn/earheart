@@ -1,5 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
+const releaseNotes = require("../main/services/release-notes");
 
 const {
   TITLE_RE,
@@ -52,6 +53,18 @@ test("releasedPrNumbers reads only exact trailing PR markers", () => {
 `;
 
   assert.deepStrictEqual([...releasedPrNumbers(changelog)], [170, 17]);
+});
+
+test("releasedPrNumbers reads markers written by the changelog producer", () => {
+  const entry = releaseNotes.entryFromPullRequest({
+    version: "1.2.0",
+    title: "fix: keep every release",
+    number: 172,
+    date: "2026-09-22",
+  });
+  const changelog = releaseNotes.withEntry(releaseNotes.CHANGELOG_HEADER, entry);
+
+  assert.deepStrictEqual([...releasedPrNumbers(changelog)], [172]);
 });
 
 test("pendingReleases catches up a burst in merge order", () => {

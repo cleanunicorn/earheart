@@ -111,8 +111,8 @@ test("a final-pair collision does not touch either existing hotkey", () => {
 
   assert.strictEqual(result.record.ok, false);
   assert.strictEqual(result.pause.ok, false);
-  assert.match(result.record.error, /pause hotkey/);
-  assert.match(result.pause.error, /record hotkey/);
+  assert.match(result.record.error, /already used by the pause hotkey/);
+  assert.match(result.pause.error, /already used by the record hotkey/);
   assert.deepStrictEqual(calls.events, []);
 });
 
@@ -127,7 +127,7 @@ test("a collision reports only the changed slot when the owner is unchanged", ()
 
   assert.deepStrictEqual(result.record, { ok: true });
   assert.strictEqual(result.pause.ok, false);
-  assert.match(result.pause.error, /record hotkey/);
+  assert.match(result.pause.error, /already used by the record hotkey/);
   assert.deepStrictEqual(calls.events, []);
 });
 

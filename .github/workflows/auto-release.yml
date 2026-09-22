@@ -1,9 +1,9 @@
 name: Auto release
 
 # Release jobs are serialized, but GitHub keeps only one pending job in a
-# concurrency group. Every surviving job therefore catches up all merged PRs
-# after the newest numbered changelog entry. Each release is rebuilt on the
-# current origin/main and pushed with its tag atomically.
+# concurrency group. Every surviving job therefore catches up all
+# release-affecting merged PRs after the newest numbered changelog entry. Each
+# release is rebuilt on the current origin/main and pushed with its tag atomically.
 
 on:
   pull_request:

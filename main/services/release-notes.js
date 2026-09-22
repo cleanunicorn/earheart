@@ -35,9 +35,10 @@ changed right after it updates.
 // stays a couple of KB.
 const FEED_VERSIONS = 12;
 
-// Types that describe a user-visible change, and the word for it. Anything else
-// (chore, docs, ci, test, style, build) never cuts a release in the first
-// place — see scripts/auto-release.js — so it never reaches a changelog entry.
+// Types that describe a user-visible change, and the word for it. Unmarked
+// chore, docs, ci, test, style, and build titles do not cut releases. Their
+// breaking `type!:` forms do; see scripts/auto-release.js. They fall back to
+// the generic "change" kind.
 const KINDS = {
   feat: "feature",
   fix: "fix",

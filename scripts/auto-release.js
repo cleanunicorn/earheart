@@ -12,10 +12,8 @@ function bumpFor(title) {
   if (!TITLE_RE.test(value)) return { bump: "", reason: "invalid" };
   if (!releaseNotes.titleToItem(value)) return { bump: "", reason: "empty" };
 
-  const prefix = value.slice(0, value.indexOf(":"));
-  if (prefix.endsWith("!")) return { bump: "major", reason: "release" };
-
-  const type = prefix.match(/^[a-z]+/)[0];
+  const [, type, , bang] = value.match(/^([a-z]+)(\([^)]+\))?(!)?: /);
+  if (bang) return { bump: "major", reason: "release" };
   if (type === "feat") return { bump: "minor", reason: "release" };
   if (["fix", "perf", "refactor"].includes(type)) {
     return { bump: "patch", reason: "release" };

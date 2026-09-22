@@ -24,6 +24,8 @@ test("bumpFor validates before sizing a release", () => {
     ["Fix: x", "", "invalid"],
     ["feat: ok", "minor", "release"],
     ["fix(scope)!: x", "major", "release"],
+    ["feat(a:b)!: x", "major", "release"],
+    ["fix(a:b): x", "patch", "release"],
     ["refactor: x", "patch", "release"],
     ["ci: x", "", "no-release"],
     ["feat: y [skip release]", "", "skip"],

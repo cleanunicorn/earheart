@@ -49,7 +49,7 @@ jobs:
           # gaps before that release are never recreated.
           gh api --paginate \
             -H "Accept: application/vnd.github+json" \
-            "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100" \
+            "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=main&sort=created&direction=desc&per_page=100" \
             --jq '.[] | select(.merged_at != null) | {number, title, mergedAt: .merged_at}' \
             | jq -s '.' > "$prs_file"
           node scripts/auto-release.js select \

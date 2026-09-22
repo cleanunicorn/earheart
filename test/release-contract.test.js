@@ -90,6 +90,8 @@ test("catch-up reads every merged PR with the explicit token permission", () => 
   assert.match(workflow, /^  issues: read$/m);
   assert.match(workflow, /gh api --paginate/);
   assert.match(workflow, /pulls\?state=closed&base=main/);
+  assert.match(workflow, /sort=created&direction=desc/);
+  assert.doesNotMatch(workflow, /sort=updated/);
   assert.match(workflow, /select\(\.merged_at != null\)/);
 });
 

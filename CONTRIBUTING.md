@@ -229,7 +229,8 @@ Design constraints worth keeping:
   (`main/chunked-decode.js`, cut at pauses, ≤ 20 s per decode) because the
   model drops whole sentences when several share a decode; if the STT worker
   dies part-way, the words already decoded are still delivered, with a
-  notification, and marked `incomplete` in history. See
+  notification, and marked `incomplete` — on the overlay's done card and in
+  the History entry, not only in the stored record. See
   [docs/long-recordings.md](docs/long-recordings.md).
 - **The UI has a design system.** [DESIGN.md](DESIGN.md) is derived from the
   shipped CSS and governs the overlay, settings and wizard: one coral accent

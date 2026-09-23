@@ -20,6 +20,9 @@
 //      note, in Settings and in the first-run wizard. The default is not the
 //      first catalog entry, so a lost `select.value = …` would show another
 //      model here instead of passing silently.
+//   9. A history entry saved from an interrupted dictation is marked in the
+//      list; a normal one isn't. The notification that announced it is long
+//      gone by the time History is reopened.
 //
 // Run under Electron:
 //
@@ -48,6 +51,7 @@ fs.mkdirSync(userData, { recursive: true });
 app.setPath("userData", userData);
 
 const windows = require("../main/windows");
+const history = require("../main/history");
 const ipc = require("../main/ipc");
 const { registry } = require("../main/engines");
 
@@ -76,6 +80,15 @@ app.whenReady().then(async () => {
       onSettingsChanged: () => {},
     });
 
+    // Two entries for check 9, saved before the window reads them: one
+    // delivered whole, one recovered from an interrupted dictation.
+    const historyCfg = { enabled: true, limit: 100 };
+    history.add({ raw: "whole dictation", text: "whole dictation", cleaned: false, delivered: "paste" }, historyCfg);
+    history.add(
+      { raw: "recovered words", text: "recovered words", cleaned: false, delivered: "paste", incomplete: true },
+      historyCfg
+    );
+
     const win = windows.openSettings();
     await new Promise((r) => win.webContents.once("did-finish-load", r));
     // Let the init IPC round-trips (settings, models, history) settle.
@@ -100,6 +113,28 @@ app.whenReady().then(async () => {
     );
     check("panel scrolls as one surface", layout.scrollable);
     check("no section is display:none-swapped", layout.hidden === 0, `${layout.hidden} hidden`);
+
+    // 9. The incomplete marker, and only on the incomplete entry.
+    const historyRows = JSON.parse(
+      await js(`
+        JSON.stringify([...document.querySelectorAll("#history-list li")].map((li) => ({
+          text: li.querySelector(".text").textContent,
+          meta: li.querySelector(".meta").textContent,
+        })));
+      `)
+    );
+    const incompleteRow = historyRows.find((r) => r.text === "recovered words");
+    const wholeRow = historyRows.find((r) => r.text === "whole dictation");
+    check(
+      "an interrupted dictation is marked in History",
+      !!incompleteRow && /incomplete/i.test(incompleteRow.meta),
+      `meta=${JSON.stringify(incompleteRow?.meta)}`
+    );
+    check(
+      "a complete dictation carries no such mark",
+      !!wholeRow && !/incomplete/i.test(wholeRow.meta),
+      `meta=${JSON.stringify(wholeRow?.meta)}`
+    );
 
     // 4. Roving tabindex seated before any interaction.
     const tabStops = JSON.parse(

@@ -133,7 +133,9 @@ cut points of the final pass too, so each chunk covers whole pieces; a chunk
 over a piece that failed stands in for every piece under it, so its words are
 neither lost nor repeated. It goes through
 the normal cleanup and paste, with a notification ("transcription
-interrupted"), and the history entry is marked `incomplete: true`. Only a run
+interrupted"). The overlay's done card says "— incomplete" and the History
+entry is marked `incomplete: true` and shows it, so the dictation is still
+identifiable once the notification is gone. Only a run
 that recovers nothing at all is an error. Engine failures carry stable codes
 (`ENGINE_EXITED` with the process exit code, `ENGINE_TIMEOUT`).
 `engines.restartStt()` retires a wedged STT worker without touching cleanup.

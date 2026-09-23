@@ -637,6 +637,14 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
 
 /* ---------- save ---------- */
 
+function hotkeySaveMessage(hotkeyResult, pauseResult) {
+  if (!hotkeyResult.ok && !pauseResult.ok) {
+    return "Saved, but the hotkeys could not be changed";
+  }
+  const name = hotkeyResult.ok ? "pause hotkey" : "hotkey";
+  return `Saved, but the ${name} could not be registered`;
+}
+
 const saveButton = $("save");
 saveButton.addEventListener("click", async () => {
   const save = $("save-status");
@@ -675,7 +683,7 @@ saveButton.addEventListener("click", async () => {
   // A hotkey couldn't be registered: keep the window open so the error is
   // visible and the user can pick a combination that works.
   saveButton.disabled = false;
-  save.textContent = `Saved, but the ${result.hotkey.ok ? "pause hotkey" : "hotkey"} could not be registered`;
+  save.textContent = hotkeySaveMessage(result.hotkey, pauseResult);
   save.className = "status err";
   hotkeyStatus.textContent = result.hotkey.ok ? "" : result.hotkey.error;
   hotkeyStatus.className = "status err";

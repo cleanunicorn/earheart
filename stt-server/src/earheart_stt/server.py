@@ -96,6 +96,8 @@ def honours_language(asr) -> bool:
     return isinstance(getattr(asr, "asr", None), (WhisperHf, WhisperOrt, NemoConformerAED))
 
 
+TARGET_SAMPLE_RATE = 16000
+MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 MAX_DECODED_BYTES = 256 * 1024 * 1024
 FLOAT32_BYTES = np.dtype(np.float32).itemsize
 
@@ -158,10 +160,6 @@ def resample_linear(waveform: np.ndarray, src_rate: int, dst_rate: int) -> np.nd
     src_t = np.linspace(0.0, duration, num=waveform.shape[0], endpoint=False)
     dst_t = np.linspace(0.0, duration, num=dst_len, endpoint=False)
     return np.interp(dst_t, src_t, waveform).astype(np.float32)
-
-
-TARGET_SAMPLE_RATE = 16000
-MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 
 
 def read_upload(file: UploadFile) -> bytes:

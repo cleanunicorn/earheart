@@ -156,6 +156,23 @@ test("a cold-start collision keeps the required record hotkey working", () => {
   assert.deepStrictEqual(triggered, ["record"]);
 });
 
+test("a rejected cold-start pause hotkey keeps the required record hotkey working", () => {
+  const triggered = [];
+  const { hotkeys, calls, bindings } = loadHotkeys({ occupied: [B] });
+
+  const result = hotkeys.applyPair(
+    pair(A, B, () => triggered.push("record"), () => triggered.push("pause"))
+  );
+
+  assert.deepStrictEqual(result.record, { ok: true });
+  assert.strictEqual(result.pause.ok, false);
+  assert.match(result.pause.error, /Could not register/);
+  assert.strictEqual(bindings.has(A), true);
+  assert.deepStrictEqual(calls.unregistered, []);
+  bindings.get(A)();
+  assert.deepStrictEqual(triggered, ["record"]);
+});
+
 test("reapplying the same pair does not drop and reacquire either hotkey", () => {
   const { hotkeys, calls } = loadHotkeys();
   hotkeys.applyPair(pair(A, B));

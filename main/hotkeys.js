@@ -112,6 +112,18 @@ function applyPair(next) {
   }
 
   function rollBack(failedName, failure) {
+    const retainColdStartRecord =
+      !previous.get("record") &&
+      !previous.get("pause") &&
+      failedName === "pause" &&
+      addedNames.length === 1 &&
+      addedNames[0] === "record" &&
+      releasedEntries.length === 0;
+    if (retainColdStartRecord) {
+      registered.set("record", target.record);
+      results.pause = { ok: false, error: failure };
+      return results;
+    }
     for (const name of addedNames) {
       globalShortcut.unregister(target[name].accelerator);
     }

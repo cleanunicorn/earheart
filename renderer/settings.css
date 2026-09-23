@@ -426,6 +426,12 @@ select {
   justify-content: space-between;
 }
 
+/* Keep model inputs visually separate from their action rows. */
+.field > input + .row,
+.field > datalist + .row {
+  margin-top: 8px;
+}
+
 /* Stacked action rows (e.g. Fetch models / Test connection) get a small gap so
    each button+status sits on its own line without touching. */
 #stt-external-fields .row + .row {

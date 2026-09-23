@@ -28,8 +28,25 @@ function writeExecutable(file, source) {
   fs.writeFileSync(file, source, { mode: 0o755 });
 }
 
+function bashExecutable({ platform = process.platform, env = process.env, exists = fs.existsSync } = {}) {
+  if (platform !== "win32") return "bash";
+
+  const roots = [
+    env.ProgramFiles,
+    env.ProgramW6432,
+    env["ProgramFiles(x86)"],
+    "C:\\Program Files",
+  ].filter((root, index, values) => root && values.indexOf(root) === index);
+  const candidates = roots.map((root) => path.win32.join(root, "Git", "bin", "bash.exe"));
+  const executable = candidates.find(exists);
+  if (executable) return executable;
+  throw new Error(
+    `Git Bash is required for the release workflow harness on Windows; tried: ${candidates.join(", ")}`,
+  );
+}
+
 function runBash(script, options) {
-  const result = spawnSync("bash", ["-c", script], {
+  const result = spawnSync(bashExecutable(), ["-c", script], {
     ...options,
     encoding: "utf8",
     timeout: 15_000,
@@ -142,6 +159,23 @@ test("full workflow extraction accepts Windows checkout newlines", () => {
   assert.equal(workflowRunSource(workflow.replace(/\n/g, "\r\n")), fullWorkflowSource);
 });
 
+test("Windows harness selects Git Bash without falling back to WSL", () => {
+  const gitBash = "D:\\Tools\\Git\\bin\\bash.exe";
+  assert.equal(
+    bashExecutable({
+      platform: "win32",
+      env: { ProgramFiles: "D:\\Tools" },
+      exists: (candidate) => candidate === gitBash,
+    }),
+    gitBash,
+  );
+  assert.throws(
+    () => bashExecutable({ platform: "win32", env: {}, exists: () => false }),
+    /Git Bash is required[\s\S]*C:\\Program Files\\Git\\bin\\bash\.exe/,
+  );
+  assert.equal(bashExecutable({ platform: "linux", exists: () => false }), "bash");
+});
+
 test("a pushed release tag survives dispatch exhaustion and is redispatched by a later full workflow run", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-release-workflow-"));
   const repository = path.join(directory, "repo");
@@ -241,10 +275,14 @@ esac
     "tag -a v1.2.3 -m v1.2.3",
     "push --atomic origin HEAD:main refs/tags/v1.2.3:refs/tags/v1.2.3",
   ]);
+  const firstChangelog = fs.readFileSync(path.join(repository, "CHANGELOG.md"), "utf8");
+  assert.match(firstChangelog, /^## v1\.2\.3 — \d{4}-\d{2}-\d{2}$/m);
+  assert.match(firstChangelog, /^- Recovery \(#101\)$/m);
 
   const later = run("success");
   assert.equal(later.status, 0);
   assert.deepStrictEqual(readLines(dispatches), ["v1.2.3", "v1.2.3", "v1.2.3", "v1.2.3"]);
   assert.deepStrictEqual(readLines(mutations), firstMutations);
+  assert.equal(fs.readFileSync(path.join(repository, "CHANGELOG.md"), "utf8"), firstChangelog);
   fs.rmSync(directory, { recursive: true, force: true });
 });

@@ -63,6 +63,20 @@ def client(client_factory, recognizer):
         yield client
 
 
+@pytest.fixture
+def read_spy(monkeypatch):
+    """Record sf.read calls while delegating to the real decoder."""
+    real_read = server.sf.read
+    calls = []
+
+    def spy(*args, **kwargs):
+        calls.append(1)
+        return real_read(*args, **kwargs)
+
+    monkeypatch.setattr(server.sf, "read", spy)
+    return calls
+
+
 def test_startup_and_discovery(client_factory, recognizer, loader):
     config = server.ServerConfig(model="test-model")
     with client_factory(recognizer, config) as client:
@@ -156,18 +170,10 @@ def test_oversized_upload_is_rejected_before_decode(
     recognizer.recognize.assert_not_called()
 
 
-def test_decoded_size_rejected_before_decode(client, recognizer, monkeypatch):
+def test_decoded_size_rejected_before_decode(client, recognizer, monkeypatch, read_spy):
     # 300 s of silence encodes to a few bytes of FLAC but decodes to 4.8M
     # float32 frames; the decoded budget must reject it before sf.read runs.
     monkeypatch.setattr(server, "MAX_DECODED_BYTES", 16 * 1024 * 1024)
-    real_read = server.sf.read
-    read_calls = []
-
-    def spy_read(*args, **kwargs):
-        read_calls.append(1)
-        return real_read(*args, **kwargs)
-
-    monkeypatch.setattr(server.sf, "read", spy_read)
     silent = io.BytesIO()
     sf.write(silent, np.zeros(300 * 16000, dtype=np.float32), 16000, format="FLAC")
 
@@ -175,7 +181,7 @@ def test_decoded_size_rejected_before_decode(client, recognizer, monkeypatch):
 
     assert response.status_code == 413
     assert response.json() == {"detail": "Decoded audio exceeds the 16 MiB limit"}
-    assert read_calls == []
+    assert read_spy == []
     recognizer.recognize.assert_not_called()
 
 
@@ -194,18 +200,10 @@ def test_decode_is_bounded_when_header_underreports(client, recognizer, monkeypa
     recognizer.recognize.assert_not_called()
 
 
-def test_low_rate_audio_is_bounded_by_projected_output(client, recognizer, monkeypatch):
+def test_low_rate_audio_is_bounded_by_projected_output(client, recognizer, monkeypatch, read_spy):
     # 25 s of 8 kHz silence fits the source-frame budget (800 KB) but projects
     # to 400k 16 kHz frames (1.6 MB) after resampling — reject it before decode.
     monkeypatch.setattr(server, "MAX_DECODED_BYTES", 1024 * 1024)
-    real_read = server.sf.read
-    read_calls = []
-
-    def spy_read(*args, **kwargs):
-        read_calls.append(1)
-        return real_read(*args, **kwargs)
-
-    monkeypatch.setattr(server.sf, "read", spy_read)
     silent = io.BytesIO()
     sf.write(silent, np.zeros(200000, dtype=np.float32), 8000, format="FLAC")
 
@@ -213,7 +211,7 @@ def test_low_rate_audio_is_bounded_by_projected_output(client, recognizer, monke
 
     assert response.status_code == 413
     assert response.json() == {"detail": "Decoded audio exceeds the 1 MiB limit"}
-    assert read_calls == []
+    assert read_spy == []
     recognizer.recognize.assert_not_called()
 
 

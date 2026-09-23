@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.33.2 — 2026-09-23
+
+- Honour onnx-asr's API, bound decoded audio, fix install docs (#222)
+
 ## v0.33.1 — 2026-09-23
 
 - Swap hotkeys without saving rejected values (#219)

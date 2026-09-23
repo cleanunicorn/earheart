@@ -173,6 +173,19 @@ test("hotkey-capture.js loads before each page's own script", () => {
   }
 });
 
+function extractFunction(source, name) {
+  const declaration = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(source);
+  assert.ok(declaration, `${name} function must exist`);
+  const bodyStart = source.indexOf("{", declaration.index + declaration[0].length - 1);
+  let depth = 0;
+  for (let i = bodyStart; i < source.length; i++) {
+    if (source[i] === "{") depth++;
+    else if (source[i] === "}" && --depth === 0) {
+      return source.slice(declaration.index, i + 1);
+    }
+  }
+  assert.fail(`${name} function has an unclosed body`);
+}
 function deferred() {
   let resolve;
   const promise = new Promise((r) => (resolve = r));
@@ -205,7 +218,7 @@ function microphonePage(source, page) {
     },
   };
   const hint = { textContent: "" };
-  const document = {
+  const baseDocument = {
     getElementById(id) {
       return id === "mic-device" ? select : hint;
     },
@@ -214,10 +227,70 @@ function microphonePage(source, page) {
     },
   };
   const enumeration = deferred();
-  const current = { audio: { deviceId: "saved-id" } };
+  const current = page === "wizard"
+    ? {
+        hotkey: "CommandOrControl+Shift+Space",
+        output: { mode: "paste", restoreClipboard: true },
+        stt: { engine: "remote", builtin: { model: "parakeet" }, baseUrl: "https://stt.test", apiKey: "", model: "", language: "en", livePreview: {} },
+        cleanup: {
+          enabled: true,
+          engine: "remote",
+          builtin: { model: "cleanup-model" },
+          custom: { temperature: 0.2 },
+          style: "custom",
+          baseUrl: "", apiKey: "", model: "", dictionary: [], systemPrompt: "",
+        },
+        updates: { autoCheck: true, remind: true },
+        engines: { idleUnloadMinutes: 0 },
+        history: { enabled: true },
+        audio: { deviceId: "saved-id", maxRecordingSeconds: 300 },
+      }
+    : {
+        hotkey: "Control+Space", pauseHotkey: "", output: { mode: "paste", restoreClipboard: true },
+        updates: {}, stt: { builtin: {}, livePreview: {} }, cleanup: { builtin: {}, custom: {} },
+        engines: {}, history: {}, audio: { deviceId: "saved-id" },
+      };
+  const elements = {
+    "mic-device": select,
+    "cleanup-enabled": { checked: true },
+    "cleanup-builtin-model": { value: "cleanup-model" },
+    "cleanup-style": { value: "0" },
+    "cleanup-temperature": { value: "" },
+    "cleanup-top-p": { value: "" },
+    "cleanup-top-k": { value: "" },
+    "cleanup-min-p": { value: "" },
+    "cleanup-url": { value: "" },
+    "cleanup-key": { value: "" },
+    "cleanup-model": { value: "" },
+    "cleanup-dictionary": { value: "" },
+    "cleanup-prompt": { value: "" },
+    "cleanup-style-mode": { value: "custom" },
+    "stt-url": { value: "" },
+    "stt-key": { value: "" },
+    "stt-model": { value: "" },
+    "stt-language": { value: "" },
+    "stt-live-preview": { checked: true },
+    "max-seconds": { value: "300" },
+    "start-on-boot": { checked: false },
+    "updates-autocheck": { checked: true },
+    "updates-remind": { checked: true },
+    "idle-unload": { value: "0" },
+    "history-enabled": { checked: true },
+    "finish-status": { textContent: "", className: "" },
+  };
   let payload;
+  let invokeCount = 0;
   const context = {
-    document,
+    document: {
+      getElementById(id) {
+        return elements[id] || baseDocument.getElementById(id);
+      },
+      createElement: () => baseDocument.createElement(),
+      querySelector(selector) {
+        assert.strictEqual(selector, 'input[name="output-mode"]:checked');
+        return { value: "paste-copy" };
+      },
+    },
     navigator: {
       mediaDevices: {
         async getUserMedia() {
@@ -228,21 +301,39 @@ function microphonePage(source, page) {
     },
     CSS: { escape: (value) => value },
     current,
-    $: (id) => document.getElementById(id),
+    cleanupStyles: [{ id: "verbatim" }],
+    $: (id) => elements[id] || baseDocument.getElementById(id),
     earheart: {
       invoke(channel, value) {
         assert.strictEqual(channel, page === "settings" ? "settings:save" : "wizard:complete");
+        invokeCount++;
         payload = value;
         return Promise.resolve({ settings: value, hotkey: { ok: true } });
       },
     },
   };
-  const start = source.indexOf("async function loadMicrophones()");
-  const bodyStart = source.indexOf("{", start) + 1;
-  const end = source.indexOf("\r\n}\r\n", bodyStart) + 3;
-  assert.ok(start >= 0 && end > start, `${page} loadMicrophones must exist`);
-  const loadSource = "async function() {" + source.slice(bodyStart, end - 3) + "}";
-  const load = require("node:vm").runInNewContext(`(${loadSource})`, context);
+  const loadFunction = `(${extractFunction(source, "loadMicrophones")})`;
+  const load = require("node:vm").runInNewContext(loadFunction, context);
+  if (page === "settings") {
+    const settingsFunctions = [
+      extractFunction(source, "num"),
+      extractFunction(source, "styleMode"),
+      extractFunction(source, "collectCleanupStyle"),
+      extractFunction(source, "engineValue"),
+      extractFunction(source, "collect"),
+      "this.collect = collect;",
+    ].join(String.fromCharCode(10));
+    const radios = { stt: "builtin", cleanup: "builtin", "cleanup-style-mode": "custom" };
+    context.document.querySelector = (selector) => {
+      if (selector === 'input[name="output-mode"]:checked') return { value: "paste-copy" };
+      const kind = selector.match(/name="([^"]+)"/)?.[1];
+      return { value: radios[kind] };
+    };
+    require("node:vm").runInNewContext(settingsFunctions, context);
+  } else {
+    const wizardFunctions = `${extractFunction(source, "collect")}; ${extractFunction(source, "finish")}; this.finish = finish;`;
+    require("node:vm").runInNewContext(wizardFunctions, context);
+  }
 
   return {
     select,
@@ -256,17 +347,29 @@ function microphonePage(source, page) {
         { kind: "audioinput", deviceId: "other-id", label: "Other microphone" },
       ]);
       await pending;
-      const channel = page === "settings" ? "settings:save" : "wizard:complete";
-      await context.earheart.invoke(channel, { audio: { deviceId: select.value } });
-      return { selected: select.value, saved: payload.audio.deviceId };
+      if (page === "settings") {
+        await context.earheart.invoke("settings:save", context.collect());
+      } else {
+        await context.finish();
+      }
+      return { selected: select.value, saved: payload, invokeCount };
     },
   };
 }
-
 for (const [page, source] of [["settings", js], ["wizard", wizardJs]]) {
   test(`${page} preserves System default selected during microphone enumeration`, async () => {
     const fixture = microphonePage(source, page);
-    assert.deepStrictEqual(await fixture.reproduce(), { selected: "", saved: "" });
+    const result = await fixture.reproduce();
+    assert.strictEqual(result.selected, "");
+    assert.strictEqual(result.saved.audio.deviceId, "");
+    assert.strictEqual(result.invokeCount, 1);
+    if (page === "wizard") {
+      assert.strictEqual(result.saved.output.mode, "paste-copy");
+      assert.strictEqual(result.saved.stt.engine, "builtin");
+      assert.strictEqual(result.saved.cleanup.builtin.model, "cleanup-model");
+      assert.strictEqual(result.saved.cleanup.style, "verbatim");
+      assert.strictEqual(result.saved.hotkey, "CommandOrControl+Shift+Space");
+    }
   });
 }
 test("permission-status.js loads before settings.js, which uses it", () => {

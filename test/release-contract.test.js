@@ -159,6 +159,25 @@ test("each pushed tag gets a bounded release-build dispatch", () => {
   assert.doesNotMatch(workflow, /in 1 2 3/);
 });
 
+test("durable pushed tags recover before candidate selection without duplicate active builds", () => {
+  const recoveryAt = workflow.indexOf("recover_pushed_tags");
+  const selectAt = workflow.indexOf("node scripts/auto-release.js select");
+  const noPendingAt = workflow.indexOf("No release-affecting merged PR is waiting.");
+  assert.ok(recoveryAt >= 0 && recoveryAt < selectAt && selectAt < noPendingAt);
+  assert.match(workflow, /git fetch origin main --tags/);
+  assert.match(workflow, /git for-each-ref --format='%\(refname:short\)%09%\(\*objectname\)' refs\/tags/);
+  assert.match(workflow, /\[\[ "\$\(git log -1 --format=%s "\$tag_commit"\)" == "release: \$tag" \]\]/);
+  assert.match(workflow, /git merge-base --is-ancestor "\$tag_commit" origin\/main/);
+  assert.match(workflow, /gh api -i "repos\/\$GITHUB_REPOSITORY\/releases\/tags\/\$tag"/);
+  assert.match(workflow, /gh run list --workflow release\.yml --commit "\$tag_commit"/);
+  assert.match(workflow, /--json status,headBranch,headSha --limit 100/);
+  assert.match(workflow, /\.headSha == \$commit or \.headBranch == \$tag/);
+  assert.match(workflow, /\.status == "queued"[\s\S]*\.status == "in_progress"/);
+  assert.match(workflow, /dispatch_release "\$tag"/);
+  assert.match(workflow, /gh workflow run release\.yml --ref "\$tag"/);
+  assert.doesNotMatch(workflow.slice(recoveryAt, selectAt), /npm version|scripts\/changelog\.js|git commit|git tag -a|git push/);
+});
+
 test("the unsafe manual release target and its documentation are gone", () => {
   assert.doesNotMatch(makefile, new RegExp("^\\.PHONY: " + "release$", "m"));
   assert.doesNotMatch(makefile, new RegExp("^release" + ":", "m"));

@@ -139,7 +139,9 @@ Release jobs are serialized. Because GitHub retains only one pending job in a
 concurrency group, each surviving run catches up every release-affecting PR
 merged since the newest numbered changelog entry, in merge order. An invalid
 title emits a warning and creates no release. This automatic workflow is the
-only supported release path.
+only supported release path. If a release commit and tag were pushed but its
+build dispatch was temporarily unavailable, a later serialized run re-dispatches
+that durable tag without cutting another version.
 
 **Your PR title is the release note.** It's what the app shows people — in the
 update prompt before they update, and in the "what's new" card after. Write it

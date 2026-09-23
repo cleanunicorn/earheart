@@ -12,6 +12,7 @@ const {
   releasedPrNumbers,
   escapeWorkflowCommandData,
   pendingReleases,
+  recoveryAction,
 } = require("../scripts/auto-release");
 
 const BOUNDARY_CHANGELOG = "## v1.0.0\n\n- Boundary (#100)\n";
@@ -64,6 +65,61 @@ test("bumpFor validates before sizing a release", () => {
 
 test("workflow command data escapes percent and line breaks", () => {
   assert.equal(escapeWorkflowCommandData("a%b\r\nc"), "a%25b%0D%0Ac");
+});
+
+test("recovery redispatches a pushed tag after dispatch exhaustion without another release mutation", () => {
+  const state = {
+    bumps: 0,
+    commits: 0,
+    tags: [],
+    dispatches: [],
+    durableTag: "",
+    releaseExists: false,
+    activeRun: false,
+  };
+  const pushRelease = (tag) => {
+    state.bumps++;
+    state.commits++;
+    state.tags.push(tag);
+    state.durableTag = tag;
+  };
+  const runRecovery = () => {
+    const action = recoveryAction({
+      tag: state.durableTag,
+      releaseExists: state.releaseExists,
+      activeRun: state.activeRun,
+    });
+    if (action.action === "dispatch") state.dispatches.push(action.tag);
+    return action;
+  };
+
+  pushRelease("v1.2.3");
+  for (let attempt = 0; attempt < 3; attempt++) {
+    assert.deepStrictEqual(runRecovery(), { action: "dispatch", tag: "v1.2.3" });
+    state.dispatches.pop(); // Each initial GitHub dispatch attempt failed.
+  }
+
+  assert.deepStrictEqual(runRecovery(), { action: "dispatch", tag: "v1.2.3" });
+  assert.deepStrictEqual(state, {
+    bumps: 1,
+    commits: 1,
+    tags: ["v1.2.3"],
+    dispatches: ["v1.2.3"],
+    durableTag: "v1.2.3",
+    releaseExists: false,
+    activeRun: false,
+  });
+});
+
+test("recovery skips tags already owned by a release or active build", () => {
+  assert.deepStrictEqual(recoveryAction({ tag: "v1.2.3", releaseExists: true }), {
+    action: "skip-release",
+    tag: "v1.2.3",
+  });
+  assert.deepStrictEqual(recoveryAction({ tag: "v1.2.3", activeRun: true }), {
+    action: "skip-active-run",
+    tag: "v1.2.3",
+  });
 });
 
 test("releasedPrNumbers reads only exact trailing PR markers", () => {

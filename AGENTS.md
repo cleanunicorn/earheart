@@ -251,7 +251,10 @@ Keep it short and useful:
   and dispatches the multi-platform release builds. The release goes live only
   after all three platforms build successfully. Release jobs are serialized;
   each surviving run catches up release-affecting merges that lost their own
-  pending run, in merge order. An invalid title warns and creates no release.
+  pending run, in merge order. If a release commit and tag were pushed but its
+  build dispatch was temporarily unavailable, a later serialized run
+  re-dispatches that durable tag without cutting another version. An invalid
+  title warns and creates no release.
   The title at merge time is used; editing it after merge does not change the
   release.
 - **Does the PR title/prefix decide the bump?** Yes.

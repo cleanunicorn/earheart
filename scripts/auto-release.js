@@ -152,6 +152,19 @@ function escapeWorkflowCommandData(message) {
   return String(message).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
 }
 
+/**
+ * Decides whether a durable auto-release tag needs a release-build dispatch.
+ * GitHub and git inspection stay in the workflow; this pure boundary makes the
+ * cross-run idempotence contract executable in Node tests.
+ */
+function recoveryAction({ tag, releaseExists = false, activeRun = false }) {
+  const value = String(tag || "");
+  if (!/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(value)) return { action: "skip-invalid", tag: value };
+  if (releaseExists) return { action: "skip-release", tag: value };
+  if (activeRun) return { action: "skip-active-run", tag: value };
+  return { action: "dispatch", tag: value };
+}
+
 function main(argv) {
   const [command, ...rest] = argv;
   const args = parseArgs(rest);
@@ -195,6 +208,7 @@ module.exports = {
   releasedPrNumbers,
   escapeWorkflowCommandData,
   pendingReleases,
+  recoveryAction,
 };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));

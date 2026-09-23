@@ -196,7 +196,7 @@ test("settings action rows keep their fields visually separate", () => {
   const normalized = css.replace(/\s+/g, " ");
   assert.match(
     normalized,
-    /\.field > input \+ \.row, \.field > datalist \+ \.row\s*\{\s*margin-top:\s*8px;\s*\}/,
+    /\.field > input \+ \.row, \.field > datalist \+ \.row, \.field > input \+ datalist \+ \.row\s*\{\s*margin-top:\s*8px;\s*\}/,
     "expected an 8px gap after model fields before their action rows"
   );
 
@@ -217,8 +217,8 @@ test("settings action rows keep their fields visually separate", () => {
     assert.match(html, pattern, `${name} should precede its action row`);
   }
 
-  // The shared selector also sees the range's label row in the wizard and
-  // settings. Its id selector must keep that intentional 6px spacing.
+  // Keep the cleanup-style slider label's intentional spacing unchanged; the
+  // new field selector does not match this nested row.
   assert.match(
     normalized,
     /#cleanup-style-labels\s*\{\s*margin-top:\s*6px;\s*\}/,

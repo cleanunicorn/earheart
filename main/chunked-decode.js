@@ -77,11 +77,9 @@ function planPieces(wav, maxSec, minPauseSec, salvageChunks) {
 // purpose — also calls speech.
 const EMPTY_RETRY_PAD_SEC = 0.25;
 
-// Longest piece that may stay empty after that retry and still be taken for a
-// breath or click. Every such piece the lab recorded was 0.7-1.2 s and held no
-// missing word; past 2 s a silent result is more likely words the model
-// missed, so it counts as lost and the dictation is marked incomplete. The
-// limit: a missed utterance of 2 s or less still isn't reported.
+// A long post-retry empty piece is immediately an EMPTY_SPEECH failure. A
+// shorter one stays marked unconfirmed so a covering live-preview salvage range
+// can supply its words, but either is incomplete when no range owns the gap.
 const EMPTY_SPEECH_MAX_SEC = 2;
 
 // Up to EMPTY_RETRY_PAD_SEC a side, but never past maxSec in total: the
@@ -121,9 +119,13 @@ function orderedChunks(salvageChunks) {
 // boundaries, so those pieces lie inside it — its words replace theirs,
 // nothing lost, nothing repeated. Filling an unconfirmed gap doesn't make the
 // result partial — those words are delivered; a failed piece still does.
-function assemble(pieces, salvageChunks) {
+function salvageOwners(pieces, salvageChunks) {
   const chunks = orderedChunks(salvageChunks);
-  const owner = pieces.map((p) => chunks.find((c) => c.from <= p.fromFrame && p.toFrame <= c.to) || null);
+  return pieces.map((p) => chunks.find((c) => c.from <= p.fromFrame && p.toFrame <= c.to) || null);
+}
+
+function assemble(pieces, owners) {
+  const owner = owners;
   const standsIn = new Set();
   pieces.forEach((p, i) => {
     if (owner[i] && isGap(p)) standsIn.add(owner[i]);
@@ -207,9 +209,9 @@ async function transcribeChunked(
       try {
         let text = ((await runTranscribe(pieceWav, { onDecodeMs })) || "").trim();
         if (!text && containsSpeech(plan.samples.subarray(piece.fromFrame, piece.toFrame), SAMPLE_RATE)) {
-          // Speech in, nothing out: one more try with room around it. Still
-          // empty is accepted (see EMPTY_RETRY_PAD_SEC) but marked, and it
-          // counts as lost once nothing else in the recording decoded either.
+          // Speech in, nothing out: one more try with room around it. A still
+          // empty piece is a gap unless a covering live-preview salvage chunk
+          // supplies its words during final assembly.
           const paddedWav = padded(plan.samples, piece.fromFrame, piece.toFrame, maxSec);
           if (paddedWav) {
             piece.attempts++;
@@ -221,7 +223,7 @@ async function transcribeChunked(
             piece.unconfirmed = true;
             log?.warn(
               `STT decode: piece ${(piece.fromFrame / SAMPLE_RATE).toFixed(1)}-${(piece.toFrame / SAMPLE_RATE).toFixed(1)}s ` +
-                `(${sec.toFixed(1)} s) heard speech but decoded to no text; accepted as a breath or click`
+                `(${sec.toFixed(1)} s) heard speech but decoded to no text; awaiting covering salvage`
             );
           }
         }
@@ -260,16 +262,17 @@ async function transcribeChunked(
     }
   }
 
-  let decoded = assemble(pieces, salvageChunks);
+  const owners = salvageOwners(pieces, salvageChunks);
+  let decoded = assemble(pieces, owners);
   if (!decoded && pieces.some((p) => p.unconfirmed)) {
     // Speech heard and no text anywhere: that is not an empty dictation.
     for (const p of pieces.filter((q) => q.unconfirmed)) {
       Object.assign(p, { ok: false, code: "EMPTY_SPEECH", error: "speech decoded to no text" });
     }
     firstError = firstError || emptySpeechError();
-    decoded = assemble(pieces, salvageChunks);
+    decoded = assemble(pieces, owners);
   }
-  const partial = pieces.some((p) => !p.ok);
+  const partial = pieces.some((p, i) => !p.ok || (p.unconfirmed && !owners[i]));
   const recovered = partial && !decoded ? salvageText : decoded;
   const text = joinText(prefixText, recovered);
   if (partial && !text) throw firstError;

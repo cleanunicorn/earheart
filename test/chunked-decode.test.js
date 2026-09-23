@@ -251,11 +251,7 @@ function shortMarkedWav() {
   return encodeWav(samples, SR);
 }
 
-test("chunked decode: a short empty piece among decoded ones is accepted, marked unconfirmed, and logged", async () => {
-  // The speech probe leans "speech" on purpose, so a breath or click after a
-  // sentence also reads as speech; every empty piece the lab recorded was one
-  // of those, 0.7-1.2 s long, and none held a missing word. Flagging them would
-  // mark every benchmark recording incomplete.
+test("chunked decode: a short empty speech piece among decoded ones stays incomplete and logged", async () => {
   const warned = [];
   let ok = 0;
   const r = await transcribeChunked(shortMarkedWav(), {
@@ -263,7 +259,7 @@ test("chunked decode: a short empty piece among decoded ones is accepted, marked
     log: { warn: (...a) => warned.push(a.join(" ")) },
   });
   assert.strictEqual(r.text, "w0 w1");
-  assert.strictEqual(r.partial, false);
+  assert.strictEqual(r.partial, true);
   const empty = r.pieces.filter((p) => p.unconfirmed);
   assert.strictEqual(empty.length, 1);
   assert.ok((empty[0].toFrame - empty[0].fromFrame) / SR < 2);
@@ -413,9 +409,8 @@ test("chunked decode: salvage cut points don't spend the dead-worker budget twic
   assert.strictEqual(r.partial, true);
 });
 
-test("chunked decode: an empty speech piece of exactly 2 s is accepted, one frame more is lost", async () => {
-  // EMPTY_SPEECH_MAX_SEC is inclusive (review final:testing-1): pin the
-  // comparison at frame precision. Salvage chunk edges force the piece to
+test("chunked decode: an empty speech piece at and above 2 s is incomplete without salvage", async () => {
+  // Salvage chunk edges force the piece to
   // exactly `frames`; the stretch is louder than the rest, so the cap's
   // quietest-window search can't land inside it.
   const run = async (frames) => {
@@ -428,14 +423,17 @@ test("chunked decode: an empty speech piece of exactly 2 s is accepted, one fram
     let ok = 0;
     const r = await transcribeChunked(encodeWav(samples, SR), {
       runTranscribe: async (w) => (holdsLoud(w) ? "" : `w${ok++}`),
-      salvageChunks: [{ from: 10 * SR, to: 10 * SR + frames, text: "live" }],
+      salvageChunks: [
+        { from: 0, to: 10 * SR, text: "before" },
+        { from: 10 * SR + frames, to: 30 * SR, text: "after" },
+      ],
     });
     const piece = r.pieces.find((p) => p.fromFrame === 10 * SR);
     assert.strictEqual(piece.toFrame - piece.fromFrame, frames);
     return { r, piece };
   };
   const exact = await run(32000);
-  assert.deepStrictEqual([exact.piece.ok, exact.piece.unconfirmed, exact.r.partial], [true, true, false]);
+  assert.deepStrictEqual([exact.piece.ok, exact.piece.unconfirmed, exact.r.partial], [true, true, true]);
   const over = await run(32001);
   assert.deepStrictEqual([over.piece.ok, over.piece.code, over.r.partial], [false, "EMPTY_SPEECH", true]);
 });

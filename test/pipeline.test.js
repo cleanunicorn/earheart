@@ -430,7 +430,34 @@ test("pipeline: a live chunk that decodes only in part fails, so the final pass 
       return `w${n}`;
     },
   });
-  await assert.rejects(rig.liveTranscribe(loudWav(50), rig.cfg.stt, new AbortController().signal), /incomplete/);
+  await assert.rejects(
+    rig.liveTranscribe(loudWav(50), rig.cfg.stt, new AbortController().signal),
+    (err) => err.message === "live chunk decode incomplete" && err.partialText === "w0 w3"
+  );
+});
+
+test("pipeline: partial-live salvage fills a failed final range once and remains incomplete", async () => {
+  const samples = new Int16Array(50 * SR);
+  for (let i = 0; i < samples.length; i++) {
+    const amp = i >= 20 * SR && i < 30 * SR ? 6000 : 8000;
+    samples[i] = i % 2 ? amp : -amp;
+  }
+  const holdsMarked = (w) => wavToFloat32(w).samples.some((x) => Math.abs(x * 32768 - 6000) < 1);
+  const rig = dictationRig({
+    transcribe: async (n, w) => {
+      if (holdsMarked(w)) throw exited();
+      return `w${n}`;
+    },
+  });
+  await rig.dictate(encodeWav(samples, SR), {
+    committedRaw: "recovered words",
+    decodedSamples: 0,
+    broken: true,
+    chunks: [{ from: 20 * SR, to: 30 * SR, text: "recovered words" }],
+  });
+  assert.deepStrictEqual(rig.log.delivered, ["w0 recovered words w3 w4"]);
+  assert.strictEqual(rig.log.history[0].incomplete, true);
+  assert.strictEqual((rig.log.delivered[0].match(/recovered words/g) || []).length, 1);
 });
 
 test("pipeline: speech that decodes to nothing at all falls back to the live-preview words", async () => {

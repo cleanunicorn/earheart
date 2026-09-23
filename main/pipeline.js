@@ -50,7 +50,11 @@ async function transcribeLive(wav, sttCfg, signal) {
     stale: () => !!signal?.aborted,
   });
   if (result.stale) throw new Error("aborted");
-  if (result.partial) throw new Error("live chunk decode incomplete");
+  if (result.partial) {
+    const err = new Error("live chunk decode incomplete");
+    if (result.text) err.partialText = result.text;
+    throw err;
+  }
   return result.text;
 }
 

@@ -185,8 +185,9 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
     if (!abortController) abortController = new AbortController();
     const { signal } = abortController;
     sttInFlight++;
+    let wav;
     try {
-      const wav = Buffer.from(wavArrayBuffer);
+      wav = Buffer.from(wavArrayBuffer);
       const raw = await runTranscribe(wav, cfg.stt, signal);
       if (stale(sid, signal)) return;
       lastErrorLogged = ""; // a decode succeeded; let the next failure surface
@@ -246,7 +247,21 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
       // dictation broken and cost it the tail-only decode for nothing. The
       // session it really belonged to already had its snapshot read before the
       // reset, so nothing is lost by staying quiet here.
-      if (final && !stale(sid, signal)) broken = true;
+      if (final && !stale(sid, signal)) {
+        broken = true;
+        const text = (err?.partialText || "").trim();
+        const frames = wav && wavSampleFrames(wav);
+        // A partial final decode recovered some words, but not enough to trust
+        // as contiguous coverage. Keep those words only as exact-range salvage
+        // for a later full decode, once per final sequence.
+        if (text && seq > lastSeq && Number.isInteger(fromSample) && fromSample >= 0 && frames > 0) {
+          lastSeq = seq;
+          committedRaw = joinText(committedRaw, text);
+          committedChunks.push({ from: fromSample, to: fromSample + frames, text });
+          liveRaw = residualTail(liveRaw, text);
+          if (display) pushRaw();
+        }
+      }
       // Report (deduped) instead of eating it silently: a persistently blank
       // preview is almost always a surfaced-here error (model loading, not
       // downloaded, or a decode failure).

@@ -583,6 +583,23 @@ test("a failed final-chunk decode breaks the snapshot", async () => {
   assert.strictEqual(h.lp.snapshotFinal().broken, true);
 });
 
+test("a partial final decode saves recovered text once as broken-range salvage", async () => {
+  const h = harness();
+  const incomplete = () => Object.assign(new Error("live chunk decode incomplete"), { partialText: "recovered words" });
+  h.setTranscribe(async () => {
+    throw incomplete();
+  });
+  const payload = finalChunk(0, 16000, 8000, true);
+  await h.lp.handleAudio(1, payload);
+  await h.lp.handleAudio(1, payload);
+
+  const snap = h.lp.snapshotFinal();
+  assert.strictEqual(snap.broken, true);
+  assert.strictEqual(snap.decodedSamples, 0, "partial output is never trusted prefix coverage");
+  assert.strictEqual(snap.committedRaw, "recovered words");
+  assert.deepStrictEqual(snap.chunks, [{ from: 16000, to: 24000, text: "recovered words" }]);
+});
+
 test("a committed chunk that heard speech but decoded to nothing breaks the snapshot", async () => {
   const h = harness();
   h.setTranscribe(async () => "chunk zero");
@@ -628,7 +645,7 @@ test("a speech-bearing chunk that decodes to whitespace only breaks the snapshot
 test("a failed in-progress decode does NOT break the snapshot", async () => {
   const h = harness();
   h.setTranscribe(async () => {
-    throw new Error("decode boom");
+    throw Object.assign(new Error("live chunk decode incomplete"), { partialText: "not final" });
   });
   await h.lp.handleAudio(1, { seq: 0, final: false, fromSample: 0, wav: wavOf(4000) });
   h.setTranscribe(async () => "ok");
@@ -636,6 +653,7 @@ test("a failed in-progress decode does NOT break the snapshot", async () => {
   const snap = h.lp.snapshotFinal();
   assert.strictEqual(snap.broken, false);
   assert.strictEqual(snap.decodedSamples, 16000);
+  assert.deepStrictEqual(snap.chunks, [{ from: 0, to: 16000, text: "ok" }]);
 });
 
 test("a final chunk decodes even while an in-progress decode is in flight", async () => {
@@ -715,13 +733,14 @@ test("a decode that fails after its session ended does not break the NEXT one", 
   h.setTranscribe(async () => "fresh session text");
   await h.lp.handleAudio(2, finalChunk(0, 0, 16000));
 
-  failStale(new Error("decode boom"));
+  failStale(Object.assign(new Error("live chunk decode incomplete"), { partialText: "stale words" }));
   await staleDecode;
 
   const snap = h.lp.snapshotFinal();
   assert.strictEqual(snap.broken, false, "the new session's snapshot stays usable");
   assert.strictEqual(snap.committedRaw, "fresh session text");
   assert.strictEqual(snap.decodedSamples, 16000);
+  assert.deepStrictEqual(snap.chunks, [{ from: 0, to: 16000, text: "fresh session text" }]);
 });
 
 test("a stale decode's completion does not free the new session's busy state", async () => {

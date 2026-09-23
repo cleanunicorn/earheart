@@ -45,17 +45,22 @@ function bashExecutable({ platform = process.platform, env = process.env, exists
   );
 }
 
-function harnessPreamble({ platform = process.platform } = {}) {
+function harnessPreamble({ platform = process.platform, pathVariables = [] } = {}) {
   const bin = platform === "win32" ? '$(cygpath -u -- "$HARNESS_BIN")' : "$HARNESS_BIN";
-  return `if [ -n "\${HARNESS_BIN:-}" ]; then PATH="${bin}:$PATH"; export PATH; fi\n`;
+  const paths = platform === "win32"
+    ? pathVariables
+      .map((name) => `if [ -n "\${${name}:-}" ]; then ${name}="$(cygpath -u -- "$${name}")"; export ${name}; fi`)
+      .join("\n")
+    : "";
+  return `if [ -n "\${HARNESS_BIN:-}" ]; then PATH="${bin}:$PATH"; export PATH; fi\n${paths}${paths ? "\n" : ""}`;
 }
 
 function harnessEnvironment(bin, environment = process.env) {
   return { ...environment, HARNESS_BIN: bin };
 }
 
-function runBash(script, { harnessPlatform, ...options }) {
-  const source = `${harnessPreamble({ platform: harnessPlatform })}${script}`;
+function runBash(script, { harnessPlatform, harnessPathVariables, ...options }) {
+  const source = `${harnessPreamble({ platform: harnessPlatform, pathVariables: harnessPathVariables })}${script}`;
   const result = spawnSync(bashExecutable(), ["-c", source], {
     ...options,
     encoding: "utf8",
@@ -66,6 +71,17 @@ function runBash(script, { harnessPlatform, ...options }) {
     throw new Error(`workflow harness Bash process failed: ${result.error.message}`);
   }
   return result;
+}
+
+function workflowDiagnostics(result, directory, files) {
+  const inspect = (file) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "<missing>");
+  return [
+    `workflow harness directory: ${directory}`,
+    `status: ${result.status}`,
+    `stdout:\n${result.stdout}`,
+    `stderr:\n${result.stderr}`,
+    ...Object.entries(files).map(([name, file]) => `${name} (${file}):\n${inspect(file)}`),
+  ].join("\n");
 }
 
 function runRecovery({ dispatchMode = "success", release = "missing", active = "none" } = {}) {
@@ -114,6 +130,7 @@ esac
   const script = `max_attempts=3\n${helperSource}\nrecover_pushed_tags\n`;
   const result = runBash(script, {
     cwd: ROOT,
+    harnessPathVariables: ["RUNNER_TEMP", "RECOVERY_ACCEPTED", "RECOVERY_DISPATCH_LOG", "RECOVERY_GIT_LOG", "RECOVERY_MUTATION_LOG"],
     env: {
       ...harnessEnvironment(bin),
       RUNNER_TEMP: directory,
@@ -197,6 +214,12 @@ test("harness activates fake commands in Bash without changing its inherited PAT
   const environment = harnessEnvironment("C:\\Temp\\bin", { PATH: "C:\\Windows;C:\\Tools" });
   assert.equal(environment.HARNESS_BIN, "C:\\Temp\\bin");
   assert.equal(environment.PATH, "C:\\Windows;C:\\Tools");
+  assert.equal(
+    harnessPreamble({ platform: "win32", pathVariables: ["RUNNER_TEMP", "WORKFLOW_DISPATCHES"] }),
+    'if [ -n "${HARNESS_BIN:-}" ]; then PATH="$(cygpath -u -- "$HARNESS_BIN"):$PATH"; export PATH; fi\n'
+      + 'if [ -n "${RUNNER_TEMP:-}" ]; then RUNNER_TEMP="$(cygpath -u -- "$RUNNER_TEMP")"; export RUNNER_TEMP; fi\n'
+      + 'if [ -n "${WORKFLOW_DISPATCHES:-}" ]; then WORKFLOW_DISPATCHES="$(cygpath -u -- "$WORKFLOW_DISPATCHES")"; export WORKFLOW_DISPATCHES; fi\n',
+  );
 });
 
 test("a pushed release tag survives dispatch exhaustion and is redispatched by a later full workflow run", () => {
@@ -270,6 +293,7 @@ esac
   const run = (phase) =>
     runBash(fullWorkflowSource, {
       cwd: repository,
+      harnessPathVariables: ["RUNNER_TEMP", "WORKFLOW_REMOTE_TAG", "WORKFLOW_DISPATCHES", "WORKFLOW_MUTATIONS"],
       env: {
         ...harnessEnvironment(bin),
         GH_TOKEN: "test-token",
@@ -285,26 +309,36 @@ esac
     });
   const readLines = (file) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim().split("\n") : []);
 
-  const exhausted = run("fail");
-  assert.equal(exhausted.status, 1);
-  assert.ok(fs.existsSync(remoteTag), `the atomic push should persist the release tag: ${exhausted.stderr}`);
-  assert.deepStrictEqual(readLines(dispatches), ["v1.2.3", "v1.2.3", "v1.2.3"]);
-  assert.equal(JSON.parse(fs.readFileSync(path.join(repository, "package.json"), "utf8")).version, "1.2.3");
-  const firstMutations = readLines(mutations);
-  assert.deepStrictEqual(firstMutations, [
-    "version patch --no-git-tag-version",
-    "commit -m release: v1.2.3",
-    "tag -a v1.2.3 -m v1.2.3",
-    "push --atomic origin HEAD:main refs/tags/v1.2.3:refs/tags/v1.2.3",
-  ]);
-  const firstChangelog = fs.readFileSync(path.join(repository, "CHANGELOG.md"), "utf8");
-  assert.match(firstChangelog, /^## v1\.2\.3 — \d{4}-\d{2}-\d{2}$/m);
-  assert.match(firstChangelog, /^- Recovery \(#101\)$/m);
+  const diagnostics = (result) => workflowDiagnostics(result, directory, {
+    dispatches,
+    mutations,
+    remoteTag,
+    package: path.join(repository, "package.json"),
+    changelog: path.join(repository, "CHANGELOG.md"),
+  });
+  try {
+    const exhausted = run("fail");
+    assert.equal(exhausted.status, 1, diagnostics(exhausted));
+    assert.ok(fs.existsSync(remoteTag), `the atomic push should persist the release tag\n${diagnostics(exhausted)}`);
+    assert.deepStrictEqual(readLines(dispatches), ["v1.2.3", "v1.2.3", "v1.2.3"], diagnostics(exhausted));
+    assert.equal(JSON.parse(fs.readFileSync(path.join(repository, "package.json"), "utf8")).version, "1.2.3", diagnostics(exhausted));
+    const firstMutations = readLines(mutations);
+    assert.deepStrictEqual(firstMutations, [
+      "version patch --no-git-tag-version",
+      "commit -m release: v1.2.3",
+      "tag -a v1.2.3 -m v1.2.3",
+      "push --atomic origin HEAD:main refs/tags/v1.2.3:refs/tags/v1.2.3",
+    ], diagnostics(exhausted));
+    const firstChangelog = fs.readFileSync(path.join(repository, "CHANGELOG.md"), "utf8");
+    assert.match(firstChangelog, /^## v1\.2\.3 — \d{4}-\d{2}-\d{2}$/m, diagnostics(exhausted));
+    assert.match(firstChangelog, /^- Recovery \(#101\)$/m, diagnostics(exhausted));
 
-  const later = run("success");
-  assert.equal(later.status, 0);
-  assert.deepStrictEqual(readLines(dispatches), ["v1.2.3", "v1.2.3", "v1.2.3", "v1.2.3"]);
-  assert.deepStrictEqual(readLines(mutations), firstMutations);
-  assert.equal(fs.readFileSync(path.join(repository, "CHANGELOG.md"), "utf8"), firstChangelog);
-  fs.rmSync(directory, { recursive: true, force: true });
+    const later = run("success");
+    assert.equal(later.status, 0, diagnostics(later));
+    assert.deepStrictEqual(readLines(dispatches), ["v1.2.3", "v1.2.3", "v1.2.3", "v1.2.3"], diagnostics(later));
+    assert.deepStrictEqual(readLines(mutations), firstMutations, diagnostics(later));
+    assert.equal(fs.readFileSync(path.join(repository, "CHANGELOG.md"), "utf8"), firstChangelog, diagnostics(later));
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });

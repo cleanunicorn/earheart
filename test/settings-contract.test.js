@@ -165,6 +165,7 @@ test("value-range.js loads before settings.js, which validates numeric fields", 
   assert.ok(fs.existsSync(path.join(RENDERER, "value-range.js")));
   assert.match(js, /clampNumber\(/);
   assert.match(valueRangeJs, /function clampNumber\(/);
+  assert.ok(fs.existsSync(path.join(__dirname, "..", "scripts", "settings-value-range-smoke.js")));
 });
 
 test("custom model version selects have accessible names", () => {

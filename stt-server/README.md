@@ -48,10 +48,13 @@ curl -s http://127.0.0.1:8484/v1/audio/transcriptions \
   -F file=@speech.wav -F response_format=json
 ```
 
-Audio uploads are limited to 64 MiB (encoded). Decoded audio is capped at
-256 MiB of float32 samples at the file's own rate and channel count — about
-70 minutes of 16 kHz mono, about 13 minutes of 44.1 kHz stereo — and rejected
-with `413` before it is decoded.
+Audio uploads are limited to 64 MiB (encoded). Decoded and resampling work is
+capped at 256 MiB for the complete simultaneously live working set: decoded
+float32 samples, downmix data, and the linear resampler's float64 sample,
+timeline, and result intermediates. This permits about 70 minutes of 16 kHz mono (no
+resampling), about 9 minutes of 8 kHz mono, or about 4 minutes of 44.1 kHz
+stereo; non-16-kHz durations include their projected 16 kHz output. Uploads
+that exceed the bound are rejected with `413` before decoding.
 
 ## Options
 

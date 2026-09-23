@@ -215,6 +215,67 @@ def test_low_rate_audio_is_bounded_by_projected_output(client, recognizer, monke
     recognizer.recognize.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    ("frames", "rate", "channels", "expected"),
+    [
+        # 8 kHz -> 16 kHz: source, np.interp's float64 sample conversion,
+        # two float64 timelines, float64 result, and float32 output are live.
+        (100, 8000, 1, 6000),
+        # 48 kHz -> 16 kHz exercises downsample frame rounding.
+        (300, 48000, 1, 8000),
+        # Same-rate stereo never enters the resampler, but downmix temporarily
+        # retains the decoded two-channel source.
+        (100, 16000, 2, 1200),
+    ],
+)
+def test_peak_working_set_accounts_for_live_resampling_arrays(
+    frames, rate, channels, expected
+):
+    assert server.peak_working_set_bytes(frames, rate, channels) == expected
+
+
+@pytest.mark.parametrize("rate, frames", [(8000, 100), (48000, 300)])
+def test_complete_working_set_rejects_before_read_at_rate_boundaries(
+    client, recognizer, monkeypatch, read_spy, rate, frames
+):
+    budget = server.peak_working_set_bytes(frames, rate, 1)
+    monkeypatch.setattr(server, "MAX_DECODED_BYTES", budget)
+    silent = io.BytesIO()
+    sf.write(silent, np.zeros(frames, dtype=np.float32), rate, format="FLAC")
+
+    # The one-frame lying-header probe also belongs to the budget, so an
+    # otherwise exact nominal boundary is rejected before sf.read.
+    response = transcribe(client, silent.getvalue())
+
+    assert response.status_code == 413
+    assert read_spy == []
+    recognizer.recognize.assert_not_called()
+
+
+@pytest.mark.parametrize("rate", [8000, 48000])
+def test_admitted_read_probe_stays_inside_complete_budget(monkeypatch, rate):
+    monkeypatch.setattr(server, "MAX_DECODED_BYTES", 6000)
+
+    admitted = server.maximum_admitted_frames(rate, 1)
+
+    assert server.peak_working_set_bytes(admitted + 1, rate, 1) <= 6000
+    assert server.peak_working_set_bytes(admitted + 2, rate, 1) > 6000
+
+
+def test_invalid_audio_metadata_is_undecodable(client, recognizer, monkeypatch):
+    monkeypatch.setattr(
+        server.sf,
+        "info",
+        lambda buffer: SimpleNamespace(frames=1, channels=1, samplerate=0),
+    )
+
+    response = transcribe(client, wav())
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Could not decode audio file"}
+    recognizer.recognize.assert_not_called()
+
+
 @pytest.mark.parametrize("rate", [8000, 16000, 48000])
 @pytest.mark.parametrize("channels", [1, 2])
 def test_audio_is_mono_float32_at_16khz(client, recognizer, rate, channels):
@@ -351,11 +412,11 @@ def test_silent_recognition(client, recognizer, result):
     assert response.json() == {"text": ""}
 
 
-def test_concurrent_inference_is_serialized(client_factory, monkeypatch):
+def test_concurrent_decode_is_serialized(client_factory, monkeypatch):
     entered = threading.Event()
     release = threading.Event()
     contended = threading.Event()
-    calls = []
+    decode_calls = []
 
     class ObservedLock:
         """Keep real locking; expose when the second request reaches it."""
@@ -374,9 +435,16 @@ def test_concurrent_inference_is_serialized(client_factory, monkeypatch):
     # Replace only the server's namespace, never threading.Lock globally.
     monkeypatch.setattr(server, "threading", SimpleNamespace(Lock=ObservedLock))
 
+    def decode(data):
+        decode_calls.append(data)
+        if len(decode_calls) == 1:
+            entered.set()
+            assert release.wait(10), "Timed out waiting to release decode"
+        return np.ones(1600, dtype=np.float32), 16000
+
+    monkeypatch.setattr(server, "decode_audio", decode)
+
     def recognize(waveform, *, sample_rate=16000, **kwargs):
-        calls.append(sample_rate)
-        entered.set()
         assert release.wait(10), "Timed out waiting to release inference"
         return "Hello."
 
@@ -384,10 +452,10 @@ def test_concurrent_inference_is_serialized(client_factory, monkeypatch):
         with ThreadPoolExecutor(max_workers=2) as pool:
             first = pool.submit(transcribe, client)
             try:
-                assert entered.wait(5), "First request never entered inference"
+                assert entered.wait(5), "First request never entered decode"
                 second = pool.submit(transcribe, client)
-                assert contended.wait(5), "Second request never waited for inference"
-                assert calls == [16000]
+                assert contended.wait(5), "Second request never waited for decode"
+                assert len(decode_calls) == 1
                 assert not first.done()
                 assert not second.done()
             finally:
@@ -396,4 +464,23 @@ def test_concurrent_inference_is_serialized(client_factory, monkeypatch):
                 response = future.result(timeout=5)
                 assert response.status_code == 200
                 assert response.json() == {"text": "Hello."}
-    assert calls == [16000, 16000]
+    assert len(decode_calls) == 2
+
+
+def test_decode_error_releases_admission_lock(client_factory, monkeypatch):
+    calls = []
+
+    def decode(data):
+        calls.append(data)
+        if len(calls) == 1:
+            raise server._too_large()
+        return np.ones(1600, dtype=np.float32), 16000
+
+    monkeypatch.setattr(server, "decode_audio", decode)
+    with client_factory(SimpleNamespace(recognize=Mock(return_value="Hello."))) as client:
+        rejected = transcribe(client)
+        accepted = transcribe(client)
+
+    assert rejected.status_code == 413
+    assert accepted.status_code == 200
+    assert len(calls) == 2

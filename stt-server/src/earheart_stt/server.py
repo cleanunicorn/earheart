@@ -100,6 +100,7 @@ TARGET_SAMPLE_RATE = 16000
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 MAX_DECODED_BYTES = 256 * 1024 * 1024
 FLOAT32_BYTES = np.dtype(np.float32).itemsize
+FLOAT64_BYTES = np.dtype(np.float64).itemsize
 
 
 def _undecodable(exc: Exception) -> HTTPException:
@@ -114,6 +115,71 @@ def _too_large() -> HTTPException:
     )
 
 
+def resampled_frame_count(frames: int, src_rate: int, dst_rate: int) -> int:
+    """Return the linear resampler's output length without float rounding drift."""
+    if frames == 0 or src_rate == dst_rate:
+        return frames
+    numerator = frames * dst_rate
+    quotient, remainder = divmod(numerator, src_rate)
+    doubled_remainder = remainder * 2
+    if doubled_remainder > src_rate or (
+        doubled_remainder == src_rate and quotient % 2
+    ):
+        quotient += 1
+    return max(1, quotient)
+
+
+def peak_working_set_bytes(frames: int, sample_rate: int, channels: int) -> int:
+    """Estimate the maximum simultaneously live decode/resample arrays."""
+    if frames < 0 or sample_rate <= 0 or channels <= 0:
+        raise ValueError("Invalid audio metadata")
+
+    source_bytes = frames * channels * FLOAT32_BYTES
+    if channels > 1:
+        # ndarray.mean(float32) produces float32, while the decoded source is
+        # still referenced during the conversion.
+        peak_bytes = source_bytes + frames * FLOAT32_BYTES
+    else:
+        peak_bytes = source_bytes
+
+    if sample_rate == TARGET_SAMPLE_RATE or frames == 0:
+        return peak_bytes
+
+    destination_frames = resampled_frame_count(frames, sample_rate, TARGET_SAMPLE_RATE)
+    # np.interp converts float32 sample values to a contiguous float64 input
+    # and returns float64. During astype(float32), both are live with the
+    # source waveform and both timelines.
+    resample_bytes = (
+        frames * FLOAT32_BYTES
+        + frames * FLOAT64_BYTES
+        + frames * FLOAT64_BYTES
+        + destination_frames * FLOAT64_BYTES
+        + destination_frames * FLOAT64_BYTES
+        + destination_frames * FLOAT32_BYTES
+    )
+    return max(peak_bytes, resample_bytes)
+
+
+def maximum_admitted_frames(sample_rate: int, channels: int) -> int:
+    """Largest advertised frame count whose one-frame read probe is safe."""
+    if sample_rate <= 0 or channels <= 0:
+        raise ValueError("Invalid audio metadata")
+    if peak_working_set_bytes(1, sample_rate, channels) > MAX_DECODED_BYTES:
+        return -1
+
+    # Every frame includes at least one float32 sample, so this is a safe
+    # finite upper bound. Binary search keeps the admission calculation pure.
+    low = 0
+    high = MAX_DECODED_BYTES // FLOAT32_BYTES
+    while low < high:
+        midpoint = (low + high + 1) // 2
+        if peak_working_set_bytes(midpoint + 1, sample_rate, channels) <= MAX_DECODED_BYTES:
+            low = midpoint
+        else:
+            high = midpoint - 1
+    return low
+
+
 def decode_audio(data: bytes) -> tuple[np.ndarray, int]:
     """Decode an uploaded audio file to float32 mono, bounded before decode."""
     buffer = io.BytesIO(data)
@@ -122,15 +188,18 @@ def decode_audio(data: bytes) -> tuple[np.ndarray, int]:
     except Exception as exc:
         raise _undecodable(exc) from exc
 
-    max_frames = MAX_DECODED_BYTES // (FLOAT32_BYTES * max(info.channels, 1))
-    if info.frames > max_frames:
-        raise _too_large()
-
-    # The source bound above misses the 16 kHz resample: low-rate audio (e.g.
-    # 8 kHz) projects to more output frames than it decodes. Bound the
-    # projected mono output too, so resample_linear cannot expand past budget.
-    projected_frames = int(round(info.frames * TARGET_SAMPLE_RATE / info.samplerate))
-    if projected_frames * FLOAT32_BYTES > MAX_DECODED_BYTES:
+    if (
+        not isinstance(info.frames, (int, np.integer))
+        or not isinstance(info.channels, (int, np.integer))
+        or not isinstance(info.samplerate, (int, np.integer))
+        or info.frames < 0
+    ):
+        raise _undecodable(ValueError("Invalid audio metadata"))
+    try:
+        max_frames = maximum_admitted_frames(info.samplerate, info.channels)
+    except ValueError as exc:
+        raise _undecodable(exc) from exc
+    if max_frames < 0 or info.frames > max_frames:
         raise _too_large()
 
     buffer.seek(0)
@@ -156,7 +225,7 @@ def resample_linear(waveform: np.ndarray, src_rate: int, dst_rate: int) -> np.nd
     duration = waveform.shape[0] / src_rate
     # A non-empty clip shorter than half a destination sample would otherwise
     # round down to zero after it already passed the endpoint's empty check.
-    dst_len = max(1, int(round(duration * dst_rate)))
+    dst_len = resampled_frame_count(waveform.shape[0], src_rate, dst_rate)
     src_t = np.linspace(0.0, duration, num=waveform.shape[0], endpoint=False)
     dst_t = np.linspace(0.0, duration, num=dst_len, endpoint=False)
     return np.interp(dst_t, src_t, waveform).astype(np.float32)
@@ -214,18 +283,17 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
                 "(supported: json, text, verbose_json)",
             )
 
-        waveform, sample_rate = decode_audio(read_upload(file))
-        if waveform.shape[0] == 0:
-            raise HTTPException(status_code=400, detail="Empty audio file")
-        waveform = resample_linear(waveform, sample_rate, TARGET_SAMPLE_RATE)
-
-        started = time.monotonic()
         kwargs = {}
         if language and state["honours_language"]:
             kwargs["language"] = language
-        # onnxruntime sessions are thread-safe, but serializing inference
-        # keeps memory bounded when several requests land at once.
+        # The entire decoded/resampling working set must be serialized too,
+        # not only onnxruntime inference.
         with inference_lock:
+            waveform, sample_rate = decode_audio(read_upload(file))
+            if waveform.shape[0] == 0:
+                raise HTTPException(status_code=400, detail="Empty audio file")
+            waveform = resample_linear(waveform, sample_rate, TARGET_SAMPLE_RATE)
+            started = time.monotonic()
             try:
                 text = asr.recognize(
                     waveform, sample_rate=TARGET_SAMPLE_RATE, **kwargs

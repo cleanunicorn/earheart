@@ -10,6 +10,7 @@ const workflow = fs.readFileSync(path.join(ROOT, ".github/workflows/auto-release
 const helperSource = workflow
   .match(/          dispatch_release\(\) \{([\s\S]*?)          # A successful atomic push/)[0]
   .replace(/^          /gm, "");
+const fullWorkflowSource = workflow.match(/        run: \|\n([\s\S]+)$/)[1].replace(/^          /gm, "");
 
 function writeExecutable(file, source) {
   fs.writeFileSync(file, source, { mode: 0o755 });
@@ -111,4 +112,111 @@ test("an accepted-but-ambiguous dispatch is reconciled before it can be retried"
   const result = runRecovery({ dispatchMode: "accepted-error" });
   assert.equal(result.status, 0);
   assert.deepStrictEqual(result.dispatches, ["v1.2.3"]);
+});
+
+test("a pushed release tag survives dispatch exhaustion and is redispatched by a later full workflow run", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-release-workflow-"));
+  const repository = path.join(directory, "repo");
+  const bin = path.join(directory, "bin");
+  const remoteTag = path.join(directory, "remote-tag");
+  const dispatches = path.join(directory, "dispatches.log");
+  const mutations = path.join(directory, "mutations.log");
+  fs.mkdirSync(path.join(repository, "scripts"), { recursive: true });
+  fs.mkdirSync(path.join(repository, "main", "services"), { recursive: true });
+  fs.mkdirSync(bin);
+  for (const file of ["auto-release.js", "changelog.js"]) {
+    fs.copyFileSync(path.join(ROOT, "scripts", file), path.join(repository, "scripts", file));
+  }
+  fs.copyFileSync(
+    path.join(ROOT, "main", "services", "release-notes.js"),
+    path.join(repository, "main", "services", "release-notes.js"),
+  );
+  fs.copyFileSync(
+    path.join(ROOT, "main", "services", "update-feed.js"),
+    path.join(repository, "main", "services", "update-feed.js"),
+  );
+  fs.writeFileSync(path.join(repository, "package.json"), JSON.stringify({ version: "1.2.2" }));
+  fs.writeFileSync(path.join(repository, "package-lock.json"), JSON.stringify({ version: "1.2.2" }));
+  fs.writeFileSync(
+    path.join(repository, "CHANGELOG.md"),
+    "# Changelog\n\n## v1.2.2 — 2026-09-20\n\n- Boundary (#100)\n",
+  );
+  writeExecutable(
+    path.join(bin, "git"),
+    `#!/usr/bin/env bash
+case "$1" in
+  fetch|reset|config|add) exit 0 ;;
+  for-each-ref) [[ -f "$WORKFLOW_REMOTE_TAG" ]] && printf 'v1.2.3\\tabc123\\n' ;;
+  log) printf 'release: v1.2.3\\n' ;;
+  merge-base) exit 0 ;;
+  rev-parse) printf 'abc123\\n' ;;
+  commit|tag) printf '%s\\n' "$*" >> "$WORKFLOW_MUTATIONS" ;;
+  push) printf '%s\\n' "$*" >> "$WORKFLOW_MUTATIONS"; touch "$WORKFLOW_REMOTE_TAG" ;;
+  *) exit 89 ;;
+esac
+`,
+  );
+  writeExecutable(
+    path.join(bin, "npm"),
+    `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$WORKFLOW_MUTATIONS"
+"$WORKFLOW_NODE" -e 'const fs=require("node:fs"); for (const file of ["package.json", "package-lock.json"]) { const json=JSON.parse(fs.readFileSync(file)); json.version="1.2.3"; fs.writeFileSync(file, JSON.stringify(json)); }'
+`,
+  );
+  writeExecutable(
+    path.join(bin, "gh"),
+    `#!/usr/bin/env bash
+case "$1 $2" in
+  "api -i") printf 'HTTP/2 404\\n'; exit 1 ;;
+  "api --paginate")
+    printf '%s\\n' '{"number":101,"title":"fix: recovery","mergedAt":"2026-09-21T10:00:00Z"}' '{"number":100,"title":"fix: boundary","mergedAt":"2026-09-20T10:00:00Z"}' ;;
+  "run list") printf '[]\\n' ;;
+  "workflow run")
+    printf 'v1.2.3\\n' >> "$WORKFLOW_DISPATCHES"
+    [[ "$WORKFLOW_PHASE" == fail ]] && exit 1
+    exit 0 ;;
+  *) exit 88 ;;
+esac
+`,
+  );
+  writeExecutable(path.join(bin, "sleep"), "#!/usr/bin/env bash\nexit 0\n");
+
+  const run = (phase) =>
+    spawnSync("bash", ["-c", fullWorkflowSource], {
+      cwd: repository,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH}`,
+        GH_TOKEN: "test-token",
+        TRIGGER_PR: "101",
+        TRIGGER_TITLE: "fix: recovery",
+        RUNNER_TEMP: directory,
+        GITHUB_REPOSITORY: "owner/repo",
+        WORKFLOW_NODE: process.execPath,
+        WORKFLOW_REMOTE_TAG: remoteTag,
+        WORKFLOW_DISPATCHES: dispatches,
+        WORKFLOW_MUTATIONS: mutations,
+        WORKFLOW_PHASE: phase,
+      },
+    });
+  const readLines = (file) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim().split("\n") : []);
+
+  const exhausted = run("fail");
+  assert.equal(exhausted.status, 1);
+  assert.ok(fs.existsSync(remoteTag), `the atomic push should persist the release tag: ${exhausted.stderr}`);
+  assert.deepStrictEqual(readLines(dispatches), ["v1.2.3", "v1.2.3", "v1.2.3"]);
+  const firstMutations = readLines(mutations);
+  assert.deepStrictEqual(firstMutations, [
+    "version patch --no-git-tag-version",
+    "commit -m release: v1.2.3",
+    "tag -a v1.2.3 -m v1.2.3",
+    "push --atomic origin HEAD:main refs/tags/v1.2.3:refs/tags/v1.2.3",
+  ]);
+
+  const later = run("success");
+  assert.equal(later.status, 0);
+  assert.deepStrictEqual(readLines(dispatches), ["v1.2.3", "v1.2.3", "v1.2.3", "v1.2.3"]);
+  assert.deepStrictEqual(readLines(mutations), firstMutations);
+  fs.rmSync(directory, { recursive: true, force: true });
 });

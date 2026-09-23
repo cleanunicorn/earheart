@@ -47,6 +47,7 @@ jobs:
 
           dispatch_release() {
             local tag="$1"
+            local tag_commit="$2"
             if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "::error title=Invalid release tag::Refusing to dispatch non-version tag: $tag"
               return 1
@@ -60,6 +61,26 @@ jobs:
                 break
               fi
               echo "::warning title=Release dispatch retry::$tag attempt $dispatch_attempt failed"
+
+              # A transport failure can happen after GitHub accepted the dispatch.
+              # Give the run list a bounded chance to expose that active build
+              # before sending the same tag again.
+              local visibility_attempt active_status
+              for ((visibility_attempt = 1; visibility_attempt <= max_attempts; visibility_attempt++)); do
+                if active_release_run "$tag" "$tag_commit"; then
+                  echo "Release build for $tag appeared after dispatch failure; not retrying."
+                  dispatched=true
+                  break 2
+                else
+                  active_status=$?
+                fi
+                if ((active_status != 1)); then
+                  return "$active_status"
+                fi
+                if ((visibility_attempt < max_attempts)); then
+                  sleep 1
+                fi
+              done
             done
             if [[ "$dispatched" != true ]]; then
               echo "::error title=Release build dispatch failed::Release build dispatch failed for $tag after $max_attempts attempts"
@@ -116,20 +137,22 @@ jobs:
               if release_exists "$tag"; then
                 echo "Release $tag already exists; recovery skipped."
                 continue
+              else
+                release_status=$?
               fi
-              release_status=$?
               if ((release_status != 1)); then
                 return "$release_status"
               fi
               if active_release_run "$tag" "$tag_commit"; then
                 echo "Release build for $tag is already active; recovery skipped."
                 continue
+              else
+                release_status=$?
               fi
-              release_status=$?
               if ((release_status != 1)); then
                 return "$release_status"
               fi
-              dispatch_release "$tag"
+              dispatch_release "$tag" "$tag_commit"
             done < <(git for-each-ref --format='%(refname:short)%09%(*objectname)' refs/tags)
           }
 
@@ -247,5 +270,5 @@ jobs:
 
             # Tags pushed with GITHUB_TOKEN do not trigger tag-push workflows,
             # so request the build explicitly after the unchanged atomic push.
-            dispatch_release "$tag"
+            dispatch_release "$tag" "$(git rev-parse "$tag^{commit}")"
           done < "$pending_file"

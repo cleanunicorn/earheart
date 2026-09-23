@@ -16,6 +16,7 @@ function readText(...parts) {
 }
 
 const workflow = readText(".github", "workflows", "auto-release.yml");
+const releaseWorkflow = readText(".github", "workflows", "release.yml");
 const titleWorkflow = readText(".github", "workflows", "pr-title.yml");
 const autoReleaseScript = readText("scripts", "auto-release.js");
 const releaseNotesSource = readText("main", "services", "release-notes.js");
@@ -175,6 +176,11 @@ test("durable pushed tags recover before candidate selection without duplicate a
   assert.match(workflow, /\.status == "queued"[\s\S]*\.status == "in_progress"/);
   assert.match(workflow, /dispatch_release "\$tag"/);
   assert.match(workflow, /gh workflow run release\.yml --ref "\$tag"/);
+  assert.match(workflow, /if active_release_run "\$tag" "\$tag_commit"; then[\s\S]*appeared after dispatch failure; not retrying/);
+  assert.match(workflow, /for \(\(visibility_attempt = 1; visibility_attempt <= max_attempts; visibility_attempt\+\+\)\); do/);
+  assert.match(releaseWorkflow, /concurrency:\n  group: release-\$\{\{ github\.ref \}\}\n  cancel-in-progress: false/);
+  assert.match(workflow, /if release_exists "\$tag"; then[\s\S]*else\n\s+release_status=\$\?/);
+  assert.match(workflow, /if active_release_run "\$tag" "\$tag_commit"; then[\s\S]*else\n\s+release_status=\$\?/);
   assert.doesNotMatch(workflow.slice(recoveryAt, selectAt), /npm version|scripts\/changelog\.js|git commit|git tag -a|git push/);
 });
 

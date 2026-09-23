@@ -268,7 +268,8 @@ const DEFAULT_CLEANUP_MODEL = "granite-4.0-micro";
 // memory and registered at startup from persisted settings (see main/ipc.js),
 // so they resolve through the same getModel/listModels path the built-ins use
 // — no special-casing in the download manager, engines, or IPC layers. Same
-// shape as a MODELS entry, minus the sha256 we can't pre-verify for a user URL.
+// shape as a MODELS entry; files include sha256 when Hugging Face publishes an
+// LFS checksum, and otherwise rely on their pinned URL and size.
 let customModels = [];
 
 // A model id or filename becomes one path component under the managed models

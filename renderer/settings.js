@@ -306,7 +306,7 @@ function collect() {
     },
     engines: {
       ...current.engines,
-      // 0 = never unload; blank or invalid input keeps the saved value.
+      // 0 = never unload; blank or invalid input keeps the saved value in range.
       idleUnloadMinutes: clampNumber(
         $("idle-unload").value,
         0,

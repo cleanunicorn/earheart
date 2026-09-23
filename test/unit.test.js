@@ -958,6 +958,10 @@ test("settings numeric values are rounded, clamped, and safely defaulted", () =>
   assert.strictEqual(clampNumber("9999", 0, 240, 2), 240);
   assert.strictEqual(clampNumber("", 0, 240, 2), 2);
   assert.strictEqual(clampNumber("not-a-number", 0, 240, 2), 2);
+  assert.strictEqual(clampNumber("", 10, 3600, -5), 10);
+  assert.strictEqual(clampNumber("not-a-number", 0, 240, 99999), 240);
+  assert.strictEqual(clampNumber("", 10, 3600, Infinity), 10);
+  assert.strictEqual(clampNumber("not-a-number", 0, 240, NaN), 0);
 });
 
 test("idle model unload defaults to a finite window and is overridable", () => {

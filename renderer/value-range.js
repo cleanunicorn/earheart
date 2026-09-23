@@ -3,10 +3,16 @@
 
 function clampNumber(value, min, max, fallback) {
   if (value === "" || value == null || (typeof value === "string" && !value.trim())) {
-    return fallback;
+    return clampFallback(min, max, fallback);
   }
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
+  if (!Number.isFinite(parsed)) return clampFallback(min, max, fallback);
+  return Math.round(Math.min(max, Math.max(min, parsed)));
+}
+
+function clampFallback(min, max, fallback) {
+  if (typeof fallback !== "number" || !Number.isFinite(fallback)) return min;
+  const parsed = fallback;
   return Math.round(Math.min(max, Math.max(min, parsed)));
 }
 

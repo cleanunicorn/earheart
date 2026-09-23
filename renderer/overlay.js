@@ -929,16 +929,24 @@ earheart.on("pipeline:status", ({ status, detail }) => {
     case "delivering":
       setStatus("delivering", "Typing…");
       break;
-    case "done":
+    case "done": {
       // A note means auto-paste was attempted and failed: say so in the
       // title, and put the reason where the preview would go — the text is
       // on the clipboard either way.
+      const delivered = detail?.note
+        ? "Copied — auto-paste failed"
+        : DONE_TITLE[detail?.method] ?? "Pasted";
+      // Some of the speech never made it into the transcript (the engine
+      // stopped part-way). The OS notification that said so is gone in
+      // seconds; the card is what the user is still looking at, so the title
+      // carries it — and, being the live region, says it to assistive tech.
       setStatus(
         "done",
-        detail?.note ? "Copied — auto-paste failed" : DONE_TITLE[detail?.method] ?? "Pasted",
+        detail?.incomplete ? `${delivered} — incomplete` : delivered,
         detail?.note || detail?.preview
       );
       break;
+    }
     case "empty":
       setStatus("empty", "Nothing heard", "Try again closer to the mic");
       break;

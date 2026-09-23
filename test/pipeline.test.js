@@ -269,7 +269,10 @@ function dictationRig({ engine = "builtin", display = true, cleanup = false, tra
         sendToSettings: (channel) => log.settingsEvents.push(channel),
         sendToOverlay(channel, payload) {
           if (channel === "record:start") lastStart = payload;
-          if (channel === "pipeline:status") log.statuses.push(payload.status);
+          if (channel === "pipeline:status") {
+            log.statuses.push(payload.status);
+            if (payload.status === "done") log.done = payload.detail;
+          }
         },
       },
       "./services/route": {
@@ -334,6 +337,7 @@ test("pipeline: no built-in final decode exceeds 20 s, on every assembly path", 
       const expected = secs.map((_, i) => `w${i}`).join(" ");
       assert.strictEqual(rig.log.delivered[0], c.snap.broken || !c.snap.committedRaw ? expected : `said ${expected}`);
       assert.strictEqual(rig.log.history[0].incomplete, undefined);
+      assert.strictEqual(rig.log.done.incomplete, false);
       assert.strictEqual(rig.log.notifications.length, 0);
     }
   }
@@ -366,6 +370,7 @@ test("pipeline: an STT worker death mid-transcription delivers what decoded, the
   assert.strictEqual(rig.log.history.length, 1);
   assert.strictEqual(rig.log.history[0].raw, "w0 w3");
   assert.strictEqual(rig.log.history[0].incomplete, true);
+  assert.strictEqual(rig.log.done.incomplete, true, "the overlay's done card says so too");
   assert.deepStrictEqual(rig.log.settingsEvents, ["history:changed"]);
   assert.ok(!rig.log.statuses.includes("error") && !rig.log.statuses.includes("empty"));
 

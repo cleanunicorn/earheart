@@ -394,6 +394,35 @@ app.whenReady().then(async () => {
       doneUi.cancelTitle === "Dismiss" && doneUi.cancelAria === "Dismiss",
       `title=${JSON.stringify(doneUi.cancelTitle)} aria=${JSON.stringify(doneUi.cancelAria)}`
     );
+    // An interrupted dictation says so where the delivery title goes: the
+    // notification is gone seconds later, this is what stays on screen.
+    win.webContents.send("pipeline:status", {
+      status: "done",
+      detail: { preview: "staged preview", method: "paste", incomplete: true },
+    });
+    await waitForStatus(win, "done");
+    const incompleteTitle = await win.webContents.executeJavaScript(
+      `document.getElementById("status-text").textContent`
+    );
+    check(
+      "an interrupted dictation is named in the done state",
+      /incomplete/i.test(incompleteTitle),
+      `title=${JSON.stringify(incompleteTitle)}`
+    );
+    win.webContents.send("pipeline:status", {
+      status: "done",
+      detail: { preview: "staged preview", method: "paste" },
+    });
+    await waitForStatus(win, "done");
+    const wholeTitle = await win.webContents.executeJavaScript(
+      `document.getElementById("status-text").textContent`
+    );
+    check(
+      "a complete dictation keeps the plain delivery title",
+      wholeTitle === "Pasted",
+      `title=${JSON.stringify(wholeTitle)}`
+    );
+
     // The tooltip mirror is conditional on clipping; the staged preview is
     // short, so no tooltip should be set.
     check(

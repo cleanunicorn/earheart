@@ -490,6 +490,9 @@ async function process(sid, wavArrayBuffer) {
       preview: text.length > 120 ? `${text.slice(0, 120)}…` : text,
       method: result.method,
       note: result.note,
+      // Same state the history entry records: the card outlives the
+      // notification, so it must say the transcript is not the whole take.
+      incomplete: partial,
     });
     hideOverlaySoon(sid, result.note ? 4000 : 1600);
   } catch (err) {

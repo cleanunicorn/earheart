@@ -6,11 +6,23 @@ const os = require("node:os");
 const path = require("node:path");
 
 const ROOT = path.join(__dirname, "..");
-const workflow = fs.readFileSync(path.join(ROOT, ".github/workflows/auto-release.yml"), "utf8");
+function normalizeNewlines(text) {
+  return text.replace(/\r\n/g, "\n");
+}
+
+function workflowRunSource(source) {
+  const match = normalizeNewlines(source).match(/        run: \|\n([\s\S]+)$/);
+  if (!match) throw new Error("auto-release workflow run block was not found");
+  return match[1].replace(/^          /gm, "");
+}
+
+const workflow = normalizeNewlines(
+  fs.readFileSync(path.join(ROOT, ".github/workflows/auto-release.yml"), "utf8"),
+);
 const helperSource = workflow
   .match(/          dispatch_release\(\) \{([\s\S]*?)          # A successful atomic push/)[0]
   .replace(/^          /gm, "");
-const fullWorkflowSource = workflow.match(/        run: \|\n([\s\S]+)$/)[1].replace(/^          /gm, "");
+const fullWorkflowSource = workflowRunSource(workflow);
 
 function writeExecutable(file, source) {
   fs.writeFileSync(file, source, { mode: 0o755 });
@@ -112,6 +124,10 @@ test("an accepted-but-ambiguous dispatch is reconciled before it can be retried"
   const result = runRecovery({ dispatchMode: "accepted-error" });
   assert.equal(result.status, 0);
   assert.deepStrictEqual(result.dispatches, ["v1.2.3"]);
+});
+
+test("full workflow extraction accepts Windows checkout newlines", () => {
+  assert.equal(workflowRunSource(workflow.replace(/\n/g, "\r\n")), fullWorkflowSource);
 });
 
 test("a pushed release tag survives dispatch exhaustion and is redispatched by a later full workflow run", () => {

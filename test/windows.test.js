@@ -22,7 +22,7 @@ const WINDOWS = require.resolve("../main/windows");
 // A BrowserWindow that records every call as [name, ...args], so a test can
 // assert not just that something happened but where it happened relative to
 // everything else. Geometry answers are fixed: nothing here depends on layout.
-function makeFakeWindow(calls, { refuseRejoin = false } = {}) {
+function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} } = {}) {
   // Tracks the NSWindow's all-Spaces collection-behaviour bit, so a test can
   // clear it after creation to stand in for the bit being lost at runtime.
   // refuseRejoin stands in for the other failure the production warn
@@ -32,11 +32,13 @@ function makeFakeWindow(calls, { refuseRejoin = false } = {}) {
     constructor(options) {
       calls.push(["construct", options]);
       this.webContents = {
-        on: () => {},
+        on: (event, handler) => {
+          webContentsHandlers[event] = handler;
+        },
         once: () => {},
         send: (channel) => calls.push(["send", channel]),
         isLoading: () => false,
-        reload: () => {},
+        reload: () => calls.push(["reload"]),
       };
     }
     setAlwaysOnTop(...args) {
@@ -100,9 +102,10 @@ function makeFakeWindow(calls, { refuseRejoin = false } = {}) {
 function loadWindows({ refuseRejoin = false } = {}) {
   const calls = [];
   const warnings = [];
+  const webContentsHandlers = {};
   const workArea = { x: 0, y: 0, width: 1920, height: 1080 };
   const electron = {
-    BrowserWindow: makeFakeWindow(calls, { refuseRejoin }),
+    BrowserWindow: makeFakeWindow(calls, { refuseRejoin, webContentsHandlers }),
     ipcMain: { on: () => {} },
     screen: {
       getPrimaryDisplay: () => ({ workArea }),
@@ -117,11 +120,14 @@ function loadWindows({ refuseRejoin = false } = {}) {
     if (request === "./util/logger") {
       return { info: () => {}, warn: (msg) => warnings.push(msg), error: () => {} };
     }
+    if (request === "./pipeline") {
+      return { onOverlayRendererGone: () => calls.push(["pipeline:renderer-gone"]) };
+    }
     return realLoad.call(this, request, ...rest);
   };
   delete require.cache[WINDOWS];
   try {
-    return { windows: require(WINDOWS), calls, warnings };
+    return { windows: require(WINDOWS), calls, warnings, webContentsHandlers };
   } finally {
     Module._load = realLoad;
     delete require.cache[WINDOWS];
@@ -154,6 +160,18 @@ function showOnceOnDarwin(t, options) {
 const names = (calls) => calls.map(([name]) => name);
 const indexOf = (calls, name) => names(calls).indexOf(name);
 const countOf = (calls, name) => names(calls).filter((n) => n === name).length;
+
+test("overlay renderer loss releases pipeline state before reload", () => {
+  const { windows, calls, webContentsHandlers } = loadWindows();
+  windows.createOverlay();
+
+  webContentsHandlers["render-process-gone"]();
+
+  const released = indexOf(calls, "pipeline:renderer-gone");
+  const reloaded = indexOf(calls, "reload");
+  assert.ok(released >= 0, "renderer loss should notify the recording pipeline");
+  assert.ok(reloaded > released, "the pipeline must release recording before renderer reload");
+});
 
 // --- The guarantees that predate the Spaces fix -----------------------------
 // These three run against behaviour that already existed, so they pass before

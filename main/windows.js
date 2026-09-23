@@ -5,6 +5,7 @@ const { BrowserWindow, ipcMain, screen } = require("electron");
 const path = require("node:path");
 const settings = require("./settings");
 const logger = require("./util/logger");
+const pipeline = require("./pipeline");
 
 const PRELOAD = path.join(__dirname, "..", "preload.js");
 const RENDERER = path.join(__dirname, "..", "renderer");
@@ -190,7 +191,9 @@ function createOverlay() {
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlayWindow.loadFile(path.join(RENDERER, "overlay.html"));
   overlayWindow.webContents.on("render-process-gone", () => {
-    // A dead overlay renderer means no more dictation; bring it back.
+    // The renderer owns the microphone and recording state; release the
+    // pipeline's session before reloading into a fresh renderer.
+    pipeline.onOverlayRendererGone();
     overlayWindow?.webContents.reload();
   });
   overlayWindow.on("closed", () => {

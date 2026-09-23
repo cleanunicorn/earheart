@@ -1003,6 +1003,10 @@ test("acceleratorFromEvent maps modifiers per platform and names keys", () => {
     );
     assert.strictEqual(acceleratorFromEvent(ev({ key: "1", code: "Digit1", ctrlKey: true })), "CommandOrControl+1");
     assert.strictEqual(acceleratorFromEvent(ev({ key: "1", code: "Numpad1", ctrlKey: true })), "CommandOrControl+num1");
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "Enter", code: "NumpadEnter", ctrlKey: true })),
+      "CommandOrControl+Enter"
+    );
     assert.strictEqual(acceleratorFromEvent(ev({ key: "0", code: "Numpad0", ctrlKey: true })), "CommandOrControl+num0");
     for (let digit = 0; digit <= 9; digit++) {
       const code = "Numpad" + digit;

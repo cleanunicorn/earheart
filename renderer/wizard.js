@@ -78,6 +78,10 @@ $("hotkey-clear").addEventListener("click", () => {
 
 async function loadMicrophones() {
   const select = $("mic-device");
+  let selectionChanged = false;
+  select.addEventListener("change", () => {
+    selectionChanged = true;
+  });
   // Preserve the saved device before permission or enumeration can finish, so
   // saving the wizard cannot silently replace it with the system default.
   if (current.audio.deviceId) {
@@ -105,7 +109,7 @@ async function loadMicrophones() {
         option.textContent = d.label || `Microphone ${select.length}`;
         select.appendChild(option);
       });
-    select.value = current.audio.deviceId || "";
+    if (!selectionChanged) select.value = current.audio.deviceId || "";
   } catch {
     $("mic-hint").textContent =
       "No microphone found (or access was denied). You can pick one later in Settings.";

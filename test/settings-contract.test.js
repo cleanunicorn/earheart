@@ -173,13 +173,102 @@ test("hotkey-capture.js loads before each page's own script", () => {
   }
 });
 
-test("wizard preserves the saved microphone during enumeration", () => {
-  const normalized = wizardJs.replace(/\s+/g, " ");
-  assert.match(normalized, /if \(current\.audio\.deviceId\) \{.*saved\.value = current\.audio\.deviceId/);
-  assert.match(normalized, /select\.value = current\.audio\.deviceId \|\| ""/);
-  assert.match(normalized, /existing\.textContent = d\.label \|\| existing\.textContent/);
-});
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => (resolve = r));
+  return { promise, resolve };
+}
 
+function microphonePage(source, page) {
+  const select = {
+    value: "",
+    options: [{ value: "", textContent: "System default" }],
+    listeners: {},
+    addEventListener(type, listener) {
+      this.listeners[type] = listener;
+    },
+    appendChild(option) {
+      this.options.push(option);
+    },
+    querySelector(selector) {
+      const value = selector.match(/option\[value="(.*)"\]/)?.[1];
+      return this.options.find((option) => option.value === value) || null;
+    },
+    get length() {
+      return this.options.length;
+    },
+    get selectedOptions() {
+      return this.options.filter((option) => option.value === this.value);
+    },
+    dispatchEvent(event) {
+      this.listeners[event.type]?.(event);
+    },
+  };
+  const hint = { textContent: "" };
+  const document = {
+    getElementById(id) {
+      return id === "mic-device" ? select : hint;
+    },
+    createElement() {
+      return { value: "", textContent: "" };
+    },
+  };
+  const enumeration = deferred();
+  const current = { audio: { deviceId: "saved-id" } };
+  let payload;
+  const context = {
+    document,
+    navigator: {
+      mediaDevices: {
+        async getUserMedia() {
+          return { getTracks: () => [{ stop() {} }] };
+        },
+        enumerateDevices: () => enumeration.promise,
+      },
+    },
+    CSS: { escape: (value) => value },
+    current,
+    $: (id) => document.getElementById(id),
+    earheart: {
+      invoke(channel, value) {
+        assert.strictEqual(channel, page === "settings" ? "settings:save" : "wizard:complete");
+        payload = value;
+        return Promise.resolve({ settings: value, hotkey: { ok: true } });
+      },
+    },
+  };
+  const start = source.indexOf("async function loadMicrophones()");
+  const bodyStart = source.indexOf("{", start) + 1;
+  const end = source.indexOf("\r\n}\r\n", bodyStart) + 3;
+  assert.ok(start >= 0 && end > start, `${page} loadMicrophones must exist`);
+  const loadSource = "async function() {" + source.slice(bodyStart, end - 3) + "}";
+  const load = require("node:vm").runInNewContext(`(${loadSource})`, context);
+
+  return {
+    select,
+    async reproduce() {
+      const pending = load();
+      await new Promise((resolve) => setImmediate(resolve));
+      select.value = "";
+      select.dispatchEvent({ type: "change" });
+      enumeration.resolve([
+        { kind: "audioinput", deviceId: "saved-id", label: "Saved microphone" },
+        { kind: "audioinput", deviceId: "other-id", label: "Other microphone" },
+      ]);
+      await pending;
+      const channel = page === "settings" ? "settings:save" : "wizard:complete";
+      await context.earheart.invoke(channel, { audio: { deviceId: select.value } });
+      return { selected: select.value, saved: payload.audio.deviceId };
+    },
+  };
+}
+
+for (const [page, source] of [["settings", js], ["wizard", wizardJs]]) {
+  test(`${page} preserves System default selected during microphone enumeration`, async () => {
+    const fixture = microphonePage(source, page);
+    assert.deepStrictEqual(await fixture.reproduce(), { selected: "", saved: "" });
+  });
+}
 test("permission-status.js loads before settings.js, which uses it", () => {
   // settings.js only reaches for these when Fix is clicked or the window
   // regains focus, so a dropped tag passes the smoke checks and throws later.

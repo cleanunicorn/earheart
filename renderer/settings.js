@@ -159,6 +159,10 @@ $("pause-hotkey-clear").addEventListener("click", () => {
 
 async function loadMicrophones() {
   const select = $("mic-device");
+  let selectionChanged = false;
+  select.addEventListener("change", () => {
+    selectionChanged = true;
+  });
   // Show the saved device immediately so saving before (or without)
   // enumeration never silently resets the microphone choice.
   if (current.audio.deviceId) {
@@ -186,7 +190,7 @@ async function loadMicrophones() {
         option.textContent = d.label || `Microphone ${select.length}`;
         select.appendChild(option);
       });
-    select.value = current.audio.deviceId || "";
+    if (!selectionChanged) select.value = current.audio.deviceId || "";
   } catch {
     // No microphone permission/device; leave "System default".
   }

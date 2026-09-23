@@ -59,10 +59,17 @@ function harnessEnvironment(bin, environment = process.env) {
   return { ...environment, HARNESS_BIN: bin };
 }
 
-function runBash(script, { harnessPlatform, harnessPathVariables, ...options }) {
+function runBash(script, {
+  harnessPlatform,
+  harnessPathVariables,
+  bash = bashExecutable,
+  spawn = spawnSync,
+  ...options
+}) {
   const source = `${harnessPreamble({ platform: harnessPlatform, pathVariables: harnessPathVariables })}${script}`;
-  const result = spawnSync(bashExecutable(), ["-c", source], {
+  const result = spawn(bash(), ["-s"], {
     ...options,
+    input: source,
     encoding: "utf8",
     timeout: 15_000,
     killSignal: "SIGKILL",
@@ -220,6 +227,24 @@ test("harness activates fake commands in Bash without changing its inherited PAT
       + 'if [ -n "${RUNNER_TEMP:-}" ]; then RUNNER_TEMP="$(cygpath -u -- "$RUNNER_TEMP")"; export RUNNER_TEMP; fi\n'
       + 'if [ -n "${WORKFLOW_DISPATCHES:-}" ]; then WORKFLOW_DISPATCHES="$(cygpath -u -- "$WORKFLOW_DISPATCHES")"; export WORKFLOW_DISPATCHES; fi\n',
   );
+});
+
+test("harness feeds workflow source to Bash stdin instead of a command-line argument", () => {
+  let invocation;
+  const result = runBash("echo workflow", {
+    harnessPlatform: "linux",
+    bash: () => "/fake/bash",
+    spawn: (executable, args, options) => {
+      invocation = { executable, args, options };
+      return { status: 0, stdout: "", stderr: "" };
+    },
+  });
+  assert.equal(result.status, 0);
+  assert.equal(invocation.executable, "/fake/bash");
+  assert.deepStrictEqual(invocation.args, ["-s"]);
+  assert.equal(invocation.options.input, 'if [ -n "${HARNESS_BIN:-}" ]; then PATH="$HARNESS_BIN:$PATH"; export PATH; fi\necho workflow');
+  assert.equal(invocation.options.timeout, 15_000);
+  assert.equal(invocation.options.killSignal, "SIGKILL");
 });
 
 test("a pushed release tag survives dispatch exhaustion and is redispatched by a later full workflow run", () => {

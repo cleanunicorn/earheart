@@ -14,6 +14,8 @@
 // corrupted, tampered, or wrong file being loaded into the native runtimes. Every URL is
 // pinned to an immutable Hugging Face commit (`resolve/<commit>/…`) rather than
 // a moving branch, so the bytes are reproducible and the checksum can't drift.
+// User-added files are checksum-verified when Hugging Face publishes their LFS
+// SHA-256; files without an LFS checksum still rely on the pinned URL and size.
 //
 // To refresh after a model is re-published: HEAD the `resolve/main/<file>` URL
 // and read `x-repo-commit` (the commit to pin), `x-linked-etag` (the sha256 for

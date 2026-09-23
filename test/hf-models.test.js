@@ -129,11 +129,24 @@ test("listGgufQuants collapses sharded quants into one entry", async () => {
     "model-Q4_K_M-00001-of-00002.gguf",
     "model-Q4_K_M-00002-of-00002.gguf",
   ]);
+  assert.ok(out.variants[0].files.every((f) => f.sha256 === undefined));
 });
 
 test("listGgufQuants rejects gated repos and repos with no GGUF", async () => {
   const gated = stubFetch([["/api/models/", { body: { sha: "c", gated: "manual" } }]]);
   await assert.rejects(listGgufQuants({ owner: "u", repo: "r" }, gated), /gated/);
+
+  const projectorOnly = stubFetch([
+    ["/tree/", { body: [
+      { type: "file", path: "mmproj-only.gguf", size: 1000 },
+      { type: "file", path: "model-imatrix.gguf", size: 1000 },
+    ] }],
+    ["/api/models/", { body: { sha: "c" } }],
+  ]);
+  await assert.rejects(
+    listGgufQuants({ owner: "u", repo: "r" }, projectorOnly),
+    /No language-model GGUF files/
+  );
 
   const noGguf = stubFetch([
     ["/tree/", { body: [{ type: "file", path: "README.md", size: 1 }] }],
@@ -501,7 +514,39 @@ test("listSttVariants points optimum ONNX exports at a sherpa conversion", async
   );
 });
 
-test("buildSttModel produces a registry-shaped custom entry", () => {
+test("buildSttModel preserves discovered checksums on the saved model entry", async () => {
+  const fetchImpl = stubFetch([
+    ["/tree/", { body: [
+      { type: "file", path: "encoder.int8.onnx", size: 600, lfs: { oid: "D".repeat(64) } },
+      { type: "file", path: "decoder.int8.onnx", size: 12, lfs: { oid: "E".repeat(64) } },
+      { type: "file", path: "joiner.int8.onnx", size: 6 },
+      { type: "file", path: "tokens.txt", size: 1, lfs: { oid: "not-an-oid" } },
+    ] }],
+    ["/api/models/", { body: { sha: "sttcommit" } }],
+  ]);
+  const discovered = await listSttVariants(
+    { owner: "csukuangfj", repo: "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" },
+    fetchImpl
+  );
+  const model = buildSttModel(discovered.repo, discovered.variants[0]);
+
+  assert.strictEqual(model.kind, "stt");
+  assert.strictEqual(model.engine, "sherpa-parakeet");
+  assert.strictEqual(model.custom, true);
+  assert.strictEqual(
+    model.id,
+    "custom-csukuangfj-sherpa-onnx-nemo-parakeet-tdt-0-6b-v3-int8-int8"
+  );
+  assert.deepStrictEqual(model.sherpa, discovered.variants[0].sherpa);
+  assert.deepStrictEqual(model.files.map((file) => file.sha256), [
+    "d".repeat(64), "e".repeat(64), undefined, undefined,
+  ]);
+  assert.strictEqual(discovered.variants[0].files[3].sha256, undefined);
+  assert.match(model.note, /partially checksum-verified/);
+  assert.strictEqual(model.files.length, 4);
+});
+
+test("custom model notes distinguish complete, partial, and absent checksums", () => {
   const variant = {
     label: "int8",
     totalBytes: 670_000_000,
@@ -519,17 +564,19 @@ test("buildSttModel produces a registry-shaped custom entry", () => {
       modelType: "nemo_transducer",
     },
   };
-  const model = buildSttModel("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", variant);
-  assert.strictEqual(model.kind, "stt");
-  assert.strictEqual(model.engine, "sherpa-parakeet");
-  assert.strictEqual(model.custom, true);
-  assert.strictEqual(
-    model.id,
-    "custom-csukuangfj-sherpa-onnx-nemo-parakeet-tdt-0-6b-v3-int8-int8"
-  );
-  assert.deepStrictEqual(model.sherpa, variant.sherpa);
-  assert.match(model.note, /not checksum-verified/);
-  assert.strictEqual(model.files.length, 4);
+  const repo = "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8";
+  const verified = buildSttModel(repo, {
+    ...variant,
+    files: variant.files.map((file) => ({ ...file, sha256: "a".repeat(64) })),
+  });
+  const partial = buildSttModel(repo, {
+    ...variant,
+    files: variant.files.map((file, i) => i === 0 ? { ...file, sha256: "a".repeat(64) } : file),
+  });
+  const unchecked = buildSttModel(repo, variant);
+  assert.match(verified.note, /checksum-verified$/);
+  assert.match(partial.note, /partially checksum-verified$/);
+  assert.match(unchecked.note, /not checksum-verified$/);
 });
 
 test("searchUrl points each kind at the hub filtered to what its discoverer accepts", () => {

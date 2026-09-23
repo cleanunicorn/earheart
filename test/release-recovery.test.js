@@ -28,6 +28,19 @@ function writeExecutable(file, source) {
   fs.writeFileSync(file, source, { mode: 0o755 });
 }
 
+function runBash(script, options) {
+  const result = spawnSync("bash", ["-c", script], {
+    ...options,
+    encoding: "utf8",
+    timeout: 15_000,
+    killSignal: "SIGKILL",
+  });
+  if (result.error) {
+    throw new Error(`workflow harness Bash process failed: ${result.error.message}`);
+  }
+  return result;
+}
+
 function runRecovery({ dispatchMode = "success", release = "missing", active = "none" } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-release-recovery-"));
   const bin = path.join(directory, "bin");
@@ -72,9 +85,8 @@ esac
   writeExecutable(path.join(bin, "sleep"), "#!/usr/bin/env bash\nexit 0\n");
 
   const script = `max_attempts=3\n${helperSource}\nrecover_pushed_tags\n`;
-  const result = spawnSync("bash", ["-c", script], {
+  const result = runBash(script, {
     cwd: ROOT,
-    encoding: "utf8",
     env: {
       ...process.env,
       PATH: `${bin}:${process.env.PATH}`,
@@ -176,7 +188,8 @@ esac
     path.join(bin, "npm"),
     `#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$WORKFLOW_MUTATIONS"
-"$WORKFLOW_NODE" -e 'const fs=require("node:fs"); for (const file of ["package.json", "package-lock.json"]) { const json=JSON.parse(fs.readFileSync(file)); json.version="1.2.3"; fs.writeFileSync(file, JSON.stringify(json)); }'
+printf '%s' '{"version":"1.2.3"}' > package.json
+printf '%s' '{"version":"1.2.3"}' > package-lock.json
 `,
   );
   writeExecutable(
@@ -198,9 +211,8 @@ esac
   writeExecutable(path.join(bin, "sleep"), "#!/usr/bin/env bash\nexit 0\n");
 
   const run = (phase) =>
-    spawnSync("bash", ["-c", fullWorkflowSource], {
+    runBash(fullWorkflowSource, {
       cwd: repository,
-      encoding: "utf8",
       env: {
         ...process.env,
         PATH: `${bin}:${process.env.PATH}`,
@@ -209,7 +221,6 @@ esac
         TRIGGER_TITLE: "fix: recovery",
         RUNNER_TEMP: directory,
         GITHUB_REPOSITORY: "owner/repo",
-        WORKFLOW_NODE: process.execPath,
         WORKFLOW_REMOTE_TAG: remoteTag,
         WORKFLOW_DISPATCHES: dispatches,
         WORKFLOW_MUTATIONS: mutations,
@@ -222,6 +233,7 @@ esac
   assert.equal(exhausted.status, 1);
   assert.ok(fs.existsSync(remoteTag), `the atomic push should persist the release tag: ${exhausted.stderr}`);
   assert.deepStrictEqual(readLines(dispatches), ["v1.2.3", "v1.2.3", "v1.2.3"]);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(repository, "package.json"), "utf8")).version, "1.2.3");
   const firstMutations = readLines(mutations);
   assert.deepStrictEqual(firstMutations, [
     "version patch --no-git-tag-version",

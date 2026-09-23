@@ -125,16 +125,15 @@ function salvageOwners(pieces, salvageChunks) {
 }
 
 function assemble(pieces, owners) {
-  const owner = owners;
   const standsIn = new Set();
   pieces.forEach((p, i) => {
-    if (owner[i] && isGap(p)) standsIn.add(owner[i]);
+    if (owners[i] && isGap(p)) standsIn.add(owners[i]);
   });
   let text = "";
   pieces.forEach((p, i) => {
-    const c = owner[i];
+    const c = owners[i];
     if (c && standsIn.has(c)) {
-      if (i === 0 || owner[i - 1] !== c) text = joinText(text, c.text);
+      if (i === 0 || owners[i - 1] !== c) text = joinText(text, c.text);
     } else if (!isGap(p)) {
       text = joinText(text, p.text);
     }

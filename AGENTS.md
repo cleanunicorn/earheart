@@ -42,7 +42,7 @@ The Makefile wraps most tasks; `make help` lists them all.
 - **Smoke checks (macOS / Windows):** the same commands without `xvfb-run`:
   `npx electron . --smoke-test --no-sandbox`, then
   `npx electron scripts/<engine|overlay|settings>-smoke.js --no-sandbox`
-- **STT server tests:** `cd stt-server && uv run --extra test python -m pytest`
+- **STT server tests:** `cd stt-server && uv run --locked --extra test python -m pytest`
 - **Cleanup model benchmark** (optional; needs a downloaded GGUF, not part of
   the gate): `node scripts/bench-cleanup.mjs --out=<dir outside the repo>
   <model.gguf>`; `--probe <owner/repo> <file.gguf>` checks a candidate on

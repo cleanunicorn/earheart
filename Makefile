@@ -102,15 +102,15 @@ release: ## Cut a release: bump, changelog, tag, push (BUMP=patch|minor|major, d
 
 .PHONY: install-stt
 install-stt: ## Create the stt-server virtualenv and install it (uv)
-	cd stt-server && uv venv && uv pip install -e .
+	cd stt-server && uv sync --locked
 
 .PHONY: run-stt
 run-stt: ## Run the local Parakeet STT server (downloads model on first run)
-	cd stt-server && uv run earheart-stt
+	cd stt-server && uv run --locked earheart-stt
 
 .PHONY: run-stt-int8
 run-stt-int8: ## Run the STT server with the smaller/faster int8 model
-	cd stt-server && uv run earheart-stt --quantization int8
+	cd stt-server && uv run --locked earheart-stt --quantization int8
 
 # ----- housekeeping ---------------------------------------------------------
 

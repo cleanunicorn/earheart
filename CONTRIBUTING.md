@@ -73,7 +73,7 @@ Built-in models download to Electron's `userData/models` on first use; the
 smoke checks don't need them present.
 
 The optional Python STT server has endpoint tests too. From `stt-server/`, run
-`uv run --extra test python -m pytest`. CI runs the same suite with synthetic
+`uv run --locked --extra test python -m pytest`. CI runs the same suite with synthetic
 WAV uploads and fake recognizers, without downloading or loading speech models.
 
 ## Building installers

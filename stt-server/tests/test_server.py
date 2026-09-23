@@ -63,6 +63,20 @@ def client(client_factory, recognizer):
         yield client
 
 
+@pytest.fixture
+def read_spy(monkeypatch):
+    """Record sf.read calls while delegating to the real decoder."""
+    real_read = server.sf.read
+    calls = []
+
+    def spy(*args, **kwargs):
+        calls.append(1)
+        return real_read(*args, **kwargs)
+
+    monkeypatch.setattr(server.sf, "read", spy)
+    return calls
+
+
 def test_startup_and_discovery(client_factory, recognizer, loader):
     config = server.ServerConfig(model="test-model")
     with client_factory(recognizer, config) as client:
@@ -110,11 +124,28 @@ def test_unsupported_response_format(client, recognizer, response_format):
 
 
 @pytest.mark.parametrize("audio", [b"", b"not an audio file"])
-def test_invalid_audio(client, recognizer, audio):
+def test_invalid_audio(client, recognizer, audio, caplog):
     response = transcribe(client, audio)
     assert response.status_code == 400
-    assert response.json()["detail"].startswith("Could not decode audio file:")
+    assert response.json() == {"detail": "Could not decode audio file"}
     recognizer.recognize.assert_not_called()
+    assert "Could not decode audio upload" in caplog.text
+
+
+def test_read_failure_returns_fixed_message(client, recognizer, monkeypatch, caplog):
+    # Valid metadata, then a read failure: exercise the sf.read error branch,
+    # which must also return the fixed message and keep the raw text server-side.
+    def boom(*args, **kwargs):
+        raise RuntimeError("sentinel-libsndfile-detail")
+
+    monkeypatch.setattr(server.sf, "read", boom)
+    response = transcribe(client, wav())
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Could not decode audio file"}
+    assert "sentinel-libsndfile-detail" not in response.text
+    recognizer.recognize.assert_not_called()
+    assert "Could not decode audio upload" in caplog.text
 
 
 def test_empty_wav(client, recognizer):
@@ -136,6 +167,112 @@ def test_oversized_upload_is_rejected_before_decode(
     response = transcribe(client, b"x" * (1024 * 1024 + 1))
     assert response.status_code == 413
     assert response.json() == {"detail": "Audio upload exceeds the 1 MiB limit"}
+    recognizer.recognize.assert_not_called()
+
+
+def test_decoded_size_rejected_before_decode(client, recognizer, monkeypatch, read_spy):
+    # 300 s of silence encodes to a few bytes of FLAC but decodes to 4.8M
+    # float32 frames; the decoded budget must reject it before sf.read runs.
+    monkeypatch.setattr(server, "MAX_DECODED_BYTES", 16 * 1024 * 1024)
+    silent = io.BytesIO()
+    sf.write(silent, np.zeros(300 * 16000, dtype=np.float32), 16000, format="FLAC")
+
+    response = transcribe(client, silent.getvalue())
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "Decoded audio exceeds the 16 MiB limit"}
+    assert read_spy == []
+    recognizer.recognize.assert_not_called()
+
+
+def test_decode_is_bounded_when_header_underreports(client, recognizer, monkeypatch):
+    # A malformed header that under-reports frames must not let an oversized
+    # decode through: the bounded sf.read still catches it.
+    monkeypatch.setattr(server, "MAX_DECODED_BYTES", 1024)
+    monkeypatch.setattr(
+        server.sf, "info", lambda buffer: SimpleNamespace(frames=1, channels=1, samplerate=16000)
+    )
+
+    response = transcribe(client, wav(np.zeros(1600, dtype=np.float32)))
+
+    assert response.status_code == 413
+    assert "Decoded audio exceeds" in response.json()["detail"]
+    recognizer.recognize.assert_not_called()
+
+
+def test_low_rate_audio_is_bounded_by_projected_output(client, recognizer, monkeypatch, read_spy):
+    # 25 s of 8 kHz silence fits the source-frame budget (800 KB) but projects
+    # to 400k 16 kHz frames (1.6 MB) after resampling — reject it before decode.
+    monkeypatch.setattr(server, "MAX_DECODED_BYTES", 1024 * 1024)
+    silent = io.BytesIO()
+    sf.write(silent, np.zeros(200000, dtype=np.float32), 8000, format="FLAC")
+
+    response = transcribe(client, silent.getvalue())
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "Decoded audio exceeds the 1 MiB limit"}
+    assert read_spy == []
+    recognizer.recognize.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("frames", "rate", "channels", "expected"),
+    [
+        # 8 kHz -> 16 kHz: source, np.interp's float64 sample conversion,
+        # two float64 timelines, float64 result, and float32 output are live.
+        (100, 8000, 1, 6000),
+        # 48 kHz -> 16 kHz exercises downsample frame rounding.
+        (300, 48000, 1, 8000),
+        # Same-rate stereo never enters the resampler, but downmix temporarily
+        # retains the decoded two-channel source.
+        (100, 16000, 2, 1200),
+    ],
+)
+def test_peak_working_set_accounts_for_live_resampling_arrays(
+    frames, rate, channels, expected
+):
+    assert server.peak_working_set_bytes(frames, rate, channels) == expected
+
+
+@pytest.mark.parametrize("rate, frames", [(8000, 100), (48000, 300)])
+def test_complete_working_set_rejects_before_read_at_rate_boundaries(
+    client, recognizer, monkeypatch, read_spy, rate, frames
+):
+    budget = server.peak_working_set_bytes(frames, rate, 1)
+    monkeypatch.setattr(server, "MAX_DECODED_BYTES", budget)
+    silent = io.BytesIO()
+    sf.write(silent, np.zeros(frames, dtype=np.float32), rate, format="FLAC")
+
+    # The one-frame lying-header probe also belongs to the budget, so an
+    # otherwise exact nominal boundary is rejected before sf.read.
+    response = transcribe(client, silent.getvalue())
+
+    assert response.status_code == 413
+    assert read_spy == []
+    recognizer.recognize.assert_not_called()
+
+
+@pytest.mark.parametrize("rate", [8000, 48000])
+def test_admitted_read_probe_stays_inside_complete_budget(monkeypatch, rate):
+    monkeypatch.setattr(server, "MAX_DECODED_BYTES", 6000)
+
+    admitted = server.maximum_admitted_frames(rate, 1)
+
+    assert server.peak_working_set_bytes(admitted + 1, rate, 1) <= 6000
+    assert server.peak_working_set_bytes(admitted + 2, rate, 1) > 6000
+
+
+def test_invalid_audio_metadata_is_undecodable(client, recognizer, monkeypatch):
+    monkeypatch.setattr(
+        server.sf,
+        "info",
+        lambda buffer: SimpleNamespace(frames=1, channels=1, samplerate=0),
+    )
+
+    response = transcribe(client, wav())
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Could not decode audio file"}
     recognizer.recognize.assert_not_called()
 
 
@@ -168,40 +305,78 @@ def test_resampling_keeps_a_nonempty_tiny_clip():
     np.testing.assert_array_equal(actual, waveform)
 
 
-def test_model_not_loaded(loader):
-    # TestClient without a context deliberately skips startup, leaving the
-    # app in its initial model-loading state.
-    client = TestClient(server.create_app())
-    try:
-        response = transcribe(client)
-        assert response.status_code == 503
-        assert response.json() == {"detail": "Model still loading"}
-        loader.assert_not_called()
-    finally:
-        client.close()
+def test_shipped_limits_are_pinned():
+    assert server.MAX_DECODED_BYTES == 256 * 1024 * 1024
+    assert server.MAX_UPLOAD_BYTES == 64 * 1024 * 1024
 
 
-def test_supported_language(client, recognizer):
-    response = transcribe(client, language="ro", response_format="verbose_json")
+@pytest.mark.parametrize("honours", [False, True])
+def test_supported_language(client_factory, recognizer, monkeypatch, honours):
+    monkeypatch.setattr(server, "honours_language", lambda asr: honours)
+    with client_factory(recognizer) as client:
+        response = transcribe(client, language="ro", response_format="verbose_json")
     assert response.status_code == 200
-    assert response.json()["language"] == "ro"
-    assert recognizer.recognize.call_args.kwargs == {"sample_rate": 16000, "language": "ro"}
+    if honours:
+        assert response.json()["language"] == "ro"
+        assert recognizer.recognize.call_args.kwargs == {
+            "sample_rate": 16000,
+            "language": "ro",
+        }
+    else:
+        assert response.json()["language"] == "auto"
+        assert recognizer.recognize.call_args.kwargs == {"sample_rate": 16000}
 
 
-def test_unsupported_language(client, recognizer):
-    recognizer.recognize.side_effect = ValueError("Unsupported language: xx")
-    response = transcribe(client, language="xx")
+def test_unsupported_language(client_factory, recognizer, monkeypatch):
+    monkeypatch.setattr(server, "honours_language", lambda asr: True)
+    recognizer.recognize.side_effect = KeyError("<|xx|>")
+    with client_factory(recognizer) as client:
+        response = transcribe(client, language="xx")
     assert response.status_code == 400
-    assert response.json() == {"detail": "Unsupported language: xx"}
+    assert response.json() == {"detail": "Unsupported language 'xx'"}
     recognizer.recognize.assert_called_once()
     assert recognizer.recognize.call_args.kwargs["language"] == "xx"
 
 
-def test_model_without_language_parameter(client_factory):
+def test_internal_type_error_is_not_retried(client_factory, recognizer, monkeypatch, caplog):
+    monkeypatch.setattr(server, "honours_language", lambda asr: True)
+    recognizer.recognize.side_effect = TypeError("internal")
+    with client_factory(recognizer) as client:
+        response = transcribe(client, language="en")
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Transcription failed"}
+    recognizer.recognize.assert_called_once()
+    assert "Transcription failed" in caplog.text
+    assert "internal" not in response.json()["detail"]
+
+
+def test_keyerror_on_non_honouring_model_is_500(client_factory, recognizer, monkeypatch):
+    monkeypatch.setattr(server, "honours_language", lambda asr: False)
+    recognizer.recognize.side_effect = KeyError("some token")
+    with client_factory(recognizer) as client:
+        response = transcribe(client, language="en")
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Transcription failed"}
+    recognizer.recognize.assert_called_once()
+    assert recognizer.recognize.call_args.kwargs == {"sample_rate": 16000}
+
+
+def test_unrelated_keyerror_on_honouring_model_is_500(client_factory, recognizer, monkeypatch):
+    monkeypatch.setattr(server, "honours_language", lambda asr: True)
+    recognizer.recognize.side_effect = KeyError("some_token_id")
+    with client_factory(recognizer) as client:
+        response = transcribe(client, language="en")
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Transcription failed"}
+    recognizer.recognize.assert_called_once()
+
+
+def test_model_without_language_parameter(client_factory, monkeypatch):
+    monkeypatch.setattr(server, "honours_language", lambda asr: False)
     calls = []
 
-    def recognize(waveform, *, sample_rate):
-        calls.append((waveform, sample_rate))
+    def recognize(waveform, *, sample_rate=16000, **kwargs):
+        calls.append((waveform, sample_rate, kwargs))
         return "English only."
 
     with client_factory(SimpleNamespace(recognize=recognize)) as client:
@@ -210,6 +385,23 @@ def test_model_without_language_parameter(client_factory):
     assert response.json() == {"text": "English only."}
     assert len(calls) == 1
     assert calls[0][1] == 16000
+    assert calls[0][2] == {}
+
+
+def test_honours_language_true_branch_end_to_end(client_factory, recognizer):
+    # Drive the real honours_language through the lifespan wiring (no
+    # monkeypatch): a Whisper-wrapping recognizer must receive and echo the hint.
+    from onnx_asr.models.whisper import WhisperHf
+
+    recognizer.asr = object.__new__(WhisperHf)
+    with client_factory(recognizer) as client:
+        response = transcribe(client, language="ro", response_format="verbose_json")
+    assert response.status_code == 200
+    assert response.json()["language"] == "ro"
+    assert recognizer.recognize.call_args.kwargs == {
+        "sample_rate": 16000,
+        "language": "ro",
+    }
 
 
 @pytest.mark.parametrize("result", [None, "", " \n "])
@@ -220,11 +412,11 @@ def test_silent_recognition(client, recognizer, result):
     assert response.json() == {"text": ""}
 
 
-def test_concurrent_inference_is_serialized(client_factory, monkeypatch):
+def test_concurrent_decode_is_serialized(client_factory, monkeypatch):
     entered = threading.Event()
     release = threading.Event()
     contended = threading.Event()
-    calls = []
+    decode_calls = []
 
     class ObservedLock:
         """Keep real locking; expose when the second request reaches it."""
@@ -243,9 +435,16 @@ def test_concurrent_inference_is_serialized(client_factory, monkeypatch):
     # Replace only the server's namespace, never threading.Lock globally.
     monkeypatch.setattr(server, "threading", SimpleNamespace(Lock=ObservedLock))
 
-    def recognize(waveform, *, sample_rate):
-        calls.append(sample_rate)
-        entered.set()
+    def decode(data):
+        decode_calls.append(data)
+        if len(decode_calls) == 1:
+            entered.set()
+            assert release.wait(10), "Timed out waiting to release decode"
+        return np.ones(1600, dtype=np.float32), 16000
+
+    monkeypatch.setattr(server, "decode_audio", decode)
+
+    def recognize(waveform, *, sample_rate=16000, **kwargs):
         assert release.wait(10), "Timed out waiting to release inference"
         return "Hello."
 
@@ -253,10 +452,10 @@ def test_concurrent_inference_is_serialized(client_factory, monkeypatch):
         with ThreadPoolExecutor(max_workers=2) as pool:
             first = pool.submit(transcribe, client)
             try:
-                assert entered.wait(5), "First request never entered inference"
+                assert entered.wait(5), "First request never entered decode"
                 second = pool.submit(transcribe, client)
-                assert contended.wait(5), "Second request never waited for inference"
-                assert calls == [16000]
+                assert contended.wait(5), "Second request never waited for decode"
+                assert len(decode_calls) == 1
                 assert not first.done()
                 assert not second.done()
             finally:
@@ -265,4 +464,23 @@ def test_concurrent_inference_is_serialized(client_factory, monkeypatch):
                 response = future.result(timeout=5)
                 assert response.status_code == 200
                 assert response.json() == {"text": "Hello."}
-    assert calls == [16000, 16000]
+    assert len(decode_calls) == 2
+
+
+def test_decode_error_releases_admission_lock(client_factory, monkeypatch):
+    calls = []
+
+    def decode(data):
+        calls.append(data)
+        if len(calls) == 1:
+            raise server._too_large()
+        return np.ones(1600, dtype=np.float32), 16000
+
+    monkeypatch.setattr(server, "decode_audio", decode)
+    with client_factory(SimpleNamespace(recognize=Mock(return_value="Hello."))) as client:
+        rejected = transcribe(client)
+        accepted = transcribe(client)
+
+    assert rejected.status_code == 413
+    assert accepted.status_code == 200
+    assert len(calls) == 2

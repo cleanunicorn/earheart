@@ -45,8 +45,18 @@ function bashExecutable({ platform = process.platform, env = process.env, exists
   );
 }
 
-function runBash(script, options) {
-  const result = spawnSync(bashExecutable(), ["-c", script], {
+function harnessPreamble({ platform = process.platform } = {}) {
+  const bin = platform === "win32" ? '$(cygpath -u -- "$HARNESS_BIN")' : "$HARNESS_BIN";
+  return `if [ -n "\${HARNESS_BIN:-}" ]; then PATH="${bin}:$PATH"; export PATH; fi\n`;
+}
+
+function harnessEnvironment(bin, environment = process.env) {
+  return { ...environment, HARNESS_BIN: bin };
+}
+
+function runBash(script, { harnessPlatform, ...options }) {
+  const source = `${harnessPreamble({ platform: harnessPlatform })}${script}`;
+  const result = spawnSync(bashExecutable(), ["-c", source], {
     ...options,
     encoding: "utf8",
     timeout: 15_000,
@@ -105,8 +115,7 @@ esac
   const result = runBash(script, {
     cwd: ROOT,
     env: {
-      ...process.env,
-      PATH: `${bin}:${process.env.PATH}`,
+      ...harnessEnvironment(bin),
       RUNNER_TEMP: directory,
       GITHUB_REPOSITORY: "owner/repo",
       RECOVERY_DISPATCH_MODE: dispatchMode,
@@ -174,6 +183,20 @@ test("Windows harness selects Git Bash without falling back to WSL", () => {
     /Git Bash is required[\s\S]*C:\\Program Files\\Git\\bin\\bash\.exe/,
   );
   assert.equal(bashExecutable({ platform: "linux", exists: () => false }), "bash");
+});
+
+test("harness activates fake commands in Bash without changing its inherited PATH", () => {
+  assert.equal(
+    harnessPreamble({ platform: "win32" }),
+    'if [ -n "${HARNESS_BIN:-}" ]; then PATH="$(cygpath -u -- "$HARNESS_BIN"):$PATH"; export PATH; fi\n',
+  );
+  assert.equal(
+    harnessPreamble({ platform: "linux" }),
+    'if [ -n "${HARNESS_BIN:-}" ]; then PATH="$HARNESS_BIN:$PATH"; export PATH; fi\n',
+  );
+  const environment = harnessEnvironment("C:\\Temp\\bin", { PATH: "C:\\Windows;C:\\Tools" });
+  assert.equal(environment.HARNESS_BIN, "C:\\Temp\\bin");
+  assert.equal(environment.PATH, "C:\\Windows;C:\\Tools");
 });
 
 test("a pushed release tag survives dispatch exhaustion and is redispatched by a later full workflow run", () => {
@@ -248,8 +271,7 @@ esac
     runBash(fullWorkflowSource, {
       cwd: repository,
       env: {
-        ...process.env,
-        PATH: `${bin}:${process.env.PATH}`,
+        ...harnessEnvironment(bin),
         GH_TOKEN: "test-token",
         TRIGGER_PR: "101",
         TRIGGER_TITLE: "fix: recovery",

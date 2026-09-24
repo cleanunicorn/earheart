@@ -165,7 +165,7 @@ test("each pushed tag gets a bounded release-build dispatch", () => {
 test("durable pushed tags recover before candidate selection without duplicate active builds", () => {
   const recoveryAt = workflow.indexOf("recover_pushed_tags");
   const selectAt = workflow.indexOf("node scripts/auto-release.js select");
-  const noPendingAt = workflow.indexOf("No release-affecting merged PR is waiting.");
+  const noPendingAt = workflow.indexOf('if [[ ! -s "$pending_file" ]]');
   assert.ok(recoveryAt >= 0 && recoveryAt < selectAt && selectAt < noPendingAt);
   assert.match(workflow, /git fetch origin main --tags/);
   assert.match(workflow, /git for-each-ref --format='%\(refname:short\)%09%\(\*objectname\)' refs\/tags/);

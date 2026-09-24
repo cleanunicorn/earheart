@@ -210,6 +210,10 @@ function setStatus(status, title, detail) {
   // pressed, and aria-pressed is how that same held state reaches assistive
   // tech.
   pauseBtn.setAttribute("aria-pressed", String(status === "paused"));
+  detailText.textContent = detail || "";
+  card.toggleAttribute("data-detail", Boolean(detail));
+  detailText.title =
+    detail && detailText.scrollHeight > 32 ? detail : "";
   // The X key's label follows the action it would perform, like pause above.
   // It reads "Dismiss" once nothing can be discarded anymore: in the terminal
   // states the take is settled, and during delivery the paste is already in
@@ -223,18 +227,8 @@ function setStatus(status, title, detail) {
   cancelBtn.title = settled ? "Dismiss" : "Discard — nothing is typed";
   cancelBtn.setAttribute("aria-label", settled ? "Dismiss" : "Discard dictation");
   statusText.textContent = title;
-  detailText.textContent = detail || "";
-  // The detail line is one ellipsized row, and for errors the actionable half
-  // ("…check the input device in Settings") is exactly the part that gets cut
-  // — mirror the full text into the tooltip so hovering recovers it, but only
-  // when the line is actually clipped: short hints shouldn't pop a tooltip
-  // duplicating text already fully on screen. Screen readers get the whole
-  // string from the live region either way.
-  detailText.title =
-    detail && detailText.scrollHeight > detailText.clientHeight ? detail : "";
   // The wave area steps back when a detail line (paste preview, error message,
   // hint) needs its space — see #card[data-detail] in overlay.css.
-  card.toggleAttribute("data-detail", Boolean(detail));
   syncOverlayHeight();
   // Every phase change retires the previous phase's bar. It stays hidden until
   // the new phase's first pipeline:progress event, so phases that report no

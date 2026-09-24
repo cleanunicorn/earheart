@@ -428,10 +428,10 @@ body {
 
 #detail-text {
   position: relative;
+  box-sizing: border-box;
   flex: 1;
   min-width: 0;
   display: block;
-  max-height: 48px;
   align-self: center;
   line-height: 16px;
   font-size: 11.5px;

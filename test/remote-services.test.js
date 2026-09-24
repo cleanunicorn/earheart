@@ -2,7 +2,6 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 
 const { serviceUrl } = require("../main/services/service-url");
-const { serviceErrorSummary } = require("../main/services/error-summary");
 const { transcribe } = require("../main/services/stt");
 const { clean } = require("../main/services/cleanup");
 
@@ -47,46 +46,43 @@ test("remote cleanup rejects an unsafe service URL before making a request", asy
   await assert.rejects(clean("keep my words", { baseUrl: "data:text/plain,no" }), /http or https/);
 });
 
-test("service error summaries ignore raw bodies and redact credentials", () => {
-  assert.strictEqual(serviceErrorSummary("not JSON with sk-secret-value"), "");
-  assert.strictEqual(
-    serviceErrorSummary('{"error":{"message":"bad key sk-123456789012345678901234"}}'),
-    "bad key [redacted API key]"
-  );
-  assert.strictEqual(serviceErrorSummary('{"error":{"message":"authorization Bearer abc123"}}'), "authorization Bearer [redacted]");
-  assert.strictEqual(serviceErrorSummary('{"message":"not an error object"}'), "");
-  assert.strictEqual(serviceErrorSummary('{"error":{"message":"settings key sk-short"}}'), "settings key sk-short");
-});
-
-test("remote STT errors never include raw response bodies or API keys", async () => {
-  const body = JSON.stringify({
-    error: {
-      message: "Incorrect API key: sk-123456789012345678901234",
-      type: "invalid_request_error",
-      private: "extra",
-    },
-  });
+test("remote STT errors expose only a fixed message and HTTP status", async () => {
+  const body = JSON.stringify({ error: { message: "secret-token-123 private transcript" } });
   await withErrorServer(401, body, async (baseUrl) => {
     await assert.rejects(
       transcribe(Buffer.alloc(0), { baseUrl, apiKey: "sk-client-secret" }),
       (err) => {
-        assert.strictEqual(err.message, "STT service error 401: Incorrect API key: [redacted API key]");
-        assert.doesNotMatch(err.message, /sk-secret|private|invalid_request/);
+        assert.strictEqual(err.message, "STT service error 401");
+        assert.doesNotMatch(err.message, /secret-token|private transcript|sk-client-secret/);
         return true;
       }
     );
   });
 });
 
-test("remote cleanup errors never include echoed dictated text", async () => {
+test("remote cleanup errors expose only a fixed message and HTTP status", async () => {
   const body = JSON.stringify({ error: { message: "content rejected: private dictated sentence" } });
   await withErrorServer(400, body, async (baseUrl) => {
     await assert.rejects(
       clean("private dictated sentence", { baseUrl, apiKey: "sk-client-secret", model: "m" }),
       (err) => {
-        assert.strictEqual(err.message, "Cleanup service error 400: content rejected: private dictated sentence");
+        assert.strictEqual(err.message, "Cleanup service error 400");
+        assert.doesNotMatch(err.message, /private dictated sentence|content rejected|sk-client-secret/);
         return true;
       }
     );
   });
+});
+
+test("remote service errors do not parse malformed or oversized provider messages", async () => {
+  const bodies = ["not JSON secret-token-123", JSON.stringify({ error: { message: "x".repeat(10000) } })];
+  for (const body of bodies) {
+    await withErrorServer(502, body, async (baseUrl) => {
+      await assert.rejects(transcribe(Buffer.alloc(0), { baseUrl }), (err) => {
+        assert.strictEqual(err.message, "STT service error 502");
+        assert.doesNotMatch(err.message, /secret-token|x{20}/);
+        return true;
+      });
+    });
+  }
 });

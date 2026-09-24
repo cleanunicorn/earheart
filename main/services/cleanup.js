@@ -5,7 +5,6 @@
 const { resolveCleanup, remoteSamplingBody } = require("../cleanup-styles");
 const { CLEAN_RUNAWAY_MESSAGE } = require("../util/clean-budget");
 const { serviceUrl } = require("./service-url");
-const { serviceErrorSummary } = require("./error-summary");
 
 // Reasoning models may emit <think>...</think> blocks; strip them.
 function stripThinking(text) {
@@ -48,9 +47,7 @@ async function clean(transcript, cfg, signal) {
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    const detail = serviceErrorSummary(body);
-    throw new Error(`Cleanup service error ${res.status}${detail ? `: ${detail}` : ""}`);
+    throw new Error(`Cleanup service error ${res.status}`);
   }
   const data = await res.json();
   const choice = data.choices?.[0];

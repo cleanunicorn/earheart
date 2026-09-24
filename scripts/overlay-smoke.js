@@ -105,10 +105,10 @@ function wavStats(wav) {
   };
 }
 
-const start = (win, sid) =>
+const start = (win, sid, deviceId = null) =>
   win.webContents.send("record:start", {
     sid,
-    deviceId: null,
+    deviceId,
     maxSeconds: 30,
     livePreview: { enabled: false },
   });
@@ -161,10 +161,119 @@ app.whenReady().then(async () => {
         cancelTitle: document.getElementById("cancel").title,
         cancelAria: document.getElementById("cancel").getAttribute("aria-label"),
         detailTitle: document.getElementById("detail-text").title,
+        detailText: document.getElementById("detail-text").textContent,
+        detailClientHeight: document.getElementById("detail-text").clientHeight,
+        detailScrollHeight: document.getElementById("detail-text").scrollHeight,
       })`);
+
+    // Deterministic control of device errors and delayed streams for race coverage.
+    await win.webContents.executeJavaScript(`(() => {
+      const media = navigator.mediaDevices;
+      const original = media.getUserMedia.bind(media);
+      const state = { calls: [], streams: [], failSaved: false, failDefault: false, deferred: null };
+      media.getUserMedia = (constraints) => {
+        state.calls.push(constraints.audio.deviceId?.exact || "default");
+        if (state.deferred) {
+          const pending = state.deferred;
+          state.deferred = null;
+          return pending.promise.then((stream) => { state.streams.push(stream); return stream; });
+        }
+        if (state.failDefault && !constraints.audio.deviceId?.exact) {
+          return Promise.reject(Object.assign(new Error("default denied"), { name: "NotAllowedError" }));
+        }
+        if (state.failSaved && constraints.audio.deviceId?.exact) {
+          return Promise.reject(Object.assign(new Error("missing"), { name: "OverconstrainedError", constraint: "deviceId" }));
+        }
+        return original(constraints).then((stream) => { state.streams.push(stream); return stream; });
+      };
+      window.__micTest = state;
+    })()`);
 
     const waveColumns = () =>
       win.webContents.executeJavaScript("waveHistory.length");
+
+    // ---- Session 0: missing saved device falls back once, and notice persists ----
+    await win.webContents.executeJavaScript("window.__micTest.failSaved = true");
+    start(win, 90, "missing-saved-device");
+    await waitForStatus(win, "recording");
+    let fallbackUi = await uiState();
+    let fallbackCalls = await win.webContents.executeJavaScript("window.__micTest.calls");
+    check("missing saved device retries exactly once with system default",
+      JSON.stringify(fallbackCalls) === JSON.stringify(["missing-saved-device", "default"]),
+      JSON.stringify(fallbackCalls));
+    check("fallback notice is fully visible while recording",
+      fallbackUi.detailText.includes("using system default") &&
+        fallbackUi.detailScrollHeight <= fallbackUi.detailClientHeight,
+      JSON.stringify(fallbackUi));
+    win.webContents.send("record:pause-toggle");
+    await waitForStatus(win, "paused");
+    fallbackUi = await uiState();
+    check("fallback notice remains visible while paused",
+      fallbackUi.detailText.includes("using system default"), fallbackUi.detailText);
+    win.webContents.send("record:pause-toggle");
+    await waitForStatus(win, "recording");
+    fallbackUi = await uiState();
+    check("fallback notice remains visible after resume",
+      fallbackUi.detailText.includes("using system default"), fallbackUi.detailText);
+    const fallbackTrack = await win.webContents.executeJavaScript(
+      "window.__micTest.streams.at(-1).getTracks()[0].readyState");
+    check("fallback capture owns a live track", fallbackTrack === "live", fallbackTrack);
+    const fallbackCapture = waitForMessage("audio:captured");
+    win.webContents.send("record:stop");
+    await fallbackCapture;
+    const stoppedFallbackTrack = await win.webContents.executeJavaScript(
+      "window.__micTest.streams.at(-1).getTracks()[0].readyState");
+    check("fallback track is stopped after capture teardown", stoppedFallbackTrack === "ended", stoppedFallbackTrack);
+    await win.webContents.executeJavaScript("window.__micTest.failSaved = false; window.__micTest.calls = []");
+
+    await win.webContents.executeJavaScript("window.__micTest.failSaved = true; window.__micTest.failDefault = true; window.__micTest.calls = []");
+    const retryError = waitForMessage("record:error");
+    start(win, 91, "missing-saved-device");
+    const retryFailure = await retryError;
+    const retryCalls = await win.webContents.executeJavaScript("window.__micTest.calls");
+    check("fallback failure reports once without a third attempt",
+      retryFailure.sid === 91 && retryCalls.length === 2 && retryCalls[1] === "default",
+      JSON.stringify({ sid: retryFailure.sid, calls: retryCalls }));
+    await win.webContents.executeJavaScript("window.__micTest.failSaved = false; window.__micTest.failDefault = false; window.__micTest.calls = []");
+    micErrors.length = 0;
+
+    const deferredSetup = await win.webContents.executeJavaScript(`(() => {
+      const state = window.__micTest;
+      const prior = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      const gates = [];
+      navigator.mediaDevices.getUserMedia = (constraints) => {
+        if (constraints.audio.deviceId?.exact === "slow-old-device") {
+          let resolve;
+          const promise = new Promise((r) => { resolve = r; });
+          gates.push({ promise, resolve });
+          state.calls.push("slow-old-device");
+          return promise.then((stream) => { state.streams.push(stream); return stream; });
+        }
+        return prior(constraints);
+      };
+      state.deferredGets = gates;
+      return true;
+    })()`);
+    check("stale stream getter installed", deferredSetup);
+    start(win, 92, "slow-old-device");
+    await sleep(40);
+    const pendingReady = await win.webContents.executeJavaScript("window.__micTest.deferredGets.length === 1");
+    check("old device request is pending", pendingReady);
+    start(win, 93);
+    await waitForStatus(win, "recording");
+    const staleResult = await win.webContents.executeJavaScript(`(async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      window.__micTest.streams.push(stream);
+      window.__micTest.deferredGets[0].resolve(stream);
+      await new Promise((r) => setTimeout(r, 100));
+      return stream.getTracks()[0].readyState;
+    })()`);
+    check("late stream from superseded session is stopped", staleResult === "ended", staleResult);
+    check("stale completion leaves the current session usable", await cardStatus(win) === "recording");
+    const staleCapture = waitForMessage("audio:captured");
+    win.webContents.send("record:stop");
+    await staleCapture;
+    await win.webContents.executeJavaScript("window.__micTest.calls = []");
 
     // ---- Session 1: status order, and capture aligned with the UI ----------
     // Record every data-status transition from inside the page, so the order
@@ -181,6 +290,7 @@ app.whenReady().then(async () => {
       "";
     `);
 
+    await win.webContents.executeJavaScript("window.__statusLog = []");
     start(win, 1);
     const liveAt = await waitForStatus(win, "recording");
     const log = await win.webContents.executeJavaScript("window.__statusLog");

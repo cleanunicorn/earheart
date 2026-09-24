@@ -27,6 +27,7 @@
 //   npx electron scripts/settings-smoke.js                            # macOS/Win
 
 const { app, session } = require("electron");
+const settings = require("../main/settings");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -71,6 +72,7 @@ app.whenReady().then(async () => {
     session.defaultSession.setPermissionRequestHandler((wc, permission, cb) =>
       cb(true)
     );
+    settings.save({ ...settings.get(), audio: { ...settings.get().audio, deviceId: "missing-saved-device" } });
     ipc.init({
       applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
       onSettingsChanged: () => {},
@@ -99,6 +101,17 @@ app.whenReady().then(async () => {
       `)
     );
     check("panel scrolls as one surface", layout.scrollable);
+    const microphone = JSON.parse(await js(`JSON.stringify({
+      value: document.getElementById("mic-device").value,
+      label: document.querySelector('#mic-device option[value="missing-saved-device"]')?.textContent,
+      notice: document.getElementById("mic-device-status").textContent,
+    })`));
+    check("unavailable saved microphone remains selected and explains fallback",
+      microphone.value === "missing-saved-device" &&
+        microphone.label === "Configured microphone (not connected)" &&
+        microphone.notice.includes("temporarily use the system default") &&
+        microphone.notice.includes("selection stays saved"),
+      JSON.stringify(microphone));
     check("no section is display:none-swapped", layout.hidden === 0, `${layout.hidden} hidden`);
 
     // 4. Roving tabindex seated before any interaction.

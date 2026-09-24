@@ -427,18 +427,19 @@ body {
 /* ---------- detail line (preview / error / hint) ---------- */
 
 #detail-text {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  flex: 1;
+  min-width: 0;
   display: block;
-  /* Centers the single line in the wave area; a flex container here would
-     swallow text-overflow (the text becomes an anonymous flex item). */
-  line-height: 32px;
+  max-height: 48px;
+  align-self: center;
+  line-height: 16px;
   font-size: 11.5px;
   color: var(--text-dim);
-  white-space: nowrap;
+  white-space: normal;
   overflow: hidden;
-  text-overflow: ellipsis;
-  padding: 0 2px;
+  overflow-wrap: anywhere;
+  padding: 2px;
 }
 
 /* Hide the empty detail line so the dimmed waveform reads on its own. */

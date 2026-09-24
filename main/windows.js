@@ -197,6 +197,7 @@ function createOverlay({ onOverlayRendererGone } = {}) {
     // can report the loss through sendToOverlay(), but the old renderer is
     // already dead, so hold that status until the replacement has loaded.
     overlayRendererReloading = true;
+    pendingOverlayStatus = null;
     const win = overlayWindow;
     onOverlayRendererGone?.();
     if (!win || win.isDestroyed()) return;
@@ -210,6 +211,8 @@ function createOverlay({ onOverlayRendererGone } = {}) {
     win.webContents.reload();
   });
   overlayWindow.on("closed", () => {
+    overlayRendererReloading = false;
+    pendingOverlayStatus = null;
     overlayWindow = null;
   });
   return overlayWindow;

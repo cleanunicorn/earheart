@@ -177,10 +177,9 @@ body {
   flex: none;
 }
 
-/* The tail of a truncated list is a pointer, not a change — one step quieter,
-   and no marker, so it doesn't read as another item. */
+/* The tail of a truncated list is a pointer, not a change, so it has no marker. */
 #update-notes li.more {
-  color: var(--text-faint);
+  color: var(--text-dim);
 }
 
 #update-notes li.more::before {

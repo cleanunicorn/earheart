@@ -254,7 +254,7 @@ each barred from the overlay and the wizard.
 - **Dim Text** (`text-dim`): secondary text, hints, the streaming raw tail,
   idle key glyphs, quiet pills, index entries at rest, placeholders. Chosen to
   hold ≥4.5:1 on Bar Ink.
-- **Faint Text** (`text-faint`): disabled key glyphs only.
+- **Faint Text** (`text-faint`): decorative markers and disabled key glyphs only.
 - **Hairline Edge** (`hairline-edge`): card and panel borders.
 - **Seam** (`seam`, white 0.08): dividers between regions — header/footer
   borders, the index rail's edge, the legend's trailing hairline, history-card
@@ -569,7 +569,8 @@ corners anywhere.
 - A Field-filled pill track (999px, 3px padding, hairline edge) holding pill
   segments; real radios stretched invisibly over each label so the whole
   segment is the target. Chosen segment takes a white 0.14 wash + Primary
-  Text; keyboard focus surfaces as a ring on the label.
+  Text and a 1px inset Primary Text ring; keyboard focus surfaces as an outer
+  ring on the label.
 
 ### Engine state badge (settings)
 - A 999px pill under the engine segmented control naming what that choice does
@@ -603,7 +604,7 @@ corners anywhere.
   filled-white "this is on" grammar. 0.16s ease.
 - **Checkbox (`.choice`):** 16px, 4px radius, Field Edge ring; checked fills
   white with an ink check.
-- **Slider:** a 4px hairline light track (white 0.15, 2px radius) under a
+- **Slider:** a 4px Field Edge track (≥3:1 on Bar Ink, 2px radius) under a
   16px solid white knob; keyboard-only focus ring. The live readout label is
   the bright element (14px Primary Text).
 
@@ -647,7 +648,7 @@ corners anywhere.
   the control row hides and the note is the whole card.
 - **What's-new list:** up to three Caption-weight bullets under the note,
   3px apart, markers in Text Faint so the words carry the line; a fourth,
-  markerless Text Faint line counts what didn't fit and points at Settings.
+  markerless Dim Text line counts what didn't fit and points at Settings.
   Shown while the update is still a decision (and on the what's-new card after
   an update lands); it steps aside once the download starts, when the progress
   line is the only news left. Settings mirrors it in full, one quiet 600/12px

@@ -69,6 +69,13 @@ test("overlay.css keeps the [hidden]-always-wins rule", () => {
   );
 });
 
+test("the update overflow note uses readable secondary text", () => {
+  const rule = css.match(/#update-notes li\.more\s*\{([^}]*)\}/);
+  assert.ok(rule, "the update overflow note keeps an explicit style");
+  assert.match(rule[1], /color:\s*var\(--text-dim\)/);
+  assert.doesNotMatch(rule[1], /text-faint/);
+});
+
 test("every var() overlay.css uses is defined in its own :root", () => {
   // overlay.css has its OWN token set (it only partially overlaps
   // settings.css's — --ink is shared, --idle/--text-mid/--text-faint are

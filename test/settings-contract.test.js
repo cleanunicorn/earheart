@@ -59,6 +59,30 @@ test("every id settings.js references exists in settings.html", () => {
   assert.deepStrictEqual(missing, [], `settings.html is missing ids: ${missing.join(", ")}`);
 });
 
+test("settings controls keep authored colors above non-text contrast minimums", () => {
+  const flat = css.replace(/\s+/g, " ");
+  assert.equal(
+    (flat.match(/scrollbar-color:\s*var\(--field-edge\) transparent/g) || []).length,
+    2,
+    "both settings scrollbars use the token measured at 3:1 or better"
+  );
+  assert.match(
+    flat,
+    /\.segmented label:has\(input:checked\) \{[^}]*box-shadow:\s*inset 0 0 0 1px var\(--text\)/,
+    "the selected segment has a high-contrast state indicator"
+  );
+  assert.match(
+    flat,
+    /input\[type="range"\]::-webkit-slider-runnable-track \{[^}]*background:\s*var\(--field-edge\)/,
+    "the WebKit range track uses the measured Field Edge token"
+  );
+  assert.match(
+    flat,
+    /input\[type="range"\]::-moz-range-track \{[^}]*background:\s*var\(--field-edge\)/,
+    "the Firefox range track uses the measured Field Edge token"
+  );
+});
+
 test("every id wizard.js references exists in wizard.html", () => {
   // wizard.js drives its UI by element id exactly like settings.js, but its
   // ids were previously unguarded: a renamed id (e.g. step-position, which

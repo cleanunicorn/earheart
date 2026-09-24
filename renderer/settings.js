@@ -159,6 +159,7 @@ $("pause-hotkey-clear").addEventListener("click", () => {
 
 async function loadMicrophones() {
   const select = $("mic-device");
+  const status = $("mic-device-status");
   // Show the saved device immediately so saving before (or without)
   // enumeration never silently resets the microphone choice.
   if (current.audio.deviceId) {
@@ -173,19 +174,31 @@ async function loadMicrophones() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach((t) => t.stop());
     const devices = await navigator.mediaDevices.enumerateDevices();
-    devices
-      .filter((d) => d.kind === "audioinput" && d.deviceId !== "default")
-      .forEach((d) => {
-        const existing = select.querySelector(`option[value="${CSS.escape(d.deviceId)}"]`);
-        if (existing) {
-          existing.textContent = d.label || existing.textContent;
-          return;
-        }
-        const option = document.createElement("option");
-        option.value = d.deviceId;
-        option.textContent = d.label || `Microphone ${select.length}`;
-        select.appendChild(option);
-      });
+    const microphones = devices.filter(
+      (d) => d.kind === "audioinput" && d.deviceId !== "default"
+    );
+    microphones.forEach((d) => {
+      const existing = select.querySelector(`option[value="${CSS.escape(d.deviceId)}"]`);
+      if (existing) {
+        existing.textContent = d.label || existing.textContent;
+        return;
+      }
+      const option = document.createElement("option");
+      option.value = d.deviceId;
+      option.textContent = d.label || `Microphone ${select.length}`;
+      select.appendChild(option);
+    });
+    if (
+      current.audio.deviceId &&
+      !microphones.some((d) => d.deviceId === current.audio.deviceId)
+    ) {
+      const configured = select.querySelector(`option[value="${CSS.escape(current.audio.deviceId)}"]`);
+      if (configured) {
+        configured.textContent = "Configured microphone (not connected)";
+        status.textContent =
+          "Saved microphone not found. Dictation can temporarily use the system default; this selection stays saved.";
+      }
+    }
     select.value = current.audio.deviceId || "";
   } catch {
     // No microphone permission/device; leave "System default".

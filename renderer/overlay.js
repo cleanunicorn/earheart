@@ -210,6 +210,10 @@ function setStatus(status, title, detail) {
   // pressed, and aria-pressed is how that same held state reaches assistive
   // tech.
   pauseBtn.setAttribute("aria-pressed", String(status === "paused"));
+  detailText.textContent = detail || "";
+  card.toggleAttribute("data-detail", Boolean(detail));
+  detailText.title =
+    detail && detailText.scrollHeight > 32 ? detail : "";
   // The X key's label follows the action it would perform, like pause above.
   // It reads "Dismiss" once nothing can be discarded anymore: in the terminal
   // states the take is settled, and during delivery the paste is already in
@@ -223,18 +227,9 @@ function setStatus(status, title, detail) {
   cancelBtn.title = settled ? "Dismiss" : "Discard — nothing is typed";
   cancelBtn.setAttribute("aria-label", settled ? "Dismiss" : "Discard dictation");
   statusText.textContent = title;
-  detailText.textContent = detail || "";
-  // The detail line is one ellipsized row, and for errors the actionable half
-  // ("…check the input device in Settings") is exactly the part that gets cut
-  // — mirror the full text into the tooltip so hovering recovers it, but only
-  // when the line is actually clipped: short hints shouldn't pop a tooltip
-  // duplicating text already fully on screen. Screen readers get the whole
-  // string from the live region either way.
-  detailText.title =
-    detail && detailText.scrollWidth > detailText.clientWidth ? detail : "";
   // The wave area steps back when a detail line (paste preview, error message,
   // hint) needs its space — see #card[data-detail] in overlay.css.
-  card.toggleAttribute("data-detail", Boolean(detail));
+  syncOverlayHeight();
   // Every phase change retires the previous phase's bar. It stays hidden until
   // the new phase's first pipeline:progress event, so phases that report no
   // progress (remote engines, near-instant steps) never flash an empty track.
@@ -553,6 +548,7 @@ function syncOverlayHeight() {
 // actually being captured from here on, so NOW the card may invite the user to
 // talk. Everything that says "you are being heard" — the Listening… status,
 // the waveform row, the timer — keys off this moment, not off setup starting.
+
 function micLive() {
   if (!recording || recording.startedAt) return;
   recording.startedAt = Date.now();
@@ -565,13 +561,17 @@ function micLive() {
     () => stopRecording(),
     recording.maxSeconds * 1000
   );
-  setStatus("recording", "Listening…");
+  setStatus("recording", "Listening…", recording.microphoneNotice || "");
 }
 
 async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) {
   // A new session always supersedes whatever was running.
   teardown();
   const myGeneration = ++generation;
+  const isCurrent = () => myGeneration === generation;
+  const stopStream = (stream) => {
+    stream?.getTracks().forEach((track) => track.stop());
+  };
   currentSid = sid;
   stopWhenReady = false;
   livePreview = live && live.enabled ? live : null;
@@ -588,28 +588,46 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
   wavePushAt = 0;
   drawMeter(); // repaint blank; the rAF loop starts once mic is live
   timerEl.textContent = "0:00";
+  let microphoneNotice = "";
 
   let streamPromise = null;
   try {
     // The two independent waits overlap: opening the mic and readying the
     // shared context. getUserMedia dominates; the context is usually warm.
-    streamPromise = navigator.mediaDevices.getUserMedia({
-      audio: {
-        deviceId: deviceId ? { exact: deviceId } : undefined,
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
+    streamPromise = (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: microphoneConstraints(deviceId),
+        });
+        if (!isCurrent()) {
+          stopStream(stream);
+          return null;
+        }
+        return stream;
+      } catch (err) {
+        if (!isCurrent()) return null;
+        // A saved USB/Bluetooth device can disappear between sessions. Retry
+        // once with the system default instead of making every dictation fail.
+        if (!deviceId || !isMissingMicrophone(err)) throw err;
+        microphoneNotice = "Selected microphone not found — using system default";
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: microphoneConstraints(),
+        });
+        if (!isCurrent()) {
+          stopStream(stream);
+          return null;
+        }
+        return stream;
+      }
+    })();
     let [stream, context] = await Promise.all([
       streamPromise,
       ensureAudioEngine(),
     ]);
-    if (myGeneration !== generation) {
+    if (myGeneration !== generation || !stream) {
       // Cancelled while the microphone was being opened: shut it down. The
       // shared context stays parked (whoever superseded us manages it).
-      stream.getTracks().forEach((track) => track.stop());
+      stopStream(stream);
       return;
     }
     if (context.state === "closed") {
@@ -618,7 +636,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
       resetAudioEngine();
       context = await ensureAudioEngine();
       if (myGeneration !== generation) {
-        stream.getTracks().forEach((track) => track.stop());
+        stopStream(stream);
         return;
       }
     }
@@ -629,7 +647,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
     // why a firing watchdog also discards the cached engine).
     startWatchdogId = setTimeout(() => {
       startWatchdogId = null;
-      if (myGeneration !== generation || recording?.startedAt) return;
+      if (!isCurrent() || recording?.startedAt) return;
       teardown();
       resetAudioEngine();
       earheart.send("record:error", {
@@ -671,6 +689,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
 
     recording = {
       sid,
+      microphoneNotice,
       stream,
       source,
       recorder,
@@ -712,9 +731,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
     // Whatever failed, never leak a live microphone: if the mic open itself
     // succeeded (say, the audio engine was what broke — or a later setup step
     // threw), release the granted stream whenever it materializes.
-    streamPromise
-      ?.then((stream) => stream.getTracks().forEach((track) => track.stop()))
-      .catch(() => {});
+    streamPromise?.then(stopStream).catch(() => {});
     // Only touch shared session state if this session still owns it: a stale
     // catch must not clear a superseding session's watchdog or suspend the
     // context it just resumed.
@@ -726,7 +743,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
       audioContext?.suspend().catch(() => {});
       earheart.send("record:error", {
         sid,
-        message: `Microphone unavailable: ${err.message}`,
+        message: microphoneErrorMessage(err),
       });
     }
   }
@@ -849,7 +866,7 @@ function togglePause() {
     // Mute at the track so nothing is even delivered; the onmessage guard
     // discards any chunk already in flight.
     recording.stream.getAudioTracks().forEach((track) => (track.enabled = false));
-    setStatus("paused", "Paused", "Press play to resume");
+    setStatus("paused", "Paused", recording.microphoneNotice || "Press play to resume");
   } else {
     recording.pausedMs += Date.now() - recording.pausedAt;
     recording.pausedAt = null;
@@ -864,7 +881,7 @@ function togglePause() {
     // Re-anchor the waveform's write clock: the wave didn't move while paused,
     // matching the capture — no gap is written for the gap.
     wavePushAt = 0;
-    setStatus("recording", "Listening…");
+    setStatus("recording", "Listening…", recording.microphoneNotice || "");
   }
 }
 

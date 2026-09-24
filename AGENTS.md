@@ -238,6 +238,35 @@ Keep it short and useful:
 - When the change is mostly a removal, lead with what is **gone** (net lines,
   the concepts dropped) and add an explicit **Kept:** line.
 
+### UI-fix PR record: contrast in Settings and update overlay
+
+For the contrast fix in #234, the renderer audit found readable text and
+interactive control states below WCAG contrast minimums. Existing tests checked
+selector/token structure but not composited color ratios, so they missed these
+failures. The PR adds CSS contract coverage for the affected rules.
+
+The sweep searched `renderer/settings.css`, `renderer/overlay.css`,
+`DESIGN.md`, and their contract tests. It found 6 affected CSS instances (2
+scrollbar declarations, 1 selected-segment rule shared by 3 controls, 2 slider
+track rules, and 1 overlay overflow-note rule); 6 fixed; 0 left. Disabled
+transport-key glyphs, decorative update bullets, and the draggable grip were
+excluded as disabled or decorative.
+
+Contrast measurements use WCAG sRGB relative luminance after alpha
+compositing. Non-text controls use the 3:1 threshold (WCAG 1.4.11); normal text
+uses 4.5:1 (WCAG 1.4.3).
+
+| Affected control/state | Before | After | Threshold |
+| --- | ---: | ---: | ---: |
+| Settings scrollbar thumb on Bar Ink (`#18181b`) | 1.77:1 (`rgba(255,255,255,.18)`) | 3.36:1 (`#6b6b74`) | 3:1 UI |
+| Selected-segment indicator against Field (`#101013`) | 1.46:1 (14% white wash) | 17.28:1 (Primary Text ring) | 3:1 UI |
+| Cleanup-style slider track on card (`#201c2c`) | 1.59:1 (`rgba(255,255,255,.15)`) | 3.15:1 (`#6b6b74`) | 3:1 UI |
+| Update overflow note on Bar Ink (`#18181b`) | 2.54:1 (28% white) | 6.91:1 (`#a1a1aa`) | 4.5:1 text |
+
+Affected-control screenshots are in `docs/screenshots/settings.png` and
+`docs/screenshots/overlay-update.png`. Additional PR-specific screenshots
+were not added for this review update.
+
 ## After opening the PR
 
 - Make sure **CI is green on all three platforms** (Linux/macOS/Windows) — the

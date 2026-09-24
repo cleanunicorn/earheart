@@ -69,7 +69,7 @@ app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function waitFor(read, message) {
   for (let attempt = 0; attempt < 100; attempt++) {
-    const value = read();
+    const value = await read();
     if (value) return value;
     await sleep(10);
   }
@@ -97,8 +97,11 @@ app.whenReady().then(async () => {
     const isInstalled = engines.isInstalled;
     engines.isInstalled = (kind, modelId) =>
       installedModels.has(`${kind}:${modelId}`) || isInstalled(kind, modelId);
-    engines.download = (kind, modelId, { onProgress }) =>
+    engines.download = (kind, modelId, { onProgress, signal }) =>
       new Promise((resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new Error("aborted")), {
+          once: true,
+        });
         downloads.set(`${kind}:${modelId}`, {
           resolve: () => {
             installedModels.add(`${kind}:${modelId}`);
@@ -404,11 +407,14 @@ app.whenReady().then(async () => {
       return {
         width: document.querySelector("#stt-model-manage .dl-fill")?.style.width,
         status: document.querySelector("#stt-model-manage .status")?.textContent,
+        button: document.querySelector("#stt-model-manage button")?.textContent,
       };
     })()`).then((s) => (typeof s === "string" ? JSON.parse(s) : s));
     check(
       "progress from an external download survives switching model selections",
-      switchedProgress.width === "42%" && switchedProgress.status.startsWith("42%"),
+      switchedProgress.width === "42%" &&
+        switchedProgress.status.startsWith("42%") &&
+        switchedProgress.button === "Cancel",
       JSON.stringify(switchedProgress)
     );
 
@@ -491,6 +497,29 @@ app.whenReady().then(async () => {
         failedState.status === "offline" &&
         failedState.announcement.endsWith("offline"),
       JSON.stringify(failedState)
+    );
+    const cancelModel = downloadModels.stt.find(
+      (id) => id !== sttDefault && id !== sttModel && id !== failedModel
+    );
+    await startModelDownload("stt", cancelModel);
+    const cancelButton = await waitFor(
+      () => js(`document.querySelector("#stt-model-manage button")?.textContent === "Cancel"`),
+      "cancel action did not render"
+    );
+    if (cancelButton !== true) throw new Error("cancel action was not available");
+    await js(`document.querySelector("#stt-model-manage button").click()`);
+    await sleep(150);
+    const cancelledState = await js(`JSON.stringify({
+      button: document.querySelector("#stt-model-manage button")?.textContent,
+      status: document.querySelector("#stt-model-manage .status")?.textContent,
+      announcement: document.getElementById("model-dl-announce").textContent,
+    })`).then(JSON.parse);
+    check(
+      "cancelling a download restores its retryable state and announcement",
+      cancelledState.button === "Download" &&
+        cancelledState.status === "Cancelled" &&
+        cancelledState.announcement.endsWith("Cancelled"),
+      JSON.stringify(cancelledState)
     );
     await js(`(() => {
       const select = document.getElementById("cleanup-builtin-model");

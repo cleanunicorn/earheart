@@ -196,7 +196,7 @@ test("settings action rows keep their fields visually separate", () => {
   const normalized = css.replace(/\s+/g, " ");
   assert.match(
     normalized,
-    /\.field > input \+ \.row, \.field > datalist \+ \.row, \.field > input \+ datalist \+ \.row\s*\{\s*margin-top:\s*8px;\s*\}/,
+    /\.field > input \+ \.row, \.field > datalist \+ \.row\s*\{\s*margin-top:\s*8px;\s*\}/,
     "expected an 8px gap after model fields before their action rows"
   );
 

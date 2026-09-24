@@ -428,8 +428,7 @@ select {
 
 /* Keep model inputs visually separate from their action rows. */
 .field > input + .row,
-.field > datalist + .row,
-.field > input + datalist + .row {
+.field > datalist + .row {
   margin-top: 8px;
 }
 

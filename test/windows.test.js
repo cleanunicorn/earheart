@@ -35,8 +35,10 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
         on: (event, handler) => {
           webContentsHandlers[event] = handler;
         },
-        once: () => {},
-        send: (channel) => calls.push(["send", channel]),
+        once: (event, handler) => {
+          webContentsHandlers[event] = handler;
+        },
+        send: (channel, payload) => calls.push(["send", channel, payload]),
         isLoading: () => false,
         reload: () => calls.push(["reload"]),
       };
@@ -99,7 +101,7 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
 
 // Load a fresh main/windows.js against fakes. Fresh per test because the module
 // keeps the overlay as module-level singleton state.
-function loadWindows({ refuseRejoin = false } = {}) {
+function loadWindows({ refuseRejoin = false, onOverlayRendererGone } = {}) {
   const calls = [];
   const warnings = [];
   const webContentsHandlers = {};
@@ -119,9 +121,6 @@ function loadWindows({ refuseRejoin = false } = {}) {
     if (request === "./settings") return { get: () => ({}), save: () => {} };
     if (request === "./util/logger") {
       return { info: () => {}, warn: (msg) => warnings.push(msg), error: () => {} };
-    }
-    if (request === "./pipeline") {
-      return { onOverlayRendererGone: () => calls.push(["pipeline:renderer-gone"]) };
     }
     return realLoad.call(this, request, ...rest);
   };
@@ -161,16 +160,46 @@ const names = (calls) => calls.map(([name]) => name);
 const indexOf = (calls, name) => names(calls).indexOf(name);
 const countOf = (calls, name) => names(calls).filter((n) => n === name).length;
 
-test("overlay renderer loss releases pipeline state before reload", () => {
-  const { windows, calls, webContentsHandlers } = loadWindows();
-  windows.createOverlay();
+test("overlay renderer loss invokes the injected callback before reload", () => {
+  const { windows, calls, webContentsHandlers } = loadWindows({
+    onOverlayRendererGone: () => calls.push(["renderer-gone-callback"]),
+  });
+  windows.createOverlay({ onOverlayRendererGone: () => calls.push(["renderer-gone-callback"]) });
 
   webContentsHandlers["render-process-gone"]();
 
-  const released = indexOf(calls, "pipeline:renderer-gone");
+  const callback = indexOf(calls, "renderer-gone-callback");
   const reloaded = indexOf(calls, "reload");
-  assert.ok(released >= 0, "renderer loss should notify the recording pipeline");
-  assert.ok(reloaded > released, "the pipeline must release recording before renderer reload");
+  assert.ok(callback >= 0, "renderer loss should notify the injected callback");
+  assert.ok(reloaded > callback, "the callback must run before renderer reload");
+});
+
+test("overlay renderer loss replays the exact error status after reload", () => {
+  const status = {
+    status: "error",
+    detail: { message: "Recording lost because the overlay stopped unexpectedly" },
+  };
+  const { windows, calls, webContentsHandlers } = loadWindows();
+  windows.createOverlay({
+    onOverlayRendererGone: () => {
+      calls.push(["renderer-gone-callback"]);
+      windows.sendToOverlay("pipeline:status", status);
+    },
+  });
+
+  webContentsHandlers["render-process-gone"]();
+
+  assert.strictEqual(
+    countOf(calls.slice(indexOf(calls, "reload")), "send"),
+    0,
+    "the error status must not be sent to the dead renderer"
+  );
+  webContentsHandlers["did-finish-load"]();
+
+  const replay = calls.find(
+    ([name, channel]) => name === "send" && channel === "pipeline:status"
+  );
+  assert.deepStrictEqual(replay, ["send", "pipeline:status", status]);
 });
 
 // --- The guarantees that predate the Spaces fix -----------------------------

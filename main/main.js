@@ -122,7 +122,7 @@ function main() {
         updates.onSettingsChanged();
       },
     });
-    windows.createOverlay();
+    windows.createOverlay({ onOverlayRendererGone: pipeline.onOverlayRendererGone });
     tray.init(app, pipeline);
     // macOS: an update leaves auto-paste's permission grants stale; repair
     // them before the first dictation rather than during it.

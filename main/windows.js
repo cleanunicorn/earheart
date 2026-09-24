@@ -5,7 +5,6 @@ const { BrowserWindow, ipcMain, screen } = require("electron");
 const path = require("node:path");
 const settings = require("./settings");
 const logger = require("./util/logger");
-const pipeline = require("./pipeline");
 
 const PRELOAD = path.join(__dirname, "..", "preload.js");
 const RENDERER = path.join(__dirname, "..", "renderer");
@@ -34,6 +33,8 @@ let overlayCustomPosition = null; // set when the user drags the card
 let overlayDragOrigin = null; // { winX, winY, pointerX, pointerY }
 let overlayHideTimer = null;
 let overlayPinned = false; // update prompt holds the card on screen
+let overlayRendererReloading = false;
+let pendingOverlayStatus = null;
 
 // Clamp a top-left position so the window stays on-screen. The height matters
 // for the bottom bound: a transcript-grown overlay is taller than OVERLAY_HEIGHT,
@@ -140,7 +141,7 @@ ipcMain.on("overlay:resize", (event, { height } = {}) => {
   win.setBounds({ x: winX, y: nextY, width: w, height: target });
 });
 
-function createOverlay() {
+function createOverlay({ onOverlayRendererGone } = {}) {
   if (overlayWindow && !overlayWindow.isDestroyed()) return overlayWindow;
   restoreOverlayPosition();
   const { x, y } = overlayPosition();
@@ -192,9 +193,21 @@ function createOverlay() {
   overlayWindow.loadFile(path.join(RENDERER, "overlay.html"));
   overlayWindow.webContents.on("render-process-gone", () => {
     // The renderer owns the microphone and recording state; release the
-    // pipeline's session before reloading into a fresh renderer.
-    pipeline.onOverlayRendererGone();
-    overlayWindow?.webContents.reload();
+    // pipeline's session before reloading into a fresh renderer. The callback
+    // can report the loss through sendToOverlay(), but the old renderer is
+    // already dead, so hold that status until the replacement has loaded.
+    overlayRendererReloading = true;
+    const win = overlayWindow;
+    onOverlayRendererGone?.();
+    if (!win || win.isDestroyed()) return;
+    win.webContents.once("did-finish-load", () => {
+      overlayRendererReloading = false;
+      if (!pendingOverlayStatus) return;
+      const { channel, payload } = pendingOverlayStatus;
+      pendingOverlayStatus = null;
+      if (!win.isDestroyed()) win.webContents.send(channel, payload);
+    });
+    win.webContents.reload();
   });
   overlayWindow.on("closed", () => {
     overlayWindow = null;
@@ -351,6 +364,14 @@ function hideOverlay() {
 }
 
 function sendToOverlay(channel, payload) {
+  if (
+    overlayRendererReloading &&
+    channel === "pipeline:status" &&
+    payload?.status === "error"
+  ) {
+    pendingOverlayStatus = { channel, payload };
+    return;
+  }
   const win = getOverlay();
   if (win) win.webContents.send(channel, payload);
 }

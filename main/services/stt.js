@@ -4,6 +4,7 @@
 // other compatible service — switching is just a base URL change.
 
 const { serviceUrl } = require("./service-url");
+const { serviceErrorSummary } = require("./error-summary");
 
 /**
  * @param {Buffer|ArrayBuffer} wav - WAV audio (16 kHz mono PCM16 expected)
@@ -32,7 +33,8 @@ async function transcribe(wav, cfg, signal) {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`STT service error ${res.status}: ${body.slice(0, 300)}`);
+    const detail = serviceErrorSummary(body);
+    throw new Error(`STT service error ${res.status}${detail ? `: ${detail}` : ""}`);
   }
   const data = await res.json();
   if (typeof data.text !== "string") {

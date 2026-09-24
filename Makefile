@@ -39,6 +39,11 @@ screenshots: ## Regenerate README screenshots into docs/screenshots/
 
 # ----- packaging ------------------------------------------------------------
 
+.PHONY: release
+release: ## Release pending merged PRs from remote main (requires authenticated gh)
+	gh workflow run auto-release.yml --ref main
+	@echo "Release requested from remote main. Track it with: gh run list --workflow auto-release.yml"
+
 .PHONY: dist
 dist: ## Build installers for the current platform
 	npm run dist

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Writes one release's entry into CHANGELOG.md, from the pull request that cut
 // it. Run by .github/workflows/auto-release.yml right after the version bump,
-// before the release commit — a release is always exactly one merged PR there,
-// so its title is the release note.
+// before the release commit. Automatic releases use one PR; manual releases
+// pass --batch <file> with all pending PR entries for one combined version.
 //
 //   node scripts/changelog.js --version 0.25.0 --title "feat: …" --pr 88 \
 //     --date 2026-08-04
@@ -36,12 +36,19 @@ if (!args.version) {
   process.exit(2);
 }
 
-const entry = notes.entryFromPullRequest({
+let entry = notes.entryFromPullRequest({
   version: args.version,
   title: args.title,
   number: args.pr,
   date: args.date,
 });
+if (args.batch) {
+  const batch = JSON.parse(fs.readFileSync(args.batch, "utf8"));
+  entry = { version: args.version, date: args.date, items: batch.entries.flatMap((pr) => {
+    const item = notes.entryFromPullRequest({ ...pr, version: args.version });
+    return item?.items || [{ text: `Merged pull request (#${pr.number})`, kind: "change" }];
+  }) };
+}
 if (!entry) {
   console.log(`changelog: nothing to record for v${args.version} (empty title)`);
   process.exit(0);

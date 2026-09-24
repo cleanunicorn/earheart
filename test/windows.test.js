@@ -22,7 +22,7 @@ const WINDOWS = require.resolve("../main/windows");
 // A BrowserWindow that records every call as [name, ...args], so a test can
 // assert not just that something happened but where it happened relative to
 // everything else. Geometry answers are fixed: nothing here depends on layout.
-function makeFakeWindow(calls, { refuseRejoin = false } = {}) {
+function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} } = {}) {
   // Tracks the NSWindow's all-Spaces collection-behaviour bit, so a test can
   // clear it after creation to stand in for the bit being lost at runtime.
   // refuseRejoin stands in for the other failure the production warn
@@ -32,11 +32,15 @@ function makeFakeWindow(calls, { refuseRejoin = false } = {}) {
     constructor(options) {
       calls.push(["construct", options]);
       this.webContents = {
-        on: () => {},
-        once: () => {},
-        send: (channel) => calls.push(["send", channel]),
+        on: (event, handler) => {
+          webContentsHandlers[event] = handler;
+        },
+        once: (event, handler) => {
+          webContentsHandlers[event] = handler;
+        },
+        send: (channel, payload) => calls.push(["send", channel, payload]),
         isLoading: () => false,
-        reload: () => {},
+        reload: () => calls.push(["reload"]),
       };
     }
     setAlwaysOnTop(...args) {
@@ -100,9 +104,10 @@ function makeFakeWindow(calls, { refuseRejoin = false } = {}) {
 function loadWindows({ refuseRejoin = false } = {}) {
   const calls = [];
   const warnings = [];
+  const webContentsHandlers = {};
   const workArea = { x: 0, y: 0, width: 1920, height: 1080 };
   const electron = {
-    BrowserWindow: makeFakeWindow(calls, { refuseRejoin }),
+    BrowserWindow: makeFakeWindow(calls, { refuseRejoin, webContentsHandlers }),
     ipcMain: { on: () => {} },
     screen: {
       getPrimaryDisplay: () => ({ workArea }),
@@ -121,7 +126,7 @@ function loadWindows({ refuseRejoin = false } = {}) {
   };
   delete require.cache[WINDOWS];
   try {
-    return { windows: require(WINDOWS), calls, warnings };
+    return { windows: require(WINDOWS), calls, warnings, webContentsHandlers };
   } finally {
     Module._load = realLoad;
     delete require.cache[WINDOWS];
@@ -154,6 +159,46 @@ function showOnceOnDarwin(t, options) {
 const names = (calls) => calls.map(([name]) => name);
 const indexOf = (calls, name) => names(calls).indexOf(name);
 const countOf = (calls, name) => names(calls).filter((n) => n === name).length;
+
+test("overlay renderer loss invokes the injected callback before reload", () => {
+  const { windows, calls, webContentsHandlers } = loadWindows();
+  windows.createOverlay({ onOverlayRendererGone: () => calls.push(["renderer-gone-callback"]) });
+
+  webContentsHandlers["render-process-gone"]();
+
+  const callback = indexOf(calls, "renderer-gone-callback");
+  const reloaded = indexOf(calls, "reload");
+  assert.ok(callback >= 0, "renderer loss should notify the injected callback");
+  assert.ok(reloaded > callback, "the callback must run before renderer reload");
+});
+
+test("overlay renderer loss replays the exact error status after reload", () => {
+  const status = {
+    status: "error",
+    detail: { message: "Recording lost because the overlay stopped unexpectedly" },
+  };
+  const { windows, calls, webContentsHandlers } = loadWindows();
+  windows.createOverlay({
+    onOverlayRendererGone: () => {
+      calls.push(["renderer-gone-callback"]);
+      windows.sendToOverlay("pipeline:status", status);
+    },
+  });
+
+  webContentsHandlers["render-process-gone"]();
+
+  assert.strictEqual(
+    countOf(calls.slice(indexOf(calls, "reload")), "send"),
+    0,
+    "the error status must not be sent to the dead renderer"
+  );
+  webContentsHandlers["did-finish-load"]();
+
+  const replay = calls.find(
+    ([name, channel]) => name === "send" && channel === "pipeline:status"
+  );
+  assert.deepStrictEqual(replay, ["send", "pipeline:status", status]);
+});
 
 // --- The guarantees that predate the Spaces fix -----------------------------
 // These three run against behaviour that already existed, so they pass before

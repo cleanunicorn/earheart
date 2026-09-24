@@ -226,7 +226,15 @@ const exited = () => Object.assign(new Error("engine process exited"), { code: "
 // for the pipeline to return to idle. `transcribe` scripts the STT backend per
 // call; `snapshot` is what the live preview hands the final pass.
 function dictationRig({ engine = "builtin", display = true, cleanup = false, transcribe, ensureStt } = {}) {
-  const log = { transcribe: [], delivered: [], history: [], notifications: [], statuses: [], settingsEvents: [] };
+  const log = {
+    transcribe: [],
+    delivered: [],
+    history: [],
+    notifications: [],
+    statuses: [],
+    settingsEvents: [],
+    lastStart: null,
+  };
   let snapshot = null;
   let lastStart = null;
   const handlers = {};
@@ -268,7 +276,10 @@ function dictationRig({ engine = "builtin", display = true, cleanup = false, tra
         hideOverlay() {},
         sendToSettings: (channel) => log.settingsEvents.push(channel),
         sendToOverlay(channel, payload) {
-          if (channel === "record:start") lastStart = payload;
+          if (channel === "record:start") {
+            lastStart = payload;
+            log.lastStart = payload;
+          }
           if (channel === "pipeline:status") {
             log.statuses.push(payload.status);
             if (payload.status === "done") log.done = payload.detail;
@@ -314,8 +325,46 @@ function dictationRig({ engine = "builtin", display = true, cleanup = false, tra
     handlers["audio:captured"]({}, { sid: lastStart.sid, wav });
     await idle;
   }
-  return { log, dictate, pipeline, cfg, liveTranscribe: (...a) => liveDeps.runTranscribe(...a) };
+  return {
+    log,
+    dictate,
+    pipeline,
+    cfg,
+    handlers,
+    liveTranscribe: (...a) => liveDeps.runTranscribe(...a),
+  };
 }
+
+test("pipeline: overlay renderer loss rejects stale capture and allows the next hotkey", () => {
+  const rig = dictationRig({ transcribe: async () => "unused" });
+  const states = [];
+  rig.pipeline.onStateChange((state) => states.push(state));
+
+  rig.pipeline.toggle();
+  assert.strictEqual(rig.pipeline.getState(), "recording");
+  const staleSid = rig.log.lastStart.sid;
+  assert.ok(rig.handlers["record:error"]);
+  rig.pipeline.onOverlayRendererGone();
+
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+  assert.ok(rig.log.statuses.includes("error"));
+  assert.deepStrictEqual(states, ["recording", "idle"]);
+
+  rig.handlers["audio:captured"]({}, { sid: staleSid, wav: speechWav(1) });
+  assert.strictEqual(rig.log.transcribe.length, 0, "a late capture from the dead renderer is stale");
+
+  rig.pipeline.toggle();
+  assert.strictEqual(rig.pipeline.getState(), "recording");
+  assert.deepStrictEqual(states, ["recording", "idle", "recording"]);
+});
+
+test("pipeline: overlay renderer loss outside recording is a no-op", () => {
+  const rig = dictationRig({ transcribe: async () => "unused" });
+  rig.pipeline.onOverlayRendererGone();
+
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+  assert.deepStrictEqual(rig.log.statuses, []);
+});
 
 test("pipeline: no built-in final decode exceeds 20 s, on every assembly path", async () => {
   const ok = async (n) => `w${n}`;

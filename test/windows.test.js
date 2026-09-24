@@ -101,7 +101,7 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
 
 // Load a fresh main/windows.js against fakes. Fresh per test because the module
 // keeps the overlay as module-level singleton state.
-function loadWindows({ refuseRejoin = false, onOverlayRendererGone } = {}) {
+function loadWindows({ refuseRejoin = false } = {}) {
   const calls = [];
   const warnings = [];
   const webContentsHandlers = {};
@@ -161,9 +161,7 @@ const indexOf = (calls, name) => names(calls).indexOf(name);
 const countOf = (calls, name) => names(calls).filter((n) => n === name).length;
 
 test("overlay renderer loss invokes the injected callback before reload", () => {
-  const { windows, calls, webContentsHandlers } = loadWindows({
-    onOverlayRendererGone: () => calls.push(["renderer-gone-callback"]),
-  });
+  const { windows, calls, webContentsHandlers } = loadWindows();
   windows.createOverlay({ onOverlayRendererGone: () => calls.push(["renderer-gone-callback"]) });
 
   webContentsHandlers["render-process-gone"]();

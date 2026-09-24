@@ -351,9 +351,14 @@ function init({ applyHotkeys, onSettingsChanged }) {
   ipcMain.handle("models:download", async (event, { kind, modelId }) => {
     const key = `${kind}:${modelId}`;
     if (downloads.has(key)) return { ok: false, error: "Already downloading" };
-    if (engines.isInstalled(kind, modelId)) return { ok: true };
+    if (engines.isInstalled(kind, modelId)) {
+      const result = { ok: true };
+      windows.broadcast("models:done", { kind, modelId, ...result });
+      return result;
+    }
     const controller = new AbortController();
     downloads.set(key, controller);
+    let result;
     try {
       await engines.download(kind, modelId, {
         signal: controller.signal,
@@ -363,13 +368,15 @@ function init({ applyHotkeys, onSettingsChanged }) {
           windows.broadcast("models:progress", { kind, modelId, ...p });
         },
       });
-      return { ok: true };
+      result = { ok: true };
     } catch (err) {
       const aborted = controller.signal.aborted;
-      return { ok: false, cancelled: aborted, error: err.message };
+      result = { ok: false, cancelled: aborted, error: err.message };
     } finally {
       downloads.delete(key);
     }
+    windows.broadcast("models:done", { kind, modelId, ...result });
+    return result;
   });
 
   ipcMain.handle("models:cancel", (event, { kind, modelId }) => {

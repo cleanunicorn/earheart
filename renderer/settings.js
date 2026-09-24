@@ -461,6 +461,21 @@ function populateModelSelect(kind) {
 // Per-kind handles to the live progress bar / status so download progress
 // events can find their row.
 const manage = { stt: {}, cleanup: {} };
+const modelDownloads = new Map();
+
+function modelDownloadKey(kind, modelId) {
+  return `${kind}:${modelId}`;
+}
+
+function showModelError(modelId, error) {
+  for (const kind of ["stt", "cleanup"]) {
+    const ui = manage[kind];
+    if (ui && ui.modelId === modelId) {
+      ui.status.textContent = error;
+      ui.status.className = "status err";
+    }
+  }
+}
 
 function renderManage(kind) {
   const container = $(`${kind}-model-manage`);
@@ -488,6 +503,7 @@ function renderManage(kind) {
   status.className = "status";
   const btn = document.createElement("button");
   const ui = { modelId, bar, fill, status, btn };
+  const download = modelDownloads.get(modelDownloadKey(kind, modelId));
 
   if (info.installed) {
     status.textContent = "Downloaded ✓";
@@ -499,10 +515,19 @@ function renderManage(kind) {
     btn.onclick = () =>
       info.custom ? removeCustomModel(modelId) : removeModel(kind, modelId);
   } else {
-    status.textContent = "Not downloaded";
-    btn.textContent = "Download";
-    btn.className = "ghost";
-    btn.onclick = () => downloadModel(kind, modelId, ui);
+    if (download) {
+      bar.hidden = false;
+      fill.style.width = `${Math.round(download.fraction * 100)}%`;
+      status.textContent = download.message || "Downloading…";
+      btn.textContent = "Cancel";
+      btn.className = "ghost";
+      btn.onclick = () => earheart.invoke("models:cancel", { kind, modelId });
+    } else {
+      status.textContent = "Not downloaded";
+      btn.textContent = "Download";
+      btn.className = "ghost";
+      btn.onclick = () => downloadModel(kind, modelId);
+    }
   }
   row.append(btn, status);
   // A custom model that isn't downloaded still needs a way off the list.
@@ -526,33 +551,47 @@ function announceDownload(kind, modelId, message) {
   $("model-dl-announce").textContent = `${info ? info.label : modelId}: ${message}`;
 }
 
-async function downloadModel(kind, modelId, ui) {
+async function downloadModel(kind, modelId) {
+  const key = modelDownloadKey(kind, modelId);
+  if (modelDownloads.has(key)) return;
+  modelDownloads.set(key, { fraction: 0, message: "Downloading…" });
+  renderManage(kind);
+
   // While the download runs, the same button cancels it (the wizard offers the
   // same escape; without it a multi-minute download in Settings is a one-way
   // trip). models:cancel aborts the in-flight transfer in the main process.
-  ui.bar.hidden = false;
-  ui.status.textContent = "Downloading…";
-  ui.status.className = "status";
-  const onCancel = () => earheart.invoke("models:cancel", { kind, modelId });
-  ui.btn.textContent = "Cancel";
-  ui.btn.className = "ghost";
-  ui.btn.onclick = onCancel;
-
-  const res = await earheart.invoke("models:download", { kind, modelId });
-  ui.btn.onclick = null;
-  if (res.ok) {
-    await refreshModels();
-    announceDownload(kind, modelId, "Downloaded ✓");
-    return;
+  try {
+    const res = await earheart.invoke("models:download", { kind, modelId });
+    modelDownloads.delete(key);
+    if (res.ok) {
+      const selectedModelId = manage[kind]?.modelId;
+      await refreshModels({ [kind]: selectedModelId });
+      return;
+    }
+    const message = res.cancelled ? "Cancelled" : res.error || "Download failed";
+    const ui = manage[kind];
+    if (ui.modelId === modelId) {
+      ui.bar.hidden = true;
+      ui.btn.textContent = res.cancelled ? "Download" : "Retry download";
+      ui.btn.className = "ghost";
+      ui.btn.onclick = () => downloadModel(kind, modelId);
+      ui.status.textContent = message;
+      ui.status.className = res.cancelled ? "status" : "status err";
+    }
+    announceDownload(kind, modelId, message);
+  } catch (err) {
+    modelDownloads.delete(key);
+    const ui = manage[kind];
+    if (ui.modelId === modelId) {
+      ui.bar.hidden = true;
+      ui.btn.textContent = "Retry download";
+      ui.btn.className = "ghost";
+      ui.btn.onclick = () => downloadModel(kind, modelId);
+      ui.status.textContent = err.message || "Download failed";
+      ui.status.className = "status err";
+    }
+    announceDownload(kind, modelId, err.message || "Download failed");
   }
-  // Failed or cancelled: revert to a download affordance the user can retry.
-  ui.bar.hidden = true;
-  ui.btn.textContent = res.cancelled ? "Download" : "Retry download";
-  ui.btn.className = "ghost";
-  ui.btn.onclick = () => downloadModel(kind, modelId, ui);
-  ui.status.textContent = res.cancelled ? "Cancelled" : res.error || "Download failed";
-  ui.status.className = res.cancelled ? "status" : "status err";
-  announceDownload(kind, modelId, ui.status.textContent);
 }
 
 async function removeModel(kind, modelId) {
@@ -561,8 +600,9 @@ async function removeModel(kind, modelId) {
   if (!confirm(`Remove ${label}? You'll need to download it again to use it.`)) {
     return;
   }
-  await earheart.invoke("models:remove", { kind, modelId });
-  await refreshModels();
+  const res = await earheart.invoke("models:remove", { kind, modelId });
+  if (res.ok) await refreshModels();
+  else showModelError(modelId, res.error || "Could not remove model");
 }
 
 // Remove a custom model entirely: its files (if downloaded) and its definition.
@@ -571,8 +611,12 @@ async function removeCustomModel(modelId) {
   const label = info ? info.label : modelId;
   if (!confirm(`Remove ${label} from your models?`)) return;
   const res = await earheart.invoke("models:remove-custom", { modelId });
-  if (res.ok) current.customModels = res.customModels;
-  await refreshModels();
+  if (res.ok) {
+    current.customModels = res.customModels;
+    await refreshModels();
+  } else {
+    showModelError(modelId, res.error || "Could not remove model");
+  }
 }
 
 // Re-pull model status and rebuild the dropdowns (custom models may have been
@@ -602,13 +646,15 @@ function progressLabel({ received, total, fraction }) {
 }
 
 earheart.on("models:progress", (p) => {
+  const download = modelDownloads.get(modelDownloadKey(p.kind, p.modelId));
+  if (!download) return;
+  download.fraction = p.fraction;
+  download.message = progressLabel(p);
   const m = manage[p.kind];
   if (m && m.modelId === p.modelId && m.fill) {
     m.fill.style.width = `${Math.round(p.fraction * 100)}%`;
-    if (m.status) {
-      m.status.textContent = progressLabel(p);
-      m.status.className = "status";
-    }
+    m.status.textContent = download.message;
+    m.status.className = "status";
   }
 });
 

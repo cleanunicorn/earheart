@@ -410,6 +410,8 @@ test("stripFillers leaves real words, acronyms and text without fillers alone", 
   // Never lose the user's words: an all-filler transcript stays as it was.
   assert.strictEqual(stripFillers("um"), "um");
   assert.strictEqual(stripFillers(""), "");
+  assert.strictEqual(stripFillers("Das wird es ermöglichen."), "Das wird es ermöglichen.");
+  assert.strictEqual(stripFillers("Ich bin ermüdet."), "Ich bin ermüdet.");
 });
 
 test("stripFillers repairs the seam only, leaving the rest of the spacing alone", () => {
@@ -447,6 +449,9 @@ test("collapseRepeats collapses a re-spoken word but not a deliberate one", () =
   assert.strictEqual(collapseRepeats("No, no that is wrong"), "No, no that is wrong");
   // Spelled-out letters are data, not a stutter.
   assert.strictEqual(collapseRepeats("serial V V 7"), "serial V V 7");
+  assert.strictEqual(collapseRepeats("Nous nous sommes rencontrés hier."), "Nous nous sommes rencontrés hier.");
+  assert.strictEqual(collapseRepeats("Ik denk dat dat klopt."), "Ik denk dat dat klopt.");
+  assert.strictEqual(collapseRepeats("Die die Frage beantwortet er."), "Die die Frage beantwortet er.");
 });
 
 test("stripStumbles removes fillers first, so the repeat they hid collapses too", () => {

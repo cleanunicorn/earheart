@@ -242,11 +242,13 @@ app.whenReady().then(async () => {
       const prior = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
       const gates = [];
       navigator.mediaDevices.getUserMedia = (constraints) => {
-        if (constraints.audio.deviceId?.exact === "slow-old-device") {
+        const deviceId = constraints.audio.deviceId?.exact;
+        if (deviceId === "slow-old-device" || deviceId === "late-missing-device") {
           let resolve;
-          const promise = new Promise((r) => { resolve = r; });
-          gates.push({ promise, resolve });
-          state.calls.push("slow-old-device");
+          let reject;
+          const promise = new Promise((r, j) => { resolve = r; reject = j; });
+          gates.push({ promise, resolve, reject });
+          state.calls.push(deviceId);
           return promise.then((stream) => { state.streams.push(stream); return stream; });
         }
         return prior(constraints);
@@ -273,6 +275,50 @@ app.whenReady().then(async () => {
     const staleCapture = waitForMessage("audio:captured");
     win.webContents.send("record:stop");
     await staleCapture;
+    await win.webContents.executeJavaScript("window.__micTest.calls = []");
+
+    start(win, 94, "late-missing-device");
+    await sleep(40);
+    const rejectionPending = await win.webContents.executeJavaScript(
+      "window.__micTest.deferredGets.length === 2"
+    );
+    check("old exact-device rejection is pending", rejectionPending);
+    start(win, 95);
+    await waitForStatus(win, "recording");
+    const errorsBeforeLateReject = micErrors.length;
+    await win.webContents.executeJavaScript(`(() => {
+      window.__micTest.deferredGets[1].reject(Object.assign(
+        new Error("missing"),
+        { name: "OverconstrainedError", constraint: "deviceId" }
+      ));
+    })()`);
+    await sleep(100);
+    const lateRejectState = await win.webContents.executeJavaScript(`({
+      calls: window.__micTest.calls,
+      detailText: document.getElementById("detail-text").textContent,
+      status: document.getElementById("card").dataset.status,
+    })`);
+    check(
+      "late stale rejection does not retry the default microphone",
+      JSON.stringify(lateRejectState.calls) ===
+        JSON.stringify(["late-missing-device", "default"]),
+      JSON.stringify(lateRejectState.calls)
+    );
+    check(
+      "late stale rejection adds no fallback notice or error to the new session",
+      lateRejectState.status === "recording" &&
+        lateRejectState.detailText === "" &&
+        micErrors.length === errorsBeforeLateReject,
+      JSON.stringify({
+        status: lateRejectState.status,
+        detailText: lateRejectState.detailText,
+        newErrors: micErrors.length - errorsBeforeLateReject,
+      })
+    );
+    const currentCapture = waitForMessage("audio:captured");
+    win.webContents.send("record:stop");
+    const capturedCurrent = await currentCapture;
+    check("new session remains usable after the stale rejection", capturedCurrent.sid === 95);
     await win.webContents.executeJavaScript("window.__micTest.calls = []");
 
     // ---- Session 1: status order, and capture aligned with the UI ----------

@@ -75,6 +75,18 @@ app.whenReady().then(async () => {
   await sleep(400);
   await shot(overlay, "overlay-recording");
 
+  await overlay.webContents.executeJavaScript(`
+    clearTranscript();
+    setStatus(
+      "recording",
+      "Listening…",
+      "Selected microphone not found — using system default"
+    );
+    "";
+  `);
+  await sleep(400);
+  await shot(overlay, "overlay-microphone-fallback");
+
   // Paused mid-take: everything holds — held pause key showing the resume
   // glyph, steady hollow status ring, frozen waveform.
   await overlay.webContents.executeJavaScript(`

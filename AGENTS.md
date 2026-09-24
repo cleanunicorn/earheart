@@ -335,9 +335,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#architecture) for the full architecture.
 - Never commit secrets, API keys, credentials, or sensitive data.
 - Always validate and sanitize user and external input.
 - Built-in catalog models are SHA-256 verified on download
-  (`main/engines/model-manager.js`). User-added models have no `sha256`, so
-  they only get size and HTTP-validator checks. Pin a checksum for anything new
-  the app ships in its catalog.
+  (`main/engines/model-manager.js`). User-added Hugging Face files use the
+  published LFS SHA-256 when available; files without one still get size and
+  HTTP-validator checks. Pin a checksum for anything new the app ships in its
+  catalog.
 
 ## Hazards
 

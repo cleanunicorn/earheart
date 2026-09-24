@@ -14,6 +14,8 @@
 // corrupted, tampered, or wrong file being loaded into the native runtimes. Every URL is
 // pinned to an immutable Hugging Face commit (`resolve/<commit>/…`) rather than
 // a moving branch, so the bytes are reproducible and the checksum can't drift.
+// User-added files are checksum-verified when Hugging Face publishes their LFS
+// SHA-256; files without an LFS checksum still rely on the pinned URL and size.
 //
 // To refresh after a model is re-published: HEAD the `resolve/main/<file>` URL
 // and read `x-repo-commit` (the commit to pin), `x-linked-etag` (the sha256 for
@@ -266,7 +268,8 @@ const DEFAULT_CLEANUP_MODEL = "granite-4.0-micro";
 // memory and registered at startup from persisted settings (see main/ipc.js),
 // so they resolve through the same getModel/listModels path the built-ins use
 // — no special-casing in the download manager, engines, or IPC layers. Same
-// shape as a MODELS entry, minus the sha256 we can't pre-verify for a user URL.
+// shape as a MODELS entry; files include sha256 when Hugging Face publishes an
+// LFS checksum, and otherwise rely on their pinned URL and size.
 let customModels = [];
 
 // A model id or filename becomes one path component under the managed models

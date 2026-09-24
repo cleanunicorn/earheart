@@ -18,6 +18,8 @@ const PRINTABLE_KEY_CODES = Object.assign(Object.create(null), {
   Numpad4: "num4", Numpad5: "num5", Numpad6: "num6", Numpad7: "num7",
   Numpad8: "num8", Numpad9: "num9",
   NumpadEnter: "Enter",
+  NumpadDecimal: "numdec", NumpadAdd: "numadd", NumpadSubtract: "numsub",
+  NumpadMultiply: "nummult", NumpadDivide: "numdiv",
   Semicolon: ";", Quote: "'", Comma: ",", Period: ".", Slash: "/",
   Backslash: "\\", BracketLeft: "[", BracketRight: "]", Backquote: "`",
   Minus: "-", Equal: "=",

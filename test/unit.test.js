@@ -1013,6 +1013,18 @@ test("acceleratorFromEvent maps modifiers per platform and names keys", () => {
       const accelerator = "CommandOrControl+num" + digit;
       assert.strictEqual(acceleratorFromEvent(ev({ key: String(digit), code, ctrlKey: true })), accelerator);
     }
+    for (const [code, key, accelerator] of [
+      ["NumpadDecimal", ".", "numdec"],
+      ["NumpadAdd", "+", "numadd"],
+      ["NumpadSubtract", "-", "numsub"],
+      ["NumpadMultiply", "*", "nummult"],
+      ["NumpadDivide", "/", "numdiv"],
+    ]) {
+      assert.strictEqual(
+        acceleratorFromEvent(ev({ key, code, ctrlKey: true })),
+        "CommandOrControl+" + accelerator
+      );
+    }
     assert.strictEqual(
       acceleratorFromEvent(ev({ key: "k", code: "KeyK", metaKey: true })),
       "Super+K"
@@ -1052,7 +1064,6 @@ test("acceleratorFromEvent maps modifiers per platform and names keys", () => {
       "unknown printable physical keys are rejected"
     );
     assert.strictEqual(acceleratorFromEvent(ev({ key: "1", code: "constructor", ctrlKey: true })), null);
-    assert.strictEqual(acceleratorFromEvent(ev({ key: "1", code: "NumpadAdd", ctrlKey: true })), null);
   } finally {
     delete global.platform;
   }

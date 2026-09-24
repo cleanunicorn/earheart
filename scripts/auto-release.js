@@ -3,6 +3,7 @@
 // Selects merged pull requests that still need releases.
 // Usage: auto-release.js select --prs <file> --changelog <file>
 //        auto-release.js pending --prs <file>
+//        auto-release.js manual --prs <file>
 // Standard output is JSON Lines for the workflow loop; standard error carries
 // workflow warnings and errors.
 
@@ -132,6 +133,20 @@ function pendingReleases({ prs, changelog }) {
   return { boundary, ...releasesForCandidates(candidates) };
 }
 
+// Manual releases group all pending merges, including documentation and tests.
+function manualRelease(prs) {
+  if (!prs.length) return null;
+  let bump = "patch";
+  const rank = { "": 0, patch: 1, minor: 2, major: 3 };
+  const entries = prs.map((pr) => {
+    const title = titleAtMerge(pr);
+    const sized = bumpFor(title).bump;
+    if (rank[sized] > rank[bump]) bump = sized;
+    return { number: pr.number, title };
+  });
+  return { number: entries.at(-1).number, title: "Manual release", bump, entries };
+}
+
 function parseArgs(argv) {
   const args = {};
   for (let index = 0; index < argv.length; index++) {
@@ -157,11 +172,12 @@ function main(argv) {
   const args = parseArgs(rest);
   const valid =
     (command === "select" && args.prs && args.changelog) ||
-    (command === "pending" && args.prs && !args.changelog);
+    (["pending", "manual"].includes(command) && args.prs && !args.changelog);
   if (!valid) {
     console.error(
       "usage: auto-release.js select --prs <file> --changelog <file>\n" +
-        "       auto-release.js pending --prs <file>",
+        "       auto-release.js pending --prs <file>\n" +
+        "       auto-release.js manual --prs <file>",
     );
     return 2;
   }
@@ -177,6 +193,11 @@ function main(argv) {
       return 0;
     }
 
+    if (command === "manual") {
+      const release = manualRelease(prs);
+      if (release) console.log(JSON.stringify(release));
+      return 0;
+    }
     const result = releasesForCandidates(prs);
     for (const warning of result.warnings) {
       console.error(`::warning title=No release::${escapeWorkflowCommandData(warning)}`);
@@ -195,6 +216,7 @@ module.exports = {
   releasedPrNumbers,
   escapeWorkflowCommandData,
   pendingReleases,
+  manualRelease,
 };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));

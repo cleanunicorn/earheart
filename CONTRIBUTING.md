@@ -29,6 +29,7 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | `make icons` | Regenerate app/tray icons into `assets/` |
 | `make screenshots` | Regenerate README screenshots into `docs/screenshots/` |
 | `make dist` | Build installers for the current platform |
+| `make release` | Release pending merged PRs from remote `main` via GitHub Actions |
 | `make dist-linux` / `dist-mac` / `dist-win` | Per-platform packages |
 | `make dist-win-docker` | Cross-build Windows packages from Linux via Docker+Wine |
 | `make install-stt` | Create the stt-server virtualenv and install it (uv) |
@@ -138,10 +139,31 @@ three platforms succeed — so a half-built release is never published.
 Release jobs are serialized. Because GitHub retains only one pending job in a
 concurrency group, each surviving run catches up every release-affecting PR
 merged since the newest numbered changelog entry, in merge order. An invalid
-title emits a warning and creates no release. This automatic workflow is the
-only supported release path. If a release commit and tag were pushed but its
+title emits a warning and creates no release. If a release commit and tag were pushed but its
 build dispatch was temporarily unavailable, a later serialized run re-dispatches
 that durable tag without cutting another version.
+
+Run `make release` with an authenticated `gh` account that has repository write
+access to request this same catch-up workflow manually. It always dispatches on
+remote `main`, regardless of your local branch or uncommitted changes. Follow
+progress with `gh run list --workflow auto-release.yml`; command success means
+the request was accepted, not that installers are published yet.
+
+The manual run includes all code merged into `main` and cuts one version for
+all pending merged PRs, with a release-note bullet for each. It uses the largest
+applicable title bump above, defaulting to patch for documentation, tests, and
+maintenance-only batches. With no pending merged PRs it creates no new version
+(but still retries undispatched release tags).
+
+Manual and automatic runs share the same concurrency group. GitHub can replace
+a pending run when another release request arrives. Check that your manual run
+actually starts; if it is cancelled while waiting, run `make release` again
+after the active release finishes.
+
+This also recovers releases missed when a fork PR's automatic `pull_request`
+run has a read-only token. Manual dispatch runs with the repository's requested
+release permissions and checks out only `main`; fork token restrictions stay
+in place. Dispatches on other refs are skipped by the release job.
 
 **Your PR title is the release note.** It's what the app shows people — in the
 update prompt before they update, and in the "what's new" card after. Write it

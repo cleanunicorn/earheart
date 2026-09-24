@@ -6,6 +6,7 @@ name: Auto release
 # release is rebuilt on the current origin/main and pushed with its tag atomically.
 
 on:
+  workflow_dispatch:
   pull_request:
     types: [closed]
     branches: [main]
@@ -18,7 +19,9 @@ permissions:
 
 jobs:
   release:
-    if: github.event.pull_request.merged == true
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     concurrency:
       group: auto-release
       cancel-in-progress: false
@@ -33,6 +36,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TRIGGER_PR: ${{ github.event.pull_request.number }}
           TRIGGER_TITLE: ${{ github.event.pull_request.title }}
+          RELEASE_EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -212,11 +216,15 @@ jobs:
           done < "$candidates_file"
 
           jq -s '.' "$resolved_jsonl" > "$resolved_file"
-          node scripts/auto-release.js pending \
-            --prs "$resolved_file" > "$pending_file"
+          if [[ "${RELEASE_EVENT:-}" == "workflow_dispatch" ]]; then
+            node scripts/auto-release.js manual --prs "$resolved_file" > "$pending_file"
+          else
+            node scripts/auto-release.js pending \
+              --prs "$resolved_file" > "$pending_file"
+          fi
 
           if [[ ! -s "$pending_file" ]]; then
-            echo "No release-affecting merged PR is waiting."
+            echo "No merged PR is waiting under this release mode."
             exit 0
           fi
 
@@ -247,6 +255,11 @@ jobs:
               tag="v$version"
               node scripts/changelog.js \
                 --version "$version" --title "$title" --pr "$number" --date "$(date -u +%F)"
+              if [[ "${RELEASE_EVENT:-}" == "workflow_dispatch" ]]; then
+                batch_file="$RUNNER_TEMP/manual-release.json"
+                printf '%s\n' "$release_json" > "$batch_file"
+                node scripts/changelog.js --version "$version" --batch "$batch_file" --date "$(date -u +%F)"
+              fi
               git add package.json package-lock.json CHANGELOG.md
               git commit -m "release: $tag"
               git tag -a "$tag" -m "$tag"

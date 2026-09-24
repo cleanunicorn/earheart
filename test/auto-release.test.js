@@ -12,10 +12,56 @@ const {
   releasedPrNumbers,
   escapeWorkflowCommandData,
   pendingReleases,
+  manualRelease,
 } = require("../scripts/auto-release");
 
 const BOUNDARY_CHANGELOG = "## v1.0.0\n\n- Boundary (#100)\n";
 const AUTO_RELEASE_SCRIPT = path.join(__dirname, "..", "scripts", "auto-release.js");
+
+test("manual release aggregates every pending merge and uses the largest bump", () => {
+  const prs = withMergeTitles([
+    { number: 101, title: "docs: explain setup" },
+    { number: 102, title: "feat: add an option" },
+    { number: 103, title: "fix!: change the format" },
+  ]);
+  const result = manualRelease(prs);
+  assert.equal(result.bump, "major");
+  assert.equal(result.number, 103);
+  assert.deepEqual(result.entries.map((pr) => pr.number), [101, 102, 103]);
+  assert.equal(manualRelease(prs.slice(0, 2)).bump, "minor");
+  assert.equal(manualRelease(prs.slice(0, 1)).bump, "patch");
+  assert.equal(manualRelease([]), null);
+});
+
+test("manual CLI and changelog writer preserve every PR in one version", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-manual-release-"));
+  try {
+    fs.mkdirSync(path.join(directory, "scripts"));
+    fs.mkdirSync(path.join(directory, "main", "services"), { recursive: true });
+    for (const file of ["scripts/changelog.js", "main/services/release-notes.js", "main/services/update-feed.js"]) {
+      fs.copyFileSync(path.join(__dirname, "..", file), path.join(directory, file));
+    }
+    const input = path.join(directory, "prs.json");
+    const batch = path.join(directory, "batch.json");
+    fs.writeFileSync(input, JSON.stringify(withMergeTitles([
+      { number: 101, title: "docs: explain setup" },
+      { number: 102, title: "fix: preserve $(literal) words" },
+    ])));
+    const selected = runCli("manual", "--prs", input);
+    assert.equal(selected.status, 0, selected.stderr);
+    fs.writeFileSync(batch, selected.stdout);
+    const written = spawnSync(process.execPath, [path.join(directory, "scripts/changelog.js"),
+      "--version", "1.2.3", "--batch", batch, "--date", "2026-09-24"], { encoding: "utf8" });
+    assert.equal(written.status, 0, written.stderr);
+    const entries = releaseNotes.parseChangelog(fs.readFileSync(path.join(directory, "CHANGELOG.md"), "utf8"));
+    assert.equal(entries.length, 1);
+    assert.deepEqual(entries[0].items.map((item) => item.text), [
+      "Explain setup (#101)", "Preserve $(literal) words (#102)",
+    ]);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 function runCli(...args) {
   return spawnSync(process.execPath, [AUTO_RELEASE_SCRIPT, ...args], { encoding: "utf8" });

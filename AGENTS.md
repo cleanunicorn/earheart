@@ -56,6 +56,10 @@ The Makefile wraps most tasks; `make help` lists them all.
   long recording loses words. Method and recorded numbers:
   [docs/long-recordings.md](docs/long-recordings.md)
 - **Build:** `make dist` (current platform)
+- **Release merged PRs:** `make release` dispatches the catch-up release workflow
+  on remote `main` using authenticated `gh`. It creates one version for all pending
+  merged PRs; local changes are excluded. Track completion with
+  `gh run list --workflow auto-release.yml`.
 
 Always run the tests and smoke checks before opening a PR.
 

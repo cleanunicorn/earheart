@@ -24,18 +24,6 @@ const makefile = readText("Makefile");
 const contributing = readText("CONTRIBUTING.md");
 const agents = readText("AGENTS.md");
 
-function markdownUnder(directory) {
-  let text = "";
-  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    const location = path.join(directory, entry.name);
-    if (entry.isDirectory()) text += markdownUnder(location);
-    else if (entry.name.endsWith(".md")) {
-      text += normalizeNewlines(fs.readFileSync(location, "utf8"));
-    }
-  }
-  return text;
-}
-
 test("release sizing uses exactly the PR-title workflow regex", () => {
   const match = titleWorkflow.match(/^\s*title_re='([^']+)'$/m);
   assert.ok(match, "pr-title.yml should define title_re");
@@ -80,14 +68,28 @@ test("contract sources normalize Windows checkout newlines", () => {
   assert.doesNotMatch(workflow, /\r/);
 });
 
-test("only merged pull-request jobs enter the static release concurrency group", () => {
-  assert.match(workflow, /^on:\n  pull_request:\n    types: \[closed\]\n    branches: \[main\]/m);
+test("merged PRs and manual main runs share the release concurrency group", () => {
+  assert.match(workflow, /^on:\n  workflow_dispatch:\n  pull_request:\n    types: \[closed\]\n    branches: \[main\]/m);
   assert.doesNotMatch(workflow, /pull_request_target/);
   assert.doesNotMatch(workflow, /^concurrency:/m);
   assert.match(
     workflow,
-    /jobs:\n  release:\n    if: github\.event\.pull_request\.merged == true\n    concurrency:\n      group: auto-release\n      cancel-in-progress: false/,
+    /concurrency:\n      group: auto-release\n      cancel-in-progress: false/,
   );
+  const expression = workflow.match(/    if: >-\n([\s\S]*?)\n    concurrency:/)[1];
+  // Exercise the actual GitHub expression (this subset is valid JavaScript).
+  const allowed = new Function("github", `return (${expression});`);
+  for (const [event, ref, merged, expected] of [
+    ["workflow_dispatch", "refs/heads/main", false, true],
+    ["workflow_dispatch", "refs/heads/feature", false, false],
+    ["workflow_dispatch", "refs/tags/v1.0.0", false, false],
+    ["pull_request", "refs/heads/main", true, true],
+    ["pull_request", "refs/heads/main", false, false],
+    ["push", "refs/heads/main", true, false],
+  ]) {
+    assert.equal(allowed({ event_name: event, ref, event: { pull_request: { merged } } }), expected);
+  }
+  assert.equal(allowed({ event_name: "workflow_dispatch", ref: "refs/heads/main", event: {} }), true);
 });
 
 test("catch-up reads every merged PR with the explicit token permission", () => {
@@ -184,17 +186,12 @@ test("durable pushed tags recover before candidate selection without duplicate a
   assert.doesNotMatch(workflow.slice(recoveryAt, selectAt), /npm version|scripts\/changelog\.js|git commit|git tag -a|git push/);
 });
 
-test("the unsafe manual release target and its documentation are gone", () => {
-  assert.doesNotMatch(makefile, new RegExp("^\\.PHONY: " + "release$", "m"));
-  assert.doesNotMatch(makefile, new RegExp("^release" + ":", "m"));
-
-  const releaseDocs = [
-    readText("README.md"),
-    contributing,
-    agents,
-    markdownUnder(path.join(ROOT, "docs")),
-  ].join("\n");
-  assert.doesNotMatch(releaseDocs, new RegExp("make " + "release"));
+test("manual release dispatches remote main without local version or git mutations", () => {
+  const recipe = makefile.match(/^release:.*\n((?:\t.*\n)+)/m)[1];
+  assert.match(recipe, /gh workflow run auto-release\.yml --ref main/);
+  assert.doesNotMatch(recipe, /npm version|git (push|tag|commit|checkout|reset)/);
+  assert.match(contributing, /make release/);
+  assert.match(contributing, /one version for\n+all pending merged PRs/);
 });
 
 test("contributor and agent guides explain serialized catch-up releases", () => {

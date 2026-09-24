@@ -70,6 +70,7 @@ test("parseRepoInput extracts the ref from blob/tree/resolve URLs", () => {
 test("parseRepoInput rejects non-Hugging-Face and malformed input", () => {
   assert.throws(() => parseRepoInput("https://example.com/owner/repo"), /huggingface\.co/);
   assert.throws(() => parseRepoInput("https://huggingface.co/owner"), /model repo/);
+  assert.throws(() => parseRepoInput("https://huggingface.co/owner/repo/tree/%E0"), /Not a Hugging Face URL or owner\/model/);
   assert.throws(() => parseRepoInput("not a url"), /Not a Hugging Face URL or owner\/model/);
   assert.throws(() => parseRepoInput(""), /Paste a Hugging Face/);
 });
@@ -83,9 +84,11 @@ test("quantOf reads the quantization token from a filename", () => {
 test("listGgufQuants groups quants, pins the commit, and recommends Q4", async () => {
   const fetchImpl = stubFetch([
     ["/tree/", { body: [
-      { type: "file", path: "gemma-3-1b-it-Q4_K_M.gguf", size: 800 },
+      { type: "file", path: "gemma-3-1b-it-Q4_K_M.gguf", size: 800, lfs: { oid: "A".repeat(64) } },
       { type: "file", path: "gemma-3-1b-it-Q8_0.gguf", size: 1600 },
       { type: "file", path: "gemma-3-1b-it-Q2_K.gguf", size: 400 },
+      { type: "file", path: "mmproj-gemma-3-1b-it-f16.gguf", size: 9000, lfs: { oid: "B".repeat(64) } },
+      { type: "file", path: "gemma-3-1b-it-imatrix.gguf", size: 9000 },
       { type: "file", path: "README.md", size: 10 },
     ] }],
     ["/api/models/", { body: { sha: "deadbeefcommit", gated: false } }],
@@ -101,6 +104,7 @@ test("listGgufQuants groups quants, pins the commit, and recommends Q4", async (
   const q4 = out.variants[0];
   assert.strictEqual(q4.totalBytes, 800);
   assert.strictEqual(q4.files.length, 1);
+  assert.strictEqual(q4.files[0].sha256, "a".repeat(64));
   assert.strictEqual(
     q4.files[0].url,
     "https://huggingface.co/u/r/resolve/deadbeefcommit/gemma-3-1b-it-Q4_K_M.gguf"
@@ -110,8 +114,8 @@ test("listGgufQuants groups quants, pins the commit, and recommends Q4", async (
 test("listGgufQuants collapses sharded quants into one entry", async () => {
   const fetchImpl = stubFetch([
     ["/tree/", { body: [
-      { type: "file", path: "model-Q4_K_M-00002-of-00002.gguf", size: 50 },
-      { type: "file", path: "model-Q4_K_M-00001-of-00002.gguf", size: 50 },
+      { type: "file", path: "model-Q4_K_M-00002-of-00002.gguf", size: 50, lfs: { oid: "not-a-sha1" } },
+      { type: "file", path: "model-Q4_K_M-00001-of-00002.gguf", size: 50, lfs: { oid: "c".repeat(40) } },
     ] }],
     ["/api/models/", { body: { sha: "c1" } }],
   ]);
@@ -125,17 +129,30 @@ test("listGgufQuants collapses sharded quants into one entry", async () => {
     "model-Q4_K_M-00001-of-00002.gguf",
     "model-Q4_K_M-00002-of-00002.gguf",
   ]);
+  assert.ok(out.variants[0].files.every((f) => f.sha256 === undefined));
 });
 
 test("listGgufQuants rejects gated repos and repos with no GGUF", async () => {
   const gated = stubFetch([["/api/models/", { body: { sha: "c", gated: "manual" } }]]);
   await assert.rejects(listGgufQuants({ owner: "u", repo: "r" }, gated), /gated/);
 
+  const projectorOnly = stubFetch([
+    ["/tree/", { body: [
+      { type: "file", path: "mmproj-only.gguf", size: 1000 },
+      { type: "file", path: "model-imatrix.gguf", size: 1000 },
+    ] }],
+    ["/api/models/", { body: { sha: "c" } }],
+  ]);
+  await assert.rejects(
+    listGgufQuants({ owner: "u", repo: "r" }, projectorOnly),
+    /No language-model GGUF files/
+  );
+
   const noGguf = stubFetch([
     ["/tree/", { body: [{ type: "file", path: "README.md", size: 1 }] }],
     ["/api/models/", { body: { sha: "c" } }],
   ]);
-  await assert.rejects(listGgufQuants({ owner: "u", repo: "r" }, noGguf), /No GGUF files/);
+  await assert.rejects(listGgufQuants({ owner: "u", repo: "r" }, noGguf), /No language-model GGUF files/);
 });
 
 test("listGgufQuants surfaces a 401 as a gated/private error", async () => {
@@ -180,7 +197,12 @@ test("buildCleanupModel produces a registry-shaped custom entry", () => {
   const variant = {
     label: "Q4_K_M",
     totalBytes: 800_000_000,
-    files: [{ name: "gemma-Q4_K_M.gguf", url: "https://hf/x.gguf", bytes: 800_000_000 }],
+    files: [{
+      name: "gemma-Q4_K_M.gguf",
+      url: "https://hf/x.gguf",
+      bytes: 800_000_000,
+      sha256: "e".repeat(64),
+    }],
   };
   const model = buildCleanupModel("unsloth/gemma-3-1b-it-GGUF", variant);
   assert.strictEqual(model.kind, "cleanup");
@@ -188,7 +210,8 @@ test("buildCleanupModel produces a registry-shaped custom entry", () => {
   assert.strictEqual(model.custom, true);
   assert.strictEqual(model.gguf.file, "gemma-Q4_K_M.gguf");
   assert.strictEqual(model.id, "custom-unsloth-gemma-3-1b-it-gguf-q4-k-m");
-  assert.match(model.note, /not checksum-verified/);
+  assert.strictEqual(model.files[0].sha256, "e".repeat(64));
+  assert.match(model.note, /checksum-verified/);
   assert.strictEqual(model.files.length, 1);
 });
 
@@ -197,7 +220,7 @@ test("buildCleanupModel produces a registry-shaped custom entry", () => {
 test("listSttVariants finds an int8 transducer bundle and pins the commit", async () => {
   const fetchImpl = stubFetch([
     ["/tree/", { body: [
-      { type: "file", path: "encoder.int8.onnx", size: 600 },
+      { type: "file", path: "encoder.int8.onnx", size: 600, lfs: { oid: "d".repeat(64) } },
       { type: "file", path: "decoder.int8.onnx", size: 12 },
       { type: "file", path: "joiner.int8.onnx", size: 6 },
       { type: "file", path: "tokens.txt", size: 1 },
@@ -216,6 +239,7 @@ test("listSttVariants finds an int8 transducer bundle and pins the commit", asyn
   const v = out.variants[0];
   assert.strictEqual(v.label, "int8");
   assert.strictEqual(v.totalBytes, 619);
+  assert.strictEqual(v.files[0].sha256, "d".repeat(64));
   assert.deepStrictEqual(v.files.map((f) => f.name), [
     "encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt",
   ]);
@@ -490,7 +514,39 @@ test("listSttVariants points optimum ONNX exports at a sherpa conversion", async
   );
 });
 
-test("buildSttModel produces a registry-shaped custom entry", () => {
+test("buildSttModel preserves discovered checksums on the saved model entry", async () => {
+  const fetchImpl = stubFetch([
+    ["/tree/", { body: [
+      { type: "file", path: "encoder.int8.onnx", size: 600, lfs: { oid: "D".repeat(64) } },
+      { type: "file", path: "decoder.int8.onnx", size: 12, lfs: { oid: "E".repeat(64) } },
+      { type: "file", path: "joiner.int8.onnx", size: 6 },
+      { type: "file", path: "tokens.txt", size: 1, lfs: { oid: "not-an-oid" } },
+    ] }],
+    ["/api/models/", { body: { sha: "sttcommit" } }],
+  ]);
+  const discovered = await listSttVariants(
+    { owner: "csukuangfj", repo: "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" },
+    fetchImpl
+  );
+  const model = buildSttModel(discovered.repo, discovered.variants[0]);
+
+  assert.strictEqual(model.kind, "stt");
+  assert.strictEqual(model.engine, "sherpa-parakeet");
+  assert.strictEqual(model.custom, true);
+  assert.strictEqual(
+    model.id,
+    "custom-csukuangfj-sherpa-onnx-nemo-parakeet-tdt-0-6b-v3-int8-int8"
+  );
+  assert.deepStrictEqual(model.sherpa, discovered.variants[0].sherpa);
+  assert.deepStrictEqual(model.files.map((file) => file.sha256), [
+    "d".repeat(64), "e".repeat(64), undefined, undefined,
+  ]);
+  assert.strictEqual(discovered.variants[0].files[3].sha256, undefined);
+  assert.match(model.note, /partially checksum-verified/);
+  assert.strictEqual(model.files.length, 4);
+});
+
+test("custom model notes distinguish complete, partial, and absent checksums", () => {
   const variant = {
     label: "int8",
     totalBytes: 670_000_000,
@@ -508,17 +564,19 @@ test("buildSttModel produces a registry-shaped custom entry", () => {
       modelType: "nemo_transducer",
     },
   };
-  const model = buildSttModel("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", variant);
-  assert.strictEqual(model.kind, "stt");
-  assert.strictEqual(model.engine, "sherpa-parakeet");
-  assert.strictEqual(model.custom, true);
-  assert.strictEqual(
-    model.id,
-    "custom-csukuangfj-sherpa-onnx-nemo-parakeet-tdt-0-6b-v3-int8-int8"
-  );
-  assert.deepStrictEqual(model.sherpa, variant.sherpa);
-  assert.match(model.note, /not checksum-verified/);
-  assert.strictEqual(model.files.length, 4);
+  const repo = "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8";
+  const verified = buildSttModel(repo, {
+    ...variant,
+    files: variant.files.map((file) => ({ ...file, sha256: "a".repeat(64) })),
+  });
+  const partial = buildSttModel(repo, {
+    ...variant,
+    files: variant.files.map((file, i) => i === 0 ? { ...file, sha256: "a".repeat(64) } : file),
+  });
+  const unchecked = buildSttModel(repo, variant);
+  assert.match(verified.note, /checksum-verified$/);
+  assert.match(partial.note, /partially checksum-verified$/);
+  assert.match(unchecked.note, /not checksum-verified$/);
 });
 
 test("searchUrl points each kind at the hub filtered to what its discoverer accepts", () => {

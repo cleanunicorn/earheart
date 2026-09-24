@@ -37,6 +37,14 @@ function applyAutostart(cfg) {
   }
 }
 
+function withFields(base, source, fields) {
+  const result = { ...base };
+  for (const field of fields) {
+    result[field] = source[field];
+  }
+  return result;
+}
+
 function init({ applyHotkeys, onSettingsChanged }) {
   // Register any models the user added from a custom Hugging Face URL so they
   // resolve for download and for loading into the cleanup worker after a
@@ -76,37 +84,63 @@ function init({ applyHotkeys, onSettingsChanged }) {
   // with, so their `overlay` can be stale — dragging the card while a form is
   // open, then saving the form, would roll the position back. Re-inject the
   // live value on every form save.
-  const keepLiveOverlay = (next) => ({ ...next, overlay: settings.get().overlay });
+  const saveWithHotkeys = (next) => {
+    const previous = settings.get();
+    const candidate = { ...next, overlay: previous.overlay };
+    const hotkeyResults = applyHotkeys(candidate);
+    const rejectedFields = ["hotkey", "pauseHotkey"].filter((field) => {
+      const result = hotkeyResults[field];
+      return !result.ok && !result.empty;
+    });
+    const persistedCandidate = withFields(candidate, previous, rejectedFields);
 
-  ipcMain.handle("settings:save", (event, next) => {
-    const saved = settings.save(keepLiveOverlay(next));
-    const hotkeyResults = applyHotkeys(saved);
+    let saved;
+    try {
+      saved = settings.save(persistedCandidate);
+    } catch (err) {
+      // The disk still contains `previous`, so put the live shortcuts back in
+      // the same state before surfacing the write failure to the renderer.
+      try {
+        const rollback = applyHotkeys(previous);
+        const failures = [rollback.hotkey, rollback.pauseHotkey]
+          .filter((result) => !result.ok)
+          .map((result) => result.error);
+        if (failures.length) {
+          logger.warn(`could not restore hotkeys after settings save failed: ${failures.join("; ")}`);
+        }
+      } catch (rollbackError) {
+        logger.warn(`could not restore hotkeys after settings save failed: ${rollbackError.message}`);
+      }
+      throw err;
+    }
+
+    // Disk keeps only working values; the form keeps the attempted values so
+    // the user can see each error and correct the field without re-entering it.
+    const responseSettings = withFields(saved, candidate, rejectedFields);
     applyAutostart(saved);
     onSettingsChanged?.();
     return {
-      settings: saved,
-      hotkey: hotkeyResults.hotkey,
-      pauseHotkey: hotkeyResults.pauseHotkey,
+      hotkeyResults,
+      response: {
+        settings: responseSettings,
+        hotkey: hotkeyResults.hotkey,
+        pauseHotkey: hotkeyResults.pauseHotkey,
+      },
     };
-  });
+  };
+
+  ipcMain.handle("settings:save", (event, next) => saveWithHotkeys(next).response);
 
   // The setup wizard saves its choices, then hands over to the settings
   // window so the user can review what was pre-configured. If the chosen
   // hotkey can't be registered, the wizard stays open to let them fix it.
   ipcMain.handle("wizard:complete", (event, next) => {
-    const saved = settings.save(keepLiveOverlay(next));
-    const hotkeyResults = applyHotkeys(saved);
-    applyAutostart(saved);
-    onSettingsChanged?.();
+    const { response, hotkeyResults } = saveWithHotkeys(next);
     if (hotkeyResults.hotkey.ok) {
       windows.openSettings({ fromWizard: true });
       windows.closeWizard();
     }
-    return {
-      settings: saved,
-      hotkey: hotkeyResults.hotkey,
-      pauseHotkey: hotkeyResults.pauseHotkey,
-    };
+    return response;
   });
 
   // Close the settings window. The renderer calls this only after a clean save

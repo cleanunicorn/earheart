@@ -258,3 +258,12 @@ test("disabled cleanup controls are inert in settings and the wizard", () => {
     );
   }
 });
+
+test("a coupled hotkey rollback gets a neutral save banner", () => {
+  const normalized = js.replace(/\s+/g, " ");
+  assert.match(
+    normalized,
+    /function hotkeySaveMessage\(hotkeyResult, pauseResult\).*if \(!hotkeyResult\.ok && !pauseResult\.ok\) { return "Saved, but the hotkeys could not be changed"/,
+    "when both slot results fail, the banner must not blame either field"
+  );
+});

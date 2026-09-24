@@ -43,6 +43,11 @@ screenshots: ## Regenerate README screenshots into docs/screenshots/
 
 # ----- packaging ------------------------------------------------------------
 
+.PHONY: release
+release: ## Release pending merged PRs from remote main (requires authenticated gh)
+	gh workflow run auto-release.yml --ref main
+	@echo "Release requested from remote main. Track it with: gh run list --workflow auto-release.yml"
+
 .PHONY: dist
 dist: ## Build installers for the current platform
 	npm run dist
@@ -84,37 +89,19 @@ dist-win-docker: ## Cross-build Windows packages from Linux via Docker+Wine
 				sherpa-onnx-win-x64 @node-llama-cpp/win-x64 && \
 			npm run dist:win"
 
-# ----- releasing -------------------------------------------------------------
-
-# Releases also happen automatically when a PR merges to main, sized by the
-# PR title (see .github/workflows/auto-release.yml). This target is the manual
-# path: bump version, commit, tag, push — CI builds and publishes installers.
-.PHONY: release
-release: ## Cut a release: bump, changelog, tag, push (BUMP=patch|minor|major, default patch; NOTE="what changed")
-	npm version $(or $(BUMP),patch) --no-git-tag-version
-	node scripts/changelog.js \
-		--version "$$(node -p 'require("./package.json").version')" \
-		--title "$(or $(NOTE),$(shell git log -1 --format=%s))" \
-		--date "$$(date -u +%F)"
-	git add package.json package-lock.json CHANGELOG.md
-	git commit -m "release: v$$(node -p 'require("./package.json").version')"
-	git tag -a "v$$(node -p 'require("./package.json").version')" \
-		-m "v$$(node -p 'require("./package.json").version')"
-	git push origin main --follow-tags
-
 # ----- speech-to-text server (Python) ---------------------------------------
 
 .PHONY: install-stt
 install-stt: ## Create the stt-server virtualenv and install it (uv)
-	cd stt-server && uv venv && uv pip install -e .
+	cd stt-server && uv sync --locked
 
 .PHONY: run-stt
 run-stt: ## Run the local Parakeet STT server (downloads model on first run)
-	cd stt-server && uv run earheart-stt
+	cd stt-server && uv run --locked earheart-stt
 
 .PHONY: run-stt-int8
 run-stt-int8: ## Run the STT server with the smaller/faster int8 model
-	cd stt-server && uv run earheart-stt --quantization int8
+	cd stt-server && uv run --locked earheart-stt --quantization int8
 
 # ----- housekeeping ---------------------------------------------------------
 

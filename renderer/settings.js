@@ -927,7 +927,11 @@ async function renderHistory() {
     const meta = document.createElement("div");
     meta.className = "meta";
     const when = document.createElement("span");
-    when.textContent = `${new Date(item.at).toLocaleString()}${item.cleaned ? " · cleaned" : ""}`;
+    // `incomplete` means the engine stopped part-way and this is what was
+    // recovered — the entry has to say so long after the notification went.
+    when.textContent = `${new Date(item.at).toLocaleString()}${item.cleaned ? " · cleaned" : ""}${
+      item.incomplete ? " · incomplete" : ""
+    }`;
     const actions = document.createElement("span");
     actions.className = "actions";
     actions.append(historyCopyButton("Copy", item.text));

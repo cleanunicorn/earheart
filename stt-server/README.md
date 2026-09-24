@@ -18,18 +18,22 @@ No audio ever leaves your machine.
 
 ## Quick start
 
-With [uv](https://docs.astral.sh/uv/) (recommended):
+From a checkout of this repo (with [uv](https://docs.astral.sh/uv/), recommended):
 
 ```bash
-uvx earheart-stt
-# or from a checkout of this repo:
 cd stt-server && uv run earheart-stt
+```
+
+Or without cloning, via uv's VCS support:
+
+```bash
+uvx --from "git+https://github.com/cleanunicorn/earheart#subdirectory=stt-server" earheart-stt
 ```
 
 Or with pip:
 
 ```bash
-pip install earheart-stt   # from a checkout: pip install ./stt-server
+pip install ./stt-server
 earheart-stt
 ```
 
@@ -44,7 +48,13 @@ curl -s http://127.0.0.1:8484/v1/audio/transcriptions \
   -F file=@speech.wav -F response_format=json
 ```
 
-Audio uploads are limited to 64 MiB.
+Audio uploads are limited to 64 MiB (encoded). Decoded and resampling work is
+capped at 256 MiB for the complete simultaneously live working set: decoded
+float32 samples, downmix data, and the linear resampler's float64 sample,
+timeline, and result intermediates. This permits about 70 minutes of 16 kHz mono (no
+resampling), about 9 minutes of 8 kHz mono, or about 4 minutes of 44.1 kHz
+stereo; non-16-kHz durations include their projected 16 kHz output. Uploads
+that exceed the bound are rejected with `413` before decoding.
 
 ## Options
 
@@ -55,16 +65,27 @@ Audio uploads are limited to 64 MiB.
 | `--model` | `EARHEART_STT_MODEL` | `nemo-parakeet-tdt-0.6b-v3` | Multilingual (25 European languages) |
 | `--quantization` | `EARHEART_STT_QUANTIZATION` | full precision | `int8` is smaller and faster on CPU |
 | `--provider` | `EARHEART_STT_PROVIDER` | `cpu` | `cuda`, `tensorrt`, `coreml`, `directml` |
-| `--cache-dir` | `EARHEART_STT_CACHE_DIR` | HF cache | Model download location |
+| `--cache-dir` | `EARHEART_STT_CACHE_DIR` | HF cache | Hugging Face cache root; several models can share it |
+
+Environment variables are validated like CLI flags: an invalid
+`EARHEART_STT_PROVIDER`, `EARHEART_STT_QUANTIZATION`, or `EARHEART_STT_PORT`
+fails at startup with an error instead of silently falling back to CPU.
 
 Other models: any model supported by onnx-asr works, e.g.
 `nemo-parakeet-tdt-0.6b-v2` (English-only) or
-`onnx-community/whisper-large-v3-turbo`.
+`onnx-community/whisper-large-v3-turbo`. The `language` field is only honoured
+by Whisper and Canary models; for others it is ignored and `verbose_json`
+reports `auto`. An unsupported language on a Whisper/Canary model returns `400`.
+
+`GET /health` is a liveness probe — the server only starts listening once the
+model has finished loading.
 
 ### GPU
 
 ```bash
-pip install "earheart-stt[gpu]"
+cd stt-server && uv run --extra gpu earheart-stt --provider cuda
+# or with pip:
+pip install "./stt-server[gpu]"
 earheart-stt --provider cuda
 ```
 
@@ -78,7 +99,7 @@ Anything with a "custom OpenAI-compatible endpoint" option works. Point it at
 
 ## Tests
 
-From `stt-server/`, run `uv run --extra test python -m pytest` (or install
+From `stt-server/`, run `uv run --locked --extra test python -m pytest` (or install
 `pip install -e ".[test]"` and run `python -m pytest`). The endpoint tests use
 synthetic WAV uploads and replace the model loader with fake recognizers;
 they do not download model weights or initialize a speech engine.

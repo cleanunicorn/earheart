@@ -38,12 +38,7 @@
 //   isCurrent(sid) -> true iff sid is the active, still-recording session
 
 const { wavSampleFrames } = require("./util/wav");
-
-function joinText(a, b) {
-  if (!a) return b;
-  if (!b) return a;
-  return `${a} ${b}`;
-}
+const { joinText } = require("./util/join-text");
 
 // Words compared for content only: two decodes of the same audio agree on the
 // words but not always on their capitalization or punctuation.
@@ -102,6 +97,10 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   // that coverage (a final chunk dropped, failed, or arriving out of order).
   let decodedSamples = 0;
   let broken = false;
+  // Every committed chunk that produced text, with the samples it covers —
+  // kept even once `broken`: those are still words the user said, and the
+  // final pass fills any range it fails to decode from them.
+  let committedChunks = [];
   // Cleanup change marker — the trimmed committedRaw snapshot the last cleanup
   // pass consumed. The cleaned text isn't stored (it's sent straight to the
   // overlay); this is all the cleanup side keeps. Always a trimmed value, so the
@@ -116,6 +115,7 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
     lastCleanedRaw = "";
     decodedSamples = 0;
     broken = false;
+    committedChunks = [];
   }
 
   function cancel() {
@@ -139,7 +139,12 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   // The committed transcript and the exact sample coverage it stands for, for
   // the pipeline's final assembly. Read BEFORE cancel() (which resets it).
   function snapshotFinal() {
-    return { committedRaw: committedRaw.trim(), decodedSamples, broken };
+    return {
+      committedRaw: committedRaw.trim(),
+      decodedSamples,
+      broken,
+      chunks: committedChunks.map((c) => ({ ...c })),
+    };
   }
 
   // A partial is stale the moment its session ends, recording stops, or its work
@@ -180,8 +185,9 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
     if (!abortController) abortController = new AbortController();
     const { signal } = abortController;
     sttInFlight++;
+    let wav;
     try {
-      const wav = Buffer.from(wavArrayBuffer);
+      wav = Buffer.from(wavArrayBuffer);
       const raw = await runTranscribe(wav, cfg.stt, signal);
       if (stale(sid, signal)) return;
       lastErrorLogged = ""; // a decode succeeded; let the next failure surface
@@ -210,6 +216,9 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
         // field on the way, or a renderer too old to send it, arrives as
         // undefined and must not be read as a promise that nobody spoke.
         const lostWords = !text && hasSpeech !== false;
+        if (text && Number.isInteger(fromSample) && fromSample >= 0 && frames > 0) {
+          committedChunks.push({ from: fromSample, to: fromSample + frames, text });
+        }
         if (!broken && !lostWords && fromSample === decodedSamples && frames > 0) {
           decodedSamples = fromSample + frames;
         } else {
@@ -238,7 +247,21 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
       // dictation broken and cost it the tail-only decode for nothing. The
       // session it really belonged to already had its snapshot read before the
       // reset, so nothing is lost by staying quiet here.
-      if (final && !stale(sid, signal)) broken = true;
+      if (final && !stale(sid, signal)) {
+        broken = true;
+        const text = (err?.partialText || "").trim();
+        const frames = wav && wavSampleFrames(wav);
+        // A partial final decode recovered some words, but not enough to trust
+        // as contiguous coverage. Keep those words only as exact-range salvage
+        // for a later full decode, once per final sequence.
+        if (text && seq > lastSeq && Number.isInteger(fromSample) && fromSample >= 0 && frames > 0) {
+          lastSeq = seq;
+          committedRaw = joinText(committedRaw, text);
+          committedChunks.push({ from: fromSample, to: fromSample + frames, text });
+          liveRaw = residualTail(liveRaw, text);
+          if (display) pushRaw();
+        }
+      }
       // Report (deduped) instead of eating it silently: a persistently blank
       // preview is almost always a surfaced-here error (model loading, not
       // downloaded, or a decode failure).

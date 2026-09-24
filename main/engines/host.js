@@ -17,6 +17,13 @@ const path = require("node:path");
 // and long transcriptions emit nothing and must still fit under it.
 const DEFAULT_REQUEST_TIMEOUT_MS = 180000;
 
+// Failures that mean the worker itself is gone or wedged — as opposed to an
+// error the worker replied with. Callers branch on these codes (the final
+// transcription retries a piece on a fresh worker), never on message text.
+function engineError(message, code, extra) {
+  return Object.assign(new Error(message), { code }, extra);
+}
+
 function createHost({ serviceName = "earheart-engines" } = {}) {
   let child = null;
   let nextId = 1;
@@ -33,10 +40,12 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
   // both from the child's own "exit" event and synchronously from stop(), so a
   // deliberate kill resets our state immediately rather than one tick later —
   // by which time a new request may already have forked a successor.
-  function handleGone() {
+  // `exitCode` is the process's own (undefined for a deliberate stop()): the
+  // only trace a native abort leaves, so it rides along on the error.
+  function handleGone(exitCode) {
     // Fail anything still in flight so callers fall back instead of hanging.
     for (const entry of pending.values()) {
-      entry.reject(new Error("engine process exited"));
+      entry.reject(engineError("engine process exited", "ENGINE_EXITED", { exitCode }));
     }
     pending.clear();
     // A fresh worker has nothing loaded; let callers reset their caches so the
@@ -76,10 +85,10 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
       if (msg.ok) entry.resolve(msg.result);
       else entry.reject(new Error(msg.error || "engine error"));
     });
-    proc.on("exit", () => {
+    proc.on("exit", (code) => {
       if (child !== proc) return; // stop() already handled this one
       child = null;
-      handleGone();
+      handleGone(code);
     });
     return proc;
   }
@@ -109,7 +118,7 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
         timer = setTimeout(() => {
           if (pending.has(id)) {
             pending.delete(id);
-            reject(new Error(`engine request '${type}' timed out`));
+            reject(engineError(`engine request '${type}' timed out`, "ENGINE_TIMEOUT"));
           }
         }, timeoutMs);
       };

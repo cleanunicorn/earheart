@@ -30,9 +30,9 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | `make icons` | Regenerate app/tray icons into `assets/` |
 | `make screenshots` | Regenerate README screenshots into `docs/screenshots/` |
 | `make dist` | Build installers for the current platform |
+| `make release` | Release pending merged PRs from remote `main` via GitHub Actions |
 | `make dist-linux` / `dist-mac` / `dist-win` | Per-platform packages |
 | `make dist-win-docker` | Cross-build Windows packages from Linux via Docker+Wine |
-| `make release` | Cut a release manually (`BUMP=patch\|minor\|major`) |
 | `make install-stt` | Create the stt-server virtualenv and install it (uv) |
 | `make run-stt` | Run the local Parakeet STT server |
 | `make clean` | Remove build output |
@@ -77,7 +77,7 @@ Built-in models download to Electron's `userData/models` on first use; the
 smoke checks don't need them present.
 
 The optional Python STT server has endpoint tests too. From `stt-server/`, run
-`uv run --extra test python -m pytest`. CI runs the same suite with synthetic
+`uv run --locked --extra test python -m pytest`. CI runs the same suite with synthetic
 WAV uploads and fake recognizers, without downloading or loading speech models.
 
 ## Building installers
@@ -140,19 +140,40 @@ builds. Those builds create the GitHub release as a draft, each platform
 uploads its installers into it, and the release is flipped live only after all
 three platforms succeed — so a half-built release is never published.
 
+Release jobs are serialized. Because GitHub retains only one pending job in a
+concurrency group, each surviving run catches up every release-affecting PR
+merged since the newest numbered changelog entry, in merge order. An invalid
+title emits a warning and creates no release. If a release commit and tag were pushed but its
+build dispatch was temporarily unavailable, a later serialized run re-dispatches
+that durable tag without cutting another version.
+
+Run `make release` with an authenticated `gh` account that has repository write
+access to request this same catch-up workflow manually. It always dispatches on
+remote `main`, regardless of your local branch or uncommitted changes. Follow
+progress with `gh run list --workflow auto-release.yml`; command success means
+the request was accepted, not that installers are published yet.
+
+The manual run includes all code merged into `main` and cuts one version for
+all pending merged PRs, with a release-note bullet for each. It uses the largest
+applicable title bump above, defaulting to patch for documentation, tests, and
+maintenance-only batches. With no pending merged PRs it creates no new version
+(but still retries undispatched release tags).
+
+Manual and automatic runs share the same concurrency group. GitHub can replace
+a pending run when another release request arrives. Check that your manual run
+actually starts; if it is cancelled while waiting, run `make release` again
+after the active release finishes.
+
+This also recovers releases missed when a fork PR's automatic `pull_request`
+run has a read-only token. Manual dispatch runs with the repository's requested
+release permissions and checks out only `main`; fork token restrictions stay
+in place. Dispatches on other refs are skipped by the release job.
+
 **Your PR title is the release note.** It's what the app shows people — in the
 update prompt before they update, and in the "what's new" card after. Write it
 for them, not for the log: `feat: paginate the settings history list`, not
-`feat: pagination`.
-
-To cut a release manually instead:
-
-```bash
-make release BUMP=minor NOTE="fix: stop the tray menu flickering"
-```
-
-`NOTE` is the changelog line (it defaults to the last commit subject, which is
-rarely what you want to publish).
+`feat: pagination`. The title at merge time is used; editing it after merge
+does not change the release.
 
 ### Release notes
 
@@ -229,7 +250,13 @@ Design constraints worth keeping:
   [docs/live-transcription-plan.md](docs/live-transcription-plan.md)).
 - **Never lose the user's words.** If cleanup fails, deliver the raw
   transcript; if paste fails, fall back to the clipboard; history keeps the
-  text either way.
+  text either way. Built-in speech is decoded one utterance at a time
+  (`main/chunked-decode.js`, cut at pauses, ≤ 20 s per decode) because the
+  model drops whole sentences when several share a decode; if the STT worker
+  dies part-way, the words already decoded are still delivered, with a
+  notification, and marked `incomplete` — on the overlay's done card and in
+  the History entry, not only in the stored record. See
+  [docs/long-recordings.md](docs/long-recordings.md).
 - **The UI has a design system.** [DESIGN.md](DESIGN.md) is derived from the
   shipped CSS and governs the overlay, settings and wizard: one coral accent
   reserved for the voice, filled-white for the primary action, no drop

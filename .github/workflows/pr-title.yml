@@ -1,6 +1,6 @@
 name: PR title
 
-# The PR title is load-bearing: auto-release.yml reads its conventional-commit
+# The PR title is load-bearing: scripts/auto-release.js reads its conventional-commit
 # prefix to decide the version bump (feat → minor, fix/perf/refactor → patch,
 # type! → major, anything else → no release). A typo'd or free-form title
 # silently ships the wrong bump (or no release at all), so validate the title
@@ -29,8 +29,8 @@ jobs:
         env:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
-          # The regex lives in a variable: bash cannot parse `[^)]` inside an
-          # inline [[ =~ ]] expression (same reason as auto-release.yml).
+          # The regex lives in a variable because bash cannot parse `[^)]`
+          # inside an inline [[ =~ ]] expression.
           title_re='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .+'
           if [[ "$TITLE" =~ $title_re ]]; then
             echo "PR title OK: $TITLE"
@@ -38,7 +38,7 @@ jobs:
           fi
           echo "::error title=Invalid PR title::\"$TITLE\" is not a Conventional Commits title"
           cat <<'EOF'
-          The PR title must follow Conventional Commits, because auto-release.yml
+          The PR title must follow Conventional Commits, because scripts/auto-release.js
           turns its prefix into the release version bump.
 
           Format:  type(optional scope)!: description

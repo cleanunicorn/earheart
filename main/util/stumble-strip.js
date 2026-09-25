@@ -16,7 +16,7 @@
 
 // Interjections as STT writes them: um, umm, uh, uhh, uhm, erm. The lookarounds
 // (rather than \b) also keep "uh-huh" and "uh-oh" intact.
-const FILLER = /(?<![\w-])(?:u[mh]+|erm+)(?![\w-])/gi;
+const FILLER = /(?<![\p{L}\p{N}_-])(?:u[mh]+|erm+)(?![\p{L}\p{N}_-])/giu;
 
 // "UM" / "UH" in caps reads as an acronym, not a stumble, so it stays.
 function isStrippableFiller(match) {
@@ -108,12 +108,13 @@ function stripFillers(text) {
   return out.length > 0 ? out : text;
 }
 
-// Words whose doubling is ordinary English, not a stutter. Collapsing these
-// changes the sentence, so they are left exactly as spoken.
+// Common doubled words that are grammatical in ordinary speech, not stutters.
+// Collapsing these changes the sentence, so they are left exactly as spoken.
 const KEEP_DOUBLED = new Set([
   "had", "that", "very", "really", "so", "no", "yes", "yeah", "ha", "hah",
   "bye", "night", "sorry", "hey", "well", "much", "many", "long", "far",
   "more", "less", "big", "little", "good", "bad", "again",
+  "nous", "vous", "dat", "die", "der", "das", "den", "dem", "que",
 ]);
 
 // Digits and number words: a repeat is data ("two two three" is a phone

@@ -345,11 +345,13 @@ function microphonePage(source, page) {
 
   return {
     select,
-    async reproduce() {
+    async reproduce({ selectSystemDefault = true } = {}) {
       const pending = load();
       await new Promise((resolve) => setImmediate(resolve));
-      select.value = "";
-      select.dispatchEvent({ type: "change" });
+      if (selectSystemDefault) {
+        select.value = "";
+        select.dispatchEvent({ type: "change" });
+      }
       enumeration.resolve([
         { kind: "audioinput", deviceId: "saved-id", label: "Saved microphone" },
         { kind: "audioinput", deviceId: "other-id", label: "Other microphone" },
@@ -378,6 +380,14 @@ for (const [page, source] of [["settings", js], ["wizard", wizardJs]]) {
       assert.strictEqual(result.saved.cleanup.style, "verbatim");
       assert.strictEqual(result.saved.hotkey, "CommandOrControl+Shift+Space");
     }
+  });
+
+  test(`${page} restores the saved microphone when the user leaves it untouched`, async () => {
+    const fixture = microphonePage(source, page);
+    const result = await fixture.reproduce({ selectSystemDefault: false });
+    assert.strictEqual(result.selected, "saved-id");
+    assert.strictEqual(result.saved.audio.deviceId, "saved-id");
+    assert.strictEqual(result.invokeCount, 1);
   });
 }
 test("permission-status.js loads before settings.js, which uses it", () => {

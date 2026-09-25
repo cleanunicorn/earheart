@@ -24,10 +24,31 @@ function validEntries(value) {
 
 function load() {
   if (cached) return cached;
+  const file = historyPath();
+  let corrupt = false;
   try {
-    cached = validEntries(JSON.parse(fs.readFileSync(historyPath(), "utf8")));
-  } catch {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (Array.isArray(parsed)) cached = validEntries(parsed);
+    else {
+      cached = [];
+      corrupt = true;
+    }
+  } catch (err) {
     cached = [];
+    corrupt = err instanceof SyntaxError;
+  }
+  if (corrupt) {
+    let backup = `${file}.corrupt-${Date.now()}-${process.pid}`;
+    let suffix = 0;
+    while (fs.existsSync(backup)) {
+      backup = `${file}.corrupt-${Date.now()}-${process.pid}-${++suffix}`;
+    }
+    try {
+      fs.renameSync(file, backup);
+      logger.warn("corrupt history preserved at", backup);
+    } catch (renameErr) {
+      logger.warn("corrupt history backup failed:", renameErr.message);
+    }
   }
   return cached;
 }
@@ -38,8 +59,8 @@ function load() {
 // within milliseconds — before any later quit event can be processed — so an
 // entry is durably on disk by the time the user could exit. The write itself
 // goes through a temp file + rename (same pattern as model-manager/updates),
-// so a crash mid-write can never leave a truncated history.json behind (which
-// load() would silently reset to [], losing the whole history).
+// so a crash mid-write can never leave a truncated history.json behind; if an
+// older write did leave one, load() preserves it before starting fresh.
 let flushScheduled = false;
 
 function scheduleFlush() {
@@ -49,11 +70,16 @@ function scheduleFlush() {
     if (!flushScheduled) return; // superseded by clear()
     flushScheduled = false;
     const file = historyPath();
-    const tmp = `${file}.tmp`;
+    const tmp = `${file}.${process.pid}.tmp`;
     try {
-      fs.writeFileSync(tmp, JSON.stringify(cached, null, 2));
+      fs.writeFileSync(tmp, JSON.stringify(cached, null, 2), { mode: 0o600 });
       fs.renameSync(tmp, file);
     } catch (err) {
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+        // The write may have failed before the temp file was created.
+      }
       logger.warn("history write failed:", err.message);
     }
   });

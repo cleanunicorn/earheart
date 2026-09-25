@@ -181,6 +181,215 @@ test("hotkey-capture.js loads before each page's own script", () => {
   }
 });
 
+function extractFunction(source, name) {
+  const declaration = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(source);
+  assert.ok(declaration, `${name} function must exist`);
+  const bodyStart = source.indexOf("{", declaration.index + declaration[0].length - 1);
+  let depth = 0;
+  for (let i = bodyStart; i < source.length; i++) {
+    if (source[i] === "{") depth++;
+    else if (source[i] === "}" && --depth === 0) {
+      return source.slice(declaration.index, i + 1);
+    }
+  }
+  assert.fail(`${name} function has an unclosed body`);
+}
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => (resolve = r));
+  return { promise, resolve };
+}
+
+function microphonePage(source, page) {
+  const select = {
+    value: "",
+    options: [{ value: "", textContent: "System default" }],
+    listeners: {},
+    addEventListener(type, listener) {
+      this.listeners[type] = listener;
+    },
+    appendChild(option) {
+      this.options.push(option);
+    },
+    querySelector(selector) {
+      const value = selector.match(/option\[value="(.*)"\]/)?.[1];
+      return this.options.find((option) => option.value === value) || null;
+    },
+    get length() {
+      return this.options.length;
+    },
+    get selectedOptions() {
+      return this.options.filter((option) => option.value === this.value);
+    },
+    dispatchEvent(event) {
+      this.listeners[event.type]?.(event);
+    },
+  };
+  const hint = { textContent: "" };
+  const baseDocument = {
+    getElementById(id) {
+      return id === "mic-device" ? select : hint;
+    },
+    createElement() {
+      return { value: "", textContent: "" };
+    },
+  };
+  const enumeration = deferred();
+  const current = page === "wizard"
+    ? {
+        hotkey: "CommandOrControl+Shift+Space",
+        output: { mode: "paste", restoreClipboard: true },
+        stt: { engine: "remote", builtin: { model: "parakeet" }, baseUrl: "https://stt.test", apiKey: "", model: "", language: "en", livePreview: {} },
+        cleanup: {
+          enabled: true,
+          engine: "remote",
+          builtin: { model: "cleanup-model" },
+          custom: { temperature: 0.2 },
+          style: "custom",
+          baseUrl: "", apiKey: "", model: "", dictionary: [], systemPrompt: "",
+        },
+        updates: { autoCheck: true, remind: true },
+        engines: { idleUnloadMinutes: 0 },
+        history: { enabled: true },
+        audio: { deviceId: "saved-id", maxRecordingSeconds: 300 },
+      }
+    : {
+        hotkey: "Control+Space", pauseHotkey: "", output: { mode: "paste", restoreClipboard: true },
+        updates: {}, stt: { builtin: {}, livePreview: {} }, cleanup: { builtin: {}, custom: {} },
+        engines: {}, history: {}, audio: { deviceId: "saved-id" },
+      };
+  const elements = {
+    "mic-device": select,
+    "cleanup-enabled": { checked: true },
+    "cleanup-builtin-model": { value: "cleanup-model" },
+    "cleanup-style": { value: "0" },
+    "cleanup-temperature": { value: "" },
+    "cleanup-top-p": { value: "" },
+    "cleanup-top-k": { value: "" },
+    "cleanup-min-p": { value: "" },
+    "cleanup-url": { value: "" },
+    "cleanup-key": { value: "" },
+    "cleanup-model": { value: "" },
+    "cleanup-dictionary": { value: "" },
+    "cleanup-prompt": { value: "" },
+    "cleanup-style-mode": { value: "custom" },
+    "stt-url": { value: "" },
+    "stt-key": { value: "" },
+    "stt-model": { value: "" },
+    "stt-language": { value: "" },
+    "stt-live-preview": { checked: true },
+    "max-seconds": { value: "300" },
+    "start-on-boot": { checked: false },
+    "updates-autocheck": { checked: true },
+    "updates-remind": { checked: true },
+    "idle-unload": { value: "0" },
+    "history-enabled": { checked: true },
+    "finish-status": { textContent: "", className: "" },
+  };
+  let payload;
+  let invokeCount = 0;
+  const context = {
+    document: {
+      getElementById(id) {
+        return elements[id] || baseDocument.getElementById(id);
+      },
+      createElement: () => baseDocument.createElement(),
+      querySelector(selector) {
+        assert.strictEqual(selector, 'input[name="output-mode"]:checked');
+        return { value: "paste-copy" };
+      },
+    },
+    navigator: {
+      mediaDevices: {
+        async getUserMedia() {
+          return { getTracks: () => [{ stop() {} }] };
+        },
+        enumerateDevices: () => enumeration.promise,
+      },
+    },
+    CSS: { escape: (value) => value },
+    current,
+    cleanupStyles: [{ id: "verbatim" }],
+    $: (id) => elements[id] || baseDocument.getElementById(id),
+    earheart: {
+      invoke(channel, value) {
+        assert.strictEqual(channel, page === "settings" ? "settings:save" : "wizard:complete");
+        invokeCount++;
+        payload = value;
+        return Promise.resolve({ settings: value, hotkey: { ok: true } });
+      },
+    },
+  };
+  const loadFunction = `(${extractFunction(source, "loadMicrophones")})`;
+  const load = require("node:vm").runInNewContext(loadFunction, context);
+  if (page === "settings") {
+    const settingsFunctions = [
+      extractFunction(source, "num"),
+      extractFunction(source, "styleMode"),
+      extractFunction(source, "collectCleanupStyle"),
+      extractFunction(source, "engineValue"),
+      extractFunction(source, "collect"),
+      "this.collect = collect;",
+    ].join(String.fromCharCode(10));
+    const radios = { stt: "builtin", cleanup: "builtin", "cleanup-style-mode": "custom" };
+    context.document.querySelector = (selector) => {
+      if (selector === 'input[name="output-mode"]:checked') return { value: "paste-copy" };
+      const kind = selector.match(/name="([^"]+)"/)?.[1];
+      return { value: radios[kind] };
+    };
+    require("node:vm").runInNewContext(settingsFunctions, context);
+  } else {
+    const wizardFunctions = `${extractFunction(source, "collect")}; ${extractFunction(source, "finish")}; this.finish = finish;`;
+    require("node:vm").runInNewContext(wizardFunctions, context);
+  }
+
+  return {
+    select,
+    async reproduce({ selectSystemDefault = true } = {}) {
+      const pending = load();
+      await new Promise((resolve) => setImmediate(resolve));
+      if (selectSystemDefault) {
+        select.value = "";
+        select.dispatchEvent({ type: "change" });
+      }
+      enumeration.resolve([
+        { kind: "audioinput", deviceId: "saved-id", label: "Saved microphone" },
+        { kind: "audioinput", deviceId: "other-id", label: "Other microphone" },
+      ]);
+      await pending;
+      if (page === "settings") {
+        await context.earheart.invoke("settings:save", context.collect());
+      } else {
+        await context.finish();
+      }
+      return { selected: select.value, saved: payload, invokeCount };
+    },
+  };
+}
+for (const [page, source] of [["settings", js], ["wizard", wizardJs]]) {
+  test(`${page} preserves System default selected during microphone enumeration`, async () => {
+    const fixture = microphonePage(source, page);
+    const result = await fixture.reproduce();
+    assert.strictEqual(result.selected, "");
+    assert.strictEqual(result.saved.audio.deviceId, "");
+    assert.strictEqual(result.invokeCount, 1);
+    if (page === "wizard") {
+      assert.strictEqual(result.saved.output.mode, "paste-copy");
+      assert.strictEqual(result.saved.stt.engine, "builtin");
+      assert.strictEqual(result.saved.cleanup.builtin.model, "cleanup-model");
+      assert.strictEqual(result.saved.cleanup.style, "verbatim");
+      assert.strictEqual(result.saved.hotkey, "CommandOrControl+Shift+Space");
+    }
+  });
+
+  test(`${page} restores the saved microphone when the user leaves it untouched`, async () => {
+    const fixture = microphonePage(source, page);
+    const result = await fixture.reproduce({ selectSystemDefault: false });
+    assert.strictEqual(result.selected, "saved-id");
+    assert.strictEqual(result.saved.audio.deviceId, "saved-id");
+    assert.strictEqual(result.invokeCount, 1);
+  });
+}
 test("permission-status.js loads before settings.js, which uses it", () => {
   // settings.js only reaches for these when Fix is clicked or the window
   // regains focus, so a dropped tag passes the smoke checks and throws later.

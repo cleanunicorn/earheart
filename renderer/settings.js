@@ -160,6 +160,10 @@ $("pause-hotkey-clear").addEventListener("click", () => {
 async function loadMicrophones() {
   const select = $("mic-device");
   const status = $("mic-device-status");
+  let selectionChanged = false;
+  select.addEventListener("change", () => {
+    selectionChanged = true;
+  });
   // Show the saved device immediately so saving before (or without)
   // enumeration never silently resets the microphone choice.
   if (current.audio.deviceId) {
@@ -199,7 +203,7 @@ async function loadMicrophones() {
           "Saved microphone not found. Dictation can temporarily use the system default; this selection stays saved.";
       }
     }
-    select.value = current.audio.deviceId || "";
+    if (!selectionChanged) select.value = current.audio.deviceId || "";
   } catch {
     // No microphone permission/device; leave "System default".
   }

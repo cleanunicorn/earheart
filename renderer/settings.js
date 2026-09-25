@@ -404,9 +404,7 @@ function syncStyleMode() {
 // Clamp a parsed number into [min, max], falling back when the field is blank
 // or unparseable so a stray entry never writes NaN into settings.
 function num(id, min, max, fallback) {
-  const v = parseFloat($(id).value);
-  if (!Number.isFinite(v)) return fallback;
-  return Math.min(max, Math.max(min, v));
+  return clampNumber($(id).value, min, max, fallback, false);
 }
 
 function collectCleanupStyle() {

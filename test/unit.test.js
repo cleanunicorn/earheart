@@ -36,7 +36,7 @@ const {
   MAC_BUNDLE_ID,
 } = require("../main/output/deliver");
 const { permissionFixStatus, permissionCheckStatus } = require("../renderer/permission-status");
-const { clampNumber } = require("../renderer/value-range");
+const { clampNumber } = require("../shared/value-range");
 const {
   microphoneConstraints,
   isMissingMicrophone,
@@ -997,6 +997,9 @@ test("settings numeric values are rounded, clamped, and safely defaulted", () =>
   assert.strictEqual(clampNumber("not-a-number", 0, 240, 99999), 240);
   assert.strictEqual(clampNumber("", 10, 3600, Infinity), 10);
   assert.strictEqual(clampNumber("not-a-number", 0, 240, NaN), 0);
+  assert.strictEqual(clampNumber("0.45", 0, 2, 0.2, false), 0.45);
+  assert.strictEqual(clampNumber("", 0, 2, 99999, false), 2);
+  assert.strictEqual(clampNumber("not-a-number", 0, 1, -5, false), 0);
 });
 
 test("idle model unload defaults to a finite window and is overridable", () => {

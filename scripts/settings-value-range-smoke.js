@@ -51,14 +51,24 @@ async function reopenSettings(previous, closed) {
   return openSettings();
 }
 
-async function saveValues(win, recording, idle) {
+async function saveValues(win, recording, idle, sampling) {
   console.log(`[settings-value-range] saving ${JSON.stringify(recording)} / ${JSON.stringify(idle)}`);
+  const samplingScript = sampling
+    ? [
+        `document.querySelector('input[name="cleanup-style-mode"][value="custom"]').checked = true;`,
+        `document.getElementById("cleanup-temperature").value = ${JSON.stringify(sampling.temperature)};`,
+        `document.getElementById("cleanup-top-p").value = ${JSON.stringify(sampling.topP)};`,
+        `document.getElementById("cleanup-top-k").value = ${JSON.stringify(sampling.topK)};`,
+        `document.getElementById("cleanup-min-p").value = ${JSON.stringify(sampling.minP)};`,
+      ].join("\n")
+    : "";
   const closed = new Promise((resolve) => win.once("closed", resolve));
   win.webContents.executeJavaScript(`(async () => {
     const button = document.getElementById("save");
     if (button.disabled) throw new Error("Settings save button is unexpectedly disabled");
     document.getElementById("max-seconds").value = ${JSON.stringify(recording)};
     document.getElementById("idle-unload").value = ${JSON.stringify(idle)};
+    ${samplingScript}
     button.click();
     const start = Date.now();
     while (!button.disabled) {
@@ -82,26 +92,46 @@ app.whenReady().then(async () => {
   const openedWindows = [];
   try {
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => callback(true));
+    fs.writeFileSync(
+      path.join(userData, "settings.json"),
+      JSON.stringify({
+        audio: { maxRecordingSeconds: -5 },
+        engines: { idleUnloadMinutes: 99999 },
+        cleanup: { custom: { temperature: 9, topP: -1, topK: -50, minP: 2 } },
+      })
+    );
+    const loaded = settings.get();
+    check("load clamps corrupted recording limit", loaded.audio.maxRecordingSeconds === 10);
+    check("load clamps corrupted idle window", loaded.engines.idleUnloadMinutes === 240);
+    check("load clamps corrupted sampling values", loaded.cleanup.custom.temperature === 2 && loaded.cleanup.custom.topP === 0 && loaded.cleanup.custom.topK === 0 && loaded.cleanup.custom.minP === 1);
+
     ipc.init({
       applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
       onSettingsChanged: () => {},
     });
 
     settings.save({
-      ...settings.DEFAULTS,
-      audio: { ...settings.DEFAULTS.audio, maxRecordingSeconds: -5 },
-      engines: { ...settings.DEFAULTS.engines, idleUnloadMinutes: 99999 },
+      ...loaded,
+      audio: { ...loaded.audio, maxRecordingSeconds: -5 },
+      engines: { ...loaded.engines, idleUnloadMinutes: 99999 },
+      cleanup: {
+        ...loaded.cleanup,
+        custom: { temperature: -5, topP: 2, topK: 999, minP: -1 },
+      },
     });
+    let persisted = readPersisted();
+    check("save clamps invalid settings at the main-process boundary", settings.get().audio.maxRecordingSeconds === 10 && settings.get().engines.idleUnloadMinutes === 240 && settings.get().cleanup.custom.temperature === 0 && settings.get().cleanup.custom.topP === 1 && settings.get().cleanup.custom.topK === 200 && settings.get().cleanup.custom.minP === 0);
+    check("disk stores main-process clamped values", persisted.audio.maxRecordingSeconds === 10 && persisted.engines.idleUnloadMinutes === 240 && persisted.cleanup.custom.temperature === 0 && persisted.cleanup.custom.topP === 1 && persisted.cleanup.custom.topK === 200 && persisted.cleanup.custom.minP === 0);
+
     let win = await openSettings();
     openedWindows.push(win);
-    await saveValues(win, "", "");
-    check("blank saved recording fallback -5 clamps to 10", settings.get().audio.maxRecordingSeconds === 10);
-    check("blank saved idle fallback 99999 clamps to 240", settings.get().engines.idleUnloadMinutes === 240);
-    let persisted = readPersisted();
-    check("disk stores clamped blank fallback", persisted.audio.maxRecordingSeconds === 10 && persisted.engines.idleUnloadMinutes === 240);
+    await saveValues(win, "", "", { temperature: "", topP: "", topK: "", minP: "" });
+    check("blank numeric fields preserve only in-range saved fallbacks", settings.get().audio.maxRecordingSeconds === 10 && settings.get().engines.idleUnloadMinutes === 240 && settings.get().cleanup.custom.temperature === 0 && settings.get().cleanup.custom.topP === 1 && settings.get().cleanup.custom.topK === 200 && settings.get().cleanup.custom.minP === 0);
+    persisted = readPersisted();
+    check("disk stores clamped blank fallbacks", persisted.audio.maxRecordingSeconds === 10 && persisted.engines.idleUnloadMinutes === 240 && persisted.cleanup.custom.temperature === 0 && persisted.cleanup.custom.topP === 1 && persisted.cleanup.custom.topK === 200 && persisted.cleanup.custom.minP === 0);
     win = await reopenSettings(win, Promise.resolve());
     openedWindows.push(win);
-    await saveValues(win, "not a number", "Infinity");
+    await saveValues(win, "not a number", "Infinity", { temperature: "bad", topP: "bad", topK: "bad", minP: "bad" });
     check("invalid recording input keeps its safe persisted value", settings.get().audio.maxRecordingSeconds === 10);
     check("nonfinite idle input keeps its safe persisted value", settings.get().engines.idleUnloadMinutes === 240);
 
@@ -109,15 +139,17 @@ app.whenReady().then(async () => {
     check("disk retains safe values after invalid inputs", persisted.audio.maxRecordingSeconds === 10 && persisted.engines.idleUnloadMinutes === 240);
     win = await reopenSettings(win, win._smokeClosed);
     openedWindows.push(win);
-    await saveValues(win, "1", "999");
+    await saveValues(win, "1", "999", { temperature: "9", topP: "-1", topK: "999", minP: "-1" });
     check("typed low/high boundaries persist as 10 and 240", settings.get().audio.maxRecordingSeconds === 10 && settings.get().engines.idleUnloadMinutes === 240);
+    check("typed sampling boundaries persist in range", settings.get().cleanup.custom.temperature === 2 && settings.get().cleanup.custom.topP === 0 && settings.get().cleanup.custom.topK === 200 && settings.get().cleanup.custom.minP === 0);
 
     persisted = readPersisted();
     check("disk stores typed low/high bounds", persisted.audio.maxRecordingSeconds === 10 && persisted.engines.idleUnloadMinutes === 240);
     win = await reopenSettings(win, win._smokeClosed);
     openedWindows.push(win);
-    await saveValues(win, "99999", "-1");
+    await saveValues(win, "99999", "-1", { temperature: "0.55", topP: "0.75", topK: "40.5", minP: "0.35" });
     check("typed high/low boundaries persist as 3600 and 0", settings.get().audio.maxRecordingSeconds === 3600 && settings.get().engines.idleUnloadMinutes === 0);
+    check("sampling precision is preserved while top-k remains integral", settings.get().cleanup.custom.temperature === 0.55 && settings.get().cleanup.custom.topP === 0.75 && settings.get().cleanup.custom.topK === 41 && settings.get().cleanup.custom.minP === 0.35);
 
     persisted = readPersisted();
     check("disk stores typed high/low bounds", persisted.audio.maxRecordingSeconds === 3600 && persisted.engines.idleUnloadMinutes === 0);

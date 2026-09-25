@@ -24,9 +24,11 @@
 //      list; a normal one isn't. The notification that announced it is long
 //      gone by the time History is reopened.
 //  10. A model download keeps progress through redraws, exposes a focused
-//      cancel action, and announces terminal success in the persistent region.
+//      cancel action, handles a download owned by another window, and
+//      announces terminal results in the persistent region.
 //  11. Wizard-started downloads survive Settings model changes without
 //      overwriting a concurrent download's state.
+//  12. Failed model removals appear in the row and persistent live region.
 //
 // Run under Electron:
 //
@@ -224,11 +226,8 @@ app.whenReady().then(async () => {
     // The glide is asynchronous; wait for it to settle, then assert the
     // panel came back near the top (threshold, not 0 — scroll-margin leaves
     // a small offset).
-    let top = await js(`document.querySelector("main").scrollTop`);
-    for (let attempt = 0; attempt < 30 && top >= 60; attempt++) {
-      await sleep(100);
-      top = await js(`document.querySelector("main").scrollTop`);
-    }
+    await sleep(1500);
+    const top = await js(`document.querySelector("main").scrollTop`);
     check("clicking the index glides the panel back", top < 60, `scrollTop=${top}`);
 
     // 5. The update card carries the full release notes — the list the
@@ -428,6 +427,19 @@ app.whenReady().then(async () => {
       () => downloads.get(`cleanup:${cleanupModel}`),
       "wizard download did not reach the engine"
     );
+    const duplicateAction = await startModelDownload("cleanup", cleanupModel);
+    await sleep(50);
+    const duplicateState = await js(`JSON.stringify({
+      button: document.querySelector("#cleanup-model-manage button")?.textContent,
+      status: document.querySelector("#cleanup-model-manage .status")?.textContent,
+    })`).then(JSON.parse);
+    check(
+      "Settings keeps a wizard-owned download active after Already downloading",
+      duplicateAction === "Cancel" &&
+        duplicateState.button === "Cancel" &&
+        duplicateState.status === "Downloading…",
+      JSON.stringify({ duplicateAction, ...duplicateState })
+    );
     wizardDownload.onProgress({
       fraction: 0.73, received: 73, total: 100,
     });
@@ -521,6 +533,37 @@ app.whenReady().then(async () => {
         cancelledState.announcement.endsWith("Cancelled"),
       JSON.stringify(cancelledState)
     );
+
+    engines.remove = async () => {
+      throw new Error("model files are busy");
+    };
+    await js(`window.confirm = () => true; true`);
+    await js(`(() => {
+      const select = document.getElementById("stt-builtin-model");
+      select.value = ${JSON.stringify(sttModel)};
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    })()`);
+    await waitFor(
+      () => js(`document.querySelector("#stt-model-manage button")?.textContent === "Remove"`),
+      "installed model did not expose Remove"
+    );
+    await js(`document.querySelector("#stt-model-manage button").click()`);
+    const removalFailure = await waitFor(
+      () => js(`document.querySelector("#stt-model-manage .status")?.textContent === "model files are busy"`),
+      "failed model removal did not appear in the row"
+    );
+    const removalAnnouncement = await js(`JSON.stringify({
+      text: document.getElementById("model-dl-announce").textContent,
+      live: document.getElementById("model-dl-announce").getAttribute("aria-live"),
+    })`).then(JSON.parse);
+    check(
+      "failed model removals appear in the persistent live region",
+      removalFailure === true &&
+        removalAnnouncement.live === "polite" &&
+        removalAnnouncement.text.endsWith("model files are busy"),
+      JSON.stringify(removalAnnouncement)
+    );
+
     await js(`(() => {
       const select = document.getElementById("cleanup-builtin-model");
       select.value = "granite-4.0-micro";

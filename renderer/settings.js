@@ -475,6 +475,10 @@ function showModelError(modelId, error) {
       ui.status.className = "status err";
     }
   }
+  const kind = ["stt", "cleanup"].find((candidate) =>
+    modelStatus?.[candidate]?.some((model) => model.id === modelId)
+  );
+  if (kind) announceModelStatus(kind, modelId, error);
 }
 
 function renderManage(kind) {
@@ -546,11 +550,9 @@ function renderManage(kind) {
   if (restoreDownloadFocus && !btn.disabled) btn.focus({ preventScroll: true });
 }
 
-// Terminal download outcomes announce through one persistent sr-only live
-// region: the visible per-row span is rebuilt by renderManage
-// (replaceChildren), and a live region's initial content on insertion is
-// not announced — so the row itself can never speak.
-function announceDownload(kind, modelId, message) {
+// Model outcomes announce through one persistent sr-only live region: the
+// visible per-row span is rebuilt by renderManage and cannot speak reliably.
+function announceModelStatus(kind, modelId, message) {
   const info = modelStatus?.[kind]?.find((m) => m.id === modelId);
   $("model-dl-announce").textContent = `${info ? info.label : modelId}: ${message}`;
 }
@@ -565,7 +567,12 @@ async function downloadModel(kind, modelId) {
   // same escape; without it a multi-minute download in Settings is a one-way
   // trip). models:cancel aborts the in-flight transfer in the main process.
   try {
-    await earheart.invoke("models:download", { kind, modelId });
+    const result = await earheart.invoke("models:download", { kind, modelId });
+    if (result.error === "Already downloading") {
+      // Another window owns this transfer; keep this row bound to its broadcasts.
+      const active = modelDownloads.get(key);
+      if (active) active.message = "Downloading…";
+    }
   } catch (err) {
     finishModelDownload({ kind, modelId, ok: false, error: err.message });
   }
@@ -585,7 +592,7 @@ async function finishModelDownload(result) {
     ui.status.textContent = cancelled ? "Cancelled" : error || "Download failed";
     ui.status.className = cancelled ? "status" : "status err";
   }
-  announceDownload(
+  announceModelStatus(
     kind,
     modelId,
     ok ? "Downloaded ✓" : cancelled ? "Cancelled" : error || "Download failed"

@@ -1001,6 +1001,10 @@ test("acceleratorFromEvent maps modifiers per platform and names keys", () => {
       acceleratorFromEvent(ev({ key: " ", code: "Space", ctrlKey: true, shiftKey: true })),
       "CommandOrControl+Shift+Space"
     );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "ArrowUp", code: "ArrowUp", ctrlKey: true })),
+      "CommandOrControl+Up"
+    );
     assert.strictEqual(acceleratorFromEvent(ev({ key: "1", code: "Digit1", ctrlKey: true })), "CommandOrControl+1");
     assert.strictEqual(acceleratorFromEvent(ev({ key: "1", code: "Numpad1", ctrlKey: true })), "CommandOrControl+num1");
     assert.strictEqual(
@@ -1063,6 +1067,11 @@ test("acceleratorFromEvent maps modifiers per platform and names keys", () => {
       null,
       "unknown printable physical keys are rejected"
     );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "Dead", code: "Quote", ctrlKey: true })),
+      null,
+      "dead keys cannot form Electron accelerators"
+    );
     assert.strictEqual(acceleratorFromEvent(ev({ key: "1", code: "constructor", ctrlKey: true })), null);
   } finally {
     delete global.platform;
@@ -1080,6 +1089,12 @@ test("prettyHotkey names modifiers the way each platform does", () => {
   assert.strictEqual(prettyHotkey("CmdOrCtrl+K", "win32"), "Ctrl+K");
   assert.strictEqual(prettyHotkey("Super+K", "win32"), "Win+K");
   assert.strictEqual(prettyHotkey("Meta+K", "linux"), "Super+K");
+  assert.strictEqual(prettyHotkey("CommandOrControl+num0", "win32"), "Ctrl+Numpad 0");
+  assert.strictEqual(prettyHotkey("CommandOrControl+numdec", "linux"), "Ctrl+Numpad Decimal");
+  assert.strictEqual(prettyHotkey("CommandOrControl+numadd", "linux"), "Ctrl+Numpad +");
+  assert.strictEqual(prettyHotkey("CommandOrControl+numsub", "linux"), "Ctrl+Numpad -");
+  assert.strictEqual(prettyHotkey("CommandOrControl+nummult", "linux"), "Ctrl+Numpad *");
+  assert.strictEqual(prettyHotkey("CommandOrControl+numdiv", "linux"), "Ctrl+Numpad /");
   // The key itself passes through untouched, and unbound stays empty.
   assert.strictEqual(prettyHotkey("CommandOrControl+Up", "linux"), "Ctrl+Up");
   assert.strictEqual(prettyHotkey("", "linux"), "");

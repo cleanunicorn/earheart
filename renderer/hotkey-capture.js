@@ -36,6 +36,7 @@ function acceleratorFromEvent(event) {
   if (parts.length === 0) return null; // require at least one modifier
 
   let key = event.key;
+  if (key === "Dead") return null;
   if (event.code === "Space" || key === " ") key = "Space";
   else if (Object.hasOwn(PRINTABLE_KEY_CODES, event.code)) key = PRINTABLE_KEY_CODES[event.code];
   else if (event.code && (event.code.startsWith("Numpad") || event.code.startsWith("Digit"))) return null;

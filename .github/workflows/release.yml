@@ -14,6 +14,12 @@ on:
 permissions:
   contents: write
 
+# A dispatch client can lose its response after GitHub accepted the request.
+# Serialize each ref as a server-side backstop against duplicate tag builds.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   # Create the GitHub release once, up front, so the three platform build jobs
   # upload into one existing release instead of each racing to create it. When

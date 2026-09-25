@@ -172,15 +172,17 @@ function wavSampleFrames(buf) {
 }
 
 /**
- * Re-encode the samples of a mono PCM16 WAV from `fromFrame` onward as a new
- * WAV buffer — the tail slice the final transcription decodes when everything
- * before `fromFrame` was already decoded chunk by chunk during recording.
- * Clamped: a `fromFrame` at/past the end yields a valid zero-sample WAV.
+ * Re-encode the samples `[fromFrame, toFrame)` of a mono PCM16 WAV as a new
+ * WAV buffer — how the final transcription hands the STT worker a bounded
+ * piece of a long recording (see main/chunked-decode.js). Clamped to the
+ * recording: a range past the end, or one whose end precedes its start,
+ * yields a valid zero-sample WAV.
  * @param {Buffer} buf
  * @param {number} fromFrame
+ * @param {number} toFrame
  * @returns {Buffer}
  */
-function wavSliceFromFrame(buf, fromFrame) {
+function wavSlice(buf, fromFrame, toFrame) {
   if (!Buffer.isBuffer(buf)) buf = Buffer.from(buf);
   const { format, channels, sampleRate, bitsPerSample, dataOffset, dataSize } =
     parseRiffChunks(buf);
@@ -189,13 +191,26 @@ function wavSliceFromFrame(buf, fromFrame) {
   }
   const frames = Math.floor(dataSize / 2);
   const from = Math.max(0, Math.min(frames, Math.floor(fromFrame)));
-  // The tail's PCM bytes move as one copy — no decode/re-encode round trip.
+  const to = Math.max(from, Math.min(frames, Math.floor(toFrame)));
+  // The range's PCM bytes move as one copy — no decode/re-encode round trip.
   // allocUnsafe: the header and the copy together cover every byte.
-  const tailSize = (frames - from) * 2;
-  const out = Buffer.allocUnsafe(44 + tailSize);
-  writeWavHeader(out, tailSize, sampleRate);
-  buf.copy(out, 44, dataOffset + from * 2, dataOffset + from * 2 + tailSize);
+  const size = (to - from) * 2;
+  const out = Buffer.allocUnsafe(44 + size);
+  writeWavHeader(out, size, sampleRate);
+  buf.copy(out, 44, dataOffset + from * 2, dataOffset + to * 2);
   return out;
+}
+
+/**
+ * The samples of a mono PCM16 WAV from `fromFrame` onward — the tail slice the
+ * final transcription decodes when everything before `fromFrame` was already
+ * decoded chunk by chunk during recording.
+ * @param {Buffer} buf
+ * @param {number} fromFrame
+ * @returns {Buffer}
+ */
+function wavSliceFromFrame(buf, fromFrame) {
+  return wavSlice(buf, fromFrame, Infinity);
 }
 
 module.exports = {
@@ -204,6 +219,7 @@ module.exports = {
   wavToFloat32,
   wavDurationSec,
   wavSampleFrames,
+  wavSlice,
   wavSliceFromFrame,
   SAMPLE_RATE,
 };

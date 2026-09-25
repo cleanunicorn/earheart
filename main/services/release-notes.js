@@ -14,7 +14,7 @@
 // own bundle to say what changed in the version it's now running (no network
 // needed for that one — the build carries its own notes).
 //
-// Titles are conventional-commit prefixed because auto-release.yml sizes the
+// Titles are conventional-commit prefixed because scripts/auto-release.js sizes the
 // version bump from that prefix; the prefix is machinery, not news, so it's
 // stripped for display and only its meaning (feature / fix) survives.
 
@@ -35,9 +35,10 @@ changed right after it updates.
 // stays a couple of KB.
 const FEED_VERSIONS = 12;
 
-// Types that describe a user-visible change, and the word for it. Anything else
-// (chore, docs, ci, test, style, build) never cuts a release in the first
-// place — see auto-release.yml — so it never reaches a changelog entry.
+// Types that describe a user-visible change, and the word for it. Unmarked
+// chore, docs, ci, test, style, and build titles do not cut releases. Their
+// breaking `type!:` forms do; see scripts/auto-release.js. They fall back to
+// the generic "change" kind.
 const KINDS = {
   feat: "feature",
   fix: "fix",

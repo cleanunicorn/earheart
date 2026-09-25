@@ -254,3 +254,38 @@ test("host: a retired worker can't clobber its successor", async () => {
   b.emit("message", { id: b.sent[0].id, ok: true, result: "from B" });
   assert.strictEqual(await second, "from B");
 });
+
+test("host: failures carry stable codes, and a worker exit keeps its exit code", async () => {
+  // The final transcription retries a piece only when the worker died or went
+  // silent — decided on err.code, not on English message text. The exit code
+  // is the evidence for why a worker died (#169); dropping it left nothing to
+  // diagnose from.
+  const { child, host } = setup();
+  const dying = host.request("transcribe", {});
+  child.emit("exit", 134);
+  await assert.rejects(dying, (err) => {
+    assert.match(err.message, /^engine process exited$/);
+    assert.strictEqual(err.code, "ENGINE_EXITED");
+    assert.strictEqual(err.exitCode, 134);
+    return true;
+  });
+
+  const { host: host2 } = setup();
+  const silent = host2.request("transcribe", {}, { timeoutMs: 20 });
+  await assert.rejects(silent, (err) => {
+    assert.match(err.message, /timed out/);
+    assert.strictEqual(err.code, "ENGINE_TIMEOUT");
+    return true;
+  });
+
+  const { host: host3 } = setup();
+  const stopped = host3.request("transcribe", {}, { timeoutMs: 50 });
+  host3.stop();
+  await assert.rejects(stopped, (err) => err.code === "ENGINE_EXITED" && err.exitCode === undefined);
+
+  // A reply the worker itself reports as an error is not an engine failure.
+  const { child: c4, host: host4 } = setup();
+  const failed = host4.request("transcribe", {});
+  c4.emit("message", { id: c4.sent[0].id, ok: false, error: "STT model not loaded" });
+  await assert.rejects(failed, (err) => err.message === "STT model not loaded" && err.code === undefined);
+});

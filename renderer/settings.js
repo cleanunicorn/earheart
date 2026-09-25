@@ -159,6 +159,7 @@ $("pause-hotkey-clear").addEventListener("click", () => {
 
 async function loadMicrophones() {
   const select = $("mic-device");
+  const status = $("mic-device-status");
   let selectionChanged = false;
   select.addEventListener("change", () => {
     selectionChanged = true;
@@ -177,19 +178,31 @@ async function loadMicrophones() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach((t) => t.stop());
     const devices = await navigator.mediaDevices.enumerateDevices();
-    devices
-      .filter((d) => d.kind === "audioinput" && d.deviceId !== "default")
-      .forEach((d) => {
-        const existing = select.querySelector(`option[value="${CSS.escape(d.deviceId)}"]`);
-        if (existing) {
-          existing.textContent = d.label || existing.textContent;
-          return;
-        }
-        const option = document.createElement("option");
-        option.value = d.deviceId;
-        option.textContent = d.label || `Microphone ${select.length}`;
-        select.appendChild(option);
-      });
+    const microphones = devices.filter(
+      (d) => d.kind === "audioinput" && d.deviceId !== "default"
+    );
+    microphones.forEach((d) => {
+      const existing = select.querySelector(`option[value="${CSS.escape(d.deviceId)}"]`);
+      if (existing) {
+        existing.textContent = d.label || existing.textContent;
+        return;
+      }
+      const option = document.createElement("option");
+      option.value = d.deviceId;
+      option.textContent = d.label || `Microphone ${select.length}`;
+      select.appendChild(option);
+    });
+    if (
+      current.audio.deviceId &&
+      !microphones.some((d) => d.deviceId === current.audio.deviceId)
+    ) {
+      const configured = select.querySelector(`option[value="${CSS.escape(current.audio.deviceId)}"]`);
+      if (configured) {
+        configured.textContent = "Configured microphone (not connected)";
+        status.textContent =
+          "Saved microphone not found. Dictation can temporarily use the system default; this selection stays saved.";
+      }
+    }
     if (!selectionChanged) select.value = current.audio.deviceId || "";
   } catch {
     // No microphone permission/device; leave "System default".
@@ -631,6 +644,14 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
 
 /* ---------- save ---------- */
 
+function hotkeySaveMessage(hotkeyResult, pauseResult) {
+  if (!hotkeyResult.ok && !pauseResult.ok) {
+    return "Saved, but the hotkeys could not be changed";
+  }
+  const name = hotkeyResult.ok ? "pause hotkey" : "hotkey";
+  return `Saved, but the ${name} could not be registered`;
+}
+
 const saveButton = $("save");
 saveButton.addEventListener("click", async () => {
   const save = $("save-status");
@@ -669,7 +690,7 @@ saveButton.addEventListener("click", async () => {
   // A hotkey couldn't be registered: keep the window open so the error is
   // visible and the user can pick a combination that works.
   saveButton.disabled = false;
-  save.textContent = `Saved, but the ${result.hotkey.ok ? "pause hotkey" : "hotkey"} could not be registered`;
+  save.textContent = hotkeySaveMessage(result.hotkey, pauseResult);
   save.className = "status err";
   hotkeyStatus.textContent = result.hotkey.ok ? "" : result.hotkey.error;
   hotkeyStatus.className = "status err";
@@ -913,7 +934,11 @@ async function renderHistory() {
     const meta = document.createElement("div");
     meta.className = "meta";
     const when = document.createElement("span");
-    when.textContent = `${new Date(item.at).toLocaleString()}${item.cleaned ? " · cleaned" : ""}`;
+    // `incomplete` means the engine stopped part-way and this is what was
+    // recovered — the entry has to say so long after the notification went.
+    when.textContent = `${new Date(item.at).toLocaleString()}${item.cleaned ? " · cleaned" : ""}${
+      item.incomplete ? " · incomplete" : ""
+    }`;
     const actions = document.createElement("span");
     actions.className = "actions";
     actions.append(historyCopyButton("Copy", item.text));

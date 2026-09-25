@@ -156,6 +156,14 @@ test("every radio/checkbox group name settings.js uses exists in settings.html",
   assert.deepStrictEqual(missing, [], `settings.html is missing radio groups: ${missing.join(", ")}`);
 });
 
+test("custom model version selects have accessible names", () => {
+  for (const id of ["stt-hf-variant", "cleanup-hf-variant"]) {
+    const select = html.match(new RegExp(`<select id="${id}"[^>]*>`));
+    assert.ok(select, `${id} must exist`);
+    assert.match(select[0], /aria-label="Model version"/);
+  }
+});
+
 test("hotkey-capture.js loads before each page's own script", () => {
   // Both pages call wireHotkeyCapture at top level; if the shared script's
   // tag is dropped or reordered, the page script throws a ReferenceError
@@ -391,6 +399,40 @@ test("settings.html uses no inline style attributes (blocked by the CSP)", () =>
   assert.strictEqual(inline.length, 0, "found inline style= attributes; move them to settings.css");
 });
 
+test("settings action rows keep their fields visually separate", () => {
+  const normalized = css.replace(/\s+/g, " ");
+  assert.match(
+    normalized,
+    /\.field > input \+ \.row, \.field > datalist \+ \.row\s*\{\s*margin-top:\s*8px;\s*\}/,
+    "expected an 8px gap after model fields before their action rows"
+  );
+
+  for (const [name, pattern] of [
+    [
+      "STT Hugging Face field",
+      /<input id="stt-hf-url"[\s\S]*?\/>\s*<div class="row">\s*<button id="stt-hf-find"/,
+    ],
+    [
+      "cleanup Hugging Face field",
+      /<input id="cleanup-hf-url"[\s\S]*?\/>\s*<div class="row">\s*<button id="cleanup-hf-find"/,
+    ],
+    [
+      "cleanup model field",
+      /<input id="cleanup-model"[\s\S]*?\/>\s*<datalist id="cleanup-model-list"><\/datalist>\s*<div class="row">\s*<button id="cleanup-fetch-models"/,
+    ],
+  ]) {
+    assert.match(html, pattern, `${name} should precede its action row`);
+  }
+
+  // The shared input selector also matches the wizard's direct slider row;
+  // this id override keeps that intentional spacing at 6px on both pages.
+  assert.match(
+    normalized,
+    /#cleanup-style-labels\s*\{\s*margin-top:\s*6px;\s*\}/,
+    "the cleanup-style slider's intentional spacing must remain unchanged"
+  );
+});
+
 test("settings.css forces [hidden] to win over component display rules", () => {
   // Components like .row and .segmented set their own display, which overrides
   // the user-agent [hidden] rule. settings.js hides several such elements via
@@ -436,4 +478,13 @@ test("disabled cleanup controls are inert in settings and the wizard", () => {
       `${name} must remove disabled cleanup fields from keyboard and accessibility navigation`
     );
   }
+});
+
+test("a coupled hotkey rollback gets a neutral save banner", () => {
+  const normalized = js.replace(/\s+/g, " ");
+  assert.match(
+    normalized,
+    /function hotkeySaveMessage\(hotkeyResult, pauseResult\).*if \(!hotkeyResult\.ok && !pauseResult\.ok\) { return "Saved, but the hotkeys could not be changed"/,
+    "when both slot results fail, the banner must not blame either field"
+  );
 });

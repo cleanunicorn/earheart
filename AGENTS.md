@@ -42,14 +42,24 @@ The Makefile wraps most tasks; `make help` lists them all.
 - **Smoke checks (macOS / Windows):** the same commands without `xvfb-run`:
   `npx electron . --smoke-test --no-sandbox`, then
   `npx electron scripts/<engine|overlay|settings>-smoke.js --no-sandbox`
-- **STT server tests:** `cd stt-server && uv run --extra test python -m pytest`
+- **STT server tests:** `cd stt-server && uv run --locked --extra test python -m pytest`
 - **Cleanup model benchmark** (optional; needs a downloaded GGUF, not part of
   the gate): `node scripts/bench-cleanup.mjs --out=<dir outside the repo>
   <model.gguf>`; `--probe <owner/repo> <file.gguf>` checks a candidate on
   Hugging Face without downloading it, and `--report <dir>` rebuilds the
   comparison tables from saved runs. Method and recorded numbers:
   [docs/cleanup-models.md](docs/cleanup-models.md)
+- **Long-recording STT measurement** (optional; needs Electron and the
+  `scripts/eval-stt.js` corpus/model cache, not part of the gate):
+  `xvfb-run -a npx electron scripts/eval-long-decode.js --no-sandbox
+  --cache-dir <cache> --out <file outside the repo> --single`; exits 1 when a
+  long recording loses words. Method and recorded numbers:
+  [docs/long-recordings.md](docs/long-recordings.md)
 - **Build:** `make dist` (current platform)
+- **Release merged PRs:** `make release` dispatches the catch-up release workflow
+  on remote `main` using authenticated `gh`. It creates one version for all pending
+  merged PRs; local changes are excluded. Track completion with
+  `gh run list --workflow auto-release.yml`.
 
 Always run the tests and smoke checks before opening a PR.
 
@@ -249,7 +259,14 @@ Keep it short and useful:
   [auto-release.yml](.github/workflows/auto-release.yml) bumps `package.json`,
   writes the PR title into `CHANGELOG.md`, commits `release: vX.Y.Z`, tags it,
   and dispatches the multi-platform release builds. The release goes live only
-  after all three platforms build successfully.
+  after all three platforms build successfully. Release jobs are serialized;
+  each surviving run catches up release-affecting merges that lost their own
+  pending run, in merge order. If a release commit and tag were pushed but its
+  build dispatch was temporarily unavailable, a later serialized run
+  re-dispatches that durable tag without cutting another version. An invalid
+  title warns and creates no release.
+  The title at merge time is used; editing it after merge does not change the
+  release.
 - **Does the PR title/prefix decide the bump?** Yes.
 
 | PR title prefix | Release effect |
@@ -322,9 +339,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#architecture) for the full architecture.
 - Never commit secrets, API keys, credentials, or sensitive data.
 - Always validate and sanitize user and external input.
 - Built-in catalog models are SHA-256 verified on download
-  (`main/engines/model-manager.js`). User-added models have no `sha256`, so
-  they only get size and HTTP-validator checks. Pin a checksum for anything new
-  the app ships in its catalog.
+  (`main/engines/model-manager.js`). User-added Hugging Face files use the
+  published LFS SHA-256 when available; files without one still get size and
+  HTTP-validator checks. Pin a checksum for anything new the app ships in its
+  catalog.
 
 ## Hazards
 

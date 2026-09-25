@@ -6,6 +6,14 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.33.7 — 2026-09-25
+
+- Capture physical keys for hotkeys (#226)
+- Preserve the saved wizard microphone (#228)
+- Improve contrast of settings controls (#234)
+- Preserve multilingual transcript words (#238)
+- Redact remote service error details (#233)
+
 ## v0.33.6 — 2026-09-24
 
 - Recover recording after overlay renderer crash (#232)

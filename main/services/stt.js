@@ -31,8 +31,7 @@ async function transcribe(wav, cfg, signal) {
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`STT service error ${res.status}: ${body.slice(0, 300)}`);
+    throw new Error(`STT service error ${res.status}`);
   }
   const data = await res.json();
   if (typeof data.text !== "string") {

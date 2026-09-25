@@ -47,8 +47,7 @@ async function clean(transcript, cfg, signal) {
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Cleanup service error ${res.status}: ${body.slice(0, 300)}`);
+    throw new Error(`Cleanup service error ${res.status}`);
   }
   const data = await res.json();
   const choice = data.choices?.[0];

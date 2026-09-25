@@ -108,8 +108,8 @@ function stripFillers(text) {
   return out.length > 0 ? out : text;
 }
 
-// Words whose doubling is ordinary English, not a stutter. Collapsing these
-// changes the sentence, so they are left exactly as spoken.
+// Common doubled words that are grammatical in ordinary speech, not stutters.
+// Collapsing these changes the sentence, so they are left exactly as spoken.
 const KEEP_DOUBLED = new Set([
   "had", "that", "very", "really", "so", "no", "yes", "yeah", "ha", "hah",
   "bye", "night", "sorry", "hey", "well", "much", "many", "long", "far",

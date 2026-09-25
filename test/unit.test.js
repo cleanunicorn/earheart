@@ -405,6 +405,7 @@ test("stripFillers leaves real words, acronyms and text without fillers alone", 
   assert.strictEqual(stripFillers("The UM report is done."), "The UM report is done.");
   // Hyphenated interjections carry meaning.
   assert.strictEqual(stripFillers("uh-huh, that works"), "uh-huh, that works");
+  assert.strictEqual(stripFillers("To umí."), "To umí.");
   // Dictated line breaks survive, without trailing whitespace.
   assert.strictEqual(stripFillers("line one um\nline two"), "line one\nline two");
   // Never lose the user's words: an all-filler transcript stays as it was.

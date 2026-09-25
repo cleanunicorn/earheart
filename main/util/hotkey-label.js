@@ -26,6 +26,24 @@ const MODIFIERS = {
   meta: { darwin: "Cmd", win32: "Win", linux: "Super" },
 };
 
+const KEYS = Object.assign(Object.create(null), {
+  num0: "Numpad 0",
+  num1: "Numpad 1",
+  num2: "Numpad 2",
+  num3: "Numpad 3",
+  num4: "Numpad 4",
+  num5: "Numpad 5",
+  num6: "Numpad 6",
+  num7: "Numpad 7",
+  num8: "Numpad 8",
+  num9: "Numpad 9",
+  numdec: "Numpad Decimal",
+  numadd: "Numpad +",
+  numsub: "Numpad -",
+  nummult: "Numpad *",
+  numdiv: "Numpad /",
+});
+
 /**
  * Human-readable form of an Electron accelerator.
  * @param {string} accelerator e.g. "CommandOrControl+Shift+Space"
@@ -39,7 +57,7 @@ function prettyHotkey(accelerator, platform = process.platform) {
     .split("+")
     .map((part) => {
       const mod = MODIFIERS[part.trim().toLowerCase()];
-      return mod ? mod[platform] || mod.linux : part.trim();
+      return mod ? mod[platform] || mod.linux : KEYS[part.trim().toLowerCase()] || part.trim();
     })
     .join("+");
 }

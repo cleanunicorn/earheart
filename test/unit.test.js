@@ -1050,13 +1050,46 @@ test("acceleratorFromEvent maps modifiers per platform and names keys", () => {
   const ev = (o) => ({ ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...o });
   try {
     global.platform = "linux";
-    assert.strictEqual(acceleratorFromEvent(ev({ key: "k", ctrlKey: true })), "CommandOrControl+K");
     assert.strictEqual(
-      acceleratorFromEvent(ev({ key: " ", ctrlKey: true, shiftKey: true })),
+      acceleratorFromEvent(ev({ key: "k", code: "KeyK", ctrlKey: true })),
+      "CommandOrControl+K"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: " ", code: "Space", ctrlKey: true, shiftKey: true })),
       "CommandOrControl+Shift+Space"
     );
-    assert.strictEqual(acceleratorFromEvent(ev({ key: "ArrowUp", ctrlKey: true })), "CommandOrControl+Up");
-    assert.strictEqual(acceleratorFromEvent(ev({ key: "k", metaKey: true })), "Super+K");
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "ArrowUp", code: "ArrowUp", ctrlKey: true })),
+      "CommandOrControl+Up"
+    );
+    assert.strictEqual(acceleratorFromEvent(ev({ key: "1", code: "Digit1", ctrlKey: true })), "CommandOrControl+1");
+    assert.strictEqual(acceleratorFromEvent(ev({ key: "1", code: "Numpad1", ctrlKey: true })), "CommandOrControl+num1");
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "Enter", code: "NumpadEnter", ctrlKey: true })),
+      "CommandOrControl+Enter"
+    );
+    assert.strictEqual(acceleratorFromEvent(ev({ key: "0", code: "Numpad0", ctrlKey: true })), "CommandOrControl+num0");
+    for (let digit = 0; digit <= 9; digit++) {
+      const code = "Numpad" + digit;
+      const accelerator = "CommandOrControl+num" + digit;
+      assert.strictEqual(acceleratorFromEvent(ev({ key: String(digit), code, ctrlKey: true })), accelerator);
+    }
+    for (const [code, key, accelerator] of [
+      ["NumpadDecimal", ".", "numdec"],
+      ["NumpadAdd", "+", "numadd"],
+      ["NumpadSubtract", "-", "numsub"],
+      ["NumpadMultiply", "*", "nummult"],
+      ["NumpadDivide", "/", "numdiv"],
+    ]) {
+      assert.strictEqual(
+        acceleratorFromEvent(ev({ key, code, ctrlKey: true })),
+        "CommandOrControl+" + accelerator
+      );
+    }
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "k", code: "KeyK", metaKey: true })),
+      "Super+K"
+    );
     assert.strictEqual(acceleratorFromEvent(ev({ key: "k" })), null, "requires a modifier");
     assert.strictEqual(
       acceleratorFromEvent(ev({ key: "Control", ctrlKey: true })),
@@ -1066,12 +1099,37 @@ test("acceleratorFromEvent maps modifiers per platform and names keys", () => {
     // macOS: physical Ctrl stays Ctrl (CommandOrControl would register Cmd),
     // and Meta is the Command key.
     global.platform = "darwin";
-    assert.strictEqual(acceleratorFromEvent(ev({ key: "k", ctrlKey: true })), "Control+K");
-    assert.strictEqual(acceleratorFromEvent(ev({ key: "k", metaKey: true })), "Command+K");
     assert.strictEqual(
-      acceleratorFromEvent(ev({ key: "p", ctrlKey: true, altKey: true })),
+      acceleratorFromEvent(ev({ key: "k", code: "KeyK", ctrlKey: true })),
+      "Control+K"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "k", code: "KeyK", metaKey: true })),
+      "Command+K"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "π", code: "KeyP", ctrlKey: true, altKey: true })),
       "Control+Alt+P"
     );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "ö", code: "Semicolon", ctrlKey: true })),
+      "Control+;"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "Ö", code: "Semicolon", altKey: true, shiftKey: true })),
+      "Alt+Shift+;"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "?", code: "IntlBackslash", ctrlKey: true })),
+      null,
+      "unknown printable physical keys are rejected"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "Dead", code: "Quote", ctrlKey: true })),
+      null,
+      "dead keys cannot form Electron accelerators"
+    );
+    assert.strictEqual(acceleratorFromEvent(ev({ key: "1", code: "constructor", ctrlKey: true })), null);
   } finally {
     delete global.platform;
   }
@@ -1088,6 +1146,12 @@ test("prettyHotkey names modifiers the way each platform does", () => {
   assert.strictEqual(prettyHotkey("CmdOrCtrl+K", "win32"), "Ctrl+K");
   assert.strictEqual(prettyHotkey("Super+K", "win32"), "Win+K");
   assert.strictEqual(prettyHotkey("Meta+K", "linux"), "Super+K");
+  assert.strictEqual(prettyHotkey("CommandOrControl+num0", "win32"), "Ctrl+Numpad 0");
+  assert.strictEqual(prettyHotkey("CommandOrControl+numdec", "linux"), "Ctrl+Numpad Decimal");
+  assert.strictEqual(prettyHotkey("CommandOrControl+numadd", "linux"), "Ctrl+Numpad +");
+  assert.strictEqual(prettyHotkey("CommandOrControl+numsub", "linux"), "Ctrl+Numpad -");
+  assert.strictEqual(prettyHotkey("CommandOrControl+nummult", "linux"), "Ctrl+Numpad *");
+  assert.strictEqual(prettyHotkey("CommandOrControl+numdiv", "linux"), "Ctrl+Numpad /");
   // The key itself passes through untouched, and unbound stays empty.
   assert.strictEqual(prettyHotkey("CommandOrControl+Up", "linux"), "Ctrl+Up");
   assert.strictEqual(prettyHotkey("", "linux"), "");

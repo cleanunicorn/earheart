@@ -6,6 +6,25 @@
 
 const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
 
+const PRINTABLE_KEY_CODES = Object.assign(Object.create(null), {
+  KeyA: "A", KeyB: "B", KeyC: "C", KeyD: "D", KeyE: "E", KeyF: "F",
+  KeyG: "G", KeyH: "H", KeyI: "I", KeyJ: "J", KeyK: "K", KeyL: "L",
+  KeyM: "M", KeyN: "N", KeyO: "O", KeyP: "P", KeyQ: "Q", KeyR: "R",
+  KeyS: "S", KeyT: "T", KeyU: "U", KeyV: "V", KeyW: "W", KeyX: "X",
+  KeyY: "Y", KeyZ: "Z",
+  Digit0: "0", Digit1: "1", Digit2: "2", Digit3: "3", Digit4: "4",
+  Digit5: "5", Digit6: "6", Digit7: "7", Digit8: "8", Digit9: "9",
+  Numpad0: "num0", Numpad1: "num1", Numpad2: "num2", Numpad3: "num3",
+  Numpad4: "num4", Numpad5: "num5", Numpad6: "num6", Numpad7: "num7",
+  Numpad8: "num8", Numpad9: "num9",
+  NumpadEnter: "Enter",
+  NumpadDecimal: "numdec", NumpadAdd: "numadd", NumpadSubtract: "numsub",
+  NumpadMultiply: "nummult", NumpadDivide: "numdiv",
+  Semicolon: ";", Quote: "'", Comma: ",", Period: ".", Slash: "/",
+  Backslash: "\\", BracketLeft: "[", BracketRight: "]", Backquote: "`",
+  Minus: "-", Equal: "=",
+});
+
 function acceleratorFromEvent(event) {
   if (MODIFIER_KEYS.has(event.key)) return null;
   const parts = [];
@@ -17,8 +36,11 @@ function acceleratorFromEvent(event) {
   if (parts.length === 0) return null; // require at least one modifier
 
   let key = event.key;
-  if (key === " ") key = "Space";
-  else if (key.length === 1) key = key.toUpperCase();
+  if (key === "Dead") return null;
+  if (event.code === "Space" || key === " ") key = "Space";
+  else if (Object.hasOwn(PRINTABLE_KEY_CODES, event.code)) key = PRINTABLE_KEY_CODES[event.code];
+  else if (event.code && (event.code.startsWith("Numpad") || event.code.startsWith("Digit"))) return null;
+  else if (key.length === 1) return null;
   else if (key.startsWith("Arrow")) key = key.slice(5);
   parts.push(key);
   return parts.join("+");

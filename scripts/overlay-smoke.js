@@ -530,6 +530,24 @@ app.whenReady().then(async () => {
       `timer=${timer6}`
     );
 
+    // ---- Dismissing during delivery only hides the overlay -----------------
+    win.webContents.send("pipeline:status", { status: "delivering" });
+    await waitForStatus(win, "delivering");
+    const deliveringUi = await uiState();
+    check(
+      "discard key is labelled Dismiss while text is being typed",
+      deliveringUi.cancelTitle === "Dismiss" && deliveringUi.cancelAria === "Dismiss",
+      `title=${JSON.stringify(deliveringUi.cancelTitle)} aria=${JSON.stringify(deliveringUi.cancelAria)}`
+    );
+    const dismissRequestP = waitForMessage("pipeline:cancel");
+    await win.webContents.executeJavaScript(`document.getElementById("cancel").click()`);
+    const dismissRequest = await dismissRequestP;
+    check(
+      "delivery-time X sends a dismiss-only request",
+      dismissRequest?.dismiss === true,
+      JSON.stringify(dismissRequest)
+    );
+
     // ---- Terminal state: the keys go inert once the dictation lands --------
     // Done is the bar's only filled key; a regression in setStatus's
     // enablement branch would leave it lit and clickable after delivery.

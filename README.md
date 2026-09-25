@@ -259,6 +259,10 @@ Every launch after that goes straight to the tray — no window to dismiss — a
 posts a short "ready, press *your hotkey*" notification. Click it to open
 Settings, or ignore it and start dictating. Settings is always in the tray menu.
 
+If a saved microphone is disconnected, dictation temporarily tries the system
+default and shows a notice on the recording bar. This fallback applies only to
+that dictation; it does not change the microphone saved in Settings.
+
 ### Transcript cleanup
 
 Cleanup is **on by default** and runs the built-in Granite 4.0 Micro model in-process: a

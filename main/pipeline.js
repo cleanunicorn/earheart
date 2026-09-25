@@ -376,6 +376,14 @@ function stopRecording() {
   windows.sendToOverlay("record:stop");
 }
 
+function onOverlayRendererGone() {
+  if (state !== "recording") return;
+  session++; // invalidate any capture event from the dead renderer
+  livePreview.cancel();
+  setState("idle");
+  overlayStatus("error", { message: "Recording lost because the overlay stopped unexpectedly" });
+}
+
 function cancel() {
   session++; // invalidate in-flight session events
   livePreview.cancel();
@@ -562,6 +570,7 @@ module.exports = {
   toggle,
   pauseToggle,
   cancel,
+  onOverlayRendererGone,
   getState,
   onStateChange,
   onSettingsChanged,

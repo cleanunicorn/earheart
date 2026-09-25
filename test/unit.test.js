@@ -37,6 +37,41 @@ const {
 } = require("../main/output/deliver");
 const { permissionFixStatus, permissionCheckStatus } = require("../renderer/permission-status");
 const { clampNumber } = require("../renderer/value-range");
+const {
+  microphoneConstraints,
+  isMissingMicrophone,
+  microphoneErrorMessage,
+} = require("../renderer/microphone");
+
+test("microphone fallback only retries a missing saved device", () => {
+  assert.deepStrictEqual(microphoneConstraints("saved-device").deviceId, {
+    exact: "saved-device",
+  });
+  assert.strictEqual(microphoneConstraints().deviceId, undefined);
+  assert.strictEqual(
+    isMissingMicrophone({ name: "OverconstrainedError", constraint: "deviceId" }),
+    true
+  );
+  assert.strictEqual(
+    isMissingMicrophone({ name: "NotAllowedError", constraint: "deviceId" }),
+    false
+  );
+  assert.strictEqual(
+    isMissingMicrophone({ name: "OverconstrainedError", constraint: "facingMode" }),
+    false
+  );
+});
+
+test("microphone errors use the error name when the browser message is blank", () => {
+  assert.strictEqual(
+    microphoneErrorMessage({ name: "OverconstrainedError", message: "" }),
+    "Microphone unavailable: OverconstrainedError"
+  );
+  assert.strictEqual(
+    microphoneErrorMessage({ name: "NotAllowedError", message: "Permission denied" }),
+    "Microphone unavailable: Permission denied"
+  );
+});
 
 test("encodeWav produces a valid RIFF header", () => {
   const samples = new Int16Array([0, 1000, -1000, 32767, -32768]);

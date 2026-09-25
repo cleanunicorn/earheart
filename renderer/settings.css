@@ -136,7 +136,7 @@ nav#tabs {
   overflow-y: auto;
   border-right: 1px solid var(--seam);
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  scrollbar-color: var(--field-edge) transparent;
 }
 
 .tab {
@@ -216,7 +216,7 @@ main {
   overflow-y: auto;
   padding: 20px 24px 32px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  scrollbar-color: var(--field-edge) transparent;
   /* Index clicks glide the page; the browser handles the easing. Collapsed
      under prefers-reduced-motion below. */
   scroll-behavior: smooth;
@@ -501,6 +501,7 @@ select {
 .segmented label:has(input:checked) {
   background: rgba(255, 255, 255, 0.14);
   color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--text);
 }
 
 /* The overlaid radio is invisible, so surface keyboard focus on the label. */
@@ -1032,12 +1033,12 @@ input[type="range"] {
 input[type="range"]::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--field-edge);
 }
 input[type="range"]::-moz-range-track {
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--field-edge);
 }
 
 input[type="range"]::-webkit-slider-thumb {

@@ -14,8 +14,8 @@ let ready = false;
 let handlersInstalled = false;
 
 // Keep the file bounded without pulling in a rotation dependency: when it has
-// grown past this at startup, the previous log is rolled to `.1` (one
-// generation kept) before a fresh stream is opened.
+// grown past this, the previous log is rolled to `.1` (one generation kept)
+// before the next line is appended.
 const MAX_BYTES = 5 * 1024 * 1024;
 
 // app.getPath("logs") is the platform's conventional logs location
@@ -67,7 +67,10 @@ function write(level, args) {
   // Best-effort append to the file. Synchronous so an error is on disk before
   // the next line runs — a crash right after logging still keeps the record.
   try {
-    if (ready) fs.appendFileSync(logPath, `${new Date().toISOString()} [${level}] ${body}\n`);
+    if (ready) {
+      rotateIfLarge(logPath);
+      fs.appendFileSync(logPath, `${new Date().toISOString()} [${level}] ${body}\n`);
+    }
   } catch {
     // Never let logging throw into the caller.
   }

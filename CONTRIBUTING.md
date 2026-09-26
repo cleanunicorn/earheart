@@ -26,6 +26,7 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | `make smoke` | Boot the app headlessly and exit (CI-style sanity check) |
 | `make overlay-smoke` | Drive the overlay with a fake mic and check capture/UI sync |
 | `make settings-smoke` | Drive the settings window and check the index/scroll-spy contract |
+| `make settings-value-range-smoke` | Verify Settings numeric values persist within their allowed ranges |
 | `make icons` | Regenerate app/tray icons into `assets/` |
 | `make screenshots` | Regenerate README screenshots into `docs/screenshots/` |
 | `make dist` | Build installers for the current platform |
@@ -57,6 +58,7 @@ make smoke                     # boots the full app with --smoke-test and exits
 npx electron scripts/engine-smoke.js --no-sandbox   # boot the engine worker, round-trip a ping
 make overlay-smoke             # drive the overlay with a fake mic, check capture/UI sync
 make settings-smoke            # drive the settings window, check the index/scroll-spy contract
+make settings-value-range-smoke # verify Settings numeric values persist within their allowed ranges
 ```
 
 The engine-smoke step forks the in-process engine `utilityProcess` worker and
@@ -68,7 +70,9 @@ captured WAV covers everything said from that moment, and stop/cancel racing
 mic startup still resolve. The settings-smoke step drives the real settings
 window and asserts the settings-page contract: every section renders on one
 scroll, the index's scroll-spy highlight and focus handoff work, and the roving
-tabindex is seated at load. CI runs all five on every platform.
+tabindex is seated at load. The settings-value-range smoke saves numeric Settings
+values through the real renderer and IPC path, then verifies the clamped values
+in memory and on disk. CI runs all six smokes on every platform.
 Built-in models download to Electron's `userData/models` on first use; the
 smoke checks don't need them present.
 

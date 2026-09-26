@@ -56,6 +56,13 @@ jobs:
       - name: Settings panel smoke
         if: runner.os != 'Linux'
         run: npx electron scripts/settings-smoke.js --no-sandbox
+      # Exercise real Settings collection, IPC save, and on-disk persistence.
+      - name: Settings value range persistence (headless)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npx electron scripts/settings-value-range-smoke.js --no-sandbox
+      - name: Settings value range persistence
+        if: runner.os != 'Linux'
+        run: npx electron scripts/settings-value-range-smoke.js --no-sandbox
 
   # A tracked symlink is the one breakage the jobs above structurally cannot
   # catch: they run `npm ci`, which rebuilds node_modules over whatever the

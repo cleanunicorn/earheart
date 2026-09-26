@@ -14,6 +14,7 @@ const LISTEN = new Set([
   "overlay:show",
   "overlay:hide",
   "models:progress",
+  "models:done",
   "updates:state",
   "updates:prompt",
 ]);

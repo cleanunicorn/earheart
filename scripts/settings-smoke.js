@@ -23,6 +23,12 @@
 //   9. A history entry saved from an interrupted dictation is marked in the
 //      list; a normal one isn't. The notification that announced it is long
 //      gone by the time History is reopened.
+//  10. A model download keeps progress through redraws, exposes a focused
+//      cancel action, handles a download owned by another window, and
+//      announces terminal results in the persistent region.
+//  11. Wizard-started downloads survive Settings model changes without
+//      overwriting a concurrent download's state.
+//  12. Failed model removals appear in the row and persistent live region.
 //
 // Run under Electron:
 //
@@ -54,7 +60,8 @@ app.setPath("userData", userData);
 const windows = require("../main/windows");
 const history = require("../main/history");
 const ipc = require("../main/ipc");
-const { registry } = require("../main/engines");
+const engines = require("../main/engines");
+const { registry } = engines;
 
 // loadMicrophones() calls getUserMedia at init; the fake device keeps that
 // deterministic on headless CI instead of hanging on a permission that will
@@ -63,6 +70,14 @@ app.commandLine.appendSwitch("use-fake-device-for-media-stream");
 app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function waitFor(read, message) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const value = await read();
+    if (value) return value;
+    await sleep(10);
+  }
+  throw new Error(message);
+}
 
 const checks = [];
 function check(name, ok, detail) {
@@ -81,7 +96,25 @@ app.whenReady().then(async () => {
       applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
       onSettingsChanged: () => {},
     });
-
+    const downloads = new Map();
+    const installedModels = new Set();
+    const isInstalled = engines.isInstalled;
+    engines.isInstalled = (kind, modelId) =>
+      installedModels.has(`${kind}:${modelId}`) || isInstalled(kind, modelId);
+    engines.download = (kind, modelId, { onProgress, signal }) =>
+      new Promise((resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new Error("aborted")), {
+          once: true,
+        });
+        downloads.set(`${kind}:${modelId}`, {
+          resolve: () => {
+            installedModels.add(`${kind}:${modelId}`);
+            resolve();
+          },
+          reject,
+          onProgress,
+        });
+      });
     // Two entries for check 9, saved before the window reads them: one
     // delivered whole, one recovered from an interrupted dictation.
     const historyCfg = { enabled: true, limit: 100 };
@@ -340,6 +373,216 @@ app.whenReady().then(async () => {
       );
     }
 
+    // 10-11. Drive the real renderer state machine while the IPC download
+    // promise is held open, so no model files or network are involved.
+    const downloadModels = await js(`JSON.stringify({
+      stt: [...document.getElementById("stt-builtin-model").options].map((o) => o.value),
+      cleanup: [...document.getElementById("cleanup-builtin-model").options].map((o) => o.value),
+    })`).then(JSON.parse);
+    const sttModel = downloadModels.stt.find((id) => id !== "parakeet-tdt-0.6b-v3-int8");
+    const sttDefault = "parakeet-tdt-0.6b-v3-int8";
+    const cleanupModel = downloadModels.cleanup.find((id) => id !== "granite-4.0-micro");
+    const startModelDownload = async (kind, modelId) => js(`(() => {
+      const select = document.getElementById(${JSON.stringify(`${kind}-builtin-model`)});
+      select.value = ${JSON.stringify(modelId)};
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      const button = document.querySelector("#" + ${JSON.stringify(`${kind}-model-manage`)} + " button");
+      button.focus();
+      button.click();
+      return document.activeElement?.textContent;
+    })()`);
+    await startModelDownload("stt", sttModel);
+    const sttDownload = await waitFor(
+      () => downloads.get(`stt:${sttModel}`),
+      "Settings download did not reach the engine"
+    );
+    const sttFocus = await js(`JSON.stringify({
+      text: document.activeElement?.textContent,
+      label: document.activeElement?.getAttribute("aria-label"),
+      rowButton: document.querySelector("#stt-model-manage button")?.textContent,
+    })`).then(JSON.parse);
+    check(
+      "starting a download keeps keyboard focus on its cancel action",
+      sttFocus.text === "Cancel" && sttFocus.rowButton === "Cancel",
+      JSON.stringify(sttFocus)
+    );
+
+    sttDownload.onProgress({
+      fraction: 0.42, received: 42, total: 100,
+    });
+    const switchedProgress = await js(`(() => {
+      const select = document.getElementById("stt-builtin-model");
+      select.value = ${JSON.stringify(sttDefault)};
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      select.value = ${JSON.stringify(sttModel)};
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      return {
+        width: document.querySelector("#stt-model-manage .dl-fill")?.style.width,
+        status: document.querySelector("#stt-model-manage .status")?.textContent,
+        button: document.querySelector("#stt-model-manage button")?.textContent,
+      };
+    })()`).then((s) => (typeof s === "string" ? JSON.parse(s) : s));
+    check(
+      "progress from an external download survives switching model selections",
+      switchedProgress.width === "42%" &&
+        switchedProgress.status.startsWith("42%") &&
+        switchedProgress.button === "Cancel",
+      JSON.stringify(switchedProgress)
+    );
+
+    const wizard = windows.openWizard();
+    await new Promise((resolve) => wizard.webContents.once("did-finish-load", resolve));
+    await wizard.webContents.executeJavaScript(
+      `earheart.invoke("models:download", { kind: "cleanup", modelId: ${JSON.stringify(cleanupModel)} }); "started"`,
+      true
+    );
+    const wizardDownload = await waitFor(
+      () => downloads.get(`cleanup:${cleanupModel}`),
+      "wizard download did not reach the engine"
+    );
+    const duplicateAction = await startModelDownload("cleanup", cleanupModel);
+    await sleep(50);
+    const duplicateState = await js(`JSON.stringify({
+      button: document.querySelector("#cleanup-model-manage button")?.textContent,
+      status: document.querySelector("#cleanup-model-manage .status")?.textContent,
+    })`).then(JSON.parse);
+    check(
+      "Settings keeps a wizard-owned download active after Already downloading",
+      duplicateAction === "Cancel" &&
+        duplicateState.button === "Cancel" &&
+        duplicateState.status === "Downloading…",
+      JSON.stringify({ duplicateAction, ...duplicateState })
+    );
+    wizardDownload.onProgress({
+      fraction: 0.73, received: 73, total: 100,
+    });
+    downloads.get(`stt:${sttModel}`).onProgress({
+      fraction: 0.58, received: 58, total: 100,
+    });
+    const wizardProgress = await js(`(() => {
+      const select = document.getElementById("cleanup-builtin-model");
+      select.value = ${JSON.stringify(cleanupModel)};
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      return {
+        width: document.querySelector("#cleanup-model-manage .dl-fill")?.style.width,
+        status: document.querySelector("#cleanup-model-manage .status")?.textContent,
+      };
+    })()`).then((s) => (typeof s === "string" ? JSON.parse(s) : s));
+    check(
+      "wizard-started progress survives Settings model changes",
+      wizardProgress.width === "73%" && wizardProgress.status.startsWith("73%"),
+      JSON.stringify(wizardProgress)
+    );
+    const concurrentProgress = await js(`JSON.stringify({
+      stt: document.querySelector("#stt-model-manage .status")?.textContent,
+      cleanup: document.querySelector("#cleanup-model-manage .status")?.textContent,
+      sttWidth: document.querySelector("#stt-model-manage .dl-fill")?.style.width,
+      cleanupWidth: document.querySelector("#cleanup-model-manage .dl-fill")?.style.width,
+    })`).then(JSON.parse);
+    check(
+      "concurrent model progress remains isolated by kind and model",
+      concurrentProgress.stt.startsWith("58%") &&
+        concurrentProgress.cleanup.startsWith("73%") &&
+        concurrentProgress.sttWidth === "58%" && concurrentProgress.cleanupWidth === "73%",
+      JSON.stringify(concurrentProgress)
+    );
+
+    sttDownload.resolve();
+    wizardDownload.resolve();
+    await sleep(250);
+    windows.closeWizard();
+    const completionAnnouncement = await js(`JSON.stringify({
+      text: document.getElementById("model-dl-announce").textContent,
+      live: document.getElementById("model-dl-announce").getAttribute("aria-live"),
+    })`).then(JSON.parse);
+    check(
+      "successful downloads announce completion in the persistent live region",
+      completionAnnouncement.live === "polite" && /Downloaded/.test(completionAnnouncement.text),
+      JSON.stringify(completionAnnouncement)
+    );
+
+    const failedModel = downloadModels.stt.find(
+      (id) => id !== sttDefault && id !== sttModel
+    );
+    await startModelDownload("stt", failedModel);
+    const failedDownload = await waitFor(
+      () => downloads.get(`stt:${failedModel}`),
+      "failed download did not reach the engine"
+    );
+    failedDownload.reject(new Error("offline"));
+    await sleep(150);
+    const failedState = await js(`JSON.stringify({
+      button: document.querySelector("#stt-model-manage button")?.textContent,
+      status: document.querySelector("#stt-model-manage .status")?.textContent,
+      announcement: document.getElementById("model-dl-announce").textContent,
+    })`).then(JSON.parse);
+    check(
+      "failed downloads retain an error and retry action",
+      failedState.button === "Retry download" &&
+        failedState.status === "offline" &&
+        failedState.announcement.endsWith("offline"),
+      JSON.stringify(failedState)
+    );
+    const cancelModel = downloadModels.stt.find(
+      (id) => id !== sttDefault && id !== sttModel && id !== failedModel
+    );
+    await startModelDownload("stt", cancelModel);
+    const cancelButton = await waitFor(
+      () => js(`document.querySelector("#stt-model-manage button")?.textContent === "Cancel"`),
+      "cancel action did not render"
+    );
+    if (cancelButton !== true) throw new Error("cancel action was not available");
+    await js(`document.querySelector("#stt-model-manage button").click()`);
+    await sleep(150);
+    const cancelledState = await js(`JSON.stringify({
+      button: document.querySelector("#stt-model-manage button")?.textContent,
+      status: document.querySelector("#stt-model-manage .status")?.textContent,
+      announcement: document.getElementById("model-dl-announce").textContent,
+    })`).then(JSON.parse);
+    check(
+      "cancelling a download restores its retryable state and announcement",
+      cancelledState.button === "Download" &&
+        cancelledState.status === "Cancelled" &&
+        cancelledState.announcement.endsWith("Cancelled"),
+      JSON.stringify(cancelledState)
+    );
+
+    engines.remove = async () => {
+      throw new Error("model files are busy");
+    };
+    await js(`window.confirm = () => true; true`);
+    await js(`(() => {
+      const select = document.getElementById("stt-builtin-model");
+      select.value = ${JSON.stringify(sttModel)};
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    })()`);
+    await waitFor(
+      () => js(`document.querySelector("#stt-model-manage button")?.textContent === "Remove"`),
+      "installed model did not expose Remove"
+    );
+    await js(`document.querySelector("#stt-model-manage button").click()`);
+    const removalFailure = await waitFor(
+      () => js(`document.querySelector("#stt-model-manage .status")?.textContent === "model files are busy"`),
+      "failed model removal did not appear in the row"
+    );
+    const removalAnnouncement = await js(`JSON.stringify({
+      text: document.getElementById("model-dl-announce").textContent,
+      live: document.getElementById("model-dl-announce").getAttribute("aria-live"),
+    })`).then(JSON.parse);
+    check(
+      "failed model removals appear in the persistent live region",
+      removalFailure === true &&
+        removalAnnouncement.live === "polite" &&
+        removalAnnouncement.text.endsWith("model files are busy"),
+      JSON.stringify(removalAnnouncement)
+    );
+
+    await js(`(() => {
+      const select = document.getElementById("cleanup-builtin-model");
+      select.value = "granite-4.0-micro";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    })()`);
+
     // 8. A fresh profile preselects the default cleanup model in both windows.
     const cleanupDefault = registry.getModel("cleanup", registry.DEFAULT_CLEANUP_MODEL);
     const readCleanupPick = (wc) =>
@@ -356,11 +599,11 @@ app.whenReady().then(async () => {
       settingsPick.value === cleanupDefault.id,
       JSON.stringify(settingsPick)
     );
-    const wizard = windows.openWizard();
-    await new Promise((r) => wizard.webContents.once("did-finish-load", r));
+    const wizardForDefaults = windows.openWizard();
+    await new Promise((r) => wizardForDefaults.webContents.once("did-finish-load", r));
     await sleep(1200);
-    const wizardPick = await readCleanupPick(wizard.webContents);
-    const wizardNote = await wizard.webContents.executeJavaScript(
+    const wizardPick = await readCleanupPick(wizardForDefaults.webContents);
+    const wizardNote = await wizardForDefaults.webContents.executeJavaScript(
       `document.getElementById("cleanup-builtin-note").textContent`,
       true
     );

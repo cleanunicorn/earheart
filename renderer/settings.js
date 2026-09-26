@@ -478,11 +478,33 @@ function populateModelSelect(kind) {
 // Per-kind handles to the live progress bar / status so download progress
 // events can find their row.
 const manage = { stt: {}, cleanup: {} };
+const modelDownloads = new Map();
+
+function modelDownloadKey(kind, modelId) {
+  return `${kind}:${modelId}`;
+}
+
+function showModelError(modelId, error) {
+  for (const kind of ["stt", "cleanup"]) {
+    const ui = manage[kind];
+    if (ui && ui.modelId === modelId) {
+      ui.status.textContent = error;
+      ui.status.className = "status err";
+    }
+  }
+  const kind = ["stt", "cleanup"].find((candidate) =>
+    modelStatus?.[candidate]?.some((model) => model.id === modelId)
+  );
+  if (kind) announceModelStatus(kind, modelId, error);
+}
 
 function renderManage(kind) {
   const container = $(`${kind}-model-manage`);
   if (!container || !modelStatus) return;
   const modelId = $(`${kind}-builtin-model`).value;
+  const restoreDownloadFocus =
+    manage[kind]?.modelId === modelId &&
+    manage[kind].btn === document.activeElement;
   const info = modelStatus[kind].find((m) => m.id === modelId);
   container.replaceChildren();
   manage[kind] = { modelId };
@@ -505,6 +527,7 @@ function renderManage(kind) {
   status.className = "status";
   const btn = document.createElement("button");
   const ui = { modelId, bar, fill, status, btn };
+  const download = modelDownloads.get(modelDownloadKey(kind, modelId));
 
   if (info.installed) {
     status.textContent = "Downloaded ✓";
@@ -516,10 +539,19 @@ function renderManage(kind) {
     btn.onclick = () =>
       info.custom ? removeCustomModel(modelId) : removeModel(kind, modelId);
   } else {
-    status.textContent = "Not downloaded";
-    btn.textContent = "Download";
-    btn.className = "ghost";
-    btn.onclick = () => downloadModel(kind, modelId, ui);
+    if (download) {
+      bar.hidden = false;
+      fill.style.width = `${Math.round(download.fraction * 100)}%`;
+      status.textContent = download.message || "Downloading…";
+      btn.textContent = "Cancel";
+      btn.className = "ghost";
+      btn.onclick = () => earheart.invoke("models:cancel", { kind, modelId });
+    } else {
+      status.textContent = "Not downloaded";
+      btn.textContent = "Download";
+      btn.className = "ghost";
+      btn.onclick = () => downloadModel(kind, modelId);
+    }
   }
   row.append(btn, status);
   // A custom model that isn't downloaded still needs a way off the list.
@@ -532,45 +564,59 @@ function renderManage(kind) {
   }
   container.append(note, bar, row);
   manage[kind] = ui;
+  if (restoreDownloadFocus && !btn.disabled) btn.focus({ preventScroll: true });
 }
 
-// Terminal download outcomes announce through one persistent sr-only live
-// region: the visible per-row span is rebuilt by renderManage
-// (replaceChildren), and a live region's initial content on insertion is
-// not announced — so the row itself can never speak.
-function announceDownload(kind, modelId, message) {
+// Model outcomes announce through one persistent sr-only live region: the
+// visible per-row span is rebuilt by renderManage and cannot speak reliably.
+function announceModelStatus(kind, modelId, message) {
   const info = modelStatus?.[kind]?.find((m) => m.id === modelId);
   $("model-dl-announce").textContent = `${info ? info.label : modelId}: ${message}`;
 }
 
-async function downloadModel(kind, modelId, ui) {
+async function downloadModel(kind, modelId) {
+  const key = modelDownloadKey(kind, modelId);
+  if (modelDownloads.has(key)) return;
+  modelDownloads.set(key, { fraction: 0, message: "Downloading…" });
+  renderManage(kind);
+
   // While the download runs, the same button cancels it (the wizard offers the
   // same escape; without it a multi-minute download in Settings is a one-way
   // trip). models:cancel aborts the in-flight transfer in the main process.
-  ui.bar.hidden = false;
-  ui.status.textContent = "Downloading…";
-  ui.status.className = "status";
-  const onCancel = () => earheart.invoke("models:cancel", { kind, modelId });
-  ui.btn.textContent = "Cancel";
-  ui.btn.className = "ghost";
-  ui.btn.onclick = onCancel;
-
-  const res = await earheart.invoke("models:download", { kind, modelId });
-  ui.btn.onclick = null;
-  if (res.ok) {
-    await refreshModels();
-    announceDownload(kind, modelId, "Downloaded ✓");
-    return;
+  try {
+    const result = await earheart.invoke("models:download", { kind, modelId });
+    if (result.error === "Already downloading") {
+      // Another window owns this transfer; keep this row bound to its broadcasts.
+      const active = modelDownloads.get(key);
+      if (active) active.message = "Downloading…";
+    }
+  } catch (err) {
+    finishModelDownload({ kind, modelId, ok: false, error: err.message });
   }
-  // Failed or cancelled: revert to a download affordance the user can retry.
-  ui.bar.hidden = true;
-  ui.btn.textContent = res.cancelled ? "Download" : "Retry download";
-  ui.btn.className = "ghost";
-  ui.btn.onclick = () => downloadModel(kind, modelId, ui);
-  ui.status.textContent = res.cancelled ? "Cancelled" : res.error || "Download failed";
-  ui.status.className = res.cancelled ? "status" : "status err";
-  announceDownload(kind, modelId, ui.status.textContent);
 }
+
+async function finishModelDownload(result) {
+  const { kind, modelId, ok, cancelled, error } = result;
+  modelDownloads.delete(modelDownloadKey(kind, modelId));
+  const selectedModelId = manage[kind]?.modelId;
+  await refreshModels({ [kind]: selectedModelId });
+  if (!ok && manage[kind]?.modelId === modelId) {
+    const ui = manage[kind];
+    ui.bar.hidden = true;
+    ui.btn.textContent = cancelled ? "Download" : "Retry download";
+    ui.btn.className = "ghost";
+    ui.btn.onclick = () => downloadModel(kind, modelId);
+    ui.status.textContent = cancelled ? "Cancelled" : error || "Download failed";
+    ui.status.className = cancelled ? "status" : "status err";
+  }
+  announceModelStatus(
+    kind,
+    modelId,
+    ok ? "Downloaded ✓" : cancelled ? "Cancelled" : error || "Download failed"
+  );
+}
+
+earheart.on("models:done", (result) => finishModelDownload(result));
 
 async function removeModel(kind, modelId) {
   const info = modelStatus[kind].find((m) => m.id === modelId);
@@ -578,8 +624,9 @@ async function removeModel(kind, modelId) {
   if (!confirm(`Remove ${label}? You'll need to download it again to use it.`)) {
     return;
   }
-  await earheart.invoke("models:remove", { kind, modelId });
-  await refreshModels();
+  const res = await earheart.invoke("models:remove", { kind, modelId });
+  if (res.ok) await refreshModels();
+  else showModelError(modelId, res.error || "Could not remove model");
 }
 
 // Remove a custom model entirely: its files (if downloaded) and its definition.
@@ -588,8 +635,12 @@ async function removeCustomModel(modelId) {
   const label = info ? info.label : modelId;
   if (!confirm(`Remove ${label} from your models?`)) return;
   const res = await earheart.invoke("models:remove-custom", { modelId });
-  if (res.ok) current.customModels = res.customModels;
-  await refreshModels();
+  if (res.ok) {
+    current.customModels = res.customModels;
+    await refreshModels();
+  } else {
+    showModelError(modelId, res.error || "Could not remove model");
+  }
 }
 
 // Re-pull model status and rebuild the dropdowns (custom models may have been
@@ -619,13 +670,19 @@ function progressLabel({ received, total, fraction }) {
 }
 
 earheart.on("models:progress", (p) => {
+  const key = modelDownloadKey(p.kind, p.modelId);
+  let download = modelDownloads.get(key);
+  if (!download) {
+    download = { fraction: 0, message: "Downloading…" };
+    modelDownloads.set(key, download);
+  }
+  download.fraction = p.fraction;
+  download.message = progressLabel(p);
   const m = manage[p.kind];
   if (m && m.modelId === p.modelId && m.fill) {
     m.fill.style.width = `${Math.round(p.fraction * 100)}%`;
-    if (m.status) {
-      m.status.textContent = progressLabel(p);
-      m.status.className = "status";
-    }
+    m.status.textContent = download.message;
+    m.status.className = "status";
   }
 });
 

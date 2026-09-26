@@ -480,7 +480,6 @@ async function process(sid, wavArrayBuffer) {
 
     overlayStatus("delivering");
     const result = await deliver(text, cfg.output, signal);
-    if (stale()) return;
     if (cfg.history.enabled) {
       history.add(
         { raw, text, cleaned, delivered: result.method, ...(partial ? { incomplete: true } : {}) },
@@ -488,6 +487,7 @@ async function process(sid, wavArrayBuffer) {
       );
       windows.sendToSettings("history:changed");
     }
+    if (stale()) return;
 
     if (result.hint) {
       // The overlay's detail row clips after a couple of dozen characters and
@@ -513,7 +513,9 @@ async function process(sid, wavArrayBuffer) {
     overlayStatus("error", { message: String(err.message).slice(0, 200) });
     hideOverlaySoon(sid, 5000);
   } finally {
-    if (abortController === controller) abortController = null;
+    if (abortController === controller) {
+      abortController = null;
+    }
     if (session === sid) setState("idle");
   }
 }
@@ -549,7 +551,10 @@ function init() {
     hideOverlaySoon(sid, 5000);
   });
 
-  ipcMain.on("pipeline:cancel", () => cancel());
+  ipcMain.on("pipeline:cancel", (event, { dismiss } = {}) => {
+    if (dismiss) windows.hideOverlay();
+    else cancel();
+  });
 }
 
 // Re-arm the idle-unload timer with the latest setting (e.g. the user changed

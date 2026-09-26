@@ -225,7 +225,15 @@ const exited = () => Object.assign(new Error("engine process exited"), { code: "
 // toggle() starts a dictation, `dictate()` hands it the captured WAV and waits
 // for the pipeline to return to idle. `transcribe` scripts the STT backend per
 // call; `snapshot` is what the live preview hands the final pass.
-function dictationRig({ engine = "builtin", display = true, cleanup = false, transcribe, ensureStt } = {}) {
+function dictationRig({
+  engine = "builtin",
+  display = true,
+  cleanup = false,
+  transcribe,
+  ensureStt,
+  deliver: deliverText,
+  onHistory,
+} = {}) {
   const log = {
     transcribe: [],
     delivered: [],
@@ -297,12 +305,17 @@ function dictationRig({ engine = "builtin", display = true, cleanup = false, tra
         clean: async (raw) => `cleaned(${raw})`,
       },
       "./output/deliver": {
-        deliver: async (text) => {
+        deliver: deliverText || (async (text) => {
           log.delivered.push(text);
           return { method: "paste" };
+        }),
+      },
+      "./history": {
+        add: (entry) => {
+          log.history.push(entry);
+          onHistory?.(entry);
         },
       },
-      "./history": { add: (entry) => log.history.push(entry) },
       "./live-preview": {
         createLivePreview: (deps) => {
           liveDeps = deps;
@@ -364,6 +377,92 @@ test("pipeline: overlay renderer loss outside recording is a no-op", () => {
 
   assert.strictEqual(rig.pipeline.getState(), "idle");
   assert.deepStrictEqual(rig.log.statuses, []);
+});
+
+test("pipeline: dismissing the overlay during delivery preserves delivery and history", async () => {
+  let finishDelivery;
+  let announceDeliveryStarted;
+  const pendingDelivery = new Promise((resolve) => {
+    finishDelivery = resolve;
+  });
+  const deliveryStarted = new Promise((resolve) => {
+    announceDeliveryStarted = resolve;
+  });
+  let deliverySignal;
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => "dictated words",
+    deliver: async (text, output, signal) => {
+      deliverySignal = signal;
+      rig.log.delivered.push(text);
+      announceDeliveryStarted();
+      return pendingDelivery;
+    },
+  });
+
+  rig.pipeline.toggle();
+  const sid = rig.log.lastStart.sid;
+  const idle = new Promise((resolve) => {
+    rig.pipeline.onStateChange((state) => state === "idle" && resolve());
+  });
+  rig.handlers["audio:captured"]({}, { sid, wav: speechWav(1) });
+  await deliveryStarted;
+  assert.ok(rig.log.statuses.includes("delivering"));
+
+  rig.handlers["pipeline:cancel"]({}, { dismiss: true });
+  assert.strictEqual(deliverySignal.aborted, false, "overlay dismissal cannot abort delivery");
+  assert.strictEqual(rig.pipeline.getState(), "processing");
+
+  finishDelivery({ method: "paste" });
+  await idle;
+
+  assert.deepStrictEqual(rig.log.delivered, ["dictated words"]);
+  assert.strictEqual(rig.log.history.length, 1, "the completed dictation is retained in history");
+  assert.strictEqual(rig.log.history[0].raw, "dictated words");
+  assert.ok(rig.log.statuses.includes("done"));
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+});
+
+test("pipeline: tray cancellation during delivery still records the transcript", async () => {
+  let finishDelivery;
+  let announceDeliveryStarted;
+  let announceHistoryWritten;
+  const pendingDelivery = new Promise((resolve) => {
+    finishDelivery = resolve;
+  });
+  const deliveryStarted = new Promise((resolve) => {
+    announceDeliveryStarted = resolve;
+  });
+  const historyWritten = new Promise((resolve) => {
+    announceHistoryWritten = resolve;
+  });
+  let deliverySignal;
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => "dictated words",
+    onHistory: announceHistoryWritten,
+    deliver: async (text, output, signal) => {
+      deliverySignal = signal;
+      rig.log.delivered.push(text);
+      announceDeliveryStarted();
+      return pendingDelivery;
+    },
+  });
+
+  rig.pipeline.toggle();
+  const sid = rig.log.lastStart.sid;
+  rig.handlers["audio:captured"]({}, { sid, wav: speechWav(1) });
+  await deliveryStarted;
+  rig.pipeline.cancel();
+  assert.strictEqual(deliverySignal.aborted, true, "tray Cancel still aborts delivery");
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+
+  finishDelivery({ method: "cancelled" });
+  await historyWritten;
+  assert.deepStrictEqual(rig.log.delivered, ["dictated words"]);
+  assert.strictEqual(rig.log.history.length, 1);
+  assert.strictEqual(rig.log.history[0].raw, "dictated words");
+  assert.strictEqual(rig.log.history[0].delivered, "cancelled");
 });
 
 test("pipeline: no built-in final decode exceeds 20 s, on every assembly path", async () => {

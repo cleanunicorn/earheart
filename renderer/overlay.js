@@ -839,7 +839,10 @@ function cancelRecording() {
   if (rec) {
     earheart.send("record:cancelled", { sid });
   } else {
-    earheart.send("pipeline:cancel");
+    const settled = ["delivering", "done", "empty", "error"].includes(
+      card.dataset.status
+    );
+    earheart.send("pipeline:cancel", settled ? { dismiss: true } : undefined);
   }
 }
 

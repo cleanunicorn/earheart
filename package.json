@@ -30,7 +30,7 @@
     "electron-builder": "^26.4.0"
   },
   "dependencies": {
-    "node-llama-cpp": "^3.18.1",
+    "node-llama-cpp": "^3.22.1",
     "sherpa-onnx-node": "^1.13.3"
   }
 }

@@ -44,7 +44,7 @@ const electronPath = require.resolve("electron", {
   m.exports = { utilityProcess: { fork: () => currentChild } };
   require.cache[electronPath] = m;
 }
-const { createHost } = require(hostPath);
+const { createHost, LOADCHECK_TIMEOUT_MS } = require(hostPath);
 
 // Fresh child + host pair for one test.
 function setup() {
@@ -288,4 +288,14 @@ test("host: failures carry stable codes, and a worker exit keeps its exit code",
   const failed = host4.request("transcribe", {});
   c4.emit("message", { id: c4.sent[0].id, ok: false, error: "STT model not loaded" });
   await assert.rejects(failed, (err) => err.message === "STT model not loaded" && err.code === undefined);
+});
+
+test("the loadcheck deadline covers Metal init on the macOS CI runner with headroom", () => {
+  // scripts/engine-smoke.js and --engine-check share it. Measured: 34.9 s for
+  // getLlama({ gpu: "metal" }) on macos-latest (llama.cpp v0.5.0 compiles its
+  // Metal libraries at init). A 30 s deadline failed CI there every time.
+  const measuredMetalInitMs = 34900;
+  assert.ok(LOADCHECK_TIMEOUT_MS >= 3 * measuredMetalInitMs, `${LOADCHECK_TIMEOUT_MS} ms`);
+  // It must still fire before release.yml's 5-minute verify step kills both checks.
+  assert.ok(2 * LOADCHECK_TIMEOUT_MS < 5 * 60 * 1000, `${LOADCHECK_TIMEOUT_MS} ms`);
 });

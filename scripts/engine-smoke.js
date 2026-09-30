@@ -17,7 +17,7 @@ const { app } = require("electron");
 const path = require("node:path");
 // Release CI points this at the packaged asar to verify the shipped addons.
 const engineRoot = process.env.EARHEART_ENGINE_ROOT || path.join(__dirname, "..");
-const { createHost } = require(path.join(engineRoot, "main/engines/host"));
+const { createHost, LOADCHECK_TIMEOUT_MS } = require(path.join(engineRoot, "main/engines/host"));
 
 // One worker is enough to prove the addons load; the app runs two of these
 // (STT + cleanup) but they fork the same engine-worker.js.
@@ -31,7 +31,7 @@ app.whenReady().then(async () => {
     }
     console.log("[engine-smoke] worker ping ok");
 
-    const engines = await host.request("loadcheck", {}, { timeoutMs: 30000 });
+    const engines = await host.request("loadcheck", {}, { timeoutMs: LOADCHECK_TIMEOUT_MS });
     if (!engines || engines.stt !== true || engines.cleanup !== true) {
       throw new Error(
         `native addon load failed: ${JSON.stringify(engines)}`

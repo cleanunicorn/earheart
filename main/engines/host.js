@@ -17,6 +17,13 @@ const path = require("node:path");
 // and long transcriptions emit nothing and must still fit under it.
 const DEFAULT_REQUEST_TIMEOUT_MS = 180000;
 
+// Deadline for the "loadcheck" request (scripts/engine-smoke.js and the
+// packaged app's --engine-check). On Apple Silicon it initializes the Metal
+// backend, and llama.cpp v0.5.0 compiles all its embedded Metal shader
+// libraries then: 34.9 s on the macos-latest runner's paravirtual GPU, 33.7 s
+// of it compiling (CI run 36778391767). 120 s leaves ~3.4x headroom.
+const LOADCHECK_TIMEOUT_MS = 120000;
+
 // Failures that mean the worker itself is gone or wedged — as opposed to an
 // error the worker replied with. Callers branch on these codes (the final
 // transcription retries a piece on a fresh worker), never on message text.
@@ -163,4 +170,4 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
   return { request, stop, busy, onExit };
 }
 
-module.exports = { createHost };
+module.exports = { createHost, LOADCHECK_TIMEOUT_MS };

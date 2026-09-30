@@ -301,7 +301,10 @@ The built-in engine is `node-llama-cpp` 3.22.1, which bundles llama.cpp
 
 - **instruct-tuned**, with a chat template node-llama-cpp resolves (the harness
   records the wrapper it picked; `GeneralChatWrapper` would mean the template
-  was not understood);
+  was not understood). The worker, the harness and `scripts/eval-cleanup.mjs`
+  resolve it through `cleanupChatWrapper` (`main/util/cleanup-turn.js`), which
+  turns Gemma 4's default reasoning off: its thought tokens count against the
+  clean's `maxTokens` cap, so every clean ran away to the raw transcript;
 - a **single-file GGUF** (a split `…-00001-of-00002.gguf` is out;
   `test/engines.test.js` now enforces this for the catalog);
 - an **architecture the bundled llama.cpp knows** (checked with
@@ -352,7 +355,7 @@ reason, not a measurement.
 
 | candidate (probed file) | reason | evidence |
 |---|---|---|
-| ggml-org/gemma-4-E2B-it-GGUF · `gemma-4-E2B-it-Q4_0.gguf`, ggml-org/gemma-4-E4B-it-GGUF · `gemma-4-E4B-it-Q4_0.gguf` | **Engine could not load it** when surveyed: architecture `gemma4` is not in llama.cpp b8390 (node-llama-cpp 3.18.1). The bump to node-llama-cpp 3.22.1 (llama.cpp v0.5.0) loads it; not yet measured here | probe `arch: gemma4`; `grep -xc gemma4` → 0 on b8390, 1 on v0.5.0 (`gemma3` → 1) |
+| ggml-org/gemma-4-E2B-it-GGUF · `gemma-4-E2B-it-Q4_0.gguf`, ggml-org/gemma-4-E4B-it-GGUF · `gemma-4-E4B-it-Q4_0.gguf` | **Engine could not load it** when surveyed: architecture `gemma4` is not in llama.cpp b8390 (node-llama-cpp 3.18.1). The bump to node-llama-cpp 3.22.1 (llama.cpp v0.5.0) loads it, and cleans with reasoning off (`cleanupChatWrapper`); not yet measured here | probe `arch: gemma4`; `grep -xc gemma4` → 0 on b8390, 1 on v0.5.0 (`gemma3` → 1) |
 | ggml-org/Laguna-XS-2.1-GGUF · `Laguna-XS-2.1-Q4_K_M.gguf` | 19.6 GB, outside the size band; licence `openmdw-1.1`. (When surveyed the engine also could not load it: `laguna` is not in b8390; v0.5.0 has it) | probe; `grep -xc laguna` → 0 on b8390, 1 on v0.5.0 |
 | Qwen/Qwen2.5-7B-Instruct-GGUF · `qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf` | **Split GGUF:** Q4_K_M comes in two parts | probe `split: true` |
 | Qwen/Qwen2.5-3B-Instruct-GGUF · `qwen2.5-3b-instruct-q4_k_m.gguf` | **Licence** `qwen-research` (non-commercial) | probe |

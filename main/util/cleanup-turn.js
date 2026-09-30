@@ -37,9 +37,27 @@ function cleanupSamplingOptions(sampling) {
   return opts;
 }
 
+// node-llama-cpp chat-wrapper resolution options for the cleanup session.
+// Gemma 4's wrapper reasons by default, and its thought tokens count against
+// the clean's maxTokens cap (transcript + slack), so every clean hit the cap
+// and fell back to the raw transcript. Cleanup is a transform, not a question:
+// turn reasoning off. Keyed by wrapper type, so any other architecture resolves
+// exactly as the "auto" default would.
+function cleanupChatWrapperOptions() {
+  return { customWrapperSettings: { gemma4: { reasoning: false } } };
+}
+
+// The chat wrapper a cleanup LlamaChatSession is built with; `mod` is the
+// imported node-llama-cpp module, `model` the loaded LlamaModel.
+function cleanupChatWrapper(mod, model) {
+  return mod.resolveChatWrapper(model, cleanupChatWrapperOptions());
+}
+
 module.exports = {
   DEFAULT_CLEANUP_TEMPERATURE,
   cleanupTurnPrefix,
   cleanupUserTurn,
   cleanupSamplingOptions,
+  cleanupChatWrapperOptions,
+  cleanupChatWrapper,
 };

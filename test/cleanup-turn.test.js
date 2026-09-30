@@ -14,6 +14,8 @@ const {
   cleanupTurnPrefix,
   cleanupUserTurn,
   cleanupSamplingOptions,
+  cleanupChatWrapperOptions,
+  cleanupChatWrapper,
 } = require("../main/util/cleanup-turn");
 
 test("cleanupUserTurn labels the transcript as data and ends on the cue", () => {
@@ -66,4 +68,29 @@ test("the prefill prefix is a strict string prefix of the full turn", () => {
   assert.ok(full.startsWith(prefix), `${JSON.stringify(prefix)} is not a prefix of the turn`);
   assert.ok(full.startsWith(cleanupTurnPrefix(prompt, "")));
   assert.strictEqual(cleanupTurnPrefix("RULES", "abc"), "RULES\n\nTranscript:\nabc");
+});
+
+test("cleanupChatWrapperOptions turns off Gemma 4 reasoning and changes nothing else", () => {
+  // Gemma 4's thought tokens count against the clean's maxTokens cap, so with
+  // reasoning on every clean ran away to the raw transcript. Only the gemma4
+  // wrapper is configured: any other model resolves as the "auto" default.
+  assert.deepStrictEqual(cleanupChatWrapperOptions(), {
+    customWrapperSettings: { gemma4: { reasoning: false } },
+  });
+  // A fresh object each call, so a caller can't mutate the shared setting.
+  assert.notStrictEqual(cleanupChatWrapperOptions(), cleanupChatWrapperOptions());
+});
+
+test("cleanupChatWrapper resolves the model's wrapper with the cleanup options", () => {
+  const calls = [];
+  const wrapper = { name: "Gemma4ChatWrapper" };
+  const mod = {
+    resolveChatWrapper(model, options) {
+      calls.push({ model, options });
+      return wrapper;
+    },
+  };
+  const model = { id: "loaded model" };
+  assert.strictEqual(cleanupChatWrapper(mod, model), wrapper);
+  assert.deepStrictEqual(calls, [{ model, options: cleanupChatWrapperOptions() }]);
 });

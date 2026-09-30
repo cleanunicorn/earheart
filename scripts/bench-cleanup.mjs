@@ -62,7 +62,7 @@ import { pathToFileURL } from "node:url";
 const require = createRequire(import.meta.url);
 const { DEFAULTS } = require("../main/settings");
 const { resolveCleanup } = require("../main/cleanup-styles");
-const { cleanupUserTurn, cleanupSamplingOptions } = require("../main/util/cleanup-turn");
+const { cleanupUserTurn, cleanupSamplingOptions, cleanupChatWrapper } = require("../main/util/cleanup-turn");
 const { cleanMaxTokens, cleanContextNeed } = require("../main/util/clean-budget");
 const { SHORT, REPORTED, FLUENT } = require("./dictation-corpus");
 const metrics = require("./cleanup-metrics");
@@ -210,7 +210,10 @@ async function benchModel(modelPath, opts, mod, now = () => performance.now()) {
   const context = await model.createContext({ contextSize: CONTEXT_SIZE });
   const loadMs = now() - tLoad;
   const sequence = context.getSequence();
-  const session = new mod.LlamaChatSession({ contextSequence: sequence });
+  const session = new mod.LlamaChatSession({
+    contextSequence: sequence,
+    chatWrapper: cleanupChatWrapper(mod, model),
+  });
   const turns = plan(opts);
 
   const manifest = {

@@ -25,7 +25,7 @@ const {
   cleanBudgetMessage,
   CLEAN_RUNAWAY_MESSAGE,
 } = require("../util/clean-budget");
-const { cleanupUserTurn, cleanupSamplingOptions } = require("../util/cleanup-turn");
+const { cleanupUserTurn, cleanupSamplingOptions, cleanupChatWrapper } = require("../util/cleanup-turn");
 
 const port = process.parentPort;
 
@@ -239,6 +239,7 @@ function freshSession(mod) {
   if (!llamaSession) {
     llamaSession = new mod.LlamaChatSession({
       contextSequence: llamaContext.getSequence(),
+      chatWrapper: cleanupChatWrapper(mod, llamaModel),
     });
   } else {
     llamaSession.resetChatHistory();

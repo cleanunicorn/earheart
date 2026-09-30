@@ -14,7 +14,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const metrics = require("../scripts/cleanup-metrics");
-const { cleanupUserTurn, cleanupSamplingOptions } = require("../main/util/cleanup-turn");
+const { cleanupUserTurn, cleanupSamplingOptions, cleanupChatWrapperOptions } = require("../main/util/cleanup-turn");
 const { cleanMaxTokens } = require("../main/util/clean-budget");
 const { FLUENT } = require("../scripts/dictation-corpus");
 const { DEFAULTS } = require("../main/settings");
@@ -260,12 +260,13 @@ test("rescore re-scores saved runs from their raw outputs and keeps the timings"
 // reply(turn, options, n) → { text, stopReason, batches } where batches is the
 // token count of each onToken callback.
 function fakeLlamaModule(reply) {
-  const calls = { getLlama: [], createContext: [], clears: 0, resets: 0, prompts: [] };
+  const calls = { getLlama: [], createContext: [], resolveChatWrapper: [], sessions: [], clears: 0, resets: 0, prompts: [] };
   class GemmaChatWrapper {}
   class LlamaChatSession {
-    constructor({ contextSequence }) {
+    constructor({ contextSequence, chatWrapper }) {
+      calls.sessions.push({ chatWrapper });
       this.sequence = contextSequence;
-      this.chatWrapper = new GemmaChatWrapper();
+      this.chatWrapper = chatWrapper ?? new GemmaChatWrapper();
     }
     resetChatHistory() {
       calls.resets++;
@@ -279,6 +280,11 @@ function fakeLlamaModule(reply) {
   }
   const mod = {
     LlamaChatSession,
+    resolveChatWrapper(model, options) {
+      const wrapper = new GemmaChatWrapper();
+      calls.resolveChatWrapper.push({ model, options, wrapper });
+      return wrapper;
+    },
     async getLlama(options) {
       calls.getLlama.push(options);
       return {
@@ -331,6 +337,12 @@ test("benchModel: the CPU pass prompts as the app does, fresh each time, and sav
   // CPU backend, no thread override, the app's 4096-token context.
   assert.deepStrictEqual(calls.getLlama, [{ gpu: false }]);
   assert.deepStrictEqual(calls.createContext, [{ contextSize: 4096 }]);
+
+  // The app's chat wrapper (reasoning off for Gemma 4), not the "auto" default.
+  assert.strictEqual(calls.resolveChatWrapper.length, 1);
+  assert.deepStrictEqual(calls.resolveChatWrapper[0].options, cleanupChatWrapperOptions());
+  assert.strictEqual(typeof calls.resolveChatWrapper[0].model.createContext, "function");
+  assert.deepStrictEqual(calls.sessions, [{ chatWrapper: calls.resolveChatWrapper[0].wrapper }]);
 
   // One untimed warm-up, then every planned clean; each one starts from an
   // empty chat and an empty KV sequence.

@@ -32,14 +32,15 @@
 // test/unit.test.js.
 
 import { createRequire } from "node:module";
-import { getLlama, LlamaChatSession } from "node-llama-cpp";
+import * as llamaCpp from "node-llama-cpp";
+const { getLlama, LlamaChatSession } = llamaCpp;
 
 const require = createRequire(import.meta.url);
 const { DEFAULTS } = require("../main/settings");
 const { STYLES } = require("../main/cleanup-styles");
 const { stripStumbles } = require("../main/util/stumble-strip");
 const { SHORT, REPORTED, FLUENT } = require("./dictation-corpus");
-const { cleanupUserTurn, cleanupSamplingOptions } = require("../main/util/cleanup-turn");
+const { cleanupUserTurn, cleanupSamplingOptions, cleanupChatWrapper } = require("../main/util/cleanup-turn");
 // The same filler/repeat counters the model benchmark scores with.
 const { countFillers, countRepeats } = require("./cleanup-metrics");
 
@@ -96,7 +97,10 @@ const model = await llama.loadModel({ modelPath });
 const context = await model.createContext({ contextSize: 4096 });
 // One sequence, one session, reset between turns — exactly what the worker's
 // freshSession() does in production.
-const session = new LlamaChatSession({ contextSequence: context.getSequence() });
+const session = new LlamaChatSession({
+  contextSequence: context.getSequence(),
+  chatWrapper: cleanupChatWrapper(llamaCpp, model),
+});
 const results = [];
 
 for (const arm of ARMS) {

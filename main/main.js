@@ -13,7 +13,7 @@ const autostart = require("./autostart");
 const updates = require("./updates");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
-const { createHost } = require("./engines/host");
+const { createHost, LOADCHECK_TIMEOUT_MS } = require("./engines/host");
 const { prettyHotkey } = require("./util/hotkey-label");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
@@ -175,7 +175,7 @@ function main() {
         if (process.argv.includes("--engine-check")) {
           const host = createHost({ serviceName: "earheart-engine-check" });
           try {
-            const engines = await host.request("loadcheck", {}, { timeoutMs: 30000 });
+            const engines = await host.request("loadcheck", {}, { timeoutMs: LOADCHECK_TIMEOUT_MS });
             if (engines?.stt !== true || engines?.cleanup !== true) {
               throw new Error(`native addon load failed: ${JSON.stringify(engines)}`);
             }

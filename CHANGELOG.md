@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.33.9 — 2026-09-30
+
+- Load Gemma 4 custom cleanup models (update node-llama-cpp to 3.22.1) (#244)
+
 ## v0.33.8 — 2026-09-26
 
 - Bump astral-sh/setup-uv from 10.1.0 to 10.2.0 in the github-actions group (#241)

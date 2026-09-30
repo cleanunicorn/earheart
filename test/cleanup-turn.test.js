@@ -94,3 +94,40 @@ test("cleanupChatWrapper resolves the model's wrapper with the cleanup options",
   assert.strictEqual(cleanupChatWrapper(mod, model), wrapper);
   assert.deepStrictEqual(calls, [{ model, options: cleanupChatWrapperOptions() }]);
 });
+
+// Against the installed node-llama-cpp's own resolver: importing it loads JS
+// only (no native backend, no model, no network). The app passes a LlamaModel,
+// whose overload forwards customWrapperSettings to this options overload.
+async function llamaCpp() {
+  return import("node-llama-cpp");
+}
+
+// What the wrapper would send for one user turn, before the model replies.
+function contextFor(wrapper) {
+  const chatHistory = [{ type: "user", text: "Hello" }, { type: "model", response: [] }];
+  return wrapper.generateContextState({ chatHistory }).contextText.toString();
+}
+
+test("the installed resolver builds Gemma 4's wrapper with reasoning off", async () => {
+  const mod = await llamaCpp();
+  const auto = mod.resolveChatWrapper({ architecture: "gemma4" });
+  const cleanup = mod.resolveChatWrapper({ architecture: "gemma4", ...cleanupChatWrapperOptions() });
+  assert.ok(cleanup instanceof mod.Gemma4ChatWrapper);
+  // The default reasons, and asks the model to think via a <|think|> marker.
+  assert.strictEqual(auto.reasoning, true);
+  assert.ok(contextFor(auto).includes("<|think|>"));
+  assert.strictEqual(cleanup.reasoning, false);
+  assert.ok(!contextFor(cleanup).includes("<|think|>"), contextFor(cleanup));
+});
+
+test("the cleanup options leave every other chat wrapper exactly as auto resolves it", async () => {
+  const mod = await llamaCpp();
+  const others = mod.specializedChatWrapperTypeNames.filter((type) => type !== "gemma4");
+  assert.ok(others.length > 10, `only ${others.length} wrapper types`);
+  for (const type of others) {
+    const auto = mod.resolveChatWrapper({ type });
+    const cleanup = mod.resolveChatWrapper({ type, ...cleanupChatWrapperOptions() });
+    assert.strictEqual(cleanup.constructor, auto.constructor, type);
+    assert.strictEqual(contextFor(cleanup), contextFor(auto), type);
+  }
+});

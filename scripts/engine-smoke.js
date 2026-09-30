@@ -31,7 +31,11 @@ app.whenReady().then(async () => {
     }
     console.log("[engine-smoke] worker ping ok");
 
-    const engines = await host.request("loadcheck", {}, { timeoutMs: 30000 });
+    // DIAGNOSTIC (temporary, reverted before review): 180 s + elapsed heartbeat.
+    const t0 = Date.now();
+    const beat = setInterval(() => console.log(`[engine-smoke] loadcheck waiting ${Math.round((Date.now() - t0) / 1000)} s`), 15000);
+    const engines = await host.request("loadcheck", {}, { timeoutMs: 180000 }).finally(() => clearInterval(beat));
+    console.log(`[engine-smoke] loadcheck replied after ${Date.now() - t0} ms: ${JSON.stringify(engines)}`);
     if (!engines || engines.stt !== true || engines.cleanup !== true) {
       throw new Error(
         `native addon load failed: ${JSON.stringify(engines)}`

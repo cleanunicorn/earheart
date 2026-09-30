@@ -554,7 +554,7 @@ async function main(argv) {
     const mod = await import("node-llama-cpp");
     console.log(TABLE_HEAD);
     console.log(markdownRow(await benchModel(opts.models[0], opts, mod)));
-    // Exit without tearing the native backend down: disposing it segfaults
+    // Exit without tearing the native backend down: disposing it segfaulted
     // node-llama-cpp 3.18.1 here (exit 139), after every file is written. One
     // model per process also keeps each model's timings free of the last one's
     // memory.

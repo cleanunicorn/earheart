@@ -53,9 +53,10 @@ test("feedFileFor picks the platform feed", () => {
   assert.strictEqual(feedFileFor("win32"), "latest.yml");
 });
 
-test("Intel installs (including Rosetta) use a separate feed", () => {
-  assert.strictEqual(feedFileFor("darwin", "x64"), "latest-mac-x64.yml");
-  assert.notStrictEqual(feedFileFor("darwin", "x64"), feedFileFor("darwin", "arm64"));
+test("macOS Intel is unsupported, so it gets no feed", () => {
+  // Intel builds stopped after v0.33.9; check() reports this as a failed
+  // check instead of fetching another architecture's feed.
+  assert.throws(() => feedFileFor("darwin", "x64"), /Unsupported macOS architecture: x64/);
   assert.throws(() => feedFileFor("darwin", "unknown"), /Unsupported/);
 });
 
@@ -67,15 +68,17 @@ test("parseLatestYml reads the mac feed", () => {
   assert.strictEqual(info.size, 171973146);
 });
 
-test("macOS rejects the other architecture even if its feed was mispublished", () => {
+test("macOS accepts only the Apple Silicon zip, even if a feed was mispublished", () => {
   const intel = MAC_YML.replaceAll("-arm64-mac.zip", "-mac.zip");
-  for (const [arch, valid, wrong] of [["arm64", MAC_YML, intel], ["x64", intel, MAC_YML]]) {
-    const info = parseLatestYml(valid, { platform: "darwin", arch });
-    assert.strictEqual(info.size, 171973146);
-    assert.throws(() => parseLatestYml(wrong, { platform: "darwin", arch }), /incompatible/);
-    assert.throws(() => parseLatestYml(valid.replaceAll(".zip", ".dmg"), {
-      platform: "darwin", arch,
-    }), /incompatible/);
+  const info = parseLatestYml(MAC_YML, { platform: "darwin", arch: "arm64" });
+  assert.strictEqual(info.size, 171973146);
+  assert.throws(() => parseLatestYml(intel, { platform: "darwin", arch: "arm64" }), /incompatible/);
+  assert.throws(() => parseLatestYml(MAC_YML.replaceAll(".zip", ".dmg"), {
+    platform: "darwin", arch: "arm64",
+  }), /incompatible/);
+  // A well-formed legacy Intel feed is still refused on Intel.
+  for (const feed of [intel, MAC_YML]) {
+    assert.throws(() => parseLatestYml(feed, { platform: "darwin", arch: "x64" }), /incompatible with macOS x64/);
   }
 });
 

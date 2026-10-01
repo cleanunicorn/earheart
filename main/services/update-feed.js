@@ -12,10 +12,12 @@ const REPO_SLUG = "cleanunicorn/earheart";
 const DEFAULT_FEED_BASE = `https://github.com/${REPO_SLUG}/releases/latest/download`;
 const RELEASES_PAGE = `https://github.com/${REPO_SLUG}/releases/latest`;
 
-/** Architecture-specific feed; the legacy mac feed stays Apple Silicon. */
+/**
+ * Platform feed. macOS ships Apple Silicon only (Intel builds stopped after
+ * v0.33.9), so any other Mac architecture throws and check() reports it.
+ */
 function feedFileFor(platform, arch = process.arch) {
   if (platform === "darwin") {
-    if (arch === "x64") return "latest-mac-x64.yml";
     if (arch === "arm64") return "latest-mac.yml";
     throw new Error(`Unsupported macOS architecture: ${arch}`);
   }
@@ -57,15 +59,10 @@ function parseLatestYml(text, { platform, arch } = {}) {
   if (!version || !path || !sha512) {
     throw new Error("Update feed is missing version, path or sha512");
   }
-  // Fail closed if a mispublished macOS feed points at the other CPU (or a
-  // DMG instead of the ZIP the updater extracts). Intel uses builder's legacy
-  // unsuffixed x64 name; Apple Silicon always includes -arm64.
-  if (platform === "darwin") {
-    const suffix = arch === "arm64" ? "-arm64-mac.zip" : "-mac.zip";
-    if ((arch !== "arm64" && arch !== "x64") || !path.endsWith(suffix) ||
-        (arch === "x64" && path !== `Earheart-${version}-mac.zip`)) {
-      throw new Error(`Update artifact is incompatible with macOS ${arch}: ${path}`);
-    }
+  // Fail closed if a mispublished macOS feed points at another CPU's build (or
+  // a DMG instead of the ZIP the updater extracts). Only Apple Silicon ships.
+  if (platform === "darwin" && (arch !== "arm64" || !path.endsWith("-arm64-mac.zip"))) {
+    throw new Error(`Update artifact is incompatible with macOS ${arch}: ${path}`);
   }
   const entry = files.find((f) => f.url === path);
   const parsedSize = entry && entry.size ? Number(entry.size) : 0;

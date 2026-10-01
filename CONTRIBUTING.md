@@ -248,7 +248,9 @@ Design constraints worth keeping:
   transcript; if paste fails, fall back to the clipboard; history keeps the
   text either way. Built-in speech is decoded one utterance at a time
   (`main/chunked-decode.js`, cut at pauses, ≤ 20 s per decode) because the
-  model drops whole sentences when several share a decode; if the STT worker
+  model drops whole sentences when several share a decode — while a fragment
+  a hesitation cut off joins its neighbour, and a click or tap is never
+  decoded alone, since the model invents words for both; if the STT worker
   dies part-way, the words already decoded are still delivered, with a
   notification, and marked `incomplete` — on the overlay's done card and in
   the History entry, not only in the stored record. See

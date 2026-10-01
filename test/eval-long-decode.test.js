@@ -109,3 +109,31 @@ test("eval-long-decode: values that would disable the gate are rejected", () => 
   const ok = parseArgs(["--min-ratio", "0", "--max-wer-over-short", "1", "--caps", "0.5"]);
   assert.deepStrictEqual([ok.minRatio, ok.maxWerOverShort, ok.caps], [0, 1, [0.5]]);
 });
+
+test("eval-long-decode: --dictation, --before and --seed parse", () => {
+  const o = parseArgs(["--cache-dir", "c", "--out", "o", "--dictation", "--before", "--seed", "7"]);
+  assert.deepStrictEqual([o.dictation, o.before, o.seed], [true, true, 7]);
+  const d = parseArgs(["--cache-dir", "c", "--out", "o"]);
+  assert.deepStrictEqual([d.dictation, d.before, d.seed], [false, false, 1]);
+});
+
+test("eval-long-decode: a dictation recording keeps every clip's audio, adds only quiet and noise, and is reproducible", () => {
+  const { dictationRecording } = require("../scripts/eval-long-decode");
+  // Two "sentences" of steady tone with a dip in the middle to hesitate in.
+  const clipOf = (sec) => {
+    const c = new Int16Array(sec * 16000);
+    for (let i = 0; i < c.length; i++) c[i] = (i % 2 ? 1 : -1) * (Math.abs(i - c.length / 2) < 800 ? 50 : 6000);
+    return c;
+  };
+  const clips = [clipOf(4), clipOf(5)];
+  const a = dictationRecording(clips, 3);
+  assert.deepStrictEqual(dictationRecording(clips, 3), a, "same seed, same recording");
+  assert.notDeepStrictEqual(dictationRecording(clips, 4), a, "another seed, another shape");
+  const clipSamples = clips.reduce((n, c) => n + c.length, 0);
+  assert.ok(a.length > clipSamples + 16000 * 0.8, "gaps and edges add time");
+  // Speech-level samples come only from the clips: the added sounds are a
+  // few ms of click and a breath, far fewer than a sentence.
+  const loud = (x) => x.reduce((n, v) => n + (Math.abs(v) > 3000 ? 1 : 0), 0);
+  assert.ok(loud(a) >= loud(Int16Array.from(clips.flatMap((c) => [...c]))) * 0.95);
+  assert.ok(loud(a) - loud(Int16Array.from(clips.flatMap((c) => [...c]))) < 16000 * 0.1);
+});

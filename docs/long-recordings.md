@@ -13,7 +13,9 @@ two ways:
 Both are fixed by
 [`main/chunked-decode.js`](../main/chunked-decode.js): every built-in decode,
 final and live preview alike, is split at the pauses in the speech (and never
-longer than 20 s), decoded one piece at a time, and joined. This page records
+longer than 20 s), decoded one piece at a time, and joined. Dictation adds
+hesitations and noise to that, which the splitter handles too ([Dictation:
+hesitations and noise](#dictation-hesitations-and-noise)). This page records
 the evidence behind that design. The harness is
 [`scripts/eval-long-decode.js`](../scripts/eval-long-decode.js); its gate is
 pinned by `test/eval-long-decode.test.js`.
@@ -102,7 +104,109 @@ the audio again instead of committing a hole.
 **What this doesn't cover.** A speaker who never pauses for 200 ms (or a room
 too noisy to reach the silence level) gets 20 s pieces only. That is the
 0.84–0.87 column above. FLEURS is read speech with clean gaps, not dictation
-through Earheart's microphone path.
+through Earheart's microphone path — which is what the next section is about.
+
+## Dictation: hesitations and noise
+
+Cutting at every pause was measured on read speech, and dictation is not read
+speech. People stop mid-sentence to think, for longer than 200 ms, and the
+room clicks, taps and breathes in the gaps. Each of those pauses was a cut, so
+the model was handed fragments with no context: the word after a hesitation
+on its own, half of a word, a keyboard tap. It decodes them badly in a way
+cleanup can't repair, because cleanup is told never to guess words. A user's
+History entry (v0.34.1) shows both:
+
+> Okay, so Let me do this. USA You will I see. A You you you uh A Oh, Monaco
+> winner. Meta. Alpex. So what Ever is it? Happening. Um Okay. …
+
+Every capital mid-sentence ("Let", "Ever", "And", "But") is a piece start,
+decoded alone; "whatever" was cut in two. "A", "You you you", "uh", "Oh" are
+the kind of words the model makes up for a click or a breath.
+
+Two changes in [`main/util/split-silence.js`](../main/util/split-silence.js),
+turned on by [`main/chunked-decode.js`](../main/chunked-decode.js):
+
+- **Noise is part of the pause.** Sound shorter than 0.15 s (in 5 ms window
+  hops, so a real click of ~0.1 s or less) with at least 0.1 s of quiet on
+  each side — or the buffer's edge, where the hotkey's own click lands — no
+  longer splits the pause it sits in. A consonant burst inside a word has
+  shorter closures around it, so it is never taken for a click. A piece
+  that still has no sound and that the speech probe doesn't call speech is
+  not decoded at all (only when the recording is more than one piece: a
+  one-piece recording's answer, or error, is the dictation's).
+- **Fragments join a neighbour.** A stretch holding less than 2 s of speech
+  joins the neighbour across the shorter pause, smallest first, as long as
+  the merged piece stays within the 20 s cap. Inside a merged piece every
+  pause longer than 0.5 s reaches the decoder shortened to 0.5 s (its middle
+  is dropped), so a long pause doesn't spend the cap on silence. Stretches of
+  2 s or more still cut at every pause, so two sentences still don't share a
+  decode (#168).
+
+### The dictation recordings
+
+`--dictation` builds each recording from the same FLEURS sentences and keeps
+their text as the reference, but shapes it like a dictation
+(`dictationRecording` in the harness, seeded and reproducible): 0–2
+hesitations of 0.4–1.2 s inside each sentence, at its quietest 100 ms between
+25 % and 75 % of the clip (usually between words, sometimes inside one); 0.8–
+2.5 s between sentences, with a ~0.3 s breath in half the gaps and a click in
+40 %; the hotkey's click at the start and end; a room floor at 0.002 RMS. It
+is a model of dictation, not a recording of it: the voices are still read
+speech.
+
+### Result
+
+`--before` runs the old behaviour (cut at every pause, decode every piece) next
+to the shipped one in the same session. Same machine as above, 2026-10-01,
+Electron 42.4.1.
+
+WER, with word ratio in brackets. A ratio over 1 is words added: the
+invented ones.
+
+| model | recording | audio | before: every pause | now | pieces, before → now |
+| --- | --- | --- | --- | --- | --- |
+| fp32 (default) | dictation | 155.2 s | 12.5 % (1.035) | **5.1 % (0.990)** | 67 → 24 |
+| fp32 (default) | dictation | 225.0 s | 10.8 % (1.035) | **5.0 % (0.994)** | 92 → 32 |
+| fp32 (default) | dictation | 382.4 s | 11.5 % (1.038) | **5.2 % (0.997)** | 150 → 54 |
+| fp32 (default) | read | 124.5 s | 6.8 % (0.994) | **4.8 % (0.981)** | 38 → 18 |
+| fp32 (default) | read | 182.9 s | 7.1 % (1.010) | **4.4 % (0.990)** | 54 → 26 |
+| fp32 (default) | read | 310.9 s | 8.1 % (1.010) | **5.6 % (0.987)** | 87 → 44 |
+| int8 | dictation | 155.2 s | 12.2 % (1.051) | **6.4 % (1.000)** | 67 → 24 |
+| int8 | dictation | 225.0 s | 11.9 % (1.056) | **6.2 % (1.012)** | 92 → 32 |
+| int8 | dictation | 382.4 s | 13.0 % (1.047) | **8.6 % (1.004)** | 150 → 54 |
+| int8 | read | 124.5 s | 6.8 % (1.016) | **4.8 % (1.000)** | 38 → 18 |
+| int8 | read | 182.9 s | 6.9 % (1.017) | **4.6 % (1.004)** | 54 → 26 |
+| int8 | read | 310.9 s | 8.2 % (1.013) | **6.1 % (0.999)** | 87 → 44 |
+
+Every "now" run passes the gate (word ratio ≥ 0.95, WER within 3 points of
+the recording's short-clip WER, 4.0–6.2 %); no piece failed, the longest
+was 16.1 s.
+
+The read recordings got better too: the 1–2 s pieces that cutting at every
+pause produced there (the "accepted empty" breaths and clicks above among
+them) were costing words, and joining them did not bring back the #168 loss —
+the word ratio stays at 0.981–1.004.
+
+### Choosing the thresholds
+
+A sweep over the int8 model, 300 s recordings (dictation seeds 1 and 2), WER:
+
+| recording | before | noise only | fragments < 2 s only | **both (shipped)** | fragments < 3 s + noise |
+| --- | --- | --- | --- | --- | --- |
+| read | 8.2 % | 6.6 % | 6.6 % | **6.1 %** | 5.7 % |
+| dictation, seed 1 | 13.0 % | 10.7 % | 8.6 % | **8.6 %** | 7.1 % |
+| dictation, seed 2 | 12.6 % | 11.5 % | 8.7 % | **8.5 %** | 7.5 % |
+
+Each change helps alone, and together they help most. 3 s scored a little
+better, but without the noise handling its word ratio fell to 0.968–0.979,
+the direction #168 went; 2 s kept it at 0.982–1.004 and is what ships. 1 s
+merged too little (9.1–11.5 %).
+
+**What this doesn't cover.** The dictation recordings are synthetic. A
+fragment can still be decoded alone when joining it either way would pass the
+20 s cap, and noise longer than 0.15 s (a cough, a chair) is still sound: it
+joins a neighbour like a fragment, so the model hears it in context rather
+than alone.
 
 ## When the worker dies anyway
 
@@ -171,6 +275,11 @@ measurement:
 xvfb-run -a npx electron scripts/eval-stt.js --no-sandbox --pass accuracy \
   --models parakeet-tdt-0.6b-v3-int8 --keep --cache-dir <cache> --out <acc.json>
 
+# dictation-shaped recordings, old and new splitting side by side
+xvfb-run -a npx electron scripts/eval-long-decode.js --no-sandbox \
+  --cache-dir <cache> --out <run.json> --dictation --before
+# read recordings, old and new splitting side by side
+… --before
 # before/after table (exit 1 if a pieces run misses the gate)
 xvfb-run -a npx electron scripts/eval-long-decode.js --no-sandbox \
   --cache-dir <cache> --out <run.json> --single

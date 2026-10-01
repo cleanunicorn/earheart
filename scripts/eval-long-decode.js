@@ -20,9 +20,17 @@
 //
 //   pieces   main/chunked-decode.js — the production code — over a real engine
 //            worker (main/engines/host.js), once per --caps value: cut at
-//            every pause, never over the cap (--no-pauses: the cap alone).
+//            the pauses, never over the cap (--no-pauses: the cap alone).
 //   single   (--single) one worker request for the whole buffer: the shape
 //            the issues reported. Informational; never gates.
+//
+// --dictation builds each recording the way a dictation sounds instead (see
+// dictationRecording): hesitations inside sentences, long gaps holding
+// breaths and clicks, the hotkey's click at either end.
+//
+// --before adds a pieces run that cuts at every pause and decodes every
+// piece — the splitter before it handled hesitations and noise
+// (informational, never gates), for a before/after table on either corpus.
 //
 // Each recording's baseline is its own sentences decoded one clip at a time
 // (mean 10 s): the "short buffer" accuracy that recording is held to. A pieces run fails
@@ -32,7 +40,8 @@
 //
 // Flags: --cache-dir <dir> (required), --out <file.json> (required),
 // --model <id> (default: the shipped default), --targets 120,180,300,
-// --caps 20 (comma list: a cap sweep), --no-pauses, --single,
+// --caps 20 (comma list: a cap sweep), --no-pauses, --single, --before, --dictation,
+// --seed 1 (the dictation shape),
 // --max-wer-over-short 0.03, --min-ratio 0.95.
 
 const fs = require("node:fs");
@@ -44,6 +53,7 @@ const registry = require("../main/engines/registry");
 const manager = require("../main/engines/model-manager");
 const { encodeWav, wavDurationSec, SAMPLE_RATE } = require("../main/util/wav");
 const { transcribeChunked, MAX_DECODE_SECONDS } = require("../main/chunked-decode");
+const { quietestOffset } = require("../renderer/chunk-boundary");
 
 const GAP_SAMPLES = Math.round(0.3 * SAMPLE_RATE);
 const LOAD_TIMEOUT_MS = 600000;
@@ -58,6 +68,9 @@ function parseArgs(argv) {
     caps: [MAX_DECODE_SECONDS],
     single: false,
     pauses: true,
+    dictation: false,
+    before: false,
+    seed: 1,
     maxWerOverShort: 0.03,
     minRatio: 0.95,
   };
@@ -90,6 +103,9 @@ function parseArgs(argv) {
       case "--caps": opts.caps = numbers(next()); break;
       case "--single": opts.single = true; break;
       case "--no-pauses": opts.pauses = false; break;
+      case "--dictation": opts.dictation = true; break;
+      case "--before": opts.before = true; break;
+      case "--seed": opts.seed = Number(next()); break;
       case "--max-wer-over-short": opts.maxWerOverShort = fraction(arg, next()); break;
       case "--min-ratio": opts.minRatio = fraction(arg, next()); break;
       default:
@@ -103,6 +119,119 @@ function parseArgs(argv) {
     if (!list.length || list.some((n) => !Number.isFinite(n) || n <= 0)) throw new Error(`${name} needs positive finite numbers`);
   }
   return opts;
+}
+
+// Deterministic [0, 1) generator, so a dictation recording is the same on
+// every run and machine for a given --seed.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// The sounds a dictation adds to read speech, as PCM16 at SAMPLE_RATE. RMS is
+// stated after the overlay's auto gain control, where the splitter sees it.
+const DICTATION_SHAPE = {
+  hesitationSec: [0.4, 1.2], // a pause dropped inside a sentence
+  hesitationsPerSentence: [0, 2],
+  gapSec: [0.8, 2.5], // between sentences
+  breathChance: 0.5, // a breath in a gap: band of noise, ~0.3 s
+  clickChance: 0.4, // a click in a gap: a few ms burst
+  floorRms: 0.002, // the room, under the silence level (0.012)
+};
+
+const sec = (s) => Math.round(s * SAMPLE_RATE);
+
+// Silence at the room's floor.
+function roomTone(n, rand, rms = DICTATION_SHAPE.floorRms) {
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = (rand() * 2 - 1) * rms * Math.sqrt(3);
+  return out;
+}
+
+// A breath: noise under a sine envelope, peaking around 0.03 RMS.
+function breath(rand) {
+  const n = sec(0.25 + rand() * 0.2);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = (rand() * 2 - 1) * 0.05 * Math.sin((Math.PI * i) / n);
+  return out;
+}
+
+// A click: a few milliseconds of loud, decaying noise (a key, the hotkey).
+function click(rand) {
+  const n = sec(0.004 + rand() * 0.006);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = (rand() * 2 - 1) * 0.4 * (1 - i / n);
+  return out;
+}
+
+// Where in a sentence clip a hesitation goes: the quietest 100 ms between
+// 25 % and 75 % of it — a gap between words, usually, and sometimes a
+// stretch inside one, which is what people do too.
+function hesitationPoints(clip, count) {
+  const floats = Float32Array.from(clip, (x) => x / 32768);
+  const points = [];
+  const lo = Math.floor(floats.length * 0.25);
+  const hi = Math.floor(floats.length * 0.75);
+  const span = Math.floor((hi - lo) / Math.max(1, count));
+  for (let k = 0; k < count && span > sec(0.2); k++) {
+    const from = lo + k * span;
+    points.push(from + quietestOffset(floats.subarray(from, from + span), sec(0.1), sec(0.01)));
+  }
+  return points;
+}
+
+/**
+ * One dictation-shaped recording from sentence clips: each clip in order,
+ * hesitations inside them, gaps between them with breaths and clicks, a
+ * click at either end — all over the room's floor. The words are the clips'
+ * and nothing else, so the clips' text stays the reference.
+ * @param {Int16Array[]} clips
+ * @param {number} seed
+ * @returns {Int16Array}
+ */
+function dictationRecording(clips, seed) {
+  const rand = mulberry32(seed);
+  const between = ([a, b]) => a + rand() * (b - a);
+  const parts = [roomTone(sec(0.1), rand), click(rand), roomTone(sec(0.5), rand)];
+  clips.forEach((clip, ci) => {
+    const [minH, maxH] = DICTATION_SHAPE.hesitationsPerSentence;
+    const points = hesitationPoints(clip, minH + Math.floor(rand() * (maxH - minH + 1)));
+    let from = 0;
+    for (const at of [...points, clip.length]) {
+      parts.push(Float32Array.from(clip.subarray(from, at), (x) => x / 32768));
+      if (at < clip.length) parts.push(roomTone(sec(between(DICTATION_SHAPE.hesitationSec)), rand));
+      from = at;
+    }
+    if (ci === clips.length - 1) return;
+    const gap = sec(between(DICTATION_SHAPE.gapSec));
+    const extras = [];
+    if (rand() < DICTATION_SHAPE.breathChance) extras.push(breath(rand));
+    if (rand() < DICTATION_SHAPE.clickChance) extras.push(click(rand));
+    const room = Math.max(0, gap - extras.reduce((n, x) => n + x.length, 0));
+    const slices = extras.length + 1;
+    for (let i = 0; i < slices; i++) {
+      parts.push(roomTone(Math.floor(room / slices), rand));
+      if (extras[i]) parts.push(extras[i]);
+    }
+  });
+  parts.push(roomTone(sec(0.6), rand), click(rand), roomTone(sec(0.1), rand));
+  const total = parts.reduce((n, p) => n + p.length, 0);
+  const out = new Int16Array(total);
+  let at = 0;
+  for (const p of parts) {
+    for (let i = 0; i < p.length; i++) out[at + i] = Math.max(-32768, Math.min(32767, Math.round(p[i] * 32768)));
+    at += p.length;
+  }
+  // The clips' own floor is digital silence in places; add the room over all.
+  const floor = roomTone(total, rand);
+  for (let i = 0; i < total; i++) out[i] = Math.max(-32768, Math.min(32767, out[i] + Math.round(floor[i] * 32768)));
+  return out;
 }
 
 // The sentences for one target length: distinct sentence ids, one gender, tsv
@@ -160,14 +289,14 @@ function markdown(result) {
   const lines = [
     `Model ${result.model}; each recording is held to its own sentences decoded one clip at a time (short-clip WER)`,
     "",
-    "| audio | short-clip WER | decode | pieces | longest piece | word ratio | WER | worker | result |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| recording | audio | short-clip WER | decode | pieces | longest piece | word ratio | WER | worker | result |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
   ];
   for (const r of result.runs) {
     const worker = r.error ? `${r.error}${r.exitCode !== undefined ? ` (exit code ${r.exitCode})` : ""}` : r.alive === false ? "dead after" : "ok";
-    const verdict = r.mode === "single" ? "(before)" : r.reasons.length ? `FAIL: ${r.reasons.join("; ")}` : "pass";
-    const shape = r.mode === "single" ? "one buffer" : `${r.pauses ? "pauses + " : ""}≤ ${r.cap} s cap`;
-    lines.push(`| ${r.audioSec.toFixed(1)} s | ${pct(r.baseline.wer)} (${r.baseline.clips} clips) | ${shape} | ${r.pieces}${r.unconfirmedPieces ? ` (${r.unconfirmedPieces} empty)` : ""} | ${r.maxPieceSec.toFixed(1)} s | ${r.ratio.toFixed(3)} | ${pct(r.wer)} | ${worker} | ${verdict} |`);
+    const verdict = r.mode === "single" || r.mode === "before" ? "(before)" : r.reasons.length ? `FAIL: ${r.reasons.join("; ")}` : "pass";
+    const shape = r.mode === "single" ? "one buffer" : r.mode === "before" ? `every pause + ≤ ${r.cap} s cap` : `${r.pauses ? "pauses + " : ""}≤ ${r.cap} s cap`;
+    lines.push(`| ${r.corpus || "read"} | ${r.audioSec.toFixed(1)} s | ${pct(r.baseline.wer)} (${r.baseline.clips} clips) | ${shape} | ${r.pieces}${r.unconfirmedPieces ? ` (${r.unconfirmedPieces} empty)` : ""} | ${r.maxPieceSec.toFixed(1)} s | ${r.ratio.toFixed(3)} | ${pct(r.wer)} | ${worker} | ${verdict} |`);
   }
   return lines.join("\n");
 }
@@ -226,6 +355,9 @@ async function measureMode(m, { worker, wav, audioSec, ref, target, utterances, 
         restartStt: worker.restart,
         maxSec: m.cap,
         minPauseSec: m.pauses ? undefined : Infinity,
+        // "before": cut at every pause, decode every piece — the splitter
+        // until it handled hesitations and noise.
+        ...(m.mode === "before" ? { minSoundSec: 0, minUtteranceSec: 0, keepPauseSec: Infinity } : {}),
         log: { warn: (...a) => log(...a) },
       });
       text = r.text;
@@ -233,6 +365,7 @@ async function measureMode(m, { worker, wav, audioSec, ref, target, utterances, 
       row.failedPieces = r.pieces.filter((p) => !p.ok).length;
       // Heard speech, decoded to nothing even padded: accepted, but counted.
       row.unconfirmedPieces = r.pieces.filter((p) => p.ok && p.unconfirmed).length;
+      row.noisePieces = r.pieces.filter((p) => p.noise).length;
       row.pieceSeconds = r.pieces.map((p) => +((p.toFrame - p.fromFrame) / SAMPLE_RATE).toFixed(2));
       const failed = r.pieces.find((p) => !p.ok);
       if (failed) Object.assign(row, { error: failed.error, exitCode: failed.exitCode });
@@ -257,7 +390,7 @@ async function measureMode(m, { worker, wav, audioSec, ref, target, utterances, 
   row.reasons = m.mode === "pieces"
     ? judgePieces(row, { shortWer: baseline.wer, cap: m.cap, minRatio: opts.minRatio, maxWerOverShort: opts.maxWerOverShort })
     : [];
-  log(`${audioSec.toFixed(1)} s ${m.mode}${m.cap ? ` cap ${m.cap}` : ""}: ratio ${row.ratio.toFixed(3)}, WER ${(row.wer * 100).toFixed(1)}%, pieces ${row.pieces}, max ${row.maxPieceSec.toFixed(1)} s${row.error ? `, ${row.error}${row.exitCode !== undefined ? ` (exit code ${row.exitCode})` : ""}` : ""}${row.reasons.length ? ` — FAIL ${row.reasons.join("; ")}` : ""}`);
+  log(`${m.corpus || "read"} ${audioSec.toFixed(1)} s ${m.mode}${m.cap ? ` cap ${m.cap}` : ""}: ratio ${row.ratio.toFixed(3)}, WER ${(row.wer * 100).toFixed(1)}%, pieces ${row.pieces}, max ${row.maxPieceSec.toFixed(1)} s${row.error ? `, ${row.error}${row.exitCode !== undefined ? ` (exit code ${row.exitCode})` : ""}` : ""}${row.reasons.length ? ` — FAIL ${row.reasons.join("; ")}` : ""}`);
   return row;
 }
 
@@ -291,10 +424,16 @@ async function run(opts) {
       if (picked.some((r, i) => r.file !== longest[i].file)) throw new Error(`${target} s sentences are not a prefix of the baseline set`);
       const baseline = prefixBaseline(clipScores, picked.length);
       log(`${target} s baseline: ${baseline.clips} clips, WER ${(baseline.wer * 100).toFixed(2)}%, ratio ${baseline.ratio.toFixed(3)}`);
-      const wav = encodeWav(e.concatPcm16(picked.map(clip), GAP_SAMPLES));
+      const pcm = opts.dictation ? dictationRecording(picked.map(clip), opts.seed) : e.concatPcm16(picked.map(clip), GAP_SAMPLES);
+      const wav = encodeWav(pcm);
       const audioSec = wavDurationSec(wav);
       const ref = picked.map((r) => r.raw).join(" ");
-      const modes = [...(opts.single ? [{ mode: "single" }] : []), ...opts.caps.map((cap) => ({ mode: "pieces", cap, pauses: opts.pauses }))];
+      const corpus = opts.dictation ? "dictation" : "read";
+      const modes = [
+        ...(opts.single ? [{ mode: "single" }] : []),
+        ...(opts.before && opts.pauses ? opts.caps.map((cap) => ({ mode: "before", cap, pauses: true })) : []),
+        ...opts.caps.map((cap) => ({ mode: "pieces", cap, pauses: opts.pauses })),
+      ].map((m) => ({ ...m, corpus }));
       const aliveWav = encodeWav(clip(picked[0]));
       for (const m of modes) {
         result.runs.push(
@@ -334,4 +473,4 @@ if (isEntry) {
   );
 }
 
-module.exports = { parseArgs, pickSentences, score, prefixBaseline, judgePieces, markdown };
+module.exports = { parseArgs, pickSentences, score, prefixBaseline, judgePieces, markdown, dictationRecording, mulberry32 };

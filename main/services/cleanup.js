@@ -12,7 +12,7 @@ function stripThinking(text) {
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
     // A response can hit its token/time limit before the closing tag. Treat
     // everything after an unmatched opener as reasoning too; clean() will
-    // fall back to the raw transcript when that leaves no answer.
+    // reject it when that leaves no answer; the pipeline preserves raw text.
     .replace(/<think>[\s\S]*$/i, "")
     .trim();
 }
@@ -60,8 +60,8 @@ async function clean(transcript, cfg, signal) {
     throw new Error("Cleanup service returned no message content");
   }
   const cleaned = stripThinking(content);
-  // An empty cleanup result should never eat the user's words.
-  return cleaned.length > 0 ? cleaned : transcript;
+  if (cleaned.length === 0) throw new Error("Cleanup returned no usable text");
+  return cleaned;
 }
 
 module.exports = { clean, stripThinking };

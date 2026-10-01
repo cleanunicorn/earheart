@@ -11,11 +11,10 @@
 // may post interim { id, progress } messages before the reply; the host routes
 // them to the caller's onProgress without settling the request.
 //
-// Engine state (the recognizer, the llama context/session) is single-instance,
-// so requests are assumed to arrive one at a time. The dictation pipeline is a
-// state machine that runs a single transcribe/clean at once; Settings "test"
-// actions are the only other callers and are not expected to overlap a live
-// dictation.
+// Cleanup load, disposal, prefill and generation share one lifecycle queue.
+// Each clean/prime carries its own model descriptor so overlapping callers
+// cannot generate on another caller's selected model. Cancellation bypasses
+// the queue and aborts registered work, including work waiting for a cold load.
 
 const path = require("node:path");
 const { wavToFloat32, SAMPLE_RATE } = require("../util/wav");
@@ -202,16 +201,16 @@ async function loadCleanup({ modelPath, contextSize, cpuOnly }) {
 // The cleanup session is single-instance mutable state (resetChatHistory +
 // prompt/preload must never interleave), but its callers overlap by design:
 // the pipeline cancels live-preview cleans and prefill-primes while decoding.
-// So every session op runs through this queue, and each gets an
+// Model loads/disposal also run through this queue. Each cancellable op gets an
 // AbortController registered while queued/running — "cancel-clean" aborts them
 // all, which both stops an in-flight generation (freeing the worker for the
 // final clean) and skips queued ops before they start.
 let cleanupQueue = Promise.resolve();
-const cleanupAborts = new Set();
+const cleanupAborts = new Map();
 
-function queuedCleanupOp(fn) {
+function queuedCleanupOp(fn, operationId, cancellable = true) {
   const ac = new AbortController();
-  cleanupAborts.add(ac);
+  if (cancellable) cleanupAborts.set(ac, operationId);
   const run = cleanupQueue.then(async () => {
     try {
       if (ac.signal.aborted) throw new Error("cleanup cancelled");
@@ -224,9 +223,15 @@ function queuedCleanupOp(fn) {
   return run;
 }
 
-async function cancelClean() {
-  for (const ac of cleanupAborts) ac.abort();
-  return { cancelled: cleanupAborts.size };
+async function cancelClean({ operationId } = {}) {
+  let cancelled = 0;
+  for (const [ac, id] of cleanupAborts) {
+    if (operationId == null || id === operationId) {
+      ac.abort();
+      cancelled++;
+    }
+  }
+  return { cancelled };
 }
 
 // Lazily create (or reset) the single chat session all cleanup ops share.
@@ -283,10 +288,11 @@ function transcriptTokens(transcript) {
   }
 }
 
-async function clean({ transcript, systemPrompt, sampling }, emitProgress) {
-  if (!llamaContext) throw new Error("Cleanup model not loaded");
-  const mod = await import("node-llama-cpp");
+async function clean({ model, operationId, transcript, systemPrompt, sampling }, emitProgress) {
   return queuedCleanupOp(async (signal) => {
+    await loadCleanup(model);
+    if (signal.aborted) throw new Error("cleanup cancelled");
+    const mod = await import("node-llama-cpp");
     const session = freshSession(mod);
     // Re-prompting with the same leading text re-uses the context's evaluated
     // state (llama.cpp skips the shared token prefix), which is what makes the
@@ -306,23 +312,24 @@ async function clean({ transcript, systemPrompt, sampling }, emitProgress) {
         if (emitProgress) emitProgress(Math.min(CLEAN_PROGRESS_CAP, generated / total));
       },
     });
-    // Hitting the cap means the model never finished: either it looped, or it
-    // wrote past the output the context was sized for. Both make the text on
+    // Hitting the cap means the model never finished: it may have reasoned,
+    // looped or written past the allowed output. Those make the text on
     // screen wrong, and half a cleanup is not worth the user's words — throw,
     // and the caller delivers the raw transcript instead.
     if (stopReason === "maxTokens") throw new Error(CLEAN_RUNAWAY_MESSAGE);
     return (responseText || "").trim();
-  });
+  }, operationId);
 }
 
 // Prefill-ahead: evaluate a known prompt prefix (static instructions, plus the
 // already-committed transcript when available) into the context without
 // generating anything, so the next clean() starts generating almost
 // immediately. Cancellable and best-effort like the live-preview cleans.
-async function primeCleanup({ text }) {
-  if (!llamaContext) throw new Error("Cleanup model not loaded");
-  const mod = await import("node-llama-cpp");
+async function primeCleanup({ model, text }) {
   return queuedCleanupOp(async (signal) => {
+    await loadCleanup(model);
+    if (signal.aborted) throw new Error("cleanup cancelled");
+    const mod = await import("node-llama-cpp");
     const session = freshSession(mod);
     await session.preloadPrompt(text || "", { signal });
     return { primed: true };
@@ -394,7 +401,7 @@ const HANDLERS = {
   loadcheck,
   "load-stt": loadStt,
   transcribe,
-  "load-cleanup": loadCleanup,
+  "load-cleanup": (args) => queuedCleanupOp(() => loadCleanup(args), undefined, false),
   clean,
   "prime-cleanup": primeCleanup,
   "cancel-clean": cancelClean,

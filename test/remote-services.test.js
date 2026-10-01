@@ -86,3 +86,14 @@ test("remote service errors do not parse malformed or oversized provider message
     });
   }
 });
+
+test("remote cleanup rejects blank and thought-only responses but accepts unchanged text", async () => {
+  for (const content of ["", "  ", "<think>reasoning only</think>", "<think>unfinished"]) {
+    await withErrorServer(200, JSON.stringify({ choices: [{ message: { content } }] }), async (baseUrl) => {
+      await assert.rejects(clean("Hello.", { baseUrl }), /no usable text/i);
+    });
+  }
+  await withErrorServer(200, JSON.stringify({ choices: [{ message: { content: "Hello." } }] }), async (baseUrl) => {
+    assert.strictEqual(await clean("Hello.", { baseUrl }), "Hello.");
+  });
+});

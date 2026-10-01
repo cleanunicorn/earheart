@@ -69,7 +69,7 @@ function cleanBudgetMessage(needed, available) {
 // Reaches the user the same way — the pipeline shows it on the cleanup-failed
 // notification — so it says what happened rather than naming a token count.
 const CLEAN_RUNAWAY_MESSAGE =
-  "Cleanup ran away repeating itself and was stopped; used the raw transcript";
+  "Cleanup reached its output token limit before finishing; used the raw transcript";
 
 // Sizing the context from the dictation cap. The floor is what an ordinary
 // dictation needs; the ceiling is where the KV cache stops being worth it (a

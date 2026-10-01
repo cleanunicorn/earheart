@@ -213,10 +213,31 @@ function wavSliceFromFrame(buf, fromFrame) {
   return wavSlice(buf, fromFrame, Infinity);
 }
 
+// One PCM16 sample from a float in [-1, 1]: the inverse of wavToFloat32's
+// /32768, clamped so a sum or a full-scale peak can't wrap around.
+function toPcm16Sample(x) {
+  return Math.max(-32768, Math.min(32767, Math.round(x * 32768)));
+}
+
+/**
+ * Float samples back to PCM16 for encodeWav, with `pad` frames of silence on
+ * each side.
+ * @param {Float32Array} samples
+ * @param {number} [pad]
+ * @returns {Int16Array}
+ */
+function toPcm16(samples, pad = 0) {
+  const pcm = new Int16Array(samples.length + 2 * pad);
+  for (let i = 0; i < samples.length; i++) pcm[pad + i] = toPcm16Sample(samples[i]);
+  return pcm;
+}
+
 module.exports = {
   encodeWav,
   encodeSilenceWav,
   wavToFloat32,
+  toPcm16,
+  toPcm16Sample,
   wavDurationSec,
   wavSampleFrames,
   wavSlice,

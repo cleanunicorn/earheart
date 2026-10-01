@@ -468,7 +468,11 @@ test("stt-eval manifest: candidates are catalog-shaped and wire only files they 
 });
 
 test("stt-eval manifest: the corpus and every skipped survey row are pinned down", () => {
-  assert.strictEqual(manifest.BASELINE_ID, registry.DEFAULT_STT_MODEL);
+  // The baseline stays the int8 build every recorded verdict was judged
+  // against, even though the app's default is now full precision; it must
+  // still be a shipped catalog model so the eval can download it.
+  assert.strictEqual(manifest.BASELINE_ID, "parakeet-tdt-0.6b-v3-int8");
+  assert.ok(registry.getModel("stt", manifest.BASELINE_ID));
   assert.ok(manifest.CORPUS.files.some((f) => f.name === manifest.CORPUS.archive));
   assert.ok(manifest.CORPUS.files.some((f) => f.name === manifest.CORPUS.tsv));
   assert.strictEqual(manifest.CORPUS.utterances, 647);

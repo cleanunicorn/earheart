@@ -91,7 +91,7 @@ function configWith(cleanupModel) {
   };
 }
 
-test("removing the selected custom cleanup model falls back to Granite 4.0 Micro", async (t) => {
+test("removing the selected custom cleanup model falls back to Qwen3 4B Instruct 2507", async (t) => {
   t.after(() => registry.setCustomModels([])); // init() registers the custom model
   const { handlers, saved } = loadIpcHandlers(configWith(customCleanup.id));
 
@@ -101,7 +101,7 @@ test("removing the selected custom cleanup model falls back to Granite 4.0 Micro
   assert.strictEqual(saved.length, 1);
   // A literal, not registry.DEFAULT_CLEANUP_MODEL: the handler reading the
   // wrong constant, or a stale literal, has to fail here.
-  assert.strictEqual(saved[0].cleanup.builtin.model, "granite-4.0-micro");
+  assert.strictEqual(saved[0].cleanup.builtin.model, "qwen3-4b-2507");
   assert.deepStrictEqual(saved[0].customModels, []);
   // The STT selection is not touched by a cleanup removal.
   assert.strictEqual(saved[0].stt.builtin.model, "parakeet-tdt-0.6b-v3-int8");

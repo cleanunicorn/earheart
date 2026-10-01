@@ -156,13 +156,13 @@ test("registry drops custom models whose paths could leave the model directory",
   }
 });
 
-test("exactly one cleanup model is marked default, and it is Granite 4.0 Micro", () => {
+test("exactly one cleanup model is marked default, and it is Qwen3 4B Instruct 2507", () => {
   const defaults = registry.listModels("cleanup").filter((m) => m.default);
   assert.strictEqual(defaults.length, 1);
   assert.strictEqual(defaults[0].id, registry.DEFAULT_CLEANUP_MODEL);
   // Pinned by name, like the STT default below: moving the default moves
   // every new install, so it has to be a deliberate change here too.
-  assert.strictEqual(registry.DEFAULT_CLEANUP_MODEL, "granite-4.0-micro");
+  assert.strictEqual(registry.DEFAULT_CLEANUP_MODEL, "qwen3-4b-2507");
 });
 
 // The exact files the cleanup benchmark measured (#167): a wrong byte count
@@ -170,8 +170,8 @@ test("exactly one cleanup model is marked default, and it is Granite 4.0 Micro",
 test("registry pins the benchmarked Granite and Qwen GGUFs", () => {
   const expected = {
     "granite-4.0-micro": {
-      label: "Granite 4.0 Micro (recommended)",
-      note: "Runs on this computer · ~2.1 GB, 2.6× the 1B · needs ~6 GB RAM · recommended: removes fillers reliably",
+      label: "Granite 4.0 Micro (faster)",
+      note: "Runs on this computer · ~2.1 GB, 2.6× the 1B · needs ~6 GB RAM · removes fillers reliably, a little faster than Qwen",
       file: {
         name: "granite-4.0-micro-Q4_K_M.gguf",
         bytes: 2_099_502_528,
@@ -180,8 +180,8 @@ test("registry pins the benchmarked Granite and Qwen GGUFs", () => {
       },
     },
     "qwen3-4b-2507": {
-      label: "Qwen3 4B Instruct 2507 (alternative)",
-      note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · removes fillers reliably, a little slower than Granite",
+      label: "Qwen3 4B Instruct 2507 (recommended)",
+      note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · recommended: removes fillers reliably",
       file: {
         name: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
         bytes: 2_497_281_120,
@@ -210,13 +210,13 @@ test("the cleanup catalog is listed smallest download first", () => {
   );
 });
 
-test("exactly one STT model is marked default, and it is still v3 int8", () => {
+test("exactly one STT model is marked default, and it is v3 full precision", () => {
   const defaults = registry.listModels("stt").filter((m) => m.default);
   assert.strictEqual(defaults.length, 1);
   assert.strictEqual(defaults[0].id, registry.DEFAULT_STT_MODEL);
   // Pinned by name: adding a model to the catalog must never move the default
   // for every user as a side effect — promoting one is a deliberate change.
-  assert.strictEqual(registry.DEFAULT_STT_MODEL, "parakeet-tdt-0.6b-v3-int8");
+  assert.strictEqual(registry.DEFAULT_STT_MODEL, "parakeet-tdt-0.6b-v3");
 });
 
 test("registry: STT entries added from the evaluation match its pinned candidates exactly", () => {

@@ -379,9 +379,9 @@ app.whenReady().then(async () => {
       stt: [...document.getElementById("stt-builtin-model").options].map((o) => o.value),
       cleanup: [...document.getElementById("cleanup-builtin-model").options].map((o) => o.value),
     })`).then(JSON.parse);
-    const sttModel = downloadModels.stt.find((id) => id !== "parakeet-tdt-0.6b-v3-int8");
-    const sttDefault = "parakeet-tdt-0.6b-v3-int8";
-    const cleanupModel = downloadModels.cleanup.find((id) => id !== "granite-4.0-micro");
+    const sttDefault = registry.DEFAULT_STT_MODEL;
+    const sttModel = downloadModels.stt.find((id) => id !== sttDefault);
+    const cleanupModel = downloadModels.cleanup.find((id) => id !== registry.DEFAULT_CLEANUP_MODEL);
     const startModelDownload = async (kind, modelId) => js(`(() => {
       const select = document.getElementById(${JSON.stringify(`${kind}-builtin-model`)});
       select.value = ${JSON.stringify(modelId)};
@@ -579,7 +579,7 @@ app.whenReady().then(async () => {
 
     await js(`(() => {
       const select = document.getElementById("cleanup-builtin-model");
-      select.value = "granite-4.0-micro";
+      select.value = ${JSON.stringify(registry.DEFAULT_CLEANUP_MODEL)};
       select.dispatchEvent(new Event("change", { bubbles: true }));
     })()`);
 

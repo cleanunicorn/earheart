@@ -282,6 +282,19 @@ Then in Settings → Cleanup: base URL
 instead, use its base URL, API key and model name (e.g. OpenRouter, Groq,
 OpenAI).
 
+#### Cleanup appears unchanged
+
+Compare **Copy original** and **Copy** in History and check whether the entry
+says **cleaned**. A completed cleanup can leave already clean text unchanged.
+If cleanup returns no usable text or reaches its output limit, Earheart
+notifies you, delivers the original transcript and records that cleanup failed.
+
+For an unexpected result, include the exact app version, operating system,
+selected cleanup model (including GGUF filename/revision), cleanup style,
+original and delivered text, and the relevant app log error. Reasoning controls
+and the distinction between output limits and context are explained in
+[Cleanup models](docs/cleanup-models.md#cleanup-failures-and-reasoning).
+
 ## Using Earheart
 
 1. Put your cursor wherever you want text — an email, an editor, a chat box.
@@ -426,17 +439,3 @@ overview, and how to build installers.
 ## License
 
 [MIT](LICENSE)
-
-
-### Cleanup appears unchanged
-
-Compare **Copy original** and **Copy** in History and check whether the entry
-says **cleaned**. A completed cleanup can leave already clean text unchanged.
-If cleanup returns no usable text or reaches its output limit, Earheart
-notifies you, delivers the original transcript and records that cleanup failed.
-
-For an unexpected result, include the exact app version, operating system,
-selected cleanup model (including GGUF filename/revision), cleanup style,
-original and delivered text, and the relevant app log error. Reasoning controls
-and the distinction between output limits and context are explained in
-[Cleanup models](docs/cleanup-models.md#cleanup-failures-and-reasoning).

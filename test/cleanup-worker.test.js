@@ -155,3 +155,19 @@ test("cleanup worker: a targeted abort during load leaves another caller's turn 
   assert.equal((await second).result, "B");
   assert.deepEqual(w.events.filter((event) => event.startsWith("prompt:")), ["prompt:B"]);
 });
+
+test("cleanup worker: targeted cancellation reaches active generation and releases the queue", async () => {
+  const promptGate = deferred();
+  const promptStarted = deferred();
+  const w = worker({ promptGate, promptStarted });
+  const active = w.send("clean", { ...turn("A"), operationId: 7 });
+  await promptStarted.promise;
+  const next = w.send("clean", { ...turn("B"), operationId: 8 });
+  assert.equal((await w.send("cancel-clean", { operationId: 7 })).result.cancelled, 1);
+  promptGate.resolve();
+  const cancelled = await active;
+  assert.equal(cancelled.ok, false);
+  assert.match(cancelled.error, /cleanup cancelled/);
+  assert.equal((await next).result, "B");
+  assert.deepEqual(w.events.filter((event) => event.startsWith("prompt:")), ["prompt:A", "prompt:B"]);
+});

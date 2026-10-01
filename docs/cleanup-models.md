@@ -303,8 +303,9 @@ The built-in engine is `node-llama-cpp` 3.22.1, which bundles llama.cpp
   records the wrapper it picked; `GeneralChatWrapper` would mean the template
   was not understood). The worker, the harness and `scripts/eval-cleanup.mjs`
   resolve it through `cleanupChatWrapper` (`main/util/cleanup-turn.js`), which
-  turns Gemma 4's default reasoning off: its thought tokens count against the
-  clean's `maxTokens` cap, so every clean ran away to the raw transcript;
+  requests nonreasoning output through the supported Gemma 4, Jinja-template,
+  Qwen and Seed controls. Qwen/Seed instructions may be ignored by the model;
+  there is no universal switch for every model family;
 - a **single-file GGUF** (a split `…-00001-of-00002.gguf` is out;
   `test/engines.test.js` now enforces this for the catalog);
 - an **architecture the bundled llama.cpp knows** (checked with
@@ -635,3 +636,35 @@ node scripts/bench-cleanup.mjs --probe unsloth/Qwen3-4B-Instruct-2507-GGUF Qwen3
 Each run writes `manifest.json` (file, sha256, backend, threads, chat
 wrapper, hardware, load average), `runs.jsonl`, `summary.json` and every raw
 output under `--out/<id>/`.
+
+
+### Cleanup failures and reasoning
+
+Cleanup's **output limit** is the transcript's token count plus 64 tokens.
+Reasoning consumes that same allowance, so a model can exhaust it before
+returning the cleaned text. Increasing the **context window** alone does not
+increase the output allowance. The context guard separately checks that the
+prompt, transcript and output can fit without dropping the beginning.
+
+The app, benchmark and evaluation scripts share the same automatic wrapper
+resolution. Cleanup disables Gemma 4 reasoning and Jinja templates' supported
+`enable_thinking` control, discourages Qwen thoughts, and requests Seed's
+zero thinking budget. Models can ignore instructions or use templates without
+these controls; the output cap remains necessary. A metadata-aware probe of
+the published `unsloth/gemma-4-E4B-it-GGUF` template selected the Gemma 4
+wrapper with reasoning already disabled by v0.33.9. This does not establish
+which template a particular downloaded GGUF revision embeds.
+
+Each builtin clean or prefill request now owns its selected model and context
+through one worker queue transaction. Changing the selected model while an
+earlier prefill or clean is running cannot replace or dispose its context
+mid-generation. Pipeline cancellation aborts outstanding previews and primes;
+a caller's AbortSignal cancels only its own clean, including work waiting for
+a cold model load. Native model loading finishes before that cancellation can
+release the queue.
+
+An empty, thought-only, or output-limited answer fails cleanup explicitly.
+The dictation pipeline keeps the raw transcript, records `cleaned: false`, and
+shows the cleanup-failed notification. A completed answer identical to its
+input is still successful: already clean text can need no edits. Existing
+history entries are not changed retrospectively.

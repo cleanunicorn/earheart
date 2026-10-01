@@ -98,8 +98,8 @@ async function transcribe(wav, cfg, signal, { onDecodeMs } = {}) {
 
 /* ---------------- cleanup ---------------- */
 
-let loadedCleanup = null;
-let loadedCleanupContext = 0; // context size the loaded model was given
+let cleanupResident = false; // worker may hold a model, even after a failed operation
+let cleanupOperationId = 0;
 
 // Windows on ARM (and macOS Rosetta) runs our x64 build as an emulated process.
 // STT (sherpa-onnx) tolerates that, but node-llama-cpp's GPU auto-probe faults
@@ -120,8 +120,8 @@ function runningEmulated() {
   }
 }
 
-// Load the cleanup model into the worker if it isn't already. Throws if the
-// model isn't downloaded yet — callers surface that (or fall back to HTTP).
+// Snapshot a selected cleanup model for an atomic worker load/operation.
+// Throws if it is not downloaded; callers surface the failure and retain raw text.
 //
 // The context is sized from how long the user is allowed to dictate, because
 // the whole turn — rules, transcript and generated output — has to fit in it at
@@ -129,23 +129,28 @@ function runningEmulated() {
 // gets a context that can still hold what they say; everyone else keeps the
 // smaller KV cache. A changed size reloads the model: the context is allocated
 // at load time, so the worker can't grow one in place.
-async function ensureCleanup(modelId) {
+function cleanupModel(modelId) {
   const model = resolve("cleanup", modelId);
   if (!manager.isInstalled(modelsDir(), model)) {
     throw new Error(`Cleanup model "${modelId}" is not downloaded yet`);
   }
-  const contextSize = cleanContextFor(settings.get().audio?.maxRecordingSeconds);
-  if (loadedCleanup !== modelId || loadedCleanupContext !== contextSize) {
-    await cleanupHost.request("load-cleanup", {
-      modelPath: path.join(manager.modelDir(modelsDir(), model), model.gguf.file),
-      contextSize,
-      // Skip the GPU probe on an emulated (Windows-on-ARM / Rosetta) host so
-      // the load can't crash the worker; run cleanup on the CPU backend there.
-      cpuOnly: runningEmulated(),
-    });
-    loadedCleanup = modelId;
-    loadedCleanupContext = contextSize;
-  }
+  return {
+    modelPath: path.join(manager.modelDir(modelsDir(), model), model.gguf.file),
+    contextSize: cleanContextFor(settings.get().audio?.maxRecordingSeconds),
+    // Avoid the native GPU probe under Windows-on-ARM / Rosetta emulation.
+    cpuOnly: runningEmulated(),
+  };
+}
+
+function cleanupRequest(type, args, opts) {
+  // Set before submission: a cold load is cancellable and must prevent idle
+  // eviction. Worker exit clears this marker; never restore it after an await.
+  cleanupResident = true;
+  return cleanupHost.request(type, args, opts);
+}
+
+async function ensureCleanup(modelId) {
+  return cleanupRequest("load-cleanup", cleanupModel(modelId));
 }
 
 // Prefill-ahead: load the cleanup model if needed and evaluate the prompt
@@ -156,18 +161,19 @@ async function ensureCleanup(modelId) {
 // builds both), which is what lets the KV reuse hit. Best effort: callers
 // fire-and-forget it.
 async function primeCleanup(cfg, transcriptPrefix = "") {
-  await ensureCleanup(cfg.builtin.model);
+  const model = cleanupModel(cfg.builtin.model);
   const { systemPrompt } = resolveCleanup(cfg);
-  return cleanupHost.request("prime-cleanup", {
+  return cleanupRequest("prime-cleanup", {
+    model,
     text: cleanupTurnPrefix(systemPrompt, transcriptPrefix),
   });
 }
 
 // Abort any in-flight or queued cancellable cleanup work (live-preview cleans,
 // primes) so the worker is free for the authoritative final clean. A no-op
-// when the worker has nothing loaded — never spawns a worker just to cancel.
+// when no cleanup request has reached the worker — never spawns one to cancel.
 function cancelClean() {
-  if (loadedCleanup === null) return;
+  if (!cleanupResident) return;
   cleanupHost.request("cancel-clean").catch(() => {});
 }
 
@@ -176,32 +182,39 @@ function cancelClean() {
 // pipeline can drive a determinate bar while the model generates.
 async function clean(transcript, cfg, signal, { onProgress } = {}) {
   if (signal?.aborted) throw new Error("aborted");
-  await ensureCleanup(cfg.builtin.model);
-  // The selected style supplies both the prompt (base + directive) and the
-  // sampling profile (temperature/topP/topK/minP) the worker applies.
+  const model = cleanupModel(cfg.builtin.model);
   const { systemPrompt, sampling } = resolveCleanup(cfg);
-  const cleaned = await cleanupHost.request(
-    "clean",
-    {
-      transcript,
-      systemPrompt,
-      sampling,
-    },
-    { onProgress }
-  );
-  // Never let an empty (or whitespace-only) cleanup eat the user's words.
-  return cleaned && cleaned.trim().length > 0 ? cleaned : transcript;
+  const operationId = ++cleanupOperationId;
+  // A caller's signal cancels its own turn. Pipeline cancelClean() still
+  // cancels all outstanding previews/primes before authoritative final cleanup.
+  const abort = () => {
+    if (cleanupResident) cleanupHost.request("cancel-clean", { operationId }).catch(() => {});
+  };
+  const pending = cleanupRequest("clean", {
+    model, operationId, transcript, systemPrompt, sampling,
+  }, { onProgress });
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
+  try {
+    const cleaned = await pending;
+    if (signal?.aborted) throw new Error("aborted");
+    if (typeof cleaned !== "string" || cleaned.trim().length === 0) {
+      throw new Error("Cleanup returned no usable text");
+    }
+    return cleaned;
+  } finally {
+    signal?.removeEventListener("abort", abort);
+  }
 }
 
-// Forget which models a worker had resident, so the next call re-runs
-// ensureStt/ensureCleanup instead of assuming a model is still loaded.
+// Worker exit forgets STT identity and cleanup residency. Cleanup model
+// identity is authoritative inside the worker, checked on every operation.
 function forgetStt() {
   loadedStt = null;
 }
 
 function forgetCleanup() {
-  loadedCleanup = null;
-  loadedCleanupContext = 0;
+  cleanupResident = false;
 }
 
 function stop() {
@@ -264,7 +277,7 @@ function stopIfIdle(host) {
 // worker was skipped and the caller should come back for it.
 function unloadIdle() {
   const sttClear = (loadedStt === null && !sttHost.busy()) || stopIfIdle(sttHost);
-  const cleanupClear = (loadedCleanup === null && !cleanupHost.busy()) || stopIfIdle(cleanupHost);
+  const cleanupClear = (!cleanupResident && !cleanupHost.busy()) || stopIfIdle(cleanupHost);
   return sttClear && cleanupClear;
 }
 

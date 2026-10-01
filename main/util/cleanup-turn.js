@@ -37,14 +37,20 @@ function cleanupSamplingOptions(sampling) {
   return opts;
 }
 
-// node-llama-cpp chat-wrapper resolution options for the cleanup session.
-// Gemma 4's wrapper reasons by default, and its thought tokens count against
-// the clean's maxTokens cap (transcript + slack), so every clean hit the cap
-// and fell back to the raw transcript. Cleanup is a transform, not a question:
-// turn reasoning off. Keyed by wrapper type, so any other architecture resolves
-// exactly as the "auto" default would.
+// Ask supported wrappers to skip unnecessary reasoning for this text transform.
+// Thought tokens consume the same output budget as the cleaned transcript.
+// Preserve automatic resolution and custom GGUF templates; wrappers without
+// an off control remain unchanged. Qwen/Seed controls are model instructions,
+// so the output cap remains the final guard if a model ignores them.
 function cleanupChatWrapperOptions() {
-  return { customWrapperSettings: { gemma4: { reasoning: false } } };
+  return {
+    customWrapperSettings: {
+      gemma4: { reasoning: false },
+      jinjaTemplate: { reasoning: false },
+      qwen: { thoughts: "discourage" },
+      seed: { thinkingBudget: 0 },
+    },
+  };
 }
 
 // The chat wrapper a cleanup LlamaChatSession is built with; `mod` is the

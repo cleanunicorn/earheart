@@ -233,6 +233,7 @@ function dictationRig({
   ensureStt,
   deliver: deliverText,
   onHistory,
+  clean: cleanupText,
 } = {}) {
   const log = {
     transcribe: [],
@@ -302,7 +303,7 @@ function dictationRig({
           opts?.onDecodeMs?.(10);
           return text;
         },
-        clean: async (raw) => `cleaned(${raw})`,
+        clean: cleanupText || (async (raw) => `cleaned(${raw})`),
       },
       "./output/deliver": {
         deliver: deliverText || (async (text) => {
@@ -687,4 +688,18 @@ test("pipeline: a long stretch of speech that decodes to nothing makes the dicta
   assert.deepStrictEqual(rig.log.delivered, ["w0 w2"]);
   assert.strictEqual(rig.log.history[0].incomplete, true);
   assert.strictEqual(rig.log.notifications.length, 1);
+});
+
+test("pipeline: failed cleanup delivers raw once, records failure and notifies", async () => {
+  const rig = dictationRig({
+    cleanup: true,
+    transcribe: async () => "Keep these words.",
+    clean: async () => { throw new Error("Cleanup returned no usable text"); },
+  });
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(rig.log.delivered, ["Keep these words."]);
+  assert.strictEqual(rig.log.history[0].raw, "Keep these words.");
+  assert.strictEqual(rig.log.history[0].text, "Keep these words.");
+  assert.strictEqual(rig.log.history[0].cleaned, false);
+  assert.ok(rig.log.notifications.some((entry) => /cleanup failed/.test(entry.title)));
 });

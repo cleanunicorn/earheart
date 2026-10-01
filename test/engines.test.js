@@ -1449,9 +1449,8 @@ test("remove deletes partial files and their resume metadata", async () => {
   });
 });
 
-test("engines.clean falls back to the raw transcript when cleanup is empty", async () => {
-  // The in-process side of "never lose the user's words": if the model returns
-  // empty/whitespace, clean() must deliver the raw transcript instead.
+test("engines.clean rejects empty cleanup so the pipeline records raw fallback", async () => {
+  // Empty output must enter the pipeline failure path, which preserves raw text.
   let cleanReply = "";
   const calls = [];
   // createHost factory shape (the real host module); this test only drives the
@@ -1477,14 +1476,16 @@ test("engines.clean falls back to the raw transcript when cleanup is empty", asy
   const cfg = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules" };
 
   cleanReply = "   "; // whitespace-only -> treated as empty
-  assert.strictEqual(await facade.clean("hello world", cfg), "hello world");
+  await assert.rejects(facade.clean("hello world", cfg), /no usable text/i);
 
   cleanReply = ""; // empty
-  assert.strictEqual(await facade.clean("keep these words", cfg), "keep these words");
+  await assert.rejects(facade.clean("keep these words", cfg), /no usable text/i);
 
   cleanReply = "Hello, world."; // real output passes through
   assert.strictEqual(await facade.clean("hello world", cfg), "Hello, world.");
 
+  cleanReply = "Hello, world.";
+  assert.strictEqual(await facade.clean("Hello, world.", cfg), "Hello, world.");
   assert.ok(calls.includes("clean"));
 });
 
@@ -1533,7 +1534,7 @@ test("engines cleanup load forces CPU-only under ARM64 emulation", async () => {
   // On an emulated Windows-on-ARM (or Rosetta) host the GPU probe crashes the
   // cleanup worker, so the facade must tell the worker to skip it. The signal
   // is Electron's app.runningUnderARM64Translation; assert it rides along on
-  // the load-cleanup request and is absent (falsy) on a native host.
+  // clean request's model descriptor and is false on a native host.
   const managerStub = {
     isInstalled: () => true,
     modelDir: (base, model) => path.join(base, model.kind, model.id),
@@ -1545,11 +1546,10 @@ test("engines cleanup load forces CPU-only under ARM64 emulation", async () => {
     const hostModule = {
       createHost: () => ({
         request: async (type, args) => {
-          if (type === "load-cleanup") {
-            payload = args;
-            return { ready: true };
+          if (type === "clean") {
+            payload = args.model;
+            return "ok";
           }
-          if (type === "clean") return "ok";
           throw new Error(`unexpected request: ${type}`);
         },
         stop() {},
@@ -1626,7 +1626,8 @@ test("engines facade routes STT and cleanup to separate worker hosts", async () 
   // Each host saw only its own engine's request types.
   assert.ok(stt.calls.includes("load-stt") && stt.calls.includes("transcribe"));
   assert.ok(!stt.calls.includes("clean") && !stt.calls.includes("load-cleanup"));
-  assert.ok(cleanup.calls.includes("load-cleanup") && cleanup.calls.includes("clean"));
+  assert.ok(cleanup.calls.includes("clean"));
+  assert.ok(!cleanup.calls.includes("load-cleanup"), "clean owns its model load in the worker");
   assert.ok(!cleanup.calls.includes("transcribe") && !cleanup.calls.includes("load-stt"));
 
   // Idle eviction exits each worker that has a model resident — that, not an
@@ -1698,23 +1699,22 @@ const count = (host, type) => host.calls.filter((t) => t === type).length;
 test("an STT worker crash forgets only STT loaded-state, not cleanup", async () => {
   // Crash isolation is the point of the split: if the STT worker dies, the next
   // transcribe must re-load STT, but cleanup (a separate, still-alive worker)
-  // must NOT be made to re-load. A regression wiring both forget callbacks onto
-  // one host would break this.
+  // keeps its own host and lifecycle. Model identity is checked in the worker.
   const { facade, hostsBySvc } = loadTwoHostFacade();
   await facade.transcribe(Buffer.from("wav"), STT_CFG);
   await facade.clean("hello", CLEANUP_CFG);
   const stt = hostsBySvc["earheart-stt"];
   const cleanup = hostsBySvc["earheart-cleanup"];
   assert.strictEqual(count(stt, "load-stt"), 1);
-  assert.strictEqual(count(cleanup, "load-cleanup"), 1);
+  assert.strictEqual(count(cleanup, "clean"), 1);
 
   stt.die(); // the STT worker process exits
 
   await facade.transcribe(Buffer.from("wav"), STT_CFG);
   await facade.clean("hello", CLEANUP_CFG);
-  // STT was forgotten on exit -> re-loaded; cleanup was untouched -> not reloaded.
+  // STT is reloaded; cleanup continues to receive independent atomic turns.
   assert.strictEqual(count(stt, "load-stt"), 2, "STT should re-load after its worker died");
-  assert.strictEqual(count(cleanup, "load-cleanup"), 1, "cleanup must not re-load when only STT died");
+  assert.strictEqual(count(cleanup, "clean"), 2, "cleanup requests retain their own model descriptor");
 });
 
 test("restartStt retires only the STT worker, and the next transcribe reloads", async () => {
@@ -1734,7 +1734,7 @@ test("restartStt retires only the STT worker, and the next transcribe reloads", 
   await facade.transcribe(Buffer.from("wav"), STT_CFG);
   await facade.clean("hello", CLEANUP_CFG);
   assert.strictEqual(count(stt, "load-stt"), 2, "STT reloads after the restart");
-  assert.strictEqual(count(cleanup, "load-cleanup"), 1);
+  assert.strictEqual(count(cleanup, "clean"), 2);
 });
 
 test("unloadIdle exits only the workers that are actually resident", async () => {
@@ -1951,4 +1951,34 @@ test("engine worker: load-stt reports the thread count and provider it built the
   } finally {
     worker.restore();
   }
+});
+
+test("engines cleanup snapshots each selected model and cancellation reaches a cold worker", async () => {
+  const requests = [];
+  let finish;
+  const facade = loadFacadeWith({
+    host: { createHost: () => ({
+      request(type, args) {
+        requests.push({ type, args });
+        if (type === "clean") return new Promise((resolve) => { finish = resolve; });
+        return Promise.resolve({ cancelled: 1 });
+      },
+      stop() {}, onExit() {},
+    }) },
+    manager: { isInstalled: () => true, modelDir: (base, model) => path.join(base, model.kind, model.id) },
+  });
+  const cfg = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, style: "clean" };
+  const controller = new AbortController();
+  const pending = facade.clean("hello", cfg, controller.signal);
+  const rejected = assert.rejects(pending, /abort/);
+  cfg.builtin.model = "changed-after-submission";
+  controller.abort();
+  const clean = requests.find((request) => request.type === "clean");
+  assert.ok(clean.args.model.modelPath.includes(registry.DEFAULT_CLEANUP_MODEL));
+  const cancel = requests.find((request) => request.type === "cancel-clean");
+  assert.strictEqual(cancel.args.operationId, clean.args.operationId);
+  facade.cancelClean();
+  assert.strictEqual(requests.at(-1).args, undefined, "pipeline cancellation still aborts all preview work");
+  finish("answer");
+  await rejected;
 });

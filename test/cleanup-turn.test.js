@@ -70,12 +70,10 @@ test("the prefill prefix is a strict string prefix of the full turn", () => {
   assert.strictEqual(cleanupTurnPrefix("RULES", "abc"), "RULES\n\nTranscript:\nabc");
 });
 
-test("cleanupChatWrapperOptions turns off Gemma 4 reasoning and changes nothing else", () => {
-  // Gemma 4's thought tokens count against the clean's maxTokens cap, so with
-  // reasoning on every clean ran away to the raw transcript. Only the gemma4
-  // wrapper is configured: any other model resolves as the "auto" default.
+test("cleanupChatWrapperOptions requests no reasoning through supported wrappers", () => {
+  // Wrapper-specific supported controls retain automatic resolution.
   assert.deepStrictEqual(cleanupChatWrapperOptions(), {
-    customWrapperSettings: { gemma4: { reasoning: false } },
+    customWrapperSettings: { gemma4: { reasoning: false }, jinjaTemplate: { reasoning: false }, qwen: { thoughts: "discourage" }, seed: { thinkingBudget: 0 } },
   });
   // A fresh object each call, so a caller can't mutate the shared setting.
   assert.notStrictEqual(cleanupChatWrapperOptions(), cleanupChatWrapperOptions());
@@ -122,7 +120,7 @@ test("the installed resolver builds Gemma 4's wrapper with reasoning off", async
 
 test("the cleanup options leave every other chat wrapper exactly as auto resolves it", async () => {
   const mod = await llamaCpp();
-  const others = mod.specializedChatWrapperTypeNames.filter((type) => type !== "gemma4");
+  const others = mod.specializedChatWrapperTypeNames.filter((type) => !["gemma4", "qwen", "seed"].includes(type));
   assert.ok(others.length > 10, `only ${others.length} wrapper types`);
   for (const type of others) {
     const auto = mod.resolveChatWrapper({ type });
@@ -130,4 +128,30 @@ test("the cleanup options leave every other chat wrapper exactly as auto resolve
     assert.strictEqual(cleanup.constructor, auto.constructor, type);
     assert.strictEqual(contextFor(cleanup), contextFor(auto), type);
   }
+});
+
+test("metadata-based Jinja cleanup disables its optional reasoning branch", async () => {
+  const mod = await llamaCpp();
+  const template = "{{ bos_token }}{% if enable_thinking %}REASONING_ON{% else %}REASONING_OFF{% endif %}{% for message in messages %}{{ message['role'] }}:{{ message['content'] }}\n{% endfor %}{% if add_generation_prompt %}assistant:{% if enable_thinking %}<think>{% else %}<think></think>{% endif %}{% endif %}";
+  const fileInfo = { metadata: { tokenizer: { chat_template: template } } };
+  const auto = mod.resolveChatWrapper({ architecture: "gemma4", fileInfo });
+  const cleanup = mod.resolveChatWrapper({ architecture: "gemma4", fileInfo, ...cleanupChatWrapperOptions() });
+  assert.ok(cleanup instanceof mod.JinjaTemplateChatWrapper);
+  assert.ok(contextFor(auto).includes("REASONING_ON"));
+  assert.strictEqual(cleanup.reasoning, false);
+  assert.ok(contextFor(cleanup).includes("REASONING_OFF"), contextFor(cleanup));
+});
+
+test("Qwen and Seed cleanup request no reasoning using their supported controls", async () => {
+  const mod = await llamaCpp();
+  for (const variation of ["3", "3.5"]) {
+    const options = cleanupChatWrapperOptions();
+    options.customWrapperSettings.qwen.variation = variation;
+    const wrapper = mod.resolveChatWrapper({ type: "qwen", ...options });
+    assert.strictEqual(wrapper.thoughts, "discourage");
+    assert.match(contextFor(wrapper), /<think>\s*<\/think>/);
+  }
+  const seed = mod.resolveChatWrapper({ type: "seed", ...cleanupChatWrapperOptions() });
+  assert.strictEqual(seed.thinkingBudget, 0);
+  assert.ok(contextFor(seed).includes("0"), contextFor(seed));
 });

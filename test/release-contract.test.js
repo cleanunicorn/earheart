@@ -17,6 +17,7 @@ function readText(...parts) {
 
 const workflow = readText(".github", "workflows", "auto-release.yml");
 const releaseWorkflow = readText(".github", "workflows", "release.yml");
+const ciWorkflow = readText(".github", "workflows", "ci.yml");
 const titleWorkflow = readText(".github", "workflows", "pr-title.yml");
 const autoReleaseScript = readText("scripts", "auto-release.js");
 const releaseNotesSource = readText("main", "services", "release-notes.js");
@@ -209,4 +210,18 @@ test("contributor and agent guides explain serialized catch-up releases", () => 
       `${name} should explain post-merge edits`,
     );
   }
+});
+
+test("macOS builds and releases are Apple Silicon only", () => {
+  for (const [name, text] of [["ci.yml", ciWorkflow], ["release.yml", releaseWorkflow]]) {
+    assert.match(
+      text,
+      /^\s+os: \[ubuntu-latest, macos-latest, windows-latest\]$/m,
+      `${name} should run one Linux, one Apple Silicon and one Windows job`,
+    );
+    assert.doesNotMatch(text, /macos-15-intel/, `${name} should not run on an Intel Mac`);
+  }
+  assert.doesNotMatch(releaseWorkflow, /latest-mac-x64|expected=x64/);
+  assert.match(releaseWorkflow, /^\s+expected=arm64\n\s+bundle=dist\/mac-arm64\/Earheart\.app$/m);
+  assert.match(releaseWorkflow, /gh release upload .* dist\/latest-mac\*\.yml --clobber/);
 });

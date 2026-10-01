@@ -91,20 +91,25 @@ function scanRuns(samples, sampleRate, quietRms) {
 
 // Fold every loud run shorter than minSoundSec that has NOISE_FLANK_SEC of
 // quiet on both sides (or the buffer's edge) into the quiet around it. Mutates
-// nothing: returns a new run list.
+// nothing: returns a new run list. Each quiet run keeps `parts`, the truly
+// quiet runs it is made of, so the sound it absorbed is never cut through or
+// squeezed away (see pauseCut, pauseDrops): what was taken for a click might
+// be a very short word, and only the decoder can tell.
 function absorbNoise(runs, sampleRate, minSoundSec) {
-  if (!(minSoundSec > 0)) return runs;
+  const withParts = (r) => (r.quiet ? { ...r, parts: [[r.from, r.to]] } : r);
+  if (!(minSoundSec > 0)) return runs.map(withParts);
   const flank = NOISE_FLANK_SEC * sampleRate;
   const quietEnough = (r) => !r || (r.quiet && r.to - r.from >= flank);
   const out = [];
   runs.forEach((r, i) => {
     const noise = !r.quiet && r.sec < minSoundSec && quietEnough(runs[i - 1]) && quietEnough(runs[i + 1]);
-    const run = { ...r, quiet: r.quiet || noise };
+    const run = noise ? { ...r, quiet: true, parts: [] } : withParts(r);
     const last = out.at(-1);
     if (last && last.quiet && run.quiet) {
       last.to = run.to;
       last.windows += run.windows;
       last.sec += run.sec;
+      last.parts = last.parts.concat(run.parts);
     } else {
       out.push(run);
     }
@@ -115,7 +120,8 @@ function absorbNoise(runs, sampleRate, minSoundSec) {
 // [from, to) of every pause: a quiet run with sound on both sides whose span
 // reaches minPauseSec less one hop (it sits within one hop of the true
 // silence on each side). A quiet run touching the start or end of the buffer
-// separates nothing: not a pause.
+// separates nothing: not a pause. Each span also carries `parts`: its truly
+// quiet runs, more than one when it absorbed noise.
 function pauseSpans(
   samples,
   sampleRate,
@@ -127,9 +133,32 @@ function pauseSpans(
   const spans = [];
   for (let i = 1; i < merged.length - 1; i++) {
     const r = merged[i];
-    if (r.quiet && r.to - r.from >= minSpan) spans.push([r.from, r.to]);
+    if (r.quiet && r.to - r.from >= minSpan) spans.push(Object.assign([r.from, r.to], { parts: r.parts }));
   }
   return spans;
+}
+
+// Where a pause is cut: the middle of its longest truly quiet part — the
+// middle of the pause itself unless it absorbed noise, and never inside that.
+function pauseCut(span) {
+  const parts = span.parts || [span];
+  const [a, b] = parts.reduce((best, p) => (p[1] - p[0] > best[1] - best[0] ? p : best));
+  return Math.round((a + b) / 2);
+}
+
+// The frames squeezePauses drops from a pause to bring it down to `keep`: the
+// middle of every quiet part longer than that, leaving keep/2 on either side
+// of it. Absorbed sound sits between parts, so it is never dropped. Shared by
+// the squeeze and by utteranceGroups' estimate of it.
+function pauseDrops(span, keep) {
+  if (!Number.isFinite(keep)) return [];
+  const half = Math.floor(keep / 2);
+  return (span.parts || [span]).filter(([a, b]) => b - a > keep).map(([a, b]) => [a + half, b - (keep - half)]);
+}
+
+// Cut points: the buffer's ends with every pause's cut between them.
+function pauseEdges(pauses, length) {
+  return [0, ...pauses.map(pauseCut), length];
 }
 
 // Seconds of sound in the buffer — loud runs only, noise excluded the same
@@ -162,11 +191,12 @@ function capCuts(samples, from, to, max, lookback, windowSamples, hopSamples) {
 // samples of speech, while it can still join a neighbour. The smallest
 // fragment goes first, to the neighbour across the shorter pause, and a merge
 // is refused when the decoded piece — the raw range less what squeezePauses
-// takes out of each long pause inside it — would exceed `max`. Returns the
+// takes out of each long pause inside it — would exceed `max` (an estimate;
+// fitCap checks the real squeeze afterwards). Returns the
 // groups in order, each spanning stretches `first`..`last`; the pause after a
 // group's `last` stretch stays a cut.
 function utteranceGroups(samples, pauses, { minUtterance, max, keep }) {
-  const edges = [0, ...pauses.map(([a, b]) => Math.round((a + b) / 2)), samples.length];
+  const edges = pauseEdges(pauses, samples.length);
   const groups = edges.slice(1).map((to, i) => {
     // Speech in a stretch: from where its first pause ends to where its next
     // begins, or the buffer's edge (whose leading/trailing quiet the splitter
@@ -175,7 +205,7 @@ function utteranceGroups(samples, pauses, { minUtterance, max, keep }) {
     const speechTo = i === pauses.length ? samples.length : pauses[i][0];
     return { first: i, last: i, from: edges[i], to, speech: Math.max(0, speechTo - speechFrom), squeezed: 0 };
   });
-  const excess = (p) => Math.max(0, p[1] - p[0] - keep);
+  const excess = (p) => pauseDrops(p, keep).reduce((n, [a, b]) => n + (b - a), 0);
   const done = new Set();
   for (;;) {
     let gi = -1;
@@ -219,9 +249,9 @@ function utteranceGroups(samples, pauses, { minUtterance, max, keep }) {
  * Ascending, each strictly past the previous; empty when no cut is needed.
  *
  * With `minUtteranceSec`, a stretch holding less speech than that is not cut
- * off from its nearest neighbour (see utteranceGroups): the merged piece's decoded
+ * off from its nearest neighbour (see utteranceGroups). Every piece's decoded
  * length — once squeezePauses shortens its inner pauses to `keepPauseSec` —
- * still never exceeds `maxSec`.
+ * never exceeds `maxSec` (see fitCap).
  * @param {Float32Array} samples mono, in [-1, 1]
  * @param {number} sampleRate
  * @param {{maxSec: number, minPauseSec?: number, quietRms?: number, minSoundSec?: number, minUtteranceSec?: number, keepPauseSec?: number, lookbackSec?: number, windowSec?: number, hopSec?: number}} opts
@@ -244,37 +274,62 @@ function splitPoints(
 ) {
   const max = Math.floor(maxSec * sampleRate);
   if (!(max > 0)) throw new Error(`splitPoints: maxSec must be positive (got ${maxSec})`);
-  const lookback = Math.floor(lookbackSec * sampleRate);
-  const windowSamples = Math.max(1, Math.floor(windowSec * sampleRate));
-  const hopSamples = Math.max(1, Math.floor(hopSec * sampleRate));
   let pauses = Number.isFinite(minPauseSec) ? pauseSpans(samples, sampleRate, { minPauseSec, quietRms, minSoundSec }) : [];
-  // Which pieces are merged groups: those are within the cap once squeezed,
-  // so only a single stretch (no pause inside it) can need cap cuts.
-  let merged = pauses.map(() => false).concat(false);
   if (minUtteranceSec > 0 && pauses.length) {
     const groups = utteranceGroups(samples, pauses, {
       minUtterance: minUtteranceSec * sampleRate,
       max,
       keep: Number.isFinite(keepPauseSec) ? keepPauseSec * sampleRate : Infinity,
     });
-    merged = groups.map((g) => g.first !== g.last);
     pauses = groups.slice(0, -1).map((g) => pauses[g.last]);
   }
-  const edges = [0, ...pauses.map(([a, b]) => Math.round((a + b) / 2)), samples.length];
+  const edges = pauseEdges(pauses, samples.length);
   const cuts = [];
+  const shape = { maxSec, minPauseSec, quietRms, minSoundSec, keepPauseSec, lookbackSec, windowSec, hopSec };
   for (let i = 1; i < edges.length; i++) {
     if (i > 1) cuts.push(edges[i - 1]);
-    if (merged[i - 1]) continue;
-    cuts.push(...capCuts(samples, edges[i - 1], edges[i], max, lookback, windowSamples, hopSamples));
+    cuts.push(...fitCap(samples, sampleRate, edges[i - 1], edges[i], shape));
   }
   return cuts;
 }
 
 /**
+ * Cuts inside [from, to) so that what the decoder receives for each piece —
+ * after squeezePauses, exactly as main/chunked-decode.js calls it — never
+ * exceeds `maxSec`. Empty when the range fits as it is; otherwise the plain
+ * cap cuts on the raw range (each then fits without any squeezing). This is
+ * the cap's guarantee, checked on the real squeeze rather than trusted to
+ * utteranceGroups' estimate, and it holds for any range: chunked-decode.js
+ * runs it again after a broken live-preview snapshot adds its own cuts.
+ * @param {Float32Array} samples
+ * @param {number} sampleRate
+ * @param {number} from
+ * @param {number} to
+ * @param {{maxSec: number, minPauseSec?: number, quietRms?: number, minSoundSec?: number, keepPauseSec?: number, lookbackSec?: number, windowSec?: number, hopSec?: number}} opts
+ * @returns {number[]}
+ */
+function fitCap(
+  samples,
+  sampleRate,
+  from,
+  to,
+  { maxSec, minPauseSec = MIN_PAUSE_SEC, quietRms = QUIET_RMS, minSoundSec = 0, keepPauseSec = Infinity, lookbackSec = 10, windowSec = 0.3, hopSec = 0.05 }
+) {
+  const max = Math.floor(maxSec * sampleRate);
+  if (to - from <= max) return [];
+  const piece = samples.subarray(from, to);
+  if (squeezePauses(piece, sampleRate, { keepPauseSec, minPauseSec, quietRms, minSoundSec }).length <= max) return [];
+  const lookback = Math.floor(lookbackSec * sampleRate);
+  const windowSamples = Math.max(1, Math.floor(windowSec * sampleRate));
+  const hopSamples = Math.max(1, Math.floor(hopSec * sampleRate));
+  return capCuts(samples, from, to, max, lookback, windowSamples, hopSamples);
+}
+
+/**
  * The decoder's view of one piece: every pause inside it longer than
- * `keepPauseSec` shortened to that, by dropping its middle. A piece with no
- * such pause comes back as the same array. Noise absorbed into a pause goes
- * with it when it sits in the dropped middle.
+ * `keepPauseSec` shortened to that, by dropping the middle of its quiet
+ * (see pauseDrops). A piece with no such pause comes back as the same array.
+ * Sound absorbed into a pause as noise is always kept.
  * @param {Float32Array} samples
  * @param {number} sampleRate
  * @param {{keepPauseSec: number, minPauseSec?: number, quietRms?: number, minSoundSec?: number}} opts
@@ -283,12 +338,7 @@ function splitPoints(
 function squeezePauses(samples, sampleRate, { keepPauseSec, minPauseSec = MIN_PAUSE_SEC, quietRms = QUIET_RMS, minSoundSec = 0 }) {
   if (!Number.isFinite(keepPauseSec)) return samples;
   const keep = Math.round(keepPauseSec * sampleRate);
-  const drops = pauseSpans(samples, sampleRate, { minPauseSec, quietRms, minSoundSec })
-    .filter(([a, b]) => b - a > keep)
-    .map(([a, b]) => {
-      const head = a + Math.floor(keep / 2);
-      return [head, b - (keep - Math.floor(keep / 2))];
-    });
+  const drops = pauseSpans(samples, sampleRate, { minPauseSec, quietRms, minSoundSec }).flatMap((span) => pauseDrops(span, keep));
   if (!drops.length) return samples;
   const dropped = drops.reduce((n, [a, b]) => n + (b - a), 0);
   const out = new Float32Array(samples.length - dropped);
@@ -303,4 +353,4 @@ function squeezePauses(samples, sampleRate, { keepPauseSec, minPauseSec = MIN_PA
   return out;
 }
 
-module.exports = { splitPoints, pauseSpans, soundSeconds, squeezePauses, QUIET_RMS };
+module.exports = { splitPoints, fitCap, pauseSpans, soundSeconds, squeezePauses, QUIET_RMS };

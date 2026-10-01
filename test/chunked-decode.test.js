@@ -485,7 +485,78 @@ test("chunked decode: a merged piece reaches the worker with its long pause shor
   const merged = r.pieces.find((p) => p.fromFrame <= 10 * SR && p.toFrame >= 10.5 * SR);
   const raw = (merged.toFrame - merged.fromFrame) / SR;
   assert.ok(w.inputs.every((sec) => sec <= MAX_DECODE_SECONDS));
-  assert.ok(Math.min(...w.inputs) < raw - 4, `decoded ${w.inputs} vs raw ${raw}`);
+  // [0, 13): 5 s speech, the 5 s pause kept at 0.5 s, the 0.5 s fragment,
+  // and the 2.5 s half-pause at its edge, which is not squeezed.
+  assert.strictEqual(raw, 13);
+  assert.ok(Math.abs(w.inputs[0] - 8.5) < 0.1, `decoded ${w.inputs[0]} s, expected 8.5`);
+});
+
+test("chunked decode: a merged piece that decodes empty is retried padded from its squeezed audio", async () => {
+  // The padded retry is a worker input like any other: built from what the
+  // decoder saw (8.5 s), not from the 13 s raw range.
+  const input = dictationWav(26, [[0, 5], [15.5, 26]], [[10, 10.5]]);
+  const seen = [];
+  const r = await transcribeChunked(input, {
+    runTranscribe: async (w) => (seen.push(wavDurationSec(w)), seen.length === 1 ? "" : "rescued"),
+  });
+  assert.strictEqual(seen.length, 3, `inputs ${seen}`);
+  assert.ok(Math.abs(seen[1] - seen[0] - 0.5) < 0.01, `padded ${seen[1]} s from ${seen[0]} s`);
+  assert.deepStrictEqual([r.pieces[0].text, r.pieces[0].attempts, r.partial], ["rescued", 2, false]);
+  // Still empty padded: a 13 s piece that heard speech is lost, not accepted.
+  const lost = await transcribeChunked(input, { runTranscribe: async (w) => (wavDurationSec(w) > 9.5 ? "words" : "") });
+  assert.deepStrictEqual([lost.partial, lost.pieces[0].ok, lost.pieces[0].code], [true, false, "EMPTY_SPEECH"]);
+});
+
+test("chunked decode: no worker input passes the cap when salvage cuts land inside a merged piece", async () => {
+  // 1 s, 30 s of quiet, 1 s: merged and squeezed it is one 2.5 s decode, but
+  // a broken snapshot's chunk edge at 22.5 s leaves 21.5 s of unsqueezable
+  // edge quiet on one side of it — held to the cap all the same.
+  const input = dictationWav(32, [[0, 1], [31, 32]]);
+  const w = fakeWorker();
+  await transcribeChunked(input, { runTranscribe: w.runTranscribe, salvageChunks: [salvage(22.5, 32, "kept")] });
+  assert.ok(w.inputs.every((sec) => sec <= MAX_DECODE_SECONDS), `inputs ${w.inputs}`);
+});
+
+test("chunked decode: every worker input stays under the cap, whatever the dictation looks like", async () => {
+  // Seeded fuzz over the shapes the dictation handling deals in: fragments,
+  // clicks, short words, long pauses, and a broken snapshot's salvage edges.
+  let seed = 7;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+  const maxSec = 8;
+  for (let run = 0; run < 60; run++) {
+    const loud = [];
+    let t = rand() * 0.5;
+    while (t < 60) {
+      const kind = rand();
+      const len = kind < 0.3 ? 0.005 + rand() * 0.1 : kind < 0.6 ? 0.1 + rand() * 1.5 : 1 + rand() * 6;
+      loud.push([t, t + len]);
+      t += len + 0.1 + rand() * (rand() < 0.2 ? 15 : 1.5);
+    }
+    const input = dictationWav(t + 0.5, loud);
+    const from = rand() * t;
+    const salvageChunks = rand() < 0.5 ? [salvage(+from.toFixed(2), +Math.min(t, from + 5 + rand() * 20).toFixed(2), "s")] : [];
+    const w = fakeWorker();
+    await transcribeChunked(input, { runTranscribe: w.runTranscribe, maxSec, salvageChunks });
+    assert.ok(w.inputs.every((sec) => sec <= maxSec + 1e-9), `run ${run}: inputs ${w.inputs.filter((s) => s > maxSec)}`);
+  }
+});
+
+test("chunked decode: a short word taken for noise is never squeezed out of a merged piece", async () => {
+  // A 0.08 s "a" alone in a 2 s pause is short enough to count as noise, but
+  // it is sound: it reaches the decoder, and no cut goes through it.
+  const input = dictationWav(9.08, [[0, 1], [8.08, 9.08]], [[4, 4.08]]);
+  const seen = [];
+  const r = await transcribeChunked(input, { runTranscribe: async (w) => (seen.push(holdsMarked(w)), "words") });
+  assert.ok(seen.some(Boolean), "the word reached the decoder");
+  for (const p of r.pieces) assert.ok(p.toFrame <= 4 * SR || p.fromFrame >= 4.08 * SR || (p.fromFrame <= 4 * SR && p.toFrame >= 4.08 * SR), "no cut inside the word");
+});
+
+test("chunked decode: a recording of nothing but noise, in pieces, is an empty dictation without a decode", async () => {
+  const input = dictationWav(10, [], [[2, 2.01], [7, 7.01]]);
+  const w = fakeWorker();
+  const r = await transcribeChunked(input, { runTranscribe: w.runTranscribe, salvageChunks: [salvage(3, 6, "unused")] });
+  assert.ok(r.pieces.length > 1);
+  assert.deepStrictEqual([w.inputs.length, r.text, r.partial], [0, "", false]);
 });
 
 test("chunked decode: a click between thoughts never reaches the decoder", async () => {

@@ -23,13 +23,13 @@
 // pipeline passes the real route.transcribe, and scripts/eval-long-decode.js a
 // bare worker host.
 
-const { splitPoints, soundSeconds, squeezePauses } = require("./util/split-silence");
+const { splitPoints, fitCap, soundSeconds, squeezePauses } = require("./util/split-silence");
 const { joinText } = require("./util/join-text");
 // The overlay loads renderer/speech-probe.js as a plain <script>
 // (renderer/overlay.html); its CommonJS export guard lets the main process
 // apply the same speech verdict.
 const { containsSpeech } = require("../renderer/speech-probe");
-const { encodeWav, wavSlice, wavToFloat32, wavSampleFrames, SAMPLE_RATE } = require("./util/wav");
+const { encodeWav, toPcm16, wavSlice, wavToFloat32, wavSampleFrames, SAMPLE_RATE } = require("./util/wav");
 
 // Longest audio one worker decode may receive when the speech has no pause to
 // cut at. Pauses do the real work; this is the backstop — a cap alone, even at
@@ -53,6 +53,10 @@ const MIN_UTTERANCE_SEC = 2;
 // shortened to it: still a clear pause, without spending the cap on silence.
 const KEEP_PAUSE_SEC = 0.5;
 
+// The options that turn all of the above off: cut at every pause and decode
+// every piece, as before. scripts/eval-long-decode.js measures against it.
+const EVERY_PAUSE = Object.freeze({ minSoundSec: 0, minUtteranceSec: 0, keepPauseSec: Infinity });
+
 // After this many pieces in a row failed even their retry, the worker is not
 // coming back for this recording: stop paying a model reload per piece.
 const MAX_CONSECUTIVE_FAILURES = 2;
@@ -67,18 +71,25 @@ function retryable(failure) {
 // [from, to) frame ranges covering the whole WAV — one per stretch of speech
 // between pauses, each at most maxSec — and the samples they index.
 // Committed chunk boundaries are cut points too, so every salvage chunk
-// covers whole pieces (see assemble). Extra cuts only shorten pieces, so the
-// cap still holds. Each range keeps the index of the pause/cap range it came
+// covers whole pieces (see assemble). A salvage cut can land inside a merged
+// piece's long pause, where the decoder won't squeeze the half left at the
+// piece's edge, so every range is held to the cap again (fitCap). Each range keeps the index of the pause/cap range it came
 // from (`group`): a dead worker is counted once per group, so salvage cuts
 // can't make one bad stretch look like two.
-function planPieces(wav, maxSec, minPauseSec, salvageChunks, dictation) {
+function planPieces(wav, maxSec, minPauseSec, salvageChunks, shape) {
   const frames = wavSampleFrames(wav);
   if (!frames) return { ranges: [[0, 0, 0]], samples: new Float32Array(0) };
   const { samples, sampleRate } = wavToFloat32(wav);
-  const natural = splitPoints(samples, sampleRate, { maxSec, minPauseSec, ...dictation });
+  const natural = splitPoints(samples, sampleRate, { maxSec, minPauseSec, ...shape });
   const cuts = new Set(natural);
   for (const c of salvageChunks) {
     for (const edge of [c.from, c.to]) if (edge > 0 && edge < frames) cuts.add(edge);
+  }
+  const salvaged = [0, ...[...cuts].sort((a, b) => a - b), frames];
+  if (salvageChunks.length) {
+    for (let i = 1; i < salvaged.length; i++) {
+      for (const cut of fitCap(samples, sampleRate, salvaged[i - 1], salvaged[i], { maxSec, minPauseSec, ...shape })) cuts.add(cut);
+    }
   }
   const edges = [0, ...[...cuts].sort((a, b) => a - b), frames];
   const groupOf = (from) => natural.filter((cut) => cut <= from).length;
@@ -106,15 +117,6 @@ function padded(samples, maxSec) {
   const pad = Math.min(Math.round(EMPTY_RETRY_PAD_SEC * SAMPLE_RATE), room);
   if (pad <= 0) return null;
   return encodeWav(toPcm16(samples, pad), SAMPLE_RATE);
-}
-
-// Float samples as PCM16, with `pad` frames of silence on each side.
-function toPcm16(samples, pad = 0) {
-  const pcm = new Int16Array(samples.length + 2 * pad);
-  for (let i = 0; i < samples.length; i++) {
-    pcm[pad + i] = Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32768)));
-  }
-  return pcm;
 }
 
 function emptySpeechError() {
@@ -247,12 +249,12 @@ async function transcribeChunked(
     // A merged piece's long inner pauses are shortened for the decoder; any
     // other piece goes as recorded.
     const decodeSamples = squeezePauses(pieceSamples, SAMPLE_RATE, { keepPauseSec, minPauseSec, minSoundSec });
-    const pieceWav =
-      decodeSamples !== pieceSamples
-        ? encodeWav(toPcm16(decodeSamples), SAMPLE_RATE)
-        : pieces.length === 1
-          ? wav
-          : wavSlice(wav, piece.fromFrame, piece.toFrame);
+    // squeezePauses hands back the same array when it dropped nothing.
+    const squeezed = decodeSamples !== pieceSamples;
+    let pieceWav;
+    if (squeezed) pieceWav = encodeWav(toPcm16(decodeSamples), SAMPLE_RATE);
+    else if (pieces.length === 1) pieceWav = wav;
+    else pieceWav = wavSlice(wav, piece.fromFrame, piece.toFrame);
     for (;;) {
       piece.attempts++;
       try {
@@ -328,4 +330,4 @@ async function transcribeChunked(
   return { text, partial, pieces };
 }
 
-module.exports = { transcribeChunked, MAX_DECODE_SECONDS, MIN_SOUND_SEC, MIN_UTTERANCE_SEC, KEEP_PAUSE_SEC };
+module.exports = { transcribeChunked, MAX_DECODE_SECONDS, EVERY_PAUSE };

@@ -6,7 +6,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 
-const { splitPoints, pauseSpans, soundSeconds, squeezePauses } = require("../main/util/split-silence");
+const { splitPoints, fitCap, pauseSpans, soundSeconds, squeezePauses } = require("../main/util/split-silence");
 
 const SR = 16000;
 
@@ -212,4 +212,33 @@ test("squeezePauses: long inner pauses shrink to keepPauseSec, the speech is unt
   const noPause = sounds(3, [[0, 3]]);
   assert.strictEqual(squeezePauses(noPause, SR, { keepPauseSec: 0.5 }), noPause, "nothing to squeeze: same array");
   assert.strictEqual(squeezePauses(samples, SR, { keepPauseSec: Infinity }), samples);
+});
+
+test("splitPoints: a pause that absorbed noise is cut in its quiet, never through the noise", () => {
+  // A 0.08 s sound at 3.2 s, flanked by 0.2 s of quiet: one pause, cut in
+  // the middle of its longer quiet part rather than its own middle (3.24 s).
+  const samples = sounds(6.48, [[0, 3], [3.2, 3.28], [3.38, 6.48]]);
+  const cuts = splitPoints(samples, SR, { maxSec: 20, minSoundSec: 0.15 });
+  assert.strictEqual(cuts.length, 1);
+  assert.ok(cuts[0] < 3.2 * SR || cuts[0] > 3.28 * SR, `cut at ${cuts[0] / SR}s`);
+});
+
+test("squeezePauses: sound absorbed as noise is kept, only quiet is dropped", () => {
+  // 3 s, 1 s quiet, a 20 ms click, 1 s quiet, 3 s: each quiet side shrinks
+  // to 0.5 s, the click survives.
+  const samples = sounds(7.02, [[0, 3], [4, 4.02], [5.02, 7.02]]);
+  const out = squeezePauses(samples, SR, { keepPauseSec: 0.5, minSoundSec: 0.15 });
+  const loud = (a) => a.reduce((n, x) => n + (x !== 0 ? 1 : 0), 0);
+  assert.strictEqual(loud(out), loud(samples), "every sound sample kept");
+  assert.ok(Math.abs(out.length / SR - 6.02) < 0.06, `${out.length / SR}s`);
+});
+
+test("fitCap: a range is only cut when its squeezed decode would pass the cap", () => {
+  const samples = sounds(32, [[0, 1], [31, 32]]);
+  const opts = { maxSec: 20, minSoundSec: 0.15, keepPauseSec: 0.5 };
+  assert.deepStrictEqual(fitCap(samples, SR, 0, samples.length, opts), [], "squeezed it is 2.5 s");
+  // From 0 to 22.5 s the quiet runs to the range's edge: nothing to squeeze.
+  const cuts = fitCap(samples, SR, 0, 22.5 * SR, opts);
+  assert.ok(cuts.length >= 1 && cuts.every((c) => c > 0 && c < 22.5 * SR));
+  assert.ok(cuts[0] <= 20 * SR);
 });

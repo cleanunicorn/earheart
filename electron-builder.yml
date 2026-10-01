@@ -45,10 +45,10 @@ linux:
     entry:
       StartupWMClass: earheart
 
-# Build on native Apple Silicon and Intel runners so npm installs the matching
-# native addons. release.yml boots each packaged app and loads its engines
-# before uploading. Keep latest-mac.yml for existing Apple Silicon installs;
-# the Intel job publishes its metadata as latest-mac-x64.yml to avoid races.
+# Build on a native Apple Silicon runner so npm installs the arm64 native
+# addons. release.yml boots the packaged app and loads its engines before
+# uploading it with latest-mac.yml. Intel Macs are not built (the last was
+# v0.33.9).
 mac:
   target:
     - dmg

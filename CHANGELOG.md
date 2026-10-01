@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.34.2 — 2026-10-01
+
+- Stop splitting dictation at hesitations and decoding noise as words (#248)
+
 ## v0.34.1 — 2026-10-01
 
 - Keep cleanup on the selected model and report failures (#247)

@@ -26,7 +26,7 @@
     "dist:win": "electron-builder --win"
   },
   "devDependencies": {
-    "electron": "^42.0.0",
+    "electron": "^42.10.0",
     "electron-builder": "^26.4.0"
   },
   "dependencies": {

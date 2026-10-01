@@ -49,9 +49,10 @@ const MODELS = {
       label: "Parakeet TDT 0.6B v3 (multilingual, int8)",
       kind: "stt",
       engine: "sherpa-parakeet",
-      default: true,
-      // ~25 languages, auto-detected, faster-than-realtime on CPU.
-      note: "Runs on this computer · 25 languages · ~670 MB · best for most laptops",
+      // ~25 languages, auto-detected, faster-than-realtime on CPU. Same model
+      // as the default with int8 weights: a quarter of the download, for
+      // machines that struggle with full precision.
+      note: "Runs on this computer · 25 languages · ~670 MB · smaller and faster, for lighter laptops",
       files: [
         { name: "encoder.int8.onnx", bytes: 652_184_281,
           sha256: "acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247",
@@ -80,9 +81,11 @@ const MODELS = {
       label: "Parakeet TDT 0.6B v3 (multilingual, full precision)",
       kind: "stt",
       engine: "sherpa-parakeet",
-      // Same 25-language model as the default, but fp32 weights — slightly
-      // higher accuracy at a larger download and more RAM/CPU per transcription.
-      note: "Runs on this computer · 25 languages · ~2.4 GB · higher accuracy, needs a stronger machine",
+      default: true,
+      // fp32 weights of the 25-language v3 model — slightly higher accuracy
+      // than the int8 build at a larger download and more RAM/CPU per
+      // transcription.
+      note: "Runs on this computer · 25 languages · ~2.5 GB · recommended: best multilingual accuracy",
       files: [
         { name: "encoder.onnx", bytes: 41_766_257,
           sha256: "3eed7ce424bf8339ad09233533c687e2dbd07e74ccf5027b5e7344019ea373b0",
@@ -115,7 +118,7 @@ const MODELS = {
       engine: "sherpa-parakeet",
       // English-only fp32 model. Top of the English ASR leaderboards; pick this
       // if you only dictate in English and want the best accuracy.
-      note: "Runs on this computer · English only · ~2.4 GB · best English accuracy, needs a stronger machine",
+      note: "Runs on this computer · English only · ~2.5 GB · best English accuracy, needs a stronger machine",
       files: [
         { name: "encoder.onnx", bytes: 41_766_257,
           sha256: "7ce8d2b3f45fcd3b553d3b7a188436db7748c271081cc004f28bf76f3df01893",
@@ -196,18 +199,18 @@ const MODELS = {
     },
     "granite-4.0-micro": {
       id: "granite-4.0-micro",
-      label: "Granite 4.0 Micro (recommended)",
+      label: "Granite 4.0 Micro (faster)",
       kind: "cleanup",
       engine: "llama-gguf",
-      default: true,
-      // The default since the cleanup benchmark (#167, Ryzen 9 3900X CPU): no
+      // The default from the cleanup benchmark (#167, Ryzen 9 3900X CPU) until
+      // Qwen3 4B Instruct 2507 replaced it: no
       // fillers left over five runs where both Gemma 3 1B and 4B left all 30,
       // at 0.95 content-word retention. The price is the download, ~2.6x the
       // 1B's, and a slower clean on CPU (18.6 s vs 7.5 s median there).
       // RAM is stated on the same scale as Gemma 3 4B's "~6 GB": measured the
       // same way (CPU, default 4096 context, peak RSS), Granite used 3,987 MiB
       // against Gemma 3 4B's 4,289 MiB, 0.93x of it.
-      note: "Runs on this computer · ~2.1 GB, 2.6× the 1B · needs ~6 GB RAM · recommended: removes fillers reliably",
+      note: "Runs on this computer · ~2.1 GB, 2.6× the 1B · needs ~6 GB RAM · removes fillers reliably, a little faster than Qwen",
       files: [
         { name: "granite-4.0-micro-Q4_K_M.gguf", bytes: 2_099_502_528,
           sha256: "97c417dcc0534b0737c74016fb2af083cb17c3b51eaac621192d23961b7024eb",
@@ -230,13 +233,14 @@ const MODELS = {
     },
     "qwen3-4b-2507": {
       id: "qwen3-4b-2507",
-      label: "Qwen3 4B Instruct 2507 (alternative)",
+      label: "Qwen3 4B Instruct 2507 (recommended)",
       kind: "cleanup",
       engine: "llama-gguf",
+      default: true,
       // Same benchmark: also no fillers left, but a little slower than Granite
       // (21.1 s vs 18.6 s median) and a little lower retention (0.94 vs 0.95).
       // RAM on the Gemma 3 4B scale: 4,817 MiB peak vs 4,289 MiB, 1.12x of it.
-      note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · removes fillers reliably, a little slower than Granite",
+      note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · recommended: removes fillers reliably",
       files: [
         { name: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf", bytes: 2_497_281_120,
           sha256: "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
@@ -260,8 +264,8 @@ const MODELS = {
   },
 };
 
-const DEFAULT_STT_MODEL = "parakeet-tdt-0.6b-v3-int8";
-const DEFAULT_CLEANUP_MODEL = "granite-4.0-micro";
+const DEFAULT_STT_MODEL = "parakeet-tdt-0.6b-v3";
+const DEFAULT_CLEANUP_MODEL = "qwen3-4b-2507";
 
 // User-added models (cleanup GGUFs or STT bundles from a Hugging Face repo
 // the user pasted). Kept in

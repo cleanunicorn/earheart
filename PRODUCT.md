@@ -88,8 +88,8 @@ shipped.
   On GNOME/KDE Wayland, users bind a system shortcut to `earheart --toggle`
   (single-instance).
 - First run: a wizard walks through hotkey → microphone → speech-to-text →
-  cleanup → output, then downloads the on-device models (≈670 MB Parakeet +
-  ≈2.1 GB Granite 4.0 Micro) with a progress bar. One-time download.
+  cleanup → output, then downloads the on-device models (≈2.5 GB Parakeet +
+  ≈2.5 GB Qwen3 4B Instruct 2507) with a progress bar. One-time download.
 - Distributed via GitHub releases: Windows installer + portable exe, macOS
   dmg (Apple Silicon only; Intel unsupported after v0.33.9), Linux AppImage +
   deb. Self-updates from GitHub releases with checksum verification.
@@ -100,10 +100,11 @@ shipped.
 
 ## Capabilities and Constraints
 
-- In-process engines by default: Parakeet TDT 0.6B v3 via sherpa-onnx
-  (multilingual, 25 languages, faster than realtime on CPU) and IBM's Granite
-  4.0 Micro cleanup model via node-llama-cpp. Gemma 3 (1B, 4B, 12B) and Qwen3
-  4B Instruct cleanup models selectable.
+- In-process engines by default: Parakeet TDT 0.6B v3 full precision via
+  sherpa-onnx (multilingual, 25 languages, faster than realtime on CPU) and the
+  Qwen3 4B Instruct 2507 cleanup model via node-llama-cpp. A smaller int8
+  Parakeet, plus Gemma 3 (1B, 4B, 12B) and IBM's Granite 4.0 Micro cleanup
+  models, are selectable.
 - Every stage is modular: any OpenAI-compatible endpoint works — STT via
   `{base}/audio/transcriptions`, cleanup via `{base}/chat/completions`
   (Ollama, llama.cpp, LM Studio, vLLM, Groq, OpenRouter, OpenAI, …).

@@ -36,7 +36,9 @@ const CORPUS = {
   ],
 };
 
-// Every candidate is judged against this one (stt-model-eval-Q3).
+// Every candidate is judged against this one (stt-model-eval-Q3). It was the
+// app default when the threshold was fixed and stays the baseline so recorded
+// verdicts remain comparable; the default is now the fp32 build.
 const BASELINE_ID = "parakeet-tdt-0.6b-v3-int8";
 
 const CANDIDATES = [

@@ -1982,3 +1982,41 @@ test("engines cleanup snapshots each selected model and cancellation reaches a c
   finish("answer");
   await rejected;
 });
+
+test("failed cleanup keeps its worker eligible for idle eviction", async () => {
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const cleanup = hostsBySvc["earheart-cleanup"];
+  cleanup.request = async (type) => {
+    cleanup.calls.push(type);
+    throw new Error("cleanup load failed");
+  };
+  await assert.rejects(facade.clean("hello", CLEANUP_CFG), /cleanup load failed/);
+  assert.strictEqual(facade.unloadIdle(), true);
+  assert.strictEqual(cleanup.stopped, true, "a failed operation may leave a model or worker resident");
+  assert.strictEqual(hostsBySvc["earheart-stt"].stopped, false, "unused STT host is untouched");
+});
+
+test("cleanup worker exit rejects pending cleanup and subsequent cancellation is a no-op", async () => {
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const cleanup = hostsBySvc["earheart-cleanup"];
+  let rejectPending;
+  cleanup.request = (type) => {
+    cleanup.calls.push(type);
+    if (type !== "clean") return Promise.resolve({ cancelled: 0 });
+    cleanup.inFlight++;
+    return new Promise((resolve, reject) => { rejectPending = reject; });
+  };
+  const pending = facade.clean("hello", CLEANUP_CFG);
+  const rejected = assert.rejects(pending, /engine process exited/);
+  // Mirror the real host's exit: notify residency listeners, reject in-flight
+  // work, and clear pending requests. Cancel must not fork a replacement.
+  cleanup.die();
+  rejectPending(new Error("engine process exited"));
+  cleanup.inFlight = 0;
+  await rejected;
+  const requestsBeforeCancel = cleanup.calls.length;
+  facade.cancelClean();
+  assert.strictEqual(cleanup.calls.length, requestsBeforeCancel);
+  assert.strictEqual(facade.unloadIdle(), true);
+  assert.strictEqual(cleanup.stopped, false, "the exited worker is already gone");
+});

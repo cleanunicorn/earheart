@@ -53,7 +53,9 @@ The Makefile wraps most tasks; `make help` lists them all.
   `scripts/eval-stt.js` corpus/model cache, not part of the gate):
   `xvfb-run -a npx electron scripts/eval-long-decode.js --no-sandbox
   --cache-dir <cache> --out <file outside the repo> --single`; exits 1 when a
-  long recording loses words. Method and recorded numbers:
+  long recording loses words. `--before` adds the old cut-at-every-pause
+  splitter side by side, and `--dictation [--seed N]` runs dictation-shaped
+  recordings (hesitations, clicks, breaths). Method and recorded numbers:
   [docs/long-recordings.md](docs/long-recordings.md)
 - **Build:** `make dist` (current platform)
 - **Release merged PRs:** `make release` dispatches the catch-up release workflow

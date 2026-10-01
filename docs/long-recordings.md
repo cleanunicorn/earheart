@@ -32,7 +32,7 @@ clip at a time (the short-clip WER below; the whole 647-clip corpus gives
 6.07 % with `scripts/eval-stt.js`). The gate is word ratio ≥ 0.95 and WER no
 more than 3 points above that baseline.
 
-| audio | short-clip WER (gate) | one buffer (before) | pauses + 20 s cap (now) | worker decode time, before → now |
+| audio | short-clip WER (gate) | one buffer (before) | every pause + 20 s cap (v0.33.3–v0.34.1) | worker decode time, before → now |
 | --- | --- | --- | --- | --- |
 | 124.5 s | 4.5 % (≤ 7.5 %) | ratio 0.839, WER 20.6 % | **ratio 1.016, WER 6.8 %** (38 pieces, longest 9.6 s, 1 accepted empty) | 8.9 s → 7.0 s |
 | 182.9 s | 4.4 % (≤ 7.4 %) | worker exits (code 133) | **ratio 1.017, WER 6.9 %** (54 pieces, longest 13.0 s, 2 accepted empty) | — → 10.1 s |
@@ -41,6 +41,11 @@ more than 3 points above that baseline.
 "Accepted empty" pieces heard sound the speech probe calls speech but decoded
 to nothing even with silence around them (see below); in these runs they were
 breaths and clicks after finished sentences.
+
+This table is the cut-at-every-pause splitter as it shipped from v0.33.3. The
+splitter that ships now also joins fragments and absorbs clicks, which did
+better on these same recordings and left no accepted-empty pieces: see
+[Dictation: hesitations and noise](#dictation-hesitations-and-noise).
 
 After each run, the same worker answered a short decode, so it survives.
 
@@ -90,7 +95,10 @@ leave fragments the model decodes to nothing: 3 such pieces in 124.5 s (WER
 So a pause counts from 200 ms. "Quiet" is the overlay's own silence level
 (RMS < 0.012 after auto gain control), scored with a 50 ms window sliding in
 5 ms steps, so a pause's length decides and its alignment doesn't: 200 ms is
-always a cut, 180 ms never. The cut goes to the middle of the pause. Speech
+always a pause, 180 ms never. The cut goes to the middle of the pause. (The
+app then keeps a pause from being a cut when what it would cut off is a
+fragment, and treats a click inside it as part of the pause — see
+[Dictation: hesitations and noise](#dictation-hesitations-and-noise).) Speech
 that runs past 20 s without a pause is cut at the quietest moment in the 10 s
 before the ceiling, using the same search the overlay uses for its forced
 chunk boundaries (`renderer/chunk-boundary.js`).
@@ -130,7 +138,11 @@ turned on by [`main/chunked-decode.js`](../main/chunked-decode.js):
   hops, so a real click of ~0.1 s or less) with at least 0.1 s of quiet on
   each side — or the buffer's edge, where the hotkey's own click lands — no
   longer splits the pause it sits in. A consonant burst inside a word has
-  shorter closures around it, so it is never taken for a click. A piece
+  shorter closures around it, so it is never taken for a click. A very short
+  word (about 0.1 s) between two pauses looks the same as a click, so
+  absorbed sound is never thrown away: the cut goes in the pause's longest
+  quiet stretch, not through the sound, and squeezing (below) only drops
+  quiet. The decoder still hears it. A piece
   that still has no sound and that the speech probe doesn't call speech is
   not decoded at all (only when the recording is more than one piece: a
   one-piece recording's answer, or error, is the dictation's).
@@ -138,7 +150,10 @@ turned on by [`main/chunked-decode.js`](../main/chunked-decode.js):
   joins the neighbour across the shorter pause, smallest first, as long as
   the merged piece stays within the 20 s cap. Inside a merged piece every
   pause longer than 0.5 s reaches the decoder shortened to 0.5 s (its middle
-  is dropped), so a long pause doesn't spend the cap on silence. Stretches of
+  is dropped), so a long pause doesn't spend the cap on silence. The cap is
+  checked on the squeezed audio itself, after any cuts a broken live-preview
+  snapshot adds: a range that would still pass 20 s is cut at the cap as
+  before. Stretches of
   2 s or more still cut at every pause, so two sentences still don't share a
   decode (#168).
 
@@ -165,31 +180,39 @@ invented ones.
 
 | model | recording | audio | before: every pause | now | pieces, before → now |
 | --- | --- | --- | --- | --- | --- |
-| fp32 (default) | dictation | 155.2 s | 12.5 % (1.035) | **5.1 % (0.990)** | 67 → 24 |
-| fp32 (default) | dictation | 225.0 s | 10.8 % (1.035) | **5.0 % (0.994)** | 92 → 32 |
-| fp32 (default) | dictation | 382.4 s | 11.5 % (1.038) | **5.2 % (0.997)** | 150 → 54 |
-| fp32 (default) | read | 124.5 s | 6.8 % (0.994) | **4.8 % (0.981)** | 38 → 18 |
-| fp32 (default) | read | 182.9 s | 7.1 % (1.010) | **4.4 % (0.990)** | 54 → 26 |
-| fp32 (default) | read | 310.9 s | 8.1 % (1.010) | **5.6 % (0.987)** | 87 → 44 |
-| int8 | dictation | 155.2 s | 12.2 % (1.051) | **6.4 % (1.000)** | 67 → 24 |
-| int8 | dictation | 225.0 s | 11.9 % (1.056) | **6.2 % (1.012)** | 92 → 32 |
-| int8 | dictation | 382.4 s | 13.0 % (1.047) | **8.6 % (1.004)** | 150 → 54 |
-| int8 | read | 124.5 s | 6.8 % (1.016) | **4.8 % (1.000)** | 38 → 18 |
-| int8 | read | 182.9 s | 6.9 % (1.017) | **4.6 % (1.004)** | 54 → 26 |
-| int8 | read | 310.9 s | 8.2 % (1.013) | **6.1 % (0.999)** | 87 → 44 |
+| fp32 (default) | dictation | 155.2 s | 12.5 % (1.035) | **5.5 % (0.990)** | 67 → 24 |
+| fp32 (default) | dictation | 225.0 s | 10.8 % (1.035) | **5.2 % (0.992)** | 92 → 32 |
+| fp32 (default) | dictation | 382.4 s | 11.5 % (1.038) | **6.2 % (0.995)** | 150 → 54 |
+| fp32 (default) | read | 124.5 s | 6.8 % (0.994) | **5.1 % (0.981)** | 38 → 18 |
+| fp32 (default) | read | 182.9 s | 7.1 % (1.010) | **4.6 % (0.990)** | 54 → 26 |
+| fp32 (default) | read | 310.9 s | 8.1 % (1.010) | **5.9 % (0.989)** | 87 → 44 |
+| int8 | dictation | 155.2 s | 12.2 % (1.051) | **5.5 % (0.997)** | 67 → 24 |
+| int8 | dictation | 225.0 s | 11.9 % (1.056) | **6.9 % (1.008)** | 92 → 32 |
+| int8 | dictation | 382.4 s | 13.0 % (1.047) | **8.6 % (1.001)** | 150 → 54 |
+| int8 | read | 124.5 s | 6.8 % (1.016) | **4.5 % (1.000)** | 38 → 18 |
+| int8 | read | 182.9 s | 6.9 % (1.017) | **4.6 % (1.002)** | 54 → 26 |
+| int8 | read | 310.9 s | 8.2 % (1.013) | **6.2 % (0.999)** | 87 → 44 |
 
 Every "now" run passes the gate (word ratio ≥ 0.95, WER within 3 points of
-the recording's short-clip WER, 4.0–6.2 %); no piece failed, the longest
-was 16.1 s.
+the recording's short-clip WER, 4.0–6.2 %); no piece failed, none came back
+empty, and the longest worker input was 16.1 s.
+
+Keeping a sound that was taken for noise (above) costs a little where it
+really was a click: before that rule the shipped run measured 5.0–5.2 % on
+the fp32 dictation recordings and 4.4–5.6 % on fp32 read. Hearing a stray
+click is the price of never deleting a short word.
 
 The read recordings got better too: the 1–2 s pieces that cutting at every
 pause produced there (the "accepted empty" breaths and clicks above among
 them) were costing words, and joining them did not bring back the #168 loss —
-the word ratio stays at 0.981–1.004.
+the word ratio stays at 0.981–1.002.
 
 ### Choosing the thresholds
 
-A sweep over the int8 model, 300 s recordings (dictation seeds 1 and 2), WER:
+A sweep over the int8 model on the 300 s target (310.9 s read, 382.4 s
+dictation for seed 1), WER, run with `minUtteranceSec` and `minSoundSec` set
+through a lab script over the same harness. Measured before the review
+fixes that keep absorbed sound (the Result table above is after them):
 
 | recording | before | noise only | fragments < 2 s only | **both (shipped)** | fragments < 3 s + noise |
 | --- | --- | --- | --- | --- | --- |
@@ -198,9 +221,10 @@ A sweep over the int8 model, 300 s recordings (dictation seeds 1 and 2), WER:
 | dictation, seed 2 | 12.6 % | 11.5 % | 8.7 % | **8.5 %** | 7.5 % |
 
 Each change helps alone, and together they help most. 3 s scored a little
-better, but without the noise handling its word ratio fell to 0.968–0.979,
-the direction #168 went; 2 s kept it at 0.982–1.004 and is what ships. 1 s
-merged too little (9.1–11.5 %).
+better, but without the noise handling its dictation word ratio fell to
+0.979 / 0.968 (seed 1 / 2), the direction #168 went; 2 s kept it at
+0.982–1.004 and is what ships. 1 s merged too little: 11.5 / 9.1 % without
+the noise handling, 10.4 / 9.9 % with it.
 
 **What this doesn't cover.** The dictation recordings are synthetic. A
 fragment can still be decoded alone when joining it either way would pass the
@@ -219,7 +243,8 @@ own speech probe, `renderer/speech-probe.js`) but decodes to no text is
 decoded once more with 250 ms of silence around it (less when that would
 pass the 20 s cap; none, and no retry, for a piece already at the cap). In the lab that rescued
 the words lost that way; what still came back empty were breaths and clicks
-after finished sentences, which the probe (biased toward "speech" on
+after finished sentences (before the dictation handling, which now folds a
+click into its pause and a breath into a neighbouring piece), which the probe (biased toward "speech" on
 purpose) also calls speech. Checked against each sentence decoded alone
 with token timestamps, none of those pieces held a word missing from the
 final transcript; all were 0.7–1.2 s long. So a still-empty piece of up to
@@ -276,11 +301,13 @@ xvfb-run -a npx electron scripts/eval-stt.js --no-sandbox --pass accuracy \
   --models parakeet-tdt-0.6b-v3-int8 --keep --cache-dir <cache> --out <acc.json>
 
 # dictation-shaped recordings, old and new splitting side by side
+# (--seed N picks the shape, default 1; the sweep below used seeds 1 and 2)
 xvfb-run -a npx electron scripts/eval-long-decode.js --no-sandbox \
   --cache-dir <cache> --out <run.json> --dictation --before
 # read recordings, old and new splitting side by side
-… --before
-# before/after table (exit 1 if a pieces run misses the gate)
+xvfb-run -a npx electron scripts/eval-long-decode.js --no-sandbox \
+  --cache-dir <cache> --out <run.json> --before
+# one buffer vs pieces (exit 1 if a pieces run misses the gate)
 xvfb-run -a npx electron scripts/eval-long-decode.js --no-sandbox \
   --cache-dir <cache> --out <run.json> --single
 # cap-only table

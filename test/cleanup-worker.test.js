@@ -13,7 +13,7 @@ function deferred() {
 }
 const drain = () => new Promise((resolve) => setImmediate(resolve));
 
-function worker({ loadGate, promptGate, promptStarted } = {}) {
+function worker({ loadGate, promptGate, promptStarted, preloadGate, preloadStarted } = {}) {
   const events = [];
   const runtime = {
     async getLlama() {
@@ -51,6 +51,10 @@ function worker({ loadGate, promptGate, promptStarted } = {}) {
       async preloadPrompt(text, { signal }) {
         assert.equal(signal.aborted, false);
         events.push(`prime:${this.modelPath}`);
+        preloadStarted?.resolve();
+        if (preloadGate) await preloadGate.promise;
+        if (signal.aborted) throw new Error("cleanup cancelled");
+        events.push(`primed:${this.modelPath}`);
       }
     },
   };
@@ -170,4 +174,41 @@ test("cleanup worker: targeted cancellation reaches active generation and releas
   assert.match(cancelled.error, /cleanup cancelled/);
   assert.equal((await next).result, "B");
   assert.deepEqual(w.events.filter((event) => event.startsWith("prompt:")), ["prompt:A", "prompt:B"]);
+});
+
+test("cleanup worker: model switches wait for active prefill to finish", async () => {
+  const preloadGate = deferred();
+  const preloadStarted = deferred();
+  const w = worker({ preloadGate, preloadStarted });
+  const prime = w.send("prime-cleanup", { model: model("A"), text: "rules" });
+  await preloadStarted.promise;
+  const loadB = w.send("load-cleanup", model("B"));
+  const cleanB = w.send("clean", turn("B"));
+  await drain();
+  assert.deepEqual(w.events, ["load:A", "prime:A"]);
+  preloadGate.resolve();
+  assert.equal((await prime).ok, true);
+  assert.equal((await loadB).ok, true);
+  assert.equal((await cleanB).result, "B");
+  assert.ok(w.events.indexOf("primed:A") < w.events.indexOf("dispose-context:A"));
+  assert.ok(w.events.indexOf("dispose-context:A") < w.events.indexOf("load:B"));
+});
+
+test("cleanup worker: cancellation reaches active prefill and permits final cleanup", async () => {
+  const preloadGate = deferred();
+  const preloadStarted = deferred();
+  const w = worker({ preloadGate, preloadStarted });
+  const prime = w.send("prime-cleanup", { model: model("A"), text: "rules" });
+  await preloadStarted.promise;
+  assert.equal((await w.send("cancel-clean")).result.cancelled, 1);
+  const final = w.send("clean", turn("B"));
+  await drain();
+  assert.deepEqual(w.events, ["load:A", "prime:A"]);
+  preloadGate.resolve();
+  const cancelled = await prime;
+  assert.equal(cancelled.ok, false);
+  assert.match(cancelled.error, /cleanup cancelled/);
+  assert.equal((await final).result, "B");
+  assert.equal(w.events.includes("primed:A"), false);
+  assert.deepEqual(w.events.filter((event) => event.startsWith("prompt:")), ["prompt:B"]);
 });

@@ -153,7 +153,7 @@ and choose an asset (`<version>` is the version number, such as `0.8.0`):
 | System | Download |
 | --- | --- |
 | 🪟 Windows | `Earheart-Setup-<version>.exe` for the installer, or `Earheart-<version>.exe` to run a portable build. Windows on ARM (Snapdragon X) uses these x64 builds under built-in emulation; both engines work, but there is no separate ARM build yet. |
-| 🍎 macOS | `Earheart-<version>-arm64.dmg` for Apple Silicon (M1/M2/M3/M4), or `Earheart-<version>.dmg` for Intel. Each is packaged and tested on its matching architecture, which the updater preserves. Check the Apple menu → **About This Mac** for “Chip” or “Processor” if unsure. |
+| 🍎 macOS | `Earheart-<version>-arm64.dmg` for Apple Silicon (M1/M2/M3/M4). Intel Macs are no longer supported: the last release with an Intel build was [v0.33.9](https://github.com/cleanunicorn/earheart/releases/tag/v0.33.9), and Intel installs keep working on it but get no further updates. Check the Apple menu → **About This Mac**: an Apple Silicon Mac lists a “Chip”, an Intel Mac a “Processor”. |
 | 🐧 Linux | `Earheart-<version>.AppImage` for any distro, or `earheart_<version>_amd64.deb` for Debian/Ubuntu. |
 
 ### 2. Install it
@@ -162,7 +162,7 @@ and choose an asset (`<version>` is the version number, such as `0.8.0`):
 | --- | --- |
 | `Earheart-Setup-<version>.exe` | Double-click and follow the installer. |
 | `Earheart-<version>.exe` (portable) | Just double-click to run — no install. |
-| `Earheart-<version>*.dmg` | Open it, then drag **Earheart** into **Applications**. (See the macOS note below — the first launch needs one extra step.) |
+| `Earheart-<version>-arm64.dmg` | Open it, then drag **Earheart** into **Applications**. (See the macOS note below — the first launch needs one extra step.) |
 | `Earheart-<version>.AppImage` | In a terminal: `chmod +x Earheart-*.AppImage`, then double-click or run it. |
 | `earheart_<version>_amd64.deb` | `sudo apt install ./earheart_<version>_amd64.deb` |
 

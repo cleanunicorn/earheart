@@ -91,8 +91,8 @@ shipped.
   cleanup → output, then downloads the on-device models (≈670 MB Parakeet +
   ≈2.1 GB Granite 4.0 Micro) with a progress bar. One-time download.
 - Distributed via GitHub releases: Windows installer + portable exe, macOS
-  dmg (arm64 + Intel), Linux AppImage + deb. Self-updates from GitHub releases
-  with checksum verification.
+  dmg (Apple Silicon only; Intel unsupported after v0.33.9), Linux AppImage +
+  deb. Self-updates from GitHub releases with checksum verification.
 - Platform frictions that are part of the product experience: macOS build is
   unsigned (one-time `xattr` quarantine strip, documented; updates clear it
   automatically); macOS needs Microphone + Accessibility permissions; Linux

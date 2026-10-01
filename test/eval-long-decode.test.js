@@ -6,7 +6,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 
-const { parseArgs, pickSentences, score, judgePieces, prefixBaseline } = require("../scripts/eval-long-decode");
+const { parseArgs, pickSentences, score, judgePieces, prefixBaseline, markdown } = require("../scripts/eval-long-decode");
 
 const GATE = { shortWer: 0.05, cap: 60, minRatio: 0.95, maxWerOverShort: 0.03 };
 const good = { hypWords: 900, ratio: 0.99, wer: 0.06, maxPieceSec: 58, failedPieces: 0, alive: true };
@@ -136,4 +136,20 @@ test("eval-long-decode: a dictation recording keeps every clip's audio, adds onl
   const loud = (x) => x.reduce((n, v) => n + (Math.abs(v) > 3000 ? 1 : 0), 0);
   assert.ok(loud(a) >= loud(Int16Array.from(clips.flatMap((c) => [...c]))) * 0.95);
   assert.ok(loud(a) - loud(Int16Array.from(clips.flatMap((c) => [...c]))) < 16000 * 0.1);
+});
+
+test("eval-long-decode: the table names the recording and marks the before run informational", () => {
+  const row = { audioSec: 155.2, baseline: { wer: 0.042, clips: 15 }, pieces: 24, maxPieceSec: 11, ratio: 0.99, wer: 0.051, reasons: [] };
+  const md = markdown({
+    model: "m",
+    runs: [
+      { ...row, mode: "before", corpus: "dictation", cap: 20, pieces: 67, reasons: ["word ratio 0.9 < 0.95"] },
+      { ...row, mode: "pieces", corpus: "dictation", cap: 20, pauses: true },
+      { ...row, mode: "pieces", cap: 20, pauses: true },
+    ],
+  }).split("\n");
+  assert.match(md[2], /^\| recording \| audio \|/);
+  assert.match(md[4], /^\| dictation \| 155\.2 s .*\| every pause \+ ≤ 20 s cap \| 67 .*\| \(before\) \|$/, "before never gates, whatever it measured");
+  assert.match(md[5], /^\| dictation \| .*\| pauses \+ ≤ 20 s cap \| .*\| pass \|$/);
+  assert.match(md[6], /^\| read \| /, "no corpus means the read recordings");
 });

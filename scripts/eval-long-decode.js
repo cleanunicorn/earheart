@@ -51,8 +51,8 @@ const e = require("./stt-eval");
 const manifest = require("./stt-eval-manifest");
 const registry = require("../main/engines/registry");
 const manager = require("../main/engines/model-manager");
-const { encodeWav, wavDurationSec, SAMPLE_RATE } = require("../main/util/wav");
-const { transcribeChunked, MAX_DECODE_SECONDS } = require("../main/chunked-decode");
+const { encodeWav, toPcm16, toPcm16Sample, wavDurationSec, SAMPLE_RATE } = require("../main/util/wav");
+const { transcribeChunked, MAX_DECODE_SECONDS, EVERY_PAUSE } = require("../main/chunked-decode");
 const { quietestOffset } = require("../renderer/chunk-boundary");
 
 const GAP_SAMPLES = Math.round(0.3 * SAMPLE_RATE);
@@ -121,19 +121,6 @@ function parseArgs(argv) {
   return opts;
 }
 
-// Deterministic [0, 1) generator, so a dictation recording is the same on
-// every run and machine for a given --seed.
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 // The sounds a dictation adds to read speech, as PCM16 at SAMPLE_RATE. RMS is
 // stated after the overlay's auto gain control, where the splitter sees it.
 const DICTATION_SHAPE = {
@@ -196,7 +183,9 @@ function hesitationPoints(clip, count) {
  * @returns {Int16Array}
  */
 function dictationRecording(clips, seed) {
-  const rand = mulberry32(seed);
+  // Seeded (scripts/stt-eval.js's generator), so a dictation recording is the
+  // same on every run and machine for a given --seed.
+  const rand = e.mulberry32(seed);
   const between = ([a, b]) => a + rand() * (b - a);
   const parts = [roomTone(sec(0.1), rand), click(rand), roomTone(sec(0.5), rand)];
   clips.forEach((clip, ci) => {
@@ -225,12 +214,12 @@ function dictationRecording(clips, seed) {
   const out = new Int16Array(total);
   let at = 0;
   for (const p of parts) {
-    for (let i = 0; i < p.length; i++) out[at + i] = Math.max(-32768, Math.min(32767, Math.round(p[i] * 32768)));
+    out.set(toPcm16(p), at);
     at += p.length;
   }
   // The clips' own floor is digital silence in places; add the room over all.
   const floor = roomTone(total, rand);
-  for (let i = 0; i < total; i++) out[i] = Math.max(-32768, Math.min(32767, out[i] + Math.round(floor[i] * 32768)));
+  for (let i = 0; i < total; i++) out[i] = toPcm16Sample(out[i] / 32768 + floor[i]);
   return out;
 }
 
@@ -357,7 +346,7 @@ async function measureMode(m, { worker, wav, audioSec, ref, target, utterances, 
         minPauseSec: m.pauses ? undefined : Infinity,
         // "before": cut at every pause, decode every piece — the splitter
         // until it handled hesitations and noise.
-        ...(m.mode === "before" ? { minSoundSec: 0, minUtteranceSec: 0, keepPauseSec: Infinity } : {}),
+        ...(m.mode === "before" ? EVERY_PAUSE : {}),
         log: { warn: (...a) => log(...a) },
       });
       text = r.text;
@@ -473,4 +462,4 @@ if (isEntry) {
   );
 }
 
-module.exports = { parseArgs, pickSentences, score, prefixBaseline, judgePieces, markdown, dictationRecording, mulberry32 };
+module.exports = { parseArgs, pickSentences, score, prefixBaseline, judgePieces, markdown, dictationRecording };

@@ -15,6 +15,7 @@ publish:
 files:
   - main/**/*
   - renderer/**/*
+  - shared/**/*
   - preload.js
   - assets/**/*
   - package.json

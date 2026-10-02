@@ -17,12 +17,14 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const RENDERER = path.join(__dirname, "..", "renderer");
+const SHARED = path.join(__dirname, "..", "shared");
 const html = fs.readFileSync(path.join(RENDERER, "settings.html"), "utf8");
 const js = fs.readFileSync(path.join(RENDERER, "settings.js"), "utf8");
 const css = fs.readFileSync(path.join(RENDERER, "settings.css"), "utf8");
 const wizardCss = fs.readFileSync(path.join(RENDERER, "wizard.css"), "utf8");
 const wizardHtml = fs.readFileSync(path.join(RENDERER, "wizard.html"), "utf8");
 const wizardJs = fs.readFileSync(path.join(RENDERER, "wizard.js"), "utf8");
+const valueRangeJs = fs.readFileSync(path.join(SHARED, "value-range.js"), "utf8");
 
 const htmlIds = new Set([...html.matchAll(/id="([a-z0-9-]+)"/g)].map((m) => m[1]));
 const htmlNames = new Set([...html.matchAll(/name="([a-z0-9-]+)"/g)].map((m) => m[1]));
@@ -178,6 +180,17 @@ test("every radio/checkbox group name settings.js uses exists in settings.html",
 
   const missing = [...referenced].filter((n) => !htmlNames.has(n)).sort();
   assert.deepStrictEqual(missing, [], `settings.html is missing radio groups: ${missing.join(", ")}`);
+});
+
+test("shared value-range.js loads before settings.js, which validates numeric fields", () => {
+  const shared = html.indexOf('src="../shared/value-range.js"');
+  const own = html.indexOf('src="settings.js"');
+  assert.notStrictEqual(shared, -1, "settings.html must load value-range.js");
+  assert.ok(shared < own, "settings.html must load value-range.js before settings.js");
+  assert.ok(fs.existsSync(path.join(SHARED, "value-range.js")));
+  assert.match(js, /clampNumber\(/);
+  assert.match(valueRangeJs, /function clampNumber\(/);
+  assert.ok(fs.existsSync(path.join(__dirname, "..", "scripts", "settings-value-range-smoke.js")));
 });
 
 test("custom model version selects have accessible names", () => {

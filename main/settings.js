@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const registry = require("./engines/registry");
 const { DEFAULT_STYLE, styleById, NEUTRAL_SAMPLING } = require("./cleanup-styles");
+const { clampNumber } = require("../shared/value-range");
 
 // The invariant core of the cleanup instructions, inlined into the model's user
 // turn (not used as a chat system prompt) — see main/engines/engine-worker.js
@@ -202,6 +203,34 @@ function deepMerge(base, override) {
   return out;
 }
 
+function normalizeNumericSettings(settings) {
+  settings.audio.maxRecordingSeconds = clampNumber(
+    settings.audio.maxRecordingSeconds,
+    10,
+    3600,
+    DEFAULTS.audio.maxRecordingSeconds
+  );
+  settings.engines.idleUnloadMinutes = clampNumber(
+    settings.engines.idleUnloadMinutes,
+    0,
+    240,
+    DEFAULTS.engines.idleUnloadMinutes
+  );
+
+  const custom = settings.cleanup.custom;
+  custom.temperature = clampNumber(
+    custom.temperature,
+    0,
+    2,
+    DEFAULTS.cleanup.custom.temperature,
+    false
+  );
+  custom.topP = clampNumber(custom.topP, 0, 1, DEFAULTS.cleanup.custom.topP, false);
+  custom.topK = clampNumber(custom.topK, 0, 200, DEFAULTS.cleanup.custom.topK);
+  custom.minP = clampNumber(custom.minP, 0, 1, DEFAULTS.cleanup.custom.minP, false);
+  return settings;
+}
+
 // Undo source-level hard wrapping in a stored prompt: within a paragraph, a line
 // that does not start a new bullet is a continuation of the one above it, so fold
 // it back up (dropping the wrap indentation). Blank-line paragraph breaks and
@@ -285,12 +314,12 @@ function load() {
   } catch {
     // First run or unreadable file: fall back to defaults.
   }
-  cached = deepMerge(DEFAULTS, migrateLegacy(stored));
+  cached = normalizeNumericSettings(deepMerge(DEFAULTS, migrateLegacy(stored)));
   return cached;
 }
 
 function save(next) {
-  const merged = deepMerge(DEFAULTS, next);
+  const merged = normalizeNumericSettings(deepMerge(DEFAULTS, next));
   const file = settingsPath();
   const tmp = `${file}.${process.pid}.tmp`;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });

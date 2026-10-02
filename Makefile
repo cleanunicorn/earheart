@@ -29,6 +29,10 @@ overlay-smoke: ## Drive the overlay with a fake mic and check capture/UI sync
 settings-smoke: ## Drive the settings window and check the index/scroll-spy contract
 	xvfb-run -a npx electron scripts/settings-smoke.js --no-sandbox
 
+.PHONY: settings-value-range-smoke
+settings-value-range-smoke: ## Verify Settings numeric values persist within their allowed ranges
+	xvfb-run -a npx electron scripts/settings-value-range-smoke.js --no-sandbox
+
 .PHONY: icons
 icons: ## Regenerate app/tray icons into assets/
 	node scripts/gen-icons.js

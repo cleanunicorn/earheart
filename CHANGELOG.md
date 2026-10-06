@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.35.0 — 2026-10-06
+
+- Give the live transcript its own section ahead of speech-to-text (#249)
+
 ## v0.34.2 — 2026-10-01
 
 - Stop splitting dictation at hesitations and decoding noise as words (#248)

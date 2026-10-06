@@ -33,12 +33,13 @@
   --mono: ui-monospace, "Cascadia Code", monospace;
 
   /* Section wayfinding hues (settings window only — --accent stays the sole
-     brand coral, reserved for the hotkey Capture Exception; these five never
+     brand coral, reserved for the hotkey Capture Exception; these six never
      appear anywhere the coral could be mistaken for it). Each pairs an index
      icon with its section's legend icon so the color, not just the glyph,
      says "you are here" while scrolling. Equal OKLCH lightness/chroma so no
      section reads as more important than another; all ≥6.7:1 on --ink. */
   --section-general: #79a7e2; /* blue */
+  --section-live: #9cae65; /* lime */
   --section-stt: #48b7c2; /* cyan */
   --section-cleanup: #b49ce1; /* violet */
   --section-history: #d389ba; /* magenta */
@@ -174,6 +175,10 @@ nav#tabs {
 [data-tab="general"] .tab-icon,
 #legend-general .legend-icon {
   color: var(--section-general);
+}
+[data-tab="live"] .tab-icon,
+#legend-live .legend-icon {
+  color: var(--section-live);
 }
 [data-tab="stt"] .tab-icon,
 #legend-stt .legend-icon {

@@ -108,7 +108,7 @@ test("each tab's panel id (tab-<data-tab>) exists in settings.html", () => {
   // The tab click handler activates panels via `tab-${tab.dataset.tab}`, an id
   // the plain-string scan above can't see. Pin it from the nav's data-tab values.
   const dataTabs = [...html.matchAll(/data-tab="([a-z]+)"/g)].map((m) => m[1]);
-  assert.ok(dataTabs.length >= 5, `expected the five tabs, got ${dataTabs.length}`);
+  assert.ok(dataTabs.length >= 6, `expected the six tabs, got ${dataTabs.length}`);
   const missing = dataTabs.filter((t) => !htmlIds.has(`tab-${t}`)).sort();
   assert.deepStrictEqual(missing, [], `missing tab panels: ${missing.map((t) => `tab-${t}`).join(", ")}`);
 });
@@ -122,7 +122,7 @@ test("every panel section has a matching index button (data-tab)", () => {
   const panelIds = [...html.matchAll(/<section id="tab-([a-z]+)"[^>]*class="panel/g)].map(
     (m) => m[1]
   );
-  assert.ok(panelIds.length >= 5, `expected the five sections, got ${panelIds.length}`);
+  assert.ok(panelIds.length >= 6, `expected the six sections, got ${panelIds.length}`);
   const orphans = panelIds.filter((p) => !dataTabs.has(p)).sort();
   assert.deepStrictEqual(orphans, [], `sections without an index button: ${orphans.join(", ")}`);
 });
@@ -131,7 +131,7 @@ test("each section's aria-labelledby points at its own existing legend", () => {
   // The legend headings carry the sections' accessible names; nothing at
   // runtime throws when the pairing breaks, so pin it here.
   const pairs = [...html.matchAll(/<section id="tab-([a-z]+)"[^>]*aria-labelledby="([a-z0-9-]+)"/g)];
-  assert.ok(pairs.length >= 5, `expected five labelled sections, got ${pairs.length}`);
+  assert.ok(pairs.length >= 6, `expected six labelled sections, got ${pairs.length}`);
   const broken = pairs
     .filter(([, name, ref]) => ref !== `legend-${name}` || !htmlIds.has(ref))
     .map(([, name, ref]) => `tab-${name}→${ref}`);
@@ -470,7 +470,7 @@ test("settings action rows keep their fields visually separate", () => {
 test("settings.css forces [hidden] to win over component display rules", () => {
   // Components like .row and .segmented set their own display, which overrides
   // the user-agent [hidden] rule. settings.js hides several such elements via
-  // the hidden attribute (e.g. #cleanup-test-row), so a global guard is required.
+  // the hidden attribute (e.g. #history-pager), so a global guard is required.
   const normalized = css.replace(/\s+/g, " ");
   assert.match(
     normalized,
@@ -521,4 +521,24 @@ test("a coupled hotkey rollback gets a neutral save banner", () => {
     /function hotkeySaveMessage\(hotkeyResult, pauseResult\).*if \(!hotkeyResult\.ok && !pauseResult\.ok\) { return "Saved, but the hotkeys could not be changed"/,
     "when both slot results fail, the banner must not blame either field"
   );
+});
+
+test("Live transcript is its own section, between General and Speech-to-text", () => {
+  // The index order is the page order; the live-preview toggle is what you see
+  // first while dictating, so it sits ahead of the engine settings.
+  const order = [...html.matchAll(/<section id="tab-([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepStrictEqual(order.slice(0, 3), ["general", "live", "stt"]);
+  const navOrder = [...html.matchAll(/data-tab="([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepStrictEqual(navOrder, order, "the index must list sections in page order");
+  const live = html.slice(html.indexOf('<section id="tab-live"'), html.indexOf('<section id="tab-stt"'));
+  assert.match(live, /id="stt-live-preview"/, "the live-preview toggle belongs to the Live transcript section");
+});
+
+test("the cleanup Test connection row lives inside the external-engine fields", () => {
+  // It only applies to an OpenAI-compatible service, so it hides with those
+  // fields instead of needing its own toggle in syncEngine.
+  const start = html.indexOf('<div id="cleanup-external-fields">');
+  const row = html.indexOf('id="cleanup-test-row"');
+  const builtinCardEnd = html.indexOf('<div class="card-title">Cleanup style</div>');
+  assert.ok(start !== -1 && row > start && row < builtinCardEnd);
 });

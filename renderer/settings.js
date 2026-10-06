@@ -460,7 +460,6 @@ function syncEngine(kind) {
   $(`${kind}-external-fields`).hidden = builtin;
   $(`${kind}-engine-state-builtin`).hidden = !builtin;
   $(`${kind}-engine-state-external`).hidden = builtin;
-  if (kind === "cleanup") $("cleanup-test-row").hidden = builtin;
   renderManage(kind);
 }
 

@@ -111,7 +111,7 @@ label, and opinions are welcome.
   unchanged. Without stealing focus, the overlay draws your voice and tracks
   the finishing passes: transcription progress is estimated from your machine's
   measured decode speed and deliberately stops short of the end; cleanup follows
-  actual generation. Toggle live transcription under Settings → Speech-to-text.
+  actual generation. Toggle live transcription under Settings → Live transcript.
 - **Cleanup built for spoken prompts** — the default **Clean** style fixes
   punctuation and removes filler words and false starts without polishing away
   your intent. Choose **Verbatim** or **Polished** with the style slider and edit
@@ -390,7 +390,7 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
   signed with the same certificate every time, so both permissions carry over
   across updates. Updating from an older unsigned release (v0.31.x or
   earlier) asks once more, and Earheart re-asks by itself on that first
-  launch. If auto-paste stops working, use Settings → Advanced → **Fix
+  launch. If auto-paste stops working, use Settings → General → **Fix
   auto-paste permission**: it clears a stale entry, re-asks, and opens the pane
   for whichever permission is off. If Earheart is still listed as on under
   Accessibility, remove it with **−** and add it again.

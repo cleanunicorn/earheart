@@ -20,6 +20,7 @@ colors:
   failed-red: "#f87171"
   idle-gray: "#71717a"
   section-general: "#79a7e2"
+  section-live: "#9cae65"
   section-stt: "#48b7c2"
   section-cleanup: "#b49ce1"
   section-history: "#d389ba"
@@ -282,11 +283,12 @@ each barred from the overlay and the wizard.
 - **Idle Gray** (`idle-gray`): the idle / nothing-heard status dot.
 
 ### Wayfinding hues (settings window only)
-Five hues, one per settings section, worn by the index glyph and its matching
+Six hues, one per settings section, worn by the index glyph and its matching
 legend glyph and nothing else. Derived in OKLCH at one lightness and chroma
 (L≈0.72, C≈0.10) so no section outranks another; each clears 6.8:1 on Bar Ink.
 They name a place, never a state.
 - **Section General** (`section-general`, #79a7e2): blue — mic glyph.
+- **Section Live transcript** (`section-live`, #9cae65): lime — waveform glyph.
 - **Section Speech-to-text** (`section-stt`, #48b7c2): cyan — captions glyph.
 - **Section Cleanup** (`section-cleanup`, #b49ce1): violet — sparkle glyph.
 - **Section History** (`section-history`, #d389ba): magenta — clock glyph.

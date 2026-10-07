@@ -427,3 +427,18 @@ test("a dictation inside the restore window leaves a newer copy alone", async (t
   t.mock.timers.tick(1000);
   assert.deepStrictEqual(state.clip, { image: screenshot });
 });
+
+test("a file copy that also carries an image keeps the image", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  onMac(t);
+  const { deliver, state } = loadDeliver({
+    trusted: true,
+    clip: { image: PNG, "text/uri-list": URI_LIST },
+  });
+
+  await pasteWithRestore(t, deliver, "hello");
+  t.mock.timers.tick(1000);
+  // The two cannot be written together; the richer representation wins.
+  assert.strictEqual(state.clip.image, PNG);
+  assert.strictEqual(state.clip["text/uri-list"], undefined);
+});

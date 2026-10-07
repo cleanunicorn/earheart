@@ -617,13 +617,32 @@ async function finishModelDownload(result) {
 
 earheart.on("models:done", (result) => finishModelDownload(result));
 
+// While a removal runs (main first stops any download of the model, which can
+// take a moment) the row says so and its buttons are disabled, so a second
+// click can't send the same removal again.
+function setRowRemoving(modelId, removing) {
+  for (const kind of ["stt", "cleanup"]) {
+    const ui = manage[kind];
+    if (!ui || ui.modelId !== modelId) continue;
+    for (const button of $(`${kind}-model-manage`).querySelectorAll("button")) {
+      button.disabled = removing;
+    }
+    if (removing && ui.status) {
+      ui.status.textContent = "Removing…";
+      ui.status.className = "status";
+    }
+  }
+}
+
 async function removeModel(kind, modelId) {
   const info = modelStatus[kind].find((m) => m.id === modelId);
   const label = info ? info.label : modelId;
   if (!confirm(`Remove ${label}? You'll need to download it again to use it.`)) {
     return;
   }
+  setRowRemoving(modelId, true);
   const res = await earheart.invoke("models:remove", { kind, modelId });
+  setRowRemoving(modelId, false);
   if (res.ok) await refreshModels();
   else showModelError(modelId, res.error || "Could not remove model");
 }
@@ -633,7 +652,9 @@ async function removeCustomModel(modelId) {
   const info = [...modelStatus.stt, ...modelStatus.cleanup].find((m) => m.id === modelId);
   const label = info ? info.label : modelId;
   if (!confirm(`Remove ${label} from your models?`)) return;
+  setRowRemoving(modelId, true);
   const res = await earheart.invoke("models:remove-custom", { modelId });
+  setRowRemoving(modelId, false);
   if (res.ok) {
     current.customModels = res.customModels;
     // Main falls back to the default when the removed model was the saved

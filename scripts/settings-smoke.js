@@ -29,7 +29,8 @@
 //  11. Wizard-started downloads survive Settings model changes without
 //      overwriting a concurrent download's state.
 //  12. Failed model removals appear in the row and persistent live region.
-//  13. Removing a custom model: a failed delete (installed "Remove" and
+//  13. Removing a custom model: the row shows "Removing…" with its buttons
+//      disabled while the delete runs; a failed delete (installed "Remove" and
 //      "Remove from list") shows its error and keeps the entry; removing the
 //      selected custom STT and cleanup models leaves each select on the
 //      default, and the real Save persists those ids, never "".
@@ -691,17 +692,40 @@ app.whenReady().then(async () => {
     })()`);
     const definitionIds = () => (settings.get().customModels || []).map((m) => m.id);
 
-    // A failed delete of the installed, selected custom STT model.
+    // A failed delete of the installed, selected custom STT model. The delete
+    // is held open first, to see the row while the removal is in flight.
+    let releaseRemoval;
+    const removalHeld = new Promise((resolve) => (releaseRemoval = resolve));
     engines.remove = async () => {
+      await removalHeld;
       throw new Error("custom model files are busy");
     };
     await js(`window.confirm = () => true; true`);
     if (!(await clickRowButton("stt", "Remove"))) throw new Error("custom STT row has no Remove");
     await waitFor(
+      () => rowState("stt").then((r) => r.status === "Removing…"),
+      "an in-flight removal did not show Removing…"
+    );
+    const inFlight = await js(`JSON.stringify({
+      status: document.querySelector("#stt-model-manage .status")?.textContent,
+      disabled: [...document.querySelectorAll("#stt-model-manage button")].map((b) => b.disabled),
+    })`).then(JSON.parse);
+    check(
+      "an in-flight model removal shows Removing… and disables the row's buttons",
+      inFlight.status === "Removing…" &&
+        inFlight.disabled.length > 0 &&
+        inFlight.disabled.every(Boolean),
+      JSON.stringify(inFlight)
+    );
+    releaseRemoval();
+    await waitFor(
       () => rowState("stt").then((r) => r.status === "custom model files are busy"),
       "failed custom removal did not appear in the STT row"
     );
     const sttFailure = await rowState("stt");
+    sttFailure.enabled = await js(
+      `[...document.querySelectorAll("#stt-model-manage button")].every((b) => !b.disabled)`
+    );
     // A failed delete through "Remove from list" on an uninstalled custom model.
     await selectModel("cleanup", customListed.id);
     if (!(await clickRowButton("cleanup", "Remove from list"))) {
@@ -715,6 +739,7 @@ app.whenReady().then(async () => {
     check(
       "failed custom model removals show the error and keep the entry",
       sttFailure.select === customStt.id &&
+        sttFailure.enabled === true &&
         sttFailure.announcement.endsWith("custom model files are busy") &&
         listedFailure.select === customListed.id &&
         listedFailure.announcement.endsWith("custom model files are busy") &&

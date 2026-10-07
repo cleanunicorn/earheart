@@ -29,6 +29,9 @@
 //  11. Wizard-started downloads survive Settings model changes without
 //      overwriting a concurrent download's state.
 //  12. Failed model removals appear in the row and persistent live region.
+//  13. "Find versions" on a speech model Earheart can't run (a NeMo Canary
+//      repo) shows discovery's explanation as an error and offers no version
+//      to add.
 //  13. Save clamps the Performance limits (max dictation length, idle unload)
 //      to the fields' own ranges, and says so instead of closing.
 //  14. A microphone chosen while permission or device enumeration is pending
@@ -387,6 +390,51 @@ app.whenReady().then(async () => {
         JSON.stringify(b)
       );
     }
+
+    // 13. An unsupported speech model family is refused where the user pasted
+    //     it. The bridge is frozen by contextBridge, so Hugging Face is stubbed
+    //     at the main process's fetch, which the IPC handler calls.
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (url) => {
+      const body = String(url).includes("/tree/")
+        ? ["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt"].map((p) => ({ type: "file", path: p, size: 1 }))
+        : { sha: "c" };
+      return { ok: true, status: 200, async json() { return body; } };
+    };
+    let refused;
+    try {
+      await js(`
+        document.getElementById("stt-hf-url").value =
+          "csukuangfj/sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8";
+        document.getElementById("stt-hf-find").click();
+      `);
+      refused = JSON.parse(
+        await waitFor(
+          () =>
+            js(`(() => {
+              const status = document.getElementById("stt-hf-result");
+              if (document.getElementById("stt-hf-find").disabled) return "";
+              if (status.className === "status") return "";
+              return JSON.stringify({
+                text: status.textContent,
+                className: status.className,
+                pickHidden: document.getElementById("stt-hf-pick").hidden,
+              });
+            })()`),
+          "the Find versions lookup never settled"
+        )
+      );
+    } finally {
+      globalThis.fetch = realFetch;
+      await js(`document.getElementById("stt-hf-url").value = ""`);
+    }
+    check(
+      "Find versions refuses a Canary repo with a readable error and no version to add",
+      /NeMo Canary model, which Earheart can't run/.test(refused.text) &&
+        refused.className === "status err" &&
+        refused.pickHidden,
+      JSON.stringify(refused)
+    );
 
     // 10-11. Drive the real renderer state machine while the IPC download
     // promise is held open, so no model files or network are involved.

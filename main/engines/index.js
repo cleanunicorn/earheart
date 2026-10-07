@@ -12,6 +12,7 @@ const settings = require("../settings");
 const { resolveCleanup } = require("../cleanup-styles");
 const { cleanContextFor } = require("../util/clean-budget");
 const { cleanupTurnPrefix } = require("../util/cleanup-turn");
+const { unsupportedSttFamily } = require("../services/hf-models");
 
 // STT and cleanup each get their own worker process so they run in parallel and
 // a crash in one engine can't take down the other (see host.js). Each lazily
@@ -77,6 +78,20 @@ function sharedLoad(slot, key, start) {
 // isn't downloaded yet — callers surface that (or fall back to the HTTP path).
 async function ensureStt(modelId) {
   const model = resolve("stt", modelId);
+  // Hugging Face discovery used to save any joiner-less bundle as Whisper, so
+  // a Canary entry may already sit in settings with a Whisper config the
+  // worker can't tell apart from the real thing. Its id, label and repo still
+  // say what it is: refuse it here, with the way out, instead of loading it.
+  const family =
+    model.sherpa && !model.sherpa.joiner
+      ? unsupportedSttFamily([model.id, model.label, model.source && model.source.repo].join(" "))
+      : null;
+  if (family) {
+    throw new Error(
+      `"${model.label || modelId}" is a ${family} model, which Earheart can't run. ` +
+        "Remove it in Settings → Speech-to-text and add a Parakeet or Whisper model instead."
+    );
+  }
   if (!manager.isInstalled(modelsDir(), model)) {
     throw new Error(`STT model "${modelId}" is not downloaded yet`);
   }

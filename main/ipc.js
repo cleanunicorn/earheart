@@ -103,6 +103,16 @@ function withMainOwned(next, live, baseline) {
   return out;
 }
 
+// The sections an open form takes from a settings:changed event (see
+// applySettingsChange in renderer/settings.js and renderer/wizard.js). Only
+// these are sent, so API keys never ride the event; the forms already hold
+// them from settings:get.
+const FORM_SYNC_KEYS = ["output", "updates", "overlay", "customModels"];
+
+function formSyncFields(cfg) {
+  return Object.fromEntries(FORM_SYNC_KEYS.map((key) => [key, cfg[key]]));
+}
+
 function withFields(base, source, fields) {
   const result = { ...base };
   for (const field of fields) {
@@ -120,8 +130,11 @@ function init({ applyHotkeys, onSettingsChanged }) {
   // Every successful save, from any writer, reaches the open forms (so they
   // show a tray or updater change) and rebuilds the tray menu (so its radios
   // show a form change).
-  settings.onChanged((change) => {
-    windows.sendToForms("settings:changed", change);
+  settings.onChanged(({ previous, current }) => {
+    windows.sendToForms("settings:changed", {
+      previous: formSyncFields(previous),
+      current: formSyncFields(current),
+    });
     tray.refresh();
   });
 

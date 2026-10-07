@@ -92,6 +92,17 @@ test("every channel main pushes to a window is in the preload LISTEN allowlist",
   assert.deepStrictEqual(missing, [], `preload LISTEN is missing: ${missing.join(", ")}`);
 });
 
+// settings:changed goes to the Settings and wizard windows only
+// (windows.sendToForms). The overlay shares the preload, so its LISTEN entry
+// can't keep the event away from it; only the send helper can.
+test("settings:changed is pushed only through sendToForms", () => {
+  assert.match(main, /sendToForms\(\s*"settings:changed"/);
+  assert.doesNotMatch(
+    main,
+    /(?:sendToOverlay|sendToSettings|broadcast|webContents\.send)\(\s*"settings:changed"/
+  );
+});
+
 // Both forms must follow settings saved elsewhere (#190), or an open form
 // shows — and on save, sends — a stale output mode. The listener lives in the
 // shared renderer/settings-sync.js; each form subscribes and, at the end of its

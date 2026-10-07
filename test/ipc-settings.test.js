@@ -241,6 +241,15 @@ test("every successful save broadcasts settings:changed and refreshes the tray",
   assert.strictEqual(changed.length, 1);
   assert.strictEqual(changed[0].payload.previous.output.mode, "paste");
   assert.strictEqual(changed[0].payload.current.output.mode, "clipboard");
+  // Only what the forms apply; API keys stay out of the event.
+  for (const side of ["previous", "current"]) {
+    assert.deepStrictEqual(
+      Object.keys(changed[0].payload[side]).sort(),
+      ["customModels", "output", "overlay", "updates"],
+      side
+    );
+  }
+  assert.doesNotMatch(JSON.stringify(changed[0].payload), /apiKey/);
   assert.strictEqual(calls.trayRefresh, 1);
 
   const originalRename = fs.renameSync;

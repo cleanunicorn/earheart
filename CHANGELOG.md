@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.35.1 — 2026-10-07
+
+- Center the detail line in the waveform strip (#250)
+
 ## v0.35.0 — 2026-10-06
 
 - Give the live transcript its own section ahead of speech-to-text (#249)

@@ -654,4 +654,12 @@ test("the overlay's recording cap accepts exactly the max-seconds field's range"
   assert.strictEqual(context.cap(Number(max) + 1), 300);
   // Its fallback is main's default, written down a second time in overlay.js.
   assert.strictEqual(context.cap(NaN), DEFAULTS.audio.maxRecordingSeconds);
+  // Anything unusable takes that default; a cap in range is kept, rounded.
+  for (const bad of [-5, 0, 1, 9, 99999, NaN, Infinity, -Infinity, "300", null, undefined]) {
+    assert.strictEqual(context.cap(bad), 300, `cap(${String(bad)})`);
+  }
+  for (const good of [10, 300, 3600]) assert.strictEqual(context.cap(good), good);
+  assert.strictEqual(context.cap(10.6), 11);
+  // Rejects, not clamps, just outside the range — main has already clamped.
+  assert.strictEqual(context.cap(9.4), 300);
 });

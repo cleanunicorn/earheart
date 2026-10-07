@@ -108,8 +108,12 @@ test("a saved cleanup model survives a new default", (t) => {
 // here and hold the two together.
 function fieldRange(id) {
   const html = fs.readFileSync(path.join(__dirname, "..", "renderer", "settings.html"), "utf8");
-  const tag = html.match(new RegExp(`<input id="${id}"[^>]*>`))[0];
-  return { min: Number(tag.match(/\bmin="([^"]+)"/)[1]), max: Number(tag.match(/\bmax="([^"]+)"/)[1]) };
+  const tag = html.match(new RegExp(`<input id="${id}"[^>]*>`))?.[0];
+  assert.ok(tag, `settings.html must have #${id}`);
+  const min = Number(tag.match(/\bmin="([^"]+)"/)?.[1]);
+  const max = Number(tag.match(/\bmax="([^"]+)"/)?.[1]);
+  assert.ok(Number.isFinite(min) && Number.isFinite(max), `#${id} must declare numeric min and max`);
+  return { min, max };
 }
 
 function limits(s) {

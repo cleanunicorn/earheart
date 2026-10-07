@@ -146,6 +146,13 @@ test("stripThinking removes reasoning blocks", () => {
     stripThinking("Answer so far.<think>unfinished private reasoning"),
     "Answer so far."
   );
+  // R1-style templates put the opener in the prompt, so the reply starts
+  // mid-reasoning and only the closer arrives.
+  assert.strictEqual(
+    stripThinking("Okay, the user wants me to clean this up.\n</think>\n\nSo this is a test."),
+    "So this is a test."
+  );
+  assert.strictEqual(stripThinking("reasoning only</think>"), "");
 });
 
 test("remote cleanup rejects an answer the server cut off at its token limit", async () => {

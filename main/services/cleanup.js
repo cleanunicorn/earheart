@@ -15,6 +15,10 @@ function stripThinking(text) {
     // everything after an unmatched opener as reasoning too; clean() will
     // reject it when that leaves no answer; the pipeline preserves raw text.
     .replace(/<think>[\s\S]*$/i, "")
+    // R1-style chat templates put the opener in the prompt, so the reply starts
+    // mid-reasoning and only the closer arrives. Runs last, so a closer that a
+    // paired block already consumed can't take an answer with it.
+    .replace(/^[\s\S]*?<\/think>/i, "")
     .trim();
 }
 

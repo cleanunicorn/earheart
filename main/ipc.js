@@ -24,8 +24,39 @@ const {
 const { STYLES: CLEANUP_STYLES } = require("./cleanup-styles");
 const { encodeSilenceWav } = require("./util/wav");
 
-// In-flight model downloads, so the UI can cancel them. Keyed by kind:modelId.
+// In-flight model downloads, so the UI can cancel them and a removal can wait
+// for them. Keyed by kind:modelId; each entry is { controller, done }, where
+// `done` settles once the download has stopped writing and reported.
 const downloads = new Map();
+// Models whose files are being deleted or replaced. A download for one of
+// these keys is refused until that finishes, so no new writer can start
+// between stopping the old one and removing its directory.
+const busyModels = new Set();
+
+// Abort a model's in-flight download, if any, and wait until it has stopped
+// writing. Never throws: the download reports its own outcome.
+async function stopDownload(kind, modelId) {
+  const entry = downloads.get(`${kind}:${modelId}`);
+  if (!entry) return;
+  entry.controller.abort();
+  await entry.done.catch(() => {});
+}
+
+// Run `fn` with the given models marked busy: their downloads are stopped and
+// awaited first, and none can restart until `fn` settles.
+async function withModelsBusy(models, fn) {
+  const keys = [...new Set(models.map(({ kind, id }) => `${kind}:${id}`))];
+  for (const key of keys) {
+    if (busyModels.has(key)) throw new Error("This model is already being changed");
+  }
+  keys.forEach((key) => busyModels.add(key));
+  try {
+    for (const { kind, id } of models) await stopDownload(kind, id);
+    return await fn();
+  } finally {
+    keys.forEach((key) => busyModels.delete(key));
+  }
+}
 
 // Push the start-on-boot choice to the OS, swallowing failures (e.g. a
 // read-only autostart dir) so a save never fails over a login-item glitch.
@@ -270,14 +301,27 @@ function init({ applyHotkeys, onSettingsChanged }) {
         listing.variants.find((v) => v.label === listing.recommended);
       if (!chosen) return { ok: false, error: "That version is no longer available" };
       const model = hfBuild[kind](listing.repo, chosen);
-      const cfg = settings.get();
-      // Dedupe by id so re-adding the same repo+quant just refreshes the entry.
-      const customModels = [
-        ...(cfg.customModels || []).filter((m) => m.id !== model.id),
-        model,
-      ];
-      settings.save({ ...cfg, customModels });
-      engines.registry.setCustomModels(customModels);
+      const existing = (settings.get().customModels || []).find((m) => m.id === model.id);
+      // The id has no commit, so an upstream re-upload of the same repo+quant
+      // keeps it while the files change. Bytes on disk under this id that
+      // don't belong to the new definition — the previous revision's, or an
+      // orphan nothing owns — are deleted before the definition is saved, so
+      // they are never mistaken for the new download. An unchanged re-add
+      // keeps its install.
+      const stale = !existing
+        ? [model]
+        : engines.definitionFingerprint(existing) !== engines.definitionFingerprint(model)
+          ? [existing, ...(existing.kind === model.kind ? [] : [model])]
+          : [];
+      const customModels = await withModelsBusy(stale, async () => {
+        for (const def of stale) await engines.removeFiles(def);
+        const cfg = settings.get();
+        // Dedupe by id so re-adding the same repo+quant just refreshes the entry.
+        const next = [...(cfg.customModels || []).filter((m) => m.id !== model.id), model];
+        settings.save({ ...cfg, customModels: next });
+        engines.registry.setCustomModels(next);
+        return next;
+      });
       return { ok: true, modelId: model.id, customModels };
     } catch (err) {
       return { ok: false, error: err.message };
@@ -286,33 +330,38 @@ function init({ applyHotkeys, onSettingsChanged }) {
 
   // Remove a custom model entirely: delete any downloaded files and drop its
   // definition from settings + the registry.
+  // A file delete that fails (e.g. EBUSY on Windows for a loaded model) fails
+  // the whole removal and keeps the definition, so the user can retry rather
+  // than leave orphaned files with no entry to remove them.
   ipcMain.handle("models:remove-custom", async (event, { modelId } = {}) => {
     try {
-      const cfg = settings.get();
       // The stored definition knows which kind it is; a definition that's
       // already gone still gets the cleanup-side fallbacks below.
-      const entry = (cfg.customModels || []).find((m) => m.id === modelId);
+      const entry = (settings.get().customModels || []).find((m) => m.id === modelId);
       const kind = entry && entry.kind === "stt" ? "stt" : "cleanup";
-      try {
-        await engines.remove(kind, modelId);
-      } catch {
-        // Not downloaded (or already gone) — still drop the definition below.
-      }
-      const customModels = (cfg.customModels || []).filter((m) => m.id !== modelId);
-      // If the removed model was the configured one for its kind, fall back to
-      // the default so the engine doesn't later fail to resolve a model that's
-      // gone.
-      const defaults = {
-        stt: engines.registry.DEFAULT_STT_MODEL,
-        cleanup: engines.registry.DEFAULT_CLEANUP_MODEL,
-      };
-      const kindCfg =
-        cfg[kind].builtin.model === modelId
-          ? { ...cfg[kind], builtin: { ...cfg[kind].builtin, model: defaults[kind] } }
-          : cfg[kind];
-      settings.save({ ...cfg, [kind]: kindCfg, customModels });
-      engines.registry.setCustomModels(customModels);
-      return { ok: true, customModels };
+      return await withModelsBusy([{ kind, id: modelId }], async () => {
+        // A definition the registry never accepted has no files to delete.
+        if (engines.registry.getModel(kind, modelId)) await engines.remove(kind, modelId);
+        // Read settings after the awaits so a save made meanwhile isn't lost.
+        const cfg = settings.get();
+        const customModels = (cfg.customModels || []).filter((m) => m.id !== modelId);
+        // If the removed model was the configured one for its kind, fall back to
+        // the default so the engine doesn't later fail to resolve a model that's
+        // gone.
+        const defaults = {
+          stt: engines.registry.DEFAULT_STT_MODEL,
+          cleanup: engines.registry.DEFAULT_CLEANUP_MODEL,
+        };
+        const kindCfg =
+          cfg[kind].builtin.model === modelId
+            ? { ...cfg[kind], builtin: { ...cfg[kind].builtin, model: defaults[kind] } }
+            : cfg[kind];
+        settings.save({ ...cfg, [kind]: kindCfg, customModels });
+        engines.registry.setCustomModels(customModels);
+        // The renderer adopts `model`: its select still holds the removed id,
+        // which would otherwise read back as "" on the next Save.
+        return { ok: true, customModels, kind, model: kindCfg.builtin.model };
+      });
     } catch (err) {
       return { ok: false, error: err.message };
     }
@@ -351,43 +400,47 @@ function init({ applyHotkeys, onSettingsChanged }) {
   ipcMain.handle("models:download", async (event, { kind, modelId }) => {
     const key = `${kind}:${modelId}`;
     if (downloads.has(key)) return { ok: false, error: "Already downloading" };
+    if (busyModels.has(key)) return { ok: false, error: "This model is being removed" };
     if (engines.isInstalled(kind, modelId)) {
       const result = { ok: true };
       windows.broadcast("models:done", { kind, modelId, ...result });
       return result;
     }
     const controller = new AbortController();
-    downloads.set(key, controller);
-    let result;
-    try {
-      await engines.download(kind, modelId, {
-        signal: controller.signal,
-        // Broadcast so whichever window is open (wizard and/or Settings) tracks
-        // the same download, not just the one that started it.
-        onProgress: (p) => {
-          windows.broadcast("models:progress", { kind, modelId, ...p });
-        },
-      });
-      result = { ok: true };
-    } catch (err) {
-      const aborted = controller.signal.aborted;
-      result = { ok: false, cancelled: aborted, error: err.message };
-    } finally {
-      downloads.delete(key);
-    }
-    windows.broadcast("models:done", { kind, modelId, ...result });
-    return result;
+    const done = (async () => {
+      let result;
+      try {
+        await engines.download(kind, modelId, {
+          signal: controller.signal,
+          // Broadcast so whichever window is open (wizard and/or Settings)
+          // tracks the same download, not just the one that started it.
+          onProgress: (p) => {
+            windows.broadcast("models:progress", { kind, modelId, ...p });
+          },
+        });
+        result = { ok: true };
+      } catch (err) {
+        const aborted = controller.signal.aborted;
+        result = { ok: false, cancelled: aborted, error: err.message };
+      } finally {
+        downloads.delete(key);
+      }
+      windows.broadcast("models:done", { kind, modelId, ...result });
+      return result;
+    })();
+    downloads.set(key, { controller, done });
+    return done;
   });
 
   ipcMain.handle("models:cancel", (event, { kind, modelId }) => {
-    const controller = downloads.get(`${kind}:${modelId}`);
-    if (controller) controller.abort();
+    const entry = downloads.get(`${kind}:${modelId}`);
+    if (entry) entry.controller.abort();
     return { ok: true };
   });
 
   ipcMain.handle("models:remove", async (event, { kind, modelId }) => {
     try {
-      await engines.remove(kind, modelId);
+      await withModelsBusy([{ kind, id: modelId }], () => engines.remove(kind, modelId));
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err.message };

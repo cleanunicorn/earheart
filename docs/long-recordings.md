@@ -267,7 +267,10 @@ entry is marked `incomplete: true` and shows it, so the dictation is still
 identifiable once the notification is gone. Only a run
 that recovers nothing at all is an error. Engine failures carry stable codes
 (`ENGINE_EXITED` with the process exit code, `ENGINE_TIMEOUT`).
-`engines.restartStt()` retires a wedged STT worker without touching cleanup.
+A request that times out retires its worker (`main/engines/host.js`), so a
+wedged STT worker is replaced without touching cleanup. The decoder also calls
+`engines.restartStt()` on a timeout, a safeguard that is a no-op once the host
+has retired the worker.
 
 ## Why the worker died (#169)
 

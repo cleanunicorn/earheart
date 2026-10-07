@@ -2081,6 +2081,34 @@ test("ensureCleanup memo: another model posts its own load, a failed load is not
   await retry;
 });
 
+test("a caller retrying straight from a failed load's rejection gets a fresh load", async () => {
+  // The slot must be clear by the time any caller hears of the failure, or a
+  // retry from its rejection handler joins the failed load again.
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const cleanup = hostsBySvc["earheart-cleanup"];
+  const held = holdLoads(cleanup, "load-cleanup");
+
+  const stt = hostsBySvc["earheart-stt"];
+  const sttHeld = holdLoads(stt, "load-stt");
+
+  const first = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
+  const retried = first.catch(() => facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL));
+  held[0].reject(new Error("cleanup load failed"));
+  await new Promise((r) => setImmediate(r));
+  assert.strictEqual(count(cleanup, "load-cleanup"), 2, "the retry posted its own load");
+  held[1].resolve({ ready: true });
+  assert.deepStrictEqual(await retried, { ready: true });
+
+  const sttFirst = facade.transcribe(Buffer.from("wav"), STT_CFG);
+  const sttRetried = sttFirst.catch(() => facade.transcribe(Buffer.from("wav"), STT_CFG));
+  await new Promise((r) => setImmediate(r));
+  sttHeld[0].reject(new Error("stt load failed"));
+  await new Promise((r) => setImmediate(r));
+  assert.strictEqual(count(stt, "load-stt"), 2, "the STT retry posted its own load");
+  sttHeld[1].resolve({ ready: true });
+  assert.strictEqual(await sttRetried, "transcribed");
+});
+
 test("worker exit drops the in-flight cleanup load memo", async () => {
   const { facade, hostsBySvc } = loadTwoHostFacade();
   const cleanup = hostsBySvc["earheart-cleanup"];

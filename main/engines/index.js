@@ -61,12 +61,15 @@ function sharedLoad(slot, key, start) {
   if (slot.inflight?.key === key) return slot.inflight.promise;
   const entry = { key, promise: start() };
   slot.inflight = entry;
-  entry.promise
-    .catch(() => {})
-    .finally(() => {
-      // A newer load (another model, or one after a worker exit) owns the slot.
-      if (slot.inflight === entry) slot.inflight = null;
-    });
+  // Registered first, so the slot is clear before any caller hears the outcome
+  // (a retry from a rejection handler must post a fresh load). Handling the
+  // rejection here also keeps this bookkeeping branch from being unhandled;
+  // callers still get the real rejection from entry.promise.
+  const clear = () => {
+    // A newer load (another model, or one after a worker exit) owns the slot.
+    if (slot.inflight === entry) slot.inflight = null;
+  };
+  entry.promise.then(clear, clear);
   return entry.promise;
 }
 

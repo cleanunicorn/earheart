@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.35.6 — 2026-10-07
+
+- Make removing and re-adding custom models reliable (#256)
+
 ## v0.35.5 — 2026-10-07
 
 - Report broken hotkeys and missing models before dictation (#255)

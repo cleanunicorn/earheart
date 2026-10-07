@@ -201,6 +201,8 @@ for (const [platform, setup, key] of [
     // says what to do instead of repeating it.
     assert.strictEqual(result.note, `Paste it with ${key}`);
     assert.ok(result.hint.includes(key), result.hint);
+    // Says where the tool's own words went, by the path Settings shows.
+    assert.ok(result.hint.includes("Settings ▸ Advanced ▸ Open error log"), result.hint);
     for (const field of [result.note, result.hint]) {
       assert.doesNotMatch(field, /BadWindow|Command failed|xdotool|powershell|osascript/i);
     }

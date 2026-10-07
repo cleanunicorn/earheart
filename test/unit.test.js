@@ -1217,7 +1217,7 @@ test("explainMacPasteError names the macOS permission that blocked the paste", (
     )
   );
   assert.match(accessibility.note, /Accessibility/);
-  assert.match(accessibility.hint, /Fix auto-paste permission/);
+  assert.match(accessibility.hint, /Settings ▸ General ▸ Fix auto-paste permission/);
   // The usual cause is an update invalidating the old grant; the hint says so,
   // because the toggle in System Settings still looks on.
   assert.match(accessibility.hint, /update/);

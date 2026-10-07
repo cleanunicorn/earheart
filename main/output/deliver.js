@@ -47,7 +47,7 @@ const MAC_BUNDLE_ID = "dev.cleanunicorn.earheart";
 // grant listed and switched on while this build is untrusted.
 const ACCESSIBILITY_OFF = {
   note: "Accessibility permission is off",
-  hint: "Accessibility is off for Earheart (an update can reset it) — Settings ▸ Advanced ▸ Fix auto-paste permission",
+  hint: "Accessibility is off for Earheart (an update can reset it) — Settings ▸ General ▸ Fix auto-paste permission",
 };
 
 // A paste tool that failed for any other reason. Its own words (a PowerShell
@@ -57,11 +57,11 @@ const ACCESSIBILITY_OFF = {
 // failed, so the note doesn't repeat it.
 const PASTE_FAILED = {
   note: "Paste it with Ctrl+V",
-  hint: "Paste it with Ctrl+V — the log has what the paste tool reported",
+  hint: "Paste it with Ctrl+V. What the paste tool reported is in Settings ▸ Advanced ▸ Open error log",
 };
 const MAC_PASTE_FAILED = {
   note: "Paste it with ⌘V",
-  hint: "Paste it with ⌘V — the log has what the paste tool reported",
+  hint: "Paste it with ⌘V. What the paste tool reported is in Settings ▸ Advanced ▸ Open error log",
 };
 // Linux without wtype, ydotool or xdotool: installing one is the fix.
 const NO_KEYSTROKE_TOOL = {
@@ -348,7 +348,7 @@ const macPermissions = {
 };
 
 /**
- * Get auto-paste back to a working state on macOS (Settings ▸ Advanced ▸ Fix
+ * Get auto-paste back to a working state on macOS (Settings ▸ General ▸ Fix
  * auto-paste permission). For whichever permission is off, clear Earheart's
  * recorded decision so macOS asks again, fire the native prompt, and open the
  * pane as the fallback. Other platforms report granted.

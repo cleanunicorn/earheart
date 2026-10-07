@@ -64,3 +64,34 @@ test("logging rotates an oversized file while the app is running", (t) => {
   assert.strictEqual(fs.readFileSync(`${file}.1`, "utf8"), "x".repeat(5 * 1024 * 1024 + 1));
   assert.match(fs.readFileSync(file, "utf8"), /after rotation/);
 });
+
+test("an error's cause chain reaches the log", (t) => {
+  // A wrapped error keeps the technical reason in `cause` (transport-error.js:
+  // "Couldn't reach <host>" over undici's "fetch failed" over ECONNREFUSED); a
+  // stack alone leaves it out.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-logger-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const logger = loadLogger(dir);
+  const refused = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:9"), { code: "ECONNREFUSED" });
+  const err = new Error("Couldn't reach 127.0.0.1:9", { cause: new TypeError("fetch failed", { cause: refused }) });
+
+  logger.error("pipeline failed:", err);
+
+  const text = fs.readFileSync(path.join(dir, "earheart.log"), "utf8");
+  assert.match(text, /Couldn't reach 127\.0\.0\.1:9/);
+  assert.match(text, /Caused by: TypeError: fetch failed/);
+  assert.match(text, /Caused by: Error: connect ECONNREFUSED 127\.0\.0\.1:9/);
+});
+
+test("a self-referencing cause chain is cut off, not followed forever", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-logger-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const logger = loadLogger(dir);
+  const err = new Error("loop");
+  err.cause = err;
+
+  logger.error(err);
+
+  const text = fs.readFileSync(path.join(dir, "earheart.log"), "utf8");
+  assert.ok((text.match(/Caused by/g) || []).length <= 3, text);
+});

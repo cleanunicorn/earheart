@@ -66,10 +66,10 @@ function cleanBudgetMessage(needed, available) {
   return `Transcript too long to clean up in one pass (needs ~${needed} tokens of context, have ${available})`;
 }
 
-// Reaches the user the same way — the pipeline shows it on the cleanup-failed
-// notification — so it says what happened rather than naming a token count.
-const CLEAN_RUNAWAY_MESSAGE =
-  "Cleanup reached its output token limit before finishing; used the raw transcript";
+// Reaches the user the same way — it is the body of the cleanup-failed
+// notification — so it says what happened rather than naming a token count. The
+// title already says the raw transcript was used; repeating it here doubled it.
+const CLEAN_RUNAWAY_MESSAGE = "Cleanup reached its output token limit before finishing";
 
 // Sizing the context from the dictation cap. The floor is what an ordinary
 // dictation needs; the ceiling is where the KV cache stops being worth it (a

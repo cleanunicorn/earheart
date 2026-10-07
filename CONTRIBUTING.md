@@ -279,7 +279,18 @@ Design constraints worth keeping:
   dies part-way, the words already decoded are still delivered, with a
   notification, and marked `incomplete` — on the overlay's done card and in
   the History entry, not only in the stored record. See
-  [docs/long-recordings.md](docs/long-recordings.md).
+  [docs/long-recordings.md](docs/long-recordings.md). Only when nothing could be
+  delivered (the transcription itself failed) does the user get a "dictation
+  failed, nothing was delivered" notification. Every pipeline notification
+  opens Settings when clicked, and stays referenced until it is clicked or
+  closed (`createNotifier` in `main/setup-notices.js`).
+- **Failure copy never echoes a service's reply.** Remote STT, cleanup and the
+  model list report `<service> error <status>` (with an API-key hint for
+  401/403) and never read the body; transport failures read "Couldn't reach
+  <host>" or "didn't answer within N s" (`main/services/transport-error.js`).
+  The original error rides as `cause`, which the log writes out; a JSON parse
+  error keeps no cause, because its message quotes the body. Providers echo
+  keys and dictated text there, and users attach `earheart.log` to bug reports.
 - **Settings have one commit path.** `settings.get()` returns a copy; nothing
   changes until `settings.save()` writes the file, so a failed save leaves
   memory equal to disk. Every writer spread-saves from a fresh `get()` read at

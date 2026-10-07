@@ -146,6 +146,20 @@ test("stripThinking removes reasoning blocks", () => {
     stripThinking("Answer so far.<think>unfinished private reasoning"),
     "Answer so far."
   );
+  // R1-style templates put the opener in the prompt, so the reply starts
+  // mid-reasoning and only the closer arrives.
+  assert.strictEqual(
+    stripThinking("Okay, the user wants me to clean this up.\n</think>\n\nSo this is a test."),
+    "So this is a test."
+  );
+  assert.strictEqual(stripThinking("reasoning only</think>"), "");
+  // Reasoning that closes more than once: everything up to the last closer goes,
+  // so no reasoning and no stray tag reach the answer.
+  assert.strictEqual(stripThinking("first thought</think>\nsecond thought\n</think>\n\nAnswer."), "Answer.");
+  // The closer is matched case-insensitively, like the paired rule.
+  assert.strictEqual(stripThinking("reasoning</THINK>Answer"), "Answer");
+  // A paired block before a lone closer: the order of the rules decides this.
+  assert.strictEqual(stripThinking("<think>a</think>more reasoning</think>Answer"), "Answer");
 });
 
 test("remote cleanup rejects an answer the server cut off at its token limit", async () => {
@@ -888,10 +902,19 @@ test("listRemoteModels accepts a bare array and omits the auth header without a 
   }
 });
 
-test("listRemoteModels surfaces HTTP errors", async () => {
-  const { server, base } = await serveJson(() => ({ status: 401, body: { error: "nope" } }));
+test("listRemoteModels surfaces HTTP errors without the reply or the URL", async () => {
+  const { server, base } = await serveJson(() => ({
+    status: 401,
+    body: { error: { message: "Incorrect API key provided: sk-secret-value" } },
+  }));
   try {
-    await assert.rejects(() => listRemoteModels({ baseUrl: base }), /HTTP 401/);
+    await assert.rejects(
+      () => listRemoteModels({ baseUrl: base, apiKey: "sk-client-secret" }),
+      (err) => {
+        assert.strictEqual(err.message, "Model list service error 401 — check the API key in Settings");
+        return true;
+      }
+    );
   } finally {
     server.close();
   }
@@ -920,7 +943,7 @@ test("listRemoteModels returns an empty list when the service reports none", asy
 test("listRemoteModels rejects a non-JSON body", async () => {
   const { server, base } = await serveJson(() => ({ status: 200, body: "not json{" }));
   try {
-    await assert.rejects(() => listRemoteModels({ baseUrl: base }), /did not return JSON/);
+    await assert.rejects(() => listRemoteModels({ baseUrl: base }), /^Error: Model list service returned a response that isn't JSON$/);
   } finally {
     server.close();
   }
@@ -929,7 +952,10 @@ test("listRemoteModels rejects a non-JSON body", async () => {
 test("listRemoteModels rejects an unexpected JSON shape", async () => {
   const { server, base } = await serveJson(() => ({ status: 200, body: { notdata: 1 } }));
   try {
-    await assert.rejects(() => listRemoteModels({ baseUrl: base }), /Unexpected/);
+    await assert.rejects(
+      () => listRemoteModels({ baseUrl: base }),
+      /^Error: Model list service returned an unexpected \/models reply$/
+    );
   } finally {
     server.close();
   }
@@ -948,11 +974,11 @@ test("listRemoteModels strips a trailing slash before appending /models", async 
   }
 });
 
-test("listRemoteModels wraps a network failure with the URL", async () => {
+test("listRemoteModels names the host it couldn't reach, in plain words", async () => {
   // Port 1 is not listenable, so the fetch rejects at the connection stage.
   await assert.rejects(
     () => listRemoteModels({ baseUrl: "http://127.0.0.1:1/v1" }),
-    /Could not reach/
+    /^Error: Couldn't reach 127\.0\.0\.1:1$/
   );
 });
 
@@ -967,7 +993,7 @@ test("listRemoteModels reports a stalled response body as a timeout", async () =
   try {
     await assert.rejects(
       () => listRemoteModels({ baseUrl: base }, { timeoutMs: 50 }),
-      /Timed out fetching models/
+      /^Error: Model list service didn't answer within 0\.05 s$/
     );
   } finally {
     server.closeAllConnections();
@@ -982,7 +1008,7 @@ test("listRemoteModels times out when a service never responds", async () => {
   try {
     await assert.rejects(
       () => listRemoteModels({ baseUrl: base }, { timeoutMs: 20 }),
-      /Timed out fetching models/
+      /^Error: Model list service didn't answer within 0\.02 s$/
     );
   } finally {
     server.closeAllConnections();
@@ -1191,7 +1217,7 @@ test("explainMacPasteError names the macOS permission that blocked the paste", (
     )
   );
   assert.match(accessibility.note, /Accessibility/);
-  assert.match(accessibility.hint, /Fix auto-paste permission/);
+  assert.match(accessibility.hint, /Settings ▸ General ▸ Fix auto-paste permission/);
   // The usual cause is an update invalidating the old grant; the hint says so,
   // because the toggle in System Settings still looks on.
   assert.match(accessibility.hint, /update/);
@@ -1206,11 +1232,13 @@ test("explainMacPasteError names the macOS permission that blocked the paste", (
   assert.doesNotMatch(timedOut.note, /osascript/);
 
   const other = explainMacPasteError(new Error("Command failed: osascript"));
-  assert.strictEqual(other.note, "Command failed: osascript");
-  assert.strictEqual(other.hint, "Command failed: osascript");
+  // An unrecognised failure gets plain copy; the raw tool output is for the log.
+  assert.doesNotMatch(other.note, /osascript|Command failed/);
+  assert.doesNotMatch(other.hint, /osascript|Command failed/);
+  assert.match(other.hint, /⌘V/);
 
   // Every note fits the overlay's single detail row.
-  for (const r of [automation, accessibility, timedOut]) assert.ok(r.note.length <= 32, r.note);
+  for (const r of [automation, accessibility, timedOut, other]) assert.ok(r.note.length <= 32, r.note);
 });
 
 // The permission reset clears TCC decisions by bundle identifier; if it drifts

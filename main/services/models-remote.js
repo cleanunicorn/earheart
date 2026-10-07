@@ -2,11 +2,11 @@
 // Works with OpenAI, Ollama, llama.cpp, LM Studio, vLLM, OpenRouter, etc. Used
 // by Settings so the user can pick a model from a list instead of typing its id.
 
-function joinUrl(baseUrl, route) {
-  return baseUrl.replace(/\/+$/, "") + route;
-}
+const { serviceUrl } = require("./service-url");
+const { requestJson } = require("./transport-error");
 
 const DEFAULT_TIMEOUT_MS = 15000;
+const SERVICE = "Model list service";
 
 /**
  * Fetch available model ids from an OpenAI-compatible endpoint.
@@ -15,59 +15,18 @@ const DEFAULT_TIMEOUT_MS = 15000;
  * @returns {Promise<string[]>} sorted, de-duplicated model ids
  */
 async function listRemoteModels(cfg, { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
-  if (!cfg || !cfg.baseUrl) throw new Error("Base URL is required");
-  const url = joinUrl(cfg.baseUrl, "/models");
-  // Only fetch over HTTP(S). The base URL is user-supplied and reaches here
-  // from the renderer, so reject file:/other schemes rather than letting fetch
-  // read the local filesystem or a non-network resource.
-  let parsed;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Error(`Invalid base URL: ${cfg.baseUrl}`);
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(`Base URL must use http or https, got ${parsed.protocol}`);
-  }
+  // The base URL is user-supplied and reaches here from the renderer;
+  // serviceUrl accepts only http(s), so fetch never reads the local filesystem
+  // or a non-network resource. Failures read like the STT and cleanup clients'.
+  const url = serviceUrl(cfg?.baseUrl, "/models");
   const headers = {};
   if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
-
-  let res;
-  try {
-    const timeout = AbortSignal.timeout(timeoutMs);
-    res = await fetch(url, {
-      headers,
-      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-    });
-  } catch (err) {
-    if (err.name === "TimeoutError") {
-      throw new Error(`Timed out fetching models from ${url}`);
-    }
-    throw new Error(`Could not reach ${url}: ${err.message}`);
-  }
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status} from ${url}`);
-  }
-
-  let body;
-  try {
-    body = await res.json();
-  } catch (err) {
-    // The deadline covers the body too: a server that sends headers and then
-    // stalls is a timeout, not a malformed response.
-    if (err.name === "TimeoutError") {
-      throw new Error(`Timed out fetching models from ${url}`);
-    }
-    if (err.name === "AbortError") {
-      throw new Error(`Could not reach ${url}: ${err.message}`);
-    }
-    throw new Error(`${url} did not return JSON`);
-  }
+  const body = await requestJson(url, { headers }, { service: SERVICE, timeoutMs, signal });
 
   // OpenAI shape: { data: [{ id }, ...] }. Some servers return a bare array.
   const list = Array.isArray(body) ? body : body.data;
   if (!Array.isArray(list)) {
-    throw new Error(`Unexpected /models response from ${url}`);
+    throw new Error(`${SERVICE} returned an unexpected /models reply`);
   }
   const ids = list
     .map((m) => (typeof m === "string" ? m : m && m.id))

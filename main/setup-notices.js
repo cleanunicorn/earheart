@@ -51,34 +51,58 @@ function hotkeyFailureNotice(result) {
   };
 }
 
+// How many shown notices stay referenced at once. A notice leaves the set when
+// it is clicked, closed or fails; the cap bounds it on platforms that never
+// report a dismissal.
+const HELD_MAX = 8;
+
 /**
- * Shows notices whose click opens Settings. The latest one stays referenced
- * past show() so its click handler survives: a Notification only a local scope
- * referenced can be collected before the user gets to it.
+ * Shows notices whose click opens Settings. Every shown notice stays
+ * referenced until it is clicked, closed or fails, so its click handler
+ * survives: a Notification only a local scope referenced can be collected
+ * before the user gets to it, and one dictation can raise several.
  *
  * Without a notification service (a Linux session without one, or permission
- * denied) show() is a silent no-op, so Settings opens instead. A `critical`
- * notice — one reporting that dictation can't work — also falls back to
- * Settings when it throws or the OS reports it failed.
+ * denied) show() is a silent no-op, so Settings opens instead — unless the
+ * notifier was made with `settingsWhenUnsupported: false`, for notices whose
+ * news is already on screen. A `critical` notice — one reporting that
+ * dictation can't work — always falls back to Settings, also when it throws or
+ * the OS reports it failed.
  */
-function createNotifier({ Notification, openSettings, logger }) {
+function createNotifier({ Notification, openSettings, logger, settingsWhenUnsupported = true }) {
+  const held = new Set();
   let current = null;
   function show(note, { critical = false } = {}) {
     if (!Notification.isSupported()) {
-      openSettings();
+      if (critical || settingsWhenUnsupported) openSettings();
       return;
     }
+    let shown = null;
     try {
-      current = new Notification(note);
-      current.on("click", () => openSettings());
-      if (critical) current.on("failed", () => openSettings());
-      current.show();
+      shown = new Notification(note);
+      const release = () => held.delete(shown);
+      shown.on("click", () => {
+        release();
+        openSettings();
+      });
+      shown.on("close", release);
+      if (critical) {
+        shown.on("failed", () => {
+          release();
+          openSettings();
+        });
+      }
+      held.add(shown);
+      if (held.size > HELD_MAX) held.delete(held.values().next().value);
+      current = shown;
+      shown.show();
     } catch (err) {
+      if (shown) held.delete(shown);
       logger.warn(`notification failed: ${err.message}`);
       if (critical) openSettings();
     }
   }
-  return { show, current: () => current };
+  return { show, current: () => current, held: () => [...held] };
 }
 
 /**
@@ -130,5 +154,7 @@ module.exports = {
   sttNotReadyNotice,
   hotkeyFailureNotice,
   createNotifier,
+  BODY_MAX,
+  HELD_MAX,
   announceStartup,
 };

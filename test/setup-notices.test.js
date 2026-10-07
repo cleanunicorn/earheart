@@ -12,6 +12,7 @@ const {
   hotkeyFailureNotice,
   createNotifier,
   announceStartup,
+  HELD_MAX,
 } = require("../main/setup-notices");
 
 // A stand-in for Electron's Notification: records every instance, its
@@ -38,7 +39,7 @@ function fakeNotification({ supported = true, throwOnShow = false } = {}) {
   return { Notification, shown };
 }
 
-function rig(options) {
+function rig(options = {}) {
   const { Notification, shown } = fakeNotification(options);
   const calls = { settings: 0, wizard: 0, warnings: [] };
   const openSettings = () => {
@@ -48,6 +49,9 @@ function rig(options) {
     Notification,
     openSettings,
     logger: { warn: (...args) => calls.warnings.push(args.join(" ")) },
+    ...(options.settingsWhenUnsupported === undefined
+      ? {}
+      : { settingsWhenUnsupported: options.settingsWhenUnsupported }),
   });
   return { notifier, shown, calls, openSettings, openWizard: () => (calls.wizard += 1) };
 }
@@ -158,6 +162,47 @@ test("a non-critical notice that fails to show is only logged", () => {
 
   assert.strictEqual(r.calls.settings, 0);
   assert.strictEqual(r.calls.warnings.length, 1);
+});
+
+test("every shown notice stays referenced until it is clicked or closed", () => {
+  // One dictation can raise several notices (interrupted, cleanup failed,
+  // paste failed); each keeps its click handler until the user is done with it.
+  const r = rig();
+
+  for (const title of ["a", "b", "c"]) r.notifier.show({ title, body: "b" });
+
+  assert.deepStrictEqual(r.notifier.held(), r.shown);
+  r.shown[0].handlers.click();
+  assert.strictEqual(r.calls.settings, 1);
+  r.shown[1].handlers.close();
+  assert.deepStrictEqual(r.notifier.held(), [r.shown[2]]);
+});
+
+test("the held notices are capped, oldest first", () => {
+  const r = rig();
+
+  for (let i = 0; i < HELD_MAX + 2; i++) r.notifier.show({ title: `n${i}`, body: "b" });
+
+  assert.deepStrictEqual(r.notifier.held(), r.shown.slice(2));
+});
+
+test("a notice that fails to show is not held", () => {
+  const r = rig({ throwOnShow: true });
+
+  r.notifier.show({ title: "t", body: "b" });
+
+  assert.deepStrictEqual(r.notifier.held(), []);
+  assert.match(r.calls.warnings[0], /notification failed: no notification daemon/);
+});
+
+test("a notifier made not to open Settings stays quiet without a service, unless critical", () => {
+  const r = rig({ supported: false, settingsWhenUnsupported: false });
+
+  r.notifier.show({ title: "t", body: "b" });
+  assert.strictEqual(r.calls.settings, 0);
+
+  r.notifier.show({ title: "t", body: "b" }, { critical: true });
+  assert.strictEqual(r.calls.settings, 1);
 });
 
 /* ---------------- startup policy ---------------- */

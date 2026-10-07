@@ -47,7 +47,28 @@ const MAC_BUNDLE_ID = "dev.cleanunicorn.earheart";
 // grant listed and switched on while this build is untrusted.
 const ACCESSIBILITY_OFF = {
   note: "Accessibility permission is off",
-  hint: "Accessibility is off for Earheart (an update can reset it) — Settings ▸ Advanced ▸ Fix auto-paste permission",
+  hint: "Accessibility is off for Earheart (an update can reset it) — Settings ▸ General ▸ Fix auto-paste permission",
+};
+
+// A paste tool that failed for any other reason. Its own words (a PowerShell
+// stack trace, an X11 error, an AppleScript code) mean nothing to the user and
+// stay in the log; the text is already on the clipboard, so say how to paste it.
+// The overlay card's title and the notification's title already say auto-paste
+// failed, so the note doesn't repeat it.
+const PASTE_FAILED = {
+  note: "Paste it with Ctrl+V",
+  hint: "Paste it with Ctrl+V. What the paste tool reported is in Settings ▸ Advanced ▸ Open error log",
+};
+const MAC_PASTE_FAILED = {
+  note: "Paste it with ⌘V",
+  hint: "Paste it with ⌘V. What the paste tool reported is in Settings ▸ Advanced ▸ Open error log",
+};
+// Linux without wtype, ydotool or xdotool: installing one is the fix.
+// simulatePasteLinux tags its error with this code; explainPasteError reads it.
+const NO_KEYSTROKE_TOOL_CODE = "NO_KEYSTROKE_TOOL";
+const NO_KEYSTROKE_TOOL = {
+  note: "No keystroke tool found",
+  hint: "Install wtype, ydotool or xdotool for auto-paste; until then, paste with Ctrl+V",
 };
 
 function execFileAsync(cmd, args, options = {}) {
@@ -102,8 +123,9 @@ async function simulatePasteLinux() {
 
   const available = candidates.filter(([cmd]) => commandExists(cmd));
   if (available.length === 0) {
-    throw new Error(
-      "No keystroke tool found (install wtype, ydotool or xdotool)"
+    throw Object.assign(
+      new Error("No keystroke tool found (install wtype, ydotool or xdotool)"),
+      { code: NO_KEYSTROKE_TOOL_CODE }
     );
   }
   let lastErr = null;
@@ -145,7 +167,13 @@ function explainMacPasteError(err) {
   }
   // 1002: System Events refused the keystroke, which is Accessibility.
   if (/\(1002\)/.test(message)) return ACCESSIBILITY_OFF;
-  return { note: message, hint: message };
+  return MAC_PASTE_FAILED;
+}
+
+function explainPasteError(err) {
+  if (process.platform === "darwin") return explainMacPasteError(err);
+  if (err.code === NO_KEYSTROKE_TOOL_CODE) return NO_KEYSTROKE_TOOL;
+  return PASTE_FAILED;
 }
 
 async function simulatePaste(signal) {
@@ -231,9 +259,8 @@ async function deliver(text, cfg, signal) {
     // Text is already on the clipboard, so the user can paste manually. The
     // overlay note vanishes in seconds; the log line is what survives, so it
     // carries the verbatim tool output, not just our reading of it.
-    const { note, hint } =
-      process.platform === "darwin" ? explainMacPasteError(err) : { note: err.message, hint: err.message };
-    logger.error("auto-paste failed:", hint, "—", err.cause ?? err);
+    const { note, hint } = explainPasteError(err);
+    logger.error("auto-paste failed:", hint, "— tool output:", err.message, "—", err.cause ?? err);
     return { method: "clipboard", note, hint };
   }
   // Cancelled while the keystroke was in flight: the paste may have landed,
@@ -323,7 +350,7 @@ const macPermissions = {
 };
 
 /**
- * Get auto-paste back to a working state on macOS (Settings ▸ Advanced ▸ Fix
+ * Get auto-paste back to a working state on macOS (Settings ▸ General ▸ Fix
  * auto-paste permission). For whichever permission is off, clear Earheart's
  * recorded decision so macOS asks again, fire the native prompt, and open the
  * pane as the fallback. Other platforms report granted.

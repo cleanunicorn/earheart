@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.35.8 — 2026-10-07
+
+- Explain remote service and auto-paste failures in plain words (#259)
+
 ## v0.35.7 — 2026-10-07
 
 - Stop tray and Settings saves reverting each other (#257)

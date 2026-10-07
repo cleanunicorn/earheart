@@ -9,7 +9,9 @@ function serviceUrl(baseUrl, route) {
   try {
     parsed = new URL(base);
   } catch {
-    throw new Error(`Invalid base URL: ${baseUrl}`);
+    // Echo what the user typed so a typo is visible, but not a query or
+    // fragment: some providers take the API key there.
+    throw new Error(`Invalid base URL: ${base.replace(/[?#][\s\S]*$/, "")}`);
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error(`Base URL must use http or https, got ${parsed.protocol}`);

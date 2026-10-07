@@ -240,9 +240,11 @@ Design constraints worth keeping:
   from the asar (`asarUnpack` in `electron-builder.yml`). Models are downloaded
   at first run, not bundled.
 - **Model files and definitions stay consistent.** A model's `.complete`
-  marker records each file's size and a fingerprint of its definition (file
-  names, URLs, sizes, checksums; `definitionFingerprint` in
-  `main/engines/model-manager.js`). A mismatch means "not installed", which
+  marker records each file's size and a fingerprint of its definition (each
+  file's name and checksum, or its URL and size when it has no checksum;
+  `definitionFingerprint` in `main/engines/model-manager.js`). Re-pinning a
+  checksummed model to a new commit with the same bytes therefore keeps its
+  install. A mismatch means "not installed", which
   matters for custom models: their id has no commit, so an upstream re-upload
   keeps the id. Markers written before fingerprints existed still count as
   installed, so upgrades never force a re-download. Instead, re-adding a custom

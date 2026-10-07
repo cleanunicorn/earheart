@@ -42,18 +42,20 @@ function partialPaths(dest) {
   return { part, meta: `${part}.json` };
 }
 
-// Identity of a definition's files: names, URLs (which pin the resolved
-// commit), sizes and checksums. A custom model keeps its id across upstream
-// re-uploads (the id has no commit), so this, not the id, tells whether the
-// bytes on disk belong to the current definition. Labels and notes are left
-// out so a copy edit never invalidates a multi-GB install.
+// Identity of a definition's files. A custom model keeps its id across
+// upstream re-uploads (the id has no commit), so this, not the id, tells
+// whether the bytes on disk belong to the current definition. A file with a
+// checksum is identified by its name and checksum alone, so re-pinning a
+// built-in to a new commit with byte-identical files keeps its install; a file
+// without one falls back to its URL (which pins the resolved commit) and size.
+// Labels and notes are left out so a copy edit never invalidates a multi-GB
+// install.
 function definitionFingerprint(model) {
-  const files = (model.files || []).map((f) => ({
-    name: f.name,
-    url: f.url ?? null,
-    bytes: f.bytes ?? null,
-    sha256: f.sha256 ?? null,
-  }));
+  const files = (model.files || []).map((f) =>
+    f.sha256
+      ? { name: f.name, sha256: f.sha256 }
+      : { name: f.name, url: f.url ?? null, bytes: f.bytes ?? null }
+  );
   return crypto.createHash("sha256").update(JSON.stringify(files)).digest("hex");
 }
 

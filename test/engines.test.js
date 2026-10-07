@@ -744,6 +744,26 @@ test("the marker records the definition fingerprint and a changed definition is 
       };
       assert.strictEqual(manager.isInstalled(dir, checksummed), false);
 
+      // A checksummed file re-pinned to a new commit with the same bytes (the
+      // registry refresh flow) is the same definition: no forced re-download.
+      const pinned = {
+        ...model,
+        files: [{ ...model.files[0], sha256: "a".repeat(64) }],
+      };
+      const repinned = {
+        ...pinned,
+        files: [{ ...pinned.files[0], url: `${base}/ccc/m.gguf` }],
+      };
+      assert.strictEqual(
+        manager.definitionFingerprint(repinned),
+        manager.definitionFingerprint(pinned)
+      );
+      // ...while a new checksum under the same name is a new revision.
+      assert.notStrictEqual(
+        manager.definitionFingerprint({ ...pinned, files: [{ ...pinned.files[0], sha256: "b".repeat(64) }] }),
+        manager.definitionFingerprint(pinned)
+      );
+
       // A size-only marker from an older build carries no fingerprint, so it
       // keeps counting as installed for any definition (upgrade safety).
       await fsp.writeFile(markerPath, JSON.stringify({ files: { "m.gguf": a.length } }));

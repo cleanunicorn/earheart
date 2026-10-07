@@ -19,7 +19,7 @@
   "scripts": {
     "start": "electron .",
     "icons": "node scripts/gen-icons.js",
-    "test": "node --test",
+    "test": "node --test --test-timeout=30000",
     "dist": "electron-builder",
     "dist:linux": "electron-builder --linux",
     "dist:mac": "electron-builder --mac",

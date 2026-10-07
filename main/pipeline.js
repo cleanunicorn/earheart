@@ -25,7 +25,7 @@ const { createPersistedRtfEstimator } = require("./util/rtf");
 const { wavDurationSec, wavSliceFromFrame } = require("./util/wav");
 const { transcribeChunked } = require("./chunked-decode");
 const logger = require("./util/logger");
-const { createNotifier, sttNotReadyNotice } = require("./setup-notices");
+const { createNotifier, sttNotReadyNotice, BODY_MAX } = require("./setup-notices");
 
 let state = "idle"; // idle | recording | processing
 // Shows the "model not downloaded" notice; its click opens Settings.
@@ -51,8 +51,10 @@ const failureNotifier = createNotifier({
   settingsWhenUnsupported: false,
 });
 
-function notify(note) {
-  failureNotifier.show(note);
+// Bodies are clipped to the shared limit, so a long native error can't push
+// the rest of the notice out of view.
+function notify({ title, body }) {
+  failureNotifier.show({ title, body: String(body).slice(0, BODY_MAX) });
 }
 
 // Live preview (the streaming partial transcript shown while recording) lives in
@@ -510,7 +512,7 @@ async function process(sid, wavArrayBuffer) {
         logger.error("cleanup failed:", err);
         notify({
           title: "Earheart: cleanup failed, used raw transcript",
-          body: String(err.message).slice(0, 180),
+          body: err.message,
         });
       }
       if (stale()) return;
@@ -534,7 +536,7 @@ async function process(sid, wavArrayBuffer) {
       // stay, same as a cleanup failure does.
       notify({
         title: "Earheart: auto-paste failed, copied to clipboard",
-        body: result.hint.slice(0, 180),
+        body: result.hint,
       });
     }
     overlayStatus("done", {
@@ -556,7 +558,7 @@ async function process(sid, wavArrayBuffer) {
     overlayStatus("error", { message: String(err.message).slice(0, 200) });
     // Nothing was delivered: this is the one failure that loses the
     // dictation, and the overlay line is gone in five seconds.
-    notify({ title: "Earheart: dictation failed, nothing was delivered", body: String(err.message).slice(0, 180) });
+    notify({ title: "Earheart: dictation failed, nothing was delivered", body: err.message });
     hideOverlaySoon(sid, 5000);
   } finally {
     if (abortController === controller) {

@@ -934,3 +934,15 @@ test("pipeline: a failure after the words were delivered doesn't say the dictati
   assert.ok(!rig.log.statuses.includes("error"));
   assert.ok(rig.log.logs.some(([level, label]) => level === "error" && label === "pipeline failed:"));
 });
+
+test("pipeline: a long error is clipped to the notification limit", async () => {
+  const { BODY_MAX } = require("../main/setup-notices");
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => {
+      throw new Error("x".repeat(400));
+    },
+  });
+  await rig.dictate(speechWav(1));
+  assert.strictEqual(rig.log.notifications[0].body, "x".repeat(BODY_MAX));
+});

@@ -349,6 +349,15 @@ function dictationRig({
   };
 }
 
+test("pipeline: record:start forwards the saved max dictation length to the overlay", () => {
+  // The overlay falls back to 300 s for a cap it can't use, so a dropped field
+  // would look exactly like the default; 420 tells the two apart.
+  const rig = dictationRig({ transcribe: async () => "unused" });
+  rig.cfg.audio.maxRecordingSeconds = 420;
+  rig.pipeline.toggle();
+  assert.strictEqual(rig.log.lastStart.maxSeconds, 420);
+});
+
 test("pipeline: overlay renderer loss rejects stale capture and allows the next hotkey", () => {
   const rig = dictationRig({ transcribe: async () => "unused" });
   const states = [];

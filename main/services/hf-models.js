@@ -6,7 +6,8 @@
 // Two discoverers, one per model kind:
 //   - listGgufQuants   cleanup GGUFs for node-llama-cpp, grouped by quantization
 //   - listSttVariants  sherpa-onnx transducer bundles (encoder/decoder/joiner
-//                      .onnx + tokens.txt), grouped by precision (int8/fp16/…)
+//                      .onnx + tokens.txt) and Whisper exports, grouped by
+//                      precision (int8/fp16/…); other families are refused
 // Both return the same shape ({ repo, commit, recommended, variants }) so the
 // IPC layer and the settings UI treat the two kinds identically.
 //

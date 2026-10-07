@@ -414,6 +414,20 @@ test("a finished download waits at ready while a dictation is running", POSIX, a
   assert.strictEqual(ctx.calls.quit, 0);
 });
 
+test("two quick restart clicks install once", POSIX, async (t) => {
+  const appImage = asAppImage(t);
+  const ctx = loadUpdates(t, { isPackaged: true });
+  appImage(ctx.root);
+  ctx.updates.init({});
+  await download(ctx.updates);
+
+  await Promise.all([ctx.updates.installNow(), ctx.updates.installNow()]);
+
+  assert.strictEqual(ctx.calls.spawn.length, 1);
+  assert.strictEqual(ctx.calls.quit, 1);
+  assert.strictEqual(ctx.updates.getState().status, "installing");
+});
+
 // --- AC3: install re-verifies the staged file -----------------------------
 
 test("installNow refuses a staged file tampered with after download", POSIX, async (t) => {

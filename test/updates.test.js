@@ -224,6 +224,24 @@ test("the right sha512 stages the exact bytes and reaches ready", async (t) => {
   assert.ok(!fs.existsSync(path.join(ctx.temp, "earheart-update")), "nothing staged in temp");
 });
 
+test("cancelling a download returns to available with nothing staged", async (t) => {
+  const ctx = loadUpdates(t);
+  ctx.updates.init({});
+  await ctx.updates.check({ manual: true });
+
+  const pending = ctx.updates.startUpdate();
+  ctx.updates.cancel();
+  await pending;
+
+  const s = ctx.updates.getState();
+  assert.strictEqual(s.status, "available");
+  assert.strictEqual(s.progress, null);
+  assert.deepStrictEqual(fs.readdirSync(ctx.stagingDir), []);
+
+  await ctx.updates.startUpdate();
+  assert.strictEqual(ctx.updates.getState().status, "ready");
+});
+
 test("a skipped version stays idle on an automatic check and shows on a manual one", async (t) => {
   const ctx = loadUpdates(t, { stored: { updates: { skippedVersion: LATEST } } });
   ctx.updates.init({});

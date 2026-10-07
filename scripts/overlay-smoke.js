@@ -164,7 +164,42 @@ app.whenReady().then(async () => {
         detailText: document.getElementById("detail-text").textContent,
         detailClientHeight: document.getElementById("detail-text").clientHeight,
         detailScrollHeight: document.getElementById("detail-text").scrollHeight,
+        detailLines: (() => {
+          const range = document.createRange();
+          range.selectNodeContents(document.getElementById("detail-text"));
+          return new Set([...range.getClientRects()].filter((r) => r.width > 0)
+            .map((r) => Math.round(r.top))).size;
+        })(),
+        detailWidth: document.getElementById("detail-text").clientWidth,
+        detailTextWidth: (() => {
+          const detail = document.getElementById("detail-text");
+          const probe = document.createElement("span");
+          probe.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap";
+          probe.style.font = getComputedStyle(detail).font;
+          probe.textContent = detail.textContent;
+          document.body.appendChild(probe);
+          const w = probe.getBoundingClientRect().width;
+          probe.remove();
+          return Math.round(w * 10) / 10;
+        })(),
       })`);
+
+    // A fixed notice must show whole in the 32px strip: at most two 16px
+    // lines. Line count alone only proves it for this machine's fonts: CI's
+    // Linux fallback font (DejaVu Sans) sets text ~8% wider and leaves a
+    // narrower strip, and wrapped the old mic notice to three lines there
+    // (#250). So also require headroom:
+    // the text's one-line width within 1.6x the line width, i.e. two lines
+    // minus the slack word wrapping can leave at a line end.
+    const TWO_LINE_BUDGET = 1.6;
+    const fitsTwoLines = (ui) =>
+      ui.detailLines <= 2 &&
+      ui.detailScrollHeight <= ui.detailClientHeight &&
+      ui.detailTextWidth <= TWO_LINE_BUDGET * ui.detailWidth;
+    const fitDetail = (ui) =>
+      `lines=${ui.detailLines} text=${ui.detailTextWidth}px line=${ui.detailWidth}px ` +
+      `ratio=${(ui.detailTextWidth / ui.detailWidth).toFixed(2)} (budget ${TWO_LINE_BUDGET}) ` +
+      `scroll=${ui.detailScrollHeight}/${ui.detailClientHeight}`;
 
     // Deterministic control of device errors and delayed streams for race coverage.
     await win.webContents.executeJavaScript(`(() => {
@@ -203,13 +238,16 @@ app.whenReady().then(async () => {
       JSON.stringify(fallbackCalls));
     check("fallback notice is fully visible while recording",
       fallbackUi.detailText.includes("using system default") &&
-        fallbackUi.detailScrollHeight <= fallbackUi.detailClientHeight,
-      JSON.stringify(fallbackUi));
+        fallbackUi.detailScrollHeight <= fallbackUi.detailClientHeight &&
+        fitsTwoLines(fallbackUi),
+      `${JSON.stringify(fallbackUi.detailText)} ${fitDetail(fallbackUi)}`);
     win.webContents.send("record:pause-toggle");
     await waitForStatus(win, "paused");
     fallbackUi = await uiState();
     check("fallback notice remains visible while paused",
       fallbackUi.detailText.includes("using system default"), fallbackUi.detailText);
+    check("fallback notice fits two lines with font headroom while paused",
+      fitsTwoLines(fallbackUi), fitDetail(fallbackUi));
     win.webContents.send("record:pause-toggle");
     await waitForStatus(win, "recording");
     fallbackUi = await uiState();
@@ -457,6 +495,11 @@ app.whenReady().then(async () => {
       `resume=${pausedUi.resumeDisplay} pause=${pausedUi.pauseDisplay} aria-pressed=${pausedUi.ariaPressed}`
     );
     check(
+      "paused hint fits two lines with font headroom",
+      fitsTwoLines(pausedUi),
+      fitDetail(pausedUi)
+    );
+    check(
       "paused hint takes the detail line (data-detail set)",
       pausedUi.dataDetail === true && pausedUi.detailDisplay === "block",
       `data-detail=${pausedUi.dataDetail} detail display=${pausedUi.detailDisplay}`
@@ -690,6 +733,15 @@ app.whenReady().then(async () => {
       "the waveform canvas fills the 32px strip with no detail line",
       meterFillsWave(emptyGeo),
       `wave=${JSON.stringify(emptyGeo.wave)} meter=${JSON.stringify(emptyGeo.meter)}`
+    );
+
+    win.webContents.send("pipeline:status", { status: "empty" });
+    await waitForStatus(win, "empty");
+    const emptyHintUi = await uiState();
+    check(
+      "the nothing-heard hint fits two lines with font headroom",
+      emptyHintUi.detailText !== "" && fitsTwoLines(emptyHintUi),
+      `${JSON.stringify(emptyHintUi.detailText)} ${fitDetail(emptyHintUi)}`
     );
 
     const oneLine = await stageDone("staged preview");

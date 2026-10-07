@@ -80,7 +80,7 @@ app.whenReady().then(async () => {
     setStatus(
       "recording",
       "Listening…",
-      "Selected microphone not found — using system default"
+      "Saved mic missing — using system default"
     );
     "";
   `);

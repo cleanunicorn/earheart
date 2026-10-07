@@ -71,6 +71,16 @@ function remove(kind, modelId) {
   return manager.remove(modelsDir(), resolve(kind, modelId));
 }
 
+// Delete the files of a definition the registry may not hold (an orphaned
+// custom download, or the previous revision of a custom model being replaced).
+function removeFiles(model) {
+  return manager.remove(modelsDir(), model);
+}
+
+function definitionFingerprint(model) {
+  return manager.definitionFingerprint(model);
+}
+
 /* ---------------- speech-to-text ---------------- */
 
 let loadedStt = null;
@@ -378,6 +388,8 @@ module.exports = {
   getSttReadiness,
   download,
   remove,
+  removeFiles,
+  definitionFingerprint,
   ensureStt,
   transcribe,
   ensureCleanup,

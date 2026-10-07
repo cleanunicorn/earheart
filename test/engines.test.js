@@ -705,6 +705,107 @@ test("isInstalled accepts a legacy or malformed marker as presence-only", async 
   }
 });
 
+test("the marker records the definition fingerprint and a changed definition is not installed", async () => {
+  const a = Buffer.from("revision-a-bytes");
+  const { server, base } = await serveFiles({ "/aaa/m.gguf": a });
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "cleanup", id: "custom-o-r-gguf-q4-k-m",
+        label: "r · Q4_K_M",
+        files: [{ name: "m.gguf", bytes: a.length, url: `${base}/aaa/m.gguf` }],
+      };
+      await manager.download(dir, model);
+      const markerPath = path.join(manager.modelDir(dir, model), manager.MARKER);
+      const marker = JSON.parse(await fsp.readFile(markerPath, "utf8"));
+      assert.strictEqual(marker.fingerprint, manager.definitionFingerprint(model));
+      assert.deepStrictEqual(marker.files, { "m.gguf": a.length });
+      assert.strictEqual(manager.isInstalled(dir, model), true);
+
+      // A copy-only change (label/note) keeps the install.
+      assert.strictEqual(
+        manager.isInstalled(dir, { ...model, label: "renamed", note: "new note" }),
+        true
+      );
+      // Same id and same size, but a new upstream revision: not installed.
+      const reuploaded = {
+        ...model,
+        files: [{ name: "m.gguf", bytes: a.length, url: `${base}/bbb/m.gguf` }],
+      };
+      assert.notStrictEqual(
+        manager.definitionFingerprint(reuploaded),
+        manager.definitionFingerprint(model)
+      );
+      assert.strictEqual(manager.isInstalled(dir, reuploaded), false);
+      // A checksum appearing (or changing) is a different definition too.
+      const checksummed = {
+        ...model,
+        files: [{ ...model.files[0], sha256: "0".repeat(64) }],
+      };
+      assert.strictEqual(manager.isInstalled(dir, checksummed), false);
+
+      // A checksummed file re-pinned to a new commit with the same bytes (the
+      // registry refresh flow) is the same definition: no forced re-download.
+      const pinned = {
+        ...model,
+        files: [{ ...model.files[0], sha256: "a".repeat(64) }],
+      };
+      const repinned = {
+        ...pinned,
+        files: [{ ...pinned.files[0], url: `${base}/ccc/m.gguf` }],
+      };
+      assert.strictEqual(
+        manager.definitionFingerprint(repinned),
+        manager.definitionFingerprint(pinned)
+      );
+      // ...while a new checksum under the same name is a new revision.
+      assert.notStrictEqual(
+        manager.definitionFingerprint({ ...pinned, files: [{ ...pinned.files[0], sha256: "b".repeat(64) }] }),
+        manager.definitionFingerprint(pinned)
+      );
+
+      // A size-only marker from an older build carries no fingerprint, so it
+      // keeps counting as installed for any definition (upgrade safety).
+      await fsp.writeFile(markerPath, JSON.stringify({ files: { "m.gguf": a.length } }));
+      assert.strictEqual(manager.isInstalled(dir, reuploaded), true);
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("the definition fingerprint ignores file order", () => {
+  const files = [
+    { name: "encoder.onnx", url: "https://h/r/resolve/c/encoder.onnx", bytes: 10 },
+    { name: "tokens.txt", url: "https://h/r/resolve/c/tokens.txt", bytes: 2, sha256: "c".repeat(64) },
+    { name: "decoder.onnx", url: "https://h/r/resolve/c/decoder.onnx", bytes: 5 },
+  ];
+  const model = { kind: "stt", id: "custom-r-int8", files };
+  const reordered = { ...model, files: [files[2], files[0], files[1]] };
+  // A re-listing that returns the same files in another order is the same
+  // definition, so re-adding it must not wipe a complete install.
+  assert.strictEqual(manager.definitionFingerprint(reordered), manager.definitionFingerprint(model));
+  // Dropping a file is not.
+  assert.notStrictEqual(
+    manager.definitionFingerprint({ ...model, files: files.slice(1) }),
+    manager.definitionFingerprint(model)
+  );
+});
+
+test("remove clears a definition's directory from the definition alone, present or not", async () => {
+  await withTmp(async (dir) => {
+    const model = { kind: "stt", id: "custom-orphan", files: [{ name: "x.bin" }] };
+    const target = manager.modelDir(dir, model);
+    await fsp.mkdir(target, { recursive: true });
+    await fsp.writeFile(path.join(target, "x.bin"), "old");
+    await fsp.writeFile(path.join(target, manager.MARKER), "");
+    await manager.remove(dir, model);
+    assert.strictEqual(fs.existsSync(target), false);
+    // A missing directory is not an error.
+    await manager.remove(dir, model);
+  });
+});
+
 test("a transient failure retains bytes and retries with Range and If-Range", async () => {
   const full = Buffer.from("the-full-payload-".repeat(64));
   const sha = crypto.createHash("sha256").update(full).digest("hex");

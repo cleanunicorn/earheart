@@ -241,6 +241,20 @@ Design constraints worth keeping:
   `node-llama-cpp` (cleanup) — which ship prebuilt binaries and are unpacked
   from the asar (`asarUnpack` in `electron-builder.yml`). Models are downloaded
   at first run, not bundled.
+- **Model files and definitions stay consistent.** A model's `.complete`
+  marker records each file's size and a fingerprint of its definition (each
+  file's name and checksum, or its URL and size when it has no checksum;
+  `definitionFingerprint` in `main/engines/model-manager.js`). Re-pinning a
+  checksummed model to a new commit with the same bytes therefore keeps its
+  install. A mismatch means "not installed", which
+  matters for custom models: their id has no commit, so an upstream re-upload
+  keeps the id. Markers written before fingerprints existed still count as
+  installed, so upgrades never force a re-download. Instead, re-adding a custom
+  model whose definition changed (or one with no stored definition) deletes the
+  bytes under its id before saving the new definition. Removing a model first
+  aborts and awaits its download (`main/ipc.js`). A delete that fails (e.g.
+  EBUSY on Windows) is reported, and the custom definition is kept so the user
+  can retry.
 - **The overlay window owns the microphone.** The main process never touches
   raw audio; it receives finished WAVs from the renderer — the final one on stop,
   plus periodic partial WAVs while recording for the live preview (re-transcribed,

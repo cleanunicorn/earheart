@@ -67,3 +67,18 @@ test("waitForLoad ignores subframe failures and aborted navigations", async () =
   await wait;
   assert.strictEqual(wc.listenerCount("did-fail-load"), 0);
 });
+
+test("waitForLoad defaults to a 15 s deadline", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const wc = fakeWebContents();
+  const wait = waitForLoad(wc);
+  const settled = wait.then(() => "resolved", () => "rejected");
+  t.mock.timers.tick(14999);
+  assert.strictEqual(
+    await Promise.race([settled, Promise.resolve("pending")]),
+    "pending",
+    "still waiting just before the default deadline"
+  );
+  t.mock.timers.tick(1);
+  await assert.rejects(wait, /within 15000 ms/);
+});

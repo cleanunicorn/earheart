@@ -480,9 +480,14 @@ function applySettingsChange({ previous, current: saved }) {
     const radio = document.querySelector(
       `input[name="output-mode"][value="${displayedOutputMode(saved.output)}"]`
     );
+    const shownBefore = document.querySelector('input[name="output-mode"]:checked')?.value;
     if (radio) radio.checked = true;
     baseline.outputMode = sharedBaseline(saved).outputMode;
     renderSummary();
+    if (shownBefore !== displayedOutputMode(saved.output)) {
+      // Say why the choice just changed under the user.
+      $("sync-announce").textContent = "Output mode changed from the tray menu.";
+    }
   }
 }
 

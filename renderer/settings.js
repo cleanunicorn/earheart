@@ -707,6 +707,7 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
 // show a shared field only when this save changed it — never repopulate the
 // whole form, which would throw away edits the user hasn't saved yet.
 function applySettingsChange({ previous, current: saved }) {
+  const flipped = [];
   current.overlay = saved.overlay;
   current.customModels = saved.customModels;
   current.updates = {
@@ -718,16 +719,40 @@ function applySettingsChange({ previous, current: saved }) {
     previous.output.mode !== saved.output.mode ||
     previous.output.restoreClipboard !== saved.output.restoreClipboard
   ) {
+    const shownBefore = document.querySelector('input[name="output-mode"]:checked')?.value;
     current.output = { ...current.output, mode: saved.output.mode, restoreClipboard: saved.output.restoreClipboard };
     showOutputMode(saved.output);
     baseline.outputMode = sharedBaseline(saved).outputMode;
+    // Only main's tray radios change the mode while this window is open.
+    if (shownBefore !== displayedOutputMode(saved.output)) {
+      flipped.push("Output mode changed from the tray menu.");
+    }
   }
   const remind = saved.updates.remind !== false;
   if ((previous.updates.remind !== false) !== remind) {
     current.updates.remind = saved.updates.remind;
+    if ($("updates-remind").checked !== remind) {
+      flipped.push(
+        remind ? "Update reminders turned on elsewhere." : "Update reminders turned off from the update prompt."
+      );
+    }
     $("updates-remind").checked = remind;
     baseline.remind = remind;
   }
+  announceSettingsChange(flipped.join(" "));
+}
+
+// Say why a control just changed under the user. This window's own save never
+// flips a control (it already shows what it saved), and a save in flight
+// reports its own result, so neither announces here.
+function announceSettingsChange(message) {
+  const status = $("save-status");
+  if (!message || saveButton.disabled) return;
+  status.textContent = message;
+  status.className = "status";
+  setTimeout(() => {
+    if (status.textContent === message) status.textContent = "";
+  }, 4000);
 }
 
 const settingsChangesReady = followSettingsChanges(applySettingsChange);

@@ -607,6 +607,7 @@ app.whenReady().then(async () => {
                 mode,
                 remind,
                 prompt: document.getElementById("cleanup-prompt").value,
+                status: document.getElementById("save-status").textContent,
                 // What the next Save would send (collect() + baseline).
                 sends: { mode: collect().output.mode, remind: collect().updates.remind, baseline },
               })
@@ -618,6 +619,12 @@ app.whenReady().then(async () => {
       "a main-side save shows in the open form and keeps unsaved edits",
       reflected.mode === "clipboard" && reflected.remind === false && reflected.prompt === unsaved,
       JSON.stringify(reflected)
+    );
+    check(
+      "the form says why its controls changed",
+      /Output mode changed from the tray menu/.test(reflected.status) &&
+        /Update reminders turned off/.test(reflected.status),
+      JSON.stringify(reflected.status)
     );
     check(
       "the form's next save carries the main-side change and its baseline",
@@ -661,7 +668,12 @@ app.whenReady().then(async () => {
           `(() => {
             const mode = document.querySelector('input[name="output-mode"]:checked')?.value;
             return mode === "paste-copy"
-              ? JSON.stringify({ mode, sends: collect().output.mode, baseline })
+              ? JSON.stringify({
+                  mode,
+                  sends: collect().output.mode,
+                  baseline,
+                  announced: document.getElementById("sync-announce").textContent,
+                })
               : "";
           })()`,
           true
@@ -673,7 +685,8 @@ app.whenReady().then(async () => {
       "a main-side save shows in the open wizard and moves its baseline",
       wizardReflected.mode === "paste-copy" &&
         wizardReflected.sends === "paste-copy" &&
-        wizardReflected.baseline.outputMode === "paste-copy",
+        wizardReflected.baseline.outputMode === "paste-copy" &&
+        /Output mode changed/.test(wizardReflected.announced),
       JSON.stringify(wizardReflected)
     );
     check(

@@ -64,6 +64,8 @@ const MAC_PASTE_FAILED = {
   hint: "Paste it with ⌘V. What the paste tool reported is in Settings ▸ Advanced ▸ Open error log",
 };
 // Linux without wtype, ydotool or xdotool: installing one is the fix.
+// simulatePasteLinux tags its error with this code; explainPasteError reads it.
+const NO_KEYSTROKE_TOOL_CODE = "NO_KEYSTROKE_TOOL";
 const NO_KEYSTROKE_TOOL = {
   note: "No keystroke tool found",
   hint: "Install wtype, ydotool or xdotool for auto-paste; until then, paste with Ctrl+V",
@@ -123,7 +125,7 @@ async function simulatePasteLinux() {
   if (available.length === 0) {
     throw Object.assign(
       new Error("No keystroke tool found (install wtype, ydotool or xdotool)"),
-      { code: "NO_KEYSTROKE_TOOL" }
+      { code: NO_KEYSTROKE_TOOL_CODE }
     );
   }
   let lastErr = null;
@@ -170,7 +172,7 @@ function explainMacPasteError(err) {
 
 function explainPasteError(err) {
   if (process.platform === "darwin") return explainMacPasteError(err);
-  if (err.code === "NO_KEYSTROKE_TOOL") return NO_KEYSTROKE_TOOL;
+  if (err.code === NO_KEYSTROKE_TOOL_CODE) return NO_KEYSTROKE_TOOL;
   return PASTE_FAILED;
 }
 

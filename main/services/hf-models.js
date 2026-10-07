@@ -406,7 +406,7 @@ const WHISPER_RE = markerRe("whisper");
 
 // Encoder-decoder families sherpa-onnx ships that Earheart has no config for,
 // by the marker their exports carry. The label is what the user is told.
-const UNSUPPORTED_STT_FAMILIES = [{ marker: markerRe("canary"), label: "NVIDIA NeMo Canary" }];
+const UNSUPPORTED_STT_FAMILIES = [{ marker: markerRe("canary"), label: "NeMo Canary" }];
 
 // The k2-fsa Whisper exports name every file of a bundle after the Whisper
 // model ("tiny.en-encoder.onnx", "distil-small.en-tokens.txt", "turbo-…").

@@ -1900,7 +1900,7 @@ test("a saved Canary entry is refused with a way out before the worker is asked 
   try {
     registry.setCustomModels([canary, tdt]);
     await assert.rejects(facade.ensureStt(canary.id), (err) => {
-      assert.match(err.message, /NVIDIA NeMo Canary/);
+      assert.match(err.message, /NeMo Canary/);
       assert.match(err.message, /Remove it in Settings/);
       return true;
     });

@@ -247,12 +247,14 @@ async function clean(transcript, cfg, signal, { onProgress } = {}) {
 // identity is authoritative inside the worker, checked on every operation.
 function forgetStt() {
   loadedStt = null;
+  // A load posted to the dead worker is doomed; don't let the successor's
+  // callers join it.
   sttLoad.inflight = null;
 }
 
 function forgetCleanup() {
   cleanupResident = false;
-  cleanupLoad.inflight = null;
+  cleanupLoad.inflight = null; // as in forgetStt: never join the dead worker's load
 }
 
 function stop() {

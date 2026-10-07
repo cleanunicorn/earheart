@@ -12,6 +12,7 @@ const route = require("./services/route");
 const engines = require("./engines");
 const autostart = require("./autostart");
 const updates = require("./updates");
+const tray = require("./tray");
 const { listRemoteModels } = require("./services/models-remote");
 const {
   parseRepoInput,
@@ -97,6 +98,81 @@ function applyAutostart(cfg) {
   }
 }
 
+const isPlainObject = (value) =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+// A form save (Settings window or wizard) sends `{ settings, baseline }`: the
+// settings it spread from the snapshot it opened with, and the values of the
+// shared fields below as it last saw them from main.
+function parseCommitRequest(request) {
+  if (!isPlainObject(request) || !isPlainObject(request.settings)) {
+    throw new Error("invalid settings request");
+  }
+  return {
+    next: request.settings,
+    baseline: isPlainObject(request.baseline) ? request.baseline : {},
+  };
+}
+
+// Fields both a form and main write: the output mode (tray radios) and update
+// reminders ("Don't remind me" on the update prompt). Main changed one while
+// the form was open when the live value differs from the form's baseline;
+// that change wins, otherwise the form's value (edited or not) is saved. Once
+// the form has applied the settings:changed broadcast its baseline moves on,
+// so the user can change the field again.
+const SHARED_FIELDS = [
+  {
+    name: "outputMode",
+    type: "string",
+    // Compared as the mode delivery performs, so retiring the legacy
+    // { mode: "paste", restoreClipboard: false } encoding counts as a change.
+    read: (cfg) => (cfg.output ? settings.effectiveOutputMode(cfg.output) : undefined),
+    // Keep main's restoreClipboard with its mode: the pair is what decides
+    // whether "paste" restores the clipboard (main/output/deliver.js).
+    write: (cfg, live) => ({
+      ...cfg,
+      output: { ...cfg.output, mode: live.output.mode, restoreClipboard: live.output.restoreClipboard },
+    }),
+  },
+  {
+    name: "remind",
+    type: "boolean",
+    read: (cfg) => cfg.updates?.remind !== false,
+    write: (cfg, live) => ({ ...cfg, updates: { ...cfg.updates, remind: live.updates.remind } }),
+  },
+];
+
+// Settings only main writes, which no form edits: the dragged overlay position
+// (main/windows.js), custom model definitions (models:add/remove-custom) and
+// the updater's bookkeeping. A form's copy of them can only be stale, so the
+// live value always wins.
+function withMainOwned(next, live, baseline) {
+  let out = { ...next, overlay: live.overlay, customModels: live.customModels };
+  if (live.updates) {
+    out.updates = {
+      ...next.updates,
+      skippedVersion: live.updates.skippedVersion,
+      lastSeenVersion: live.updates.lastSeenVersion,
+    };
+  }
+  for (const field of SHARED_FIELDS) {
+    const seen = baseline[field.name];
+    if (typeof seen !== field.type) continue;
+    if (field.read(live) !== seen) out = field.write(out, live);
+  }
+  return out;
+}
+
+// The sections an open form takes from a settings:changed event (see
+// applySettingsChange in renderer/settings.js and renderer/wizard.js). Only
+// these are sent, so API keys never ride the event; the forms already hold
+// them from settings:get.
+const FORM_SYNC_KEYS = ["output", "updates", "overlay", "customModels"];
+
+function formSyncFields(cfg) {
+  return Object.fromEntries(FORM_SYNC_KEYS.map((key) => [key, cfg[key]]));
+}
+
 function withFields(base, source, fields) {
   const result = { ...base };
   for (const field of fields) {
@@ -141,9 +217,19 @@ function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
   // restart, exactly like the built-ins.
   engines.registry.setCustomModels(settings.get().customModels || []);
 
+  // Every successful save, from any writer, reaches the open forms (so they
+  // show a tray or updater change) and rebuilds the tray menu (so its radios
+  // show a form change).
+  settings.onChanged(({ previous, current }) => {
+    windows.sendToForms("settings:changed", {
+      previous: formSyncFields(previous),
+      current: formSyncFields(current),
+    });
+    tray.refresh();
+  });
+
   ipcMain.handle("settings:get", () => {
-    // Shallow copy so reporting the live OS state doesn't mutate the cache.
-    const cfg = { ...settings.get() };
+    const cfg = settings.get();
     // Report the real OS login-item state so the toggle reflects reality even
     // if it was changed outside the app (e.g. the autostart file was removed).
     try {
@@ -172,15 +258,14 @@ function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
     };
   });
 
-  // The overlay position (settings.overlay) is owned by the main process: it
-  // changes when the user drags the card, not through any form. The settings
-  // and wizard windows save a payload spread from the snapshot they opened
-  // with, so their `overlay` can be stale — dragging the card while a form is
-  // open, then saving the form, would roll the position back. Re-inject the
-  // live value on every form save.
-  const saveWithHotkeys = (next) => {
+  // The one commit path for both forms. Main-side writers save while a form
+  // is open, so the form's payload is merged with the live settings first
+  // (withMainOwned), then hotkeys are applied before persisting so a rejected
+  // shortcut never reaches disk.
+  const commitSettings = (request) => {
+    const { next, baseline } = parseCommitRequest(request);
     const previous = settings.get();
-    const candidate = { ...next, overlay: previous.overlay };
+    const candidate = withMainOwned(next, previous, baseline);
     const hotkeyResults = applyHotkeys(candidate);
     const rejectedFields = ["hotkey", "pauseHotkey"].filter((field) => {
       const result = hotkeyResults[field];
@@ -223,13 +308,13 @@ function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
     };
   };
 
-  ipcMain.handle("settings:save", (event, next) => saveWithHotkeys(next).response);
+  ipcMain.handle("settings:save", (event, request) => commitSettings(request).response);
 
   // The setup wizard saves its choices, then hands over to the settings
   // window so the user can review what was pre-configured. If the chosen
   // hotkey can't be registered, the wizard stays open to let them fix it.
-  ipcMain.handle("wizard:complete", (event, next) => {
-    const { response, hotkeyResults } = saveWithHotkeys(next);
+  ipcMain.handle("wizard:complete", (event, request) => {
+    const { response, hotkeyResults } = commitSettings(request);
     if (hotkeyResults.hotkey.ok) {
       windows.openSettings({ fromWizard: true });
       windows.closeWizard();
@@ -490,6 +575,8 @@ function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
   ipcMain.handle("history:list", () => history.list());
   ipcMain.handle("history:clear", () => {
     history.clear();
+    // "Copy last transcription" must go disabled with nothing left to copy.
+    tray.refresh();
     return [];
   });
 

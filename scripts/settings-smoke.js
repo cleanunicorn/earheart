@@ -29,6 +29,11 @@
 //  11. Wizard-started downloads survive Settings model changes without
 //      overwriting a concurrent download's state.
 //  12. Failed model removals appear in the row and persistent live region.
+//  13. A main-side save while the window is open (the tray's output radios,
+//      the update prompt's "Don't remind me") shows in the form through
+//      settings:changed, without discarding an edit the user hasn't saved,
+//      and moves the form's baseline so its next save keeps the change.
+//  14. The same for the setup wizard's output step.
 //  13. Removing a custom model: the row shows "Removing…" with its buttons
 //      disabled while the delete runs; the confirm mentions the downloaded
 //      files only for an installed model; a failed delete (installed "Remove" and
@@ -737,6 +742,53 @@ app.whenReady().then(async () => {
       select.dispatchEvent(new Event("change", { bubbles: true }));
     })()`);
 
+    // 13. Settings saved by main while the window is open reach the form.
+    const unsaved = "An edit the user has not saved yet";
+    await js(`document.getElementById("cleanup-prompt").value = ${JSON.stringify(unsaved)}; true`);
+    const before = settings.get();
+    settings.save({
+      ...before,
+      output: { ...before.output, mode: "clipboard" },
+      updates: { ...before.updates, remind: false },
+    });
+    const reflected = await waitFor(
+      () =>
+        js(`(() => {
+          const mode = document.querySelector('input[name="output-mode"]:checked')?.value;
+          const remind = document.getElementById("updates-remind").checked;
+          return mode === "clipboard" && !remind
+            ? JSON.stringify({
+                mode,
+                remind,
+                prompt: document.getElementById("cleanup-prompt").value,
+                status: document.getElementById("save-status").textContent,
+                // What the next Save would send (collect() + baseline).
+                sends: { mode: collect().output.mode, remind: collect().updates.remind, baseline },
+              })
+            : "";
+        })()`),
+      "the open form did not show the main-side change"
+    ).then(JSON.parse);
+    check(
+      "a main-side save shows in the open form and keeps unsaved edits",
+      reflected.mode === "clipboard" && reflected.remind === false && reflected.prompt === unsaved,
+      JSON.stringify(reflected)
+    );
+    check(
+      "the form says why its controls changed",
+      /Output mode changed from the tray menu/.test(reflected.status) &&
+        /Update reminders turned off/.test(reflected.status),
+      JSON.stringify(reflected.status)
+    );
+    check(
+      "the form's next save carries the main-side change and its baseline",
+      reflected.sends.mode === "clipboard" &&
+        reflected.sends.remind === false &&
+        reflected.sends.baseline.outputMode === "clipboard" &&
+        reflected.sends.baseline.remind === false,
+      JSON.stringify(reflected.sends)
+    );
+
     // 8. A fresh profile preselects the default cleanup model in both windows.
     const cleanupDefault = registry.getModel("cleanup", registry.DEFAULT_CLEANUP_MODEL);
     const readCleanupPick = (wc) =>
@@ -761,7 +813,36 @@ app.whenReady().then(async () => {
       `document.getElementById("cleanup-builtin-note").textContent`,
       true
     );
+    // 14. A main-side save while the wizard is open reaches its output step.
+    const beforeWizard = settings.get();
+    settings.save({ ...beforeWizard, output: { ...beforeWizard.output, mode: "paste-copy" } });
+    const wizardReflected = await waitFor(
+      () =>
+        wizardForDefaults.webContents.executeJavaScript(
+          `(() => {
+            const mode = document.querySelector('input[name="output-mode"]:checked')?.value;
+            return mode === "paste-copy"
+              ? JSON.stringify({
+                  mode,
+                  sends: collect().output.mode,
+                  baseline,
+                  announced: document.getElementById("sync-announce").textContent,
+                })
+              : "";
+          })()`,
+          true
+        ),
+      "the open wizard did not show the main-side change"
+    ).then(JSON.parse);
     windows.closeWizard();
+    check(
+      "a main-side save shows in the open wizard and moves its baseline",
+      wizardReflected.mode === "paste-copy" &&
+        wizardReflected.sends === "paste-copy" &&
+        wizardReflected.baseline.outputMode === "paste-copy" &&
+        /Output mode changed/.test(wizardReflected.announced),
+      JSON.stringify(wizardReflected)
+    );
     check(
       "the wizard preselects the default cleanup model on a fresh profile",
       wizardPick.value === cleanupDefault.id,

@@ -1,6 +1,9 @@
 // Settings window renderer.
 
 let current = null; // settings object being edited
+// The shared fields as this window last saw them from main; sent with every
+// save (sharedBaseline in settings-sync.js).
+let baseline = null;
 let defaults = null;
 let platform = "linux";
 let modelStatus = null; // { stt: [...], cleanup: [...] } from the main process
@@ -211,19 +214,18 @@ async function loadMicrophones() {
 
 /* ---------- populate / collect ---------- */
 
-function populate() {
-  hotkeyInput.value = current.hotkey;
-  pauseHotkeyInput.value = current.pauseHotkey || "";
-  // Legacy settings expressed "paste & keep on clipboard" as paste mode with
-  // clipboard restore turned off; show those as the explicit paste-copy mode.
-  const mode =
-    current.output.mode === "paste" && !current.output.restoreClipboard
-      ? "paste-copy"
-      : current.output.mode;
+function showOutputMode(output) {
+  const mode = displayedOutputMode(output);
   (
     document.querySelector(`input[name="output-mode"][value="${mode}"]`) ||
     document.querySelector('input[name="output-mode"][value="paste"]')
   ).checked = true;
+}
+
+function populate() {
+  hotkeyInput.value = current.hotkey;
+  pauseHotkeyInput.value = current.pauseHotkey || "";
+  showOutputMode(current.output);
 
   $("stt-url").value = current.stt.baseUrl;
   $("stt-key").value = current.stt.apiKey;
@@ -747,6 +749,63 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
   $("cleanup-prompt").value = defaults.cleanup.systemPrompt;
 });
 
+/* ---------- changes saved elsewhere ---------- */
+
+// Main saved the settings (tray radio, update prompt, overlay drag, custom
+// models, or this window's own save). Take the values only main writes, and
+// show a shared field only when this save changed it — never repopulate the
+// whole form, which would throw away edits the user hasn't saved yet.
+function applySettingsChange({ previous, current: saved }) {
+  const flipped = [];
+  current.overlay = saved.overlay;
+  current.customModels = saved.customModels;
+  current.updates = {
+    ...current.updates,
+    skippedVersion: saved.updates.skippedVersion,
+    lastSeenVersion: saved.updates.lastSeenVersion,
+  };
+  if (
+    previous.output.mode !== saved.output.mode ||
+    previous.output.restoreClipboard !== saved.output.restoreClipboard
+  ) {
+    const shownBefore = document.querySelector('input[name="output-mode"]:checked')?.value;
+    current.output = { ...current.output, mode: saved.output.mode, restoreClipboard: saved.output.restoreClipboard };
+    showOutputMode(saved.output);
+    baseline.outputMode = sharedBaseline(saved).outputMode;
+    // Only main's tray radios change the mode while this window is open.
+    if (shownBefore !== displayedOutputMode(saved.output)) {
+      flipped.push("Output mode changed from the tray menu.");
+    }
+  }
+  const remind = saved.updates.remind !== false;
+  if ((previous.updates.remind !== false) !== remind) {
+    current.updates.remind = saved.updates.remind;
+    if ($("updates-remind").checked !== remind) {
+      flipped.push(
+        remind ? "Update reminders turned on elsewhere." : "Update reminders turned off from the update prompt."
+      );
+    }
+    $("updates-remind").checked = remind;
+    baseline.remind = remind;
+  }
+  announceSettingsChange(flipped.join(" "));
+}
+
+// Say why a control just changed under the user. This window's own save never
+// flips a control (it already shows what it saved), and a save in flight
+// reports its own result, so neither announces here.
+function announceSettingsChange(message) {
+  const status = $("save-status");
+  if (!message || saveButton.disabled) return;
+  status.textContent = message;
+  status.className = "status";
+  setTimeout(() => {
+    if (status.textContent === message) status.textContent = "";
+  }, 4000);
+}
+
+const settingsChangesReady = followSettingsChanges(applySettingsChange);
+
 /* ---------- save ---------- */
 
 // Show each hotkey's registration failure under its field: the launch result
@@ -806,8 +865,13 @@ saveButton.addEventListener("click", async () => {
   save.className = "status";
   try {
     current = collect();
-    result = await earheart.invoke("settings:save", current);
+    result = await earheart.invoke("settings:save", { settings: current, baseline });
     current = result.settings;
+    baseline = sharedBaseline(current);
+    // Main may have kept its own value for a shared field (a tray change this
+    // form hadn't seen yet), so show what was actually saved.
+    showOutputMode(current.output);
+    $("updates-remind").checked = current.updates.remind !== false;
     const adjusted = limitAdjustments(current);
     $("max-seconds").value = current.audio.maxRecordingSeconds;
     $("idle-unload").value = current.engines.idleUnloadMinutes;
@@ -1322,6 +1386,7 @@ earheart.on("updates:state", renderUpdateState);
 (async () => {
   const data = await earheart.invoke("settings:get");
   current = data.settings;
+  baseline = sharedBaseline(current);
   defaults = data.defaults;
   platform = data.platform;
   cleanupStyles = data.cleanupStyles || [];
@@ -1344,6 +1409,7 @@ earheart.on("updates:state", renderUpdateState);
   populateModelSelect("stt");
   populateModelSelect("cleanup");
   populate();
+  settingsChangesReady();
   renderHistory();
   loadMicrophones();
 })();

@@ -79,6 +79,67 @@ test("every channel the renderers listen on is in the preload LISTEN allowlist",
   assert.deepStrictEqual(missing, [], `preload LISTEN is missing: ${missing.join(", ")}`);
 });
 
+// The other direction: a channel main pushes to a window but the preload LISTEN
+// allowlist doesn't carry can't be subscribed to, so the renderer's
+// earheart.on() throws and the update never lands.
+test("every channel main pushes to a window is in the preload LISTEN allowlist", () => {
+  const pushed = channels(
+    main,
+    /(?:sendToForms|sendToSettings|sendToOverlay|broadcast|webContents\.send)\(\s*"([a-z:-]+)"/g
+  );
+  assert.ok(pushed.has("settings:changed"), "main should push settings:changed");
+  const missing = [...pushed].filter((c) => !LISTEN.has(c)).sort();
+  assert.deepStrictEqual(missing, [], `preload LISTEN is missing: ${missing.join(", ")}`);
+});
+
+// settings:changed goes to the Settings and wizard windows only
+// (windows.sendToForms). The overlay shares the preload, so its LISTEN entry
+// can't keep the event away from it; only the send helper can.
+test("settings:changed is pushed only through sendToForms", () => {
+  assert.match(main, /sendToForms\(\s*"settings:changed"/);
+  assert.doesNotMatch(
+    main,
+    /(?:sendToOverlay|sendToSettings|broadcast|webContents\.send)\(\s*"settings:changed"/
+  );
+});
+
+// Both forms must follow settings saved elsewhere (#190), or an open form
+// shows — and on save, sends — a stale output mode. The listener lives in the
+// shared renderer/settings-sync.js; each form subscribes and, at the end of its
+// init, flushes what arrived while it loaded.
+test("Settings and the wizard both follow settings:changed", () => {
+  const sync = fs.readFileSync(path.join(ROOT, "renderer", "settings-sync.js"), "utf8");
+  assert.match(sync, /earheart\.on\(\s*"settings:changed"/);
+  for (const file of ["settings.js", "wizard.js"]) {
+    const source = fs.readFileSync(path.join(ROOT, "renderer", file), "utf8");
+    assert.match(
+      source,
+      /const settingsChangesReady = followSettingsChanges\(applySettingsChange\)/,
+      `${file} should subscribe to settings:changed`
+    );
+    const init = source.indexOf("/* ---------- init ---------- */");
+    assert.ok(init !== -1 && source.indexOf("settingsChangesReady();", init) !== -1, `${file} should flush queued changes in its init`);
+  }
+});
+
+// The baseline a form sends and the shared fields main reconciles are joined
+// only by key names. main skips a baseline key it doesn't know, so a rename on
+// either side silently lets a stale form value overwrite a tray change again.
+test("the form baseline names exactly main's shared fields", () => {
+  const ipc = fs.readFileSync(path.join(ROOT, "main", "ipc.js"), "utf8");
+  const block = ipc.match(/const SHARED_FIELDS = \[([\s\S]*?)\n\];/);
+  assert.ok(block, "main/ipc.js should define SHARED_FIELDS");
+  const mainNames = [...block[1].matchAll(/name:\s*"([A-Za-z]+)"/g)].map((m) => m[1]).sort();
+  const { sharedBaseline } = require("../renderer/settings-sync");
+  const formNames = Object.keys(sharedBaseline({ output: { mode: "paste", restoreClipboard: true }, updates: {} })).sort();
+  assert.deepStrictEqual(formNames, mainNames);
+  // Neither page re-encodes the baseline by hand.
+  for (const file of ["settings.js", "wizard.js"]) {
+    const source = fs.readFileSync(path.join(ROOT, "renderer", file), "utf8");
+    assert.doesNotMatch(source, /outputMode:/, `${file} should build its baseline with sharedBaseline()`);
+  }
+});
+
 // logs:open answers with an `action` naming which of its three fallbacks ran,
 // and the renderer switches on that string to phrase the status line. The two
 // sides are joined by nothing but the literal, so renaming one silently drops

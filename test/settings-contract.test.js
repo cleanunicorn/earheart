@@ -190,6 +190,20 @@ test("custom model version selects have accessible names", () => {
   }
 });
 
+test("settings-sync.js loads before each page's own script", () => {
+  // Both pages call followSettingsChanges and sharedBaseline at top level and
+  // in init; without the shared script they throw a ReferenceError.
+  for (const [name, source, page] of [
+    ["settings.html", html, "settings.js"],
+    ["wizard.html", wizardHtml, "wizard.js"],
+  ]) {
+    const shared = source.indexOf('src="settings-sync.js"');
+    const own = source.indexOf(`src="${page}"`);
+    assert.notStrictEqual(shared, -1, `${name} must load settings-sync.js`);
+    assert.ok(shared < own, `${name} must load settings-sync.js before ${page}`);
+  }
+});
+
 test("hotkey-capture.js loads before each page's own script", () => {
   // Both pages call wireHotkeyCapture at top level; if the shared script's
   // tag is dropped or reordered, the page script throws a ReferenceError
@@ -357,6 +371,8 @@ function microphonePage(source, page) {
       },
       createElement: () => baseDocument.createElement(),
       querySelector(selector) {
+        // finish() re-checks the radio for the saved mode afterwards.
+        if (selector.startsWith('input[name="output-mode"][value=')) return { checked: false };
         assert.strictEqual(selector, 'input[name="output-mode"]:checked');
         return { value: "paste-copy" };
       },
@@ -371,14 +387,21 @@ function microphonePage(source, page) {
     },
     CSS: { escape: (value) => value },
     current,
+    baseline: { outputMode: current.output.mode, remind: true },
+    // The page's own copy of the shared classic script's global.
+    sharedBaseline: require("../renderer/settings-sync").sharedBaseline,
+    displayedOutputMode: require("../renderer/settings-sync").displayedOutputMode,
     cleanupStyles: [{ id: "verbatim" }],
     $: (id) => elements[id] || baseDocument.getElementById(id),
     earheart: {
       invoke(channel, value) {
         assert.strictEqual(channel, page === "settings" ? "settings:save" : "wizard:complete");
+        // Both forms send { settings, baseline } (main/ipc.js commitSettings).
+        assert.ok(value && typeof value.settings === "object", "save request carries settings");
+        assert.ok("baseline" in value, "save request carries the shared-field baseline");
         invokeCount++;
-        payload = value;
-        return Promise.resolve({ settings: value, hotkey: { ok: true } });
+        payload = value.settings;
+        return Promise.resolve({ settings: value.settings, hotkey: { ok: true } });
       },
     },
   };
@@ -415,7 +438,7 @@ function microphonePage(source, page) {
       await pending;
       if (choose !== undefined && chooseWhen === "after") pick();
       if (page === "settings") {
-        await context.earheart.invoke("settings:save", context.collect());
+        await context.earheart.invoke("settings:save", { settings: context.collect(), baseline: context.baseline });
       } else {
         await context.finish();
       }
@@ -438,6 +461,8 @@ for (const [page, source] of [["settings", js], ["wizard", wizardJs]]) {
     assert.strictEqual(result.invokeCount, 1);
     if (page === "wizard") {
       assert.strictEqual(result.saved.output.mode, "paste-copy");
+      // The explicit mode replaces the legacy restoreClipboard: false.
+      assert.strictEqual(result.saved.output.restoreClipboard, true);
       assert.strictEqual(result.saved.stt.engine, "builtin");
       assert.strictEqual(result.saved.cleanup.builtin.model, "cleanup-model");
       assert.strictEqual(result.saved.cleanup.style, "verbatim");
@@ -471,6 +496,13 @@ for (const [page, source] of [["settings", js], ["wizard", wizardJs]]) {
     if (page === "wizard") assert.strictEqual(result.saved.audio.maxRecordingSeconds, 300);
   });
 }
+// The save button's request, not just collect(): main reconciles shared
+// fields against `baseline` (main/ipc.js commitSettings), so a save that drops
+// it silently lets a stale form value overwrite a tray change.
+test("the Settings save button sends { settings, baseline }", () => {
+  assert.match(js, /earheart\.invoke\("settings:save", \{ settings: current, baseline \}\)/);
+});
+
 
 test("wizard respects System default chosen while an unavailable saved microphone loads", async () => {
   const fixture = microphonePage(wizardJs, "wizard");

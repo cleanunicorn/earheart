@@ -32,6 +32,7 @@ function loadIpcHandlers(cfg, { engines = {}, hf = {} } = {}) {
   const settings = {
     DEFAULTS: {},
     get: () => stored,
+    onChanged: () => () => {},
     save: (next) => {
       saved.push(next);
       stored = next;
@@ -63,6 +64,7 @@ function loadIpcHandlers(cfg, { engines = {}, hf = {} } = {}) {
     [resolveFrom("./history")]: {},
     [resolveFrom("./autostart")]: {},
     [resolveFrom("./updates")]: {},
+    [resolveFrom("./tray")]: { refresh() {} },
     [resolveFrom("./util/logger")]: { info() {}, warn: (msg) => warnings.push(msg), error() {} },
   };
 

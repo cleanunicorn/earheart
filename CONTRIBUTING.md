@@ -25,7 +25,7 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | `make test` | Run unit tests (`node --test`) |
 | `make smoke` | Boot the app headlessly and exit (CI-style sanity check) |
 | `make overlay-smoke` | Drive the overlay with a fake mic and check capture/UI sync |
-| `make settings-smoke` | Drive the settings window and check the index/scroll-spy contract |
+| `make settings-smoke` | Drive the settings window and check the index/scroll-spy contract and live settings sync |
 | `make icons` | Regenerate app/tray icons into `assets/` |
 | `make screenshots` | Regenerate README screenshots into `docs/screenshots/` |
 | `make dist` | Build installers for the current platform |
@@ -68,8 +68,10 @@ captured WAV covers everything said from that moment, and stop/cancel racing
 mic startup still resolve. The settings-smoke step drives the real settings
 window and asserts the settings-page contract: every section renders on one
 scroll, the index's scroll-spy highlight and focus handoff work, the roving
-tabindex is seated at load, and a microphone chosen while device enumeration
-is still pending survives it and is what Save writes to disk. CI runs all five on every platform.
+tabindex is seated at load, a setting saved from the tray reaches an open
+Settings window or wizard without discarding unsaved edits, and a microphone
+chosen while device enumeration is pending survives it and Save writes that
+choice to disk. CI runs all five on every platform.
 Built-in models download to Electron's `userData/models` on first use; the
 smoke checks don't need them present.
 
@@ -271,6 +273,18 @@ Design constraints worth keeping:
   notification, and marked `incomplete` — on the overlay's done card and in
   the History entry, not only in the stored record. See
   [docs/long-recordings.md](docs/long-recordings.md).
+- **Settings have one commit path.** `settings.get()` returns a copy; nothing
+  changes until `settings.save()` writes the file, so a failed save leaves
+  memory equal to disk. Every writer spread-saves from a fresh `get()` read at
+  the moment it saves, never a snapshot captured earlier (a menu build, or
+  before an `await`). The Settings and wizard forms save through
+  `commitSettings` in `main/ipc.js`: keys only main writes (overlay position,
+  custom models, updater bookkeeping) always keep their live value, and fields
+  both sides write (output mode, update reminders) keep a main-side change the
+  form hadn't seen yet, judged against the `baseline` the form sends. Every
+  successful save fires `settings.onChanged`, which rebuilds the tray and
+  sends `settings:changed` to the open forms; they apply only the fields that
+  changed, so unsaved edits survive.
 - **The UI has a design system.** [DESIGN.md](DESIGN.md) is derived from the
   shipped CSS and governs the overlay, settings and wizard: one coral accent
   reserved for the voice, filled-white for the primary action, no drop

@@ -30,7 +30,8 @@
 //      overwriting a concurrent download's state.
 //  12. Failed model removals appear in the row and persistent live region.
 //  13. Removing a custom model: the row shows "Removing…" with its buttons
-//      disabled while the delete runs; a failed delete (installed "Remove" and
+//      disabled while the delete runs; the confirm mentions the downloaded
+//      files only for an installed model; a failed delete (installed "Remove" and
 //      "Remove from list") shows its error and keeps the entry; removing the
 //      selected custom STT and cleanup models leaves each select on the
 //      default, and the real Save persists those ids, never "".
@@ -701,7 +702,7 @@ app.whenReady().then(async () => {
       await removalHeld;
       throw new Error("custom model files are busy");
     };
-    await js(`window.confirm = () => true; true`);
+    await js(`window.confirms = []; window.confirm = (m) => (window.confirms.push(m), true); true`);
     if (!(await clickRowButton("stt", "Remove"))) throw new Error("custom STT row has no Remove");
     await waitFor(
       () => rowState("stt").then((r) => r.status === "Removing…"),
@@ -737,6 +738,15 @@ app.whenReady().then(async () => {
       "failed Remove from list did not appear in the cleanup row"
     );
     const listedFailure = await rowState("cleanup");
+    const confirms = await js(`JSON.stringify(window.confirms)`).then(JSON.parse);
+    check(
+      "removing an installed custom model warns that its download is deleted; an uninstalled one doesn't",
+      confirms.length === 2 &&
+        confirms[0].includes("downloaded files") &&
+        confirms[0].includes(customStt.label) &&
+        confirms[1] === `Remove ${customListed.label} from your models?`,
+      JSON.stringify(confirms)
+    );
     check(
       "failed custom model removals show the error and keep the entry",
       sttFailure.select === customStt.id &&

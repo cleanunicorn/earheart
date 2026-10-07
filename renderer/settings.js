@@ -656,7 +656,12 @@ async function removeModel(kind, modelId) {
 async function removeCustomModel(modelId) {
   const info = [...modelStatus.stt, ...modelStatus.cleanup].find((m) => m.id === modelId);
   const label = info ? info.label : modelId;
-  if (!confirm(`Remove ${label} from your models?`)) return;
+  // An installed custom model loses its download too; say so, like the
+  // curated models' confirm does.
+  const question = info?.installed
+    ? `Remove ${label} and its downloaded files? You'll need to download it again to use it.`
+    : `Remove ${label} from your models?`;
+  if (!confirm(question)) return;
   setRowRemoving(modelId, true);
   const res = await earheart.invoke("models:remove-custom", { modelId });
   setRowRemoving(modelId, false);

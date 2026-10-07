@@ -40,6 +40,15 @@ function overrideProcess(t, values) {
   }
 }
 
+// Put an environment variable back as it was (or unset) after this test.
+function preserveEnv(t, name) {
+  const before = process.env[name];
+  t.after(() => {
+    if (before === undefined) delete process.env[name];
+    else process.env[name] = before;
+  });
+}
+
 function assetNameFor(platform) {
   if (platform === "darwin") return `Earheart-${LATEST}-arm64-mac.zip`;
   if (platform === "win32") return `Earheart-Setup-${LATEST}.exe`;
@@ -149,13 +158,9 @@ function loadUpdates(t, { stored, isPackaged = false, dictation = "recording", f
       else delete require.cache[p];
     }
   }
-  const feedEnv = process.env.EARHEART_UPDATE_FEED;
+  preserveEnv(t, "EARHEART_UPDATE_FEED");
   process.env.EARHEART_UPDATE_FEED = pathToFileURL(feedDir).href;
-  t.after(() => {
-    updates.dispose();
-    if (feedEnv === undefined) delete process.env.EARHEART_UPDATE_FEED;
-    else process.env.EARHEART_UPDATE_FEED = feedEnv;
-  });
+  t.after(() => updates.dispose());
   const stagingDir = path.join(userData, "updates");
   return {
     updates,
@@ -186,11 +191,7 @@ async function waitFor(cond, what) {
 // Linux AppImage install: APPIMAGE points at the user's (victim) AppImage.
 function asAppImage(t) {
   overrideProcess(t, { platform: "linux" });
-  const before = process.env.APPIMAGE;
-  t.after(() => {
-    if (before === undefined) delete process.env.APPIMAGE;
-    else process.env.APPIMAGE = before;
-  });
+  preserveEnv(t, "APPIMAGE");
   return (root) => {
     const target = path.join(root, "Earheart.AppImage");
     fs.writeFileSync(target, "old app\n");
@@ -497,11 +498,8 @@ test("installNow refuses a staged file swapped for a symlink, even to the right 
 
 test("installWindows runs the verified setup silently and quits", async (t) => {
   overrideProcess(t, { platform: "win32" });
-  const portable = process.env.PORTABLE_EXECUTABLE_FILE;
+  preserveEnv(t, "PORTABLE_EXECUTABLE_FILE");
   delete process.env.PORTABLE_EXECUTABLE_FILE;
-  t.after(() => {
-    if (portable !== undefined) process.env.PORTABLE_EXECUTABLE_FILE = portable;
-  });
   const ctx = loadUpdates(t, { isPackaged: true });
   ctx.updates.init({});
   await download(ctx.updates);

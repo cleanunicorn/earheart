@@ -5,6 +5,7 @@
 const { resolveCleanup, remoteSamplingBody } = require("../cleanup-styles");
 const { CLEAN_RUNAWAY_MESSAGE } = require("../util/clean-budget");
 const { serviceUrl } = require("./service-url");
+const { requestJson } = require("./transport-error");
 
 // Reasoning models may emit <think>...</think> blocks; strip them.
 function stripThinking(text) {
@@ -14,6 +15,11 @@ function stripThinking(text) {
     // everything after an unmatched opener as reasoning too; clean() will
     // reject it when that leaves no answer; the pipeline preserves raw text.
     .replace(/<think>[\s\S]*$/i, "")
+    // R1-style chat templates put the opener in the prompt, so the reply starts
+    // mid-reasoning and only the closer arrives — sometimes more than once.
+    // Everything up to the last closer is reasoning. Runs last, so a closer that
+    // a paired block already consumed can't take an answer with it.
+    .replace(/^[\s\S]*<\/think>/i, "")
     .trim();
 }
 
@@ -32,24 +38,22 @@ async function clean(transcript, cfg, signal) {
   // the sampling profile; remoteSamplingBody emits only the portable fields.
   const { systemPrompt, sampling } = resolveCleanup(cfg);
 
-  const timeout = AbortSignal.timeout(cfg.timeoutMs || 60000);
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      model: cfg.model,
-      ...remoteSamplingBody(sampling),
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: transcript },
-      ],
-    }),
-    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-  });
-  if (!res.ok) {
-    throw new Error(`Cleanup service error ${res.status}`);
-  }
-  const data = await res.json();
+  const data = await requestJson(
+    url,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: cfg.model,
+        ...remoteSamplingBody(sampling),
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: transcript },
+        ],
+      }),
+    },
+    { service: "Cleanup service", timeoutMs: cfg.timeoutMs || 60000, signal }
+  );
   const choice = data.choices?.[0];
   // The server cut the answer off at its token limit. A half-cleaned
   // transcript is not a cleanup result; throwing sends the pipeline down the

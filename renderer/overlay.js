@@ -964,8 +964,8 @@ earheart.on("pipeline:status", ({ status, detail }) => {
       break;
     case "done": {
       // A note means auto-paste was attempted and failed: say so in the
-      // title, and put the reason where the preview would go — the text is
-      // on the clipboard either way.
+      // title, and put the reason or what to do where the preview would go —
+      // the text is on the clipboard either way.
       const delivered = detail?.note
         ? "Copied — auto-paste failed"
         : DONE_TITLE[detail?.method] ?? "Pasted";

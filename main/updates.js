@@ -36,6 +36,7 @@ const settings = require("./settings");
 const windows = require("./windows");
 const dictation = require("./pipeline");
 const logger = require("./util/logger");
+const { createNotifier } = require("./setup-notices");
 const { ensureMacSignature } = require("./util/mac-signature");
 
 const CHECK_DELAY_MS = 10_000;
@@ -323,6 +324,16 @@ async function fetchNotes(latest) {
   }
 }
 
+// Keeps each shown update notice referenced so its click (open Settings) still
+// works after a wait. No notification service means no notice: the tray menu
+// and Settings carry the update too.
+const updateNotifier = createNotifier({
+  Notification,
+  openSettings: () => windows.openSettings(),
+  logger,
+  settingsWhenUnsupported: false,
+});
+
 function notifyAvailable(version) {
   if (settings.get().updates.remind === false) return;
   try {
@@ -330,7 +341,7 @@ function notifyAvailable(version) {
     // update" is a chore, "this is what you get" is news. The where-to-update
     // line stays as the fallback (and lives on the prompt and in Settings).
     const headline = state.notes[0] && state.notes[0].items[0];
-    const note = new Notification({
+    updateNotifier.show({
       title: `Earheart ${version} is available`,
       body:
         headline ||
@@ -338,8 +349,6 @@ function notifyAvailable(version) {
           ? "Update from the prompt on screen, the tray menu, or Settings → Advanced."
           : "Download it from the releases page (see Settings → Advanced)."),
     });
-    note.on("click", () => windows.openSettings());
-    note.show();
   } catch (err) {
     logger.warn(`update notification failed: ${err.message}`);
   }

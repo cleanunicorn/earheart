@@ -48,8 +48,20 @@ function rotateIfLarge(file, maxBytes = MAX_BYTES) {
   }
 }
 
+// An Error's stack leaves out its cause, which is where a wrapped error keeps
+// the technical reason (transport-error.js, deliver.js). Follow the chain a few
+// levels, so the log has it and a cause that points back at itself stops.
+const CAUSE_DEPTH = 3;
+
+function fmtError(err, depth = 0) {
+  const text = err.stack || err.message;
+  if (err.cause === undefined || depth >= CAUSE_DEPTH) return text;
+  const cause = err.cause instanceof Error ? fmtError(err.cause, depth + 1) : fmt(err.cause);
+  return `${text}\nCaused by: ${cause}`;
+}
+
 function fmt(value) {
-  if (value instanceof Error) return value.stack || value.message;
+  if (value instanceof Error) return fmtError(value);
   if (typeof value === "string") return value;
   try {
     return JSON.stringify(value);

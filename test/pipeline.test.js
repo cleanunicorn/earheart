@@ -31,10 +31,14 @@ function loadPipelineWith({ engines, settings, overrides = {} }) {
       app: { getPath: () => os.tmpdir() },
       ipcMain: { on() {} },
       Notification: class {
+        static isSupported() {
+          return true;
+        }
+        on() {}
         show() {}
       },
     },
-    [resolveFrom("./windows")]: { sendToOverlay() {}, showOverlay() {}, hideOverlay() {} },
+    [resolveFrom("./windows")]: { sendToOverlay() {}, showOverlay() {}, hideOverlay() {}, openSettings() {} },
     [resolveFrom("./settings")]: settings,
     [resolveFrom("./services/route")]: { transcribe: async () => "", clean: async () => "" },
     [resolveFrom("./engines")]: engines,
@@ -234,6 +238,7 @@ function dictationRig({
   deliver: deliverText,
   onHistory,
   clean: cleanupText,
+  notificationThrows = false,
   sttReadiness = () => ({ ok: true }),
   notificationsSupported = true,
 } = {}) {
@@ -246,6 +251,7 @@ function dictationRig({
     delivered: [],
     history: [],
     notifications: [],
+    logs: [],
     statuses: [],
     settingsEvents: [],
     lastStart: null,
@@ -287,6 +293,7 @@ function dictationRig({
             return notificationsSupported;
           }
           constructor(opts) {
+            if (notificationThrows) throw new Error("no notification service");
             this.opts = opts;
             this.handlers = {};
           }
@@ -294,7 +301,7 @@ function dictationRig({
             this.handlers[event] = fn;
           }
           show() {
-            log.notifications.push(this.opts);
+            log.notifications.push({ ...this.opts, click: this.handlers.click });
             log.notes.push(this);
           }
         },
@@ -348,6 +355,11 @@ function dictationRig({
           liveDeps = deps;
           return { cancel() {}, handleAudio() {}, snapshotFinal: () => snapshot };
         },
+      },
+      "./util/logger": {
+        info() {},
+        warn: (...args) => log.logs.push(["warn", ...args]),
+        error: (...args) => log.logs.push(["error", ...args]),
       },
       "./util/rtf": {
         createPersistedRtfEstimator: () => ({ record() {}, progressAt: () => 0.5, estimate: () => 0.1 }),
@@ -736,7 +748,87 @@ test("pipeline: failed cleanup delivers raw once, records failure and notifies",
   assert.strictEqual(rig.log.history[0].raw, "Keep these words.");
   assert.strictEqual(rig.log.history[0].text, "Keep these words.");
   assert.strictEqual(rig.log.history[0].cleaned, false);
-  assert.ok(rig.log.notifications.some((entry) => /cleanup failed/.test(entry.title)));
+  // The title is the half of the sentence that says the raw transcript was
+  // used (CLEAN_RUNAWAY_MESSAGE leaves it out on purpose); the body is the
+  // client's fixed message and never the dictated text.
+  const notes = rig.log.notifications.filter((entry) => /cleanup failed/.test(entry.title));
+  assert.strictEqual(notes.length, 1);
+  assert.match(notes[0].title, /cleanup failed, used raw transcript/);
+  assert.strictEqual(notes[0].body, "Cleanup returned no usable text");
+  const line = rig.log.logs.find(([, label]) => label === "cleanup failed:");
+  assert.ok(line, "the failure is logged");
+  assert.strictEqual(line[2].message, "Cleanup returned no usable text");
+  for (const text of [notes[0].body, String(line[2].message)]) {
+    assert.doesNotMatch(text, /Keep these words/);
+  }
+});
+
+// Every pipeline notification leads to Settings, where the service, key and
+// paste options live: clicking one must open it.
+function assertClickOpensSettings(rig, entry) {
+  assert.strictEqual(typeof entry.click, "function", `"${entry.title}" has a click action`);
+  const before = rig.log.settingsOpened;
+  entry.click();
+  assert.strictEqual(rig.log.settingsOpened, before + 1);
+}
+
+test("pipeline: a failed transcription notifies, and the click opens Settings", async () => {
+  // The one path where the dictation is lost: the overlay line is gone in
+  // five seconds, so a notification has to carry it.
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => {
+      throw new Error("Couldn't reach api.example.test");
+    },
+  });
+  await rig.dictate(speechWav(1));
+  assert.ok(rig.log.statuses.includes("error"));
+  assert.deepStrictEqual(rig.log.delivered, []);
+  assert.strictEqual(rig.log.notifications.length, 1);
+  const [note] = rig.log.notifications;
+  assert.strictEqual(note.title, "Earheart: dictation failed, nothing was delivered");
+  assert.strictEqual(note.body, "Couldn't reach api.example.test");
+  assertClickOpensSettings(rig, note);
+});
+
+test("pipeline: the interrupted, cleanup-failed and paste-failed notifications open Settings", async () => {
+  const rig = dictationRig({
+    cleanup: true,
+    // 50 s of pause-less speech decodes in three pieces; the worker dies on
+    // the second and its retry, so the transcript is incomplete.
+    transcribe: async (n) => {
+      if (n === 1 || n === 2) throw exited();
+      return `w${n}`;
+    },
+    clean: async () => {
+      throw new Error("Cleanup service error 503");
+    },
+    deliver: async (text) => {
+      rig.log.delivered.push(text);
+      return { method: "clipboard", note: "Auto-paste failed", hint: "Paste it with Ctrl+V" };
+    },
+  });
+  await rig.dictate(loudWav(50));
+  const titles = rig.log.notifications.map((entry) => entry.title);
+  assert.ok(titles.some((t) => /interrupted/.test(t)), titles.join(", "));
+  assert.ok(titles.some((t) => /cleanup failed/.test(t)), titles.join(", "));
+  assert.ok(titles.some((t) => /auto-paste failed/.test(t)), titles.join(", "));
+  for (const entry of rig.log.notifications) assertClickOpensSettings(rig, entry);
+});
+
+test("pipeline: a notification that can't be shown never costs the user's words", async () => {
+  const rig = dictationRig({
+    cleanup: true,
+    notificationThrows: true,
+    transcribe: async () => "Keep these words.",
+    clean: async () => {
+      throw new Error("Cleanup service error 503");
+    },
+  });
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(rig.log.delivered, ["Keep these words."]);
+  assert.strictEqual(rig.log.history[0].text, "Keep these words.");
+  assert.ok(rig.log.statuses.includes("done"));
 });
 
 /* ---------------- missing speech model (#194) ---------------- */
@@ -812,4 +904,45 @@ test("pipeline: without a notification service a missing model opens Settings", 
   assert.strictEqual(rig.pipeline.getState(), "idle");
   assert.strictEqual(rig.log.notifications.length, 0);
   assert.strictEqual(rig.log.settingsOpened, 1);
+});
+
+test("pipeline: without a notification service a failed dictation opens nothing", async () => {
+  // The overlay already said it; Settings popping up uninvited would not help.
+  const rig = dictationRig({
+    engine: "remote",
+    notificationsSupported: false,
+    transcribe: async () => {
+      throw new Error("Couldn't reach api.example.test");
+    },
+  });
+  await rig.dictate(speechWav(1));
+  assert.ok(rig.log.statuses.includes("error"));
+  assert.strictEqual(rig.log.notifications.length, 0);
+  assert.strictEqual(rig.log.settingsOpened, 0);
+});
+
+test("pipeline: a failure after the words were delivered doesn't say the dictation was lost", async () => {
+  const rig = dictationRig({
+    transcribe: async () => "Delivered words.",
+    onHistory: () => {
+      throw new Error("history disk full");
+    },
+  });
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(rig.log.delivered, ["Delivered words."]);
+  assert.ok(!rig.log.notifications.some((n) => /dictation failed/.test(n.title)), "no lost-dictation notice");
+  assert.ok(!rig.log.statuses.includes("error"));
+  assert.ok(rig.log.logs.some(([level, label]) => level === "error" && label === "pipeline failed:"));
+});
+
+test("pipeline: a long error is clipped to the notification limit", async () => {
+  const { BODY_MAX } = require("../main/setup-notices");
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => {
+      throw new Error("x".repeat(400));
+    },
+  });
+  await rig.dictate(speechWav(1));
+  assert.strictEqual(rig.log.notifications[0].body, "x".repeat(BODY_MAX));
 });

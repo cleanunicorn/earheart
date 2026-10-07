@@ -25,7 +25,7 @@ const { createPersistedRtfEstimator } = require("./util/rtf");
 const { wavDurationSec, wavSliceFromFrame } = require("./util/wav");
 const { transcribeChunked } = require("./chunked-decode");
 const logger = require("./util/logger");
-const { createNotifier, sttNotReadyNotice } = require("./setup-notices");
+const { createNotifier, sttNotReadyNotice, BODY_MAX } = require("./setup-notices");
 
 let state = "idle"; // idle | recording | processing
 // Shows the "model not downloaded" notice; its click opens Settings.
@@ -37,6 +37,25 @@ const setupNotifier = createNotifier({
 let session = 0; // current dictation session id
 let abortController = null;
 const stateListeners = new Set();
+
+// Notices about a dictation that went wrong; the fix lives in Settings (the
+// service, its key, the paste tool), so clicking one opens it. Without a
+// notification service they open nothing: the overlay has already said what
+// happened, and a window popping up on every failed cleanup would be worse.
+// The notifier catches its own failures — these run on the fallback paths and
+// must never cost the user's words.
+const failureNotifier = createNotifier({
+  Notification,
+  openSettings: () => windows.openSettings(),
+  logger,
+  settingsWhenUnsupported: false,
+});
+
+// Bodies are clipped to the shared limit, so a long native error can't push
+// the rest of the notice out of view.
+function notify({ title, body }) {
+  failureNotifier.show({ title, body: String(body).slice(0, BODY_MAX) });
+}
 
 // Live preview (the streaming partial transcript shown while recording) lives in
 // its own module; the pipeline just feeds it audio and cancels it at the right
@@ -433,6 +452,9 @@ async function process(sid, wavArrayBuffer) {
   abortController = controller;
   const { signal } = controller;
   const wav = Buffer.from(wavArrayBuffer);
+  // Once deliver() returns, the words are on the clipboard or pasted; a later
+  // failure (history, the done card) must not tell the user they were lost.
+  let delivered = false;
   const stale = () => session !== sid || signal.aborted;
 
   const builtinCleanup = cfg.cleanup.enabled && cfg.cleanup.engine === "builtin";
@@ -470,10 +492,10 @@ async function process(sid, wavArrayBuffer) {
       // part-way). What was recovered still goes through cleanup and delivery
       // like any dictation; this says it is not the whole thing.
       logger.warn("transcription incomplete: delivering the recovered text");
-      new Notification({
+      notify({
         title: "Earheart: transcription interrupted",
         body: "The speech engine stopped part-way; delivered the text recovered so far.",
-      }).show();
+      });
     }
 
     let text = raw;
@@ -487,17 +509,18 @@ async function process(sid, wavArrayBuffer) {
         if (stale()) return;
         // Cleanup is an enhancement: fall back to the raw transcript and
         // surface what happened instead of dropping the dictation.
-        logger.error("cleanup failed:", err.message);
-        new Notification({
+        logger.error("cleanup failed:", err);
+        notify({
           title: "Earheart: cleanup failed, used raw transcript",
-          body: String(err.message).slice(0, 180),
-        }).show();
+          body: err.message,
+        });
       }
       if (stale()) return;
     }
 
     overlayStatus("delivering");
     const result = await deliver(text, cfg.output, signal);
+    delivered = true;
     if (cfg.history.enabled) {
       history.add(
         { raw, text, cleaned, delivered: result.method, ...(partial ? { incomplete: true } : {}) },
@@ -511,10 +534,10 @@ async function process(sid, wavArrayBuffer) {
       // The overlay's detail row clips after a couple of dozen characters and
       // hides itself seconds later; the full instruction needs somewhere to
       // stay, same as a cleanup failure does.
-      new Notification({
+      notify({
         title: "Earheart: auto-paste failed, copied to clipboard",
-        body: result.hint.slice(0, 180),
-      }).show();
+        body: result.hint,
+      });
     }
     overlayStatus("done", {
       preview: text.length > 120 ? `${text.slice(0, 120)}…` : text,
@@ -528,7 +551,14 @@ async function process(sid, wavArrayBuffer) {
   } catch (err) {
     if (stale()) return;
     logger.error("pipeline failed:", err);
+    if (delivered) {
+      hideOverlaySoon(sid, 1600);
+      return;
+    }
     overlayStatus("error", { message: String(err.message).slice(0, 200) });
+    // Nothing was delivered: this is the one failure that loses the
+    // dictation, and the overlay line is gone in five seconds.
+    notify({ title: "Earheart: dictation failed, nothing was delivered", body: err.message });
     hideOverlaySoon(sid, 5000);
   } finally {
     if (abortController === controller) {

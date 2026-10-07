@@ -330,7 +330,7 @@ function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
     windows.closeSettings();
   });
 
-  // Settings → About: open the error log in the OS default handler so the user
+  // Settings → Advanced → About: open the error log in the OS default handler so the user
   // can read or attach it when something goes wrong. `action` names which of
   // the three outcomes happened so the UI can describe it; the path comes back
   // either way, so even total failure still tells the user where to look.
@@ -364,7 +364,7 @@ function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
     windows.openWizard();
   });
 
-  // Settings → Advanced: report whether auto-paste is allowed, and which
+  // Settings → General: report whether auto-paste is allowed, and which
   // permission blocks it, so the UI can re-check silently (e.g. when the window
   // regains focus after the user toggled a permission) without resetting
   // anything or re-opening System Settings.

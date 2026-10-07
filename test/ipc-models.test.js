@@ -23,7 +23,7 @@ const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(ipcPa
 // lands in `saved` and becomes what the next read returns. `engines` overrides
 // members of the engines facade, `hf` members of services/hf-models, and every
 // window broadcast lands in `broadcasts`.
-function loadIpcHandlers(cfg, { engines = {}, hf = {} } = {}) {
+function loadIpcHandlers(cfg, { engines = {}, hf = {}, route = {} } = {}) {
   const handlers = {};
   const saved = [];
   const broadcasts = [];
@@ -59,7 +59,7 @@ function loadIpcHandlers(cfg, { engines = {}, hf = {} } = {}) {
     [resolveFrom("./windows")]: {
       broadcast: (channel, payload) => broadcasts.push({ channel, payload }),
     },
-    [resolveFrom("./services/route")]: {},
+    [resolveFrom("./services/route")]: route,
     [resolveFrom("./output/deliver")]: {},
     [resolveFrom("./history")]: {},
     [resolveFrom("./autostart")]: {},
@@ -622,3 +622,68 @@ for (const [what, url, message] of [
     assert.ok(!registry.listModels("stt").some((m) => m.custom), "nothing registered");
   });
 }
+
+/* ---------------- Settings Test results (#187) ---------------- */
+
+// The Test buttons show whatever these handlers return. Driven here through
+// the real remote clients against a local server whose error replies echo a
+// key and the dictated text, the way providers do.
+async function withReply(status, body, run) {
+  const server = require("node:http").createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(status, { "content-type": "application/json" });
+      res.end(body);
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    await run(`http://127.0.0.1:${server.address().port}/v1`);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+}
+
+const remoteRoute = {
+  transcribe: require("../main/services/stt").transcribe,
+  clean: require("../main/services/cleanup").clean,
+};
+const SECRETS = /sk-secret-value|sk-client-secret|this is uh a test|private/;
+
+test("the Settings Test results never show a provider's reply", async () => {
+  const { handlers } = loadIpcHandlers({}, { route: remoteRoute });
+  const echo = JSON.stringify({
+    error: { message: "Incorrect API key provided: sk-secret-value; content: um so this is uh a test, private" },
+  });
+
+  await withReply(401, echo, async (baseUrl) => {
+    const cfg = { engine: "remote", baseUrl, apiKey: "sk-client-secret", model: "m" };
+    const stt = await handlers["stt:test"]({}, cfg);
+    assert.deepStrictEqual(stt, { ok: false, error: "STT service error 401 — check the API key in Settings" });
+    const models = await handlers["models:list-remote"]({}, cfg);
+    assert.deepStrictEqual(models, {
+      ok: false,
+      error: "Model list service error 401 — check the API key in Settings",
+    });
+  });
+  await withReply(400, echo, async (baseUrl) => {
+    const cleanup = await handlers["cleanup:test"]({}, { engine: "remote", baseUrl, apiKey: "sk-client-secret", model: "m" });
+    assert.deepStrictEqual(cleanup, { ok: false, error: "Cleanup service error 400" });
+    assert.doesNotMatch(cleanup.error, SECRETS);
+  });
+});
+
+test("the Settings Test results name an unreachable host in plain words", async () => {
+  const { handlers } = loadIpcHandlers({}, { route: remoteRoute });
+  const probe = require("node:http").createServer();
+  await new Promise((resolve) => probe.listen(0, "127.0.0.1", resolve));
+  const host = `127.0.0.1:${probe.address().port}`;
+  await new Promise((resolve) => probe.close(resolve));
+  const cfg = { engine: "remote", baseUrl: `http://${host}/v1`, model: "m" };
+
+  for (const channel of ["stt:test", "cleanup:test", "models:list-remote"]) {
+    const result = await handlers[channel]({}, cfg);
+    assert.deepStrictEqual(result, { ok: false, error: `Couldn't reach ${host}` }, channel);
+  }
+});

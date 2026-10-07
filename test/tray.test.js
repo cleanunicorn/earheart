@@ -85,7 +85,7 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
   const pipeline = { getState: () => "idle", onStateChange() {}, toggle() {}, cancel() {} };
   tray.init({ quit() {} }, pipeline);
   const file = path.join(userData, "settings.json");
-  return { tray, settings, menus, warnings, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
+  return { settings, menus, warnings, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
 }
 
 const item = (menu, label) => menu.find((entry) => entry.label === label);

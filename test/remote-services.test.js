@@ -5,14 +5,10 @@ const { serviceUrl } = require("../main/services/service-url");
 const { transcribe } = require("../main/services/stt");
 const { clean } = require("../main/services/cleanup");
 
-async function withErrorServer(status, body, run) {
-  const server = require("node:http").createServer((req, res) => {
-    req.resume();
-    req.on("end", () => {
-      res.writeHead(status, { "content-type": "application/json" });
-      res.end(body);
-    });
-  });
+// A local server whose handler the test writes: a hang, a stalled or dropped
+// body, a canned reply.
+async function withServer(handler, run) {
+  const server = require("node:http").createServer(handler);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
     await run(`http://127.0.0.1:${server.address().port}/v1`);
@@ -20,6 +16,18 @@ async function withErrorServer(status, body, run) {
     server.closeAllConnections();
     server.close();
   }
+}
+
+// A canned reply, sent once the request body is drained (STT posts a
+// multipart upload; answering before it is read can reset the connection).
+function withErrorServer(status, body, run) {
+  return withServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(status, { "content-type": "application/json" });
+      res.end(body);
+    });
+  }, run);
 }
 
 test("serviceUrl preserves base paths and removes trailing slashes", () => {
@@ -97,19 +105,6 @@ test("remote cleanup rejects blank and thought-only responses but accepts unchan
     assert.strictEqual(await clean("Hello.", { baseUrl }), "Hello.");
   });
 });
-
-// A server whose handler the test writes, for the shapes withErrorServer can't
-// make: a hang, a stalled body.
-async function withServer(handler, run) {
-  const server = require("node:http").createServer(handler);
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  try {
-    await run(`http://127.0.0.1:${server.address().port}/v1`);
-  } finally {
-    server.closeAllConnections();
-    server.close();
-  }
-}
 
 // A port nothing listens on: bind one, then let it go.
 async function closedPortUrl() {

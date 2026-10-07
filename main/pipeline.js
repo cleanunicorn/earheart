@@ -453,7 +453,7 @@ async function process(sid, wavArrayBuffer) {
   const { signal } = controller;
   const wav = Buffer.from(wavArrayBuffer);
   // Once deliver() returns, the words are on the clipboard or pasted; a later
-  // failure (history, the done card) must not tell the user they were lost.
+  // failure (the done card) must not tell the user they were lost.
   let delivered = false;
   const stale = () => session !== sid || signal.aborted;
 
@@ -518,16 +518,22 @@ async function process(sid, wavArrayBuffer) {
       if (stale()) return;
     }
 
+    // History first: the final text is the user's as soon as it exists,
+    // whatever delivery does next (a cancel mid-keystroke, a paste tool that
+    // throws). And history never blocks delivery — a failure here is logged
+    // and the words still go out.
+    if (cfg.history.enabled) {
+      try {
+        history.add({ raw, text, cleaned, ...(partial ? { incomplete: true } : {}) }, cfg.history);
+        windows.sendToSettings("history:changed");
+      } catch (err) {
+        logger.error("history add failed:", err);
+      }
+    }
+
     overlayStatus("delivering");
     const result = await deliver(text, cfg.output, signal);
     delivered = true;
-    if (cfg.history.enabled) {
-      history.add(
-        { raw, text, cleaned, delivered: result.method, ...(partial ? { incomplete: true } : {}) },
-        cfg.history
-      );
-      windows.sendToSettings("history:changed");
-    }
     if (stale()) return;
 
     if (result.hint) {

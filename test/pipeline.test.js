@@ -501,6 +501,9 @@ test("pipeline: tray cancellation during delivery still records the transcript",
   const sid = rig.log.lastStart.sid;
   rig.handlers["audio:captured"]({}, { sid, wav: speechWav(1) });
   await deliveryStarted;
+  // The words are the user's as soon as they exist: history has them before
+  // the paste keystroke is even attempted, so no cancel can lose them.
+  assert.strictEqual(rig.log.history.length, 1, "history is written before delivery starts");
   rig.pipeline.cancel();
   assert.strictEqual(deliverySignal.aborted, true, "tray Cancel still aborts delivery");
   assert.strictEqual(rig.pipeline.getState(), "idle");
@@ -510,7 +513,22 @@ test("pipeline: tray cancellation during delivery still records the transcript",
   assert.deepStrictEqual(rig.log.delivered, ["dictated words"]);
   assert.strictEqual(rig.log.history.length, 1);
   assert.strictEqual(rig.log.history[0].raw, "dictated words");
-  assert.strictEqual(rig.log.history[0].delivered, "cancelled");
+});
+
+test("pipeline: a delivery that throws still keeps the transcript in history", async () => {
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => "dictated words",
+    deliver: async () => {
+      throw new Error("paste tool exploded");
+    },
+  });
+  await rig.dictate(speechWav(1));
+  assert.strictEqual(rig.log.history.length, 1, "exactly one history row");
+  assert.strictEqual(rig.log.history[0].text, "dictated words");
+  // Nothing reached the target app, so the user is still told so.
+  assert.ok(rig.log.statuses.includes("error"));
+  assert.ok(rig.log.notifications.some((n) => /dictation failed/.test(n.title)));
 });
 
 test("pipeline: no built-in final decode exceeds 20 s, on every assembly path", async () => {
@@ -921,7 +939,7 @@ test("pipeline: without a notification service a failed dictation opens nothing"
   assert.strictEqual(rig.log.settingsOpened, 0);
 });
 
-test("pipeline: a failure after the words were delivered doesn't say the dictation was lost", async () => {
+test("pipeline: a history failure never costs the user's words or says they were lost", async () => {
   const rig = dictationRig({
     transcribe: async () => "Delivered words.",
     onHistory: () => {
@@ -929,10 +947,12 @@ test("pipeline: a failure after the words were delivered doesn't say the dictati
     },
   });
   await rig.dictate(speechWav(1));
+  // History runs before delivery now, so its failure must not block the paste.
   assert.deepStrictEqual(rig.log.delivered, ["Delivered words."]);
   assert.ok(!rig.log.notifications.some((n) => /dictation failed/.test(n.title)), "no lost-dictation notice");
   assert.ok(!rig.log.statuses.includes("error"));
-  assert.ok(rig.log.logs.some(([level, label]) => level === "error" && label === "pipeline failed:"));
+  assert.ok(rig.log.statuses.includes("done"));
+  assert.ok(rig.log.logs.some(([level, label]) => level === "error" && label === "history add failed:"));
 });
 
 test("pipeline: a long error is clipped to the notification limit", async () => {

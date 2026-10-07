@@ -2,7 +2,8 @@
 //
 // "paste" mode writes the text to the clipboard and simulates the platform
 // paste keystroke (Cmd+V / Ctrl+V) in the focused application, optionally
-// restoring the previous clipboard contents afterwards.
+// restoring the previous clipboard contents afterwards — in every format the
+// user had there (an image, HTML, RTF, a file copy), not just the plain text.
 // "paste-copy" mode pastes the same way but always leaves the transcript on
 // the clipboard (never restores the previous contents).
 // "clipboard" mode only copies, leaving pasting to the user.
@@ -195,6 +196,62 @@ async function simulatePaste(signal) {
   }
 }
 
+// A file copy's references. Only writeBuffer() can put them back, and, like
+// writeText(), it replaces every other format (checked against Electron 42
+// under Xvfb: write({...}) keeps its keys together; writeText and writeBuffer
+// each leave only what they wrote).
+const URI_LIST_FORMAT = "text/uri-list";
+
+/**
+ * What the clipboard holds right now, in every form Electron can read back.
+ * readText() alone is not enough: a screenshot, a file copy or rich text all
+ * read as "" there, and writing that "" back would destroy them.
+ * @returns {{text?: string, html?: string, rtf?: string, image?: object,
+ *   uris?: Buffer} | null} null when nothing is capturable — an empty
+ *   clipboard, or only formats Electron cannot read — so the caller skips the
+ *   restore instead of overwriting the user's contents.
+ */
+function snapshotClipboard() {
+  const formats = clipboard.availableFormats();
+  const snap = {};
+  const text = clipboard.readText();
+  if (text) snap.text = text;
+  if (formats.includes("text/html")) {
+    const html = clipboard.readHTML();
+    if (html) snap.html = html;
+  }
+  if (formats.includes("text/rtf")) {
+    const rtf = clipboard.readRTF();
+    if (rtf) snap.rtf = rtf;
+  }
+  // Only decode an image when one is advertised: a screenshot is megabytes.
+  if (formats.some((format) => format.startsWith("image/"))) {
+    const image = clipboard.readImage();
+    if (!image.isEmpty()) snap.image = image;
+  }
+  if (formats.includes(URI_LIST_FORMAT)) {
+    const uris = clipboard.readBuffer(URI_LIST_FORMAT);
+    if (uris.length > 0) snap.uris = uris;
+  }
+  return Object.keys(snap).length > 0 ? snap : null;
+}
+
+/** Put a snapshotClipboard() result back, as one write. */
+function restoreSnapshot(snap) {
+  const { uris, ...data } = snap;
+  // A file copy also lists the paths as plain text, but the references are
+  // what a paste into a file manager uses and the two cannot ride together.
+  // Anything richer (an image, HTML, RTF) alongside them wins instead.
+  if (uris && !data.html && !data.rtf && !data.image) {
+    clipboard.writeBuffer(URI_LIST_FORMAT, uris);
+    return;
+  }
+  clipboard.write(data);
+}
+
+// The restore armed by the last paste: `{ timer, text, snap }`, where `text` is
+// the transcript it put on the clipboard and `snap` what it promised to put
+// back. One at a time: a new dictation settles the previous one first.
 let pendingRestore = null;
 
 /**
@@ -208,16 +265,22 @@ let pendingRestore = null;
  */
 async function deliver(text, cfg, signal) {
   if (signal?.aborted) return { method: "cancelled" };
-  // A restore scheduled by a previous dictation must not clobber this one.
+  // A restore scheduled by a previous dictation must not fire under this one,
+  // but its promise still stands: if that transcript is still on the
+  // clipboard, put the user's contents back now, before this dictation takes
+  // its own snapshot — otherwise re-dictating within the second loses them.
   if (pendingRestore) {
-    clearTimeout(pendingRestore);
+    const { timer, text: previousText, snap } = pendingRestore;
+    clearTimeout(timer);
     pendingRestore = null;
+    if (clipboard.readText() === previousText) restoreSnapshot(snap);
   }
   const pasting = cfg.mode === "paste" || cfg.mode === "paste-copy";
   // Only plain "paste" mode restores; "paste-copy" exists precisely to keep
-  // the transcript on the clipboard after pasting.
+  // the transcript on the clipboard after pasting. `null` means no restore —
+  // disabled, or nothing on the clipboard worth putting back.
   const previous =
-    cfg.mode === "paste" && cfg.restoreClipboard ? clipboard.readText() : null;
+    cfg.mode === "paste" && cfg.restoreClipboard ? snapshotClipboard() : null;
   clipboard.writeText(text);
 
   if (!pasting) {
@@ -232,7 +295,7 @@ async function deliver(text, cfg, signal) {
     // before the keystroke should keep that promise too, but only if another
     // app has not replaced our transcript in the meantime.
     if (previous !== null && clipboard.readText() === text) {
-      clipboard.writeText(previous);
+      restoreSnapshot(previous);
     }
     return { method: "cancelled" };
   }
@@ -270,10 +333,11 @@ async function deliver(text, cfg, signal) {
   if (previous !== null) {
     // Wait for the target app to consume the clipboard before restoring it,
     // and only restore if nothing else has written to it since.
-    pendingRestore = setTimeout(() => {
+    const timer = setTimeout(() => {
       pendingRestore = null;
-      if (clipboard.readText() === text) clipboard.writeText(previous);
+      if (clipboard.readText() === text) restoreSnapshot(previous);
     }, 1000);
+    pendingRestore = { timer, text, snap: previous };
   }
   return { method: cfg.mode };
 }

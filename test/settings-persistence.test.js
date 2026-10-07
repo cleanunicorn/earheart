@@ -58,6 +58,19 @@ function makeSettingsDir(t) {
   return dir;
 }
 
+// Replace fs.renameSync with a failing stub for the duration of `fn`.
+function withFailingRename(fn) {
+  const originalRename = fs.renameSync;
+  fs.renameSync = () => {
+    throw new Error("simulated rename failure");
+  };
+  try {
+    return fn();
+  } finally {
+    fs.renameSync = originalRename;
+  }
+}
+
 test("settings save replaces the file and leaves no partial temp file", (t) => {
   const dir = makeSettingsDir(t);
   const settings = loadSettings(dir);
@@ -81,15 +94,7 @@ test("a failed replacement preserves the previous settings", (t) => {
   const settings = loadSettings(dir);
   settings.save({ hotkey: "Working" });
 
-  const originalRename = fs.renameSync;
-  fs.renameSync = () => {
-    throw new Error("simulated rename failure");
-  };
-  try {
-    assert.throws(() => settings.save({ hotkey: "Broken" }), /rename failure/);
-  } finally {
-    fs.renameSync = originalRename;
-  }
+  assert.throws(() => withFailingRename(() => settings.save({ hotkey: "Broken" })), /rename failure/);
 
   const file = path.join(dir, "settings.json");
   assert.strictEqual(JSON.parse(fs.readFileSync(file, "utf8")).hotkey, "Working");
@@ -116,19 +121,6 @@ test("a saved cleanup model survives a new default", (t) => {
   const fresh = makeSettingsDir(t);
   assert.strictEqual(loadSettings(fresh).get().cleanup.builtin.model, "cleanup-default");
 });
-
-// Replace fs.renameSync with a failing stub for the duration of `fn`.
-function withFailingRename(fn) {
-  const originalRename = fs.renameSync;
-  fs.renameSync = () => {
-    throw new Error("simulated rename failure");
-  };
-  try {
-    return fn();
-  } finally {
-    fs.renameSync = originalRename;
-  }
-}
 
 function readFile(dir) {
   return JSON.parse(fs.readFileSync(path.join(dir, "settings.json"), "utf8"));

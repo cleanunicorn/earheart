@@ -251,6 +251,7 @@ function dictationRig({
     delivered: [],
     history: [],
     notifications: [],
+    logs: [],
     statuses: [],
     settingsEvents: [],
     lastStart: null,
@@ -354,6 +355,11 @@ function dictationRig({
           liveDeps = deps;
           return { cancel() {}, handleAudio() {}, snapshotFinal: () => snapshot };
         },
+      },
+      "./util/logger": {
+        info() {},
+        warn: (...args) => log.logs.push(["warn", ...args]),
+        error: (...args) => log.logs.push(["error", ...args]),
       },
       "./util/rtf": {
         createPersistedRtfEstimator: () => ({ record() {}, progressAt: () => 0.5, estimate: () => 0.1 }),
@@ -742,7 +748,19 @@ test("pipeline: failed cleanup delivers raw once, records failure and notifies",
   assert.strictEqual(rig.log.history[0].raw, "Keep these words.");
   assert.strictEqual(rig.log.history[0].text, "Keep these words.");
   assert.strictEqual(rig.log.history[0].cleaned, false);
-  assert.ok(rig.log.notifications.some((entry) => /cleanup failed/.test(entry.title)));
+  // The title is the half of the sentence that says the raw transcript was
+  // used (CLEAN_RUNAWAY_MESSAGE leaves it out on purpose); the body is the
+  // client's fixed message and never the dictated text.
+  const notes = rig.log.notifications.filter((entry) => /cleanup failed/.test(entry.title));
+  assert.strictEqual(notes.length, 1);
+  assert.match(notes[0].title, /cleanup failed, used raw transcript/);
+  assert.strictEqual(notes[0].body, "Cleanup returned no usable text");
+  const line = rig.log.logs.find(([, label]) => label === "cleanup failed:");
+  assert.ok(line, "the failure is logged");
+  assert.strictEqual(line[2].message, "Cleanup returned no usable text");
+  for (const text of [notes[0].body, String(line[2].message)]) {
+    assert.doesNotMatch(text, /Keep these words/);
+  }
 });
 
 // Every pipeline notification leads to Settings, where the service, key and

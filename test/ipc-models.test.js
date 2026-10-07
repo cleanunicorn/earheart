@@ -332,7 +332,7 @@ test("removing one model leaves another model's download running", async (t) => 
 
 // Two Hugging Face listings of the same repo + quant at different commits: the
 // custom id is the same, the definition is not.
-function ggufListing(commit, { bytes = 12, sha256 } = {}) {
+function ggufListing(commit) {
   return {
     repo: "o/r-GGUF",
     commit,
@@ -340,12 +340,11 @@ function ggufListing(commit, { bytes = 12, sha256 } = {}) {
     variants: [
       {
         label: "Q4_K_M",
-        totalBytes: bytes,
+        totalBytes: 12,
         files: [
           {
             name: "r-Q4_K_M.gguf",
-            bytes,
-            ...(sha256 ? { sha256 } : {}),
+            bytes: 12,
             url: `https://huggingface.co/o/r-GGUF/resolve/${commit}/r-Q4_K_M.gguf`,
           },
         ],

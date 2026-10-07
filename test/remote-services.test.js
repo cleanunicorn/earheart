@@ -135,6 +135,7 @@ test("remote STT returns trimmed text and rejects a reply without it", async () 
   await withErrorServer(500, JSON.stringify({ error: { message: "secret-token-123" } }), async (baseUrl) => {
     await assert.rejects(transcribe(Buffer.alloc(0), { baseUrl }), (err) => {
       assert.strictEqual(err.message, "STT service error 500");
+      assert.strictEqual(err.cause, undefined);
       return true;
     });
   });
@@ -144,6 +145,7 @@ test("remote cleanup reports a server error and a reply with no content", async 
   await withErrorServer(503, JSON.stringify({ error: { message: "my private words" } }), async (baseUrl) => {
     await assert.rejects(clean("my private words", { baseUrl, model: "m" }), (err) => {
       assert.strictEqual(err.message, "Cleanup service error 503");
+      assert.strictEqual(err.cause, undefined);
       return true;
     });
   });
@@ -160,6 +162,8 @@ for (const { name, service, call } of clients) {
         await assert.rejects(call({ baseUrl, apiKey: "sk-client-secret" }), (err) => {
           assert.strictEqual(err.message, `${service} error ${status} — check the API key in Settings`);
           assert.doesNotMatch(err.message, /sk-secret-value|sk-client-secret|private words/);
+          // The body is never read, so nothing from it can ride along either.
+          assert.strictEqual(err.cause, undefined);
           return true;
         });
       });

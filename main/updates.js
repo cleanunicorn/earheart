@@ -509,12 +509,13 @@ function skipVersion() {
 // the verified download for their own binary before it is installed (#186).
 const updateDirPath = () => path.join(app.getPath("userData"), "updates");
 
-// POSIX only: Windows has no uid or mode bits, and %APPDATA% is per-user.
-const hasOwners = () => typeof process.getuid === "function";
+// Whether this runtime has POSIX uids and mode bits (not Windows, where
+// %APPDATA% is per-user anyway).
+const hasUid = () => typeof process.getuid === "function";
 
 // A real directory (not a symlink), ours, and closed to group/other.
 const isPrivateDir = (st) =>
-  st.isDirectory() && (!hasOwners() || (st.uid === process.getuid() && !(st.mode & 0o077)));
+  st.isDirectory() && (!hasUid() || (st.uid === process.getuid() && !(st.mode & 0o077)));
 
 /**
  * The staging dir, created 0700. Anything else found at its path — a symlink
@@ -851,7 +852,7 @@ async function sweepLegacyDir(dir) {
   }
   if (st.isSymbolicLink()) {
     await fsp.rm(dir, { force: true });
-  } else if (!hasOwners() || st.uid === process.getuid()) {
+  } else if (!hasUid() || st.uid === process.getuid()) {
     await fsp.rm(dir, { recursive: true, force: true });
   } else {
     logger.warn(`left ${dir} alone: it belongs to another user`);

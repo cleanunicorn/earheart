@@ -373,7 +373,10 @@ test(
     // for, and both look like a fetch rejection. So probe connectivity once
     // against a host that is deliberately NOT in the registry: if that is
     // unreachable, skip; otherwise every per-URL rejection is a real failure.
-    const head = (url) => fetch(url, { method: "HEAD", redirect: "follow" });
+    // A black-holed network stalls rather than rejects; without a bound each
+    // probe would sit on undici's 300 s default before the skip or failure.
+    const head = (url) =>
+      fetch(url, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(10_000) });
     try {
       await head("https://example.com");
     } catch (err) {

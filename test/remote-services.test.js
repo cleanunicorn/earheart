@@ -37,6 +37,17 @@ test("serviceUrl preserves base paths and removes trailing slashes", () => {
   );
 });
 
+test("serviceUrl doesn't echo a query or fragment from an invalid base", () => {
+  // A key pasted into the URL would otherwise reach the overlay and the log.
+  assert.throws(
+    () => serviceUrl("http//api.example.test/v1?key=sk-in-url#frag", "/models"),
+    (err) => {
+      assert.strictEqual(err.message, "Invalid base URL: http//api.example.test/v1");
+      return true;
+    }
+  );
+});
+
 test("serviceUrl rejects missing, invalid and non-network bases", () => {
   assert.throws(() => serviceUrl("", "/models"), /required/);
   assert.throws(() => serviceUrl("localhost:8080", "/models"), /http or https/);

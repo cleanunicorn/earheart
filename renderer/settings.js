@@ -252,7 +252,7 @@ function populate() {
   $("updates-autocheck").checked = current.updates?.autoCheck !== false;
   $("updates-remind").checked = current.updates?.remind !== false;
   $("max-seconds").value = current.audio.maxRecordingSeconds;
-  $("idle-unload").value = current.engines?.idleUnloadMinutes ?? 2;
+  $("idle-unload").value = current.engines?.idleUnloadMinutes ?? defaults.engines.idleUnloadMinutes;
 
   if (platform !== "linux") {
     $("wayland-note").style.display = "none";
@@ -317,7 +317,10 @@ function collect() {
       // Clamped to the field's own min/max: the markup's limits bind nothing
       // on their own, and a tiny or negative cap ends every dictation at once.
       maxRecordingSeconds: Math.round(
-        numInRange("max-seconds", current.audio?.maxRecordingSeconds ?? 300)
+        numInRange(
+          "max-seconds",
+          current.audio?.maxRecordingSeconds ?? defaults.audio.maxRecordingSeconds
+        )
       ),
     },
     engines: {

@@ -16,6 +16,8 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 
+const { DEFAULTS } = require("../main/settings");
+
 const RENDERER = path.join(__dirname, "..", "renderer");
 const html = fs.readFileSync(path.join(RENDERER, "settings.html"), "utf8");
 const js = fs.readFileSync(path.join(RENDERER, "settings.js"), "utf8");
@@ -328,6 +330,7 @@ function microphonePage(source, page) {
   let payload;
   let invokeCount = 0;
   const context = {
+    defaults: DEFAULTS,
     document: {
       getElementById(id) {
         return elements[id] || baseDocument.getElementById(id);
@@ -576,6 +579,7 @@ function collectLimits({ maxSeconds = "", idle = "", saved = {} }) {
       audio: { deviceId: "", ...saved.audio },
       engines: { ...saved.engines },
     },
+    defaults: DEFAULTS,
     cleanupStyles: [{ id: "clean" }],
     $: (id) => elements[id] || { value: "", checked: false },
     document: { querySelector: () => ({ value: "builtin" }) },
@@ -594,7 +598,7 @@ test("max dictation length is clamped to the field's range on save", () => {
   }
   // Blank keeps what was saved, or the 300 s default when nothing valid was.
   assert.strictEqual(collectLimits({ saved: { audio: { maxRecordingSeconds: 420 } } }).maxSeconds, 420);
-  assert.strictEqual(collectLimits({}).maxSeconds, 300);
+  assert.strictEqual(collectLimits({}).maxSeconds, DEFAULTS.audio.maxRecordingSeconds);
 });
 
 test("idle unload is clamped to the field's range, and blank still means never", () => {
@@ -622,4 +626,6 @@ test("the overlay's recording cap accepts exactly the max-seconds field's range"
   assert.strictEqual(context.cap(Number(max)), Number(max));
   assert.strictEqual(context.cap(Number(min) - 1), 300);
   assert.strictEqual(context.cap(Number(max) + 1), 300);
+  // Its fallback is main's default, written down a second time in overlay.js.
+  assert.strictEqual(context.cap(NaN), DEFAULTS.audio.maxRecordingSeconds);
 });

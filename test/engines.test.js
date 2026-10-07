@@ -2067,9 +2067,13 @@ test("ensureCleanup memo: another model posts its own load, a failed load is not
   const b = facade.ensureCleanup("granite-4.0-micro");
   assert.strictEqual(count(cleanup, "load-cleanup"), 2, "a different model is a different load");
   held[0].reject(new Error("cleanup load failed"));
-  held[1].resolve({ ready: true });
   await assert.rejects(a, /cleanup load failed/);
+  // The settled load must not clear the slot the still-running one now owns.
+  const joined = facade.ensureCleanup("granite-4.0-micro");
+  assert.strictEqual(count(cleanup, "load-cleanup"), 2, "a live load is still joined");
+  held[1].resolve({ ready: true });
   await b;
+  await joined;
 
   const retry = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
   assert.strictEqual(count(cleanup, "load-cleanup"), 3, "a failed load must be retried, not replayed");

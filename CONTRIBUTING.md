@@ -25,7 +25,7 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | `make test` | Run unit tests (`node --test`) |
 | `make smoke` | Boot the app headlessly and exit (CI-style sanity check) |
 | `make overlay-smoke` | Drive the overlay with a fake mic and check capture/UI sync |
-| `make settings-smoke` | Drive the settings window and check the index/scroll-spy contract |
+| `make settings-smoke` | Drive the settings window and check the index/scroll-spy contract and live settings sync |
 | `make icons` | Regenerate app/tray icons into `assets/` |
 | `make screenshots` | Regenerate README screenshots into `docs/screenshots/` |
 | `make dist` | Build installers for the current platform |
@@ -67,8 +67,9 @@ capture contract: "Listening…" only appears once samples actually flow, the
 captured WAV covers everything said from that moment, and stop/cancel racing
 mic startup still resolve. The settings-smoke step drives the real settings
 window and asserts the settings-page contract: every section renders on one
-scroll, the index's scroll-spy highlight and focus handoff work, and the roving
-tabindex is seated at load. CI runs all five on every platform.
+scroll, the index's scroll-spy highlight and focus handoff work, the roving
+tabindex is seated at load, and a setting saved from the tray reaches an open
+Settings window or wizard without discarding unsaved edits. CI runs all five on every platform.
 Built-in models download to Electron's `userData/models` on first use; the
 smoke checks don't need them present.
 

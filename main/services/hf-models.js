@@ -308,8 +308,11 @@ function buildCleanupModel(repoFull, variant) {
 //                 models come from
 //   - whisper     encoder/decoder .onnx + tokens.txt, no joiner — the
 //                 csukuangfj/sherpa-onnx-whisper-* exports
-// A missing joiner is what tells them apart; the engine picks the matching
-// sherpa model config from the `sherpa` map each variant carries.
+// A joiner marks a transducer. A missing joiner does NOT mark Whisper: other
+// encoder-decoder families (NeMo Canary, FireRedASR …) ship the same files, so
+// Whisper needs its own positive marker (see sttFamily) and everything else is
+// rejected rather than guessed. Each variant's `sherpa` map carries the
+// family's explicit modelType, which is what the engine routes on.
 //
 // Repos often ship several precisions of the same model side by side
 // ("encoder.onnx" and "encoder.int8.onnx"), so group the files by precision
@@ -395,6 +398,37 @@ function tokensFor(candidates, encoder) {
   );
 }
 
+// A marker word that stands on its own between non-alphanumerics ("_", "-",
+// "." and "/" all count), so "my_whisper_export" matches and "notwhisperer"
+// doesn't.
+const markerRe = (word) => new RegExp(`(^|[^a-z0-9])${word}([^a-z0-9]|$)`, "i");
+const WHISPER_RE = markerRe("whisper");
+
+// Encoder-decoder families sherpa-onnx ships that Earheart has no config for,
+// by the marker their exports carry. The label is what the user is told.
+const UNSUPPORTED_STT_FAMILIES = [{ marker: markerRe("canary"), label: "NVIDIA NeMo Canary" }];
+
+// The k2-fsa Whisper exports name every file of a bundle after the Whisper
+// model ("tiny.en-encoder.onnx", "distil-small.en-tokens.txt", "turbo-…").
+const WHISPER_PREFIX_RE = /^(distil-)?(tiny|base|small|medium|large(-v\d)?|turbo)(\.en)?$/;
+
+/**
+ * The unsupported encoder-decoder family named anywhere in `text` (repo
+ * names, file names, a saved model's id/label), or null. Shared with the
+ * engine facade so entries saved before discovery checked this are caught
+ * at load time too.
+ * @returns {string|null}
+ */
+function unsupportedSttFamily(text) {
+  const hit = UNSUPPORTED_STT_FAMILIES.find((f) => f.marker.test(text || ""));
+  return hit ? hit.label : null;
+}
+
+// Supported shapes, for the end of every "can't run this" message.
+const SUPPORTED_STT =
+  "Earheart supports sherpa-onnx transducer bundles (encoder, decoder, joiner + tokens.txt), " +
+  "such as Parakeet, and sherpa-onnx Whisper exports (encoder, decoder + tokens.txt)";
+
 // Name a few of the files we did find, so "this isn't a model Earheart can
 // run" never reads as "your repo is empty" when it plainly isn't.
 function samplePaths(files, limit = 3) {
@@ -405,7 +439,8 @@ function samplePaths(files, limit = 3) {
  * List the precisions (int8 / fp16 / fp32 / …) available in a sherpa-onnx
  * transducer or Whisper repo. Same return shape as listGgufQuants; each variant
  * additionally carries the `sherpa` file map the engine wires together — with a
- * `joiner` for transducers and without one for Whisper.
+ * `joiner` for transducers and without one for Whisper. Throws a readable
+ * error for any other encoder-decoder family (Canary, or one it can't name).
  * @returns {Promise<{repo,commit,recommended,variants:Array<{label,totalBytes,files,sherpa}>}>}
  */
 async function listSttVariants({ owner, repo, ref }, fetchImpl, options = {}) {
@@ -434,15 +469,12 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, options = {}) {
     );
   }
   // Which roles the repo has at all, before worrying about precisions or the
-  // symbol table. Encoder + decoder with no joiner is the encoder-decoder
-  // (seq2seq) shape sherpa loads as Whisper; anything else is a model family
-  // the engine has no config for, and saying which part is missing beats
-  // complaining about a tokens.txt that was never the real problem.
+  // symbol table: an encoder and a decoder are needed by every family, and
+  // saying which part is missing beats complaining about a tokens.txt that
+  // was never the real problem.
   const has = (part) => onnx.some((f) => componentOf(f.name) === part);
-  const family = has("joiner") ? "transducer" : "whisper";
-  const missing = ["encoder", "decoder", ...(family === "transducer" ? ["joiner"] : [])].filter(
-    (part) => !has(part)
-  );
+  const hasJoiner = has("joiner");
+  const missing = ["encoder", "decoder"].filter((part) => !has(part));
   if (missing.length) {
     throw new Error(
       `Found ${onnx.length} .onnx file${onnx.length === 1 ? "" : "s"} ` +
@@ -454,12 +486,39 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, options = {}) {
   // sherpa's Whisper exports name it "<model>-tokens.txt"; transducer bundles
   // use a plain "tokens.txt". Match either, and pair one to each encoder below.
   const tokensFiles = byDepth.filter((f) => TOKENS_RE.test(f.name));
+
+  // The family needs a positive marker. A joiner is one. Without it, an
+  // encoder + decoder is only Whisper when something says so: a family we
+  // know we can't run is named before anything else (even a missing
+  // tokens.txt wouldn't be the real problem), and an unidentified bundle is
+  // rejected rather than guessed.
+  const markerText = [`${owner}/${repo}`, ...onnx.map((f) => f.path), ...tokensFiles.map((f) => f.path)].join(" ");
+  const unsupported = hasJoiner ? null : unsupportedSttFamily(markerText);
+  if (unsupported) {
+    throw new Error(`This looks like a ${unsupported} model, which Earheart can't run yet. ${SUPPORTED_STT}.`);
+  }
   if (tokensFiles.length === 0) {
     throw new Error(
-      `Found the ${family === "whisper" ? "encoder and decoder" : "encoder, decoder and joiner"} ` +
+      `Found the ${hasJoiner ? "encoder, decoder and joiner" : "encoder and decoder"} ` +
         ".onnx files, but no tokens.txt — sherpa-onnx needs the bundle's symbol table. " +
         "Hugging Face / optimum ONNX exports keep the vocabulary in tokenizer.json instead; " +
         "look for a sherpa-onnx conversion of the same model (csukuangfj/sherpa-onnx-…)"
+    );
+  }
+  const whisperPrefixed = onnx.some((f) => {
+    const prefix = bundlePrefix(f.name);
+    return WHISPER_PREFIX_RE.test(prefix) && tokensFiles.some((t) => tokensPrefix(t.name) === prefix);
+  });
+  const family = hasJoiner
+    ? "transducer"
+    : WHISPER_RE.test(markerText) || whisperPrefixed
+      ? "whisper"
+      : null;
+  if (!family) {
+    throw new Error(
+      `Couldn't tell which kind of speech model this is (found ${samplePaths(onnx)}). ` +
+        "Encoder and decoder files alone don't identify a model family, and Earheart won't " +
+        `guess one. ${SUPPORTED_STT}.`
     );
   }
 
@@ -525,8 +584,8 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, options = {}) {
       sherpa: {
         encoder: encoder.name,
         decoder: decoder.name,
-        // Omitted for Whisper — its absence is what selects the engine's
-        // whisper model config over the transducer one.
+        // Omitted for Whisper. The engine routes on modelType, and rejects a
+        // map whose joiner and modelType disagree.
         ...(joiner ? { joiner: joiner.name } : {}),
         tokens: tokens.name,
         modelType,
@@ -582,6 +641,7 @@ module.exports = {
   searchUrl,
   listGgufQuants,
   listSttVariants,
+  unsupportedSttFamily,
   recommendedVariant,
   buildCleanupModel,
   buildSttModel,

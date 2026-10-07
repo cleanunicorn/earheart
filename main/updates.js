@@ -513,9 +513,12 @@ const updateDirPath = () => path.join(app.getPath("userData"), "updates");
 // %APPDATA% is per-user anyway).
 const hasUid = () => typeof process.getuid === "function";
 
+// Without uids every entry counts as ours.
+const ownedByUs = (st) => !hasUid() || st.uid === process.getuid();
+
 // A real directory (not a symlink), ours, and closed to group/other.
 const isPrivateDir = (st) =>
-  st.isDirectory() && (!hasUid() || (st.uid === process.getuid() && !(st.mode & 0o077)));
+  st.isDirectory() && ownedByUs(st) && (!hasUid() || !(st.mode & 0o077));
 
 /**
  * The staging dir, created 0700. Anything else found at its path — a symlink
@@ -852,7 +855,7 @@ async function sweepLegacyDir(dir) {
   }
   if (st.isSymbolicLink()) {
     await fsp.rm(dir, { force: true });
-  } else if (!hasUid() || st.uid === process.getuid()) {
+  } else if (ownedByUs(st)) {
     await fsp.rm(dir, { recursive: true, force: true });
   } else {
     logger.warn(`left ${dir} alone: it belongs to another user`);

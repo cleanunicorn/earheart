@@ -97,6 +97,13 @@ let remindWasOn = true;
 const feedBase = () => process.env.EARHEART_UPDATE_FEED || feed.DEFAULT_FEED_BASE;
 const feedOverridden = () => Boolean(process.env.EARHEART_UPDATE_FEED);
 
+// Save update bookkeeping onto fresh settings (never an older snapshot), so
+// a write here can't roll back what another writer saved meanwhile.
+function saveUpdates(fields) {
+  const cfg = settings.get();
+  settings.save({ ...cfg, updates: { ...cfg.updates, ...fields } });
+}
+
 function setState(patch) {
   state = { ...state, ...patch };
   try {
@@ -201,7 +208,7 @@ function armWhatsNew() {
     // card may show again next launch — far better than init() throwing here
     // and main.js never reaching the hotkey registration.
     try {
-      settings.save({ ...cfg, updates: { ...cfg.updates, lastSeenVersion: current } });
+      saveUpdates({ lastSeenVersion: current });
     } catch (err) {
       logger.warn(`could not record the last-seen version: ${err.message}`);
     }
@@ -433,8 +440,7 @@ function dismissPrompt() {
  * interruption, it doesn't hide the update.
  */
 function stopReminding() {
-  const cfg = settings.get();
-  settings.save({ ...cfg, updates: { ...cfg.updates, remind: false } });
+  saveUpdates({ remind: false });
   remindWasOn = false;
   hidePrompt();
 }
@@ -493,8 +499,7 @@ function cancel() {
 
 function skipVersion() {
   if (!state.latest) return;
-  const cfg = settings.get();
-  settings.save({ ...cfg, updates: { ...cfg.updates, skippedVersion: state.latest } });
+  saveUpdates({ skippedVersion: state.latest });
   pendingInfo = null;
   setState({ status: "idle", latest: null });
 }

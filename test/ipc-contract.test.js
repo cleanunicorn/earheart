@@ -68,6 +68,14 @@ const PUSHED_RE = /(?:sendToForms|sendToSettings|sendToOverlay|broadcast|webCont
 const pushed = channels(main, PUSHED_RE);
 const listened = channels(renderer, /earheart\.on\(\s*"([a-z:-]+)"/g);
 
+// The table scan adds no channel the literal call sites don't also name
+// today, so a rotted regex or a renamed property would change no outcome
+// above. Pin its output, as the `action:` scan below pins its own.
+test("the overlay's action tables name exactly the update channels", () => {
+  const tabled = [...channels(renderer, /channel:\s*"([a-z:-]+)"/g)].sort();
+  assert.deepStrictEqual(tabled, ["updates:apply", "updates:cancel", "updates:dismiss", "updates:install"]);
+});
+
 test("every channel the renderers invoke is in the preload INVOKE allowlist", () => {
   assert.ok(invoked.size > 20, `expected many invoked channels, got ${invoked.size}`);
   const missing = [...invoked].filter((c) => !INVOKE.has(c)).sort();

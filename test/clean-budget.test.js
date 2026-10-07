@@ -73,9 +73,7 @@ test("clean cap: scales with the transcript and never reaches zero", () => {
 test("clean cap: the runaway message says what happened, once", () => {
   // It is the body of the cleanup-failed notification, whose title already
   // says the raw transcript was used — repeating that here doubled the clause.
-  assert.doesNotMatch(CLEAN_RUNAWAY_MESSAGE, /raw transcript/i);
-  assert.match(CLEAN_RUNAWAY_MESSAGE, /output token limit/i);
-  assert.doesNotMatch(CLEAN_RUNAWAY_MESSAGE, /repeat/i);
+  assert.strictEqual(CLEAN_RUNAWAY_MESSAGE, "Cleanup reached its output token limit before finishing");
 });
 
 test("clean budget: the refusal message names both numbers", () => {

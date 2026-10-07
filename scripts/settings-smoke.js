@@ -29,9 +29,10 @@
 //  11. Wizard-started downloads survive Settings model changes without
 //      overwriting a concurrent download's state.
 //  12. Failed model removals appear in the row and persistent live region.
-//  13. A hotkey that failed to register at launch shows under its field as soon
-//      as Settings opens, before any Save; a failure about an accelerator the
-//      field no longer holds stays hidden.
+//  13. A record or pause hotkey that failed to register at launch shows under
+//      its field as soon as Settings opens, before any Save; a failure about an
+//      accelerator the field no longer holds stays hidden, unless a failed
+//      restore left the saved hotkey unbound.
 //
 // Run under Electron:
 //
@@ -94,17 +95,22 @@ app.whenReady().then(async () => {
     session.defaultSession.setPermissionRequestHandler((wc, permission, cb) =>
       cb(true)
     );
-    settings.save({ ...settings.get(), audio: { ...settings.get().audio, deviceId: "missing-saved-device" } });
-    // Check 13: the launch registration result main.js would report — the
-    // record hotkey failed on the value now saved; the pause failure is about
-    // an accelerator the field no longer holds (a rejected save, since undone).
+    // A saved pause hotkey, so check 13 can show its launch failure too.
+    settings.save({
+      ...settings.get(),
+      pauseHotkey: "CommandOrControl+Alt+P",
+      audio: { ...settings.get().audio, deviceId: "missing-saved-device" },
+    });
+    // Check 13: the launch registration result main.js would report — both
+    // hotkeys failed on the values now saved.
     const launchHotkeyError = "Could not register the record hotkey (smoke)";
+    const launchPauseError = "Could not register the pause hotkey (smoke)";
     ipc.init({
       applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
       onSettingsChanged: () => {},
       getHotkeyStatus: () => ({
         hotkey: { ok: false, error: launchHotkeyError, accelerator: settings.get().hotkey },
-        pauseHotkey: { ok: false, error: "stale pause failure", accelerator: "Alt+F12" },
+        pauseHotkey: { ok: false, error: launchPauseError, accelerator: settings.get().pauseHotkey },
       }),
     });
     const downloads = new Map();
@@ -153,9 +159,23 @@ app.whenReady().then(async () => {
       JSON.stringify(hotkeyRows)
     );
     check(
-      "a failure about an accelerator no longer in the field stays hidden",
-      hotkeyRows.pause === "",
+      "a pause hotkey that failed at launch shows under its field on open",
+      hotkeyRows.pause === launchPauseError,
       JSON.stringify(hotkeyRows)
+    );
+    // A failure about an accelerator the field no longer holds (a rejected
+    // save, since undone) stays hidden.
+    const staleRow = await js(`(() => {
+      renderHotkeyStatus({
+        hotkey: { ok: true },
+        pauseHotkey: { ok: false, error: "stale pause failure", accelerator: "Alt+F12" },
+      });
+      return document.getElementById("pause-hotkey-status").textContent;
+    })()`);
+    check(
+      "a failure about an accelerator no longer in the field stays hidden",
+      staleRow === "",
+      JSON.stringify(staleRow)
     );
     // A failed swap whose rollback also failed leaves the saved hotkey unbound:
     // the result names the attempted accelerator, the field shows the saved

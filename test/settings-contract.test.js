@@ -33,11 +33,12 @@ const htmlNames = new Set([...html.matchAll(/name="([a-z0-9-]+)"/g)].map((m) => 
 // those template ids so the presence check covers what the script really queries.
 // True when `sel` sits in a rule's selector list of the comment-stripped
 // sheet — not in a comment, not as the prefix of a longer name, not inside
-// a declaration.
+// a declaration, and not only in a pseudo-qualified or :not()-wrapped form
+// (`.field:hover`, `:not(.capturing)`), which leaves the bare class unstyled.
 const cssRules = css.replace(/\/\*[\s\S]*?\*\//g, "");
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function definesRule(sel) {
-  return new RegExp(escapeRegExp(sel) + "(?![\\w-])[^{}]*\\{").test(cssRules);
+  return new RegExp(escapeRegExp(sel) + "(?![\\w:)-])[^{}]*\\{").test(cssRules);
 }
 
 function expand(id) {

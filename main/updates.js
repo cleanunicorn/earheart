@@ -11,6 +11,11 @@
 // Portable/deb/translocated installs can't be updated in place; those get a
 // "download it yourself" path to the releases page instead.
 //
+// Downloads stage in a private userData/updates (0700, replaced if anything
+// else is found there), never the shared temp dir, and are re-verified
+// against the feed's sha512 right before install — another local user must
+// not be able to swap in their own binary (#186).
+//
 // electron-updater is deliberately not used: its macOS half requires a signed
 // app. The feed it would read (latest*.yml, published by CI with every
 // release) is consumed directly instead — see services/update-feed.js.

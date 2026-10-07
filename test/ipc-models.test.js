@@ -451,3 +451,38 @@ test("a download refused while its model is being removed still reports models:d
   gate.resolve();
   assert.strictEqual((await within(removing, 1000, "remove-custom")).ok, true);
 });
+
+test("a second change to a model that is already being changed is refused", async (t) => {
+  t.after(() => registry.setCustomModels([]));
+  const gate = deferred();
+  const removed = [];
+  const { handlers, saved } = loadIpcHandlers(configWith(customCleanup.id), {
+    engines: {
+      remove: async (kind, id) => {
+        await gate.promise;
+        removed.push(id);
+      },
+    },
+  });
+  const first = handlers["models:remove-custom"]({}, { modelId: customCleanup.id });
+  await new Promise((r) => setImmediate(r));
+
+  // A double-clicked Remove sends the same request again mid-delete.
+  // Bounded, so a missing guard fails here instead of waiting on the gate.
+  const second = await within(
+    handlers["models:remove-custom"]({}, { modelId: customCleanup.id }), 1000, "second remove-custom"
+  ).catch((err) => ({ ok: "waited", error: err.message }));
+  const plain = await within(
+    handlers["models:remove"]({}, { kind: "cleanup", modelId: customCleanup.id }), 1000, "models:remove"
+  ).catch((err) => ({ ok: "waited", error: err.message }));
+
+  assert.strictEqual(second.ok, false);
+  assert.match(second.error, /already being changed/);
+  assert.strictEqual(plain.ok, false);
+  assert.strictEqual(saved.length, 0, "the refused requests must not save");
+  gate.resolve();
+  const result = await within(first, 1000, "first remove-custom");
+  assert.strictEqual(result.ok, true);
+  assert.deepStrictEqual(removed, [customCleanup.id]);
+  assert.strictEqual(saved.length, 1);
+});

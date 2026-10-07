@@ -255,6 +255,18 @@ Design constraints worth keeping:
   notification, and marked `incomplete` — on the overlay's done card and in
   the History entry, not only in the stored record. See
   [docs/long-recordings.md](docs/long-recordings.md).
+- **Settings have one commit path.** `settings.get()` returns a copy; nothing
+  changes until `settings.save()` writes the file, so a failed save leaves
+  memory equal to disk. Every writer spread-saves from a fresh `get()` read at
+  the moment it saves, never a snapshot captured earlier (a menu build, or
+  before an `await`). The Settings and wizard forms save through
+  `commitSettings` in `main/ipc.js`: keys only main writes (overlay position,
+  custom models, updater bookkeeping) always keep their live value, and fields
+  both sides write (output mode, update reminders) keep a main-side change the
+  form hadn't seen yet, judged against the `baseline` the form sends. Every
+  successful save fires `settings.onChanged`, which rebuilds the tray and
+  sends `settings:changed` to the open forms; they apply only the fields that
+  changed, so unsaved edits survive.
 - **The UI has a design system.** [DESIGN.md](DESIGN.md) is derived from the
   shipped CSS and governs the overlay, settings and wizard: one coral accent
   reserved for the voice, filled-white for the primary action, no drop

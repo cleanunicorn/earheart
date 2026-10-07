@@ -42,8 +42,25 @@ function partialPaths(dest) {
   return { part, meta: `${part}.json` };
 }
 
-// Read the completion marker. Returns the recorded {name: size} map, an empty
-// map for a legacy (pre-size) marker, or null when no marker is present.
+// Identity of a definition's files: names, URLs (which pin the resolved
+// commit), sizes and checksums. A custom model keeps its id across upstream
+// re-uploads (the id has no commit), so this, not the id, tells whether the
+// bytes on disk belong to the current definition. Labels and notes are left
+// out so a copy edit never invalidates a multi-GB install.
+function definitionFingerprint(model) {
+  const files = (model.files || []).map((f) => ({
+    name: f.name,
+    url: f.url ?? null,
+    bytes: f.bytes ?? null,
+    sha256: f.sha256 ?? null,
+  }));
+  return crypto.createHash("sha256").update(JSON.stringify(files)).digest("hex");
+}
+
+// Read the completion marker. Returns { sizes, fingerprint }: the recorded
+// {name: size} map (empty for a legacy pre-size marker) and the definition
+// fingerprint (undefined for a marker written before fingerprints), or null
+// when no marker is present.
 function readMarker(dir) {
   let raw;
   try {
@@ -51,12 +68,15 @@ function readMarker(dir) {
   } catch {
     return null; // no marker: not installed
   }
-  if (!raw) return {}; // legacy empty marker: presence-only
+  if (!raw) return { sizes: {} }; // legacy empty marker: presence-only
   try {
     const parsed = JSON.parse(raw);
-    return (parsed && parsed.files) || {};
+    return {
+      sizes: (parsed && parsed.files) || {},
+      fingerprint: typeof parsed?.fingerprint === "string" ? parsed.fingerprint : undefined,
+    };
   } catch {
-    return {};
+    return { sizes: {} };
   }
 }
 
@@ -64,7 +84,9 @@ function readMarker(dir) {
  * True once the completion marker exists and every file is on disk at the size
  * recorded when it was downloaded. The recorded sizes (not the registry's
  * approximate `bytes`) are the source of truth, so a finished file that was
- * later truncated is treated as not installed.
+ * later truncated is treated as not installed. A marker that records a
+ * definition fingerprint must match the current definition; one written before
+ * fingerprints existed is trusted, so upgrading never forces a re-download.
  */
 function isInstalled(baseDir, model) {
   // A model whose id or filenames can't name a path inside the managed
@@ -76,8 +98,12 @@ function isInstalled(baseDir, model) {
   } catch {
     return false;
   }
-  const sizes = readMarker(dir);
-  if (sizes === null) return false;
+  const marker = readMarker(dir);
+  if (marker === null) return false;
+  if (marker.fingerprint !== undefined && marker.fingerprint !== definitionFingerprint(model)) {
+    return false; // bytes from a different revision of this id
+  }
+  const sizes = marker.sizes;
   return model.files.every((f) => {
     let p;
     try {
@@ -397,7 +423,10 @@ async function download(baseDir, model, { onProgress, signal } = {}) {
   }
   signal?.throwIfAborted();
   const marker = path.join(modelDir(baseDir, model), MARKER);
-  await fsp.writeFile(marker, JSON.stringify({ files: sizes }));
+  await fsp.writeFile(
+    marker,
+    JSON.stringify({ files: sizes, fingerprint: definitionFingerprint(model) })
+  );
   if (signal?.aborted) {
     await fsp.rm(marker, { force: true });
     signal.throwIfAborted();
@@ -409,6 +438,7 @@ module.exports = {
   modelDir,
   filePath,
   isInstalled,
+  definitionFingerprint,
   remove,
   download,
   MARKER,

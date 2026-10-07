@@ -60,11 +60,15 @@ test("rtf: progressAt guards zero/invalid inputs", () => {
 
 /* ---------------- persistence across restarts ---------------- */
 
-// A state-file path in a fresh temp dir that the test removes when it ends.
-function tmpStateFile(t) {
+// A fresh temp dir that the test removes when it ends.
+function tmpDir(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-rtf-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  return path.join(dir, "stt-rtf.json");
+  return dir;
+}
+
+function tmpStateFile(t) {
+  return path.join(tmpDir(t), "stt-rtf.json");
 }
 
 test("persisted rtf: saves after record and reloads on the next construction", (t) => {
@@ -145,9 +149,7 @@ test("persisted rtf: rejected samples don't touch the state file", (t) => {
 
 test("persisted rtf: a failed save keeps the in-memory estimate working", (t) => {
   // Point the state file at a directory so writeFileSync fails.
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-rtf-"));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const rtf = createPersistedRtfEstimator(dir);
+  const rtf = createPersistedRtfEstimator(tmpDir(t));
   rtf.record(10, 1); // save fails silently
   assert.ok(rtf.estimate() < 0.25); // EMA still updated for this session
 });

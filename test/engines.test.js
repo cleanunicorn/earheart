@@ -2106,6 +2106,28 @@ test("a caller retrying straight from a failed load's rejection gets a fresh loa
   assert.strictEqual(await sttRetried, "transcribed");
 });
 
+test("a changed cleanup context size is a different load, not a joined one", (t) => {
+  // The context is allocated at load time, so a caller wanting a bigger one
+  // (Max dictation length raised) must not join a load of the smaller one.
+  const settings = require("../main/settings");
+  const base = settings.get();
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const cleanup = hostsBySvc["earheart-cleanup"];
+  const held = holdLoads(cleanup, "load-cleanup");
+
+  const small = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
+  t.mock.method(settings, "get", () => ({ ...base, audio: { ...base.audio, maxRecordingSeconds: 3600 } }));
+  const large = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
+  assert.strictEqual(count(cleanup, "load-cleanup"), 2);
+  assert.ok(
+    held[1].payload.contextSize > held[0].payload.contextSize,
+    `${held[1].payload.contextSize} > ${held[0].payload.contextSize}`
+  );
+  held[0].resolve({ ready: true });
+  held[1].resolve({ ready: true });
+  return Promise.all([small, large]);
+});
+
 test("worker exit drops the in-flight cleanup load memo", async () => {
   const { facade, hostsBySvc } = loadTwoHostFacade();
   const cleanup = hostsBySvc["earheart-cleanup"];

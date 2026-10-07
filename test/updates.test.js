@@ -222,7 +222,7 @@ test("a wrong sha512 fails with Checksum mismatch and leaves nothing staged", as
 
   const s = ctx.updates.getState();
   assert.strictEqual(s.status, "error");
-  assert.match(s.error, /Checksum mismatch/);
+  assert.match(s.error, /^Checksum mismatch.*try updating again/);
   assert.deepStrictEqual(fs.readdirSync(ctx.stagingDir), []);
 });
 

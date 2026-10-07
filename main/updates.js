@@ -602,7 +602,9 @@ async function downloadAsset(info, signal) {
     const out = fs.createWriteStream(part, { flags: "wx", mode: 0o600 });
     await streamPipeline(body, meter, out, { signal });
     const got = hash.digest("base64");
-    if (got !== info.sha512) throw new Error("Checksum mismatch — download corrupted");
+    if (got !== info.sha512) {
+      throw new Error("Checksum mismatch — the download was corrupted and discarded; try updating again.");
+    }
     await fsp.rename(part, dest);
   } catch (err) {
     await fsp.rm(part, { force: true }).catch(() => {});

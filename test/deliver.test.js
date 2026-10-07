@@ -392,3 +392,22 @@ test("a text-only clipboard never decodes an image", async (t) => {
   assert.deepStrictEqual(state.clip, { text: "old" });
   assert.strictEqual(imageReads, 0);
 });
+
+test("a clipboard restore that throws is logged and never fails the dictation", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  onMac(t);
+  const { deliver, state, electron } = loadDeliver({ trusted: true, clip: { image: PNG } });
+  electron.clipboard.write = () => {
+    throw new Error("clipboard owner went away");
+  };
+
+  const first = await pasteWithRestore(t, deliver, "first");
+  assert.strictEqual(first.method, "paste");
+  // Settled by the next dictation: the failing restore must not reject it.
+  const second = await pasteWithRestore(t, deliver, "second");
+  assert.strictEqual(second.method, "paste");
+  assert.deepStrictEqual(state.clip, { text: "second" }, "the new transcript still went out");
+  // And on the timer path it is logged, not thrown at the process.
+  t.mock.timers.tick(1000);
+  assert.strictEqual(state.logs.filter((line) => line.includes("clipboard restore failed")).length, 2);
+});

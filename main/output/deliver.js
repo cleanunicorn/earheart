@@ -253,8 +253,16 @@ function restoreSnapshot(snap) {
 // transcript we wrote: if another app has replaced it since, that copy is the
 // user's newer intent and wins. Every restore goes through here so the guard
 // cannot drift between the cancel, timer and settle paths.
+// The restore is a courtesy to the previous clipboard, never a reason to lose
+// the dictation: a failing write is logged and delivery goes on (at the settle
+// it would otherwise reject deliver() before this transcript is even written;
+// in the timer it would only reach the process-level handler).
 function restoreIfUnchanged(snap, transcript) {
-  if (clipboard.readText() === transcript) restoreSnapshot(snap);
+  try {
+    if (clipboard.readText() === transcript) restoreSnapshot(snap);
+  } catch (err) {
+    logger.error("clipboard restore failed:", err);
+  }
 }
 
 // The restore armed by the last paste: `{ timer, text, snap }`, where `text` is

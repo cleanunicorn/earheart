@@ -1,6 +1,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 const Module = require("node:module");
+const { prettyHotkey, registrationHint } = require("../main/util/hotkey-label");
 
 const A = "CommandOrControl+Shift+Space";
 const B = "CommandOrControl+Alt+P";
@@ -333,7 +334,7 @@ test("a rollback re-registration failure is reported and removed from state", ()
   assert.match(failed.pause.error, /Could not restore/);
   assert.match(failed.pause.error, /pause hotkey is now unbound until you save again or restart/);
   assert.deepStrictEqual(calls.warnings, [
-    `Could not restore "${B}" after rollback. The pause hotkey is now unbound until you save again or restart.`,
+    `Could not restore "${prettyHotkey(B)}" after rollback. The pause hotkey is now unbound until you save again or restart.`,
   ]);
   clearCalls(calls);
   hotkeys.applyPair(pair(A, B));
@@ -353,14 +354,35 @@ test("a collateral rollback failure reports the unbound slot without contradicti
 
   assert.strictEqual(
     failed.record.error.replace(/\s+/g, " "),
-    `The pause hotkey could not be registered. Could not restore "${A}" after rollback. The record hotkey is now unbound until you save again or restart.`
+    `The pause hotkey could not be registered. Could not restore "${prettyHotkey(A)}" after rollback. The record hotkey is now unbound until you save again or restart.`
   );
   assert.doesNotMatch(failed.record.error, /Not changed/);
   assert.deepStrictEqual(calls.warnings, [
-    `Could not restore "${A}" after rollback. The record hotkey is now unbound until you save again or restart.`,
+    `Could not restore "${prettyHotkey(A)}" after rollback. The record hotkey is now unbound until you save again or restart.`,
   ]);
   assert.strictEqual(bindings.has(A), false);
   assert.strictEqual(bindings.has(B), true);
+});
+
+// A failed swap whose rollback also fails leaves the slot's *saved* hotkey
+// unbound. Settings hides results about an accelerator the field no longer
+// holds, so this one must say it describes the slot itself: the saved value
+// (A) is what the field shows on reopen, not the attempted one (B).
+test("a slot left unbound by a failed restore is marked as describing the slot", () => {
+  const { hotkeys, bindings } = loadHotkeys({
+    registerImpl(accelerator, attempt) {
+      if (accelerator === A && (attempt === 2 || attempt === 3)) return false;
+      return true;
+    },
+  });
+  hotkeys.applyPair(pair(A, B));
+
+  const results = hotkeys.toHotkeyResults(hotkeys.applyPair(pair(B, A)), { hotkey: B, pauseHotkey: A });
+
+  assert.strictEqual(bindings.has(A), false, "the saved record hotkey is really unbound");
+  assert.strictEqual(results.hotkey.unbound, true);
+  assert.strictEqual(results.hotkey.accelerator, B, "the attempted accelerator differs from the saved one");
+  assert.strictEqual(results.pauseHotkey.unbound, undefined, "an ordinary rejection keeps its old binding");
 });
 
 test("empty targets are valid unbound states", () => {
@@ -399,4 +421,80 @@ test("a non-empty record failure passes through without an empty marker", () => 
     hotkeys.toHotkeyResults({ record, pause: { ok: true } }),
     { hotkey: record, pauseHotkey: { ok: true } }
   );
+});
+
+// Settings shows a stored result only while its field still holds the same
+// accelerator, so each slot carries the accelerator it was attempted with.
+test("results carry the accelerator each slot was attempted with", () => {
+  const { hotkeys } = loadHotkeys();
+  const record = { ok: false, error: "record rejected" };
+
+  assert.deepStrictEqual(
+    hotkeys.toHotkeyResults(
+      { record, pause: { ok: true, empty: true } },
+      { hotkey: A, pauseHotkey: undefined }
+    ),
+    {
+      hotkey: { ok: false, error: "record rejected", accelerator: A },
+      pauseHotkey: { ok: true, empty: true, accelerator: "" },
+    }
+  );
+  assert.deepStrictEqual(record, { ok: false, error: "record rejected" }, "the pair result is not mutated");
+  assert.deepStrictEqual(
+    hotkeys.toHotkeyResults({ record: { ok: true, empty: true }, pause: { ok: true } }, { hotkey: "" }),
+    {
+      hotkey: { ok: false, empty: true, error: "No hotkey configured", accelerator: "" },
+      pauseHotkey: { ok: true, accelerator: "" },
+    }
+  );
+});
+
+// Hotkey errors are read by people (Settings rows, the startup notice), so they
+// name the keys the way the platform does and point only at help that exists
+// on this platform. Electron itself still receives the raw accelerator.
+test("registration errors show the readable accelerator and this platform's hint", () => {
+  const { hotkeys, calls } = loadHotkeys({ occupied: [B] });
+
+  const result = hotkeys.applyPair(pair(A, B));
+
+  assert.strictEqual(
+    result.pause.error,
+    `Could not register "${prettyHotkey(B)}" (${registrationHint()}).`
+  );
+  assert.ok(calls.registered.some(({ accelerator }) => accelerator === B));
+});
+
+test("collision errors show the readable accelerator", () => {
+  const cold = loadHotkeys().hotkeys.applyPair(pair(A, A));
+  assert.strictEqual(cold.pause.error, `"${prettyHotkey(A)}" is already used by the record hotkey`);
+
+  const { hotkeys } = loadHotkeys();
+  hotkeys.applyPair(pair(A, B));
+  const warm = hotkeys.applyPair(pair(C, C));
+  assert.strictEqual(warm.record.error, `"${prettyHotkey(C)}" is already used by the pause hotkey`);
+  assert.strictEqual(warm.pause.error, `"${prettyHotkey(C)}" is already used by the record hotkey`);
+});
+
+test("an invalid accelerator error shows the readable form and keeps the native reason", () => {
+  const BAD = "CommandOrControl+Nope";
+  const { hotkeys } = loadHotkeys({
+    registerImpl(accelerator) {
+      if (accelerator === BAD) throw new Error("bad accelerator");
+      return true;
+    },
+  });
+
+  const result = hotkeys.applyPair(pair(BAD, ""));
+
+  assert.strictEqual(result.record.error, `Invalid hotkey "${prettyHotkey(BAD)}": bad accelerator`);
+});
+
+test("no hotkey error carries a raw Electron modifier name", () => {
+  const { hotkeys } = loadHotkeys({ occupied: [B] });
+  const results = [hotkeys.applyPair(pair(A, B)), hotkeys.applyPair(pair(C, C))];
+  for (const result of results) {
+    for (const slot of [result.record, result.pause]) {
+      if (slot.error) assert.doesNotMatch(slot.error, /CommandOrControl/);
+    }
+  }
 });

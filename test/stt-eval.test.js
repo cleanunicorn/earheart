@@ -920,6 +920,19 @@ test("stt-eval worker config: the exact recognizer config for every sherpa famil
   }
 });
 
+test("stt-eval worker config: a map without a joiner, family or Whisper type is refused, not guessed", () => {
+  const cfg = (sherpa) => e.sherpaRecognizerConfig("/m", sherpa, { numThreads: 1, provider: "cpu" });
+  // An --add'ed Canary bundle saved before discovery checked the family
+  // looked exactly like this; it must not become a Whisper recognizer.
+  assert.throws(() => cfg({ encoder: "e", decoder: "d", tokens: "t" }), /unknown sherpa family/);
+  assert.throws(() => cfg({ encoder: "e", decoder: "d", tokens: "t", modelType: "canary" }), /unknown sherpa family/);
+  assert.ok(cfg({ encoder: "e", decoder: "d", tokens: "t", modelType: "whisper" }).modelConfig.whisper);
+  // Every candidate in the manifest still declares a family it can build.
+  for (const c of manifest.CANDIDATES) {
+    assert.doesNotThrow(() => cfg(c.sherpa), c.id);
+  }
+});
+
 test("stt-eval worker: load reports the app's runtime; transcribe before load fails", async () => {
   const workerPath = require.resolve("../scripts/stt-eval-worker");
   const sherpaPath = require.resolve("sherpa-onnx-node", { paths: [path.dirname(workerPath)] });

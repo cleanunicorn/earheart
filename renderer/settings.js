@@ -749,6 +749,26 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
 
 /* ---------- save ---------- */
 
+// Show each hotkey's registration failure under its field: the launch result
+// (from settings:get) when the window opens, then each Save's. A result is shown
+// only while the field holds the accelerator it was attempted with — after a
+// rejected save, settings keep the old working value, and an error about the
+// rejected one would describe a combination that is no longer there. Two kinds
+// are shown regardless: a result without an accelerator (an older main), and an
+// `unbound` one — a failed restore left the saved hotkey itself unregistered.
+function renderHotkeyStatus(status) {
+  const rows = [
+    [$("hotkey-status"), status?.hotkey, current.hotkey],
+    [$("pause-hotkey-status"), status?.pauseHotkey, current.pauseHotkey],
+  ];
+  for (const [row, result, shown] of rows) {
+    const stale =
+      !result?.unbound && result?.accelerator !== undefined && result.accelerator !== (shown || "");
+    row.textContent = result && !result.ok && !stale ? result.error : "";
+    row.className = "status err";
+  }
+}
+
 function hotkeySaveMessage(hotkeyResult, pauseResult) {
   if (!hotkeyResult.ok && !pauseResult.ok) {
     return "Saved, but the hotkeys could not be changed";
@@ -777,8 +797,6 @@ function limitAdjustments(saved) {
 const saveButton = $("save");
 saveButton.addEventListener("click", async () => {
   const save = $("save-status");
-  const hotkeyStatus = $("hotkey-status");
-  const pauseHotkeyStatus = $("pause-hotkey-status");
   let result;
   let pauseResult;
   // Acknowledge the click immediately and block a duplicate save while the
@@ -799,8 +817,7 @@ saveButton.addEventListener("click", async () => {
       // Saved, but not as typed: stay open long enough to say so.
       save.textContent = `Saved — ${adjusted.join("; ")}`;
       save.className = "status ok";
-      hotkeyStatus.textContent = "";
-      pauseHotkeyStatus.textContent = "";
+      renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult });
       saveButton.disabled = false;
       return;
     }
@@ -808,8 +825,7 @@ saveButton.addEventListener("click", async () => {
       // Clean save — close the window so the user doesn't have to dismiss it.
       save.textContent = "Saved";
       save.className = "status ok";
-      hotkeyStatus.textContent = "";
-      pauseHotkeyStatus.textContent = "";
+      renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult });
       earheart.invoke("settings:close");
       return;
     }
@@ -826,10 +842,7 @@ saveButton.addEventListener("click", async () => {
   saveButton.disabled = false;
   save.textContent = hotkeySaveMessage(result.hotkey, pauseResult);
   save.className = "status err";
-  hotkeyStatus.textContent = result.hotkey.ok ? "" : result.hotkey.error;
-  hotkeyStatus.className = "status err";
-  pauseHotkeyStatus.textContent = pauseResult.ok ? "" : pauseResult.error;
-  pauseHotkeyStatus.className = "status err";
+  renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult });
   setTimeout(() => {
     save.textContent = "";
   }, 4000);
@@ -1312,6 +1325,9 @@ earheart.on("updates:state", renderUpdateState);
   defaults = data.defaults;
   platform = data.platform;
   cleanupStyles = data.cleanupStyles || [];
+  // A hotkey that failed at launch shows now, not after a Save — and before
+  // the update and model round-trips below.
+  renderHotkeyStatus(data.hotkeyStatus);
   // The Accessibility permission only exists on macOS.
   if (platform === "darwin") $("accessibility-field").hidden = false;
   $("version").textContent = `v${data.version}`;

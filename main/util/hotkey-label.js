@@ -2,7 +2,8 @@
 //
 // Settings and the wizard show the accelerator verbatim ("CommandOrControl+
 // Shift+Space") because that is what gets registered, but a notification is
-// prose: it has to name the keys the way the platform's own menus do.
+// prose: it has to name the keys the way the platform's own menus do. Hotkey
+// error messages are prose too (see hotkeys.js).
 //
 // Pure string work, kept out of main.js so it can be tested directly —
 // main.js binds Electron at module scope and cannot be required from a test.
@@ -62,4 +63,16 @@ function prettyHotkey(accelerator, platform = process.platform) {
     .join("+");
 }
 
-module.exports = { prettyHotkey };
+/**
+ * Why a hotkey may have failed to register, pointing only at help the user can
+ * find on this platform: the Wayland note in Settings exists on Linux alone.
+ * @param {string} [platform] process.platform value; defaults to this machine
+ * @returns {string} a clause to put inside parentheses after the error
+ */
+function registrationHint(platform = process.platform) {
+  return platform === "linux"
+    ? "already in use, or your desktop blocks global shortcuts — see the Wayland note in Settings"
+    : "already in use by another app";
+}
+
+module.exports = { prettyHotkey, registrationHint };

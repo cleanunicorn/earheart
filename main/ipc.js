@@ -135,7 +135,7 @@ function staleDefinitions(existing, model) {
   );
 }
 
-function init({ applyHotkeys, onSettingsChanged }) {
+function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
   // Register any models the user added from a custom Hugging Face URL so they
   // resolve for download and for loading into the cleanup worker after a
   // restart, exactly like the built-ins.
@@ -156,6 +156,10 @@ function init({ applyHotkeys, onSettingsChanged }) {
       defaults: settings.DEFAULTS,
       platform: process.platform,
       version: app.getVersion(),
+      // The last hotkey registration (launch or save), so Settings can show a
+      // shortcut that failed at launch as soon as it opens. Read-only: asking
+      // never re-registers anything.
+      hotkeyStatus: getHotkeyStatus?.() ?? null,
       // Drives the cleanup style slider (id/label/hint per stop) and the
       // "Start from preset" seed values, so the UI copy and numbers stay in
       // lockstep with the presets the engines actually use.

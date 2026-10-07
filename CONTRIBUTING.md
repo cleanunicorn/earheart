@@ -67,8 +67,9 @@ capture contract: "Listening…" only appears once samples actually flow, the
 captured WAV covers everything said from that moment, and stop/cancel racing
 mic startup still resolve. The settings-smoke step drives the real settings
 window and asserts the settings-page contract: every section renders on one
-scroll, the index's scroll-spy highlight and focus handoff work, and the roving
-tabindex is seated at load. CI runs all five on every platform.
+scroll, the index's scroll-spy highlight and focus handoff work, the roving
+tabindex is seated at load, and a microphone chosen while device enumeration
+is still pending survives it and is what Save writes to disk. CI runs all five on every platform.
 Built-in models download to Electron's `userData/models` on first use; the
 smoke checks don't need them present.
 
@@ -198,6 +199,7 @@ main/                    Electron main process
   main.js                lifecycle, single-instance, --toggle forwarding
   pipeline.js            record → transcribe → clean → deliver state machine
   hotkeys.js             global shortcut registration
+  setup-notices.js       launch policy + "fix your setup" notices (→ Settings)
   settings.js            JSON settings with deep-merged defaults
   history.js             local transcription history
   tray.js                tray icon + menu

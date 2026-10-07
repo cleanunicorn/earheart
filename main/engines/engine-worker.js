@@ -80,8 +80,29 @@ function makeProgressEmitter(id) {
 
 /* ---------------- speech-to-text (sherpa-onnx / Parakeet) ---------------- */
 
+const TRANSDUCER_TYPES = new Set(["transducer", "nemo_transducer"]);
+
+// The sherpa model family a `sherpa` map declares: a joiner makes a
+// transducer (entries saved before modelType existed are NeMo ones), Whisper
+// has to say so in modelType. A missing joiner alone is not a family — other
+// encoder-decoder models (NeMo Canary …) look the same and would load into
+// the Whisper config wrongly — so it, a contradiction, or an unknown type is
+// refused before the current recognizer is dropped.
+function sttFamily(sherpa) {
+  const type = sherpa.modelType;
+  if (sherpa.joiner && (!type || TRANSDUCER_TYPES.has(type))) {
+    return { family: "transducer", modelType: type || "nemo_transducer" };
+  }
+  if (!sherpa.joiner && type === "whisper") return { family: "whisper", modelType: type };
+  throw new Error(
+    `Unsupported speech model configuration (${type ? `type "${type}"` : "no model type"}, ` +
+      `${sherpa.joiner ? "with" : "without"} a joiner) — Earheart runs transducer and Whisper models`
+  );
+}
+
 async function loadStt({ dir, sherpa, modelId }) {
   if (recognizer && sttModelId === modelId) return { ready: true, ...sttRuntime };
+  const { family: kind, modelType } = sttFamily(sherpa);
   let sherpaOnnx;
   try {
     sherpaOnnx = require("sherpa-onnx-node");
@@ -93,12 +114,11 @@ async function loadStt({ dir, sherpa, modelId }) {
   await disposeStt();
   const encoder = path.join(dir, sherpa.encoder);
   const decoder = path.join(dir, sherpa.decoder);
-  // Two model families, told apart by the joiner: a transducer has one, an
-  // encoder-decoder (Whisper) doesn't. sherpa reads whichever sub-config is
-  // set, so pass exactly one.
-  const family = sherpa.joiner
-    ? { transducer: { encoder, decoder, joiner: path.join(dir, sherpa.joiner) } }
-    : { whisper: { encoder, decoder } };
+  // sherpa reads whichever sub-config is set, so pass exactly one.
+  const family =
+    kind === "transducer"
+      ? { transducer: { encoder, decoder, joiner: path.join(dir, sherpa.joiner) } }
+      : { whisper: { encoder, decoder } };
   const runtime = {
     // Cap 8, not 4: decode is memory-bound and stops scaling there (~20%
     // faster than 4 threads on an 8+-core desktop; more threads regress).
@@ -111,7 +131,7 @@ async function loadStt({ dir, sherpa, modelId }) {
       ...family,
       tokens: path.join(dir, sherpa.tokens),
       ...runtime,
-      modelType: sherpa.modelType || (sherpa.joiner ? "nemo_transducer" : "whisper"),
+      modelType,
       debug: false,
     },
   });

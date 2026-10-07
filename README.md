@@ -259,6 +259,14 @@ than the last bit of accuracy.
 Every launch after that goes straight to the tray — no window to dismiss — and
 posts a short "ready, press *your hotkey*" notification. Click it to open
 Settings, or ignore it and start dictating. Settings is always in the tray menu.
+Earheart says "ready" only when it is: if the hotkey could not be registered
+(another app holds it, or the desktop blocks global shortcuts), Settings opens
+with the reason under the hotkey field; if the selected built-in speech model
+isn't downloaded yet, the notification names it and opens Settings to download
+it. Starting at sign-in stays silent when everything works, and posts the same
+notification when something doesn't. Pressing the hotkey without the speech
+model shows that notification instead of starting a recording that couldn't be
+transcribed.
 
 If a saved microphone is disconnected, dictation temporarily tries the system
 default and shows a notice on the recording bar. This fallback applies only to

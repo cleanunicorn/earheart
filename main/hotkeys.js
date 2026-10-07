@@ -8,6 +8,7 @@
 
 const { globalShortcut } = require("electron");
 const logger = require("./util/logger");
+const { prettyHotkey, registrationHint } = require("./util/hotkey-label");
 const NAMES = ["record", "pause"];
 
 // Named slots ("record", "pause"), each holding at most one accelerator and
@@ -34,7 +35,7 @@ function collisionPlan(target, previous, changed, results) {
     const otherName = name === "record" ? "pause" : "record";
     collisionResults[name] = {
       ok: false,
-      error: `"${target[name].accelerator}" is already used by the ${otherName} hotkey`,
+      error: `"${prettyHotkey(target[name].accelerator)}" is already used by the ${otherName} hotkey`,
     };
   }
   return { results: collisionResults };
@@ -80,7 +81,7 @@ function applyPair(next) {
       pause: recordOnly.record.ok
         ? {
             ok: false,
-            error: `"${target.pause.accelerator}" is already used by the record hotkey`,
+            error: `"${prettyHotkey(target.pause.accelerator)}" is already used by the record hotkey`,
           }
         : {
             ok: false,
@@ -104,8 +105,8 @@ function applyPair(next) {
     const attempt = attemptRegister(accelerator, onTrigger);
     if (!attempt.ok) {
       return attempt.error
-        ? `Invalid hotkey "${accelerator}": ${attempt.error.message}`
-        : `Could not register "${accelerator}" (already in use, or your desktop blocks global shortcuts — see the Wayland note in Settings).`;
+        ? `Invalid hotkey "${prettyHotkey(accelerator)}": ${attempt.error.message}`
+        : `Could not register "${prettyHotkey(accelerator)}" (${registrationHint()}).`;
     }
     addedNames.push(name);
     return null;
@@ -140,7 +141,7 @@ function applyPair(next) {
       const attempt = attemptRegister(entry.accelerator, entry.onTrigger);
       const restoreError = attempt.ok
         ? null
-        : `Could not restore "${entry.accelerator}" after rollback${
+        : `Could not restore "${prettyHotkey(entry.accelerator)}" after rollback${
             attempt.error ? `: ${attempt.error.message}` : ""
           }`;
       if (restoreError) {
@@ -149,8 +150,11 @@ function applyPair(next) {
         logger.warn(unboundError);
         const priorError = results[name].error.replace(/^Not changed: the /, "The ");
         const separator = /[.!?]$/.test(priorError) ? " " : ". ";
+        // `unbound`: this result is about the slot itself — its saved hotkey
+        // is gone — not only about the accelerator that was attempted.
         results[name] = {
           ok: false,
+          unbound: true,
           error: `${priorError}${separator}${unboundError}`,
         };
       } else {
@@ -197,12 +201,20 @@ function unregisterAll() {
 
 // The pair layer treats either empty slot as a valid unbound state. Adapt that
 // result to the app contract, where record is required but pause is optional.
-function toHotkeyResults(pair) {
-  return {
+// Given the accelerators that were applied, each result also records its own,
+// so a later reader (Settings, on open) can tell whether a failure still
+// describes the value in the field.
+function toHotkeyResults(pair, accelerators) {
+  const results = {
     hotkey: pair.record.empty
       ? { ok: false, empty: true, error: "No hotkey configured" }
       : pair.record,
     pauseHotkey: pair.pause,
+  };
+  if (!accelerators) return results;
+  return {
+    hotkey: { ...results.hotkey, accelerator: accelerators.hotkey || "" },
+    pauseHotkey: { ...results.pauseHotkey, accelerator: accelerators.pauseHotkey || "" },
   };
 }
 

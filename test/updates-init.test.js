@@ -16,7 +16,16 @@ const updatesPath = require.resolve("../main/updates");
 const settingsPath = require.resolve("../main/settings");
 const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(updatesPath)] });
 
-function loadUpdates(t, { stored } = {}) {
+// The real feed helpers, except that any latest*.yml "parses" to `latest`.
+function feedWith(latest) {
+  const real = require("../main/services/update-feed");
+  return {
+    ...real,
+    parseLatestYml: () => ({ version: latest, path: `Earheart-${latest}.AppImage`, sha512: "x" }),
+  };
+}
+
+function loadUpdates(t, { stored, latest = "0.0.1" } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-updates-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const userData = path.join(root, "userData");
@@ -38,7 +47,14 @@ function loadUpdates(t, { stored } = {}) {
       Notification: class {},
       shell: {},
     },
-    [resolveFrom("./windows")]: { broadcast() {} },
+    [resolveFrom("./windows")]: {
+      broadcast() {},
+      sendToOverlay() {},
+      setOverlayPinned() {},
+      hideOverlay() {},
+      showOverlay() {},
+    },
+    [resolveFrom("./services/update-feed")]: feedWith(latest),
     [resolveFrom("./pipeline")]: { onStateChange() {}, getState: () => "idle" },
     [resolveFrom("./services/update-fetch")]: { fetchUpdateText: async () => "" },
     [resolveFrom("./util/mac-signature")]: { ensureMacSignature() {} },
@@ -92,6 +108,12 @@ const existingProfile = {
   updates: { lastSeenVersion: "0.34.0", skippedVersion: "0.33.0" },
 };
 
+const fullProfile = {
+  hotkey: "CommandOrControl+Alt+X",
+  overlay: { x: 10, y: 20 },
+  updates: { remind: true, skippedVersion: "", lastSeenVersion: "0.35.1" },
+};
+
 // #190: armWhatsNew's save was unguarded, so EACCES/ENOSPC/EPERM on the first
 // launch after an update aborted startup before the hotkeys registered.
 test("init() survives a failing last-seen-version save", (t) => {
@@ -133,4 +155,47 @@ test("init() on a fresh profile does not create the settings file", (t) => {
   updates.init({});
 
   assert.strictEqual(readFile(), null);
+});
+
+// #190 sweep: stopReminding and skipVersion edited a get() result before
+// saving. They spread-save now; a partial save object would let
+// deepMerge(DEFAULTS, …) reset every omitted key (overlay, hotkey, keys).
+test("stopReminding saves remind: false and keeps the rest of the file", (t) => {
+  const { updates, settings, readFile } = loadUpdates(t, { stored: fullProfile });
+  updates.init({});
+
+  updates.stopReminding();
+
+  const disk = readFile();
+  assert.strictEqual(disk.updates.remind, false);
+  assert.strictEqual(disk.hotkey, fullProfile.hotkey);
+  assert.deepStrictEqual(disk.overlay, fullProfile.overlay);
+  assert.strictEqual(disk.updates.lastSeenVersion, "0.35.1");
+  assert.deepStrictEqual(settings.get(), disk);
+});
+
+test("skipVersion saves the offered version and keeps the rest of the file", async (t) => {
+  const { updates, settings, readFile } = loadUpdates(t, { stored: fullProfile, latest: "0.36.0" });
+  updates.init({});
+  await updates.check({ manual: true });
+  assert.strictEqual(updates.getState().latest, "0.36.0");
+
+  updates.skipVersion();
+
+  const disk = readFile();
+  assert.strictEqual(disk.updates.skippedVersion, "0.36.0");
+  assert.strictEqual(disk.updates.remind, true);
+  assert.strictEqual(disk.hotkey, fullProfile.hotkey);
+  assert.deepStrictEqual(disk.overlay, fullProfile.overlay);
+  assert.deepStrictEqual(settings.get(), disk);
+});
+
+test("skipVersion with nothing on offer leaves the file alone", (t) => {
+  const { updates, readFile } = loadUpdates(t, { stored: fullProfile });
+  updates.init({});
+  const before = readFile();
+
+  updates.skipVersion();
+
+  assert.deepStrictEqual(readFile(), before);
 });

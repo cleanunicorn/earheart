@@ -46,6 +46,31 @@ async function stopDownload(kind, modelId) {
   await entry.done.catch(() => {});
 }
 
+// Stream one model to disk and report its outcome to every window. Resolves
+// (never rejects) once the transfer has stopped writing, its `downloads` entry
+// is gone and models:done has been broadcast — what a removal waits for.
+async function runDownload(kind, modelId, controller) {
+  let result;
+  try {
+    await engines.download(kind, modelId, {
+      signal: controller.signal,
+      // Broadcast so whichever window is open (wizard and/or Settings) tracks
+      // the same download, not just the one that started it.
+      onProgress: (p) => {
+        windows.broadcast("models:progress", { kind, modelId, ...p });
+      },
+    });
+    result = { ok: true };
+  } catch (err) {
+    const aborted = controller.signal.aborted;
+    result = { ok: false, cancelled: aborted, error: err.message };
+  } finally {
+    downloads.delete(modelKey(kind, modelId));
+  }
+  windows.broadcast("models:done", { kind, modelId, ...result });
+  return result;
+}
+
 // Run `fn` with the given models marked busy: their downloads are stopped and
 // awaited first, and none can restart until `fn` settles.
 async function withModelsBusy(models, fn) {
@@ -438,27 +463,7 @@ function init({ applyHotkeys, onSettingsChanged }) {
       return result;
     }
     const controller = new AbortController();
-    const done = (async () => {
-      let result;
-      try {
-        await engines.download(kind, modelId, {
-          signal: controller.signal,
-          // Broadcast so whichever window is open (wizard and/or Settings)
-          // tracks the same download, not just the one that started it.
-          onProgress: (p) => {
-            windows.broadcast("models:progress", { kind, modelId, ...p });
-          },
-        });
-        result = { ok: true };
-      } catch (err) {
-        const aborted = controller.signal.aborted;
-        result = { ok: false, cancelled: aborted, error: err.message };
-      } finally {
-        downloads.delete(key);
-      }
-      windows.broadcast("models:done", { kind, modelId, ...result });
-      return result;
-    })();
+    const done = runDownload(kind, modelId, controller);
     downloads.set(key, { controller, done });
     return done;
   });

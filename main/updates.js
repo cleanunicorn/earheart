@@ -793,10 +793,10 @@ function runDetachedScript(dir, name, content, args) {
 
 // --- housekeeping ---------------------------------------------------------
 
-// Clear droppings from a previous update: the extraction staging dir (a
-// verified download stays, for reuse), the staging dir older versions used in
-// the shared temp dir and, on macOS, a leftover .update-old bundle if the swap
-// script's own cleanup lost a race with shutdown.
+// Clear droppings from a previous update: everything in the staging dir but a
+// download of a version newer than this one (kept for reuse), the staging dir
+// older versions used in the shared temp dir and, on macOS, a leftover
+// .update-old bundle if the swap script's own cleanup lost a race with shutdown.
 async function sweepLeftovers() {
   await sweepUpdateDir(updateDirPath());
   await sweepLegacyDir(path.join(app.getPath("temp"), "earheart-update"));
@@ -808,7 +808,9 @@ async function sweepLeftovers() {
 
 // Only sweep inside the staging dir when it passes the same check updateDir()
 // applies; otherwise leave it for the next download to replace, rather than
-// deleting through a symlink or inside someone else's dir.
+// deleting through a symlink or inside someone else's dir. Installers are
+// 100-200 MB and this dir, unlike the system temp dir, is never pruned by the
+// OS, so once a version is running its download goes too.
 async function sweepUpdateDir(dir) {
   let st;
   try {
@@ -818,7 +820,19 @@ async function sweepUpdateDir(dir) {
     throw err;
   }
   if (!isPrivateDir(st)) return;
-  await fsp.rm(path.join(dir, "staging"), { recursive: true, force: true });
+  for (const entry of await fsp.readdir(dir, { withFileTypes: true })) {
+    const version = entry.name.match(/\d+\.\d+\.\d+/);
+    const pending =
+      entry.isFile() &&
+      !entry.name.endsWith(".part") &&
+      version &&
+      feed.compareVersions(version[0], state.current) > 0;
+    if (pending) continue;
+    // One at a time: a just-finished Windows installer may still be running.
+    await fsp
+      .rm(path.join(dir, entry.name), { recursive: true, force: true })
+      .catch((err) => logger.warn(`could not remove ${entry.name}: ${err.message}`));
+  }
 }
 
 // Before #186 updates staged in <temp>/earheart-update. Remove it if it is

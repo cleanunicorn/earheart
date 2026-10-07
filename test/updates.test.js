@@ -511,6 +511,25 @@ test("init sweeps the extraction dir but keeps a verified download", async (t) =
   assert.deepStrictEqual(fs.readFileSync(ctx.staged), ASSET_BYTES);
 });
 
+test("init prunes installers for versions no newer than the running one", async (t) => {
+  const ctx = loadUpdates(t); // running 0.35.1
+  fs.mkdirSync(ctx.stagingDir, { mode: 0o700 });
+  const keep = "Earheart-0.36.0.AppImage";
+  const gone = [
+    "Earheart-0.35.0.AppImage",
+    "Earheart-Setup-0.35.1.exe",
+    "Earheart-0.35.1-arm64-mac.zip",
+    "Earheart-0.37.0.AppImage.part",
+    "relaunch.sh",
+  ];
+  for (const name of [keep, ...gone]) fs.writeFileSync(path.join(ctx.stagingDir, name), "x");
+
+  ctx.updates.init({});
+
+  await waitFor(() => fs.readdirSync(ctx.stagingDir).length === 1, "prune");
+  assert.deepStrictEqual(fs.readdirSync(ctx.stagingDir), [keep]);
+});
+
 test("init does not sweep through a symlink at the staging dir path", POSIX, async (t) => {
   const ctx = loadUpdates(t);
   const elsewhere = path.join(ctx.root, "elsewhere");

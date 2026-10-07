@@ -197,8 +197,14 @@ function armWhatsNew() {
   const seen = cfg.updates.lastSeenVersion || "";
   const current = state.current;
   if (seen !== current) {
-    cfg.updates.lastSeenVersion = current;
-    settings.save(cfg);
+    // Bookkeeping only: if it can't be written (EACCES, ENOSPC, EPERM), the
+    // card may show again next launch — far better than init() throwing here
+    // and main.js never reaching the hotkey registration.
+    try {
+      settings.save({ ...cfg, updates: { ...cfg.updates, lastSeenVersion: current } });
+    } catch (err) {
+      logger.warn(`could not record the last-seen version: ${err.message}`);
+    }
   }
   if (!seen || feed.compareVersions(current, seen) <= 0) return;
   // "Don't remind me" is a request to stop being interrupted about versions;
@@ -428,8 +434,7 @@ function dismissPrompt() {
  */
 function stopReminding() {
   const cfg = settings.get();
-  cfg.updates.remind = false;
-  settings.save(cfg);
+  settings.save({ ...cfg, updates: { ...cfg.updates, remind: false } });
   remindWasOn = false;
   hidePrompt();
 }
@@ -489,8 +494,7 @@ function cancel() {
 function skipVersion() {
   if (!state.latest) return;
   const cfg = settings.get();
-  cfg.updates.skippedVersion = state.latest;
-  settings.save(cfg);
+  settings.save({ ...cfg, updates: { ...cfg.updates, skippedVersion: state.latest } });
   pendingInfo = null;
   setState({ status: "idle", latest: null });
 }

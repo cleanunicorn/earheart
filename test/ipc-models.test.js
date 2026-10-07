@@ -428,3 +428,26 @@ test("a failed wipe on re-add keeps the old definition", async (t) => {
   assert.strictEqual(h.saved.length, savesBefore);
   assert.match(registry.getModel("cleanup", "custom-o-r-gguf-q4-k-m").files[0].url, /\/aaa\//);
 });
+
+test("a download refused while its model is being removed still reports models:done", async (t) => {
+  t.after(() => registry.setCustomModels([]));
+  const gate = deferred();
+  const { handlers, broadcasts } = loadIpcHandlers(configWith("gemma-3-1b"), {
+    engines: { remove: () => gate.promise },
+  });
+  const key = { kind: "cleanup", modelId: customCleanup.id };
+  // No download in flight, so only the removal's busy mark can refuse this.
+  const removing = handlers["models:remove-custom"]({}, { modelId: key.modelId });
+  await new Promise((r) => setImmediate(r));
+
+  const refused = await handlers["models:download"]({}, key);
+
+  assert.deepStrictEqual(refused, { ok: false, error: "This model is being removed" });
+  // Settings clears its optimistic "Downloading…" row only on models:done.
+  assert.deepStrictEqual(
+    broadcasts.filter((b) => b.channel === "models:done").map((b) => b.payload),
+    [{ kind: "cleanup", modelId: customCleanup.id, ok: false, error: "This model is being removed" }]
+  );
+  gate.resolve();
+  assert.strictEqual((await within(removing, 1000, "remove-custom")).ok, true);
+});

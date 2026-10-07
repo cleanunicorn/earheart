@@ -400,7 +400,14 @@ function init({ applyHotkeys, onSettingsChanged }) {
   ipcMain.handle("models:download", async (event, { kind, modelId }) => {
     const key = `${kind}:${modelId}`;
     if (downloads.has(key)) return { ok: false, error: "Already downloading" };
-    if (busyModels.has(key)) return { ok: false, error: "This model is being removed" };
+    if (busyModels.has(key)) {
+      // Like every other terminal outcome (except "Already downloading", whose
+      // transfer will broadcast its own), report it to every window so a row
+      // that optimistically showed "Downloading…" settles.
+      const result = { ok: false, error: "This model is being removed" };
+      windows.broadcast("models:done", { kind, modelId, ...result });
+      return result;
+    }
     if (engines.isInstalled(kind, modelId)) {
       const result = { ok: true };
       windows.broadcast("models:done", { kind, modelId, ...result });

@@ -411,3 +411,19 @@ test("a clipboard restore that throws is logged and never fails the dictation", 
   t.mock.timers.tick(1000);
   assert.strictEqual(state.logs.filter((line) => line.includes("clipboard restore failed")).length, 2);
 });
+
+test("a dictation inside the restore window leaves a newer copy alone", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  onMac(t);
+  const { deliver, state } = loadDeliver({ trusted: true, clip: { text: "old" } });
+  const screenshot = { isEmpty: () => false, kind: "newer" };
+
+  await pasteWithRestore(t, deliver, "first");
+  state.clip = { image: screenshot }; // another app copied meanwhile
+  // Settling the first restore must not put "old" back over the screenshot;
+  // the second dictation snapshots the screenshot instead and restores it.
+  await pasteWithRestore(t, deliver, "second");
+  assert.deepStrictEqual(state.clip, { text: "second" });
+  t.mock.timers.tick(1000);
+  assert.deepStrictEqual(state.clip, { image: screenshot });
+});

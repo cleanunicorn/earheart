@@ -29,6 +29,9 @@
 //  11. Wizard-started downloads survive Settings model changes without
 //      overwriting a concurrent download's state.
 //  12. Failed model removals appear in the row and persistent live region.
+//  13. A hotkey that failed to register at launch shows under its field as soon
+//      as Settings opens, before any Save; a failure about an accelerator the
+//      field no longer holds stays hidden.
 //
 // Run under Electron:
 //
@@ -92,9 +95,17 @@ app.whenReady().then(async () => {
       cb(true)
     );
     settings.save({ ...settings.get(), audio: { ...settings.get().audio, deviceId: "missing-saved-device" } });
+    // Check 13: the launch registration result main.js would report — the
+    // record hotkey failed on the value now saved; the pause failure is about
+    // an accelerator the field no longer holds (a rejected save, since undone).
+    const launchHotkeyError = "Could not register the record hotkey (smoke)";
     ipc.init({
       applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
       onSettingsChanged: () => {},
+      getHotkeyStatus: () => ({
+        hotkey: { ok: false, error: launchHotkeyError, accelerator: settings.get().hotkey },
+        pauseHotkey: { ok: false, error: "stale pause failure", accelerator: "Alt+F12" },
+      }),
     });
     const downloads = new Map();
     const installedModels = new Set();
@@ -130,6 +141,22 @@ app.whenReady().then(async () => {
     await sleep(1200);
 
     const js = (code) => win.webContents.executeJavaScript(code, true);
+
+    // 13. Registration status on open, before any Save.
+    const hotkeyRows = JSON.parse(await js(`JSON.stringify({
+      record: document.getElementById("hotkey-status").textContent,
+      pause: document.getElementById("pause-hotkey-status").textContent,
+    })`));
+    check(
+      "a hotkey that failed at launch shows under its field on open",
+      hotkeyRows.record === launchHotkeyError,
+      JSON.stringify(hotkeyRows)
+    );
+    check(
+      "a failure about an accelerator no longer in the field stays hidden",
+      hotkeyRows.pause === "",
+      JSON.stringify(hotkeyRows)
+    );
 
     // 1. One continuous scroll, everything rendered.
     const layout = JSON.parse(

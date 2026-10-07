@@ -542,3 +542,26 @@ test("the cleanup Test connection row lives inside the external-engine fields", 
   const builtinCardEnd = html.indexOf('<div class="card-title">Cleanup style</div>');
   assert.ok(start !== -1 && row > start && row < builtinCardEnd);
 });
+
+// A hotkey that failed to register at launch must be visible the moment
+// Settings opens (#194), not after a Save and not behind the slower update and
+// model-status round-trips that follow settings:get.
+test("the init IIFE renders the hotkey registration status before other awaits", () => {
+  const init = js.slice(js.lastIndexOf("(async () =>"));
+  const render = init.indexOf("renderHotkeyStatus(data.hotkeyStatus)");
+  assert.ok(render > 0, "the init IIFE must render data.hotkeyStatus");
+  assert.ok(
+    render < init.indexOf('await earheart.invoke("updates:get")'),
+    "hotkey status must render before waiting on updates:get"
+  );
+  assert.ok(
+    render < init.indexOf('await earheart.invoke("models:status")'),
+    "hotkey status must render before waiting on models:status"
+  );
+});
+
+test("Save writes the hotkey rows through the shared status renderer", () => {
+  const save = js.slice(js.indexOf('saveButton.addEventListener("click"'), js.indexOf("/* ---------- connection tests"));
+  assert.match(save, /renderHotkeyStatus\(/);
+  assert.doesNotMatch(save, /hotkeyStatus\.textContent|pauseHotkeyStatus\.textContent/);
+});

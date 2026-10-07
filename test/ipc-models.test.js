@@ -354,8 +354,7 @@ function ggufListing(commit, { bytes = 12, sha256 } = {}) {
   };
 }
 
-function addCustomHarness(cfg, listings, engines = {}) {
-  const events = [];
+function addCustomHarness(cfg, listings, { engines = {}, events = [] } = {}) {
   let next = 0;
   let failWipe = false;
   const listing = async () => listings[next++];
@@ -555,4 +554,34 @@ test("re-adding an id under the other kind wipes the bytes under both kinds", as
   ]);
   const stored = h.saved.at(-1).customModels.filter((m) => m.id === result.modelId);
   assert.deepStrictEqual(stored.map((m) => m.kind), ["stt"]);
+});
+
+test("re-adding a changed custom model stops its download before wiping", async (t) => {
+  t.after(() => registry.setCustomModels([]));
+  const events = [];
+  const fake = abortableDownload(events);
+  const h = addCustomHarness(configWith("gemma-3-1b"), [ggufListing("aaa"), ggufListing("bbb")], {
+    engines: { download: fake.download },
+    events,
+  });
+  const first = await h.add();
+  const downloading = h.handlers["models:download"]({}, { kind: "cleanup", modelId: first.modelId });
+  await fake.started;
+  const sinceStart = events.length;
+
+  const readding = h.add();
+  await new Promise((r) => setImmediate(r));
+  assert.strictEqual(events.slice(sinceStart).some((e) => e.startsWith("wipe:")), false,
+    "the old revision must not be wiped while its download is still settling");
+  fake.finishCleanup();
+  const result = await within(readding, 1000, "add-custom");
+
+  assert.strictEqual(result.ok, true, result.error);
+  assert.deepStrictEqual(events.slice(-4), [
+    `download:cleanup:${first.modelId}`,
+    "aborted",
+    "download settled",
+    `wipe:cleanup:${first.modelId}:https://huggingface.co/o/r-GGUF/resolve/aaa/r-Q4_K_M.gguf`,
+  ]);
+  assert.strictEqual((await within(downloading, 1000, "download")).cancelled, true);
 });

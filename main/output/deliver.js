@@ -249,6 +249,14 @@ function restoreSnapshot(snap) {
   clipboard.write(data);
 }
 
+// Put the snapshot back, but only while the clipboard still holds the
+// transcript we wrote: if another app has replaced it since, that copy is the
+// user's newer intent and wins. Every restore goes through here so the guard
+// cannot drift between the cancel, timer and settle paths.
+function restoreIfUnchanged(snap, transcript) {
+  if (clipboard.readText() === transcript) restoreSnapshot(snap);
+}
+
 // The restore armed by the last paste: `{ timer, text, snap }`, where `text` is
 // the transcript it put on the clipboard and `snap` what it promised to put
 // back. One at a time: a new dictation settles the previous one first.
@@ -273,7 +281,7 @@ async function deliver(text, cfg, signal) {
     const { timer, text: previousText, snap } = pendingRestore;
     clearTimeout(timer);
     pendingRestore = null;
-    if (clipboard.readText() === previousText) restoreSnapshot(snap);
+    restoreIfUnchanged(snap, previousText);
   }
   const pasting = cfg.mode === "paste" || cfg.mode === "paste-copy";
   // Only plain "paste" mode restores; "paste-copy" exists precisely to keep
@@ -294,9 +302,7 @@ async function deliver(text, cfg, signal) {
     // Plain paste promises to put the previous clipboard back. Cancellation
     // before the keystroke should keep that promise too, but only if another
     // app has not replaced our transcript in the meantime.
-    if (previous !== null && clipboard.readText() === text) {
-      restoreSnapshot(previous);
-    }
+    if (previous !== null) restoreIfUnchanged(previous, text);
     return { method: "cancelled" };
   }
   // Ask macOS directly before driving System Events. An untrusted app's
@@ -335,7 +341,7 @@ async function deliver(text, cfg, signal) {
     // and only restore if nothing else has written to it since.
     const timer = setTimeout(() => {
       pendingRestore = null;
-      if (clipboard.readText() === text) restoreSnapshot(previous);
+      restoreIfUnchanged(previous, text);
     }, 1000);
     pendingRestore = { timer, text, snap: previous };
   }

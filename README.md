@@ -325,6 +325,11 @@ the wizard:
 A mis-aimed paste never loses your words: the History section in Settings
 keeps recent transcriptions in a local file (you can turn this off).
 
+When something goes wrong (a service can't be reached, cleanup fails and the
+raw transcript is used, auto-paste fails and the text waits on the clipboard)
+a notification says so; clicking it opens Settings, where the service, its key
+and the paste options live.
+
 Settings → Advanced → Performance holds two limits. **Max dictation length**
 takes 10–3600 seconds (default 300); a dictation that reaches it stops and is
 transcribed. **Unload models after idle** takes 0–240 minutes (default 2); 0

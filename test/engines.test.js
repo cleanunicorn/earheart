@@ -774,6 +774,24 @@ test("the marker records the definition fingerprint and a changed definition is 
   }
 });
 
+test("the definition fingerprint ignores file order", () => {
+  const files = [
+    { name: "encoder.onnx", url: "https://h/r/resolve/c/encoder.onnx", bytes: 10 },
+    { name: "tokens.txt", url: "https://h/r/resolve/c/tokens.txt", bytes: 2, sha256: "c".repeat(64) },
+    { name: "decoder.onnx", url: "https://h/r/resolve/c/decoder.onnx", bytes: 5 },
+  ];
+  const model = { kind: "stt", id: "custom-r-int8", files };
+  const reordered = { ...model, files: [files[2], files[0], files[1]] };
+  // A re-listing that returns the same files in another order is the same
+  // definition, so re-adding it must not wipe a complete install.
+  assert.strictEqual(manager.definitionFingerprint(reordered), manager.definitionFingerprint(model));
+  // Dropping a file is not.
+  assert.notStrictEqual(
+    manager.definitionFingerprint({ ...model, files: files.slice(1) }),
+    manager.definitionFingerprint(model)
+  );
+});
+
 test("remove clears a definition's directory from the definition alone, present or not", async () => {
   await withTmp(async (dir) => {
     const model = { kind: "stt", id: "custom-orphan", files: [{ name: "x.bin" }] };

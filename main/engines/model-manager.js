@@ -49,13 +49,16 @@ function partialPaths(dest) {
 // built-in to a new commit with byte-identical files keeps its install; a file
 // without one falls back to its URL (which pins the resolved commit) and size.
 // Labels and notes are left out so a copy edit never invalidates a multi-GB
-// install.
+// install, and files are taken in name order because a re-listing may return
+// the same files in another order.
 function definitionFingerprint(model) {
-  const files = (model.files || []).map((f) =>
-    f.sha256
-      ? { name: f.name, sha256: f.sha256 }
-      : { name: f.name, url: f.url ?? null, bytes: f.bytes ?? null }
-  );
+  const files = (model.files || [])
+    .map((f) =>
+      f.sha256
+        ? { name: f.name, sha256: f.sha256 }
+        : { name: f.name, url: f.url ?? null, bytes: f.bytes ?? null }
+    )
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   return crypto.createHash("sha256").update(JSON.stringify(files)).digest("hex");
 }
 

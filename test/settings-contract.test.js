@@ -218,6 +218,21 @@ function extractFunction(source, name) {
   }
   assert.fail(`${name} function has an unclosed body`);
 }
+// settings.js collect() and the helpers it calls, ready to run in a vm context
+// that supplies $, current, document and cleanupStyles. One list, so a helper
+// collect() gains is added once.
+function settingsCollectSource() {
+  return [
+    extractFunction(js, "num"),
+    extractFunction(js, "numInRange"),
+    extractFunction(js, "styleMode"),
+    extractFunction(js, "collectCleanupStyle"),
+    extractFunction(js, "engineValue"),
+    extractFunction(js, "collect"),
+    "this.collect = collect;",
+  ].join("\n");
+}
+
 function deferred() {
   let resolve;
   const promise = new Promise((r) => (resolve = r));
@@ -347,15 +362,7 @@ function microphonePage(source, page) {
   const loadFunction = `(${extractFunction(source, "loadMicrophones")})`;
   const load = require("node:vm").runInNewContext(loadFunction, context);
   if (page === "settings") {
-    const settingsFunctions = [
-      extractFunction(source, "num"),
-      extractFunction(source, "numInRange"),
-      extractFunction(source, "styleMode"),
-      extractFunction(source, "collectCleanupStyle"),
-      extractFunction(source, "engineValue"),
-      extractFunction(source, "collect"),
-      "this.collect = collect;",
-    ].join(String.fromCharCode(10));
+    const settingsFunctions = settingsCollectSource();
     const radios = { stt: "builtin", cleanup: "builtin", "cleanup-style-mode": "custom" };
     context.document.querySelector = (selector) => {
       if (selector === 'input[name="output-mode"]:checked') return { value: "paste-copy" };
@@ -573,16 +580,7 @@ function collectLimits({ maxSeconds = "", idle = "", saved = {} }) {
     $: (id) => elements[id] || { value: "", checked: false },
     document: { querySelector: () => ({ value: "builtin" }) },
   };
-  const source = [
-    extractFunction(js, "num"),
-    extractFunction(js, "numInRange"),
-    extractFunction(js, "styleMode"),
-    extractFunction(js, "collectCleanupStyle"),
-    extractFunction(js, "engineValue"),
-    extractFunction(js, "collect"),
-    "this.collect = collect;",
-  ].join("\n");
-  require("node:vm").runInNewContext(source, context);
+  require("node:vm").runInNewContext(settingsCollectSource(), context);
   const out = context.collect();
   return { maxSeconds: out.audio.maxRecordingSeconds, idle: out.engines.idleUnloadMinutes };
 }

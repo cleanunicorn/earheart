@@ -2097,6 +2097,24 @@ test("worker exit drops the in-flight cleanup load memo", async () => {
   await next;
 });
 
+test("STT worker exit drops the in-flight load-stt memo", async () => {
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const stt = hostsBySvc["earheart-stt"];
+  const held = holdLoads(stt, "load-stt");
+
+  const first = facade.transcribe(Buffer.from("wav"), STT_CFG);
+  await new Promise((r) => setImmediate(r));
+  stt.die();
+  // The dead worker's load is gone; a caller now must reach the successor.
+  const next = facade.transcribe(Buffer.from("wav"), STT_CFG);
+  await new Promise((r) => setImmediate(r));
+  assert.strictEqual(count(stt, "load-stt"), 2);
+  held[0].reject(new Error("engine process exited"));
+  held[1].resolve({ ready: true });
+  await assert.rejects(first, /engine process exited/);
+  assert.strictEqual(await next, "transcribed");
+});
+
 test("concurrent cold transcribes share one load-stt", async () => {
   // Same race on the STT side: both callers passed the loaded-model check
   // before either load resolved, so the worker built the recognizer twice.

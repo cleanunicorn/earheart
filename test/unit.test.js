@@ -902,10 +902,19 @@ test("listRemoteModels accepts a bare array and omits the auth header without a 
   }
 });
 
-test("listRemoteModels surfaces HTTP errors", async () => {
-  const { server, base } = await serveJson(() => ({ status: 401, body: { error: "nope" } }));
+test("listRemoteModels surfaces HTTP errors without the reply or the URL", async () => {
+  const { server, base } = await serveJson(() => ({
+    status: 401,
+    body: { error: { message: "Incorrect API key provided: sk-secret-value" } },
+  }));
   try {
-    await assert.rejects(() => listRemoteModels({ baseUrl: base }), /HTTP 401/);
+    await assert.rejects(
+      () => listRemoteModels({ baseUrl: base, apiKey: "sk-client-secret" }),
+      (err) => {
+        assert.strictEqual(err.message, "Model list service error 401 — check the API key in Settings");
+        return true;
+      }
+    );
   } finally {
     server.close();
   }
@@ -934,7 +943,7 @@ test("listRemoteModels returns an empty list when the service reports none", asy
 test("listRemoteModels rejects a non-JSON body", async () => {
   const { server, base } = await serveJson(() => ({ status: 200, body: "not json{" }));
   try {
-    await assert.rejects(() => listRemoteModels({ baseUrl: base }), /did not return JSON/);
+    await assert.rejects(() => listRemoteModels({ baseUrl: base }), /^Error: Model list service returned a response that isn't JSON$/);
   } finally {
     server.close();
   }
@@ -943,7 +952,10 @@ test("listRemoteModels rejects a non-JSON body", async () => {
 test("listRemoteModels rejects an unexpected JSON shape", async () => {
   const { server, base } = await serveJson(() => ({ status: 200, body: { notdata: 1 } }));
   try {
-    await assert.rejects(() => listRemoteModels({ baseUrl: base }), /Unexpected/);
+    await assert.rejects(
+      () => listRemoteModels({ baseUrl: base }),
+      /^Error: Model list service returned an unexpected \/models reply$/
+    );
   } finally {
     server.close();
   }
@@ -962,11 +974,11 @@ test("listRemoteModels strips a trailing slash before appending /models", async 
   }
 });
 
-test("listRemoteModels wraps a network failure with the URL", async () => {
+test("listRemoteModels names the host it couldn't reach, in plain words", async () => {
   // Port 1 is not listenable, so the fetch rejects at the connection stage.
   await assert.rejects(
     () => listRemoteModels({ baseUrl: "http://127.0.0.1:1/v1" }),
-    /Could not reach/
+    /^Error: Couldn't reach 127\.0\.0\.1:1$/
   );
 });
 
@@ -981,7 +993,7 @@ test("listRemoteModels reports a stalled response body as a timeout", async () =
   try {
     await assert.rejects(
       () => listRemoteModels({ baseUrl: base }, { timeoutMs: 50 }),
-      /Timed out fetching models/
+      /^Error: Model list service didn't answer within 0\.05 s$/
     );
   } finally {
     server.closeAllConnections();
@@ -996,7 +1008,7 @@ test("listRemoteModels times out when a service never responds", async () => {
   try {
     await assert.rejects(
       () => listRemoteModels({ baseUrl: base }, { timeoutMs: 20 }),
-      /Timed out fetching models/
+      /^Error: Model list service didn't answer within 0\.02 s$/
     );
   } finally {
     server.closeAllConnections();

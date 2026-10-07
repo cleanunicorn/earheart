@@ -2,6 +2,11 @@
 // "fetch failed" or "The operation was aborted due to timeout", which reach the
 // overlay, the notification and the Settings Test result verbatim. The
 // original error rides along as `cause`, so the log keeps the technical detail.
+//
+// Used by every client of a user-configured OpenAI-compatible service: stt.js,
+// cleanup.js and models-remote.js. hf-models.js and update-fetch.js keep their
+// own wrapping on purpose: they take an injected fetch and talk to fixed hosts
+// (Hugging Face, the update feed, file:// in tests), not a service the user set up.
 
 /**
  * @param {Error} err - what fetch() or the body read threw

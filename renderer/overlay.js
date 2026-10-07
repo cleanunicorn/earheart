@@ -569,7 +569,7 @@ function micLive() {
 // already keep it to the field's 10–3600 s; anything else reaching here — a
 // negative cap fires at once, a huge one never — takes the 300 s default.
 function recordingCapSeconds(value) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return 300;
+  if (!Number.isFinite(value)) return 300;
   const seconds = Math.round(value);
   return seconds >= 10 && seconds <= 3600 ? seconds : 300;
 }

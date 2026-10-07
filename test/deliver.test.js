@@ -442,3 +442,18 @@ test("a file copy that also carries an image keeps the image", async (t) => {
   assert.strictEqual(state.clip.image, PNG);
   assert.strictEqual(state.clip["text/uri-list"], undefined);
 });
+
+test("cancelling before the keystroke puts a screenshot back", async () => {
+  const { deliver, state } = loadDeliver({ trusted: true, clip: { image: PNG } });
+  const controller = new AbortController();
+  const pending = deliver(
+    "new transcript",
+    { mode: "paste", restoreClipboard: true, pasteDelayMs: DELAY },
+    controller.signal
+  );
+  controller.abort();
+
+  assert.deepStrictEqual(await pending, { method: "cancelled" });
+  assert.strictEqual(state.clip.image, PNG);
+  assert.strictEqual(state.clip.text, undefined);
+});

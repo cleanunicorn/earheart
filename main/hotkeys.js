@@ -8,6 +8,7 @@
 
 const { globalShortcut } = require("electron");
 const logger = require("./util/logger");
+const { prettyHotkey, registrationHint } = require("./util/hotkey-label");
 const NAMES = ["record", "pause"];
 
 // Named slots ("record", "pause"), each holding at most one accelerator and
@@ -34,7 +35,7 @@ function collisionPlan(target, previous, changed, results) {
     const otherName = name === "record" ? "pause" : "record";
     collisionResults[name] = {
       ok: false,
-      error: `"${target[name].accelerator}" is already used by the ${otherName} hotkey`,
+      error: `"${prettyHotkey(target[name].accelerator)}" is already used by the ${otherName} hotkey`,
     };
   }
   return { results: collisionResults };
@@ -80,7 +81,7 @@ function applyPair(next) {
       pause: recordOnly.record.ok
         ? {
             ok: false,
-            error: `"${target.pause.accelerator}" is already used by the record hotkey`,
+            error: `"${prettyHotkey(target.pause.accelerator)}" is already used by the record hotkey`,
           }
         : {
             ok: false,
@@ -104,8 +105,8 @@ function applyPair(next) {
     const attempt = attemptRegister(accelerator, onTrigger);
     if (!attempt.ok) {
       return attempt.error
-        ? `Invalid hotkey "${accelerator}": ${attempt.error.message}`
-        : `Could not register "${accelerator}" (already in use, or your desktop blocks global shortcuts — see the Wayland note in Settings).`;
+        ? `Invalid hotkey "${prettyHotkey(accelerator)}": ${attempt.error.message}`
+        : `Could not register "${prettyHotkey(accelerator)}" (${registrationHint()}).`;
     }
     addedNames.push(name);
     return null;
@@ -140,7 +141,7 @@ function applyPair(next) {
       const attempt = attemptRegister(entry.accelerator, entry.onTrigger);
       const restoreError = attempt.ok
         ? null
-        : `Could not restore "${entry.accelerator}" after rollback${
+        : `Could not restore "${prettyHotkey(entry.accelerator)}" after rollback${
             attempt.error ? `: ${attempt.error.message}` : ""
           }`;
       if (restoreError) {

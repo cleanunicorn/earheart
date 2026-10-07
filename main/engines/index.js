@@ -36,6 +36,32 @@ function isInstalled(kind, modelId) {
   return manager.isInstalled(modelsDir(), resolve(kind, modelId));
 }
 
+// Whether a dictation with these STT settings can be transcribed, answered from
+// the registry and the disk only — cheap and synchronous, so the pipeline asks
+// on every hotkey press before opening the microphone, and startup asks before
+// saying "ready". Returns data, not copy (main/setup-notices.js words it):
+//   { ok: true }                                      remote engine, or installed
+//   { ok: false, reason: "missing", modelId, label }  built-in model not on disk
+//   { ok: false, reason: "unknown", modelId }         id not in the registry
+// It proves the files are there, not that the native engine will load them;
+// the final pass still surfaces a load failure.
+function getSttReadiness(sttCfg) {
+  if (sttCfg?.engine !== "builtin") return { ok: true };
+  const modelId = sttCfg.builtin?.model;
+  const model = registry.getModel("stt", modelId);
+  if (!model) return { ok: false, reason: "unknown", modelId };
+  let installed;
+  try {
+    installed = manager.isInstalled(modelsDir(), model);
+  } catch {
+    // An indeterminate check must never cost a dictation: let it record, and
+    // the final pass reports whatever is really wrong.
+    return { ok: true };
+  }
+  if (installed) return { ok: true };
+  return { ok: false, reason: "missing", modelId, label: model.label || modelId };
+}
+
 function download(kind, modelId, { onProgress, signal } = {}) {
   return manager.download(modelsDir(), resolve(kind, modelId), { onProgress, signal });
 }
@@ -291,6 +317,7 @@ cleanupHost.onExit(forgetCleanup);
 module.exports = {
   modelsDir,
   isInstalled,
+  getSttReadiness,
   download,
   remove,
   ensureStt,

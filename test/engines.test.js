@@ -2020,3 +2020,107 @@ test("cleanup worker exit rejects pending cleanup and subsequent cancellation is
   assert.strictEqual(facade.unloadIdle(), true);
   assert.strictEqual(cleanup.stopped, false, "the exited worker is already gone");
 });
+
+/* ---------------- STT readiness (#194) ---------------- */
+
+// Pressing the hotkey with the selected built-in model missing must be refused
+// before the microphone opens, and the startup notice must not say "ready".
+// Both ask getSttReadiness, which answers from the registry and the disk only.
+function readinessFacade({ installed = new Set(), isInstalled } = {}) {
+  const checked = [];
+  const managerStub = {
+    isInstalled:
+      isInstalled ||
+      ((base, model) => {
+        checked.push(model.id);
+        return installed.has(model.id);
+      }),
+    modelDir: (base, model) => path.join(base, model.kind, model.id),
+  };
+  const hostModule = {
+    createHost: () => ({ request: async () => ({}), stop() {}, onExit() {} }),
+  };
+  return { facade: loadFacadeWith({ host: hostModule, manager: managerStub }), checked };
+}
+
+test("getSttReadiness: an installed built-in model is ready", () => {
+  const id = registry.DEFAULT_STT_MODEL;
+  const { facade } = readinessFacade({ installed: new Set([id]) });
+
+  assert.deepStrictEqual(facade.getSttReadiness({ engine: "builtin", builtin: { model: id } }), { ok: true });
+});
+
+test("getSttReadiness: a missing built-in model names its registry label", () => {
+  const id = "parakeet-tdt-0.6b-v3-int8";
+  const { facade } = readinessFacade();
+
+  assert.deepStrictEqual(facade.getSttReadiness({ engine: "builtin", builtin: { model: id } }), {
+    ok: false,
+    reason: "missing",
+    modelId: id,
+    label: registry.getModel("stt", id).label,
+  });
+});
+
+test("getSttReadiness: an incomplete download is not ready", async (t) => {
+  // The real manager: a model directory without its completion marker.
+  const base = await fsp.mkdtemp(path.join(os.tmpdir(), "earheart-ready-"));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const id = registry.DEFAULT_STT_MODEL;
+  const model = registry.getModel("stt", id);
+  fs.mkdirSync(manager.modelDir(base, model), { recursive: true });
+  const { facade } = readinessFacade({ isInstalled: (dir, m) => manager.isInstalled(base, m) });
+
+  const readiness = facade.getSttReadiness({ engine: "builtin", builtin: { model: id } });
+
+  assert.strictEqual(readiness.ok, false);
+  assert.strictEqual(readiness.reason, "missing");
+});
+
+test("getSttReadiness: an unknown model id is reported, not thrown", () => {
+  const { facade } = readinessFacade();
+
+  assert.deepStrictEqual(facade.getSttReadiness({ engine: "builtin", builtin: { model: "gone" } }), {
+    ok: false,
+    reason: "unknown",
+    modelId: "gone",
+  });
+});
+
+test("getSttReadiness: a custom STT model resolves through the registry", (t) => {
+  const custom = {
+    id: "custom-acme-stt",
+    kind: "stt",
+    label: "Acme STT",
+    engine: "sherpa-parakeet",
+    custom: true,
+    files: [{ name: "model.onnx", url: "https://huggingface.co/acme/stt/resolve/c/model.onnx" }],
+  };
+  registry.setCustomModels([custom]);
+  t.after(() => registry.setCustomModels([]));
+  const { facade } = readinessFacade();
+
+  const readiness = facade.getSttReadiness({ engine: "builtin", builtin: { model: custom.id } });
+
+  assert.strictEqual(readiness.reason, "missing");
+  assert.strictEqual(readiness.label, "Acme STT");
+});
+
+test("getSttReadiness: the remote engine is ready without touching the disk", () => {
+  const { facade, checked } = readinessFacade();
+
+  assert.deepStrictEqual(facade.getSttReadiness({ engine: "remote", builtin: { model: "gone" } }), { ok: true });
+  assert.deepStrictEqual(checked, []);
+});
+
+test("getSttReadiness: a disk check that throws does not block dictation", () => {
+  const { facade } = readinessFacade({
+    isInstalled: () => {
+      throw new Error("EACCES");
+    },
+  });
+
+  const readiness = facade.getSttReadiness({ engine: "builtin", builtin: { model: registry.DEFAULT_STT_MODEL } });
+
+  assert.strictEqual(readiness.ok, true);
+});

@@ -83,7 +83,7 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
         // id — a malformed message must not extend the deadline or reach the
         // caller. Valid progress proves the worker is alive, so push the
         // inactivity deadline out.
-        if (typeof msg.progress !== "number" || !Number.isFinite(msg.progress)) return;
+        if (!Number.isFinite(msg.progress)) return;
         entry.touch();
         if (entry.onProgress) entry.onProgress(msg.progress);
         return;
@@ -126,6 +126,12 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
           if (pending.has(id)) {
             pending.delete(id);
             reject(engineError(`engine request '${type}' timed out`, "ENGINE_TIMEOUT"));
+            // Silence this long means the worker is wedged (a native call that
+            // never returns), and every later request would queue behind it.
+            // Retire it: its other requests fail as ENGINE_EXITED so their
+            // callers fall back, and the next request forks a fresh worker.
+            // This request was removed above, so it keeps ENGINE_TIMEOUT.
+            stop();
           }
         }, timeoutMs);
       };

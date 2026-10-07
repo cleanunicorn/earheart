@@ -255,9 +255,11 @@ function stop() {
 }
 
 // Retire the STT worker only — for a decode that timed out: the native call
-// keeps running in the worker, so without this the retry (and the next
-// dictation) would queue behind it. The exit listener forgets the loaded
-// model, so the next transcribe re-forks and reloads. Cleanup is untouched.
+// keeps running in the worker, so a retry (and the next dictation) must not
+// queue behind it. The host already retires a worker whose request timed out
+// (host.js), so after a timeout this is a no-op kept as the caller's explicit
+// intent. The exit listener forgets the loaded model, so the next transcribe
+// re-forks and reloads. Cleanup is untouched.
 function restartStt() {
   sttHost.stop();
 }

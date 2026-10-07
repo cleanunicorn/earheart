@@ -165,7 +165,6 @@ function loadUpdates(t, { stored, isPackaged = false, dictation = "recording", f
   return {
     updates,
     root,
-    userData,
     temp,
     stagingDir,
     staged: path.join(stagingDir, assetName),

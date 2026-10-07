@@ -45,4 +45,25 @@ function statusError(service, status) {
   return new Error(`${service} error ${status}${hint}`);
 }
 
-module.exports = { transportError, statusError, readJson };
+/**
+ * One request to an OpenAI-compatible service, with its deadline covering the
+ * reply's body too, and every failure in the plain copy above.
+ * @param {string} url
+ * @param {RequestInit} init - method, headers, body (no signal)
+ * @param {{service: string, timeoutMs: number, signal?: AbortSignal}} opts
+ * @returns {Promise<any>} the parsed JSON reply
+ */
+async function requestJson(url, init, { service, timeoutMs, signal }) {
+  const failure = { service, timeoutS: timeoutMs / 1000 };
+  const timeout = AbortSignal.timeout(timeoutMs);
+  let res;
+  try {
+    res = await fetch(url, { ...init, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+  } catch (err) {
+    throw transportError(err, url, failure);
+  }
+  if (!res.ok) throw statusError(service, res.status);
+  return readJson(res, url, failure);
+}
+
+module.exports = { transportError, statusError, readJson, requestJson };

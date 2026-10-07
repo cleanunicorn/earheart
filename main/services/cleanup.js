@@ -5,7 +5,7 @@
 const { resolveCleanup, remoteSamplingBody } = require("../cleanup-styles");
 const { CLEAN_RUNAWAY_MESSAGE } = require("../util/clean-budget");
 const { serviceUrl } = require("./service-url");
-const { transportError, statusError, readJson } = require("./transport-error");
+const { requestJson } = require("./transport-error");
 
 // Reasoning models may emit <think>...</think> blocks; strip them.
 function stripThinking(text) {
@@ -38,12 +38,9 @@ async function clean(transcript, cfg, signal) {
   // the sampling profile; remoteSamplingBody emits only the portable fields.
   const { systemPrompt, sampling } = resolveCleanup(cfg);
 
-  const timeoutMs = cfg.timeoutMs || 60000;
-  const failure = { service: "Cleanup service", timeoutS: timeoutMs / 1000 };
-  const timeout = AbortSignal.timeout(timeoutMs);
-  let res;
-  try {
-    res = await fetch(url, {
+  const data = await requestJson(
+    url,
+    {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -54,13 +51,9 @@ async function clean(transcript, cfg, signal) {
           { role: "user", content: transcript },
         ],
       }),
-      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-    });
-  } catch (err) {
-    throw transportError(err, url, failure);
-  }
-  if (!res.ok) throw statusError("Cleanup service", res.status);
-  const data = await readJson(res, url, failure);
+    },
+    { service: "Cleanup service", timeoutMs: cfg.timeoutMs || 60000, signal }
+  );
   const choice = data.choices?.[0];
   // The server cut the answer off at its token limit. A half-cleaned
   // transcript is not a cleanup result; throwing sends the pipeline down the

@@ -4,6 +4,7 @@
 // other compatible service — switching is just a base URL change.
 
 const { serviceUrl } = require("./service-url");
+const { transportError, statusError, readJson } = require("./transport-error");
 
 /**
  * @param {Buffer|ArrayBuffer} wav - WAV audio (16 kHz mono PCM16 expected)
@@ -23,17 +24,22 @@ async function transcribe(wav, cfg, signal) {
   const headers = {};
   if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
 
-  const timeout = AbortSignal.timeout(cfg.timeoutMs || 120000);
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: form,
-    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-  });
-  if (!res.ok) {
-    throw new Error(`STT service error ${res.status}`);
+  const timeoutMs = cfg.timeoutMs || 120000;
+  const failure = { service: "STT service", timeoutS: timeoutMs / 1000 };
+  const timeout = AbortSignal.timeout(timeoutMs);
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: form,
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    });
+  } catch (err) {
+    throw transportError(err, url, failure);
   }
-  const data = await res.json();
+  if (!res.ok) throw statusError("STT service", res.status);
+  const data = await readJson(res, url, failure);
   if (typeof data.text !== "string") {
     throw new Error("STT service returned no `text` field");
   }

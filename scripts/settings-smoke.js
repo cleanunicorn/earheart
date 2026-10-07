@@ -157,6 +157,23 @@ app.whenReady().then(async () => {
       hotkeyRows.pause === "",
       JSON.stringify(hotkeyRows)
     );
+    // A failed swap whose rollback also failed leaves the saved hotkey unbound:
+    // the result names the attempted accelerator, the field shows the saved
+    // one, and the error must still show (hotkeys.js marks it unbound).
+    const unboundRow = await js(`(() => {
+      renderHotkeyStatus({
+        hotkey: { ok: false, unbound: true, error: "record hotkey is now unbound", accelerator: "Alt+F11" },
+        pauseHotkey: { ok: true },
+      });
+      const text = document.getElementById("hotkey-status").textContent;
+      renderHotkeyStatus(null);
+      return text;
+    })()`);
+    check(
+      "a hotkey left unbound by a failed restore shows on reopen",
+      unboundRow === "record hotkey is now unbound",
+      JSON.stringify(unboundRow)
+    );
 
     // 1. One continuous scroll, everything rendered.
     const layout = JSON.parse(

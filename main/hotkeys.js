@@ -150,8 +150,11 @@ function applyPair(next) {
         logger.warn(unboundError);
         const priorError = results[name].error.replace(/^Not changed: the /, "The ");
         const separator = /[.!?]$/.test(priorError) ? " " : ". ";
+        // `unbound`: this result is about the slot itself — its saved hotkey
+        // is gone — not only about the accelerator that was attempted.
         results[name] = {
           ok: false,
+          unbound: true,
           error: `${priorError}${separator}${unboundError}`,
         };
       } else {

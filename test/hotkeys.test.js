@@ -364,6 +364,27 @@ test("a collateral rollback failure reports the unbound slot without contradicti
   assert.strictEqual(bindings.has(B), true);
 });
 
+// A failed swap whose rollback also fails leaves the slot's *saved* hotkey
+// unbound. Settings hides results about an accelerator the field no longer
+// holds, so this one must say it describes the slot itself: the saved value
+// (A) is what the field shows on reopen, not the attempted one (B).
+test("a slot left unbound by a failed restore is marked as describing the slot", () => {
+  const { hotkeys, bindings } = loadHotkeys({
+    registerImpl(accelerator, attempt) {
+      if (accelerator === A && (attempt === 2 || attempt === 3)) return false;
+      return true;
+    },
+  });
+  hotkeys.applyPair(pair(A, B));
+
+  const results = hotkeys.toHotkeyResults(hotkeys.applyPair(pair(B, A)), { hotkey: B, pauseHotkey: A });
+
+  assert.strictEqual(bindings.has(A), false, "the saved record hotkey is really unbound");
+  assert.strictEqual(results.hotkey.unbound, true);
+  assert.strictEqual(results.hotkey.accelerator, B, "the attempted accelerator differs from the saved one");
+  assert.strictEqual(results.pauseHotkey.unbound, undefined, "an ordinary rejection keeps its old binding");
+});
+
 test("empty targets are valid unbound states", () => {
   const { hotkeys, bindings } = loadHotkeys();
   hotkeys.applyPair(pair(A, B));

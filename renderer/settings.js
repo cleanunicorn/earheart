@@ -704,15 +704,17 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
 // (from settings:get) when the window opens, then each Save's. A result is shown
 // only while the field holds the accelerator it was attempted with — after a
 // rejected save, settings keep the old working value, and an error about the
-// rejected one would describe a combination that is no longer there. A result
-// without an accelerator (an older main) is shown as is.
+// rejected one would describe a combination that is no longer there. Two kinds
+// are shown regardless: a result without an accelerator (an older main), and an
+// `unbound` one — a failed restore left the saved hotkey itself unregistered.
 function renderHotkeyStatus(status) {
   const rows = [
     [$("hotkey-status"), status?.hotkey, current.hotkey],
     [$("pause-hotkey-status"), status?.pauseHotkey, current.pauseHotkey],
   ];
   for (const [row, result, shown] of rows) {
-    const stale = result?.accelerator !== undefined && result.accelerator !== (shown || "");
+    const stale =
+      !result?.unbound && result?.accelerator !== undefined && result.accelerator !== (shown || "");
     row.textContent = result && !result.ok && !stale ? result.error : "";
     row.className = "status err";
   }

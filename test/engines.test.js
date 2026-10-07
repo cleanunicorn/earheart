@@ -1754,14 +1754,8 @@ test("engines facade routes STT and cleanup to separate worker hosts", async () 
   const cleanup = hostsBySvc["earheart-cleanup"];
   assert.ok(stt && cleanup, "both hosts should be created");
 
-  await facade.transcribe(
-    Buffer.from("wav"),
-    { builtin: { model: registry.DEFAULT_STT_MODEL }, language: "" }
-  );
-  await facade.clean(
-    "hello",
-    { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules" }
-  );
+  await facade.transcribe(Buffer.from("wav"), STT_CFG);
+  await facade.clean("hello", CLEANUP_CFG);
 
   // Each host saw only its own engine's request types.
   assert.ok(stt.calls.includes("load-stt") && stt.calls.includes("transcribe"));

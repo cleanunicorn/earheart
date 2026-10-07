@@ -33,8 +33,9 @@ The Makefile wraps most tasks; `make help` lists them all.
 - **Install / bootstrap:** `make install`
 - **Run locally:** `make run`
 - **Lint / format / type-check:** none — plain JavaScript, no linter configured.
-- **Test (all):** `make test` (`node --test`, no framework)
-- **Test (single file):** `node --test test/pipeline.test.js`
+- **Test (all):** `make test` (`node --test` with a 30 s per-test timeout, no
+  framework)
+- **Test (single file):** `node --test --test-timeout=30000 test/pipeline.test.js`
 - **Smoke checks (Linux):** `make smoke`, `make overlay-smoke`,
   `make settings-smoke` (each wraps `xvfb-run -a`), and
   `xvfb-run -a npx electron scripts/engine-smoke.js --no-sandbox` (no make

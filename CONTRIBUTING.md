@@ -22,7 +22,7 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | --- | --- |
 | `make install` | Install app dependencies (npm) |
 | `make run` | Run the app in development |
-| `make test` | Run unit tests (`node --test`) |
+| `make test` | Run unit tests (`node --test`, 30 s per-test timeout) |
 | `make smoke` | Boot the app headlessly and exit (CI-style sanity check) |
 | `make overlay-smoke` | Drive the overlay with a fake mic and check capture/UI sync |
 | `make settings-smoke` | Drive the settings window and check the index/scroll-spy contract and live settings sync |
@@ -52,7 +52,7 @@ other models.
 ## Tests
 
 ```bash
-npm test                       # unit tests (node --test, no test framework)
+npm test                       # unit tests (node --test, 30 s per-test timeout, no framework)
 make smoke                     # boots the full app with --smoke-test and exits
 npx electron scripts/engine-smoke.js --no-sandbox   # boot the engine worker, round-trip a ping
 make overlay-smoke             # drive the overlay with a fake mic, check capture/UI sync

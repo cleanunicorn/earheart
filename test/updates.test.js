@@ -200,6 +200,18 @@ function asAppImage(t) {
   };
 }
 
+// A packaged macOS app running from a throwaway Earheart.app.
+function asMacApp(t) {
+  const bundle = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "earheart-mac-")), "Earheart.app");
+  t.after(() => fs.rmSync(path.dirname(bundle), { recursive: true, force: true }));
+  overrideProcess(t, {
+    platform: "darwin",
+    arch: "arm64",
+    execPath: path.join(bundle, "Contents", "MacOS", "Earheart"),
+  });
+  return bundle;
+}
+
 // --- AC4: download and verify against a real file:// feed -----------------
 
 test("a wrong sha512 fails with Checksum mismatch and leaves nothing staged", async (t) => {
@@ -515,13 +527,7 @@ test("installWindows runs the verified setup silently and quits", async (t) => {
 });
 
 test("installMac swaps in the extracted bundle through the swap script", async (t) => {
-  const bundle = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "earheart-mac-")), "Earheart.app");
-  t.after(() => fs.rmSync(path.dirname(bundle), { recursive: true, force: true }));
-  overrideProcess(t, {
-    platform: "darwin",
-    arch: "arm64",
-    execPath: path.join(bundle, "Contents", "MacOS", "Earheart"),
-  });
+  const bundle = asMacApp(t);
   // Stand-in for ditto: "extract" a bundle reporting the expected version.
   const spawnSyncImpl = (cmd, args) => {
     if (cmd === "/usr/bin/ditto") {
@@ -653,14 +659,8 @@ test("init leaves another user's old temp staging dir alone", POSIX, async (t) =
 });
 
 test("init clears a leftover .update-old bundle on macOS", async (t) => {
-  const bundle = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "earheart-mac-")), "Earheart.app");
-  t.after(() => fs.rmSync(path.dirname(bundle), { recursive: true, force: true }));
+  const bundle = asMacApp(t);
   fs.mkdirSync(`${bundle}.update-old`, { recursive: true });
-  overrideProcess(t, {
-    platform: "darwin",
-    arch: "arm64",
-    execPath: path.join(bundle, "Contents", "MacOS", "Earheart"),
-  });
   const ctx = loadUpdates(t, { isPackaged: true });
 
   ctx.updates.init({});

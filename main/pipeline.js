@@ -38,23 +38,21 @@ let session = 0; // current dictation session id
 let abortController = null;
 const stateListeners = new Set();
 
-// Held past show() so the click handler survives: a Notification only a local
-// scope referenced can be collected before the user gets to it (main.js keeps
-// its startup notice the same way).
-let lastNotice = null;
+// Notices about a dictation that went wrong; the fix lives in Settings (the
+// service, its key, the paste tool), so clicking one opens it. Without a
+// notification service they open nothing: the overlay has already said what
+// happened, and a window popping up on every failed cleanup would be worse.
+// The notifier catches its own failures — these run on the fallback paths and
+// must never cost the user's words.
+const failureNotifier = createNotifier({
+  Notification,
+  openSettings: () => windows.openSettings(),
+  logger,
+  settingsWhenUnsupported: false,
+});
 
-// Every pipeline notification is about a failure whose fix lives in Settings
-// (the service, its key, the paste tool), so clicking one opens it. A
-// notification that can't be shown is logged and dropped: it runs on the
-// fallback paths, and must never cost the user's words.
 function notify(note) {
-  try {
-    lastNotice = new Notification(note);
-    lastNotice.on("click", () => windows.openSettings());
-    lastNotice.show();
-  } catch (err) {
-    logger.warn(`notification failed: ${err.message}`);
-  }
+  failureNotifier.show(note);
 }
 
 // Live preview (the streaming partial transcript shown while recording) lives in

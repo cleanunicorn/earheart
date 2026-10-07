@@ -31,6 +31,9 @@ function loadPipelineWith({ engines, settings, overrides = {} }) {
       app: { getPath: () => os.tmpdir() },
       ipcMain: { on() {} },
       Notification: class {
+        static isSupported() {
+          return true;
+        }
         on() {}
         show() {}
       },
@@ -883,4 +886,19 @@ test("pipeline: without a notification service a missing model opens Settings", 
   assert.strictEqual(rig.pipeline.getState(), "idle");
   assert.strictEqual(rig.log.notifications.length, 0);
   assert.strictEqual(rig.log.settingsOpened, 1);
+});
+
+test("pipeline: without a notification service a failed dictation opens nothing", async () => {
+  // The overlay already said it; Settings popping up uninvited would not help.
+  const rig = dictationRig({
+    engine: "remote",
+    notificationsSupported: false,
+    transcribe: async () => {
+      throw new Error("Couldn't reach api.example.test");
+    },
+  });
+  await rig.dictate(speechWav(1));
+  assert.ok(rig.log.statuses.includes("error"));
+  assert.strictEqual(rig.log.notifications.length, 0);
+  assert.strictEqual(rig.log.settingsOpened, 0);
 });

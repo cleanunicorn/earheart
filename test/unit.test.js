@@ -153,6 +153,13 @@ test("stripThinking removes reasoning blocks", () => {
     "So this is a test."
   );
   assert.strictEqual(stripThinking("reasoning only</think>"), "");
+  // Reasoning that closes more than once: everything up to the last closer goes,
+  // so no reasoning and no stray tag reach the answer.
+  assert.strictEqual(stripThinking("first thought</think>\nsecond thought\n</think>\n\nAnswer."), "Answer.");
+  // The closer is matched case-insensitively, like the paired rule.
+  assert.strictEqual(stripThinking("reasoning</THINK>Answer"), "Answer");
+  // A paired block before a lone closer: the order of the rules decides this.
+  assert.strictEqual(stripThinking("<think>a</think>more reasoning</think>Answer"), "Answer");
 });
 
 test("remote cleanup rejects an answer the server cut off at its token limit", async () => {

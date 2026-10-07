@@ -354,13 +354,15 @@ function ggufListing(commit, { bytes = 12, sha256 } = {}) {
   };
 }
 
-function addCustomHarness(cfg, listings) {
+function addCustomHarness(cfg, listings, engines = {}) {
   const events = [];
   let next = 0;
   let failWipe = false;
+  const listing = async () => listings[next++];
   const loaded = loadIpcHandlers(cfg, {
-    hf: { listGgufQuants: async () => listings[next++] },
+    hf: { listGgufQuants: listing, listSttVariants: listing },
     engines: {
+      ...engines,
       removeFiles: async (def) => {
         if (failWipe) {
           const err = new Error("EBUSY: resource busy or locked");
@@ -372,8 +374,8 @@ function addCustomHarness(cfg, listings) {
       },
     },
   });
-  const add = () =>
-    loaded.handlers["models:add-custom"]({}, { kind: "cleanup", url: "o/r-GGUF", variant: "Q4_K_M" });
+  const add = (kind = "cleanup") =>
+    loaded.handlers["models:add-custom"]({}, { kind, url: "o/r-GGUF", variant: "Q4_K_M" });
   return { ...loaded, events, add, setFailWipe: (v) => (failWipe = v) };
 }
 
@@ -530,4 +532,27 @@ test("models:remove gives actionable copy for a locked file and passes other err
   assert.strictEqual(warnings.length, 1);
   assert.match(warnings[0], /EACCES/);
   assert.strictEqual(other.error, "Unknown cleanup model: gemma-3-1b");
+});
+
+test("re-adding an id under the other kind wipes the bytes under both kinds", async (t) => {
+  t.after(() => registry.setCustomModels([]));
+  // Ids are custom-<repo>-<variant> for both kinds, and directories are
+  // <kind>/<id>, so an STT variant labelled like a GGUF quant collides.
+  const sttListing = {
+    ...ggufListing("bbb"),
+    variants: [{ ...ggufListing("bbb").variants[0], sherpa: { encoder: "r-Q4_K_M.gguf" } }],
+  };
+  const h = addCustomHarness(configWith("gemma-3-1b"), [ggufListing("aaa"), sttListing]);
+
+  await h.add("cleanup");
+  const result = await h.add("stt");
+
+  assert.strictEqual(result.ok, true, result.error);
+  assert.strictEqual(result.modelId, "custom-o-r-gguf-q4-k-m");
+  assert.deepStrictEqual(h.events.slice(-2), [
+    "wipe:cleanup:custom-o-r-gguf-q4-k-m:https://huggingface.co/o/r-GGUF/resolve/aaa/r-Q4_K_M.gguf",
+    "wipe:stt:custom-o-r-gguf-q4-k-m:https://huggingface.co/o/r-GGUF/resolve/bbb/r-Q4_K_M.gguf",
+  ]);
+  const stored = h.saved.at(-1).customModels.filter((m) => m.id === result.modelId);
+  assert.deepStrictEqual(stored.map((m) => m.kind), ["stt"]);
 });

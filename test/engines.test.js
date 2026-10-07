@@ -1259,7 +1259,7 @@ test("cancellation preserves a resumable partial", async () => {
       res.write(full.subarray(0, 256));
       return;
     }
-    const offset = Number(req.headers.range.match(/^bytes=(\d+)-$/)[1]);
+    const offset = rangeOffset(req);
     res.statusCode = 206;
     res.setHeader("content-range", `bytes ${offset}-${full.length - 1}/${full.length}`);
     res.setHeader("content-length", full.length - offset);

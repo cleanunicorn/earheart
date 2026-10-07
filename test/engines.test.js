@@ -1796,6 +1796,29 @@ function loadTwoHostFacade() {
 const STT_CFG = { builtin: { model: registry.DEFAULT_STT_MODEL }, language: "" };
 const CLEANUP_CFG = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules" };
 const count = (host, type) => host.calls.filter((t) => t === type).length;
+// Let pending promise chains (a facade call reaching its host request) run.
+const drain = () => new Promise((resolve) => setImmediate(resolve));
+
+// Hold one request type in flight until the test releases (or fails) it, the
+// way a cold load sits in the real worker for seconds. The host reports busy
+// until it settles, as the real one does. Returns the controls.
+function holdLoads(host, loadType) {
+  const held = [];
+  const passThrough = host.request;
+  host.request = (type, payload) => {
+    if (type !== loadType) return passThrough(type, payload);
+    host.calls.push(type);
+    host.inFlight++;
+    return new Promise((resolve, reject) => {
+      const settle = (fn) => (value) => {
+        host.inFlight--;
+        fn(value);
+      };
+      held.push({ resolve: settle(resolve), reject: settle(reject), payload });
+    });
+  };
+  return held;
+}
 
 test("an STT worker crash forgets only STT loaded-state, not cleanup", async () => {
   // Crash isolation is the point of the split: if the STT worker dies, the next
@@ -1922,23 +1945,10 @@ test("a worker mid cold-load is skipped and reported, not counted as idle", asyn
   const { facade, hostsBySvc } = loadTwoHostFacade();
   const stt = hostsBySvc["earheart-stt"];
 
-  // Hold `load-stt` in flight the way the real host does: busy until it settles.
-  let releaseLoad;
-  const held = new Promise((r) => (releaseLoad = r));
-  const passThrough = stt.request;
-  stt.request = async (type, payload) => {
-    if (type !== "load-stt") return passThrough(type, payload);
-    stt.inFlight++;
-    try {
-      await held;
-      return { ready: true };
-    } finally {
-      stt.inFlight--;
-    }
-  };
+  const held = holdLoads(stt, "load-stt");
 
   const loading = facade.transcribe(Buffer.from("wav"), STT_CFG);
-  await new Promise((r) => setImmediate(r)); // let ensureStt reach the pending load
+  await drain(); // let ensureStt reach the pending load
   assert.ok(stt.busy(), "precondition: the load is actually in flight");
 
   assert.strictEqual(
@@ -1948,7 +1958,7 @@ test("a worker mid cold-load is skipped and reported, not counted as idle", asyn
   );
   assert.ok(!stt.stopped, "a worker mid-load must not be killed");
 
-  releaseLoad();
+  held[0].resolve({ ready: true });
   await loading;
 
   // Once the load settles the worker is resident and evicts as usual.
@@ -2120,4 +2130,172 @@ test("cleanup worker exit rejects pending cleanup and subsequent cancellation is
   assert.strictEqual(cleanup.calls.length, requestsBeforeCancel);
   assert.strictEqual(facade.unloadIdle(), true);
   assert.strictEqual(cleanup.stopped, false, "the exited worker is already gone");
+});
+
+test("concurrent cold ensureCleanup calls share one load-cleanup", async () => {
+  // Two callers asking for the same cold model at once share one request. The
+  // worker would also collapse a second load-cleanup (it queues loads and
+  // checks residency; see cleanup-worker.test.js), so this pins the facade's
+  // half: one round trip, not two.
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const cleanup = hostsBySvc["earheart-cleanup"];
+  const held = holdLoads(cleanup, "load-cleanup");
+
+  const first = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
+  const second = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
+  assert.strictEqual(count(cleanup, "load-cleanup"), 1, "the second caller joins the in-flight load");
+  held[0].resolve({ ready: true });
+  assert.deepStrictEqual(await first, { ready: true });
+  assert.deepStrictEqual(await second, { ready: true });
+
+  // Settled loads are not cached: the worker owns residency, so a later call
+  // asks it again (it answers from its resident-model check).
+  const later = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
+  assert.strictEqual(count(cleanup, "load-cleanup"), 2);
+  held[1].resolve({ ready: true });
+  await later;
+});
+
+test("ensureCleanup memo: another model posts its own load, a failed load is not reused", async () => {
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const cleanup = hostsBySvc["earheart-cleanup"];
+  const held = holdLoads(cleanup, "load-cleanup");
+
+  const a = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
+  const b = facade.ensureCleanup("granite-4.0-micro");
+  assert.strictEqual(count(cleanup, "load-cleanup"), 2, "a different model is a different load");
+  held[0].reject(new Error("cleanup load failed"));
+  await assert.rejects(a, /cleanup load failed/);
+  // The settled load must not clear the slot the still-running one now owns.
+  const joined = facade.ensureCleanup("granite-4.0-micro");
+  assert.strictEqual(count(cleanup, "load-cleanup"), 2, "a live load is still joined");
+  held[1].resolve({ ready: true });
+  await b;
+  await joined;
+
+  const retry = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
+  assert.strictEqual(count(cleanup, "load-cleanup"), 3, "a failed load must be retried, not replayed");
+  held[2].resolve({ ready: true });
+  await retry;
+});
+
+test("a caller retrying straight from a failed load's rejection gets a fresh load", async () => {
+  // The slot must be clear by the time any caller hears of the failure, or a
+  // retry from its rejection handler joins the failed load again.
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const cleanup = hostsBySvc["earheart-cleanup"];
+  const held = holdLoads(cleanup, "load-cleanup");
+
+  const stt = hostsBySvc["earheart-stt"];
+  const sttHeld = holdLoads(stt, "load-stt");
+
+  const first = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
+  const retried = first.catch(() => facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL));
+  held[0].reject(new Error("cleanup load failed"));
+  await drain();
+  assert.strictEqual(count(cleanup, "load-cleanup"), 2, "the retry posted its own load");
+  held[1].resolve({ ready: true });
+  assert.deepStrictEqual(await retried, { ready: true });
+
+  const sttFirst = facade.transcribe(Buffer.from("wav"), STT_CFG);
+  const sttRetried = sttFirst.catch(() => facade.transcribe(Buffer.from("wav"), STT_CFG));
+  await drain();
+  sttHeld[0].reject(new Error("stt load failed"));
+  await drain();
+  assert.strictEqual(count(stt, "load-stt"), 2, "the STT retry posted its own load");
+  sttHeld[1].resolve({ ready: true });
+  assert.strictEqual(await sttRetried, "transcribed");
+});
+
+test("a changed cleanup context size is a different load, not a joined one", (t) => {
+  // The context is allocated at load time, so a caller wanting a bigger one
+  // (Max dictation length raised) must not join a load of the smaller one.
+  const settings = require("../main/settings");
+  const base = settings.get();
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const cleanup = hostsBySvc["earheart-cleanup"];
+  const held = holdLoads(cleanup, "load-cleanup");
+
+  const small = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
+  t.mock.method(settings, "get", () => ({ ...base, audio: { ...base.audio, maxRecordingSeconds: 3600 } }));
+  const large = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
+  assert.strictEqual(count(cleanup, "load-cleanup"), 2);
+  assert.ok(
+    held[1].payload.contextSize > held[0].payload.contextSize,
+    `${held[1].payload.contextSize} > ${held[0].payload.contextSize}`
+  );
+  held[0].resolve({ ready: true });
+  held[1].resolve({ ready: true });
+  return Promise.all([small, large]);
+});
+
+test("worker exit drops the in-flight cleanup load memo", async () => {
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const cleanup = hostsBySvc["earheart-cleanup"];
+  const held = holdLoads(cleanup, "load-cleanup");
+
+  const first = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
+  cleanup.die();
+  // The dead worker's load is gone; a caller now must reach the successor.
+  const next = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
+  assert.strictEqual(count(cleanup, "load-cleanup"), 2);
+  held[0].reject(new Error("engine process exited"));
+  held[1].resolve({ ready: true });
+  await assert.rejects(first, /engine process exited/);
+  await next;
+});
+
+test("STT worker exit drops the in-flight load-stt memo", async () => {
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const stt = hostsBySvc["earheart-stt"];
+  const held = holdLoads(stt, "load-stt");
+
+  const first = facade.transcribe(Buffer.from("wav"), STT_CFG);
+  await drain();
+  stt.die();
+  // The dead worker's load is gone; a caller now must reach the successor.
+  const next = facade.transcribe(Buffer.from("wav"), STT_CFG);
+  await drain();
+  assert.strictEqual(count(stt, "load-stt"), 2);
+  held[0].reject(new Error("engine process exited"));
+  held[1].resolve({ ready: true });
+  await assert.rejects(first, /engine process exited/);
+  assert.strictEqual(await next, "transcribed");
+});
+
+test("concurrent cold transcribes share one load-stt", async () => {
+  // Same race on the STT side: both callers passed the loaded-model check
+  // before either load resolved, so the worker built the recognizer twice.
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const stt = hostsBySvc["earheart-stt"];
+  const held = holdLoads(stt, "load-stt");
+
+  const first = facade.transcribe(Buffer.from("wav"), STT_CFG);
+  const second = facade.transcribe(Buffer.from("wav"), STT_CFG);
+  await drain();
+  assert.strictEqual(count(stt, "load-stt"), 1, "the second caller joins the in-flight load");
+  held[0].resolve({ ready: true });
+  assert.strictEqual(await first, "transcribed");
+  assert.strictEqual(await second, "transcribed");
+
+  // Resolved: the facade now knows the model is resident and doesn't re-post.
+  await facade.transcribe(Buffer.from("wav"), STT_CFG);
+  assert.strictEqual(count(stt, "load-stt"), 1);
+});
+
+test("a failed STT load is not reused by the next caller", async () => {
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const stt = hostsBySvc["earheart-stt"];
+  const held = holdLoads(stt, "load-stt");
+
+  const first = facade.transcribe(Buffer.from("wav"), STT_CFG);
+  await drain();
+  held[0].reject(new Error("stt load failed"));
+  await assert.rejects(first, /stt load failed/);
+
+  const retry = facade.transcribe(Buffer.from("wav"), STT_CFG);
+  await drain();
+  assert.strictEqual(count(stt, "load-stt"), 2);
+  held[1].resolve({ ready: true });
+  assert.strictEqual(await retry, "transcribed");
 });

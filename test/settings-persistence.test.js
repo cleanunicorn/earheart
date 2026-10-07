@@ -102,3 +102,62 @@ test("a saved cleanup model survives a new default", (t) => {
   const fresh = makeSettingsDir(t);
   assert.strictEqual(loadSettings(fresh).get().cleanup.builtin.model, "cleanup-default");
 });
+
+// The limits Settings shows as min/max on its two Performance fields. Main
+// keeps its own copy (it must not parse renderer markup), so read the markup
+// here and hold the two together.
+function fieldRange(id) {
+  const html = fs.readFileSync(path.join(__dirname, "..", "renderer", "settings.html"), "utf8");
+  const tag = html.match(new RegExp(`<input id="${id}"[^>]*>`))?.[0];
+  assert.ok(tag, `settings.html must have #${id}`);
+  const min = Number(tag.match(/\bmin="([^"]+)"/)?.[1]);
+  const max = Number(tag.match(/\bmax="([^"]+)"/)?.[1]);
+  assert.ok(Number.isFinite(min) && Number.isFinite(max), `#${id} must declare numeric min and max`);
+  return { min, max };
+}
+
+function limits(s) {
+  return { maxSeconds: s.audio.maxRecordingSeconds, idle: s.engines.idleUnloadMinutes };
+}
+
+test("save clamps the dictation length and idle unload to the Settings ranges", (t) => {
+  const dir = makeSettingsDir(t);
+  const settings = loadSettings(dir);
+  const file = path.join(dir, "settings.json");
+  const seconds = fieldRange("max-seconds");
+  const minutes = fieldRange("idle-unload");
+
+  for (const [input, expected] of [
+    [{ maxSeconds: -5, idle: -1 }, { maxSeconds: seconds.min, idle: minutes.min }],
+    [{ maxSeconds: 99999, idle: 9999 }, { maxSeconds: seconds.max, idle: minutes.max }],
+    [{ maxSeconds: seconds.min - 1, idle: minutes.max + 1 }, { maxSeconds: seconds.min, idle: minutes.max }],
+    [{ maxSeconds: 420.6, idle: 2.4 }, { maxSeconds: 421, idle: 2 }],
+    [{ maxSeconds: NaN, idle: Infinity }, { maxSeconds: 300, idle: 2 }],
+    [{ maxSeconds: 300, idle: 0 }, { maxSeconds: 300, idle: 0 }],
+  ]) {
+    const next = { hotkey: "Kept", audio: { deviceId: "mic", maxRecordingSeconds: input.maxSeconds }, engines: { idleUnloadMinutes: input.idle } };
+    const snapshot = JSON.stringify(next);
+    const returned = settings.save(next);
+    assert.deepStrictEqual(limits(returned), expected, JSON.stringify(input));
+    assert.deepStrictEqual(limits(settings.get()), expected);
+    assert.deepStrictEqual(limits(JSON.parse(fs.readFileSync(file, "utf8"))), expected);
+    assert.strictEqual(returned.audio.deviceId, "mic");
+    assert.strictEqual(returned.hotkey, "Kept");
+    assert.strictEqual(JSON.stringify(next), snapshot, "save must not mutate its argument");
+  }
+  assert.deepStrictEqual(limits(settings.DEFAULTS), { maxSeconds: 300, idle: 2 });
+});
+
+test("a hand-edited settings file can't load an out-of-range limit", (t) => {
+  const dir = makeSettingsDir(t);
+  const file = path.join(dir, "settings.json");
+  const raw = JSON.stringify({ hotkey: "Mine", audio: { maxRecordingSeconds: -5 }, engines: { idleUnloadMinutes: 99999 } });
+  fs.writeFileSync(file, raw);
+  const settings = loadSettings(dir);
+
+  assert.deepStrictEqual(limits(settings.get()), { maxSeconds: 10, idle: 240 });
+  assert.strictEqual(settings.get().hotkey, "Mine");
+  // Validation, not a migration: loading never rewrites the user's file.
+  assert.strictEqual(fs.readFileSync(file, "utf8"), raw);
+  assert.deepStrictEqual(limits(settings.DEFAULTS), { maxSeconds: 300, idle: 2 });
+});

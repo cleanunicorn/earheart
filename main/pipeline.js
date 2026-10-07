@@ -504,7 +504,7 @@ async function process(sid, wavArrayBuffer) {
         if (stale()) return;
         // Cleanup is an enhancement: fall back to the raw transcript and
         // surface what happened instead of dropping the dictation.
-        logger.error("cleanup failed:", err.message);
+        logger.error("cleanup failed:", err);
         notify({
           title: "Earheart: cleanup failed, used raw transcript",
           body: String(err.message).slice(0, 180),

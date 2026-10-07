@@ -31,10 +31,11 @@ function loadPipelineWith({ engines, settings, overrides = {} }) {
       app: { getPath: () => os.tmpdir() },
       ipcMain: { on() {} },
       Notification: class {
+        on() {}
         show() {}
       },
     },
-    [resolveFrom("./windows")]: { sendToOverlay() {}, showOverlay() {}, hideOverlay() {} },
+    [resolveFrom("./windows")]: { sendToOverlay() {}, showOverlay() {}, hideOverlay() {}, openSettings() {} },
     [resolveFrom("./settings")]: settings,
     [resolveFrom("./services/route")]: { transcribe: async () => "", clean: async () => "" },
     [resolveFrom("./engines")]: engines,
@@ -234,12 +235,14 @@ function dictationRig({
   deliver: deliverText,
   onHistory,
   clean: cleanupText,
+  notificationThrows = false,
 } = {}) {
   const log = {
     transcribe: [],
     delivered: [],
     history: [],
     notifications: [],
+    settingsOpened: 0,
     statuses: [],
     settingsEvents: [],
     lastStart: null,
@@ -272,10 +275,15 @@ function dictationRig({
         ipcMain: { on: (channel, fn) => (handlers[channel] = fn) },
         Notification: class {
           constructor(opts) {
+            if (notificationThrows) throw new Error("no notification service");
             this.opts = opts;
+            this.handlers = {};
+          }
+          on(event, fn) {
+            this.handlers[event] = fn;
           }
           show() {
-            log.notifications.push(this.opts);
+            log.notifications.push({ ...this.opts, click: this.handlers.click });
           }
         },
       },
@@ -283,6 +291,7 @@ function dictationRig({
         createOverlay: () => ({ webContents: { isLoading: () => false } }),
         showOverlay() {},
         hideOverlay() {},
+        openSettings: () => log.settingsOpened++,
         sendToSettings: (channel) => log.settingsEvents.push(channel),
         sendToOverlay(channel, payload) {
           if (channel === "record:start") {
@@ -711,4 +720,72 @@ test("pipeline: failed cleanup delivers raw once, records failure and notifies",
   assert.strictEqual(rig.log.history[0].text, "Keep these words.");
   assert.strictEqual(rig.log.history[0].cleaned, false);
   assert.ok(rig.log.notifications.some((entry) => /cleanup failed/.test(entry.title)));
+});
+
+// Every pipeline notification leads to Settings, where the service, key and
+// paste options live: clicking one must open it.
+function assertClickOpensSettings(rig, entry) {
+  assert.strictEqual(typeof entry.click, "function", `"${entry.title}" has a click action`);
+  const before = rig.log.settingsOpened;
+  entry.click();
+  assert.strictEqual(rig.log.settingsOpened, before + 1);
+}
+
+test("pipeline: a failed transcription notifies, and the click opens Settings", async () => {
+  // The one path where the dictation is lost: the overlay line is gone in
+  // five seconds, so a notification has to carry it.
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => {
+      throw new Error("Couldn't reach api.example.test");
+    },
+  });
+  await rig.dictate(speechWav(1));
+  assert.ok(rig.log.statuses.includes("error"));
+  assert.deepStrictEqual(rig.log.delivered, []);
+  assert.strictEqual(rig.log.notifications.length, 1);
+  const [note] = rig.log.notifications;
+  assert.match(note.title, /dictation failed/);
+  assert.strictEqual(note.body, "Couldn't reach api.example.test");
+  assertClickOpensSettings(rig, note);
+});
+
+test("pipeline: the interrupted, cleanup-failed and paste-failed notifications open Settings", async () => {
+  const rig = dictationRig({
+    cleanup: true,
+    // 50 s of pause-less speech decodes in three pieces; the worker dies on
+    // the second and its retry, so the transcript is incomplete.
+    transcribe: async (n) => {
+      if (n === 1 || n === 2) throw exited();
+      return `w${n}`;
+    },
+    clean: async () => {
+      throw new Error("Cleanup service error 503");
+    },
+    deliver: async (text) => {
+      rig.log.delivered.push(text);
+      return { method: "clipboard", note: "Auto-paste failed", hint: "Paste it with Ctrl+V" };
+    },
+  });
+  await rig.dictate(loudWav(50));
+  const titles = rig.log.notifications.map((entry) => entry.title);
+  assert.ok(titles.some((t) => /interrupted/.test(t)), titles.join(", "));
+  assert.ok(titles.some((t) => /cleanup failed/.test(t)), titles.join(", "));
+  assert.ok(titles.some((t) => /auto-paste failed/.test(t)), titles.join(", "));
+  for (const entry of rig.log.notifications) assertClickOpensSettings(rig, entry);
+});
+
+test("pipeline: a notification that can't be shown never costs the user's words", async () => {
+  const rig = dictationRig({
+    cleanup: true,
+    notificationThrows: true,
+    transcribe: async () => "Keep these words.",
+    clean: async () => {
+      throw new Error("Cleanup service error 503");
+    },
+  });
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(rig.log.delivered, ["Keep these words."]);
+  assert.strictEqual(rig.log.history[0].text, "Keep these words.");
+  assert.ok(rig.log.statuses.includes("done"));
 });

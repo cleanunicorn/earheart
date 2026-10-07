@@ -31,6 +31,25 @@ let session = 0; // current dictation session id
 let abortController = null;
 const stateListeners = new Set();
 
+// Held past show() so the click handler survives: a Notification only a local
+// scope referenced can be collected before the user gets to it (main.js keeps
+// its startup notice the same way).
+let lastNotice = null;
+
+// Every pipeline notification is about a failure whose fix lives in Settings
+// (the service, its key, the paste tool), so clicking one opens it. A
+// notification that can't be shown is logged and dropped: it runs on the
+// fallback paths, and must never cost the user's words.
+function notify(note) {
+  try {
+    lastNotice = new Notification(note);
+    lastNotice.on("click", () => windows.openSettings());
+    lastNotice.show();
+  } catch (err) {
+    logger.warn(`notification failed: ${err.message}`);
+  }
+}
+
 // Live preview (the streaming partial transcript shown while recording) lives in
 // its own module; the pipeline just feeds it audio and cancels it at the right
 // lifecycle points. Dependencies are injected so it stays free of our private
@@ -452,10 +471,10 @@ async function process(sid, wavArrayBuffer) {
       // part-way). What was recovered still goes through cleanup and delivery
       // like any dictation; this says it is not the whole thing.
       logger.warn("transcription incomplete: delivering the recovered text");
-      new Notification({
+      notify({
         title: "Earheart: transcription interrupted",
         body: "The speech engine stopped part-way; delivered the text recovered so far.",
-      }).show();
+      });
     }
 
     let text = raw;
@@ -470,10 +489,10 @@ async function process(sid, wavArrayBuffer) {
         // Cleanup is an enhancement: fall back to the raw transcript and
         // surface what happened instead of dropping the dictation.
         logger.error("cleanup failed:", err.message);
-        new Notification({
+        notify({
           title: "Earheart: cleanup failed, used raw transcript",
           body: String(err.message).slice(0, 180),
-        }).show();
+        });
       }
       if (stale()) return;
     }
@@ -493,10 +512,10 @@ async function process(sid, wavArrayBuffer) {
       // The overlay's detail row clips after a couple of dozen characters and
       // hides itself seconds later; the full instruction needs somewhere to
       // stay, same as a cleanup failure does.
-      new Notification({
+      notify({
         title: "Earheart: auto-paste failed, copied to clipboard",
         body: result.hint.slice(0, 180),
-      }).show();
+      });
     }
     overlayStatus("done", {
       preview: text.length > 120 ? `${text.slice(0, 120)}…` : text,
@@ -511,6 +530,9 @@ async function process(sid, wavArrayBuffer) {
     if (stale()) return;
     logger.error("pipeline failed:", err);
     overlayStatus("error", { message: String(err.message).slice(0, 200) });
+    // Nothing was delivered: this is the one failure that loses the
+    // dictation, and the overlay line is gone in five seconds.
+    notify({ title: "Earheart: dictation failed", body: String(err.message).slice(0, 180) });
     hideOverlaySoon(sid, 5000);
   } finally {
     if (abortController === controller) {

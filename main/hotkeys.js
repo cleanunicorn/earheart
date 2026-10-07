@@ -198,12 +198,20 @@ function unregisterAll() {
 
 // The pair layer treats either empty slot as a valid unbound state. Adapt that
 // result to the app contract, where record is required but pause is optional.
-function toHotkeyResults(pair) {
-  return {
+// Given the accelerators that were applied, each result also records its own,
+// so a later reader (Settings, on open) can tell whether a failure still
+// describes the value in the field.
+function toHotkeyResults(pair, accelerators) {
+  const results = {
     hotkey: pair.record.empty
       ? { ok: false, empty: true, error: "No hotkey configured" }
       : pair.record,
     pauseHotkey: pair.pause,
+  };
+  if (!accelerators) return results;
+  return {
+    hotkey: { ...results.hotkey, accelerator: accelerators.hotkey || "" },
+    pauseHotkey: { ...results.pauseHotkey, accelerator: accelerators.pauseHotkey || "" },
   };
 }
 

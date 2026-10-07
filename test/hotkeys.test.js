@@ -402,6 +402,32 @@ test("a non-empty record failure passes through without an empty marker", () => 
   );
 });
 
+// Settings shows a stored result only while its field still holds the same
+// accelerator, so each slot carries the accelerator it was attempted with.
+test("results carry the accelerator each slot was attempted with", () => {
+  const { hotkeys } = loadHotkeys();
+  const record = { ok: false, error: "record rejected" };
+
+  assert.deepStrictEqual(
+    hotkeys.toHotkeyResults(
+      { record, pause: { ok: true, empty: true } },
+      { hotkey: A, pauseHotkey: undefined }
+    ),
+    {
+      hotkey: { ok: false, error: "record rejected", accelerator: A },
+      pauseHotkey: { ok: true, empty: true, accelerator: "" },
+    }
+  );
+  assert.deepStrictEqual(record, { ok: false, error: "record rejected" }, "the pair result is not mutated");
+  assert.deepStrictEqual(
+    hotkeys.toHotkeyResults({ record: { ok: true, empty: true }, pause: { ok: true } }, { hotkey: "" }),
+    {
+      hotkey: { ok: false, empty: true, error: "No hotkey configured", accelerator: "" },
+      pauseHotkey: { ok: true, accelerator: "" },
+    }
+  );
+});
+
 // Hotkey errors are read by people (Settings rows, the startup notice), so they
 // name the keys the way the platform does and point only at help that exists
 // on this platform. Electron itself still receives the raw accelerator.

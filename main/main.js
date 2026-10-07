@@ -39,6 +39,10 @@ if (!gotLock) {
   main();
 }
 
+// The result of the last applyHotkeys() call — launch, save, or a save's
+// rollback — kept so Settings can show it when it opens (settings:get).
+let lastHotkeyStatus = null;
+
 // Register both global hotkeys from settings as one transaction. The record
 // hotkey is required (empty is a misconfiguration); the pause hotkey is
 // optional (empty simply leaves it unbound).
@@ -49,7 +53,8 @@ function applyHotkeys(cfg) {
     onRecord: () => pipeline.toggle(),
     onPause: () => pipeline.pauseToggle(),
   });
-  return hotkeys.toHotkeyResults(pair);
+  lastHotkeyStatus = hotkeys.toHotkeyResults(pair, cfg);
+  return lastHotkeyStatus;
 }
 
 // Held past show() so the click handler survives: a Notification that only the
@@ -116,6 +121,7 @@ function main() {
     pipeline.init();
     ipc.init({
       applyHotkeys,
+      getHotkeyStatus: () => lastHotkeyStatus,
       onSettingsChanged: () => {
         tray.refresh();
         pipeline.onSettingsChanged();

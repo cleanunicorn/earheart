@@ -865,7 +865,7 @@ test("reconcileTranscript hides whitespace-only input", () => {
 function serveJson(handler) {
   const requests = [];
   const server = http.createServer((req, res) => {
-    requests.push({ method: req.method, url: req.url, headers: req.headers });
+    requests.push({ url: req.url, headers: req.headers });
     const { status, body } = handler(req);
     res.statusCode = status;
     res.setHeader("content-type", "application/json");

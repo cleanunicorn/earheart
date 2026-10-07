@@ -562,8 +562,10 @@ async function process(sid, wavArrayBuffer) {
       return;
     }
     overlayStatus("error", { message: String(err.message).slice(0, 200) });
-    // Nothing was delivered: this is the one failure that loses the
-    // dictation, and the overlay line is gone in five seconds.
+    // Nothing reached the target app. A transcription failure loses the
+    // dictation outright; a deliver() failure leaves the words in History
+    // (written above, before delivery). Either way the overlay line is gone in
+    // five seconds, so the notice has to say it.
     notify({ title: "Earheart: dictation failed, nothing was delivered", body: err.message });
     hideOverlaySoon(sid, 5000);
   } finally {

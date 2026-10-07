@@ -599,6 +599,10 @@ test("installMac swaps in the extracted bundle through the swap script", async (
     path.join(ctx.stagingDir, "staging", "Earheart.app"),
   ]);
   assert.match(fs.readFileSync(script, "utf8"), /earheart update swap/);
+  // process.platform is overridden here; POSIX was decided at load.
+  if (!POSIX.skip) {
+    assert.strictEqual(fs.statSync(path.join(ctx.stagingDir, "staging")).mode & 0o777, 0o700);
+  }
   assert.strictEqual(ctx.calls.quit, 1);
 });
 

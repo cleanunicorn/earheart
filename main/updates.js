@@ -707,7 +707,7 @@ function installMac(zipPath) {
 
   const staging = path.join(path.dirname(zipPath), "staging");
   fs.rmSync(staging, { recursive: true, force: true });
-  fs.mkdirSync(staging, { recursive: true });
+  fs.mkdirSync(staging, { recursive: true, mode: 0o700 });
   const ditto = spawnSync("/usr/bin/ditto", ["-xk", zipPath, staging]);
   if (ditto.status !== 0) {
     throw new Error(`Could not extract the update: ${ditto.stderr || ditto.status}`);

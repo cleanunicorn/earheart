@@ -643,8 +643,13 @@ async function removeModel(kind, modelId) {
   setRowRemoving(modelId, true);
   const res = await earheart.invoke("models:remove", { kind, modelId });
   setRowRemoving(modelId, false);
-  if (res.ok) await refreshModels();
-  else showModelError(modelId, res.error || "Could not remove model");
+  if (res.ok) {
+    // Announce before refreshing, while modelStatus still has the label.
+    announceModelStatus(kind, modelId, "Removed");
+    await refreshModels();
+  } else {
+    showModelError(modelId, res.error || "Could not remove model");
+  }
 }
 
 // Remove a custom model entirely: its files (if downloaded) and its definition.
@@ -661,6 +666,7 @@ async function removeCustomModel(modelId) {
     // one. Adopt that, or refreshModels would keep pointing the select at the
     // removed id, which reads back as "" and gets saved as an empty model.
     if (res.kind && res.model) current[res.kind].builtin.model = res.model;
+    announceModelStatus(res.kind || info?.kind, modelId, "Removed");
     await refreshModels();
   } else {
     showModelError(modelId, res.error || "Could not remove model");

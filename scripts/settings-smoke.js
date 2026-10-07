@@ -774,6 +774,8 @@ app.whenReady().then(async () => {
       "removing the selected custom models leaves each select on the default",
       afterRemove.stt.select === registry.DEFAULT_STT_MODEL &&
         afterRemove.cleanup.select === registry.DEFAULT_CLEANUP_MODEL &&
+        // The last removal (STT) is announced in the persistent live region.
+        afterRemove.stt.announcement === `${customStt.label}: Removed` &&
         removed.length === 3,
       JSON.stringify({ afterRemove, removed })
     );

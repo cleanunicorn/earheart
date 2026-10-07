@@ -636,8 +636,9 @@ app.whenReady().then(async () => {
     })()`);
     const savedLimits = await waitFor(() => {
       const saved = settings.get();
-      return saved.audio.maxRecordingSeconds !== 300 && saved;
-    }, "Save did not reach settings");
+      // Wait for the clamped values themselves, so stale state can't satisfy it.
+      return saved.audio.maxRecordingSeconds === 10 && saved.engines.idleUnloadMinutes === 240 && saved;
+    }, "Save did not store the clamped limits (10 s, 240 min)");
     check(
       "Save clamps max dictation length and idle unload to their ranges",
       savedLimits.audio.maxRecordingSeconds === 10 && savedLimits.engines.idleUnloadMinutes === 240,

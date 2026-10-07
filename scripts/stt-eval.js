@@ -680,11 +680,15 @@ const FEATURE_DIM = 80;
 
 /**
  * The OfflineRecognizer config for a model's `sherpa` block, by family:
- * transducer (has a joiner), whisper, moonshine, nemoCtc, canary.
+ * transducer (has a joiner), whisper (modelType "whisper"), moonshine,
+ * nemoCtc, canary.
  */
 function sherpaRecognizerConfig(dir, sherpa, runtime) {
   const p = (f) => joinPath(dir, f);
-  const family = sherpa.family || (sherpa.joiner ? "transducer" : "whisper");
+  // Undeclared maps keep the app worker's rule: a joiner is a transducer, and
+  // Whisper must say so in modelType. A bare encoder + decoder is not guessed.
+  const family =
+    sherpa.family || (sherpa.joiner ? "transducer" : sherpa.modelType === "whisper" ? "whisper" : null);
   let modelFiles;
   switch (family) {
     case "transducer":
@@ -710,7 +714,9 @@ function sherpaRecognizerConfig(dir, sherpa, runtime) {
       modelFiles = { canary: { encoder: p(sherpa.encoder), decoder: p(sherpa.decoder), srcLang: "en", tgtLang: "en", usePnc: 1 } };
       break;
     default:
-      throw new Error(`unknown sherpa family: ${sherpa.family}`);
+      throw new Error(
+        `unknown sherpa family: ${sherpa.family || `none declared (modelType ${sherpa.modelType || "unset"}, no joiner)`}`
+      );
   }
   const modelType = sherpa.modelType || (family === "transducer" ? "nemo_transducer" : undefined);
   return {

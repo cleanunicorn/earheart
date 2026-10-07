@@ -1953,6 +1953,52 @@ test("engine worker: load-stt reports the thread count and provider it built the
   }
 });
 
+test("engine worker: load-stt routes on the declared family and never guesses Whisper", async () => {
+  const built = [];
+  const worker = loadWorkerWith({
+    OfflineRecognizer: class {
+      constructor(config) {
+        built.push(config.modelConfig);
+      }
+    },
+  });
+  const load = (id, sherpa) =>
+    worker.send({ id, type: "load-stt", dir: "/m", sherpa: { encoder: "e", decoder: "d", tokens: "t", ...sherpa }, modelId: `m${id}` });
+  try {
+    // Whisper only when it says so.
+    assert.strictEqual((await load(1, { modelType: "whisper" })).ok, true);
+    assert.deepStrictEqual(Object.keys(built[0].whisper), ["encoder", "decoder"]);
+    assert.strictEqual(built[0].transducer, undefined);
+    assert.strictEqual(built[0].modelType, "whisper");
+    // A joiner is a transducer; the legacy entries without a modelType are NeMo.
+    assert.strictEqual((await load(2, { joiner: "j" })).ok, true);
+    assert.ok(built[1].transducer.joiner.endsWith("j"));
+    assert.strictEqual(built[1].whisper, undefined);
+    assert.strictEqual(built[1].modelType, "nemo_transducer");
+    assert.strictEqual((await load(3, { joiner: "j", modelType: "transducer" })).ok, true);
+    assert.strictEqual(built[2].modelType, "transducer");
+
+    // No joiner and no declared type is no longer read as Whisper; neither is
+    // a declaration the files contradict, or a family the worker can't run.
+    for (const [id, sherpa] of [
+      [4, {}],
+      [5, { modelType: "whisper", joiner: "j" }],
+      [6, { modelType: "nemo_transducer" }],
+      [7, { modelType: "canary" }],
+    ]) {
+      const reply = await load(id, sherpa);
+      assert.strictEqual(reply.ok, false, JSON.stringify(sherpa));
+      assert.match(reply.error, /Unsupported speech model configuration/);
+    }
+    assert.strictEqual(built.length, 3, "no recognizer is built for a rejected config");
+    // ...and the refusal doesn't drop the model that was already resident.
+    assert.strictEqual((await load(3, { joiner: "j", modelType: "transducer" })).ok, true);
+    assert.strictEqual(built.length, 3);
+  } finally {
+    worker.restore();
+  }
+});
+
 test("engines cleanup snapshots each selected model and cancellation reaches a cold worker", async () => {
   const requests = [];
   let finish;

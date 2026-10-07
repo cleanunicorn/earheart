@@ -27,6 +27,7 @@ function loadIpcHandlers(cfg, { engines = {}, hf = {} } = {}) {
   const handlers = {};
   const saved = [];
   const broadcasts = [];
+  const warnings = [];
   let stored = cfg;
   const settings = {
     DEFAULTS: {},
@@ -62,7 +63,7 @@ function loadIpcHandlers(cfg, { engines = {}, hf = {} } = {}) {
     [resolveFrom("./history")]: {},
     [resolveFrom("./autostart")]: {},
     [resolveFrom("./updates")]: {},
-    [resolveFrom("./util/logger")]: { info() {}, warn() {}, error() {} },
+    [resolveFrom("./util/logger")]: { info() {}, warn: (msg) => warnings.push(msg), error() {} },
   };
 
   const previous = {};
@@ -84,7 +85,7 @@ function loadIpcHandlers(cfg, { engines = {}, hf = {} } = {}) {
       else delete require.cache[p];
     }
   }
-  return { handlers, saved, broadcasts };
+  return { handlers, saved, broadcasts, warnings };
 }
 
 const customCleanup = {
@@ -171,7 +172,7 @@ for (const code of ["EBUSY", "EPERM"]) {
     t.after(() => registry.setCustomModels([]));
     let fail = true;
     const removed = [];
-    const { handlers, saved } = loadIpcHandlers(configWith(customCleanup.id), {
+    const { handlers, saved, warnings } = loadIpcHandlers(configWith(customCleanup.id), {
       engines: {
         remove: async (kind, id) => {
           if (fail) {
@@ -187,7 +188,10 @@ for (const code of ["EBUSY", "EPERM"]) {
     const result = await handlers["models:remove-custom"]({}, { modelId: customCleanup.id });
 
     assert.strictEqual(result.ok, false);
-    assert.match(result.error, new RegExp(code));
+    // Actionable copy for the user; the raw error, with its path, goes to the log.
+    assert.match(result.error, /in use or locked.*try again/);
+    assert.doesNotMatch(result.error, new RegExp(code));
+    assert.ok(warnings.some((w) => w.includes(code) && w.includes(customCleanup.id)), warnings.join("\n"));
     assert.strictEqual(saved.length, 0, "a failed delete must not drop the definition");
     assert.ok(registry.getModel("cleanup", customCleanup.id), "still registered");
 
@@ -358,7 +362,11 @@ function addCustomHarness(cfg, listings) {
     hf: { listGgufQuants: async () => listings[next++] },
     engines: {
       removeFiles: async (def) => {
-        if (failWipe) throw new Error("EBUSY: resource busy or locked");
+        if (failWipe) {
+          const err = new Error("EBUSY: resource busy or locked");
+          err.code = "EBUSY";
+          throw err;
+        }
         manager.modelDir(os.tmpdir(), def); // throws for a kind/id the real delete would reject
         events.push(`wipe:${def.kind}:${def.id}:${def.files[0].url}`);
       },
@@ -425,7 +433,7 @@ test("a failed wipe on re-add keeps the old definition", async (t) => {
   const result = await h.add();
 
   assert.strictEqual(result.ok, false);
-  assert.match(result.error, /EBUSY/);
+  assert.match(result.error, /in use or locked/);
   assert.strictEqual(h.saved.length, savesBefore);
   assert.match(registry.getModel("cleanup", "custom-o-r-gguf-q4-k-m").files[0].url, /\/aaa\//);
 });
@@ -503,4 +511,23 @@ test("re-adding over a hand-edited definition that names no directory replaces i
   ]);
   const stored = h.saved.at(-1).customModels;
   assert.deepStrictEqual(stored.map((m) => m.kind), ["cleanup"]);
+});
+
+test("models:remove gives actionable copy for a locked file and passes other errors through", async (t) => {
+  t.after(() => registry.setCustomModels([]));
+  let next;
+  const { handlers, warnings } = loadIpcHandlers(configWith("gemma-3-1b"), {
+    engines: { remove: async () => { throw next; } },
+  });
+  const key = { kind: "cleanup", modelId: "gemma-3-1b" };
+
+  next = Object.assign(new Error("EACCES: permission denied, rmdir '/x/models/cleanup/gemma-3-1b'"), { code: "EACCES" });
+  const locked = await handlers["models:remove"]({}, key);
+  next = new Error("Unknown cleanup model: gemma-3-1b");
+  const other = await handlers["models:remove"]({}, key);
+
+  assert.match(locked.error, /in use or locked/);
+  assert.strictEqual(warnings.length, 1);
+  assert.match(warnings[0], /EACCES/);
+  assert.strictEqual(other.error, "Unknown cleanup model: gemma-3-1b");
 });

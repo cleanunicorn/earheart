@@ -76,6 +76,17 @@ function withFields(base, source, fields) {
   return result;
 }
 
+// What to tell the user when deleting a model's files fails. The raw error
+// (e.g. "EBUSY: resource busy or locked, rmdir '/home/…/models/…'") names an
+// internal path and no way out, so the usual lock and permission codes get
+// actionable copy and the raw message goes to the log instead.
+const FILES_IN_USE_CODES = new Set(["EBUSY", "EPERM", "EACCES"]);
+function deleteErrorMessage(err) {
+  if (!FILES_IN_USE_CODES.has(err.code)) return err.message;
+  logger.warn(`could not delete model files: ${err.message}`);
+  return "The model's files are in use or locked. Close anything using the model, then try again.";
+}
+
 // The definitions whose bytes must go before `model` replaces `existing` (the
 // stored definition with the same id, if any). The id has no commit, so an
 // upstream re-upload of the same repo+quant keeps it while the files change.
@@ -333,7 +344,7 @@ function init({ applyHotkeys, onSettingsChanged }) {
       });
       return { ok: true, modelId: model.id, customModels };
     } catch (err) {
-      return { ok: false, error: err.message };
+      return { ok: false, error: deleteErrorMessage(err) };
     }
   });
 
@@ -372,7 +383,7 @@ function init({ applyHotkeys, onSettingsChanged }) {
         return { ok: true, customModels, kind, model: kindCfg.builtin.model };
       });
     } catch (err) {
-      return { ok: false, error: err.message };
+      return { ok: false, error: deleteErrorMessage(err) };
     }
   });
 
@@ -459,7 +470,7 @@ function init({ applyHotkeys, onSettingsChanged }) {
       await withModelsBusy([{ kind, id: modelId }], () => engines.remove(kind, modelId));
       return { ok: true };
     } catch (err) {
-      return { ok: false, error: err.message };
+      return { ok: false, error: deleteErrorMessage(err) };
     }
   });
 

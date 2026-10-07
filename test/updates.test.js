@@ -234,6 +234,7 @@ test("the right sha512 stages the exact bytes and reaches ready", async (t) => {
 
   assert.strictEqual(ctx.updates.getState().status, "ready");
   assert.deepStrictEqual(fs.readFileSync(ctx.staged), ASSET_BYTES);
+  if (!POSIX.skip) assert.strictEqual(fs.statSync(ctx.staged).mode & 0o777, 0o600);
   assert.ok(!fs.existsSync(path.join(ctx.temp, "earheart-update")), "nothing staged in temp");
 });
 

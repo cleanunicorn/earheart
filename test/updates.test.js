@@ -281,6 +281,31 @@ test("a symlink planted as the staging dir is replaced, not followed", POSIX, as
   assert.deepStrictEqual(fs.readdirSync(elsewhere), []);
 });
 
+test("a file planted at the staging dir path is replaced", async (t) => {
+  const ctx = loadUpdates(t);
+  fs.writeFileSync(ctx.stagingDir, "not a dir");
+  ctx.updates.init({});
+
+  await download(ctx.updates);
+
+  assert.strictEqual(ctx.updates.getState().status, "ready");
+  assert.ok(fs.lstatSync(ctx.stagingDir).isDirectory());
+  assert.deepStrictEqual(fs.readFileSync(ctx.staged), ASSET_BYTES);
+});
+
+test("a dangling symlink planted as the staging dir is replaced", POSIX, async (t) => {
+  const ctx = loadUpdates(t);
+  fs.symlinkSync(path.join(ctx.root, "nowhere"), ctx.stagingDir);
+  ctx.updates.init({});
+
+  await download(ctx.updates);
+
+  assert.strictEqual(ctx.updates.getState().status, "ready");
+  const st = fs.lstatSync(ctx.stagingDir);
+  assert.ok(st.isDirectory() && !st.isSymbolicLink());
+  assert.ok(!fs.existsSync(path.join(ctx.root, "nowhere")), "link target not created");
+});
+
 test("a staging dir owned by another user is replaced", POSIX, async (t) => {
   const ctx = loadUpdates(t);
   fs.mkdirSync(ctx.stagingDir, { mode: 0o700 });

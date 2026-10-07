@@ -512,21 +512,29 @@ const updateDirPath = () => path.join(app.getPath("userData"), "updates");
 // POSIX only: Windows has no uid or mode bits, and %APPDATA% is per-user.
 const hasOwners = () => typeof process.getuid === "function";
 
+// A real directory (not a symlink), ours, and closed to group/other.
+const isPrivateDir = (st) =>
+  st.isDirectory() && (!hasOwners() || (st.uid === process.getuid() && !(st.mode & 0o077)));
+
 /**
- * The staging dir, created 0700. One that is a symlink, someone else's, or
- * writable by group/other is replaced (rm removes a symlink itself, never its
- * target) rather than trusted.
+ * The staging dir, created 0700. Anything else found at its path — a symlink
+ * (dangling or not), a file, someone else's dir, or one writable by
+ * group/other — is replaced (rm removes a symlink itself, never its target)
+ * rather than trusted.
  */
 function updateDir() {
   const dir = updateDirPath();
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  if (hasOwners()) {
-    const st = fs.lstatSync(dir);
-    if (!st.isDirectory() || st.uid !== process.getuid() || st.mode & 0o077) {
-      fs.rmSync(dir, { recursive: true, force: true });
-      fs.mkdirSync(dir, { mode: 0o700 });
-    }
+  let st = null;
+  try {
+    st = fs.lstatSync(dir);
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
   }
+  if (st && !isPrivateDir(st)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+    st = null;
+  }
+  if (!st) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
 }
 

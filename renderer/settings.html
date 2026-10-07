@@ -576,14 +576,17 @@
             <strong>Max dictation length</strong> — a dictation that reaches the cap stops
             and transcribes on its own; nothing is lost. Raising it lets the cleanup model
             hold more of what you say, at the cost of some memory; a dictation longer than
-            it can hold is still transcribed and delivered, just as spoken.
+            it can hold is still transcribed and delivered, just as spoken. 10–3600 seconds;
+            a value outside that is saved as the nearest limit, and a blank keeps the
+            current one.
           </p>
           <p class="hint">
             <strong>Unload models after idle</strong> — built-in models stay in memory for
             fast repeat dictations, then unload after this many idle minutes to free memory
             (~1.5 GB or more); 0 keeps them loaded for the whole session. The next dictation
             reloads them in a few seconds, usually hidden while you're still speaking. Only
-            affects in-app models, not external services.
+            affects in-app models, not external services. 0–240 minutes; a value outside
+            that is saved as the nearest limit, and a blank means 0.
           </p>
         </div>
 

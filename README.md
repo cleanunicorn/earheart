@@ -317,6 +317,12 @@ the wizard:
 A mis-aimed paste never loses your words: the History section in Settings
 keeps recent transcriptions in a local file (you can turn this off).
 
+Settings → Advanced → Performance holds two limits. **Max dictation length**
+takes 10–3600 seconds (default 300); a dictation that reaches it stops and is
+transcribed. **Unload models after idle** takes 0–240 minutes (default 2); 0
+keeps the models loaded. A value outside a range is saved as the nearest limit,
+a blank max length keeps the saved value, and a blank idle field means 0.
+
 ## Using other services
 
 Both speech-to-text and cleanup steps are also **modular,

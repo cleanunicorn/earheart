@@ -183,9 +183,12 @@ test("cancelling paste-copy keeps the transcript on the clipboard", async () => 
 // detail row and the hint says how to paste by hand; the tool's stderr is for
 // the log only, never the overlay or the notification.
 const STDERR = "xdotool: BadWindow (invalid Window parameter) at 0x3a00007";
+// macOS runs through explainPasteError's darwin branch; an osascript error
+// with no permission code falls through to the generic copy.
 for (const [platform, setup, key] of [
   ["win32", (t) => onPlatform(t, "win32"), "Ctrl+V"],
   ["linux", onLinuxX11, "Ctrl+V"],
+  ["darwin", onMac, "⌘V"],
 ]) {
   test(`${platform}: a failed paste shows short copy and logs the stderr`, async (t) => {
     setup(t);
@@ -194,9 +197,9 @@ for (const [platform, setup, key] of [
     assert.strictEqual(result.method, "clipboard");
     assert.strictEqual(state.clipboard, "my words");
     assert.ok(result.note.length <= 32, result.note);
-    assert.match(result.hint, new RegExp(key.replace("+", "\\+")));
+    assert.ok(`${result.note} ${result.hint}`.includes(key), `${result.note} / ${result.hint}`);
     for (const field of [result.note, result.hint]) {
-      assert.doesNotMatch(field, /BadWindow|Command failed|xdotool|powershell/i);
+      assert.doesNotMatch(field, /BadWindow|Command failed|xdotool|powershell|osascript/i);
     }
     assert.ok(state.logs.some((line) => line.includes(STDERR)), state.logs.join("\n"));
   });

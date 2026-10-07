@@ -408,8 +408,10 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
   auto-paste permission**: it clears a stale entry, re-asks, and opens the pane
   for whichever permission is off. If Earheart is still listed as on under
   Accessibility, remove it with **−** and add it again.
-  When a paste fails the overlay and a notification say why, and the reason
-  is also written to `~/Library/Logs/Earheart/earheart.log`.
+  When a paste fails, the text stays on the clipboard. The overlay and a
+  notification name the permission that blocked it, or say to paste with ⌘V
+  when the cause is something else. What the paste tool reported is written to
+  `~/Library/Logs/Earheart/earheart.log`.
 
 ### Windows
 

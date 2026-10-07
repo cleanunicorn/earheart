@@ -181,6 +181,8 @@ function assemble(pieces, owners) {
  * @param {object} deps
  * @param {(wav: Buffer, opts: {onDecodeMs?: (ms: number) => void}) => Promise<string>} deps.runTranscribe
  * @param {() => void} [deps.restartStt] retire a wedged worker before retrying
+ *   (engine hosts already retire it on the timeout, so this is a safeguard for
+ *   a transcribe backend that doesn't)
  * @param {number} [deps.maxSec]
  * @param {number} [deps.minPauseSec] shortest pause cut at (Infinity: none)
  * @param {number} [deps.minSoundSec] shorter sound is noise (0: off)
@@ -290,10 +292,11 @@ async function transcribeChunked(
           err?.message,
           err?.code ? `(${err.code}${err.exitCode !== undefined ? `, exit code ${err.exitCode}` : ""})` : ""
         );
-        // A timed-out worker is still stuck in the native decode: retire it
-        // every time, or the retry — and on a last attempt, the next piece or
-        // dictation — queues behind it. An exited one is already gone (the
-        // host re-forks on the next request).
+        // A timed-out worker is still stuck in the native decode: it must be
+        // retired every time, or the retry — and on a last attempt, the next
+        // piece or dictation — queues behind it. The host already retires it
+        // on the timeout (host.js); this keeps the intent explicit here. An
+        // exited one is already gone (the host re-forks on the next request).
         if (err?.code === "ENGINE_TIMEOUT") restartStt();
         if (piece.attempts < 2 && retryable(err)) continue;
         piece.error = err?.message || String(err);

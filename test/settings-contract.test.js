@@ -190,6 +190,20 @@ test("custom model version selects have accessible names", () => {
   }
 });
 
+test("settings-sync.js loads before each page's own script", () => {
+  // Both pages call followSettingsChanges and sharedBaseline at top level and
+  // in init; without the shared script they throw a ReferenceError.
+  for (const [name, source, page] of [
+    ["settings.html", html, "settings.js"],
+    ["wizard.html", wizardHtml, "wizard.js"],
+  ]) {
+    const shared = source.indexOf('src="settings-sync.js"');
+    const own = source.indexOf(`src="${page}"`);
+    assert.notStrictEqual(shared, -1, `${name} must load settings-sync.js`);
+    assert.ok(shared < own, `${name} must load settings-sync.js before ${page}`);
+  }
+});
+
 test("hotkey-capture.js loads before each page's own script", () => {
   // Both pages call wireHotkeyCapture at top level; if the shared script's
   // tag is dropped or reordered, the page script throws a ReferenceError
@@ -241,10 +255,30 @@ function deferred() {
   return { promise, resolve };
 }
 
+const PRESENT_DEVICES = [
+  { kind: "audioinput", deviceId: "saved-id", label: "Saved microphone" },
+  { kind: "audioinput", deviceId: "other-id", label: "Other microphone" },
+];
+// The saved "saved-id" is not plugged in: only another mic (and the OS
+// "default" alias, which both pickers filter out) are enumerated.
+const MISSING_SAVED_DEVICES = [
+  { kind: "audioinput", deviceId: "default", label: "Default - Other microphone" },
+  { kind: "audioinput", deviceId: "other-id", label: "Other microphone" },
+];
+
 function microphonePage(source, page) {
+  // Behaves like a real <select>: value comes from the selected option, and
+  // setting a value with no matching option selects nothing (value ""). A
+  // plain string here would let a never-added saved ID read back as selected.
   const select = {
-    value: "",
+    selectedIndex: 0,
     options: [{ value: "", textContent: "System default" }],
+    get value() {
+      return this.options[this.selectedIndex]?.value ?? "";
+    },
+    set value(value) {
+      this.selectedIndex = this.options.findIndex((option) => option.value === value);
+    },
     listeners: {},
     addEventListener(type, listener) {
       this.listeners[type] = listener;
@@ -260,7 +294,7 @@ function microphonePage(source, page) {
       return this.options.length;
     },
     get selectedOptions() {
-      return this.options.filter((option) => option.value === this.value);
+      return this.selectedIndex < 0 ? [] : [this.options[this.selectedIndex]];
     },
     dispatchEvent(event) {
       this.listeners[event.type]?.(event);
@@ -337,6 +371,8 @@ function microphonePage(source, page) {
       },
       createElement: () => baseDocument.createElement(),
       querySelector(selector) {
+        // finish() re-checks the radio for the saved mode afterwards.
+        if (selector.startsWith('input[name="output-mode"][value=')) return { checked: false };
         assert.strictEqual(selector, 'input[name="output-mode"]:checked');
         return { value: "paste-copy" };
       },
@@ -351,14 +387,21 @@ function microphonePage(source, page) {
     },
     CSS: { escape: (value) => value },
     current,
+    baseline: { outputMode: current.output.mode, remind: true },
+    // The page's own copy of the shared classic script's global.
+    sharedBaseline: require("../renderer/settings-sync").sharedBaseline,
+    displayedOutputMode: require("../renderer/settings-sync").displayedOutputMode,
     cleanupStyles: [{ id: "verbatim" }],
     $: (id) => elements[id] || baseDocument.getElementById(id),
     earheart: {
       invoke(channel, value) {
         assert.strictEqual(channel, page === "settings" ? "settings:save" : "wizard:complete");
+        // Both forms send { settings, baseline } (main/ipc.js commitSettings).
+        assert.ok(value && typeof value.settings === "object", "save request carries settings");
+        assert.ok("baseline" in value, "save request carries the shared-field baseline");
         invokeCount++;
-        payload = value;
-        return Promise.resolve({ settings: value, hotkey: { ok: true } });
+        payload = value.settings;
+        return Promise.resolve({ settings: value.settings, hotkey: { ok: true } });
       },
     },
   };
@@ -380,36 +423,46 @@ function microphonePage(source, page) {
 
   return {
     select,
-    async reproduce({ selectSystemDefault = true } = {}) {
+    // `choose` undefined leaves the picker untouched; "" is an explicit
+    // System default. `chooseWhen` is "during" (before enumeration resolves)
+    // or "after" (once loading finished, before saving).
+    async reproduce({ devices = PRESENT_DEVICES, choose, chooseWhen = "during" } = {}) {
+      const pick = () => {
+        select.value = choose;
+        select.dispatchEvent({ type: "change" });
+      };
       const pending = load();
       await new Promise((resolve) => setImmediate(resolve));
-      if (selectSystemDefault) {
-        select.value = "";
-        select.dispatchEvent({ type: "change" });
-      }
-      enumeration.resolve([
-        { kind: "audioinput", deviceId: "saved-id", label: "Saved microphone" },
-        { kind: "audioinput", deviceId: "other-id", label: "Other microphone" },
-      ]);
+      if (choose !== undefined && chooseWhen === "during") pick();
+      enumeration.resolve(devices);
       await pending;
+      if (choose !== undefined && chooseWhen === "after") pick();
       if (page === "settings") {
-        await context.earheart.invoke("settings:save", context.collect());
+        await context.earheart.invoke("settings:save", { settings: context.collect(), baseline: context.baseline });
       } else {
         await context.finish();
       }
-      return { selected: select.value, saved: payload, invokeCount };
+      return {
+        selected: select.value,
+        selectedOptions: select.selectedOptions,
+        options: select.options,
+        saved: payload,
+        invokeCount,
+      };
     },
   };
 }
 for (const [page, source] of [["settings", js], ["wizard", wizardJs]]) {
   test(`${page} preserves System default selected during microphone enumeration`, async () => {
     const fixture = microphonePage(source, page);
-    const result = await fixture.reproduce();
+    const result = await fixture.reproduce({ choose: "" });
     assert.strictEqual(result.selected, "");
     assert.strictEqual(result.saved.audio.deviceId, "");
     assert.strictEqual(result.invokeCount, 1);
     if (page === "wizard") {
       assert.strictEqual(result.saved.output.mode, "paste-copy");
+      // The explicit mode replaces the legacy restoreClipboard: false.
+      assert.strictEqual(result.saved.output.restoreClipboard, true);
       assert.strictEqual(result.saved.stt.engine, "builtin");
       assert.strictEqual(result.saved.cleanup.builtin.model, "cleanup-model");
       assert.strictEqual(result.saved.cleanup.style, "verbatim");
@@ -419,12 +472,57 @@ for (const [page, source] of [["settings", js], ["wizard", wizardJs]]) {
 
   test(`${page} restores the saved microphone when the user leaves it untouched`, async () => {
     const fixture = microphonePage(source, page);
-    const result = await fixture.reproduce({ selectSystemDefault: false });
+    const result = await fixture.reproduce();
     assert.strictEqual(result.selected, "saved-id");
     assert.strictEqual(result.saved.audio.deviceId, "saved-id");
     assert.strictEqual(result.invokeCount, 1);
   });
+
+  // #230: rerunning the wizard (or saving Settings) while the saved mic is
+  // unplugged must not swap it for System default. Only the early seed of the
+  // saved option keeps it selectable, so these fail if that seed is removed.
+  test(`${page} keeps an unavailable saved microphone when untouched`, async () => {
+    const fixture = microphonePage(source, page);
+    const result = await fixture.reproduce({ devices: MISSING_SAVED_DEVICES });
+    assert.strictEqual(result.selected, "saved-id");
+    assert.deepStrictEqual(result.selectedOptions.map((option) => option.value), ["saved-id"]);
+    assert.strictEqual(result.saved.audio.deviceId, "saved-id");
+    assert.strictEqual(result.invokeCount, 1);
+    assert.strictEqual(
+      result.selectedOptions[0].textContent,
+      page === "settings" ? "Configured microphone (not connected)" : "Configured microphone"
+    );
+    assert.ok(!result.options.some((option) => option.value === "default"));
+    if (page === "wizard") assert.strictEqual(result.saved.audio.maxRecordingSeconds, 300);
+  });
 }
+// The save button's request, not just collect(): main reconciles shared
+// fields against `baseline` (main/ipc.js commitSettings), so a save that drops
+// it silently lets a stale form value overwrite a tray change.
+test("the Settings save button sends { settings, baseline }", () => {
+  assert.match(js, /earheart\.invoke\("settings:save", \{ settings: current, baseline \}\)/);
+});
+
+
+test("wizard respects System default chosen while an unavailable saved microphone loads", async () => {
+  const fixture = microphonePage(wizardJs, "wizard");
+  const result = await fixture.reproduce({ devices: MISSING_SAVED_DEVICES, choose: "" });
+  assert.strictEqual(result.selected, "");
+  assert.strictEqual(result.saved.audio.deviceId, "");
+  assert.strictEqual(result.invokeCount, 1);
+});
+
+test("wizard respects another microphone chosen over an unavailable saved one", async () => {
+  const fixture = microphonePage(wizardJs, "wizard");
+  const result = await fixture.reproduce({
+    devices: MISSING_SAVED_DEVICES,
+    choose: "other-id",
+    chooseWhen: "after",
+  });
+  assert.strictEqual(result.selected, "other-id");
+  assert.strictEqual(result.saved.audio.deviceId, "other-id");
+  assert.strictEqual(result.invokeCount, 1);
+});
 test("permission-status.js loads before settings.js, which uses it", () => {
   // settings.js only reaches for these when Fix is clicked or the window
   // regains focus, so a dropped tag passes the smoke checks and throws later.
@@ -552,6 +650,29 @@ test("the cleanup Test connection row lives inside the external-engine fields", 
   const row = html.indexOf('id="cleanup-test-row"');
   const builtinCardEnd = html.indexOf('<div class="card-title">Cleanup style</div>');
   assert.ok(start !== -1 && row > start && row < builtinCardEnd);
+});
+
+// A hotkey that failed to register at launch must be visible the moment
+// Settings opens (#194), not after a Save and not behind the slower update and
+// model-status round-trips that follow settings:get.
+test("the init IIFE renders the hotkey registration status before other awaits", () => {
+  const init = js.slice(js.lastIndexOf("(async () =>"));
+  const render = init.indexOf("renderHotkeyStatus(data.hotkeyStatus)");
+  assert.ok(render > 0, "the init IIFE must render data.hotkeyStatus");
+  assert.ok(
+    render < init.indexOf('await earheart.invoke("updates:get")'),
+    "hotkey status must render before waiting on updates:get"
+  );
+  assert.ok(
+    render < init.indexOf('await earheart.invoke("models:status")'),
+    "hotkey status must render before waiting on models:status"
+  );
+});
+
+test("Save writes the hotkey rows through the shared status renderer", () => {
+  const save = js.slice(js.indexOf('saveButton.addEventListener("click"'), js.indexOf("/* ---------- connection tests"));
+  assert.match(save, /renderHotkeyStatus\(/);
+  assert.doesNotMatch(save, /hotkeyStatus\.textContent|pauseHotkeyStatus\.textContent/);
 });
 
 // The Performance limits: the HTML min/max are the ranges, but nothing binds

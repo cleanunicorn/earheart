@@ -25,7 +25,7 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | `make test` | Run unit tests (`node --test`) |
 | `make smoke` | Boot the app headlessly and exit (CI-style sanity check) |
 | `make overlay-smoke` | Drive the overlay with a fake mic and check capture/UI sync |
-| `make settings-smoke` | Drive the settings window and check the index/scroll-spy contract |
+| `make settings-smoke` | Drive the settings window and check the index/scroll-spy contract and live settings sync |
 | `make icons` | Regenerate app/tray icons into `assets/` |
 | `make screenshots` | Regenerate README screenshots into `docs/screenshots/` |
 | `make dist` | Build installers for the current platform |
@@ -67,8 +67,11 @@ capture contract: "Listening…" only appears once samples actually flow, the
 captured WAV covers everything said from that moment, and stop/cancel racing
 mic startup still resolve. The settings-smoke step drives the real settings
 window and asserts the settings-page contract: every section renders on one
-scroll, the index's scroll-spy highlight and focus handoff work, and the roving
-tabindex is seated at load. CI runs all five on every platform.
+scroll, the index's scroll-spy highlight and focus handoff work, the roving
+tabindex is seated at load, a setting saved from the tray reaches an open
+Settings window or wizard without discarding unsaved edits, and a microphone
+chosen while device enumeration is pending survives it and Save writes that
+choice to disk. CI runs all five on every platform.
 Built-in models download to Electron's `userData/models` on first use; the
 smoke checks don't need them present.
 
@@ -198,6 +201,7 @@ main/                    Electron main process
   main.js                lifecycle, single-instance, --toggle forwarding
   pipeline.js            record → transcribe → clean → deliver state machine
   hotkeys.js             global shortcut registration
+  setup-notices.js       launch policy + "fix your setup" notices (→ Settings)
   settings.js            JSON settings with deep-merged defaults
   history.js             local transcription history
   tray.js                tray icon + menu
@@ -239,6 +243,20 @@ Design constraints worth keeping:
   `node-llama-cpp` (cleanup) — which ship prebuilt binaries and are unpacked
   from the asar (`asarUnpack` in `electron-builder.yml`). Models are downloaded
   at first run, not bundled.
+- **Model files and definitions stay consistent.** A model's `.complete`
+  marker records each file's size and a fingerprint of its definition (each
+  file's name and checksum, or its URL and size when it has no checksum;
+  `definitionFingerprint` in `main/engines/model-manager.js`). Re-pinning a
+  checksummed model to a new commit with the same bytes therefore keeps its
+  install. A mismatch means "not installed", which
+  matters for custom models: their id has no commit, so an upstream re-upload
+  keeps the id. Markers written before fingerprints existed still count as
+  installed, so upgrades never force a re-download. Instead, re-adding a custom
+  model whose definition changed (or one with no stored definition) deletes the
+  bytes under its id before saving the new definition. Removing a model first
+  aborts and awaits its download (`main/ipc.js`). A delete that fails (e.g.
+  EBUSY on Windows) is reported, and the custom definition is kept so the user
+  can retry.
 - **The overlay window owns the microphone.** The main process never touches
   raw audio; it receives finished WAVs from the renderer — the final one on stop,
   plus periodic partial WAVs while recording for the live preview (re-transcribed,
@@ -255,6 +273,18 @@ Design constraints worth keeping:
   notification, and marked `incomplete` — on the overlay's done card and in
   the History entry, not only in the stored record. See
   [docs/long-recordings.md](docs/long-recordings.md).
+- **Settings have one commit path.** `settings.get()` returns a copy; nothing
+  changes until `settings.save()` writes the file, so a failed save leaves
+  memory equal to disk. Every writer spread-saves from a fresh `get()` read at
+  the moment it saves, never a snapshot captured earlier (a menu build, or
+  before an `await`). The Settings and wizard forms save through
+  `commitSettings` in `main/ipc.js`: keys only main writes (overlay position,
+  custom models, updater bookkeeping) always keep their live value, and fields
+  both sides write (output mode, update reminders) keep a main-side change the
+  form hadn't seen yet, judged against the `baseline` the form sends. Every
+  successful save fires `settings.onChanged`, which rebuilds the tray and
+  sends `settings:changed` to the open forms; they apply only the fields that
+  changed, so unsaved edits survive.
 - **The UI has a design system.** [DESIGN.md](DESIGN.md) is derived from the
   shipped CSS and governs the overlay, settings and wizard: one coral accent
   reserved for the voice, filled-white for the primary action, no drop

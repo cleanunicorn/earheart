@@ -12,6 +12,7 @@ const settings = require("../settings");
 const { resolveCleanup } = require("../cleanup-styles");
 const { cleanContextFor } = require("../util/clean-budget");
 const { cleanupTurnPrefix } = require("../util/cleanup-turn");
+const { unsupportedSttFamily } = require("../services/hf-models");
 
 // STT and cleanup each get their own worker process so they run in parallel and
 // a crash in one engine can't take down the other (see host.js). Each lazily
@@ -36,6 +37,32 @@ function isInstalled(kind, modelId) {
   return manager.isInstalled(modelsDir(), resolve(kind, modelId));
 }
 
+// Whether a dictation with these STT settings can be transcribed, answered from
+// the registry and the disk only — cheap and synchronous, so the pipeline asks
+// on every hotkey press before opening the microphone, and startup asks before
+// saying "ready". Returns data, not copy (main/setup-notices.js words it):
+//   { ok: true }                                      remote engine, or installed
+//   { ok: false, reason: "missing", modelId, label }  built-in model not on disk
+//   { ok: false, reason: "unknown", modelId }         id not in the registry
+// It proves the files are there, not that the native engine will load them;
+// the final pass still surfaces a load failure.
+function getSttReadiness(sttCfg) {
+  if (sttCfg?.engine !== "builtin") return { ok: true };
+  const modelId = sttCfg.builtin?.model;
+  const model = registry.getModel("stt", modelId);
+  if (!model) return { ok: false, reason: "unknown", modelId };
+  let installed;
+  try {
+    installed = manager.isInstalled(modelsDir(), model);
+  } catch {
+    // An indeterminate check must never cost a dictation: let it record, and
+    // the final pass reports whatever is really wrong.
+    return { ok: true };
+  }
+  if (installed) return { ok: true };
+  return { ok: false, reason: "missing", modelId, label: model.label || modelId };
+}
+
 function download(kind, modelId, { onProgress, signal } = {}) {
   return manager.download(modelsDir(), resolve(kind, modelId), { onProgress, signal });
 }
@@ -44,24 +71,75 @@ function remove(kind, modelId) {
   return manager.remove(modelsDir(), resolve(kind, modelId));
 }
 
+// Delete the files of a definition the registry may not hold (an orphaned
+// custom download, or the previous revision of a custom model being replaced).
+function removeFiles(model) {
+  return manager.remove(modelsDir(), model);
+}
+
+function definitionFingerprint(model) {
+  return manager.definitionFingerprint(model);
+}
+
 /* ---------------- speech-to-text ---------------- */
 
 let loadedStt = null;
+const sttLoad = { inflight: null };
+
+// Share one in-flight load between concurrent callers asking for the same
+// thing. Recording start warms STT and the final pass loads it again, so on a
+// cold start both callers can arrive before the first load settles; each
+// posting its own load-stt made the worker (whose STT load isn't queued) build
+// the recognizer twice. The cleanup worker queues its loads and checks
+// residency itself, so there the memo only saves a redundant round trip. Only
+// the in-flight promise is shared: once it settles (either way) the slot is
+// cleared, so a failed load is retried rather than replayed.
+function sharedLoad(slot, key, start) {
+  if (slot.inflight?.key === key) return slot.inflight.promise;
+  const entry = { key, promise: start() };
+  slot.inflight = entry;
+  // Registered first, so the slot is clear before any caller hears the outcome
+  // (a retry from a rejection handler must post a fresh load). Handling the
+  // rejection here also keeps this bookkeeping branch from being unhandled;
+  // callers still get the real rejection from entry.promise.
+  const clear = () => {
+    // A newer load (another model, or one after a worker exit) owns the slot.
+    if (slot.inflight === entry) slot.inflight = null;
+  };
+  entry.promise.then(clear, clear);
+  return entry.promise;
+}
 
 // Load the STT model into the worker if it isn't already. Throws if the model
 // isn't downloaded yet — callers surface that (or fall back to the HTTP path).
 async function ensureStt(modelId) {
   const model = resolve("stt", modelId);
+  // Hugging Face discovery used to save any joiner-less bundle as Whisper, so
+  // a Canary entry may already sit in settings with a Whisper config the
+  // worker can't tell apart from the real thing. Its id, label and repo still
+  // say what it is: refuse it here, with the way out, instead of loading it.
+  const family =
+    model.sherpa && !model.sherpa.joiner
+      ? unsupportedSttFamily([model.id, model.label, model.source && model.source.repo].join(" "))
+      : null;
+  if (family) {
+    throw new Error(
+      `"${model.label || modelId}" is a ${family} model, which Earheart can't run. ` +
+        "Remove it in Settings → Speech-to-text and add a Parakeet or Whisper model instead."
+    );
+  }
   if (!manager.isInstalled(modelsDir(), model)) {
     throw new Error(`STT model "${modelId}" is not downloaded yet`);
   }
   if (loadedStt !== modelId) {
-    await sttHost.request("load-stt", {
-      dir: manager.modelDir(modelsDir(), model),
-      sherpa: model.sherpa,
-      modelId,
+    await sharedLoad(sttLoad, modelId, async () => {
+      await sttHost.request("load-stt", {
+        dir: manager.modelDir(modelsDir(), model),
+        sherpa: model.sherpa,
+        modelId,
+      });
+      loadedStt = modelId;
     });
-    loadedStt = modelId;
   }
 }
 
@@ -149,8 +227,17 @@ function cleanupRequest(type, args, opts) {
   return cleanupHost.request(type, args, opts);
 }
 
+const cleanupLoad = { inflight: null };
+
+// Load the cleanup model ahead of use. The pipeline doesn't call this: it warms
+// with primeCleanup() and every clean() carries its model to the worker, which
+// loads it on demand. The key includes the context size: a changed size is a
+// different load.
 async function ensureCleanup(modelId) {
-  return cleanupRequest("load-cleanup", cleanupModel(modelId));
+  const model = cleanupModel(modelId);
+  return sharedLoad(cleanupLoad, `${modelId}:${model.contextSize}`, () =>
+    cleanupRequest("load-cleanup", model)
+  );
 }
 
 // Prefill-ahead: load the cleanup model if needed and evaluate the prompt
@@ -211,10 +298,14 @@ async function clean(transcript, cfg, signal, { onProgress } = {}) {
 // identity is authoritative inside the worker, checked on every operation.
 function forgetStt() {
   loadedStt = null;
+  // A load posted to the dead worker is doomed; don't let the successor's
+  // callers join it.
+  sttLoad.inflight = null;
 }
 
 function forgetCleanup() {
   cleanupResident = false;
+  cleanupLoad.inflight = null; // as in forgetStt: never join the dead worker's load
 }
 
 function stop() {
@@ -225,9 +316,11 @@ function stop() {
 }
 
 // Retire the STT worker only — for a decode that timed out: the native call
-// keeps running in the worker, so without this the retry (and the next
-// dictation) would queue behind it. The exit listener forgets the loaded
-// model, so the next transcribe re-forks and reloads. Cleanup is untouched.
+// keeps running in the worker, so a retry (and the next dictation) must not
+// queue behind it. The host already retires a worker whose request timed out
+// (host.js), so after a timeout this is a no-op kept as the caller's explicit
+// intent. The exit listener forgets the loaded model, so the next transcribe
+// re-forks and reloads. Cleanup is untouched.
 function restartStt() {
   sttHost.stop();
 }
@@ -241,8 +334,9 @@ function stopIfIdle(host) {
 }
 
 // Give an idle dictation's memory back to the OS by exiting the worker that
-// holds it. The next transcribe/clean re-forks it and re-runs
-// ensureStt/ensureCleanup.
+// holds it. The next transcribe/clean re-forks it and reloads the model: STT
+// through ensureStt, cleanup inside the worker, which every clean/prime
+// carries its model descriptor to.
 //
 // Exiting is the only thing that actually reclaims. Dropping the engine handles
 // in-process does not: sherpa-onnx exposes no free() at all, so the recognizer
@@ -291,8 +385,11 @@ cleanupHost.onExit(forgetCleanup);
 module.exports = {
   modelsDir,
   isInstalled,
+  getSttReadiness,
   download,
   remove,
+  removeFiles,
+  definitionFingerprint,
   ensureStt,
   transcribe,
   ensureCleanup,

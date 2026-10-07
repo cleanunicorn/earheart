@@ -4,6 +4,9 @@
 // settings window.
 
 let current = null; // settings object being edited
+// The shared fields as this window last saw them from main; sent with the
+// save (sharedBaseline in settings-sync.js).
+let baseline = null;
 let defaults = null;
 let platform = "linux";
 let micLoaded = false;
@@ -185,6 +188,9 @@ function collect() {
     output: {
       ...current.output,
       mode: document.querySelector('input[name="output-mode"]:checked').value,
+      // As in Settings: the explicit paste-copy mode replaces the legacy
+      // restoreClipboard: false, so plain paste always restores.
+      restoreClipboard: true,
     },
     stt: {
       ...current.stt,
@@ -456,6 +462,37 @@ $("download-later").addEventListener("click", () => {
   checkAllDone();
 });
 
+/* ---------- changes saved elsewhere ---------- */
+
+// Main saved the settings while the wizard is open (e.g. the tray's output
+// radios): take the values only main writes and show a changed output mode,
+// without touching anything else the user has chosen.
+function applySettingsChange({ previous, current: saved }) {
+  current.overlay = saved.overlay;
+  current.customModels = saved.customModels;
+  current.updates = { ...saved.updates };
+  baseline.remind = saved.updates.remind !== false;
+  if (
+    previous.output.mode !== saved.output.mode ||
+    previous.output.restoreClipboard !== saved.output.restoreClipboard
+  ) {
+    current.output = { ...current.output, mode: saved.output.mode, restoreClipboard: saved.output.restoreClipboard };
+    const radio = document.querySelector(
+      `input[name="output-mode"][value="${displayedOutputMode(saved.output)}"]`
+    );
+    const shownBefore = document.querySelector('input[name="output-mode"]:checked')?.value;
+    if (radio) radio.checked = true;
+    baseline.outputMode = sharedBaseline(saved).outputMode;
+    renderSummary();
+    if (shownBefore !== displayedOutputMode(saved.output)) {
+      // Say why the choice just changed under the user.
+      $("sync-announce").textContent = "Output mode changed from the tray menu.";
+    }
+  }
+}
+
+const settingsChangesReady = followSettingsChanges(applySettingsChange);
+
 /* ---------- finish ---------- */
 
 async function finish() {
@@ -464,13 +501,20 @@ async function finish() {
   status.className = "status";
   let result;
   try {
-    result = await earheart.invoke("wizard:complete", collect());
+    result = await earheart.invoke("wizard:complete", { settings: collect(), baseline });
   } catch (err) {
     status.textContent = `Could not save: ${err.message}`;
     status.className = "status err";
     return;
   }
   current = result.settings;
+  baseline = sharedBaseline(current);
+  // Main may have kept its own output mode (a tray change the wizard hadn't
+  // seen yet); show what was actually saved.
+  const savedRadio = document.querySelector(
+    `input[name="output-mode"][value="${displayedOutputMode(current.output)}"]`
+  );
+  if (savedRadio) savedRadio.checked = true;
   if (!result.hotkey.ok) {
     // Stay in the wizard so the user can pick a combination that registers.
     status.textContent = "";
@@ -491,11 +535,12 @@ async function finish() {
   platform = data.platform;
   cleanupStyles = data.cleanupStyles || [];
   modelStatus = await earheart.invoke("models:status");
+  baseline = sharedBaseline(current);
 
   hotkeyInput.value = current.hotkey;
   $("cleanup-enabled").checked = current.cleanup.enabled;
   document.querySelector(
-    `input[name="output-mode"][value="${current.output.mode}"]`
+    `input[name="output-mode"][value="${displayedOutputMode(current.output)}"]`
   ).checked = true;
 
   populateCleanupModels();
@@ -510,4 +555,5 @@ async function finish() {
   if (platform === "darwin") $("demo-mod").textContent = "⌘";
   if (platform !== "linux") $("wayland-note").style.display = "none";
   showStep(0);
+  settingsChangesReady();
 })();

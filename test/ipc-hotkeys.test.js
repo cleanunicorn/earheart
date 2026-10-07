@@ -11,7 +11,7 @@ const Module = require("node:module");
 const ipcPath = require.resolve("../main/ipc");
 const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(ipcPath)] });
 
-function loadIpcHandlers({ previous, hotkeyResults, saveError = null }) {
+function loadIpcHandlers({ previous, hotkeyResults, saveError = null, getHotkeyStatus }) {
   const handlers = {};
   const calls = {
     applied: [],
@@ -26,6 +26,7 @@ function loadIpcHandlers({ previous, hotkeyResults, saveError = null }) {
   const settings = {
     DEFAULTS: {},
     get: () => current,
+    onChanged: () => () => {},
     save: (next) => {
       calls.saved.push(next);
       if (saveError) throw saveError;
@@ -69,6 +70,7 @@ function loadIpcHandlers({ previous, hotkeyResults, saveError = null }) {
     [resolveFrom("./history")]: {},
     [resolveFrom("./autostart")]: autostart,
     [resolveFrom("./updates")]: {},
+    [resolveFrom("./tray")]: { refresh() {} },
     [resolveFrom("./util/logger")]: {
       info() {},
       warn(message) {
@@ -99,6 +101,7 @@ function loadIpcHandlers({ previous, hotkeyResults, saveError = null }) {
       onSettingsChanged() {
         calls.settingsChanged += 1;
       },
+      getHotkeyStatus,
     });
   } finally {
     delete require.cache[ipcPath];
@@ -119,6 +122,10 @@ const working = {
   customModels: [],
 };
 
+// The `{ settings, baseline }` request both forms send. No baseline: these
+// tests are about hotkeys, so the form's shared-field values stand.
+const request = (attempt) => ({ settings: attempt });
+
 function submitted(overrides = {}) {
   return {
     ...working,
@@ -136,7 +143,7 @@ test("successful settings save persists and returns both hotkeys", () => {
   const results = { hotkey: { ok: true }, pauseHotkey: { ok: true } };
   const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: results });
 
-  const reply = handlers["settings:save"]({}, attempt);
+  const reply = handlers["settings:save"]({}, request(attempt));
 
   assert.strictEqual(calls.saved[0].hotkey, attempt.hotkey);
   assert.strictEqual(calls.saved[0].pauseHotkey, attempt.pauseHotkey);
@@ -156,7 +163,7 @@ test("settings save keeps a rejected record off disk but in the reply", () => {
   };
   const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: results });
 
-  const reply = handlers["settings:save"]({}, attempt);
+  const reply = handlers["settings:save"]({}, request(attempt));
 
   assert.strictEqual(calls.saved.length, 1);
   assert.strictEqual(calls.saved[0].hotkey, working.hotkey);
@@ -179,7 +186,7 @@ test("settings save keeps a rejected pause off disk but in the reply", () => {
   };
   const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: results });
 
-  const reply = handlers["settings:save"]({}, attempt);
+  const reply = handlers["settings:save"]({}, request(attempt));
 
   assert.strictEqual(calls.saved[0].hotkey, attempt.hotkey);
   assert.strictEqual(calls.saved[0].pauseHotkey, working.pauseHotkey);
@@ -196,7 +203,7 @@ test("an atomic pair rollback keeps both previous hotkeys on disk", () => {
   };
   const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: results });
 
-  const reply = handlers["settings:save"]({}, attempt);
+  const reply = handlers["settings:save"]({}, request(attempt));
 
   assert.strictEqual(calls.saved[0].hotkey, working.hotkey);
   assert.strictEqual(calls.saved[0].pauseHotkey, working.pauseHotkey);
@@ -212,7 +219,7 @@ test("an intentionally empty record remains persisted as a misconfiguration", ()
   };
   const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: results });
 
-  const reply = handlers["settings:save"]({}, attempt);
+  const reply = handlers["settings:save"]({}, request(attempt));
 
   assert.strictEqual(calls.saved[0].hotkey, "");
   assert.strictEqual(reply.settings.hotkey, "");
@@ -226,7 +233,7 @@ test("wizard completion reconciles a record failure and stays open", () => {
   };
   const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: results });
 
-  const reply = handlers["wizard:complete"]({}, attempt);
+  const reply = handlers["wizard:complete"]({}, request(attempt));
 
   assert.strictEqual(calls.saved[0].hotkey, working.hotkey);
   assert.strictEqual(calls.saved[0].pauseHotkey, attempt.pauseHotkey);
@@ -240,7 +247,7 @@ test("successful wizard completion persists both hotkeys and hands off", () => {
   const results = { hotkey: { ok: true }, pauseHotkey: { ok: true } };
   const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: results });
 
-  const reply = handlers["wizard:complete"]({}, attempt);
+  const reply = handlers["wizard:complete"]({}, request(attempt));
 
   assert.strictEqual(calls.saved[0].hotkey, attempt.hotkey);
   assert.strictEqual(calls.saved[0].pauseHotkey, attempt.pauseHotkey);
@@ -259,7 +266,7 @@ test("a settings write failure restores the pair that remains on disk", () => {
     saveError: writeError,
   });
 
-  assert.throws(() => handlers["settings:save"]({}, attempt), /disk full/);
+  assert.throws(() => handlers["settings:save"]({}, request(attempt)), /disk full/);
   assert.strictEqual(calls.applied.length, 2);
   assert.deepStrictEqual(calls.applied[0].overlay, working.overlay);
   assert.deepStrictEqual(calls.applied[1], working);
@@ -282,7 +289,7 @@ test("a failed write keeps its error when hotkey rollback reports a failure", ()
     },
   });
 
-  assert.throws(() => handlers["settings:save"]({}, attempt), /disk full/);
+  assert.throws(() => handlers["settings:save"]({}, request(attempt)), /disk full/);
   assert.strictEqual(calls.warnings.length, 1);
   assert.match(calls.warnings[0], /could not restore hotkeys.*record restore failed/);
 });
@@ -298,7 +305,51 @@ test("a failed write keeps its error when hotkey rollback throws", () => {
     },
   });
 
-  assert.throws(() => handlers["settings:save"]({}, attempt), /disk full/);
+  assert.throws(() => handlers["settings:save"]({}, request(attempt)), /disk full/);
   assert.strictEqual(calls.warnings.length, 1);
   assert.match(calls.warnings[0], /could not restore hotkeys.*rollback blew up/);
+});
+
+// Settings renders the startup registration result when it opens, before any
+// Save — so settings:get has to carry it, and reading it must never re-register.
+test("settings:get reports the last hotkey registration without re-registering", () => {
+  const status = {
+    hotkey: { ok: false, error: "Could not register", accelerator: working.hotkey },
+    pauseHotkey: { ok: true, accelerator: working.pauseHotkey },
+  };
+  const { handlers, calls } = loadIpcHandlers({
+    previous: working,
+    hotkeyResults: { hotkey: { ok: true }, pauseHotkey: { ok: true } },
+    getHotkeyStatus: () => status,
+  });
+
+  const first = handlers["settings:get"]();
+  const second = handlers["settings:get"]();
+
+  assert.deepStrictEqual(first.hotkeyStatus, status);
+  assert.deepStrictEqual(second.hotkeyStatus, status);
+  assert.deepStrictEqual(calls.applied, []);
+});
+
+test("settings:get reports a later registration result", () => {
+  let status = { hotkey: { ok: false, error: "taken", accelerator: "A" }, pauseHotkey: { ok: true } };
+  const { handlers } = loadIpcHandlers({
+    previous: working,
+    hotkeyResults: { hotkey: { ok: true }, pauseHotkey: { ok: true } },
+    getHotkeyStatus: () => status,
+  });
+  assert.strictEqual(handlers["settings:get"]().hotkeyStatus.hotkey.ok, false);
+
+  status = { hotkey: { ok: true, accelerator: "B" }, pauseHotkey: { ok: true } };
+
+  assert.strictEqual(handlers["settings:get"]().hotkeyStatus.hotkey.ok, true);
+});
+
+test("settings:get reports no hotkey status when none is wired", () => {
+  const { handlers } = loadIpcHandlers({
+    previous: working,
+    hotkeyResults: { hotkey: { ok: true }, pauseHotkey: { ok: true } },
+  });
+
+  assert.strictEqual(handlers["settings:get"]().hotkeyStatus, null);
 });

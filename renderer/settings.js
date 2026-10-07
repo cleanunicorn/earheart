@@ -1,6 +1,9 @@
 // Settings window renderer.
 
 let current = null; // settings object being edited
+// The shared fields as this window last saw them from main; sent with every
+// save (sharedBaseline in settings-sync.js).
+let baseline = null;
 let defaults = null;
 let platform = "linux";
 let modelStatus = null; // { stt: [...], cleanup: [...] } from the main process
@@ -211,19 +214,18 @@ async function loadMicrophones() {
 
 /* ---------- populate / collect ---------- */
 
-function populate() {
-  hotkeyInput.value = current.hotkey;
-  pauseHotkeyInput.value = current.pauseHotkey || "";
-  // Legacy settings expressed "paste & keep on clipboard" as paste mode with
-  // clipboard restore turned off; show those as the explicit paste-copy mode.
-  const mode =
-    current.output.mode === "paste" && !current.output.restoreClipboard
-      ? "paste-copy"
-      : current.output.mode;
+function showOutputMode(output) {
+  const mode = displayedOutputMode(output);
   (
     document.querySelector(`input[name="output-mode"][value="${mode}"]`) ||
     document.querySelector('input[name="output-mode"][value="paste"]')
   ).checked = true;
+}
+
+function populate() {
+  hotkeyInput.value = current.hotkey;
+  pauseHotkeyInput.value = current.pauseHotkey || "";
+  showOutputMode(current.output);
 
   $("stt-url").value = current.stt.baseUrl;
   $("stt-key").value = current.stt.apiKey;
@@ -630,25 +632,61 @@ async function finishModelDownload(result) {
 
 earheart.on("models:done", (result) => finishModelDownload(result));
 
+// While a removal runs (main first stops any download of the model, which can
+// take a moment) the row says so and its buttons are disabled, so a second
+// click can't send the same removal again.
+function setRowRemoving(modelId, removing) {
+  for (const kind of ["stt", "cleanup"]) {
+    const ui = manage[kind];
+    if (!ui || ui.modelId !== modelId) continue;
+    for (const button of $(`${kind}-model-manage`).querySelectorAll("button")) {
+      button.disabled = removing;
+    }
+    if (removing && ui.status) {
+      ui.status.textContent = "Removing…";
+      ui.status.className = "status";
+    }
+  }
+}
+
 async function removeModel(kind, modelId) {
   const info = modelStatus[kind].find((m) => m.id === modelId);
   const label = info ? info.label : modelId;
   if (!confirm(`Remove ${label}? You'll need to download it again to use it.`)) {
     return;
   }
+  setRowRemoving(modelId, true);
   const res = await earheart.invoke("models:remove", { kind, modelId });
-  if (res.ok) await refreshModels();
-  else showModelError(modelId, res.error || "Could not remove model");
+  setRowRemoving(modelId, false);
+  if (res.ok) {
+    // Announce before refreshing, while modelStatus still has the label.
+    announceModelStatus(kind, modelId, "Removed");
+    await refreshModels();
+  } else {
+    showModelError(modelId, res.error || "Could not remove model");
+  }
 }
 
 // Remove a custom model entirely: its files (if downloaded) and its definition.
 async function removeCustomModel(modelId) {
   const info = [...modelStatus.stt, ...modelStatus.cleanup].find((m) => m.id === modelId);
   const label = info ? info.label : modelId;
-  if (!confirm(`Remove ${label} from your models?`)) return;
+  // An installed custom model loses its download too; say so, like the
+  // curated models' confirm does.
+  const question = info?.installed
+    ? `Remove ${label} and its downloaded files? You'll need to download it again to use it.`
+    : `Remove ${label} from your models?`;
+  if (!confirm(question)) return;
+  setRowRemoving(modelId, true);
   const res = await earheart.invoke("models:remove-custom", { modelId });
+  setRowRemoving(modelId, false);
   if (res.ok) {
     current.customModels = res.customModels;
+    // Main falls back to the default when the removed model was the saved
+    // one. Adopt that, or refreshModels would keep pointing the select at the
+    // removed id, which reads back as "" and gets saved as an empty model.
+    if (res.kind && res.model) current[res.kind].builtin.model = res.model;
+    announceModelStatus(res.kind || info?.kind, modelId, "Removed");
     await refreshModels();
   } else {
     showModelError(modelId, res.error || "Could not remove model");
@@ -711,7 +749,84 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
   $("cleanup-prompt").value = defaults.cleanup.systemPrompt;
 });
 
+/* ---------- changes saved elsewhere ---------- */
+
+// Main saved the settings (tray radio, update prompt, overlay drag, custom
+// models, or this window's own save). Take the values only main writes, and
+// show a shared field only when this save changed it — never repopulate the
+// whole form, which would throw away edits the user hasn't saved yet.
+function applySettingsChange({ previous, current: saved }) {
+  const flipped = [];
+  current.overlay = saved.overlay;
+  current.customModels = saved.customModels;
+  current.updates = {
+    ...current.updates,
+    skippedVersion: saved.updates.skippedVersion,
+    lastSeenVersion: saved.updates.lastSeenVersion,
+  };
+  if (
+    previous.output.mode !== saved.output.mode ||
+    previous.output.restoreClipboard !== saved.output.restoreClipboard
+  ) {
+    const shownBefore = document.querySelector('input[name="output-mode"]:checked')?.value;
+    current.output = { ...current.output, mode: saved.output.mode, restoreClipboard: saved.output.restoreClipboard };
+    showOutputMode(saved.output);
+    baseline.outputMode = sharedBaseline(saved).outputMode;
+    // Only main's tray radios change the mode while this window is open.
+    if (shownBefore !== displayedOutputMode(saved.output)) {
+      flipped.push("Output mode changed from the tray menu.");
+    }
+  }
+  const remind = saved.updates.remind !== false;
+  if ((previous.updates.remind !== false) !== remind) {
+    current.updates.remind = saved.updates.remind;
+    if ($("updates-remind").checked !== remind) {
+      flipped.push(
+        remind ? "Update reminders turned on elsewhere." : "Update reminders turned off from the update prompt."
+      );
+    }
+    $("updates-remind").checked = remind;
+    baseline.remind = remind;
+  }
+  announceSettingsChange(flipped.join(" "));
+}
+
+// Say why a control just changed under the user. This window's own save never
+// flips a control (it already shows what it saved), and a save in flight
+// reports its own result, so neither announces here.
+function announceSettingsChange(message) {
+  const status = $("save-status");
+  if (!message || saveButton.disabled) return;
+  status.textContent = message;
+  status.className = "status";
+  setTimeout(() => {
+    if (status.textContent === message) status.textContent = "";
+  }, 4000);
+}
+
+const settingsChangesReady = followSettingsChanges(applySettingsChange);
+
 /* ---------- save ---------- */
+
+// Show each hotkey's registration failure under its field: the launch result
+// (from settings:get) when the window opens, then each Save's. A result is shown
+// only while the field holds the accelerator it was attempted with — after a
+// rejected save, settings keep the old working value, and an error about the
+// rejected one would describe a combination that is no longer there. Two kinds
+// are shown regardless: a result without an accelerator (an older main), and an
+// `unbound` one — a failed restore left the saved hotkey itself unregistered.
+function renderHotkeyStatus(status) {
+  const rows = [
+    [$("hotkey-status"), status?.hotkey, current.hotkey],
+    [$("pause-hotkey-status"), status?.pauseHotkey, current.pauseHotkey],
+  ];
+  for (const [row, result, shown] of rows) {
+    const stale =
+      !result?.unbound && result?.accelerator !== undefined && result.accelerator !== (shown || "");
+    row.textContent = result && !result.ok && !stale ? result.error : "";
+    row.className = "status err";
+  }
+}
 
 function hotkeySaveMessage(hotkeyResult, pauseResult) {
   if (!hotkeyResult.ok && !pauseResult.ok) {
@@ -741,8 +856,6 @@ function limitAdjustments(saved) {
 const saveButton = $("save");
 saveButton.addEventListener("click", async () => {
   const save = $("save-status");
-  const hotkeyStatus = $("hotkey-status");
-  const pauseHotkeyStatus = $("pause-hotkey-status");
   let result;
   let pauseResult;
   // Acknowledge the click immediately and block a duplicate save while the
@@ -752,8 +865,13 @@ saveButton.addEventListener("click", async () => {
   save.className = "status";
   try {
     current = collect();
-    result = await earheart.invoke("settings:save", current);
+    result = await earheart.invoke("settings:save", { settings: current, baseline });
     current = result.settings;
+    baseline = sharedBaseline(current);
+    // Main may have kept its own value for a shared field (a tray change this
+    // form hadn't seen yet), so show what was actually saved.
+    showOutputMode(current.output);
+    $("updates-remind").checked = current.updates.remind !== false;
     const adjusted = limitAdjustments(current);
     $("max-seconds").value = current.audio.maxRecordingSeconds;
     $("idle-unload").value = current.engines.idleUnloadMinutes;
@@ -763,8 +881,7 @@ saveButton.addEventListener("click", async () => {
       // Saved, but not as typed: stay open long enough to say so.
       save.textContent = `Saved — ${adjusted.join("; ")}`;
       save.className = "status ok";
-      hotkeyStatus.textContent = "";
-      pauseHotkeyStatus.textContent = "";
+      renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult });
       saveButton.disabled = false;
       return;
     }
@@ -772,8 +889,7 @@ saveButton.addEventListener("click", async () => {
       // Clean save — close the window so the user doesn't have to dismiss it.
       save.textContent = "Saved";
       save.className = "status ok";
-      hotkeyStatus.textContent = "";
-      pauseHotkeyStatus.textContent = "";
+      renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult });
       earheart.invoke("settings:close");
       return;
     }
@@ -790,10 +906,7 @@ saveButton.addEventListener("click", async () => {
   saveButton.disabled = false;
   save.textContent = hotkeySaveMessage(result.hotkey, pauseResult);
   save.className = "status err";
-  hotkeyStatus.textContent = result.hotkey.ok ? "" : result.hotkey.error;
-  hotkeyStatus.className = "status err";
-  pauseHotkeyStatus.textContent = pauseResult.ok ? "" : pauseResult.error;
-  pauseHotkeyStatus.className = "status err";
+  renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult });
   setTimeout(() => {
     save.textContent = "";
   }, 4000);
@@ -1273,9 +1386,13 @@ earheart.on("updates:state", renderUpdateState);
 (async () => {
   const data = await earheart.invoke("settings:get");
   current = data.settings;
+  baseline = sharedBaseline(current);
   defaults = data.defaults;
   platform = data.platform;
   cleanupStyles = data.cleanupStyles || [];
+  // A hotkey that failed at launch shows now, not after a Save — and before
+  // the update and model round-trips below.
+  renderHotkeyStatus(data.hotkeyStatus);
   // The Accessibility permission only exists on macOS.
   if (platform === "darwin") $("accessibility-field").hidden = false;
   $("version").textContent = `v${data.version}`;
@@ -1292,6 +1409,7 @@ earheart.on("updates:state", renderUpdateState);
   populateModelSelect("stt");
   populateModelSelect("cleanup");
   populate();
+  settingsChangesReady();
   renderHistory();
   loadMicrophones();
 })();

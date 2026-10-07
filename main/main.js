@@ -14,7 +14,7 @@ const updates = require("./updates");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { createHost, LOADCHECK_TIMEOUT_MS } = require("./engines/host");
-const { prettyHotkey } = require("./util/hotkey-label");
+const { createNotifier, announceStartup } = require("./setup-notices");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
 const startHidden = process.argv.includes("--hidden");
@@ -39,6 +39,10 @@ if (!gotLock) {
   main();
 }
 
+// The result of the last applyHotkeys() call — launch, save, or a save's
+// rollback — kept so Settings can show it when it opens (settings:get).
+let lastHotkeyStatus = null;
+
 // Register both global hotkeys from settings as one transaction. The record
 // hotkey is required (empty is a misconfiguration); the pause hotkey is
 // optional (empty simply leaves it unbound).
@@ -49,40 +53,16 @@ function applyHotkeys(cfg) {
     onRecord: () => pipeline.toggle(),
     onPause: () => pipeline.pauseToggle(),
   });
-  return hotkeys.toHotkeyResults(pair);
+  lastHotkeyStatus = hotkeys.toHotkeyResults(pair, cfg);
+  return lastHotkeyStatus;
 }
 
-// Held past show() so the click handler survives: a Notification that only the
-// local scope referenced can be collected before the user gets to it.
-let startupNote = null;
-
-// A returning user launching the app manually lands straight in the tray,
-// ready for the hotkey — no settings window to dismiss. A one-shot
-// notification confirms it started; clicking it is optional (it opens
-// Settings) and the notification dismisses itself otherwise. Settings stays
-// reachable from the tray menu regardless.
-function announceRunning(cfg) {
-  // No notification service (a Linux session without one, or permission
-  // denied) means show() is a silent no-op — and on a desktop without a tray
-  // area the launch would leave no trace at all. Fall back to the window.
-  if (!Notification.isSupported()) {
-    windows.openSettings();
-    return;
-  }
-  try {
-    const combo = prettyHotkey(cfg.hotkey);
-    startupNote = new Notification({
-      title: "Earheart is ready",
-      body: combo
-        ? `Press ${combo} to dictate.`
-        : "Open the tray menu to get started.",
-    });
-    startupNote.on("click", () => windows.openSettings());
-    startupNote.show();
-  } catch (err) {
-    logger.warn(`startup notification failed: ${err.message}`);
-  }
-}
+// Startup notices; clicking one opens Settings (see setup-notices.js).
+const notifier = createNotifier({
+  Notification,
+  openSettings: () => windows.openSettings(),
+  logger,
+});
 
 function main() {
   app.whenReady().then(() => {
@@ -116,8 +96,9 @@ function main() {
     pipeline.init();
     ipc.init({
       applyHotkeys,
+      // The tray rebuilds itself on every settings save (main/ipc.js).
+      getHotkeyStatus: () => lastHotkeyStatus,
       onSettingsChanged: () => {
-        tray.refresh();
         pipeline.onSettingsChanged();
         updates.onSettingsChanged();
       },
@@ -148,22 +129,22 @@ function main() {
       logger.warn(hotkeyResults.pauseHotkey.error);
     }
 
-    if (!startHidden && !isSmokeTest) {
-      if (firstRun) {
-        windows.openWizard();
-      } else if (!hotkeyResults.hotkey.ok) {
-        // The hotkey didn't register — taken by something else, or a Wayland
-        // desktop blocking global grabs. Announcing "press X to dictate" would
-        // be a lie, and the tray says nothing about why it does nothing, so
-        // show Settings: the hotkey field and the Wayland note live there.
-        windows.openSettings();
-      } else {
-        // Returning user: stay in the tray and announce, instead of popping a
-        // settings window they have to dismiss. Settings is still in the tray
-        // menu. (--hidden, used by autostart-at-login, stays fully silent.)
-        announceRunning(cfg);
-      }
-    }
+    // A returning user lands straight in the tray with a "ready" notice — or,
+    // when the record hotkey didn't register or the speech model isn't
+    // downloaded, a notice (or Settings) saying what to fix, so they find out
+    // before they speak. --hidden (autostart at login) stays silent when
+    // healthy. See announceStartup for the full order.
+    announceStartup({
+      cfg,
+      hidden: startHidden,
+      smokeTest: isSmokeTest,
+      firstRun,
+      hotkeyStatus: hotkeyResults,
+      sttReadiness: engines.getSttReadiness(cfg.stt),
+      openWizard: () => windows.openWizard(),
+      openSettings: () => windows.openSettings(),
+      notify: notifier.show,
+    });
 
     if (isSmokeTest) {
       // CI/dev sanity check: boot everything, then exit cleanly.

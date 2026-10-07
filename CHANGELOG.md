@@ -6,6 +6,26 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.35.7 — 2026-10-07
+
+- Stop tray and Settings saves reverting each other (#257)
+
+## v0.35.6 — 2026-10-07
+
+- Make removing and re-adding custom models reliable (#256)
+
+## v0.35.5 — 2026-10-07
+
+- Report broken hotkeys and missing models before dictation (#255)
+
+## v0.35.4 — 2026-10-07
+
+- Refuse speech models Earheart can't identify (#254)
+
+## v0.35.3 — 2026-10-07
+
+- Dedupe cold engine loads and recover wedged workers (#258)
+
 ## v0.35.2 — 2026-10-07
 
 - Clamp dictation length and idle unload limits (#251)

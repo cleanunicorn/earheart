@@ -5,6 +5,7 @@ const { app } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const registry = require("./engines/registry");
+const logger = require("./util/logger");
 const { DEFAULT_STYLE, styleById, NEUTRAL_SAMPLING } = require("./cleanup-styles");
 
 // The invariant core of the cleanup instructions, inlined into the model's user
@@ -165,15 +166,17 @@ const DEFAULTS = {
   // card is first dragged — the overlay then gets the default bottom-center
   // spot. Owned by main/windows.js (persisted on drag end, validated against
   // the connected displays on startup); the settings/wizard forms never edit
-  // it, so main/ipc.js re-injects the live value when they save. Kept free of
+  // it, so main/ipc.js commitSettings re-injects the live value when they
+  // save. Kept free of
   // placeholder values (deepMerge treats a null base as a mergeable object,
   // so a `x: null` default would corrupt the saved coordinate).
   overlay: {},
   // Models (cleanup or STT) the user added from a Hugging Face repo. Each entry
   // is a registry-shaped model definition (see main/services/hf-models.js). Managed
-  // only by the models:add-custom / models:remove-custom IPC handlers; the
-  // settings form carries it through untouched (collect() spreads it). deepMerge
-  // replaces arrays wholesale, so a saved list survives a merge intact.
+  // only by the models:add-custom / models:remove-custom IPC handlers, so a
+  // form save never writes it: main/ipc.js commitSettings re-injects the live
+  // list. deepMerge replaces arrays wholesale, so a saved list survives a merge
+  // intact.
   customModels: [],
 };
 
@@ -185,19 +188,40 @@ function settingsPath() {
   return filePath;
 }
 
-function deepMerge(base, override) {
-  if (override === null || override === undefined) return base;
-  if (Array.isArray(base)) return Array.isArray(override) ? override : base;
-  if (base === null || typeof base !== "object") {
-    return typeof override === typeof base ? override : base;
+const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+// A deep copy of plain JSON-shaped data (what settings.json holds), so no two
+// holders ever share a nested object: callers can edit what they are handed
+// without touching the cache or DEFAULTS.
+function clone(value) {
+  if (Array.isArray(value)) return value.map(clone);
+  if (value === null || typeof value !== "object") return value;
+  const out = {};
+  for (const key of Object.keys(value)) {
+    if (!UNSAFE_KEYS.has(key)) out[key] = clone(value[key]);
   }
-  if (Array.isArray(override) || typeof override !== "object") return base;
-  const out = { ...base };
+  return out;
+}
+
+// Merge `override` onto `base`, returning a fresh object that shares nothing
+// with either. A stored value only replaces a default of the same type
+// (`typeof`): a string where a number belongs, or an object where a string
+// belongs, falls back to the default. That check is by type alone, so an empty
+// string still replaces a non-empty default (see #191). Arrays are replaced
+// wholesale, never merged element by element.
+function deepMerge(base, override) {
+  if (override === null || override === undefined) return clone(base);
+  if (Array.isArray(base)) return clone(Array.isArray(override) ? override : base);
+  if (base === null || typeof base !== "object") {
+    return clone(typeof override === typeof base ? override : base);
+  }
+  if (Array.isArray(override) || typeof override !== "object") return clone(base);
+  const out = clone(base);
   for (const key of Object.keys(override)) {
-    if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
+    if (UNSAFE_KEYS.has(key)) continue;
     out[key] = Object.hasOwn(base, key)
       ? deepMerge(base[key], override[key])
-      : override[key];
+      : clone(override[key]);
   }
   return out;
 }
@@ -317,6 +341,11 @@ function load() {
   return cached;
 }
 
+// Merge `next` onto the defaults and write it atomically. Throws when the
+// write fails, and memory then still equals the file, so callers that must
+// not fail (startup, bookkeeping) guard it. Only after a successful write does
+// the cache change and onChanged fire. Returns a detached copy of what was
+// saved.
 function save(next) {
   const merged = clampLimits(deepMerge(DEFAULTS, next));
   const file = settingsPath();
@@ -339,17 +368,52 @@ function save(next) {
   }
   // Only now does the in-memory copy change: a failed save must leave get()
   // agreeing with the file, not handing out values that were never persisted.
+  const previous = load();
   cached = merged;
-  return cached;
+  notifyChanged(previous);
+  return clone(cached);
 }
 
+// A copy of the current settings. Editing it changes nothing until it is
+// passed to save(), so a failed save can't leave memory ahead of the file.
 function get() {
-  return load();
+  return clone(load());
+}
+
+// Listeners told after every successful save, with detached `previous` and
+// `current` snapshots. One registration covers every writer (forms, tray,
+// updater, overlay drag, model handlers), so a new writer can't forget to tell
+// the open windows. A throwing listener is logged: the save already reached
+// disk, so it must not be reported as failed.
+const changeListeners = new Set();
+
+function onChanged(fn) {
+  changeListeners.add(fn);
+  return () => changeListeners.delete(fn);
+}
+
+function notifyChanged(previous) {
+  for (const fn of changeListeners) {
+    try {
+      fn({ previous: clone(previous), current: clone(cached) });
+    } catch (err) {
+      logger.warn(`settings change listener failed: ${err.message}`);
+    }
+  }
 }
 
 // True until settings are saved for the first time. Used to show the setup
 // wizard exactly once: both finishing and skipping the wizard persist the
 // settings file.
+// The output mode delivery actually performs. Legacy files expressed "paste &
+// keep on clipboard" as paste mode with clipboard restore off, which behaves
+// as paste-copy (main/output/deliver.js restores only for paste + restore).
+// The tray, the forms (renderer/settings-sync.js displayedOutputMode, kept in
+// step by test/settings-sync.test.js) and the commit path all compare this.
+function effectiveOutputMode(output) {
+  return output.mode === "paste" && !output.restoreClipboard ? "paste-copy" : output.mode;
+}
+
 function isFirstRun() {
   return !fs.existsSync(settingsPath());
 }
@@ -357,6 +421,8 @@ function isFirstRun() {
 module.exports = {
   get,
   save,
+  onChanged,
+  effectiveOutputMode,
   isFirstRun,
   migrateLegacy,
   DEFAULTS,

@@ -12,6 +12,7 @@ const route = require("./services/route");
 const engines = require("./engines");
 const autostart = require("./autostart");
 const updates = require("./updates");
+const tray = require("./tray");
 const { listRemoteModels } = require("./services/models-remote");
 const {
   parseRepoInput,
@@ -24,8 +25,68 @@ const {
 const { STYLES: CLEANUP_STYLES } = require("./cleanup-styles");
 const { encodeSilenceWav } = require("./util/wav");
 
-// In-flight model downloads, so the UI can cancel them. Keyed by kind:modelId.
+// One model's key in `downloads` and `busyModels` (the renderer's
+// modelDownloadKey uses the same shape).
+const modelKey = (kind, modelId) => `${kind}:${modelId}`;
+
+// In-flight model downloads, so the UI can cancel them and a removal can wait
+// for them. Keyed by modelKey; each entry is { controller, done }, where
+// `done` settles once the download has stopped writing and reported.
 const downloads = new Map();
+// Models whose files are being deleted or replaced. A download for one of
+// these keys is refused until that finishes, so no new writer can start
+// between stopping the old one and removing its directory.
+const busyModels = new Set();
+
+// Abort a model's in-flight download, if any, and wait until it has stopped
+// writing. Never throws: the download reports its own outcome.
+async function stopDownload(kind, modelId) {
+  const entry = downloads.get(modelKey(kind, modelId));
+  if (!entry) return;
+  entry.controller.abort();
+  await entry.done.catch(() => {});
+}
+
+// Stream one model to disk and report its outcome to every window. Resolves
+// (never rejects) once the transfer has stopped writing, its `downloads` entry
+// is gone and models:done has been broadcast — what a removal waits for.
+async function runDownload(kind, modelId, controller) {
+  let result;
+  try {
+    await engines.download(kind, modelId, {
+      signal: controller.signal,
+      // Broadcast so whichever window is open (wizard and/or Settings) tracks
+      // the same download, not just the one that started it.
+      onProgress: (p) => {
+        windows.broadcast("models:progress", { kind, modelId, ...p });
+      },
+    });
+    result = { ok: true };
+  } catch (err) {
+    const aborted = controller.signal.aborted;
+    result = { ok: false, cancelled: aborted, error: err.message };
+  } finally {
+    downloads.delete(modelKey(kind, modelId));
+  }
+  windows.broadcast("models:done", { kind, modelId, ...result });
+  return result;
+}
+
+// Run `fn` with the given models marked busy: their downloads are stopped and
+// awaited first, and none can restart until `fn` settles.
+async function withModelsBusy(models, fn) {
+  const keys = [...new Set(models.map(({ kind, id }) => modelKey(kind, id)))];
+  for (const key of keys) {
+    if (busyModels.has(key)) throw new Error("This model is already being changed");
+  }
+  keys.forEach((key) => busyModels.add(key));
+  try {
+    for (const { kind, id } of models) await stopDownload(kind, id);
+    return await fn();
+  } finally {
+    keys.forEach((key) => busyModels.delete(key));
+  }
+}
 
 // Push the start-on-boot choice to the OS, swallowing failures (e.g. a
 // read-only autostart dir) so a save never fails over a login-item glitch.
@@ -37,6 +98,81 @@ function applyAutostart(cfg) {
   }
 }
 
+const isPlainObject = (value) =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+// A form save (Settings window or wizard) sends `{ settings, baseline }`: the
+// settings it spread from the snapshot it opened with, and the values of the
+// shared fields below as it last saw them from main.
+function parseCommitRequest(request) {
+  if (!isPlainObject(request) || !isPlainObject(request.settings)) {
+    throw new Error("invalid settings request");
+  }
+  return {
+    next: request.settings,
+    baseline: isPlainObject(request.baseline) ? request.baseline : {},
+  };
+}
+
+// Fields both a form and main write: the output mode (tray radios) and update
+// reminders ("Don't remind me" on the update prompt). Main changed one while
+// the form was open when the live value differs from the form's baseline;
+// that change wins, otherwise the form's value (edited or not) is saved. Once
+// the form has applied the settings:changed broadcast its baseline moves on,
+// so the user can change the field again.
+const SHARED_FIELDS = [
+  {
+    name: "outputMode",
+    type: "string",
+    // Compared as the mode delivery performs, so retiring the legacy
+    // { mode: "paste", restoreClipboard: false } encoding counts as a change.
+    read: (cfg) => (cfg.output ? settings.effectiveOutputMode(cfg.output) : undefined),
+    // Keep main's restoreClipboard with its mode: the pair is what decides
+    // whether "paste" restores the clipboard (main/output/deliver.js).
+    write: (cfg, live) => ({
+      ...cfg,
+      output: { ...cfg.output, mode: live.output.mode, restoreClipboard: live.output.restoreClipboard },
+    }),
+  },
+  {
+    name: "remind",
+    type: "boolean",
+    read: (cfg) => cfg.updates?.remind !== false,
+    write: (cfg, live) => ({ ...cfg, updates: { ...cfg.updates, remind: live.updates.remind } }),
+  },
+];
+
+// Settings only main writes, which no form edits: the dragged overlay position
+// (main/windows.js), custom model definitions (models:add/remove-custom) and
+// the updater's bookkeeping. A form's copy of them can only be stale, so the
+// live value always wins.
+function withMainOwned(next, live, baseline) {
+  let out = { ...next, overlay: live.overlay, customModels: live.customModels };
+  if (live.updates) {
+    out.updates = {
+      ...next.updates,
+      skippedVersion: live.updates.skippedVersion,
+      lastSeenVersion: live.updates.lastSeenVersion,
+    };
+  }
+  for (const field of SHARED_FIELDS) {
+    const seen = baseline[field.name];
+    if (typeof seen !== field.type) continue;
+    if (field.read(live) !== seen) out = field.write(out, live);
+  }
+  return out;
+}
+
+// The sections an open form takes from a settings:changed event (see
+// applySettingsChange in renderer/settings.js and renderer/wizard.js). Only
+// these are sent, so API keys never ride the event; the forms already hold
+// them from settings:get.
+const FORM_SYNC_KEYS = ["output", "updates", "overlay", "customModels"];
+
+function formSyncFields(cfg) {
+  return Object.fromEntries(FORM_SYNC_KEYS.map((key) => [key, cfg[key]]));
+}
+
 function withFields(base, source, fields) {
   const result = { ...base };
   for (const field of fields) {
@@ -45,15 +181,55 @@ function withFields(base, source, fields) {
   return result;
 }
 
-function init({ applyHotkeys, onSettingsChanged }) {
+// What to tell the user when deleting a model's files fails. The raw error
+// (e.g. "EBUSY: resource busy or locked, rmdir '/home/…/models/…'") names an
+// internal path and no way out, so the usual lock and permission codes get
+// actionable copy and the raw message goes to the log instead.
+const FILES_IN_USE_CODES = new Set(["EBUSY", "EPERM", "EACCES"]);
+function deleteErrorMessage(err) {
+  if (!FILES_IN_USE_CODES.has(err.code)) return err.message;
+  logger.warn(`could not delete model files: ${err.message}`);
+  return "The model's files are in use or locked. Close anything using the model, then try again.";
+}
+
+// The definitions whose bytes must go before `model` replaces `existing` (the
+// stored definition with the same id, if any). The id has no commit, so an
+// upstream re-upload of the same repo+quant keeps it while the files change.
+// Bytes on disk under this id that don't belong to the new definition — the
+// previous revision's, or an orphan nothing owns — are deleted so they are
+// never mistaken for the new download. An unchanged re-add keeps its install.
+function staleDefinitions(existing, model) {
+  if (!existing) return [model];
+  if (engines.definitionFingerprint(existing) === engines.definitionFingerprint(model)) return [];
+  // Directories are kind/id, so a same-id definition of the other kind
+  // leaves bytes under both. A hand-edited definition whose kind or id can't
+  // name a directory has no bytes the app could have written; skipping it
+  // lets the re-add replace the broken entry instead of failing on it.
+  const stale = existing.kind === model.kind ? [existing] : [existing, model];
+  return stale.filter(
+    (def) => engines.registry.isPathSegment(def.kind) && engines.registry.isPathSegment(def.id)
+  );
+}
+
+function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
   // Register any models the user added from a custom Hugging Face URL so they
   // resolve for download and for loading into the cleanup worker after a
   // restart, exactly like the built-ins.
   engines.registry.setCustomModels(settings.get().customModels || []);
 
+  // Every successful save, from any writer, reaches the open forms (so they
+  // show a tray or updater change) and rebuilds the tray menu (so its radios
+  // show a form change).
+  settings.onChanged(({ previous, current }) => {
+    windows.sendToForms("settings:changed", {
+      previous: formSyncFields(previous),
+      current: formSyncFields(current),
+    });
+    tray.refresh();
+  });
+
   ipcMain.handle("settings:get", () => {
-    // Shallow copy so reporting the live OS state doesn't mutate the cache.
-    const cfg = { ...settings.get() };
+    const cfg = settings.get();
     // Report the real OS login-item state so the toggle reflects reality even
     // if it was changed outside the app (e.g. the autostart file was removed).
     try {
@@ -66,6 +242,10 @@ function init({ applyHotkeys, onSettingsChanged }) {
       defaults: settings.DEFAULTS,
       platform: process.platform,
       version: app.getVersion(),
+      // The last hotkey registration (launch or save), so Settings can show a
+      // shortcut that failed at launch as soon as it opens. Read-only: asking
+      // never re-registers anything.
+      hotkeyStatus: getHotkeyStatus?.() ?? null,
       // Drives the cleanup style slider (id/label/hint per stop) and the
       // "Start from preset" seed values, so the UI copy and numbers stay in
       // lockstep with the presets the engines actually use.
@@ -78,15 +258,14 @@ function init({ applyHotkeys, onSettingsChanged }) {
     };
   });
 
-  // The overlay position (settings.overlay) is owned by the main process: it
-  // changes when the user drags the card, not through any form. The settings
-  // and wizard windows save a payload spread from the snapshot they opened
-  // with, so their `overlay` can be stale — dragging the card while a form is
-  // open, then saving the form, would roll the position back. Re-inject the
-  // live value on every form save.
-  const saveWithHotkeys = (next) => {
+  // The one commit path for both forms. Main-side writers save while a form
+  // is open, so the form's payload is merged with the live settings first
+  // (withMainOwned), then hotkeys are applied before persisting so a rejected
+  // shortcut never reaches disk.
+  const commitSettings = (request) => {
+    const { next, baseline } = parseCommitRequest(request);
     const previous = settings.get();
-    const candidate = { ...next, overlay: previous.overlay };
+    const candidate = withMainOwned(next, previous, baseline);
     const hotkeyResults = applyHotkeys(candidate);
     const rejectedFields = ["hotkey", "pauseHotkey"].filter((field) => {
       const result = hotkeyResults[field];
@@ -129,13 +308,13 @@ function init({ applyHotkeys, onSettingsChanged }) {
     };
   };
 
-  ipcMain.handle("settings:save", (event, next) => saveWithHotkeys(next).response);
+  ipcMain.handle("settings:save", (event, request) => commitSettings(request).response);
 
   // The setup wizard saves its choices, then hands over to the settings
   // window so the user can review what was pre-configured. If the chosen
   // hotkey can't be registered, the wizard stays open to let them fix it.
-  ipcMain.handle("wizard:complete", (event, next) => {
-    const { response, hotkeyResults } = saveWithHotkeys(next);
+  ipcMain.handle("wizard:complete", (event, request) => {
+    const { response, hotkeyResults } = commitSettings(request);
     if (hotkeyResults.hotkey.ok) {
       windows.openSettings({ fromWizard: true });
       windows.closeWizard();
@@ -270,51 +449,59 @@ function init({ applyHotkeys, onSettingsChanged }) {
         listing.variants.find((v) => v.label === listing.recommended);
       if (!chosen) return { ok: false, error: "That version is no longer available" };
       const model = hfBuild[kind](listing.repo, chosen);
-      const cfg = settings.get();
-      // Dedupe by id so re-adding the same repo+quant just refreshes the entry.
-      const customModels = [
-        ...(cfg.customModels || []).filter((m) => m.id !== model.id),
-        model,
-      ];
-      settings.save({ ...cfg, customModels });
-      engines.registry.setCustomModels(customModels);
+      const existing = (settings.get().customModels || []).find((m) => m.id === model.id);
+      const stale = staleDefinitions(existing, model);
+      const customModels = await withModelsBusy(stale, async () => {
+        for (const def of stale) await engines.removeFiles(def);
+        const cfg = settings.get();
+        // Dedupe by id so re-adding the same repo+quant just refreshes the entry.
+        const next = [...(cfg.customModels || []).filter((m) => m.id !== model.id), model];
+        settings.save({ ...cfg, customModels: next });
+        engines.registry.setCustomModels(next);
+        return next;
+      });
       return { ok: true, modelId: model.id, customModels };
     } catch (err) {
-      return { ok: false, error: err.message };
+      return { ok: false, error: deleteErrorMessage(err) };
     }
   });
 
   // Remove a custom model entirely: delete any downloaded files and drop its
   // definition from settings + the registry.
+  // A file delete that fails (e.g. EBUSY on Windows for a loaded model) fails
+  // the whole removal and keeps the definition, so the user can retry rather
+  // than leave orphaned files with no entry to remove them.
   ipcMain.handle("models:remove-custom", async (event, { modelId } = {}) => {
     try {
-      const cfg = settings.get();
       // The stored definition knows which kind it is; a definition that's
       // already gone still gets the cleanup-side fallbacks below.
-      const entry = (cfg.customModels || []).find((m) => m.id === modelId);
+      const entry = (settings.get().customModels || []).find((m) => m.id === modelId);
       const kind = entry && entry.kind === "stt" ? "stt" : "cleanup";
-      try {
-        await engines.remove(kind, modelId);
-      } catch {
-        // Not downloaded (or already gone) — still drop the definition below.
-      }
-      const customModels = (cfg.customModels || []).filter((m) => m.id !== modelId);
-      // If the removed model was the configured one for its kind, fall back to
-      // the default so the engine doesn't later fail to resolve a model that's
-      // gone.
-      const defaults = {
-        stt: engines.registry.DEFAULT_STT_MODEL,
-        cleanup: engines.registry.DEFAULT_CLEANUP_MODEL,
-      };
-      const kindCfg =
-        cfg[kind].builtin.model === modelId
-          ? { ...cfg[kind], builtin: { ...cfg[kind].builtin, model: defaults[kind] } }
-          : cfg[kind];
-      settings.save({ ...cfg, [kind]: kindCfg, customModels });
-      engines.registry.setCustomModels(customModels);
-      return { ok: true, customModels };
+      return await withModelsBusy([{ kind, id: modelId }], async () => {
+        // A definition the registry never accepted has no files to delete.
+        if (engines.registry.getModel(kind, modelId)) await engines.remove(kind, modelId);
+        // Read settings after the awaits so a save made meanwhile isn't lost.
+        const cfg = settings.get();
+        const customModels = (cfg.customModels || []).filter((m) => m.id !== modelId);
+        // If the removed model was the configured one for its kind, fall back to
+        // the default so the engine doesn't later fail to resolve a model that's
+        // gone.
+        const defaults = {
+          stt: engines.registry.DEFAULT_STT_MODEL,
+          cleanup: engines.registry.DEFAULT_CLEANUP_MODEL,
+        };
+        const kindCfg =
+          cfg[kind].builtin.model === modelId
+            ? { ...cfg[kind], builtin: { ...cfg[kind].builtin, model: defaults[kind] } }
+            : cfg[kind];
+        settings.save({ ...cfg, [kind]: kindCfg, customModels });
+        engines.registry.setCustomModels(customModels);
+        // The renderer adopts `model`: its select still holds the removed id,
+        // which would otherwise read back as "" on the next Save.
+        return { ok: true, customModels, kind, model: kindCfg.builtin.model };
+      });
     } catch (err) {
-      return { ok: false, error: err.message };
+      return { ok: false, error: deleteErrorMessage(err) };
     }
   });
 
@@ -349,54 +536,47 @@ function init({ applyHotkeys, onSettingsChanged }) {
 
   // Stream a model download to disk, posting progress to the requesting window.
   ipcMain.handle("models:download", async (event, { kind, modelId }) => {
-    const key = `${kind}:${modelId}`;
+    const key = modelKey(kind, modelId);
     if (downloads.has(key)) return { ok: false, error: "Already downloading" };
+    if (busyModels.has(key)) {
+      // Like every other terminal outcome (except "Already downloading", whose
+      // transfer will broadcast its own), report it to every window so a row
+      // that optimistically showed "Downloading…" settles.
+      const result = { ok: false, error: "This model is being removed" };
+      windows.broadcast("models:done", { kind, modelId, ...result });
+      return result;
+    }
     if (engines.isInstalled(kind, modelId)) {
       const result = { ok: true };
       windows.broadcast("models:done", { kind, modelId, ...result });
       return result;
     }
     const controller = new AbortController();
-    downloads.set(key, controller);
-    let result;
-    try {
-      await engines.download(kind, modelId, {
-        signal: controller.signal,
-        // Broadcast so whichever window is open (wizard and/or Settings) tracks
-        // the same download, not just the one that started it.
-        onProgress: (p) => {
-          windows.broadcast("models:progress", { kind, modelId, ...p });
-        },
-      });
-      result = { ok: true };
-    } catch (err) {
-      const aborted = controller.signal.aborted;
-      result = { ok: false, cancelled: aborted, error: err.message };
-    } finally {
-      downloads.delete(key);
-    }
-    windows.broadcast("models:done", { kind, modelId, ...result });
-    return result;
+    const done = runDownload(kind, modelId, controller);
+    downloads.set(key, { controller, done });
+    return done;
   });
 
   ipcMain.handle("models:cancel", (event, { kind, modelId }) => {
-    const controller = downloads.get(`${kind}:${modelId}`);
-    if (controller) controller.abort();
+    const entry = downloads.get(modelKey(kind, modelId));
+    if (entry) entry.controller.abort();
     return { ok: true };
   });
 
   ipcMain.handle("models:remove", async (event, { kind, modelId }) => {
     try {
-      await engines.remove(kind, modelId);
+      await withModelsBusy([{ kind, id: modelId }], () => engines.remove(kind, modelId));
       return { ok: true };
     } catch (err) {
-      return { ok: false, error: err.message };
+      return { ok: false, error: deleteErrorMessage(err) };
     }
   });
 
   ipcMain.handle("history:list", () => history.list());
   ipcMain.handle("history:clear", () => {
     history.clear();
+    // "Copy last transcription" must go disabled with nothing left to copy.
+    tray.refresh();
     return [];
   });
 

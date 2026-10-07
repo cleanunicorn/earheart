@@ -15,9 +15,9 @@
 // with it the user's words.
 //
 // Pure arithmetic, kept here rather than in the engine worker so it can be
-// tested directly: engine-worker.js runs inside an Electron utilityProcess and
-// binds `process.parentPort` at module scope, so it cannot be required from a
-// test at all.
+// tested directly, without a model: engine-worker.js runs inside an Electron
+// utilityProcess and binds `process.parentPort` at module scope, so its tests
+// (test/cleanup-worker.test.js) have to fake that port and node-llama-cpp.
 
 // Slack for the chat template's own wrapper tokens on top of prompt + output.
 const CLEAN_CONTEXT_SLACK_TOKENS = 64;

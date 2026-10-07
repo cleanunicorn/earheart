@@ -79,6 +79,67 @@ test("every channel the renderers listen on is in the preload LISTEN allowlist",
   assert.deepStrictEqual(missing, [], `preload LISTEN is missing: ${missing.join(", ")}`);
 });
 
+// The other direction: a channel main pushes to a window but the preload LISTEN
+// allowlist doesn't carry can't be subscribed to, so the renderer's
+// earheart.on() throws and the update never lands.
+test("every channel main pushes to a window is in the preload LISTEN allowlist", () => {
+  const pushed = channels(
+    main,
+    /(?:sendToForms|sendToSettings|sendToOverlay|broadcast|webContents\.send)\(\s*"([a-z:-]+)"/g
+  );
+  assert.ok(pushed.has("settings:changed"), "main should push settings:changed");
+  const missing = [...pushed].filter((c) => !LISTEN.has(c)).sort();
+  assert.deepStrictEqual(missing, [], `preload LISTEN is missing: ${missing.join(", ")}`);
+});
+
+// settings:changed goes to the Settings and wizard windows only
+// (windows.sendToForms). The overlay shares the preload, so its LISTEN entry
+// can't keep the event away from it; only the send helper can.
+test("settings:changed is pushed only through sendToForms", () => {
+  assert.match(main, /sendToForms\(\s*"settings:changed"/);
+  assert.doesNotMatch(
+    main,
+    /(?:sendToOverlay|sendToSettings|broadcast|webContents\.send)\(\s*"settings:changed"/
+  );
+});
+
+// Both forms must follow settings saved elsewhere (#190), or an open form
+// shows — and on save, sends — a stale output mode. The listener lives in the
+// shared renderer/settings-sync.js; each form subscribes and, at the end of its
+// init, flushes what arrived while it loaded.
+test("Settings and the wizard both follow settings:changed", () => {
+  const sync = fs.readFileSync(path.join(ROOT, "renderer", "settings-sync.js"), "utf8");
+  assert.match(sync, /earheart\.on\(\s*"settings:changed"/);
+  for (const file of ["settings.js", "wizard.js"]) {
+    const source = fs.readFileSync(path.join(ROOT, "renderer", file), "utf8");
+    assert.match(
+      source,
+      /const settingsChangesReady = followSettingsChanges\(applySettingsChange\)/,
+      `${file} should subscribe to settings:changed`
+    );
+    const init = source.indexOf("/* ---------- init ---------- */");
+    assert.ok(init !== -1 && source.indexOf("settingsChangesReady();", init) !== -1, `${file} should flush queued changes in its init`);
+  }
+});
+
+// The baseline a form sends and the shared fields main reconciles are joined
+// only by key names. main skips a baseline key it doesn't know, so a rename on
+// either side silently lets a stale form value overwrite a tray change again.
+test("the form baseline names exactly main's shared fields", () => {
+  const ipc = fs.readFileSync(path.join(ROOT, "main", "ipc.js"), "utf8");
+  const block = ipc.match(/const SHARED_FIELDS = \[([\s\S]*?)\n\];/);
+  assert.ok(block, "main/ipc.js should define SHARED_FIELDS");
+  const mainNames = [...block[1].matchAll(/name:\s*"([A-Za-z]+)"/g)].map((m) => m[1]).sort();
+  const { sharedBaseline } = require("../renderer/settings-sync");
+  const formNames = Object.keys(sharedBaseline({ output: { mode: "paste", restoreClipboard: true }, updates: {} })).sort();
+  assert.deepStrictEqual(formNames, mainNames);
+  // Neither page re-encodes the baseline by hand.
+  for (const file of ["settings.js", "wizard.js"]) {
+    const source = fs.readFileSync(path.join(ROOT, "renderer", file), "utf8");
+    assert.doesNotMatch(source, /outputMode:/, `${file} should build its baseline with sharedBaseline()`);
+  }
+});
+
 // logs:open answers with an `action` naming which of its three fallbacks ran,
 // and the renderer switches on that string to phrase the status line. The two
 // sides are joined by nothing but the literal, so renaming one silently drops
@@ -95,6 +156,47 @@ test("every logs:open action the renderer branches on is one main can return", (
   const compared = channels(renderer, /result\.action\s*===\s*"([a-z]+)"/g);
   const unknown = [...compared].filter((a) => !emitted.has(a)).sort();
   assert.deepStrictEqual(unknown, [], `renderer tests actions main never sends: ${unknown.join(", ")}`);
+});
+
+// The source of `function name(…) { … }` in `source`, found by matching braces
+// rather than by a "\n}\n" terminator, so a CRLF checkout (core.autocrlf on
+// the Windows runner) can't make it run on into the rest of the file.
+function functionSource(source, name) {
+  const declaration = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(source);
+  assert.ok(declaration, `${name} function must exist`);
+  const bodyStart = source.indexOf("{", declaration.index + declaration[0].length);
+  let depth = 0;
+  for (let i = bodyStart; i < source.length; i++) {
+    if (source[i] === "{") depth++;
+    else if (source[i] === "}" && --depth === 0) return source.slice(declaration.index, i + 1);
+  }
+  assert.fail(`${name} function has an unclosed body`);
+}
+
+// models:remove-custom answers with the kind and model main saved after the
+// removal, and Settings adopts them so its select never falls back to the
+// removed id (which reads back "" and gets saved). Joined by bare field names:
+// a rename on either side would make the renderer skip the adoption silently,
+// caught only by the heavier settings smoke. Compare the success return's
+// fields with the fields removeCustomModel reads off the result.
+test("every models:remove-custom result field Settings reads is one main returns", () => {
+  const start = main.indexOf('ipcMain.handle("models:remove-custom"');
+  assert.notStrictEqual(start, -1, "models:remove-custom handler must exist");
+  const handler = main.slice(start, main.indexOf("ipcMain.handle(", start + 1));
+  const success = /return \{ ok: true, ([^}]*)\}/.exec(handler);
+  assert.ok(success, "models:remove-custom must return a literal success object");
+  const returned = new Set(["ok", "error", ...success[1].split(",").map((f) => f.split(":")[0].trim())]);
+  for (const field of ["customModels", "kind", "model"]) {
+    assert.ok(returned.has(field), `models:remove-custom no longer returns ${field}`);
+  }
+
+  const fn = functionSource(renderer, "removeCustomModel");
+  const read = channels(fn, /\bres\.([A-Za-z]+)/g);
+  for (const field of ["kind", "model"]) {
+    assert.ok(read.has(field), `removeCustomModel no longer reads res.${field}`);
+  }
+  const unknown = [...read].filter((f) => !returned.has(f)).sort();
+  assert.deepStrictEqual(unknown, [], `removeCustomModel reads fields main never returns: ${unknown.join(", ")}`);
 });
 
 test("every channel the renderers send is in SEND and has an ipcMain.on", () => {

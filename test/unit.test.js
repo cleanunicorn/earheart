@@ -1202,11 +1202,13 @@ test("explainMacPasteError names the macOS permission that blocked the paste", (
   assert.doesNotMatch(timedOut.note, /osascript/);
 
   const other = explainMacPasteError(new Error("Command failed: osascript"));
-  assert.strictEqual(other.note, "Command failed: osascript");
-  assert.strictEqual(other.hint, "Command failed: osascript");
+  // An unrecognised failure gets plain copy; the raw tool output is for the log.
+  assert.doesNotMatch(other.note, /osascript|Command failed/);
+  assert.doesNotMatch(other.hint, /osascript|Command failed/);
+  assert.match(other.hint, /⌘V/);
 
   // Every note fits the overlay's single detail row.
-  for (const r of [automation, accessibility, timedOut]) assert.ok(r.note.length <= 32, r.note);
+  for (const r of [automation, accessibility, timedOut, other]) assert.ok(r.note.length <= 32, r.note);
 });
 
 // The permission reset clears TCC decisions by bundle identifier; if it drifts

@@ -81,6 +81,7 @@ fs.mkdirSync(userData, { recursive: true });
 app.setPath("userData", userData);
 
 const windows = require("../main/windows");
+const { waitForLoad } = require("./wait-for-load");
 const history = require("../main/history");
 const ipc = require("../main/ipc");
 const engines = require("../main/engines");
@@ -171,7 +172,7 @@ app.whenReady().then(async () => {
     );
 
     const win = windows.openSettings();
-    await new Promise((r) => win.webContents.once("did-finish-load", r));
+    await waitForLoad(win.webContents);
     // Let the init IPC round-trips (settings, models, history) settle.
     await sleep(1200);
 
@@ -590,7 +591,7 @@ app.whenReady().then(async () => {
     );
 
     const wizard = windows.openWizard();
-    await new Promise((resolve) => wizard.webContents.once("did-finish-load", resolve));
+    await waitForLoad(wizard.webContents);
     await wizard.webContents.executeJavaScript(
       `earheart.invoke("models:download", { kind: "cleanup", modelId: ${JSON.stringify(cleanupModel)} }); "started"`,
       true
@@ -806,7 +807,7 @@ app.whenReady().then(async () => {
       JSON.stringify(settingsPick)
     );
     const wizardForDefaults = windows.openWizard();
-    await new Promise((r) => wizardForDefaults.webContents.once("did-finish-load", r));
+    await waitForLoad(wizardForDefaults.webContents);
     await sleep(1200);
     const wizardPick = await readCleanupPick(wizardForDefaults.webContents);
     const wizardNote = await wizardForDefaults.webContents.executeJavaScript(
@@ -938,7 +939,7 @@ app.whenReady().then(async () => {
     });
     registry.setCustomModels(settings.get().customModels);
     win.webContents.reload();
-    await new Promise((r) => win.webContents.once("did-finish-load", r));
+    await waitForLoad(win.webContents);
     await sleep(1200);
 
     // A failed delete of the installed, selected custom STT model. The delete
@@ -1080,7 +1081,7 @@ app.whenReady().then(async () => {
     async function micRace({ hold, choose, reject = false, save = false, seedAlt = false }) {
       settings.save({ ...settings.get(), audio: { ...settings.get().audio, deviceId: SAVED_MIC } });
       const raceWin = windows.openSettings();
-      await new Promise((r) => raceWin.webContents.once("did-finish-load", r));
+      await waitForLoad(raceWin.webContents);
       await sleep(1200);
       const run = (code) => raceWin.webContents.executeJavaScript(code, true);
       try {

@@ -1696,6 +1696,27 @@ const STT_CFG = { builtin: { model: registry.DEFAULT_STT_MODEL }, language: "" }
 const CLEANUP_CFG = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules" };
 const count = (host, type) => host.calls.filter((t) => t === type).length;
 
+// Hold one request type in flight until the test releases (or fails) it, the
+// way a cold load sits in the real worker for seconds. The host reports busy
+// until it settles, as the real one does. Returns the controls.
+function holdLoads(host, loadType) {
+  const held = [];
+  const passThrough = host.request;
+  host.request = (type, payload) => {
+    if (type !== loadType) return passThrough(type, payload);
+    host.calls.push(type);
+    host.inFlight++;
+    return new Promise((resolve, reject) => {
+      const settle = (fn) => (value) => {
+        host.inFlight--;
+        fn(value);
+      };
+      held.push({ resolve: settle(resolve), reject: settle(reject), payload });
+    });
+  };
+  return held;
+}
+
 test("an STT worker crash forgets only STT loaded-state, not cleanup", async () => {
   // Crash isolation is the point of the split: if the STT worker dies, the next
   // transcribe must re-load STT, but cleanup (a separate, still-alive worker)
@@ -1821,20 +1842,7 @@ test("a worker mid cold-load is skipped and reported, not counted as idle", asyn
   const { facade, hostsBySvc } = loadTwoHostFacade();
   const stt = hostsBySvc["earheart-stt"];
 
-  // Hold `load-stt` in flight the way the real host does: busy until it settles.
-  let releaseLoad;
-  const held = new Promise((r) => (releaseLoad = r));
-  const passThrough = stt.request;
-  stt.request = async (type, payload) => {
-    if (type !== "load-stt") return passThrough(type, payload);
-    stt.inFlight++;
-    try {
-      await held;
-      return { ready: true };
-    } finally {
-      stt.inFlight--;
-    }
-  };
+  const held = holdLoads(stt, "load-stt");
 
   const loading = facade.transcribe(Buffer.from("wav"), STT_CFG);
   await new Promise((r) => setImmediate(r)); // let ensureStt reach the pending load
@@ -1847,7 +1855,7 @@ test("a worker mid cold-load is skipped and reported, not counted as idle", asyn
   );
   assert.ok(!stt.stopped, "a worker mid-load must not be killed");
 
-  releaseLoad();
+  held[0].resolve({ ready: true });
   await loading;
 
   // Once the load settles the worker is resident and evicts as usual.
@@ -2020,19 +2028,6 @@ test("cleanup worker exit rejects pending cleanup and subsequent cancellation is
   assert.strictEqual(facade.unloadIdle(), true);
   assert.strictEqual(cleanup.stopped, false, "the exited worker is already gone");
 });
-
-// Hold one request type in flight until the test releases (or fails) it, the
-// way a cold load sits in the real worker for seconds. Returns the controls.
-function holdLoads(host, loadType) {
-  const held = [];
-  const passThrough = host.request;
-  host.request = (type, payload) => {
-    if (type !== loadType) return passThrough(type, payload);
-    host.calls.push(type);
-    return new Promise((resolve, reject) => held.push({ resolve, reject, payload }));
-  };
-  return held;
-}
 
 test("concurrent cold ensureCleanup calls share one load-cleanup", async () => {
   // Two callers asking for the same cold model at once share one request. The

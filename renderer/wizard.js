@@ -5,9 +5,8 @@
 
 let current = null; // settings object being edited
 // The shared fields as this window last saw them from main; sent with the
-// save (see main/ipc.js SHARED_FIELDS and renderer/settings.js).
+// save (sharedBaseline in settings-sync.js).
 let baseline = null;
-let pendingChange = null; // a settings:changed that arrived before init
 let defaults = null;
 let platform = "linux";
 let micLoaded = false;
@@ -460,8 +459,6 @@ $("download-later").addEventListener("click", () => {
   checkAllDone();
 });
 
-/* ---------- finish ---------- */
-
 /* ---------- changes saved elsewhere ---------- */
 
 // Main saved the settings while the wizard is open (e.g. the tray's output
@@ -481,10 +478,9 @@ function applySettingsChange({ previous, current: saved }) {
   }
 }
 
-earheart.on("settings:changed", (change) => {
-  if (!baseline) pendingChange = change;
-  else applySettingsChange(change);
-});
+const settingsChangesReady = followSettingsChanges(applySettingsChange);
+
+/* ---------- finish ---------- */
 
 async function finish() {
   const status = $("finish-status");
@@ -499,7 +495,7 @@ async function finish() {
     return;
   }
   current = result.settings;
-  baseline = { outputMode: current.output.mode, remind: current.updates?.remind !== false };
+  baseline = sharedBaseline(current);
   if (!result.hotkey.ok) {
     // Stay in the wizard so the user can pick a combination that registers.
     status.textContent = "";
@@ -520,7 +516,7 @@ async function finish() {
   platform = data.platform;
   cleanupStyles = data.cleanupStyles || [];
   modelStatus = await earheart.invoke("models:status");
-  baseline = { outputMode: current.output.mode, remind: current.updates?.remind !== false };
+  baseline = sharedBaseline(current);
 
   hotkeyInput.value = current.hotkey;
   $("cleanup-enabled").checked = current.cleanup.enabled;
@@ -540,6 +536,5 @@ async function finish() {
   if (platform === "darwin") $("demo-mod").textContent = "⌘";
   if (platform !== "linux") $("wayland-note").style.display = "none";
   showStep(0);
-  if (pendingChange) applySettingsChange(pendingChange);
-  pendingChange = null;
+  settingsChangesReady();
 })();

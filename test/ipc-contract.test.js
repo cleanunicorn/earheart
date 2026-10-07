@@ -92,12 +92,40 @@ test("every channel main pushes to a window is in the preload LISTEN allowlist",
   assert.deepStrictEqual(missing, [], `preload LISTEN is missing: ${missing.join(", ")}`);
 });
 
-// Both forms must listen for settings saved elsewhere (#190), or an open form
-// shows — and on save, sends — a stale output mode.
-test("Settings and the wizard both listen for settings:changed", () => {
+// Both forms must follow settings saved elsewhere (#190), or an open form
+// shows — and on save, sends — a stale output mode. The listener lives in the
+// shared renderer/settings-sync.js; each form subscribes and, at the end of its
+// init, flushes what arrived while it loaded.
+test("Settings and the wizard both follow settings:changed", () => {
+  const sync = fs.readFileSync(path.join(ROOT, "renderer", "settings-sync.js"), "utf8");
+  assert.match(sync, /earheart\.on\(\s*"settings:changed"/);
   for (const file of ["settings.js", "wizard.js"]) {
     const source = fs.readFileSync(path.join(ROOT, "renderer", file), "utf8");
-    assert.match(source, /earheart\.on\(\s*"settings:changed"/, `${file} should listen for settings:changed`);
+    assert.match(
+      source,
+      /const settingsChangesReady = followSettingsChanges\(applySettingsChange\)/,
+      `${file} should subscribe to settings:changed`
+    );
+    const init = source.indexOf("/* ---------- init ---------- */");
+    assert.ok(init !== -1 && source.indexOf("settingsChangesReady();", init) !== -1, `${file} should flush queued changes in its init`);
+  }
+});
+
+// The baseline a form sends and the shared fields main reconciles are joined
+// only by key names. main skips a baseline key it doesn't know, so a rename on
+// either side silently lets a stale form value overwrite a tray change again.
+test("the form baseline names exactly main's shared fields", () => {
+  const ipc = fs.readFileSync(path.join(ROOT, "main", "ipc.js"), "utf8");
+  const block = ipc.match(/const SHARED_FIELDS = \[([\s\S]*?)\n\];/);
+  assert.ok(block, "main/ipc.js should define SHARED_FIELDS");
+  const mainNames = [...block[1].matchAll(/name:\s*"([A-Za-z]+)"/g)].map((m) => m[1]).sort();
+  const { sharedBaseline } = require("../renderer/settings-sync");
+  const formNames = Object.keys(sharedBaseline({ output: { mode: "paste" }, updates: {} })).sort();
+  assert.deepStrictEqual(formNames, mainNames);
+  // Neither page re-encodes the baseline by hand.
+  for (const file of ["settings.js", "wizard.js"]) {
+    const source = fs.readFileSync(path.join(ROOT, "renderer", file), "utf8");
+    assert.doesNotMatch(source, /outputMode:/, `${file} should build its baseline with sharedBaseline()`);
   }
 });
 

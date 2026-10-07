@@ -1,11 +1,9 @@
 // Settings window renderer.
 
 let current = null; // settings object being edited
-// The shared fields (output mode, update reminders) as this window last saw
-// them from main. Sent with every save so main can tell a change made here
-// from a stale value main has since replaced (see main/ipc.js SHARED_FIELDS).
+// The shared fields as this window last saw them from main; sent with every
+// save (sharedBaseline in settings-sync.js).
 let baseline = null;
-let pendingChange = null; // a settings:changed that arrived before init
 let defaults = null;
 let platform = "linux";
 let modelStatus = null; // { stt: [...], cleanup: [...] } from the main process
@@ -216,14 +214,8 @@ async function loadMicrophones() {
 
 /* ---------- populate / collect ---------- */
 
-function sharedBaseline(cfg) {
-  return { outputMode: cfg.output.mode, remind: cfg.updates?.remind !== false };
-}
-
 function showOutputMode(output) {
-  // Legacy settings expressed "paste & keep on clipboard" as paste mode with
-  // clipboard restore turned off; show those as the explicit paste-copy mode.
-  const mode = output.mode === "paste" && !output.restoreClipboard ? "paste-copy" : output.mode;
+  const mode = displayedOutputMode(output);
   (
     document.querySelector(`input[name="output-mode"][value="${mode}"]`) ||
     document.querySelector('input[name="output-mode"][value="paste"]')
@@ -738,10 +730,7 @@ function applySettingsChange({ previous, current: saved }) {
   }
 }
 
-earheart.on("settings:changed", (change) => {
-  if (!baseline) pendingChange = change;
-  else applySettingsChange(change);
-});
+const settingsChangesReady = followSettingsChanges(applySettingsChange);
 
 /* ---------- save ---------- */
 
@@ -1297,8 +1286,7 @@ earheart.on("updates:state", renderUpdateState);
   populateModelSelect("stt");
   populateModelSelect("cleanup");
   populate();
-  if (pendingChange) applySettingsChange(pendingChange);
-  pendingChange = null;
+  settingsChangesReady();
   renderHistory();
   loadMicrophones();
 })();

@@ -188,6 +188,20 @@ test("custom model version selects have accessible names", () => {
   }
 });
 
+test("settings-sync.js loads before each page's own script", () => {
+  // Both pages call followSettingsChanges and sharedBaseline at top level and
+  // in init; without the shared script they throw a ReferenceError.
+  for (const [name, source, page] of [
+    ["settings.html", html, "settings.js"],
+    ["wizard.html", wizardHtml, "wizard.js"],
+  ]) {
+    const shared = source.indexOf('src="settings-sync.js"');
+    const own = source.indexOf(`src="${page}"`);
+    assert.notStrictEqual(shared, -1, `${name} must load settings-sync.js`);
+    assert.ok(shared < own, `${name} must load settings-sync.js before ${page}`);
+  }
+});
+
 test("hotkey-capture.js loads before each page's own script", () => {
   // Both pages call wireHotkeyCapture at top level; if the shared script's
   // tag is dropped or reordered, the page script throws a ReferenceError
@@ -334,6 +348,8 @@ function microphonePage(source, page) {
     CSS: { escape: (value) => value },
     current,
     baseline: { outputMode: current.output.mode, remind: true },
+    // The page's own copy of the shared classic script's global.
+    sharedBaseline: require("../renderer/settings-sync").sharedBaseline,
     cleanupStyles: [{ id: "verbatim" }],
     $: (id) => elements[id] || baseDocument.getElementById(id),
     earheart: {

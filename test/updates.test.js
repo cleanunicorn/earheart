@@ -565,21 +565,24 @@ test("installWindows runs the verified setup silently and quits", async (t) => {
   assert.strictEqual(ctx.calls.quit, 1);
 });
 
-test("installMac swaps in the extracted bundle through the swap script", async (t) => {
-  const bundle = asMacApp(t);
-  // Stand-in for ditto: "extract" a bundle reporting the expected version.
-  const spawnSyncImpl = (cmd, args) => {
-    if (cmd === "/usr/bin/ditto") {
-      const contents = path.join(args[2], "Earheart.app", "Contents");
-      fs.mkdirSync(path.join(contents, "MacOS"), { recursive: true });
-      fs.writeFileSync(
-        path.join(contents, "Info.plist"),
-        `<key>CFBundleShortVersionString</key>\n<string>${LATEST}</string>`
-      );
-    }
+// Stand-in for ditto: "extract" a bundle reporting `version`, or fail.
+function fakeDitto({ version = LATEST, status = 0 } = {}) {
+  return (cmd, args) => {
+    if (cmd !== "/usr/bin/ditto") return { status: 0 };
+    if (status !== 0) return { status, stderr: "boom" };
+    const contents = path.join(args[2], "Earheart.app", "Contents");
+    fs.mkdirSync(path.join(contents, "MacOS"), { recursive: true });
+    fs.writeFileSync(
+      path.join(contents, "Info.plist"),
+      `<key>CFBundleShortVersionString</key>\n<string>${version}</string>`
+    );
     return { status: 0 };
   };
-  const ctx = loadUpdates(t, { isPackaged: true, spawnSyncImpl });
+}
+
+test("installMac swaps in the extracted bundle through the swap script", async (t) => {
+  const bundle = asMacApp(t);
+  const ctx = loadUpdates(t, { isPackaged: true, spawnSyncImpl: fakeDitto() });
   ctx.updates.init({});
   await download(ctx.updates);
 
@@ -605,6 +608,27 @@ test("installMac swaps in the extracted bundle through the swap script", async (
   }
   assert.strictEqual(ctx.calls.quit, 1);
 });
+
+for (const [name, ditto, error] of [
+  ["a failed extraction", { status: 1 }, /^Could not extract the update: boom/],
+  ["an archive of the wrong version", { version: "0.99.0" }, /expected 0\.36\.0/],
+]) {
+  test(`installMac stops without swapping on ${name}`, async (t) => {
+    asMacApp(t);
+    const ctx = loadUpdates(t, { isPackaged: true, spawnSyncImpl: fakeDitto(ditto) });
+    ctx.updates.init({});
+    await download(ctx.updates);
+
+    await ctx.updates.installNow();
+
+    const s = ctx.updates.getState();
+    assert.strictEqual(s.status, "error");
+    assert.match(s.error, error);
+    assert.strictEqual(ctx.calls.spawn.length, 0);
+    assert.strictEqual(ctx.calls.quit, 0);
+    assert.ok(!fs.existsSync(path.join(ctx.stagingDir, "swap.sh")));
+  });
+}
 
 // --- AC5: leftover sweep follows the staging dir --------------------------
 

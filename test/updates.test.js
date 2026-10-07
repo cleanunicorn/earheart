@@ -665,6 +665,17 @@ test("init removes our old shared temp staging dir", async (t) => {
   await waitFor(() => !fs.existsSync(legacy), "legacy sweep");
 });
 
+test("init removes our stray file at the old temp path without a warning", async (t) => {
+  const ctx = loadUpdates(t);
+  const legacy = path.join(ctx.temp, "earheart-update");
+  fs.writeFileSync(legacy, "x");
+
+  ctx.updates.init({});
+
+  await waitFor(() => !fs.existsSync(legacy), "legacy file removal");
+  assert.deepStrictEqual(ctx.logs.warn, []);
+});
+
 test("init removes a symlink at the old temp path without following it", POSIX, async (t) => {
   const ctx = loadUpdates(t);
   const victimDir = path.join(ctx.root, "victim-dir");

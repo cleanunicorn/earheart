@@ -851,7 +851,7 @@ async function sweepLegacyDir(dir) {
   }
   if (st.isSymbolicLink()) {
     await fsp.rm(dir, { force: true });
-  } else if (st.isDirectory() && (!hasOwners() || st.uid === process.getuid())) {
+  } else if (!hasOwners() || st.uid === process.getuid()) {
     await fsp.rm(dir, { recursive: true, force: true });
   } else {
     logger.warn(`left ${dir} alone: it belongs to another user`);

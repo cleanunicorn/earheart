@@ -564,6 +564,16 @@ function micLive() {
   setStatus("recording", "Listening…", recording.microphoneNotice || "");
 }
 
+// The max-recording cap arrives over IPC and arms setTimeout(stopRecording,
+// cap * 1000) at the first samples and again on resume. Settings and main
+// already keep it to the field's 10–3600 s; anything else reaching here — a
+// negative cap fires at once, a huge one never — takes the 300 s default.
+function recordingCapSeconds(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 300;
+  const seconds = Math.round(value);
+  return seconds >= 10 && seconds <= 3600 ? seconds : 300;
+}
+
 async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) {
   // A new session always supersedes whatever was running.
   teardown();
@@ -716,7 +726,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
       timerId: setInterval(updateTimer, 250),
       // Armed by micLive() with the first samples, so the cap and the visible
       // timer share one clock.
-      maxSeconds: maxSeconds || 300,
+      maxSeconds: recordingCapSeconds(maxSeconds),
       maxTimerId: null,
       partialTimerId: livePreview
         ? setInterval(sendPartial, livePreview.intervalMs || 1200)

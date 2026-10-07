@@ -160,3 +160,40 @@ test("the overlay and the decode splitter share one silence level", () => {
   const { QUIET_RMS } = require("../main/util/split-silence");
   assert.strictEqual(Number(m[1]), QUIET_RMS);
 });
+
+// The max-recording cap arrives over IPC and arms setTimeout(stopRecording,
+// cap * 1000). A non-positive cap fired the instant "Listening…" appeared and
+// an absurd one never fired (#210), so the overlay validates it once per
+// session and falls back to the 300 s default.
+function recordingCap() {
+  const start = js.search(/function recordingCapSeconds\s*\(/);
+  assert.notStrictEqual(start, -1, "overlay.js must define recordingCapSeconds()");
+  let depth = 0;
+  let end = js.indexOf("{", start);
+  for (; end < js.length; end++) {
+    if (js[end] === "{") depth++;
+    else if (js[end] === "}" && --depth === 0) break;
+  }
+  const context = {};
+  require("node:vm").runInNewContext(
+    `${js.slice(start, end + 1)}; this.cap = recordingCapSeconds;`,
+    context
+  );
+  return context.cap;
+}
+
+test("the recording cap falls back to 300 s for an unusable value", () => {
+  const cap = recordingCap();
+  for (const bad of [-5, 0, 1, 9, 99999, NaN, Infinity, -Infinity, "300", null, undefined]) {
+    assert.strictEqual(cap(bad), 300, `cap(${String(bad)})`);
+  }
+  for (const good of [10, 300, 3600]) assert.strictEqual(cap(good), good);
+  assert.strictEqual(cap(10.6), 11);
+});
+
+test("startRecording takes its cap through recordingCapSeconds", () => {
+  // Both timer sites (first samples, resume) read recording.maxSeconds, so the
+  // one validated assignment covers them.
+  assert.match(js, /maxSeconds:\s*recordingCapSeconds\(maxSeconds\)/);
+  assert.doesNotMatch(js, /maxSeconds:\s*maxSeconds\s*\|\|/);
+});

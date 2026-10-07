@@ -314,12 +314,16 @@ function collect() {
     audio: {
       ...current.audio,
       deviceId: $("mic-device").value,
-      maxRecordingSeconds: parseInt($("max-seconds").value, 10) || 300,
+      // Clamped to the field's own min/max: the markup's limits bind nothing
+      // on their own, and a tiny or negative cap ends every dictation at once.
+      maxRecordingSeconds: Math.round(
+        numInRange("max-seconds", current.audio?.maxRecordingSeconds ?? 300)
+      ),
     },
     engines: {
       ...current.engines,
       // 0 (or blank) = never unload; otherwise the idle window in minutes.
-      idleUnloadMinutes: Math.max(0, parseInt($("idle-unload").value, 10) || 0),
+      idleUnloadMinutes: Math.round(numInRange("idle-unload", 0)),
     },
     history: {
       ...current.history,
@@ -401,6 +405,12 @@ function num(id, min, max, fallback) {
   const v = parseFloat($(id).value);
   if (!Number.isFinite(v)) return fallback;
   return Math.min(max, Math.max(min, v));
+}
+
+// num() bounded by the field's own min/max attributes, so the markup stays the
+// one place each range is written down.
+function numInRange(id, fallback) {
+  return num(id, Number($(id).min), Number($(id).max), fallback);
 }
 
 function collectCleanupStyle() {

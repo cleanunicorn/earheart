@@ -302,11 +302,11 @@ function microphonePage(source, page) {
     "stt-model": { value: "" },
     "stt-language": { value: "" },
     "stt-live-preview": { checked: true },
-    "max-seconds": { value: "300" },
+    "max-seconds": { value: "300", ...inputRange("max-seconds") },
     "start-on-boot": { checked: false },
     "updates-autocheck": { checked: true },
     "updates-remind": { checked: true },
-    "idle-unload": { value: "0" },
+    "idle-unload": { value: "0", ...inputRange("idle-unload") },
     "history-enabled": { checked: true },
     "finish-status": { textContent: "", className: "" },
   };
@@ -349,6 +349,7 @@ function microphonePage(source, page) {
   if (page === "settings") {
     const settingsFunctions = [
       extractFunction(source, "num"),
+      extractFunction(source, "numInRange"),
       extractFunction(source, "styleMode"),
       extractFunction(source, "collectCleanupStyle"),
       extractFunction(source, "engineValue"),
@@ -541,4 +542,86 @@ test("the cleanup Test connection row lives inside the external-engine fields", 
   const row = html.indexOf('id="cleanup-test-row"');
   const builtinCardEnd = html.indexOf('<div class="card-title">Cleanup style</div>');
   assert.ok(start !== -1 && row > start && row < builtinCardEnd);
+});
+
+// The Performance limits: the HTML min/max are the ranges, but nothing binds
+// collect() to them (there is no <form>/checkValidity), so collect() must clamp
+// itself. Runs the real collect() against stub elements carrying the markup's
+// own min/max attributes (#210: a typed -5 stopped every dictation at once).
+function inputRange(id) {
+  const tag = html.match(new RegExp(`<input id="${id}"[^>]*>`))?.[0];
+  assert.ok(tag, `settings.html must have #${id}`);
+  const min = tag.match(/\bmin="([^"]+)"/)?.[1];
+  const max = tag.match(/\bmax="([^"]+)"/)?.[1];
+  assert.ok(min !== undefined && max !== undefined, `#${id} must declare min and max`);
+  return { min, max };
+}
+
+function collectLimits({ maxSeconds = "", idle = "", saved = {} }) {
+  const elements = {
+    "max-seconds": { value: maxSeconds, ...inputRange("max-seconds") },
+    "idle-unload": { value: idle, ...inputRange("idle-unload") },
+  };
+  const context = {
+    current: {
+      stt: { builtin: {}, livePreview: {} },
+      cleanup: { builtin: {}, custom: {} },
+      audio: { deviceId: "", ...saved.audio },
+      engines: { ...saved.engines },
+    },
+    cleanupStyles: [{ id: "clean" }],
+    $: (id) => elements[id] || { value: "", checked: false },
+    document: { querySelector: () => ({ value: "builtin" }) },
+  };
+  const source = [
+    extractFunction(js, "num"),
+    extractFunction(js, "numInRange"),
+    extractFunction(js, "styleMode"),
+    extractFunction(js, "collectCleanupStyle"),
+    extractFunction(js, "engineValue"),
+    extractFunction(js, "collect"),
+    "this.collect = collect;",
+  ].join("\n");
+  require("node:vm").runInNewContext(source, context);
+  const out = context.collect();
+  return { maxSeconds: out.audio.maxRecordingSeconds, idle: out.engines.idleUnloadMinutes };
+}
+
+test("max dictation length is clamped to the field's range on save", () => {
+  for (const [typed, stored] of [
+    ["-5", 10], ["0", 10], ["1", 10], ["9", 10], ["99999", 3600],
+    ["10", 10], ["11", 11], ["300", 300], ["3600", 3600], ["10.4", 10], ["10.6", 11],
+  ]) {
+    assert.strictEqual(collectLimits({ maxSeconds: typed }).maxSeconds, stored, `typed ${typed}`);
+  }
+  // Blank keeps what was saved, or the 300 s default when nothing valid was.
+  assert.strictEqual(collectLimits({ saved: { audio: { maxRecordingSeconds: 420 } } }).maxSeconds, 420);
+  assert.strictEqual(collectLimits({}).maxSeconds, 300);
+});
+
+test("idle unload is clamped to the field's range, and blank still means never", () => {
+  for (const [typed, stored] of [
+    ["9999", 240], ["-3", 0], ["0", 0], ["2", 2], ["17", 17], ["240", 240], ["2.6", 3],
+  ]) {
+    assert.strictEqual(collectLimits({ idle: typed }).idle, stored, `typed ${typed}`);
+  }
+  for (const saved of [2, 10]) {
+    assert.strictEqual(collectLimits({ saved: { engines: { idleUnloadMinutes: saved } } }).idle, 0);
+  }
+});
+
+test("the overlay's recording cap accepts exactly the max-seconds field's range", () => {
+  // overlay.js re-validates the cap it is sent; its bounds must not drift
+  // from the field's, or a value Settings saved would be overridden.
+  const overlayJs = fs.readFileSync(path.join(RENDERER, "overlay.js"), "utf8");
+  const context = {};
+  require("node:vm").runInNewContext(
+    `${extractFunction(overlayJs, "recordingCapSeconds")}; this.cap = recordingCapSeconds;`,
+    context
+  );
+  const { min, max } = inputRange("max-seconds");
+  assert.strictEqual(context.cap(Number(min)), Number(min));
+  assert.strictEqual(context.cap(Number(max)), Number(max));
+  assert.strictEqual(context.cap(Number(min) - 1), 300);
+  assert.strictEqual(context.cap(Number(max) + 1), 300);
 });

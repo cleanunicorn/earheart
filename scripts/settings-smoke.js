@@ -29,6 +29,8 @@
 //  11. Wizard-started downloads survive Settings model changes without
 //      overwriting a concurrent download's state.
 //  12. Failed model removals appear in the row and persistent live region.
+//  13. Save clamps the Performance limits (max dictation length, idle unload)
+//      to the fields' own ranges.
 //
 // Run under Electron:
 //
@@ -617,6 +619,24 @@ app.whenReady().then(async () => {
       "the wizard shows the default cleanup model's note",
       wizardNote === cleanupDefault.note,
       JSON.stringify(wizardNote)
+    );
+
+    // 13. The Performance limits clamp on the real Save: out-of-range entries
+    // reach disk as the field's own min/max, not as typed (#210). Last, since
+    // a clean save closes the window.
+    await js(`(() => {
+      document.getElementById("max-seconds").value = "-5";
+      document.getElementById("idle-unload").value = "9999";
+      document.getElementById("save").click();
+    })()`);
+    const savedLimits = await waitFor(() => {
+      const saved = settings.get();
+      return saved.audio.maxRecordingSeconds !== 300 && saved;
+    }, "Save did not reach settings");
+    check(
+      "Save clamps max dictation length and idle unload to their ranges",
+      savedLimits.audio.maxRecordingSeconds === 10 && savedLimits.engines.idleUnloadMinutes === 240,
+      `max=${savedLimits.audio.maxRecordingSeconds} idle=${savedLimits.engines.idleUnloadMinutes}`
     );
 
     const failed = checks.filter((c) => !c.ok);

@@ -195,13 +195,39 @@ test("a form save keeps a tray click that retired the legacy paste-copy encoding
   assert.strictEqual(readFile().output.restoreClipboard, true);
 });
 
-test("a malformed save request is rejected without writing", (t) => {
-  const { handlers, settings, readFile } = loadIpc(t);
-  settings.save({ ...settings.get(), hotkey: "Kept" });
+for (const channel of ["settings:save", "wizard:complete"]) {
+  test(`a malformed ${channel} request is rejected without writing`, (t) => {
+    const { handlers, settings, readFile } = loadIpc(t);
+    settings.save({ ...settings.get(), hotkey: "Kept" });
 
-  assert.throws(() => handlers["settings:save"]({}, null), /settings request/);
-  assert.throws(() => handlers["settings:save"]({}, { settings: "nope" }), /settings request/);
-  assert.strictEqual(readFile().hotkey, "Kept");
+    assert.throws(() => handlers[channel]({}, null), /settings request/);
+    assert.throws(() => handlers[channel]({}, { settings: "nope" }), /settings request/);
+    assert.strictEqual(readFile().hotkey, "Kept");
+  });
+}
+
+// A baseline value of the wrong type is not something the form saw from main,
+// so it must not let main overwrite the form's choice; a well-typed field next
+// to it still reconciles.
+test("baseline fields of the wrong type leave the form's value in place", (t) => {
+  const { handlers, settings, readFile } = loadIpc(t);
+  settings.save(settings.get());
+  const { snapshot } = openForm(settings);
+  writeMainSide(settings); // main: mode clipboard, remind false
+
+  const edited = {
+    ...snapshot,
+    output: { ...snapshot.output, mode: "paste-copy" },
+    updates: { ...snapshot.updates, remind: true },
+  };
+  handlers["settings:save"]({}, { settings: edited, baseline: { outputMode: 7, remind: "yes" } });
+  assert.strictEqual(readFile().output.mode, "paste-copy");
+  assert.strictEqual(readFile().updates.remind, true);
+
+  writeMainSide(settings);
+  handlers["settings:save"]({}, { settings: edited, baseline: { outputMode: "paste", remind: "yes" } });
+  assert.strictEqual(readFile().output.mode, "clipboard", "the well-typed field still reconciles");
+  assert.strictEqual(readFile().updates.remind, true);
 });
 
 test("every successful save broadcasts settings:changed and refreshes the tray", (t) => {

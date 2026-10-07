@@ -50,11 +50,23 @@ const INVOKE = allowlist("INVOKE");
 // Renderer → main request channels. bindTest threads its channel through as
 // a bare third argument (never an earheart.invoke("…") literal), so scan
 // those call sites too or stt:test/cleanup:test go unguarded.
+// The overlay's update-prompt action tables (UPDATE_ACTIONS, WHATSNEW_ACTION
+// in renderer/overlay.js) hold their channels as `channel: "…"` properties and
+// invoke them through earheart.invoke(action.channel), so scan those too — a
+// typo there is a dead button that no literal call site would reveal.
 const invoked = new Set([
   ...channels(renderer, /earheart\.invoke\(\s*"([a-z:-]+)"/g),
   ...channels(renderer, /bindTest\(\s*"[^"]+"\s*,\s*"[^"]+"\s*,\s*"([a-z:-]+)"/g),
+  ...channels(renderer, /channel:\s*"([a-z:-]+)"/g),
 ]);
 const handled = channels(main, /ipcMain\.handle\(\s*"([a-z:-]+)"/g);
+
+// Main → renderer pushes: every send helper and raw webContents.send that
+// names its channel as a literal. The helper bodies in main/windows.js pass a
+// variable, so they are (correctly) not collected here.
+const PUSHED_RE = /(?:sendToForms|sendToSettings|sendToOverlay|broadcast|webContents\.send)\(\s*"([a-z:-]+)"/g;
+const pushed = channels(main, PUSHED_RE);
+const listened = channels(renderer, /earheart\.on\(\s*"([a-z:-]+)"/g);
 
 test("every channel the renderers invoke is in the preload INVOKE allowlist", () => {
   assert.ok(invoked.size > 20, `expected many invoked channels, got ${invoked.size}`);
@@ -73,7 +85,6 @@ test("every preload INVOKE entry has an ipcMain.handle (no dead allowlist entrie
 });
 
 test("every channel the renderers listen on is in the preload LISTEN allowlist", () => {
-  const listened = channels(renderer, /earheart\.on\(\s*"([a-z:-]+)"/g);
   assert.ok(listened.size > 10, `expected many listened channels, got ${listened.size}`);
   const missing = [...listened].filter((c) => !LISTEN.has(c)).sort();
   assert.deepStrictEqual(missing, [], `preload LISTEN is missing: ${missing.join(", ")}`);
@@ -83,13 +94,25 @@ test("every channel the renderers listen on is in the preload LISTEN allowlist",
 // allowlist doesn't carry can't be subscribed to, so the renderer's
 // earheart.on() throws and the update never lands.
 test("every channel main pushes to a window is in the preload LISTEN allowlist", () => {
-  const pushed = channels(
-    main,
-    /(?:sendToForms|sendToSettings|sendToOverlay|broadcast|webContents\.send)\(\s*"([a-z:-]+)"/g
-  );
   assert.ok(pushed.has("settings:changed"), "main should push settings:changed");
   const missing = [...pushed].filter((c) => !LISTEN.has(c)).sort();
   assert.deepStrictEqual(missing, [], `preload LISTEN is missing: ${missing.join(", ")}`);
+});
+
+// An allowlisted channel is still dead if main never pushes it: the renderer
+// subscribes and waits forever (a renamed emit, or one deleted in a refactor).
+// The size guard keeps a rotted PUSHED_RE from passing this vacuously.
+test("every channel the renderers listen on is pushed by main", () => {
+  assert.ok(pushed.size > 10, `expected many pushed channels, got ${pushed.size}`);
+  const missing = [...listened].filter((c) => !pushed.has(c)).sort();
+  assert.deepStrictEqual(missing, [], `main never pushes: ${missing.join(", ")}`);
+});
+
+// And the other way: a push nobody subscribes to is an event lost on the
+// floor — same shape as the dead-allowlist check for INVOKE above.
+test("every channel main pushes has a renderer listener (no dead pushes)", () => {
+  const dead = [...pushed].filter((c) => !listened.has(c)).sort();
+  assert.deepStrictEqual(dead, [], `main pushes channels no renderer listens on: ${dead.join(", ")}`);
 });
 
 // settings:changed goes to the Settings and wizard windows only

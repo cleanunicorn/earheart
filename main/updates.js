@@ -67,7 +67,9 @@ let intervalTimer = null;
 let downloadController = null;
 let notifiedVersion = null;
 let pendingInfo = null; // parsed feed entry for `latest`
-let downloadedPath = null; // verified asset waiting to be installed
+// The verified asset waiting to be installed, and the sha512 it was verified
+// against: installNow re-checks it, since the user may click restart hours later.
+let staged = null; // { path, sha512 }
 
 // The overlay update prompt: a banner on the always-on-top card (an OS toast
 // alone proved far too easy to miss). `promptShowing` means the banner is up
@@ -466,9 +468,8 @@ async function startUpdate() {
 
   setState({ status: "downloading", progress: { received: 0, total: info.size, fraction: 0 } });
   downloadController = new AbortController();
-  let file;
   try {
-    file = await downloadAsset(info, downloadController.signal);
+    staged = { path: await downloadAsset(info, downloadController.signal), sha512: info.sha512 };
   } catch (err) {
     const aborted = downloadController.signal.aborted;
     downloadController = null;
@@ -481,7 +482,6 @@ async function startUpdate() {
     return;
   }
   downloadController = null;
-  downloadedPath = file;
   setState({ status: "ready", progress: null });
 
   // Don't yank the app out from under a dictation in progress: hold at
@@ -490,7 +490,7 @@ async function startUpdate() {
     logger.info("update downloaded; waiting for dictation to finish");
     return;
   }
-  installNow();
+  return installNow();
 }
 
 function cancel() {
@@ -504,13 +504,48 @@ function skipVersion() {
   setState({ status: "idle", latest: null });
 }
 
+// Updates stage in userData, never the shared system temp dir: on Linux that
+// is /tmp, where another local user could pre-create the directory and swap
+// the verified download for their own binary before it is installed (#186).
+const updateDirPath = () => path.join(app.getPath("userData"), "updates");
+
+// POSIX only: Windows has no uid or mode bits, and %APPDATA% is per-user.
+const hasOwners = () => typeof process.getuid === "function";
+
 /**
- * Stream the release asset to the temp dir, verifying its sha512 in the same
- * pass. A verified file from an earlier attempt is reused as-is.
+ * The staging dir, created 0700. One that is a symlink, someone else's, or
+ * writable by group/other is replaced (rm removes a symlink itself, never its
+ * target) rather than trusted.
+ */
+function updateDir() {
+  const dir = updateDirPath();
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (hasOwners()) {
+    const st = fs.lstatSync(dir);
+    if (!st.isDirectory() || st.uid !== process.getuid() || st.mode & 0o077) {
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.mkdirSync(dir, { mode: 0o700 });
+    }
+  }
+  return dir;
+}
+
+/**
+ * Write a file without following a symlink planted at its path: remove
+ * whatever is there, then create exclusively ("wx" fails on anything that
+ * reappeared in between).
+ */
+function writeFresh(file, content, mode) {
+  fs.rmSync(file, { force: true });
+  fs.writeFileSync(file, content, { mode, flag: "wx" });
+}
+
+/**
+ * Stream the release asset to the staging dir, verifying its sha512 in the
+ * same pass. A verified file from an earlier attempt is reused as-is.
  */
 async function downloadAsset(info, signal) {
-  const dir = path.join(app.getPath("temp"), "earheart-update");
-  await fsp.mkdir(dir, { recursive: true });
+  const dir = updateDir();
   const dest = path.join(dir, path.basename(info.path));
 
   if (await isVerified(dest, info.sha512)) return dest;
@@ -549,7 +584,9 @@ async function downloadAsset(info, signal) {
   });
 
   try {
-    await streamPipeline(body, meter, fs.createWriteStream(part), { signal });
+    await fsp.rm(part, { force: true });
+    const out = fs.createWriteStream(part, { flags: "wx", mode: 0o600 });
+    await streamPipeline(body, meter, out, { signal });
     const got = hash.digest("base64");
     if (got !== info.sha512) throw new Error("Checksum mismatch — download corrupted");
     await fsp.rename(part, dest);
@@ -562,6 +599,9 @@ async function downloadAsset(info, signal) {
 
 async function isVerified(file, sha512) {
   try {
+    // A symlink (or anything but a plain file) is never ours: refuse it
+    // rather than hash whatever it points at.
+    if (!(await fsp.lstat(file)).isFile()) return false;
     const hash = crypto.createHash("sha512");
     await new Promise((resolve, reject) => {
       const stream = fs.createReadStream(file);
@@ -575,16 +615,31 @@ async function isVerified(file, sha512) {
   }
 }
 
-/** Hand off to the platform installer and quit. */
-function installNow() {
-  if (state.status !== "ready" || !downloadedPath) return;
+/**
+ * Re-verify the staged asset, then hand off to the platform installer and
+ * quit. Never rejects: callers fire and forget, the outcome lands in state.
+ */
+async function installNow() {
+  if (state.status !== "ready" || !staged) return;
+  // Set before the await so a second click can't start a second install.
   setState({ status: "installing" });
+  const { path: file, sha512 } = staged;
+  if (!(await isVerified(file, sha512))) {
+    logger.error(`update install refused: ${file} no longer matches its sha512`);
+    staged = null;
+    await fsp.rm(file, { force: true }).catch(() => {});
+    setState({
+      status: "error",
+      error: "The downloaded update no longer matches its checksum and was discarded — try updating again.",
+    });
+    return;
+  }
   try {
-    if (installKind === "nsis") installWindows(downloadedPath);
-    else if (installKind === "mac-app") installMac(downloadedPath);
-    else if (installKind === "appimage") installLinux(downloadedPath);
+    if (installKind === "nsis") installWindows(file);
+    else if (installKind === "mac-app") installMac(file);
+    else if (installKind === "appimage") installLinux(file);
     else {
-      logger.info(`dry-run: would install ${downloadedPath} (${installKind})`);
+      logger.info(`dry-run: would install ${file} (${installKind})`);
       setState({ status: "ready" });
     }
   } catch (err) {
@@ -671,14 +726,7 @@ function installMac(zipPath) {
   // LSFileQuarantineEnabled), but stripping it here costs nothing.
   spawnSync("/usr/bin/xattr", ["-dr", "com.apple.quarantine", newBundle]);
 
-  const script = path.join(path.dirname(zipPath), "swap.sh");
-  fs.writeFileSync(script, MAC_SWAP_SCRIPT, { mode: 0o755 });
-  const log = fs.openSync(path.join(app.getPath("userData"), "update.log"), "a");
-  spawn("/bin/sh", [script, String(process.pid), bundle, newBundle], {
-    detached: true,
-    stdio: ["ignore", log, log],
-  }).unref();
-  fs.closeSync(log);
+  runDetachedScript(path.dirname(zipPath), "swap.sh", MAC_SWAP_SCRIPT, [bundle, newBundle]);
   app.quit();
 }
 
@@ -705,7 +753,10 @@ function installLinux(newAppImage) {
   if (!target) throw new Error("APPIMAGE is not set");
   const part = `${target}.update.part`;
   try {
-    fs.copyFileSync(newAppImage, part);
+    // Remove, then copy exclusively, so a symlink planted at `part` is
+    // replaced instead of written through.
+    fs.rmSync(part, { force: true });
+    fs.copyFileSync(newAppImage, part, fs.constants.COPYFILE_EXCL);
     fs.chmodSync(part, 0o755);
     fs.renameSync(part, target);
   } catch (err) {
@@ -715,28 +766,54 @@ function installLinux(newAppImage) {
     );
   }
 
-  const script = path.join(path.dirname(newAppImage), "relaunch.sh");
-  fs.writeFileSync(script, LINUX_RELAUNCH_SCRIPT, { mode: 0o755 });
+  runDetachedScript(path.dirname(newAppImage), "relaunch.sh", LINUX_RELAUNCH_SCRIPT, [target]);
+  app.quit();
+}
+
+// Write `content` to dir/name and run it detached as `sh script <pid> ...args`,
+// logging to userData/update.log, so it can outlive this process.
+function runDetachedScript(dir, name, content, args) {
+  const script = path.join(dir, name);
+  writeFresh(script, content, 0o755);
   const log = fs.openSync(path.join(app.getPath("userData"), "update.log"), "a");
-  spawn("/bin/sh", [script, String(process.pid), target], {
+  spawn("/bin/sh", [script, String(process.pid), ...args], {
     detached: true,
     stdio: ["ignore", log, log],
   }).unref();
   fs.closeSync(log);
-  app.quit();
 }
 
 // --- housekeeping ---------------------------------------------------------
 
-// Clear droppings from a previous update: the extraction staging dir and, on
-// macOS, a leftover .update-old bundle if the swap script's own cleanup lost
-// a race with shutdown.
+// Clear droppings from a previous update: the extraction staging dir (a
+// verified download stays, for reuse), the staging dir older versions used in
+// the shared temp dir and, on macOS, a leftover .update-old bundle if the swap
+// script's own cleanup lost a race with shutdown.
 async function sweepLeftovers() {
-  const dir = path.join(app.getPath("temp"), "earheart-update");
-  await fsp.rm(path.join(dir, "staging"), { recursive: true, force: true });
+  await fsp.rm(path.join(updateDirPath(), "staging"), { recursive: true, force: true });
+  await sweepLegacyDir(path.join(app.getPath("temp"), "earheart-update"));
   if (installKind === "mac-app") {
     const bundle = path.resolve(process.execPath, "..", "..", "..");
     await fsp.rm(`${bundle}.update-old`, { recursive: true, force: true });
+  }
+}
+
+// Before #186 updates staged in <temp>/earheart-update. Remove it if it is
+// ours; a symlink there is unlinked, never followed; another user's is left.
+async function sweepLegacyDir(dir) {
+  let st;
+  try {
+    st = await fsp.lstat(dir);
+  } catch (err) {
+    if (err.code === "ENOENT") return;
+    throw err;
+  }
+  if (st.isSymbolicLink()) {
+    await fsp.rm(dir, { force: true });
+  } else if (st.isDirectory() && (!hasOwners() || st.uid === process.getuid())) {
+    await fsp.rm(dir, { recursive: true, force: true });
+  } else {
+    logger.warn(`left ${dir} alone: it belongs to another user`);
   }
 }
 

@@ -206,7 +206,7 @@ main/                    Electron main process
   history.js             local transcription history
   tray.js                tray icon + menu
   windows.js             overlay + settings + setup wizard windows
-  updates.js             in-app updater: check, download, verify, install
+  updates.js             in-app updater: check, download to userData/updates, verify, re-verify, install
   services/update-feed.js     latest*.yml parsing + install-kind detection
   services/release-notes.js   what's-new: CHANGELOG.md ⇄ release-notes.json
   services/stt.js        OpenAI-compatible transcription client

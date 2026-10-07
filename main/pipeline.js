@@ -332,9 +332,9 @@ function startRecording() {
   // until a decode is free). Cleanup: loading the LLM takes seconds cold and used
   // to start only after transcription finished; priming additionally prefills
   // the static prompt prefix so even the first clean of the session skips it.
-  // Both are best effort — the final pass re-runs ensureStt/ensureCleanup
-  // (idempotent) and surfaces real errors there; a failed warm-up here must
-  // never block the recording.
+  // Both are best effort — the final pass loads them again (ensureStt, and the
+  // cleanup worker's own load before each clean; both idempotent) and surfaces
+  // real errors there; a failed warm-up here must never block the recording.
   if (cfg.stt.engine === "builtin") {
     engines.ensureStt(cfg.stt.builtin.model).catch(() => {});
   }

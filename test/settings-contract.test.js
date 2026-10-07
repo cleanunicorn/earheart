@@ -16,6 +16,8 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 
+const { DEFAULTS } = require("../main/settings");
+
 const RENDERER = path.join(__dirname, "..", "renderer");
 const html = fs.readFileSync(path.join(RENDERER, "settings.html"), "utf8");
 const js = fs.readFileSync(path.join(RENDERER, "settings.js"), "utf8");
@@ -218,16 +220,51 @@ function extractFunction(source, name) {
   }
   assert.fail(`${name} function has an unclosed body`);
 }
+// settings.js collect() and the helpers it calls, ready to run in a vm context
+// that supplies $, current, document and cleanupStyles. One list, so a helper
+// collect() gains is added once.
+function settingsCollectSource() {
+  return [
+    extractFunction(js, "num"),
+    extractFunction(js, "numInRange"),
+    extractFunction(js, "styleMode"),
+    extractFunction(js, "collectCleanupStyle"),
+    extractFunction(js, "engineValue"),
+    extractFunction(js, "collect"),
+    "this.collect = collect;",
+  ].join("\n");
+}
+
 function deferred() {
   let resolve;
   const promise = new Promise((r) => (resolve = r));
   return { promise, resolve };
 }
 
+const PRESENT_DEVICES = [
+  { kind: "audioinput", deviceId: "saved-id", label: "Saved microphone" },
+  { kind: "audioinput", deviceId: "other-id", label: "Other microphone" },
+];
+// The saved "saved-id" is not plugged in: only another mic (and the OS
+// "default" alias, which both pickers filter out) are enumerated.
+const MISSING_SAVED_DEVICES = [
+  { kind: "audioinput", deviceId: "default", label: "Default - Other microphone" },
+  { kind: "audioinput", deviceId: "other-id", label: "Other microphone" },
+];
+
 function microphonePage(source, page) {
+  // Behaves like a real <select>: value comes from the selected option, and
+  // setting a value with no matching option selects nothing (value ""). A
+  // plain string here would let a never-added saved ID read back as selected.
   const select = {
-    value: "",
+    selectedIndex: 0,
     options: [{ value: "", textContent: "System default" }],
+    get value() {
+      return this.options[this.selectedIndex]?.value ?? "";
+    },
+    set value(value) {
+      this.selectedIndex = this.options.findIndex((option) => option.value === value);
+    },
     listeners: {},
     addEventListener(type, listener) {
       this.listeners[type] = listener;
@@ -243,7 +280,7 @@ function microphonePage(source, page) {
       return this.options.length;
     },
     get selectedOptions() {
-      return this.options.filter((option) => option.value === this.value);
+      return this.selectedIndex < 0 ? [] : [this.options[this.selectedIndex]];
     },
     dispatchEvent(event) {
       this.listeners[event.type]?.(event);
@@ -302,17 +339,18 @@ function microphonePage(source, page) {
     "stt-model": { value: "" },
     "stt-language": { value: "" },
     "stt-live-preview": { checked: true },
-    "max-seconds": { value: "300" },
+    "max-seconds": { value: "300", ...inputRange("max-seconds") },
     "start-on-boot": { checked: false },
     "updates-autocheck": { checked: true },
     "updates-remind": { checked: true },
-    "idle-unload": { value: "0" },
+    "idle-unload": { value: "0", ...inputRange("idle-unload") },
     "history-enabled": { checked: true },
     "finish-status": { textContent: "", className: "" },
   };
   let payload;
   let invokeCount = 0;
   const context = {
+    defaults: DEFAULTS,
     document: {
       getElementById(id) {
         return elements[id] || baseDocument.getElementById(id);
@@ -347,14 +385,7 @@ function microphonePage(source, page) {
   const loadFunction = `(${extractFunction(source, "loadMicrophones")})`;
   const load = require("node:vm").runInNewContext(loadFunction, context);
   if (page === "settings") {
-    const settingsFunctions = [
-      extractFunction(source, "num"),
-      extractFunction(source, "styleMode"),
-      extractFunction(source, "collectCleanupStyle"),
-      extractFunction(source, "engineValue"),
-      extractFunction(source, "collect"),
-      "this.collect = collect;",
-    ].join(String.fromCharCode(10));
+    const settingsFunctions = settingsCollectSource();
     const radios = { stt: "builtin", cleanup: "builtin", "cleanup-style-mode": "custom" };
     context.document.querySelector = (selector) => {
       if (selector === 'input[name="output-mode"]:checked') return { value: "paste-copy" };
@@ -369,31 +400,39 @@ function microphonePage(source, page) {
 
   return {
     select,
-    async reproduce({ selectSystemDefault = true } = {}) {
+    // `choose` undefined leaves the picker untouched; "" is an explicit
+    // System default. `chooseWhen` is "during" (before enumeration resolves)
+    // or "after" (once loading finished, before saving).
+    async reproduce({ devices = PRESENT_DEVICES, choose, chooseWhen = "during" } = {}) {
+      const pick = () => {
+        select.value = choose;
+        select.dispatchEvent({ type: "change" });
+      };
       const pending = load();
       await new Promise((resolve) => setImmediate(resolve));
-      if (selectSystemDefault) {
-        select.value = "";
-        select.dispatchEvent({ type: "change" });
-      }
-      enumeration.resolve([
-        { kind: "audioinput", deviceId: "saved-id", label: "Saved microphone" },
-        { kind: "audioinput", deviceId: "other-id", label: "Other microphone" },
-      ]);
+      if (choose !== undefined && chooseWhen === "during") pick();
+      enumeration.resolve(devices);
       await pending;
+      if (choose !== undefined && chooseWhen === "after") pick();
       if (page === "settings") {
         await context.earheart.invoke("settings:save", context.collect());
       } else {
         await context.finish();
       }
-      return { selected: select.value, saved: payload, invokeCount };
+      return {
+        selected: select.value,
+        selectedOptions: select.selectedOptions,
+        options: select.options,
+        saved: payload,
+        invokeCount,
+      };
     },
   };
 }
 for (const [page, source] of [["settings", js], ["wizard", wizardJs]]) {
   test(`${page} preserves System default selected during microphone enumeration`, async () => {
     const fixture = microphonePage(source, page);
-    const result = await fixture.reproduce();
+    const result = await fixture.reproduce({ choose: "" });
     assert.strictEqual(result.selected, "");
     assert.strictEqual(result.saved.audio.deviceId, "");
     assert.strictEqual(result.invokeCount, 1);
@@ -408,12 +447,50 @@ for (const [page, source] of [["settings", js], ["wizard", wizardJs]]) {
 
   test(`${page} restores the saved microphone when the user leaves it untouched`, async () => {
     const fixture = microphonePage(source, page);
-    const result = await fixture.reproduce({ selectSystemDefault: false });
+    const result = await fixture.reproduce();
     assert.strictEqual(result.selected, "saved-id");
     assert.strictEqual(result.saved.audio.deviceId, "saved-id");
     assert.strictEqual(result.invokeCount, 1);
   });
+
+  // #230: rerunning the wizard (or saving Settings) while the saved mic is
+  // unplugged must not swap it for System default. Only the early seed of the
+  // saved option keeps it selectable, so these fail if that seed is removed.
+  test(`${page} keeps an unavailable saved microphone when untouched`, async () => {
+    const fixture = microphonePage(source, page);
+    const result = await fixture.reproduce({ devices: MISSING_SAVED_DEVICES });
+    assert.strictEqual(result.selected, "saved-id");
+    assert.deepStrictEqual(result.selectedOptions.map((option) => option.value), ["saved-id"]);
+    assert.strictEqual(result.saved.audio.deviceId, "saved-id");
+    assert.strictEqual(result.invokeCount, 1);
+    assert.strictEqual(
+      result.selectedOptions[0].textContent,
+      page === "settings" ? "Configured microphone (not connected)" : "Configured microphone"
+    );
+    assert.ok(!result.options.some((option) => option.value === "default"));
+    if (page === "wizard") assert.strictEqual(result.saved.audio.maxRecordingSeconds, 300);
+  });
 }
+
+test("wizard respects System default chosen while an unavailable saved microphone loads", async () => {
+  const fixture = microphonePage(wizardJs, "wizard");
+  const result = await fixture.reproduce({ devices: MISSING_SAVED_DEVICES, choose: "" });
+  assert.strictEqual(result.selected, "");
+  assert.strictEqual(result.saved.audio.deviceId, "");
+  assert.strictEqual(result.invokeCount, 1);
+});
+
+test("wizard respects another microphone chosen over an unavailable saved one", async () => {
+  const fixture = microphonePage(wizardJs, "wizard");
+  const result = await fixture.reproduce({
+    devices: MISSING_SAVED_DEVICES,
+    choose: "other-id",
+    chooseWhen: "after",
+  });
+  assert.strictEqual(result.selected, "other-id");
+  assert.strictEqual(result.saved.audio.deviceId, "other-id");
+  assert.strictEqual(result.invokeCount, 1);
+});
 test("permission-status.js loads before settings.js, which uses it", () => {
   // settings.js only reaches for these when Fix is clicked or the window
   // regains focus, so a dropped tag passes the smoke checks and throws later.
@@ -541,4 +618,114 @@ test("the cleanup Test connection row lives inside the external-engine fields", 
   const row = html.indexOf('id="cleanup-test-row"');
   const builtinCardEnd = html.indexOf('<div class="card-title">Cleanup style</div>');
   assert.ok(start !== -1 && row > start && row < builtinCardEnd);
+});
+
+// The Performance limits: the HTML min/max are the ranges, but nothing binds
+// collect() to them (there is no <form>/checkValidity), so collect() must clamp
+// itself. Runs the real collect() against stub elements carrying the markup's
+// own min/max attributes (#210: a typed -5 stopped every dictation at once).
+function inputRange(id) {
+  const tag = html.match(new RegExp(`<input id="${id}"[^>]*>`))?.[0];
+  assert.ok(tag, `settings.html must have #${id}`);
+  const min = tag.match(/\bmin="([^"]+)"/)?.[1];
+  const max = tag.match(/\bmax="([^"]+)"/)?.[1];
+  assert.ok(min !== undefined && max !== undefined, `#${id} must declare min and max`);
+  return { min, max };
+}
+
+function collectLimits({ maxSeconds = "", idle = "", saved = {} }) {
+  const elements = {
+    "max-seconds": { value: maxSeconds, ...inputRange("max-seconds") },
+    "idle-unload": { value: idle, ...inputRange("idle-unload") },
+  };
+  const context = {
+    current: {
+      stt: { builtin: {}, livePreview: {} },
+      cleanup: { builtin: {}, custom: {} },
+      audio: { deviceId: "", ...saved.audio },
+      engines: { ...saved.engines },
+    },
+    defaults: DEFAULTS,
+    cleanupStyles: [{ id: "clean" }],
+    $: (id) => elements[id] || { value: "", checked: false },
+    document: { querySelector: () => ({ value: "builtin" }) },
+  };
+  require("node:vm").runInNewContext(settingsCollectSource(), context);
+  const out = context.collect();
+  return { maxSeconds: out.audio.maxRecordingSeconds, idle: out.engines.idleUnloadMinutes };
+}
+
+test("max dictation length is clamped to the field's range on save", () => {
+  for (const [typed, stored] of [
+    ["-5", 10], ["0", 10], ["1", 10], ["9", 10], ["99999", 3600],
+    ["10", 10], ["11", 11], ["300", 300], ["3600", 3600], ["10.4", 10], ["10.6", 11],
+  ]) {
+    assert.strictEqual(collectLimits({ maxSeconds: typed }).maxSeconds, stored, `typed ${typed}`);
+  }
+  // Blank keeps what was saved, or the 300 s default when nothing valid was.
+  assert.strictEqual(collectLimits({ saved: { audio: { maxRecordingSeconds: 420 } } }).maxSeconds, 420);
+  assert.strictEqual(collectLimits({}).maxSeconds, DEFAULTS.audio.maxRecordingSeconds);
+});
+
+test("idle unload is clamped to the field's range, and blank still means never", () => {
+  for (const [typed, stored] of [
+    ["9999", 240], ["-3", 0], ["0", 0], ["2", 2], ["17", 17], ["240", 240], ["2.6", 3],
+  ]) {
+    assert.strictEqual(collectLimits({ idle: typed }).idle, stored, `typed ${typed}`);
+  }
+  for (const saved of [2, 10]) {
+    assert.strictEqual(collectLimits({ saved: { engines: { idleUnloadMinutes: saved } } }).idle, 0);
+  }
+});
+
+test("Save names each limit it stored differently from what was typed", () => {
+  const adjustments = (maxSeconds, idle, saved) => {
+    const elements = {
+      "max-seconds": { value: maxSeconds, ...inputRange("max-seconds") },
+      "idle-unload": { value: idle, ...inputRange("idle-unload") },
+    };
+    const context = { $: (id) => elements[id] };
+    require("node:vm").runInNewContext(
+      `${extractFunction(js, "limitAdjustments")}; this.limitAdjustments = limitAdjustments;`,
+      context
+    );
+    return [...context.limitAdjustments({
+      audio: { maxRecordingSeconds: saved[0] },
+      engines: { idleUnloadMinutes: saved[1] },
+    })];
+  };
+  assert.deepStrictEqual(adjustments("-5", "9999", [10, 240]), [
+    "Max dictation length set to 10 s (allowed 10–3600)",
+    "Idle unload set to 240 min (allowed 0–240)",
+  ]);
+  assert.deepStrictEqual(adjustments("10.6", "2", [11, 2]), ["Max dictation length set to 11 s (allowed 10–3600)"]);
+  // Stored as typed, or left blank on purpose: nothing to report.
+  assert.deepStrictEqual(adjustments("300", "0", [300, 0]), []);
+  assert.deepStrictEqual(adjustments("", "", [300, 0]), []);
+});
+
+test("the overlay's recording cap accepts exactly the max-seconds field's range", () => {
+  // overlay.js re-validates the cap it is sent; its bounds must not drift
+  // from the field's, or a value Settings saved would be overridden.
+  const overlayJs = fs.readFileSync(path.join(RENDERER, "overlay.js"), "utf8");
+  const context = {};
+  require("node:vm").runInNewContext(
+    `${extractFunction(overlayJs, "recordingCapSeconds")}; this.cap = recordingCapSeconds;`,
+    context
+  );
+  const { min, max } = inputRange("max-seconds");
+  assert.strictEqual(context.cap(Number(min)), Number(min));
+  assert.strictEqual(context.cap(Number(max)), Number(max));
+  assert.strictEqual(context.cap(Number(min) - 1), 300);
+  assert.strictEqual(context.cap(Number(max) + 1), 300);
+  // Its fallback is main's default, written down a second time in overlay.js.
+  assert.strictEqual(context.cap(NaN), DEFAULTS.audio.maxRecordingSeconds);
+  // Anything unusable takes that default; a cap in range is kept, rounded.
+  for (const bad of [-5, 0, 1, 9, 99999, NaN, Infinity, -Infinity, "300", null, undefined]) {
+    assert.strictEqual(context.cap(bad), 300, `cap(${String(bad)})`);
+  }
+  for (const good of [10, 300, 3600]) assert.strictEqual(context.cap(good), good);
+  assert.strictEqual(context.cap(10.6), 11);
+  // Rejects, not clamps, just outside the range — main has already clamped.
+  assert.strictEqual(context.cap(9.4), 300);
 });

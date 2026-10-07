@@ -4,6 +4,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
+const { CLEAN_RUNAWAY_MESSAGE } = require("../main/util/clean-budget");
 const { createRequire } = require("node:module");
 
 function deferred() {
@@ -13,15 +14,26 @@ function deferred() {
 }
 const drain = () => new Promise((resolve) => setImmediate(resolve));
 
-function worker({ loadGate, promptGate, promptStarted, preloadGate, preloadStarted } = {}) {
+// Options beyond the gates: `env` replaces the worker's process.env (CPU-only
+// by default, so the GPU attempt is skipped), `gpuFails` makes a model load on
+// a GPU-mode runtime throw, and `stopReason` is what generation reports.
+function worker({
+  loadGate, promptGate, promptStarted, preloadGate, preloadStarted,
+  env = { EARHEART_LLAMA_GPU: "off" }, gpuFails = false, stopReason = "eogToken",
+} = {}) {
   const events = [];
+  const getLlamaCalls = [];
   const runtime = {
-    async getLlama() {
+    async getLlama(options) {
+      // Normalized: the worker builds this object in its own vm realm.
+      getLlamaCalls.push(JSON.parse(JSON.stringify(options)));
+      const gpu = options?.gpu !== false;
       return {
         async loadModel({ modelPath }) {
           events.push(`load:${modelPath}`);
           if (loadGate) await loadGate.promise;
           if (modelPath === "bad") throw new Error("bad model");
+          if (gpu && gpuFails) throw new Error("out of VRAM");
           return {
             tokenize: (text) => text.split(/\s+/),
             async createContext({ contextSize }) {
@@ -46,7 +58,7 @@ function worker({ loadGate, promptGate, promptStarted, preloadGate, preloadStart
         promptStarted?.resolve();
         if (promptGate) await promptGate.promise;
         if (signal.aborted) throw new Error("cleanup cancelled");
-        return { responseText: this.modelPath, stopReason: "eogToken" };
+        return { responseText: this.modelPath, stopReason };
       }
       async preloadPrompt(text, { signal }) {
         assert.equal(signal.aborted, false);
@@ -70,7 +82,7 @@ function worker({ loadGate, promptGate, promptStarted, preloadGate, preloadStart
   vm.runInNewContext(injected, {
     require: createRequire(workerPath),
     process: {
-      env: { EARHEART_LLAMA_GPU: "off" },
+      env,
       platform: process.platform,
       arch: process.arch,
       parentPort: {
@@ -95,7 +107,7 @@ function worker({ loadGate, promptGate, promptStarted, preloadGate, preloadStart
       onMessage({ data: { id, type, ...args } });
     });
   }
-  return { send, events };
+  return { send, events, getLlamaCalls };
 }
 const model = (modelPath) => ({ modelPath, contextSize: 4096, cpuOnly: true });
 const turn = (modelPath) => ({ model: model(modelPath), transcript: "hello", systemPrompt: "rules" });
@@ -211,4 +223,47 @@ test("cleanup worker: cancellation reaches active prefill and permits final clea
   assert.equal((await final).result, "B");
   assert.equal(w.events.includes("primed:A"), false);
   assert.deepEqual(w.events.filter((event) => event.startsWith("prompt:")), ["prompt:B"]);
+});
+
+test("cleanup worker: overlapping cold load-cleanup requests load the model once", async () => {
+  // Both requests check for a resident model before the first load finishes.
+  // Unserialized, both passed and the second overwrote the first model and
+  // context without disposing them; the shared queue makes the second wait
+  // and find the first one resident.
+  const loadGate = deferred();
+  const w = worker({ loadGate });
+  const first = w.send("load-cleanup", model("A"));
+  const second = w.send("load-cleanup", model("A"));
+  await drain();
+  loadGate.resolve();
+  assert.equal((await first).ok, true);
+  assert.equal((await second).ok, true);
+  assert.deepEqual(w.events, ["load:A"]);
+});
+
+test("cleanup worker: a generation that hits its token cap is refused, not returned", async () => {
+  const w = worker({ stopReason: "maxTokens" });
+  const reply = await w.send("clean", turn("A"));
+  assert.equal(reply.ok, false);
+  assert.equal(reply.error, CLEAN_RUNAWAY_MESSAGE);
+});
+
+test("cleanup worker: a turn that can't fit the context is refused before generating", async () => {
+  const w = worker();
+  const tiny = { modelPath: "A", contextSize: 10, cpuOnly: true };
+  const reply = await w.send("clean", { model: tiny, transcript: "hello there", systemPrompt: "rules" });
+  assert.equal(reply.ok, false);
+  assert.match(reply.error, /too long/);
+  assert.equal(w.events.some((event) => event.startsWith("prompt:")), false, "nothing was generated");
+});
+
+test("cleanup worker: a GPU load failure retries once on a CPU-only runtime", async () => {
+  const w = worker({ env: {}, gpuFails: true });
+  const reply = await w.send("load-cleanup", { modelPath: "A", contextSize: 4096, cpuOnly: false });
+  assert.equal(reply.ok, true, reply.error);
+  assert.deepEqual(w.getLlamaCalls, [{}, { gpu: false }]);
+  assert.deepEqual(w.events, ["load:A", "load:A"]);
+  // The CPU runtime is kept: the next clean doesn't probe the GPU again.
+  assert.equal((await w.send("clean", turn("A"))).result, "A");
+  assert.equal(w.getLlamaCalls.length, 2);
 });

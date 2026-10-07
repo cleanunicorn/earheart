@@ -6,8 +6,8 @@
 // (main/engines/index.js), and the cleanup scripts (scripts/bench-cleanup.mjs,
 // scripts/eval-cleanup.mjs), whose numbers only describe the app if they
 // prompt exactly as the app does. The worker runs inside an Electron
-// utilityProcess and binds `process.parentPort` at module scope, so a script or
-// a test cannot require it.
+// utilityProcess and binds `process.parentPort` at module scope, so a script
+// can't require it without faking that port first.
 
 const DEFAULT_CLEANUP_TEMPERATURE = 0.2;
 

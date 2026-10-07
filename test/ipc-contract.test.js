@@ -240,6 +240,20 @@ test("every channel the renderers send is in SEND and has an ipcMain.on", () => 
   assert.deepStrictEqual(unreceived, [], `main has no ipcMain.on for: ${unreceived.join(", ")}`);
 });
 
+// The dead-entry direction for the remaining sets, as for INVOKE and pushes
+// above: an allowlist entry or an ipcMain.on nothing in a renderer uses is
+// a channel that was renamed or removed on one side only.
+test("SEND, LISTEN and ipcMain.on carry no channel the renderers no longer use", () => {
+  const sent = channels(renderer, /earheart\.send\(\s*"([a-z:-]+)"/g);
+  const received = channels(main, /ipcMain\.on\(\s*"([a-z:-]+)"/g);
+  const deadSend = [...SEND].filter((c) => !sent.has(c)).sort();
+  assert.deepStrictEqual(deadSend, [], `SEND allows channels no renderer sends: ${deadSend.join(", ")}`);
+  const deadListen = [...LISTEN].filter((c) => !listened.has(c)).sort();
+  assert.deepStrictEqual(deadListen, [], `LISTEN allows channels no renderer listens on: ${deadListen.join(", ")}`);
+  const deadOn = [...received].filter((c) => !sent.has(c)).sort();
+  assert.deepStrictEqual(deadOn, [], `main has ipcMain.on for channels no renderer sends: ${deadOn.join(", ")}`);
+});
+
 // A channel can be allowlisted, sent and received and STILL lose data: the
 // main-side handler destructures the payload, so a field the renderer sends but
 // the handler forgets to name is dropped without a word. audio:partial shipped

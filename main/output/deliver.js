@@ -53,13 +53,14 @@ const ACCESSIBILITY_OFF = {
 // A paste tool that failed for any other reason. Its own words (a PowerShell
 // stack trace, an X11 error, an AppleScript code) mean nothing to the user and
 // stay in the log; the text is already on the clipboard, so say how to paste it.
-// The notification's title already says auto-paste failed.
+// The overlay card's title and the notification's title already say auto-paste
+// failed, so the note doesn't repeat it.
 const PASTE_FAILED = {
-  note: "Auto-paste failed",
+  note: "Paste it with Ctrl+V",
   hint: "Paste it with Ctrl+V — the log has what the paste tool reported",
 };
 const MAC_PASTE_FAILED = {
-  note: "Auto-paste failed",
+  note: "Paste it with ⌘V",
   hint: "Paste it with ⌘V — the log has what the paste tool reported",
 };
 // Linux without wtype, ydotool or xdotool: installing one is the fix.

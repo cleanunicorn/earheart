@@ -197,7 +197,10 @@ for (const [platform, setup, key] of [
     assert.strictEqual(result.method, "clipboard");
     assert.strictEqual(state.clipboard, "my words");
     assert.ok(result.note.length <= 32, result.note);
-    assert.ok(`${result.note} ${result.hint}`.includes(key), `${result.note} / ${result.hint}`);
+    // The overlay card's title already says auto-paste failed, so the note
+    // says what to do instead of repeating it.
+    assert.strictEqual(result.note, `Paste it with ${key}`);
+    assert.ok(result.hint.includes(key), result.hint);
     for (const field of [result.note, result.hint]) {
       assert.doesNotMatch(field, /BadWindow|Command failed|xdotool|powershell|osascript/i);
     }

@@ -29,6 +29,9 @@
 //  11. Wizard-started downloads survive Settings model changes without
 //      overwriting a concurrent download's state.
 //  12. Failed model removals appear in the row and persistent live region.
+//  13. A microphone chosen while permission or device enumeration is pending
+//      survives completion (options and labels still refresh), and Save
+//      writes that choice to disk; an untouched saved microphone stays put.
 //
 // Run under Electron:
 //
@@ -68,6 +71,11 @@ const { registry } = engines;
 // never arrive.
 app.commandLine.appendSwitch("use-fake-device-for-media-stream");
 app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
+
+// Like the tray app (main/main.js), stay alive with no window open: the
+// microphone cases close Settings between runs, and Electron's default quit
+// would end the smoke with exit 0 before the summary is printed.
+app.on("window-all-closed", () => {});
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function waitFor(read, message) {
@@ -617,6 +625,160 @@ app.whenReady().then(async () => {
       "the wizard shows the default cleanup model's note",
       wizardNote === cleanupDefault.note,
       JSON.stringify(wizardNote)
+    );
+
+    // 13. A microphone chosen while permission or enumeration is pending
+    // survives completion and is what Save writes to disk. Each case reopens
+    // Settings on a saved device, holds the real loadMicrophones() at one
+    // await, makes the choice through the real <select>, then releases.
+    // Runs last: a clean Save closes the window, and the cases rewrite the
+    // profile's microphone.
+    windows.closeSettings();
+    await waitFor(() => win.isDestroyed(), "settings window did not close");
+    const SAVED_MIC = "saved-usb-mic";
+    const ALT_MIC = "desk-mic";
+    const raceDevices = [
+      { kind: "audioinput", deviceId: "default", label: "Default - Saved USB Mic" },
+      { kind: "audioinput", deviceId: SAVED_MIC, label: "Saved USB Mic" },
+      { kind: "audioinput", deviceId: ALT_MIC, label: "Desk Mic" },
+      { kind: "videoinput", deviceId: "camera", label: "Camera" },
+    ];
+    async function micRace({ hold, choose, reject = false, save = false, seedAlt = false }) {
+      settings.save({ ...settings.get(), audio: { ...settings.get().audio, deviceId: SAVED_MIC } });
+      const raceWin = windows.openSettings();
+      await new Promise((r) => raceWin.webContents.once("did-finish-load", r));
+      await sleep(1200);
+      const run = (code) => raceWin.webContents.executeJavaScript(code, true);
+      try {
+        // Reset the picker to its markup state, then re-run the page's own
+        // loader against held media promises (never awaited from here).
+        const seeded = await run(`(() => {
+          const select = document.getElementById("mic-device");
+          [...select.options].slice(1).forEach((o) => o.remove());
+          select.value = "";
+          document.getElementById("mic-device-status").textContent = "";
+          if (${seedAlt}) {
+            const alt = document.createElement("option");
+            alt.value = ${JSON.stringify(ALT_MIC)};
+            alt.textContent = "Microphone 1";
+            select.appendChild(alt);
+          }
+          const probe = (window.__micProbe = { calls: [], stopped: 0, done: false, error: null });
+          const held = (stage) => new Promise((resolve, reject) => { probe[stage] = { resolve, reject }; });
+          const stream = { getTracks: () => [{ stop: () => { probe.stopped++; } }] };
+          const devices = ${JSON.stringify(raceDevices)};
+          navigator.mediaDevices.getUserMedia = () => {
+            probe.calls.push("getUserMedia");
+            return ${JSON.stringify(hold)} === "permission" ? held("permission").then(() => stream) : Promise.resolve(stream);
+          };
+          navigator.mediaDevices.enumerateDevices = () => {
+            probe.calls.push("enumerateDevices");
+            return ${JSON.stringify(hold)} === "enumerate" ? held("enumerate").then(() => devices) : Promise.resolve(devices);
+          };
+          loadMicrophones().then(
+            () => { probe.done = true; },
+            (err) => { probe.error = String(err); probe.done = true; }
+          );
+          return select.value;
+        })()`);
+        const heldCall = hold === "permission" ? "getUserMedia" : "enumerateDevices";
+        await waitFor(
+          () => run(`window.__micProbe.calls.includes(${JSON.stringify(heldCall)})`),
+          `loader did not reach ${heldCall}`
+        );
+        if (choose !== undefined) {
+          await run(`(() => {
+            const select = document.getElementById("mic-device");
+            select.value = ${JSON.stringify(choose)};
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+          })()`);
+        }
+        if (hold === "permission") {
+          await run(reject
+            ? `window.__micProbe.permission.reject(new DOMException("denied", "NotAllowedError"))`
+            : `window.__micProbe.permission.resolve()`);
+        } else if (hold === "enumerate") {
+          await run(`window.__micProbe.enumerate.resolve()`);
+        }
+        await waitFor(() => run(`window.__micProbe.done`), "loader did not settle");
+        const state = JSON.parse(await run(`(() => {
+          const select = document.getElementById("mic-device");
+          const label = (id) => select.querySelector('option[value="' + CSS.escape(id) + '"]')?.textContent ?? null;
+          const result = JSON.stringify({
+            seeded: ${JSON.stringify(seeded)},
+            value: select.value,
+            saved: label(${JSON.stringify(SAVED_MIC)}),
+            alt: label(${JSON.stringify(ALT_MIC)}),
+            values: [...select.options].map((o) => o.value),
+            status: document.getElementById("mic-device-status").textContent,
+            stopped: window.__micProbe.stopped,
+            error: window.__micProbe.error,
+          });
+          delete navigator.mediaDevices.getUserMedia;
+          delete navigator.mediaDevices.enumerateDevices;
+          return result;
+        })()`));
+        if (save) {
+          await run(`document.getElementById("save").click()`);
+          await waitFor(() => raceWin.isDestroyed(), "a clean Save did not close Settings");
+          state.persisted = JSON.parse(
+            fs.readFileSync(path.join(userData, "settings.json"), "utf8")
+          ).audio.deviceId;
+        }
+        return state;
+      } finally {
+        if (!raceWin.isDestroyed()) {
+          windows.closeSettings();
+          await waitFor(() => raceWin.isDestroyed(), "settings window did not close");
+        }
+      }
+    }
+    const refreshed = (s) =>
+      s.saved === "Saved USB Mic" &&
+      s.alt === "Desk Mic" &&
+      !s.values.includes("default") &&
+      !s.values.includes("camera") &&
+      new Set(s.values).size === s.values.length;
+
+    const heldEnumeration = await micRace({ hold: "enumerate", choose: "", save: true });
+    check(
+      "System default chosen while enumeration is pending survives completion",
+      heldEnumeration.seeded === SAVED_MIC && heldEnumeration.value === "" && !heldEnumeration.error,
+      JSON.stringify(heldEnumeration)
+    );
+    check(
+      "enumeration still refreshes microphone options and labels after a pending choice",
+      refreshed(heldEnumeration) && heldEnumeration.stopped === 1,
+      JSON.stringify(heldEnumeration)
+    );
+    check(
+      "Save persists System default chosen during enumeration",
+      heldEnumeration.persisted === "",
+      JSON.stringify(heldEnumeration.persisted)
+    );
+    const heldPermission = await micRace({ hold: "permission", choose: "" });
+    check(
+      "System default chosen while microphone permission is pending survives completion",
+      heldPermission.value === "" && refreshed(heldPermission) && !heldPermission.error,
+      JSON.stringify(heldPermission)
+    );
+    const altChoice = await micRace({ hold: "enumerate", choose: ALT_MIC, seedAlt: true, save: true });
+    check(
+      "another microphone chosen during enumeration survives, relabelled, and is saved",
+      altChoice.value === ALT_MIC && refreshed(altChoice) && altChoice.persisted === ALT_MIC,
+      JSON.stringify(altChoice)
+    );
+    const untouched = await micRace({ hold: "none" });
+    check(
+      "an untouched saved microphone stays selected with its refreshed label",
+      untouched.value === SAVED_MIC && refreshed(untouched) && untouched.status === "",
+      JSON.stringify(untouched)
+    );
+    const denied = await micRace({ hold: "permission", choose: "", reject: true });
+    check(
+      "a choice made before microphone permission is denied is kept",
+      denied.value === "" && denied.stopped === 0 && !denied.error,
+      JSON.stringify(denied)
     );
 
     const failed = checks.filter((c) => !c.ok);

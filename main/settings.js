@@ -301,6 +301,34 @@ function migrateLegacy(stored) {
   return stored;
 }
 
+// The ranges Settings offers for its two Performance fields (min/max on
+// #max-seconds and #idle-unload in renderer/settings.html; a test holds the
+// two copies together). Enforced here too so a hand-edited settings.json can't
+// arm a recording cap that fires at once or an idle timer past setTimeout's
+// limit. Not a migration: nothing is rewritten, the next save stores the
+// clamped value.
+const LIMITS = [
+  { section: "audio", key: "maxRecordingSeconds", min: 10, max: 3600 },
+  { section: "engines", key: "idleUnloadMinutes", min: 0, max: 240 },
+];
+
+// Clamp each limit into its range (rounded to whole units); a non-finite value
+// takes the default. Copies the touched sections: deepMerge can hand back
+// DEFAULTS' own objects, which must never change.
+function clampLimits(merged) {
+  const out = { ...merged };
+  for (const { section, key, min, max } of LIMITS) {
+    const value = out[section][key];
+    out[section] = {
+      ...out[section],
+      [key]: Number.isFinite(value)
+        ? Math.round(Math.min(max, Math.max(min, value)))
+        : DEFAULTS[section][key],
+    };
+  }
+  return out;
+}
+
 function load() {
   if (cached) return cached;
   let stored = {};
@@ -309,7 +337,7 @@ function load() {
   } catch {
     // First run or unreadable file: fall back to defaults.
   }
-  cached = deepMerge(DEFAULTS, migrateLegacy(stored));
+  cached = clampLimits(deepMerge(DEFAULTS, migrateLegacy(stored)));
   return cached;
 }
 
@@ -319,7 +347,7 @@ function load() {
 // the cache change and onChanged fire. Returns a detached copy of what was
 // saved.
 function save(next) {
-  const merged = deepMerge(DEFAULTS, next);
+  const merged = clampLimits(deepMerge(DEFAULTS, next));
   const file = settingsPath();
   const tmp = `${file}.${process.pid}.tmp`;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });

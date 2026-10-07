@@ -160,3 +160,14 @@ test("the overlay and the decode splitter share one silence level", () => {
   const { QUIET_RMS } = require("../main/util/split-silence");
   assert.strictEqual(Number(m[1]), QUIET_RMS);
 });
+
+// The max-recording cap arrives over IPC and arms setTimeout(stopRecording,
+// cap * 1000). A non-positive cap fired the instant "Listening…" appeared and
+// an absurd one never fired (#210). recordingCapSeconds()'s own cases run in
+// settings-contract.test.js, beside the field range it must match.
+test("startRecording takes its cap through recordingCapSeconds", () => {
+  // Both timer sites (first samples, resume) read recording.maxSeconds, so the
+  // one validated assignment covers them.
+  assert.match(js, /maxSeconds:\s*recordingCapSeconds\(maxSeconds\)/);
+  assert.doesNotMatch(js, /maxSeconds:\s*maxSeconds\s*\|\|/);
+});

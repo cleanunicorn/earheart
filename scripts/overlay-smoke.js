@@ -11,6 +11,8 @@
 //   4. The shared AudioContext survives across sessions: after a completed
 //      dictation AND after a cancel mid-startup, the next session records
 //      again (suspend/resume reuse, no stale worklet).
+//   5. An unusable max-length cap (e.g. -5 s) falls back to the default
+//      instead of stopping the take the moment it goes live.
 //
 // Run under Electron:
 //
@@ -398,6 +400,28 @@ app.whenReady().then(async () => {
       `wav=${stats1.seconds.toFixed(2)}s, ui-live window=${((stoppedAt - liveAt) / 1000).toFixed(2)}s, allowance=${WAV_LAG_ALLOWANCE_SEC}s`
     );
     check("captured audio is not silence", stats1.rms > 0.001, `rms=${stats1.rms.toFixed(4)}`);
+
+    // ---- An unusable max-length cap must not end the take ------------------
+    // A -5 s cap once armed setTimeout(stopRecording, -5000), which fires at
+    // once: every dictation stopped the instant "Listening…" appeared (#210).
+    // The overlay now falls back to the 300 s default instead.
+    // The early stop shows as a capture delivered before anyone pressed stop
+    // (the card itself keeps saying "Listening…"), so watch for that.
+    const capCaptureP = waitForMessage("audio:captured");
+    let capturedBeforeStop = false;
+    capCaptureP.then(() => (capturedBeforeStop = true), () => {});
+    win.webContents.send("record:start", {
+      sid: 210,
+      deviceId: null,
+      maxSeconds: -5,
+      livePreview: { enabled: false },
+    });
+    await waitForStatus(win, "recording");
+    await sleep(1000);
+    check("a negative max-length cap does not stop the take", !capturedBeforeStop);
+    win.webContents.send("record:stop");
+    const capCapture = await capCaptureP;
+    check("the take with a bad cap still delivers on stop", capCapture.sid === 210);
 
     // ---- Session 2: stop racing mic startup resolves as abandoned ----------
     const cancelled2P = waitForMessage("record:cancelled");

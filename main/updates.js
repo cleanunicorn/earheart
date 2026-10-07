@@ -526,7 +526,7 @@ const isPrivateDir = (st) =>
  * group/other — is replaced (rm removes a symlink itself, never its target)
  * rather than trusted.
  */
-function updateDir() {
+function ensureUpdateDir() {
   const dir = updateDirPath();
   let st = null;
   try {
@@ -557,7 +557,7 @@ function writeFresh(file, content, mode) {
  * same pass. A verified file from an earlier attempt is reused as-is.
  */
 async function downloadAsset(info, signal) {
-  const dir = updateDir();
+  const dir = ensureUpdateDir();
   const dest = path.join(dir, path.basename(info.path));
 
   if (await isVerified(dest, info.sha512)) return dest;
@@ -814,7 +814,7 @@ async function sweepLeftovers() {
   }
 }
 
-// Only sweep inside the staging dir when it passes the same check updateDir()
+// Only sweep inside the staging dir when it passes the same check ensureUpdateDir()
 // applies; otherwise leave it for the next download to replace, rather than
 // deleting through a symlink or inside someone else's dir. Installers are
 // 100-200 MB and this dir, unlike the system temp dir, is never pruned by the

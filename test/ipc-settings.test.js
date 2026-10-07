@@ -30,6 +30,7 @@ function loadIpc(t, { remove = async () => {} } = {}) {
     [resolveFrom("./engines")]: {
       registry: {
         setCustomModels() {},
+        getModel: () => customModel,
         DEFAULT_STT_MODEL: "stt-default",
         DEFAULT_CLEANUP_MODEL: "cleanup-default",
       },
@@ -280,12 +281,18 @@ test("history:clear refreshes the tray", (t) => {
 // deleting the files, then saved that copy afterwards.
 test("removing a custom model keeps settings written while its files were deleted", async (t) => {
   let finishRemove;
+  let beginRemove;
+  const removing = new Promise((resolve) => (beginRemove = resolve));
   const { handlers, settings, readFile } = loadIpc(t, {
-    remove: () => new Promise((resolve) => (finishRemove = resolve)),
+    remove: () => new Promise((resolve) => {
+      finishRemove = resolve;
+      beginRemove();
+    }),
   });
   settings.save({ ...settings.get(), customModels: [customModel] });
 
   const pending = handlers["models:remove-custom"]({}, { modelId: customModel.id });
+  await removing;
   settings.save({ ...settings.get(), overlay: { x: 10, y: 20 } });
   finishRemove();
   const result = await pending;

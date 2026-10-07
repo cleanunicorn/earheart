@@ -164,9 +164,9 @@ app.whenReady().then(async () => {
     // Two entries for check 9, saved before the window reads them: one
     // delivered whole, one recovered from an interrupted dictation.
     const historyCfg = { enabled: true, limit: 100 };
-    history.add({ raw: "whole dictation", text: "whole dictation", cleaned: false, delivered: "paste" }, historyCfg);
+    history.add({ raw: "whole dictation", text: "whole dictation", cleaned: false }, historyCfg);
     history.add(
-      { raw: "recovered words", text: "recovered words", cleaned: false, delivered: "paste", incomplete: true },
+      { raw: "recovered words", text: "recovered words", cleaned: false, incomplete: true },
       historyCfg
     );
 

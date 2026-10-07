@@ -525,7 +525,9 @@ test("pipeline: a delivery that throws still keeps the transcript in history", a
   });
   await rig.dictate(speechWav(1));
   assert.strictEqual(rig.log.history.length, 1, "exactly one history row");
-  assert.strictEqual(rig.log.history[0].text, "dictated words");
+  // The row's exact shape: nothing about delivery can be known yet, so
+  // nothing about it is recorded.
+  assert.deepStrictEqual(rig.log.history[0], { raw: "dictated words", text: "dictated words", cleaned: false });
   // Nothing reached the target app, so the user is still told so.
   assert.ok(rig.log.statuses.includes("error"));
   assert.ok(rig.log.notifications.some((n) => /dictation failed/.test(n.title)));

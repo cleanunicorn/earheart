@@ -457,3 +457,17 @@ test("cancelling before the keystroke puts a screenshot back", async () => {
   assert.strictEqual(state.clip.image, PNG);
   assert.strictEqual(state.clip.text, undefined);
 });
+
+test("advertised but empty formats restore nothing", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  onMac(t);
+  // The clipboard lists an image and a file list, but both read back empty.
+  const { deliver, state } = loadDeliver({
+    trusted: true,
+    clip: { image: EMPTY_IMAGE, "text/uri-list": Buffer.alloc(0) },
+  });
+
+  await pasteWithRestore(t, deliver, "hello");
+  t.mock.timers.tick(1000);
+  assert.deepStrictEqual(state.clip, { text: "hello" }, "no junk is written over the transcript");
+});

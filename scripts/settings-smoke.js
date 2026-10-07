@@ -135,6 +135,27 @@ app.whenReady().then(async () => {
     await sleep(1200);
 
     const js = (code) => win.webContents.executeJavaScript(code, true);
+    // Model-row helpers: read a row, click one of its buttons by label, pick a
+    // model in a select, list the stored custom definitions.
+    const rowState = (kind) => js(`JSON.stringify({
+      select: document.getElementById(${JSON.stringify(`${kind}-builtin-model`)}).value,
+      status: document.querySelector(${JSON.stringify(`#${kind}-model-manage .status`)})?.textContent,
+      buttons: [...document.querySelectorAll(${JSON.stringify(`#${kind}-model-manage button`)})].map((b) => b.textContent),
+      announcement: document.getElementById("model-dl-announce").textContent,
+    })`).then(JSON.parse);
+    const clickRowButton = (kind, text) => js(`(() => {
+      const button = [...document.querySelectorAll(${JSON.stringify(`#${kind}-model-manage button`)})]
+        .find((b) => b.textContent === ${JSON.stringify(text)});
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`);
+    const selectModel = (kind, modelId) => js(`(() => {
+      const select = document.getElementById(${JSON.stringify(`${kind}-builtin-model`)});
+      select.value = ${JSON.stringify(modelId)};
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    })()`);
+    const definitionIds = () => (settings.get().customModels || []).map((m) => m.id);
 
     // 1. One continuous scroll, everything rendered.
     const layout = JSON.parse(
@@ -671,26 +692,6 @@ app.whenReady().then(async () => {
     win.webContents.reload();
     await new Promise((r) => win.webContents.once("did-finish-load", r));
     await sleep(1200);
-
-    const rowState = (kind) => js(`JSON.stringify({
-      select: document.getElementById(${JSON.stringify(`${kind}-builtin-model`)}).value,
-      status: document.querySelector(${JSON.stringify(`#${kind}-model-manage .status`)})?.textContent,
-      buttons: [...document.querySelectorAll(${JSON.stringify(`#${kind}-model-manage button`)})].map((b) => b.textContent),
-      announcement: document.getElementById("model-dl-announce").textContent,
-    })`).then(JSON.parse);
-    const clickRowButton = (kind, text) => js(`(() => {
-      const button = [...document.querySelectorAll(${JSON.stringify(`#${kind}-model-manage button`)})]
-        .find((b) => b.textContent === ${JSON.stringify(text)});
-      if (!button) return false;
-      button.click();
-      return true;
-    })()`);
-    const selectModel = (kind, modelId) => js(`(() => {
-      const select = document.getElementById(${JSON.stringify(`${kind}-builtin-model`)});
-      select.value = ${JSON.stringify(modelId)};
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    })()`);
-    const definitionIds = () => (settings.get().customModels || []).map((m) => m.id);
 
     // A failed delete of the installed, selected custom STT model. The delete
     // is held open first, to see the row while the removal is in flight.

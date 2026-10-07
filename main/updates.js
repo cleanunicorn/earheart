@@ -544,7 +544,7 @@ function updateDir() {
  * reappeared in between).
  */
 function writeFresh(file, content, mode) {
-  fs.rmSync(file, { force: true });
+  fs.rmSync(file, { recursive: true, force: true });
   fs.writeFileSync(file, content, { mode, flag: "wx" });
 }
 
@@ -592,7 +592,7 @@ async function downloadAsset(info, signal) {
   });
 
   try {
-    await fsp.rm(part, { force: true });
+    await fsp.rm(part, { recursive: true, force: true });
     const out = fs.createWriteStream(part, { flags: "wx", mode: 0o600 });
     await streamPipeline(body, meter, out, { signal });
     const got = hash.digest("base64");
@@ -768,7 +768,11 @@ function installLinux(newAppImage) {
     fs.chmodSync(part, 0o755);
     fs.renameSync(part, target);
   } catch (err) {
-    fs.rmSync(part, { force: true });
+    // Best effort: a cleanup failure (say, a directory at `part`) must not
+    // hide the error below.
+    try {
+      fs.rmSync(part, { force: true });
+    } catch {}
     throw new Error(
       `Can't replace ${target} (${err.message}) — download the update manually from the releases page`
     );

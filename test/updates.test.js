@@ -415,6 +415,45 @@ test("installLinux replaces the AppImage without following planted symlinks", PO
   assert.strictEqual(ctx.calls.quit, 1);
 });
 
+test("a directory in the way of the AppImage copy fails with a readable error", POSIX, async (t) => {
+  const appImage = asAppImage(t);
+  const ctx = loadUpdates(t, { isPackaged: true });
+  const target = appImage(ctx.root);
+  fs.mkdirSync(`${target}.update.part`);
+  ctx.updates.init({});
+  await download(ctx.updates);
+
+  await ctx.updates.installNow();
+
+  const s = ctx.updates.getState();
+  assert.strictEqual(s.status, "error");
+  assert.match(s.error, /^Can't replace .*download the update manually/);
+  assert.strictEqual(fs.readFileSync(target, "utf8"), "old app\n");
+  assert.strictEqual(ctx.calls.quit, 0);
+});
+
+test("leftovers in the staging dir don't block a download or install", POSIX, async (t) => {
+  const appImage = asAppImage(t);
+  const ctx = loadUpdates(t, { isPackaged: true });
+  const target = appImage(ctx.root);
+  fs.mkdirSync(ctx.stagingDir, { mode: 0o700 });
+  const marker = path.join(ctx.stagingDir, "marker");
+  fs.writeFileSync(marker, "");
+  ctx.updates.init({});
+  // Plant after the launch sweep, which would otherwise prune them first.
+  await waitFor(() => !fs.existsSync(marker), "launch sweep");
+  fs.writeFileSync(`${ctx.staged}.part`, "half a download from a crash");
+  fs.mkdirSync(path.join(ctx.stagingDir, "relaunch.sh"));
+  await download(ctx.updates);
+  assert.strictEqual(ctx.updates.getState().status, "ready");
+
+  await ctx.updates.installNow();
+
+  assert.deepStrictEqual(fs.readFileSync(target), ASSET_BYTES);
+  assert.ok(fs.statSync(path.join(ctx.stagingDir, "relaunch.sh")).isFile());
+  assert.strictEqual(ctx.calls.quit, 1);
+});
+
 // --- the handoff from download to install ---------------------------------
 
 test("a finished download installs straight away when no dictation is running", POSIX, async (t) => {

@@ -29,6 +29,10 @@
 //  11. Wizard-started downloads survive Settings model changes without
 //      overwriting a concurrent download's state.
 //  12. Failed model removals appear in the row and persistent live region.
+//  13. Removing a custom model: a failed delete (installed "Remove" and
+//      "Remove from list") shows its error and keeps the entry; removing the
+//      selected custom STT and cleanup models leaves each select on the
+//      default, and the real Save persists those ids, never "".
 //
 // Run under Electron:
 //
@@ -617,6 +621,159 @@ app.whenReady().then(async () => {
       "the wizard shows the default cleanup model's note",
       wizardNote === cleanupDefault.note,
       JSON.stringify(wizardNote)
+    );
+
+    // 13. Custom-model removal. Saved settings select a custom model of each
+    // kind, so the reload below starts the renderer from them, as a user who
+    // picked those models would.
+    const customStt = {
+      id: "custom-acme-smoke-stt-int8",
+      kind: "stt",
+      label: "smoke-stt · int8",
+      note: "smoke fixture",
+      engine: "sherpa-parakeet",
+      custom: true,
+      files: [{ name: "model.int8.onnx", url: "https://example.invalid/model.int8.onnx" }],
+      sherpa: { family: "transducer" },
+    };
+    const customCleanup = {
+      id: "custom-acme-smoke-q4-k-m",
+      kind: "cleanup",
+      label: "smoke · Q4_K_M",
+      note: "smoke fixture",
+      engine: "llama-gguf",
+      custom: true,
+      files: [{ name: "smoke-Q4_K_M.gguf", url: "https://example.invalid/smoke-Q4_K_M.gguf" }],
+      gguf: { file: "smoke-Q4_K_M.gguf" },
+    };
+    const customListed = {
+      ...customCleanup,
+      id: "custom-acme-listed-q8-0",
+      label: "listed · Q8_0",
+      files: [{ name: "listed-Q8_0.gguf", url: "https://example.invalid/listed-Q8_0.gguf" }],
+      gguf: { file: "listed-Q8_0.gguf" },
+    };
+    installedModels.add(`stt:${customStt.id}`);
+    installedModels.add(`cleanup:${customCleanup.id}`);
+    const seeded = settings.get();
+    settings.save({
+      ...seeded,
+      stt: { ...seeded.stt, engine: "builtin", builtin: { ...seeded.stt.builtin, model: customStt.id } },
+      cleanup: {
+        ...seeded.cleanup,
+        engine: "builtin",
+        builtin: { ...seeded.cleanup.builtin, model: customCleanup.id },
+      },
+      customModels: [customStt, customCleanup, customListed],
+    });
+    registry.setCustomModels(settings.get().customModels);
+    win.webContents.reload();
+    await new Promise((r) => win.webContents.once("did-finish-load", r));
+    await sleep(1200);
+
+    const rowState = (kind) => js(`JSON.stringify({
+      select: document.getElementById(${JSON.stringify(`${kind}-builtin-model`)}).value,
+      status: document.querySelector(${JSON.stringify(`#${kind}-model-manage .status`)})?.textContent,
+      buttons: [...document.querySelectorAll(${JSON.stringify(`#${kind}-model-manage button`)})].map((b) => b.textContent),
+      announcement: document.getElementById("model-dl-announce").textContent,
+    })`).then(JSON.parse);
+    const clickRowButton = (kind, text) => js(`(() => {
+      const button = [...document.querySelectorAll(${JSON.stringify(`#${kind}-model-manage button`)})]
+        .find((b) => b.textContent === ${JSON.stringify(text)});
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`);
+    const selectModel = (kind, modelId) => js(`(() => {
+      const select = document.getElementById(${JSON.stringify(`${kind}-builtin-model`)});
+      select.value = ${JSON.stringify(modelId)};
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    })()`);
+    const definitionIds = () => (settings.get().customModels || []).map((m) => m.id);
+
+    // A failed delete of the installed, selected custom STT model.
+    engines.remove = async () => {
+      throw new Error("custom model files are busy");
+    };
+    await js(`window.confirm = () => true; true`);
+    if (!(await clickRowButton("stt", "Remove"))) throw new Error("custom STT row has no Remove");
+    await waitFor(
+      () => rowState("stt").then((r) => r.status === "custom model files are busy"),
+      "failed custom removal did not appear in the STT row"
+    );
+    const sttFailure = await rowState("stt");
+    // A failed delete through "Remove from list" on an uninstalled custom model.
+    await selectModel("cleanup", customListed.id);
+    if (!(await clickRowButton("cleanup", "Remove from list"))) {
+      throw new Error("uninstalled custom row has no Remove from list");
+    }
+    await waitFor(
+      () => rowState("cleanup").then((r) => r.status === "custom model files are busy"),
+      "failed Remove from list did not appear in the cleanup row"
+    );
+    const listedFailure = await rowState("cleanup");
+    check(
+      "failed custom model removals show the error and keep the entry",
+      sttFailure.select === customStt.id &&
+        sttFailure.announcement.endsWith("custom model files are busy") &&
+        listedFailure.select === customListed.id &&
+        listedFailure.announcement.endsWith("custom model files are busy") &&
+        [customStt.id, customCleanup.id, customListed.id].every((id) => definitionIds().includes(id)) &&
+        settings.get().stt.builtin.model === customStt.id,
+      JSON.stringify({ sttFailure, listedFailure, definitions: definitionIds() })
+    );
+
+    // The retry succeeds once the files can be deleted.
+    const removed = [];
+    engines.remove = async (kind, modelId) => {
+      removed.push(`${kind}:${modelId}`);
+    };
+    await clickRowButton("cleanup", "Remove from list");
+    await waitFor(
+      () => js(`![...document.getElementById("cleanup-builtin-model").options].some((o) => o.value === ${JSON.stringify(customListed.id)})`),
+      "Remove from list retry did not drop the entry"
+    );
+    // Removing the selected custom models: each select must land on the
+    // default, not on "" (a select set to a missing option reads back empty).
+    await selectModel("cleanup", customCleanup.id);
+    await clickRowButton("cleanup", "Remove");
+    await clickRowButton("stt", "Remove");
+    await waitFor(
+      () => js(`![...document.querySelectorAll("#stt-builtin-model option, #cleanup-builtin-model option")]
+        .some((o) => o.value === ${JSON.stringify(customStt.id)} || o.value === ${JSON.stringify(customCleanup.id)})`),
+      "custom models were not removed from the selects"
+    );
+    const afterRemove = { stt: await rowState("stt"), cleanup: await rowState("cleanup") };
+    check(
+      "removing the selected custom models leaves each select on the default",
+      afterRemove.stt.select === registry.DEFAULT_STT_MODEL &&
+        afterRemove.cleanup.select === registry.DEFAULT_CLEANUP_MODEL &&
+        removed.length === 3,
+      JSON.stringify({ afterRemove, removed })
+    );
+
+    // Save goes through the real settings:save handler (and then closes the
+    // window), so count saves to know when the renderer's own one has landed.
+    let rendererSaves = 0;
+    const saveSettings = settings.save;
+    settings.save = (next) => {
+      rendererSaves++;
+      return saveSettings(next);
+    };
+    await js(`document.getElementById("save").click(); true`);
+    await waitFor(() => rendererSaves > 0, "Save after removing custom models did not reach main");
+    settings.save = saveSettings;
+    const persisted = {
+      stt: settings.get().stt.builtin.model,
+      cleanup: settings.get().cleanup.builtin.model,
+      customModels: definitionIds(),
+    };
+    check(
+      "Save after removing the selected custom models persists the defaults, never an empty id",
+      persisted.stt === registry.DEFAULT_STT_MODEL &&
+        persisted.cleanup === registry.DEFAULT_CLEANUP_MODEL &&
+        persisted.customModels.length === 0,
+      JSON.stringify(persisted)
     );
 
     const failed = checks.filter((c) => !c.ok);

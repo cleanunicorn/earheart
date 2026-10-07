@@ -636,6 +636,10 @@ async function removeCustomModel(modelId) {
   const res = await earheart.invoke("models:remove-custom", { modelId });
   if (res.ok) {
     current.customModels = res.customModels;
+    // Main falls back to the default when the removed model was the saved
+    // one. Adopt that, or refreshModels would keep pointing the select at the
+    // removed id, which reads back as "" and gets saved as an empty model.
+    if (res.kind && res.model) current[res.kind].builtin.model = res.model;
     await refreshModels();
   } else {
     showModelError(modelId, res.error || "Could not remove model");

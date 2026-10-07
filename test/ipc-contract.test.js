@@ -53,7 +53,10 @@ const INVOKE = allowlist("INVOKE");
 // The overlay's update-prompt action tables (UPDATE_ACTIONS, WHATSNEW_ACTION
 // in renderer/overlay.js) hold their channels as `channel: "…"` properties and
 // invoke them through earheart.invoke(action.channel), so scan those too — a
-// typo there is a dead button that no literal call site would reveal.
+// typo there is a dead button that no literal call site would reveal. Unlike
+// the two call-site scans this one is a property sweep over all of renderer/,
+// valid only while `channel:` names an IPC channel nowhere else; the pin
+// below holds that assumption.
 const invoked = new Set([
   ...channels(renderer, /earheart\.invoke\(\s*"([a-z:-]+)"/g),
   ...channels(renderer, /bindTest\(\s*"[^"]+"\s*,\s*"[^"]+"\s*,\s*"([a-z:-]+)"/g),

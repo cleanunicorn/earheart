@@ -607,8 +607,14 @@ test("shared classes the wizard relies on still exist in settings.css", () => {
   // breaks the wizard's chrome. Cheap tripwire that each selector still appears.
   // .capturing is toggled by hotkey-capture.js (which the wizard also loads)
   // and styled only here — the one visual cue that a hotkey field is armed.
+  // Match the selector in rule position of the comment-stripped sheet: the
+  // header comment names most of these, and a plain substring would also
+  // accept a longer name (.hint-x) or a value inside a declaration.
   const shared = [".field", ".row", ".hint", ".status", ".lead", ".choice", "button.primary", "button.ghost", "code", ".capturing"];
-  const missing = shared.filter((sel) => !css.includes(sel)).sort();
+  const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const definesRule = (sel) => new RegExp(escape(sel) + "(?![\\w-])[^{}]*\\{").test(rules);
+  const missing = shared.filter((sel) => !definesRule(sel)).sort();
   assert.deepStrictEqual(missing, [], `settings.css no longer defines: ${missing.join(", ")}`);
 });
 

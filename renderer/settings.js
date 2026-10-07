@@ -1,6 +1,11 @@
 // Settings window renderer.
 
 let current = null; // settings object being edited
+// The shared fields (output mode, update reminders) as this window last saw
+// them from main. Sent with every save so main can tell a change made here
+// from a stale value main has since replaced (see main/ipc.js SHARED_FIELDS).
+let baseline = null;
+let pendingChange = null; // a settings:changed that arrived before init
 let defaults = null;
 let platform = "linux";
 let modelStatus = null; // { stt: [...], cleanup: [...] } from the main process
@@ -211,19 +216,24 @@ async function loadMicrophones() {
 
 /* ---------- populate / collect ---------- */
 
-function populate() {
-  hotkeyInput.value = current.hotkey;
-  pauseHotkeyInput.value = current.pauseHotkey || "";
+function sharedBaseline(cfg) {
+  return { outputMode: cfg.output.mode, remind: cfg.updates?.remind !== false };
+}
+
+function showOutputMode(output) {
   // Legacy settings expressed "paste & keep on clipboard" as paste mode with
   // clipboard restore turned off; show those as the explicit paste-copy mode.
-  const mode =
-    current.output.mode === "paste" && !current.output.restoreClipboard
-      ? "paste-copy"
-      : current.output.mode;
+  const mode = output.mode === "paste" && !output.restoreClipboard ? "paste-copy" : output.mode;
   (
     document.querySelector(`input[name="output-mode"][value="${mode}"]`) ||
     document.querySelector('input[name="output-mode"][value="paste"]')
   ).checked = true;
+}
+
+function populate() {
+  hotkeyInput.value = current.hotkey;
+  pauseHotkeyInput.value = current.pauseHotkey || "";
+  showOutputMode(current.output);
 
   $("stt-url").value = current.stt.baseUrl;
   $("stt-key").value = current.stt.apiKey;
@@ -698,6 +708,41 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
   $("cleanup-prompt").value = defaults.cleanup.systemPrompt;
 });
 
+/* ---------- changes saved elsewhere ---------- */
+
+// Main saved the settings (tray radio, update prompt, overlay drag, custom
+// models, or this window's own save). Take the values only main writes, and
+// show a shared field only when this save changed it — never repopulate the
+// whole form, which would throw away edits the user hasn't saved yet.
+function applySettingsChange({ previous, current: saved }) {
+  current.overlay = saved.overlay;
+  current.customModels = saved.customModels;
+  current.updates = {
+    ...current.updates,
+    skippedVersion: saved.updates.skippedVersion,
+    lastSeenVersion: saved.updates.lastSeenVersion,
+  };
+  if (
+    previous.output.mode !== saved.output.mode ||
+    previous.output.restoreClipboard !== saved.output.restoreClipboard
+  ) {
+    current.output = { ...current.output, mode: saved.output.mode, restoreClipboard: saved.output.restoreClipboard };
+    showOutputMode(saved.output);
+    baseline.outputMode = saved.output.mode;
+  }
+  const remind = saved.updates.remind !== false;
+  if ((previous.updates.remind !== false) !== remind) {
+    current.updates.remind = saved.updates.remind;
+    $("updates-remind").checked = remind;
+    baseline.remind = remind;
+  }
+}
+
+earheart.on("settings:changed", (change) => {
+  if (!baseline) pendingChange = change;
+  else applySettingsChange(change);
+});
+
 /* ---------- save ---------- */
 
 function hotkeySaveMessage(hotkeyResult, pauseResult) {
@@ -722,8 +767,9 @@ saveButton.addEventListener("click", async () => {
   save.className = "status";
   try {
     current = collect();
-    result = await earheart.invoke("settings:save", current);
+    result = await earheart.invoke("settings:save", { settings: current, baseline });
     current = result.settings;
+    baseline = sharedBaseline(current);
     // Older mains don't report a pause result; treat that as fine.
     pauseResult = result.pauseHotkey ?? { ok: true };
     if (result.hotkey.ok && pauseResult.ok) {
@@ -1231,6 +1277,7 @@ earheart.on("updates:state", renderUpdateState);
 (async () => {
   const data = await earheart.invoke("settings:get");
   current = data.settings;
+  baseline = sharedBaseline(current);
   defaults = data.defaults;
   platform = data.platform;
   cleanupStyles = data.cleanupStyles || [];
@@ -1250,6 +1297,8 @@ earheart.on("updates:state", renderUpdateState);
   populateModelSelect("stt");
   populateModelSelect("cleanup");
   populate();
+  if (pendingChange) applySettingsChange(pendingChange);
+  pendingChange = null;
   renderHistory();
   loadMicrophones();
 })();

@@ -467,6 +467,14 @@ function sendToSettings(channel, payload) {
   }
 }
 
+// Send to the Settings and wizard windows only — for payloads that carry the
+// full settings (API keys included), which the overlay has no use for.
+function sendToForms(channel, payload) {
+  for (const win of [settingsWindow, wizardWindow]) {
+    if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+  }
+}
+
 // Send to every live window. Used for events both the wizard and Settings care
 // about (e.g. model download progress) so whichever is open stays in sync.
 function broadcast(channel, payload) {
@@ -486,6 +494,7 @@ module.exports = {
   sendToOverlay,
   openSettings,
   sendToSettings,
+  sendToForms,
   broadcast,
   openWizard,
   closeWizard,

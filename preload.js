@@ -17,6 +17,7 @@ const LISTEN = new Set([
   "models:done",
   "updates:state",
   "updates:prompt",
+  "settings:changed",
 ]);
 
 const SEND = new Set([

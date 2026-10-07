@@ -4,6 +4,10 @@
 // settings window.
 
 let current = null; // settings object being edited
+// The shared fields as this window last saw them from main; sent with the
+// save (see main/ipc.js SHARED_FIELDS and renderer/settings.js).
+let baseline = null;
+let pendingChange = null; // a settings:changed that arrived before init
 let defaults = null;
 let platform = "linux";
 let micLoaded = false;
@@ -458,19 +462,44 @@ $("download-later").addEventListener("click", () => {
 
 /* ---------- finish ---------- */
 
+/* ---------- changes saved elsewhere ---------- */
+
+// Main saved the settings while the wizard is open (e.g. the tray's output
+// radios): take the values only main writes and show a changed output mode,
+// without touching anything else the user has chosen.
+function applySettingsChange({ previous, current: saved }) {
+  current.overlay = saved.overlay;
+  current.customModels = saved.customModels;
+  current.updates = { ...saved.updates };
+  baseline.remind = saved.updates.remind !== false;
+  if (previous.output.mode !== saved.output.mode) {
+    current.output = { ...current.output, mode: saved.output.mode };
+    const radio = document.querySelector(`input[name="output-mode"][value="${saved.output.mode}"]`);
+    if (radio) radio.checked = true;
+    baseline.outputMode = saved.output.mode;
+    renderSummary();
+  }
+}
+
+earheart.on("settings:changed", (change) => {
+  if (!baseline) pendingChange = change;
+  else applySettingsChange(change);
+});
+
 async function finish() {
   const status = $("finish-status");
   status.textContent = "Saving…";
   status.className = "status";
   let result;
   try {
-    result = await earheart.invoke("wizard:complete", collect());
+    result = await earheart.invoke("wizard:complete", { settings: collect(), baseline });
   } catch (err) {
     status.textContent = `Could not save: ${err.message}`;
     status.className = "status err";
     return;
   }
   current = result.settings;
+  baseline = { outputMode: current.output.mode, remind: current.updates?.remind !== false };
   if (!result.hotkey.ok) {
     // Stay in the wizard so the user can pick a combination that registers.
     status.textContent = "";
@@ -491,6 +520,7 @@ async function finish() {
   platform = data.platform;
   cleanupStyles = data.cleanupStyles || [];
   modelStatus = await earheart.invoke("models:status");
+  baseline = { outputMode: current.output.mode, remind: current.updates?.remind !== false };
 
   hotkeyInput.value = current.hotkey;
   $("cleanup-enabled").checked = current.cleanup.enabled;
@@ -510,4 +540,6 @@ async function finish() {
   if (platform === "darwin") $("demo-mod").textContent = "⌘";
   if (platform !== "linux") $("wayland-note").style.display = "none";
   showStep(0);
+  if (pendingChange) applySettingsChange(pendingChange);
+  pendingChange = null;
 })();

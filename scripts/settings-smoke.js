@@ -29,6 +29,9 @@
 //  11. Wizard-started downloads survive Settings model changes without
 //      overwriting a concurrent download's state.
 //  12. Failed model removals appear in the row and persistent live region.
+//  13. A main-side save while the window is open (the tray's output radios,
+//      the update prompt's "Don't remind me") shows in the form through
+//      settings:changed, without discarding an edit the user hasn't saved.
 //
 // Run under Electron:
 //
@@ -582,6 +585,32 @@ app.whenReady().then(async () => {
       select.value = ${JSON.stringify(registry.DEFAULT_CLEANUP_MODEL)};
       select.dispatchEvent(new Event("change", { bubbles: true }));
     })()`);
+
+    // 13. Settings saved by main while the window is open reach the form.
+    const unsaved = "An edit the user has not saved yet";
+    await js(`document.getElementById("cleanup-prompt").value = ${JSON.stringify(unsaved)}; true`);
+    const before = settings.get();
+    settings.save({
+      ...before,
+      output: { ...before.output, mode: "clipboard" },
+      updates: { ...before.updates, remind: false },
+    });
+    const reflected = await waitFor(
+      () =>
+        js(`(() => {
+          const mode = document.querySelector('input[name="output-mode"]:checked')?.value;
+          const remind = document.getElementById("updates-remind").checked;
+          return mode === "clipboard" && !remind
+            ? JSON.stringify({ mode, remind, prompt: document.getElementById("cleanup-prompt").value })
+            : "";
+        })()`),
+      "the open form did not show the main-side change"
+    ).then(JSON.parse);
+    check(
+      "a main-side save shows in the open form and keeps unsaved edits",
+      reflected.mode === "clipboard" && reflected.remind === false && reflected.prompt === unsaved,
+      JSON.stringify(reflected)
+    );
 
     // 8. A fresh profile preselects the default cleanup model in both windows.
     const cleanupDefault = registry.getModel("cleanup", registry.DEFAULT_CLEANUP_MODEL);

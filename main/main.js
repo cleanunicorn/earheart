@@ -116,8 +116,8 @@ function main() {
     pipeline.init();
     ipc.init({
       applyHotkeys,
+      // The tray rebuilds itself on every settings save (main/ipc.js).
       onSettingsChanged: () => {
-        tray.refresh();
         pipeline.onSettingsChanged();
         updates.onSettingsChanged();
       },

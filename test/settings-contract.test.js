@@ -333,14 +333,18 @@ function microphonePage(source, page) {
     },
     CSS: { escape: (value) => value },
     current,
+    baseline: { outputMode: current.output.mode, remind: true },
     cleanupStyles: [{ id: "verbatim" }],
     $: (id) => elements[id] || baseDocument.getElementById(id),
     earheart: {
       invoke(channel, value) {
         assert.strictEqual(channel, page === "settings" ? "settings:save" : "wizard:complete");
+        // Both forms send { settings, baseline } (main/ipc.js commitSettings).
+        assert.ok(value && typeof value.settings === "object", "save request carries settings");
+        assert.ok("baseline" in value, "save request carries the shared-field baseline");
         invokeCount++;
-        payload = value;
-        return Promise.resolve({ settings: value, hotkey: { ok: true } });
+        payload = value.settings;
+        return Promise.resolve({ settings: value.settings, hotkey: { ok: true } });
       },
     },
   };
@@ -382,7 +386,7 @@ function microphonePage(source, page) {
       ]);
       await pending;
       if (page === "settings") {
-        await context.earheart.invoke("settings:save", context.collect());
+        await context.earheart.invoke("settings:save", { settings: context.collect(), baseline: context.baseline });
       } else {
         await context.finish();
       }
@@ -414,6 +418,13 @@ for (const [page, source] of [["settings", js], ["wizard", wizardJs]]) {
     assert.strictEqual(result.invokeCount, 1);
   });
 }
+// The save button's request, not just collect(): main reconciles shared
+// fields against `baseline` (main/ipc.js commitSettings), so a save that drops
+// it silently lets a stale form value overwrite a tray change.
+test("the Settings save button sends { settings, baseline }", () => {
+  assert.match(js, /earheart\.invoke\("settings:save", \{ settings: current, baseline \}\)/);
+});
+
 test("permission-status.js loads before settings.js, which uses it", () => {
   // settings.js only reaches for these when Fix is clicked or the window
   // regains focus, so a dropped tag passes the smoke checks and throws later.

@@ -79,6 +79,28 @@ test("every channel the renderers listen on is in the preload LISTEN allowlist",
   assert.deepStrictEqual(missing, [], `preload LISTEN is missing: ${missing.join(", ")}`);
 });
 
+// The other direction: a channel main pushes to a window but the preload LISTEN
+// allowlist doesn't carry can't be subscribed to, so the renderer's
+// earheart.on() throws and the update never lands.
+test("every channel main pushes to a window is in the preload LISTEN allowlist", () => {
+  const pushed = channels(
+    main,
+    /(?:sendToForms|sendToSettings|sendToOverlay|broadcast|webContents\.send)\(\s*"([a-z:-]+)"/g
+  );
+  assert.ok(pushed.has("settings:changed"), "main should push settings:changed");
+  const missing = [...pushed].filter((c) => !LISTEN.has(c)).sort();
+  assert.deepStrictEqual(missing, [], `preload LISTEN is missing: ${missing.join(", ")}`);
+});
+
+// Both forms must listen for settings saved elsewhere (#190), or an open form
+// shows — and on save, sends — a stale output mode.
+test("Settings and the wizard both listen for settings:changed", () => {
+  for (const file of ["settings.js", "wizard.js"]) {
+    const source = fs.readFileSync(path.join(ROOT, "renderer", file), "utf8");
+    assert.match(source, /earheart\.on\(\s*"settings:changed"/, `${file} should listen for settings:changed`);
+  }
+});
+
 // logs:open answers with an `action` naming which of its three fallbacks ran,
 // and the renderer switches on that string to phrase the status line. The two
 // sides are joined by nothing but the literal, so renaming one silently drops

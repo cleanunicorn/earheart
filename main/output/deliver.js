@@ -289,6 +289,10 @@ async function deliver(text, cfg, signal) {
   // but its promise still stands: if that transcript is still on the
   // clipboard, put the user's contents back now, before this dictation takes
   // its own snapshot — otherwise re-dictating within the second loses them.
+  // The trade: a target app still reading that paste gets the restored
+  // contents instead. There is no signal for when a paste has been consumed,
+  // and the previous keystroke has long been sent (dictations are serialized),
+  // so the window is cut short rather than the snapshot dropped.
   if (pendingRestore) {
     const { timer, text: previousText, snap } = pendingRestore;
     clearTimeout(timer);

@@ -501,6 +501,7 @@ test("installMac swaps in the extracted bundle through the swap script", async (
 
 test("init sweeps the extraction dir but keeps a verified download", async (t) => {
   const ctx = loadUpdates(t);
+  fs.mkdirSync(ctx.stagingDir, { mode: 0o700 });
   fs.mkdirSync(path.join(ctx.stagingDir, "staging", "Earheart.app"), { recursive: true });
   fs.writeFileSync(ctx.staged, ASSET_BYTES);
 
@@ -508,6 +509,21 @@ test("init sweeps the extraction dir but keeps a verified download", async (t) =
 
   await waitFor(() => !fs.existsSync(path.join(ctx.stagingDir, "staging")), "staging sweep");
   assert.deepStrictEqual(fs.readFileSync(ctx.staged), ASSET_BYTES);
+});
+
+test("init does not sweep through a symlink at the staging dir path", POSIX, async (t) => {
+  const ctx = loadUpdates(t);
+  const elsewhere = path.join(ctx.root, "elsewhere");
+  fs.mkdirSync(path.join(elsewhere, "staging"), { recursive: true });
+  fs.symlinkSync(elsewhere, ctx.stagingDir);
+  // The legacy dir is swept after the staging dir: its removal marks the end.
+  const legacy = path.join(ctx.temp, "earheart-update");
+  fs.mkdirSync(legacy);
+
+  ctx.updates.init({});
+
+  await waitFor(() => !fs.existsSync(legacy), "sweep to finish");
+  assert.ok(fs.existsSync(path.join(elsewhere, "staging")), "link target untouched");
 });
 
 test("init removes our old shared temp staging dir", async (t) => {

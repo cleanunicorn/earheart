@@ -798,12 +798,27 @@ function runDetachedScript(dir, name, content, args) {
 // the shared temp dir and, on macOS, a leftover .update-old bundle if the swap
 // script's own cleanup lost a race with shutdown.
 async function sweepLeftovers() {
-  await fsp.rm(path.join(updateDirPath(), "staging"), { recursive: true, force: true });
+  await sweepUpdateDir(updateDirPath());
   await sweepLegacyDir(path.join(app.getPath("temp"), "earheart-update"));
   if (installKind === "mac-app") {
     const bundle = path.resolve(process.execPath, "..", "..", "..");
     await fsp.rm(`${bundle}.update-old`, { recursive: true, force: true });
   }
+}
+
+// Only sweep inside the staging dir when it passes the same check updateDir()
+// applies; otherwise leave it for the next download to replace, rather than
+// deleting through a symlink or inside someone else's dir.
+async function sweepUpdateDir(dir) {
+  let st;
+  try {
+    st = await fsp.lstat(dir);
+  } catch (err) {
+    if (err.code === "ENOENT") return;
+    throw err;
+  }
+  if (!isPrivateDir(st)) return;
+  await fsp.rm(path.join(dir, "staging"), { recursive: true, force: true });
 }
 
 // Before #186 updates staged in <temp>/earheart-update. Remove it if it is

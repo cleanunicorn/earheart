@@ -1695,6 +1695,8 @@ function loadTwoHostFacade() {
 const STT_CFG = { builtin: { model: registry.DEFAULT_STT_MODEL }, language: "" };
 const CLEANUP_CFG = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules" };
 const count = (host, type) => host.calls.filter((t) => t === type).length;
+// Let pending promise chains (a facade call reaching its host request) run.
+const drain = () => new Promise((resolve) => setImmediate(resolve));
 
 // Hold one request type in flight until the test releases (or fails) it, the
 // way a cold load sits in the real worker for seconds. The host reports busy
@@ -1845,7 +1847,7 @@ test("a worker mid cold-load is skipped and reported, not counted as idle", asyn
   const held = holdLoads(stt, "load-stt");
 
   const loading = facade.transcribe(Buffer.from("wav"), STT_CFG);
-  await new Promise((r) => setImmediate(r)); // let ensureStt reach the pending load
+  await drain(); // let ensureStt reach the pending load
   assert.ok(stt.busy(), "precondition: the load is actually in flight");
 
   assert.strictEqual(
@@ -2089,16 +2091,16 @@ test("a caller retrying straight from a failed load's rejection gets a fresh loa
   const first = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
   const retried = first.catch(() => facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL));
   held[0].reject(new Error("cleanup load failed"));
-  await new Promise((r) => setImmediate(r));
+  await drain();
   assert.strictEqual(count(cleanup, "load-cleanup"), 2, "the retry posted its own load");
   held[1].resolve({ ready: true });
   assert.deepStrictEqual(await retried, { ready: true });
 
   const sttFirst = facade.transcribe(Buffer.from("wav"), STT_CFG);
   const sttRetried = sttFirst.catch(() => facade.transcribe(Buffer.from("wav"), STT_CFG));
-  await new Promise((r) => setImmediate(r));
+  await drain();
   sttHeld[0].reject(new Error("stt load failed"));
-  await new Promise((r) => setImmediate(r));
+  await drain();
   assert.strictEqual(count(stt, "load-stt"), 2, "the STT retry posted its own load");
   sttHeld[1].resolve({ ready: true });
   assert.strictEqual(await sttRetried, "transcribed");
@@ -2126,11 +2128,11 @@ test("STT worker exit drops the in-flight load-stt memo", async () => {
   const held = holdLoads(stt, "load-stt");
 
   const first = facade.transcribe(Buffer.from("wav"), STT_CFG);
-  await new Promise((r) => setImmediate(r));
+  await drain();
   stt.die();
   // The dead worker's load is gone; a caller now must reach the successor.
   const next = facade.transcribe(Buffer.from("wav"), STT_CFG);
-  await new Promise((r) => setImmediate(r));
+  await drain();
   assert.strictEqual(count(stt, "load-stt"), 2);
   held[0].reject(new Error("engine process exited"));
   held[1].resolve({ ready: true });
@@ -2147,7 +2149,7 @@ test("concurrent cold transcribes share one load-stt", async () => {
 
   const first = facade.transcribe(Buffer.from("wav"), STT_CFG);
   const second = facade.transcribe(Buffer.from("wav"), STT_CFG);
-  await new Promise((r) => setImmediate(r));
+  await drain();
   assert.strictEqual(count(stt, "load-stt"), 1, "the second caller joins the in-flight load");
   held[0].resolve({ ready: true });
   assert.strictEqual(await first, "transcribed");
@@ -2164,12 +2166,12 @@ test("a failed STT load is not reused by the next caller", async () => {
   const held = holdLoads(stt, "load-stt");
 
   const first = facade.transcribe(Buffer.from("wav"), STT_CFG);
-  await new Promise((r) => setImmediate(r));
+  await drain();
   held[0].reject(new Error("stt load failed"));
   await assert.rejects(first, /stt load failed/);
 
   const retry = facade.transcribe(Buffer.from("wav"), STT_CFG);
-  await new Promise((r) => setImmediate(r));
+  await drain();
   assert.strictEqual(count(stt, "load-stt"), 2);
   held[1].resolve({ ready: true });
   assert.strictEqual(await retry, "transcribed");

@@ -596,6 +596,8 @@ async function downloadAsset(info, signal) {
   });
 
   try {
+    // Remove, then create exclusively, as writeFresh does: a symlink planted
+    // at `part` is replaced instead of written through.
     await fsp.rm(part, { recursive: true, force: true });
     const out = fs.createWriteStream(part, { flags: "wx", mode: 0o600 });
     await streamPipeline(body, meter, out, { signal });

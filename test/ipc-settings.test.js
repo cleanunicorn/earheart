@@ -20,7 +20,7 @@ function loadIpc(t, { remove = async () => {} } = {}) {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-ipc-"));
   t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
   const handlers = {};
-  const calls = { broadcasts: [], trayRefresh: 0, historyCleared: 0, opened: [], closed: 0 };
+  const calls = { broadcasts: [], trayRefresh: 0, historyCleared: 0 };
   const stubs = {
     [resolveFrom("electron")]: {
       app: { getPath: () => userData, getVersion: () => "0.35.1" },
@@ -42,10 +42,8 @@ function loadIpc(t, { remove = async () => {} } = {}) {
     },
     [resolveFrom("./windows")]: {
       sendToForms: (channel, payload) => calls.broadcasts.push({ channel, payload }),
-      openSettings: (options) => calls.opened.push(options),
-      closeWizard: () => {
-        calls.closed += 1;
-      },
+      openSettings() {},
+      closeWizard() {},
     },
     [resolveFrom("./tray")]: {
       refresh: () => {

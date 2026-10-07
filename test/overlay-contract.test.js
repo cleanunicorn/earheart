@@ -189,6 +189,8 @@ test("the recording cap falls back to 300 s for an unusable value", () => {
   }
   for (const good of [10, 300, 3600]) assert.strictEqual(cap(good), good);
   assert.strictEqual(cap(10.6), 11);
+  // Rejects, not clamps, just outside the range — main has already clamped.
+  assert.strictEqual(cap(9.4), 300);
 });
 
 test("startRecording takes its cap through recordingCapSeconds", () => {

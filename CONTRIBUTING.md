@@ -257,6 +257,13 @@ Design constraints worth keeping:
   aborts and awaits its download (`main/ipc.js`). A delete that fails (e.g.
   EBUSY on Windows) is reported, and the custom definition is kept so the user
   can retry.
+- **Updates stage privately and are re-verified before install.** The updater
+  downloads into `userData/updates` (0700; a symlink, file, foreign or
+  group/other-writable entry there is replaced, never trusted), never the
+  shared system temp dir. Every write there removes the path first and then
+  creates exclusively, so a planted symlink is replaced, not followed.
+  `installNow` re-hashes the staged file against the feed's sha512 right
+  before installing and refuses a mismatch (#186).
 - **The overlay window owns the microphone.** The main process never touches
   raw audio; it receives finished WAVs from the renderer — the final one on stop,
   plus periodic partial WAVs while recording for the live preview (re-transcribed,

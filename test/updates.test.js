@@ -384,6 +384,36 @@ test("installLinux replaces the AppImage without following planted symlinks", PO
   assert.strictEqual(ctx.calls.quit, 1);
 });
 
+// --- the handoff from download to install ---------------------------------
+
+test("a finished download installs straight away when no dictation is running", POSIX, async (t) => {
+  const appImage = asAppImage(t);
+  const ctx = loadUpdates(t, { isPackaged: true, dictation: "idle" });
+  const target = appImage(ctx.root);
+  ctx.updates.init({});
+
+  await download(ctx.updates);
+
+  assert.strictEqual(ctx.updates.getState().status, "installing");
+  assert.deepStrictEqual(fs.readFileSync(target), ASSET_BYTES);
+  assert.strictEqual(ctx.calls.spawn.length, 1);
+  assert.strictEqual(ctx.calls.quit, 1);
+});
+
+test("a finished download waits at ready while a dictation is running", POSIX, async (t) => {
+  const appImage = asAppImage(t);
+  const ctx = loadUpdates(t, { isPackaged: true, dictation: "recording" });
+  const target = appImage(ctx.root);
+  ctx.updates.init({});
+
+  await download(ctx.updates);
+
+  assert.strictEqual(ctx.updates.getState().status, "ready");
+  assert.strictEqual(fs.readFileSync(target, "utf8"), "old app\n");
+  assert.strictEqual(ctx.calls.spawn.length, 0);
+  assert.strictEqual(ctx.calls.quit, 0);
+});
+
 // --- AC3: install re-verifies the staged file -----------------------------
 
 test("installNow refuses a staged file tampered with after download", POSIX, async (t) => {

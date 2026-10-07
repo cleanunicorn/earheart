@@ -14,7 +14,10 @@ const path = require("node:path");
 // Default silence deadline: a request is rejected after this long with no
 // reply AND no progress. Interim progress messages re-arm it (see request()),
 // so this bounds a wedged worker, not a slow-but-progressing one — model loads
-// and long transcriptions emit nothing and must still fit under it.
+// and long transcriptions emit nothing and must still fit under it. Missing it
+// is treated as a wedge: the worker is retired, so a silent phase that runs
+// past it also fails the worker's other requests (they fall back as
+// ENGINE_EXITED).
 const DEFAULT_REQUEST_TIMEOUT_MS = 180000;
 
 // Deadline for the "loadcheck" request (scripts/engine-smoke.js and the
@@ -109,7 +112,9 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
    * The worker may post interim `{ id, progress }` messages before its reply;
    * they invoke `onProgress` without settling the promise, and each one resets
    * the timeout — the ceiling bounds *silence*, not total duration, so a slow
-   * but visibly progressing inference is never cut off.
+   * but visibly progressing inference is never cut off. A request that misses
+   * it rejects with ENGINE_TIMEOUT and retires the worker: its other requests
+   * reject with ENGINE_EXITED, and the next request forks a fresh one.
    * @param {string} type
    * @param {object} [args]
    * @param {{timeoutMs?: number, onProgress?: (progress: number) => void}} [opts]

@@ -18,9 +18,10 @@ const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(trayP
 
 // Load the real tray.js + settings.js against fakes and init() the tray.
 // `menus` collects every menu template the tray builds, newest last.
-function loadTray(t, { historyEntries = [] } = {}) {
+function loadTray(t, { historyEntries = [], stored } = {}) {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-tray-"));
   t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
+  if (stored) fs.writeFileSync(path.join(userData, "settings.json"), JSON.stringify(stored));
   const menus = [];
   const warnings = [];
   const entries = historyEntries;
@@ -163,4 +164,24 @@ test("Copy last transcription is disabled when the history is empty", (t) => {
 test("Copy last transcription is enabled when the history has an entry", (t) => {
   const { menus } = loadTray(t, { historyEntries: [{ text: "hello" }] });
   assert.strictEqual(item(menus.at(-1), "Copy last transcription").enabled, true);
+});
+
+// A profile from before the explicit paste-copy mode stores "paste & keep on
+// clipboard" as { mode: "paste", restoreClipboard: false }. The tray used to
+// check "Paste into active app" for it, and clicking that kept the old flag,
+// so delivery went on keeping the transcript on the clipboard.
+test("a legacy paste-and-keep profile shows as paste-copy and a paste click restores", (t) => {
+  const { menus, readFile } = loadTray(t, {
+    stored: { output: { mode: "paste", restoreClipboard: false } },
+  });
+  const legacyMenu = menus.at(-1);
+  assert.strictEqual(item(legacyMenu, "Paste and keep on clipboard").checked, true);
+  assert.strictEqual(item(legacyMenu, "Paste into active app").checked, false);
+
+  item(legacyMenu, "Paste into active app").click();
+
+  assert.deepStrictEqual(
+    { mode: readFile().output.mode, restoreClipboard: readFile().output.restoreClipboard },
+    { mode: "paste", restoreClipboard: true }
+  );
 });

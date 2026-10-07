@@ -372,6 +372,15 @@ function notifyChanged(previous) {
 // True until settings are saved for the first time. Used to show the setup
 // wizard exactly once: both finishing and skipping the wizard persist the
 // settings file.
+// The output mode delivery actually performs. Legacy files expressed "paste &
+// keep on clipboard" as paste mode with clipboard restore off, which behaves
+// as paste-copy (main/output/deliver.js restores only for paste + restore).
+// The tray, the forms (renderer/settings-sync.js displayedOutputMode, kept in
+// step by test/settings-sync.test.js) and the commit path all compare this.
+function effectiveOutputMode(output) {
+  return output.mode === "paste" && !output.restoreClipboard ? "paste-copy" : output.mode;
+}
+
 function isFirstRun() {
   return !fs.existsSync(settingsPath());
 }
@@ -380,6 +389,7 @@ module.exports = {
   get,
   save,
   onChanged,
+  effectiveOutputMode,
   isFirstRun,
   migrateLegacy,
   DEFAULTS,

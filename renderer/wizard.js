@@ -188,6 +188,9 @@ function collect() {
     output: {
       ...current.output,
       mode: document.querySelector('input[name="output-mode"]:checked').value,
+      // As in Settings: the explicit paste-copy mode replaces the legacy
+      // restoreClipboard: false, so plain paste always restores.
+      restoreClipboard: true,
     },
     stt: {
       ...current.stt,
@@ -469,11 +472,16 @@ function applySettingsChange({ previous, current: saved }) {
   current.customModels = saved.customModels;
   current.updates = { ...saved.updates };
   baseline.remind = saved.updates.remind !== false;
-  if (previous.output.mode !== saved.output.mode) {
-    current.output = { ...current.output, mode: saved.output.mode };
-    const radio = document.querySelector(`input[name="output-mode"][value="${saved.output.mode}"]`);
+  if (
+    previous.output.mode !== saved.output.mode ||
+    previous.output.restoreClipboard !== saved.output.restoreClipboard
+  ) {
+    current.output = { ...current.output, mode: saved.output.mode, restoreClipboard: saved.output.restoreClipboard };
+    const radio = document.querySelector(
+      `input[name="output-mode"][value="${displayedOutputMode(saved.output)}"]`
+    );
     if (radio) radio.checked = true;
-    baseline.outputMode = saved.output.mode;
+    baseline.outputMode = sharedBaseline(saved).outputMode;
     renderSummary();
   }
 }
@@ -521,7 +529,7 @@ async function finish() {
   hotkeyInput.value = current.hotkey;
   $("cleanup-enabled").checked = current.cleanup.enabled;
   document.querySelector(
-    `input[name="output-mode"][value="${current.output.mode}"]`
+    `input[name="output-mode"][value="${displayedOutputMode(current.output)}"]`
   ).checked = true;
 
   populateCleanupModels();

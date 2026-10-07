@@ -41,19 +41,35 @@ test("changes that arrive before the form loads are applied in order on ready()"
   });
 });
 
-test("sharedBaseline reads the stored mode and normalizes remind", () => {
+test("sharedBaseline reads the displayed mode and normalizes remind", () => {
   assert.deepStrictEqual(
-    sharedBaseline({ output: { mode: "clipboard" }, updates: { remind: false } }),
+    sharedBaseline({ output: { mode: "clipboard", restoreClipboard: true }, updates: { remind: false } }),
     { outputMode: "clipboard", remind: false }
   );
-  assert.deepStrictEqual(sharedBaseline({ output: { mode: "paste" }, updates: {} }), {
+  assert.deepStrictEqual(sharedBaseline({ output: { mode: "paste", restoreClipboard: true }, updates: {} }), {
     outputMode: "paste",
     remind: true,
   });
+  assert.strictEqual(
+    sharedBaseline({ output: { mode: "paste", restoreClipboard: false }, updates: {} }).outputMode,
+    "paste-copy"
+  );
 });
 
 test("displayedOutputMode shows the legacy paste-without-restore encoding as paste-copy", () => {
   assert.strictEqual(displayedOutputMode({ mode: "paste", restoreClipboard: false }), "paste-copy");
   assert.strictEqual(displayedOutputMode({ mode: "paste", restoreClipboard: true }), "paste");
   assert.strictEqual(displayedOutputMode({ mode: "clipboard", restoreClipboard: false }), "clipboard");
+});
+
+// main compares the form's baseline against effectiveOutputMode; the two
+// mappings must agree or a legacy profile reads as changed on every save.
+test("the forms' legacy mapping matches main's effectiveOutputMode", () => {
+  const { effectiveOutputMode } = require("../main/settings");
+  for (const mode of ["paste", "paste-copy", "clipboard"]) {
+    for (const restoreClipboard of [true, false]) {
+      const output = { mode, restoreClipboard };
+      assert.strictEqual(displayedOutputMode(output), effectiveOutputMode(output), JSON.stringify(output));
+    }
+  }
 });

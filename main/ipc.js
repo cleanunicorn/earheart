@@ -64,14 +64,21 @@ const SHARED_FIELDS = [
   {
     name: "outputMode",
     type: "string",
-    read: (cfg) => cfg.output?.mode,
-    write: (cfg, mode) => ({ ...cfg, output: { ...cfg.output, mode } }),
+    // Compared as the mode delivery performs, so retiring the legacy
+    // { mode: "paste", restoreClipboard: false } encoding counts as a change.
+    read: (cfg) => (cfg.output ? settings.effectiveOutputMode(cfg.output) : undefined),
+    // Keep main's restoreClipboard with its mode: the pair is what decides
+    // whether "paste" restores the clipboard (main/output/deliver.js).
+    write: (cfg, live) => ({
+      ...cfg,
+      output: { ...cfg.output, mode: live.output.mode, restoreClipboard: live.output.restoreClipboard },
+    }),
   },
   {
     name: "remind",
     type: "boolean",
     read: (cfg) => cfg.updates?.remind !== false,
-    write: (cfg, remind) => ({ ...cfg, updates: { ...cfg.updates, remind } }),
+    write: (cfg, live) => ({ ...cfg, updates: { ...cfg.updates, remind: live.updates.remind } }),
   },
 ];
 
@@ -91,8 +98,7 @@ function withMainOwned(next, live, baseline) {
   for (const field of SHARED_FIELDS) {
     const seen = baseline[field.name];
     if (typeof seen !== field.type) continue;
-    const current = field.read(live);
-    if (current !== seen) out = field.write(out, current);
+    if (field.read(live) !== seen) out = field.write(out, live);
   }
   return out;
 }

@@ -120,7 +120,7 @@ test("the form baseline names exactly main's shared fields", () => {
   assert.ok(block, "main/ipc.js should define SHARED_FIELDS");
   const mainNames = [...block[1].matchAll(/name:\s*"([A-Za-z]+)"/g)].map((m) => m[1]).sort();
   const { sharedBaseline } = require("../renderer/settings-sync");
-  const formNames = Object.keys(sharedBaseline({ output: { mode: "paste" }, updates: {} })).sort();
+  const formNames = Object.keys(sharedBaseline({ output: { mode: "paste", restoreClipboard: true }, updates: {} })).sort();
   assert.deepStrictEqual(formNames, mainNames);
   // Neither page re-encodes the baseline by hand.
   for (const file of ["settings.js", "wizard.js"]) {

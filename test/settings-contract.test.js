@@ -419,6 +419,8 @@ for (const [page, source] of [["settings", js], ["wizard", wizardJs]]) {
     assert.strictEqual(result.invokeCount, 1);
     if (page === "wizard") {
       assert.strictEqual(result.saved.output.mode, "paste-copy");
+      // The explicit mode replaces the legacy restoreClipboard: false.
+      assert.strictEqual(result.saved.output.restoreClipboard, true);
       assert.strictEqual(result.saved.stt.engine, "builtin");
       assert.strictEqual(result.saved.cleanup.builtin.model, "cleanup-model");
       assert.strictEqual(result.saved.cleanup.style, "verbatim");

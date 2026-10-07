@@ -9,12 +9,13 @@
 // of SHARED_FIELDS in main/ipc.js — test/ipc-contract.test.js pins that, since
 // a key main doesn't know is skipped silently and the stale value wins.
 function sharedBaseline(cfg) {
-  return { outputMode: cfg.output.mode, remind: cfg.updates?.remind !== false };
+  return { outputMode: displayedOutputMode(cfg.output), remind: cfg.updates?.remind !== false };
 }
 
 // The output mode a form shows. Legacy settings expressed "paste & keep on
 // clipboard" as paste mode with clipboard restore turned off; show those as
-// the explicit paste-copy mode.
+// the explicit paste-copy mode. Mirrors effectiveOutputMode in
+// main/settings.js, which main compares the baseline against.
 function displayedOutputMode(output) {
   return output.mode === "paste" && !output.restoreClipboard ? "paste-copy" : output.mode;
 }

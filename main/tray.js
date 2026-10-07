@@ -27,6 +27,8 @@ function icon(name) {
 
 function buildMenu(app) {
   const cfg = settings.get();
+  // Check the radio for what delivery does, legacy encoding included.
+  const shownMode = settings.effectiveOutputMode(cfg.output);
   const state = pipeline.getState();
   const lastEntry = history.list()[0];
   return Menu.buildFromTemplate([
@@ -49,7 +51,7 @@ function buildMenu(app) {
     ...OUTPUT_MODES.map(({ label, mode }) => ({
       label,
       type: "radio",
-      checked: cfg.output.mode === mode,
+      checked: shownMode === mode,
       click: () => setOutputMode(mode),
     })),
     { type: "separator" },
@@ -80,7 +82,9 @@ function buildMenu(app) {
 function setOutputMode(mode) {
   const cur = settings.get();
   try {
-    settings.save({ ...cur, output: { ...cur.output, mode } });
+    // restoreClipboard: true retires the legacy encoding, as the Settings
+    // form does: "paste" must restore, "paste-copy" is the keep-it mode.
+    settings.save({ ...cur, output: { ...cur.output, mode, restoreClipboard: true } });
   } catch (err) {
     logger.warn(`could not save the output mode: ${err.message}`);
     refresh();

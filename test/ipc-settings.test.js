@@ -171,6 +171,27 @@ test("a form that already reflects a main change can change it again", (t) => {
   assert.strictEqual(readFile().output.mode, "paste");
 });
 
+// The legacy { mode: "paste", restoreClipboard: false } encoding behaves as
+// paste-copy. A tray click that retires it to real paste changes only
+// restoreClipboard, so main must compare modes as delivery sees them or the
+// open form's stale paste-copy wins.
+test("a form save keeps a tray click that retired the legacy paste-copy encoding", (t) => {
+  const { handlers, settings, readFile } = loadIpc(t);
+  const legacy = settings.get();
+  settings.save({ ...legacy, output: { ...legacy.output, mode: "paste", restoreClipboard: false } });
+  const snapshot = settings.get();
+  const baseline = { outputMode: "paste-copy", remind: true }; // what the form shows
+  const cur = settings.get();
+  settings.save({ ...cur, output: { ...cur.output, mode: "paste", restoreClipboard: true } });
+
+  // The form never touched its radio: it still shows (and sends) paste-copy.
+  const stale = { ...snapshot, output: { ...snapshot.output, mode: "paste-copy", restoreClipboard: true } };
+  handlers["settings:save"]({}, { settings: stale, baseline });
+
+  assert.strictEqual(readFile().output.mode, "paste");
+  assert.strictEqual(readFile().output.restoreClipboard, true);
+});
+
 test("a malformed save request is rejected without writing", (t) => {
   const { handlers, settings, readFile } = loadIpc(t);
   settings.save({ ...settings.get(), hotkey: "Kept" });

@@ -720,7 +720,7 @@ function applySettingsChange({ previous, current: saved }) {
   ) {
     current.output = { ...current.output, mode: saved.output.mode, restoreClipboard: saved.output.restoreClipboard };
     showOutputMode(saved.output);
-    baseline.outputMode = saved.output.mode;
+    baseline.outputMode = sharedBaseline(saved).outputMode;
   }
   const remind = saved.updates.remind !== false;
   if ((previous.updates.remind !== false) !== remind) {

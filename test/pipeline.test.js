@@ -234,8 +234,14 @@ function dictationRig({
   deliver: deliverText,
   onHistory,
   clean: cleanupText,
+  sttReadiness = () => ({ ok: true }),
+  notificationsSupported = true,
 } = {}) {
   const log = {
+    warmups: [],
+    overlaysCreated: 0,
+    settingsOpened: 0,
+    notes: [],
     transcribe: [],
     delivered: [],
     history: [],
@@ -259,11 +265,17 @@ function dictationRig({
   let liveDeps = null;
   const pipeline = loadPipelineWith({
     engines: {
-      ensureStt: ensureStt || (async () => {}),
+      ensureStt: async (...args) => {
+        log.warmups.push("stt");
+        return ensureStt ? ensureStt(...args) : undefined;
+      },
       restartStt() {},
       unloadIdle: () => true,
       cancelClean() {},
-      primeCleanup: async () => {},
+      primeCleanup: async () => {
+        log.warmups.push("cleanup");
+      },
+      getSttReadiness: (sttCfg) => sttReadiness(sttCfg),
     },
     settings: { get: () => cfg },
     overrides: {
@@ -271,16 +283,30 @@ function dictationRig({
         app: { getPath: () => os.tmpdir() },
         ipcMain: { on: (channel, fn) => (handlers[channel] = fn) },
         Notification: class {
+          static isSupported() {
+            return notificationsSupported;
+          }
           constructor(opts) {
             this.opts = opts;
+            this.handlers = {};
+          }
+          on(event, fn) {
+            this.handlers[event] = fn;
           }
           show() {
             log.notifications.push(this.opts);
+            log.notes.push(this);
           }
         },
       },
       "./windows": {
-        createOverlay: () => ({ webContents: { isLoading: () => false } }),
+        createOverlay: () => {
+          log.overlaysCreated += 1;
+          return { webContents: { isLoading: () => false } };
+        },
+        openSettings: () => {
+          log.settingsOpened += 1;
+        },
         showOverlay() {},
         hideOverlay() {},
         sendToSettings: (channel) => log.settingsEvents.push(channel),
@@ -702,4 +728,79 @@ test("pipeline: failed cleanup delivers raw once, records failure and notifies",
   assert.strictEqual(rig.log.history[0].text, "Keep these words.");
   assert.strictEqual(rig.log.history[0].cleaned, false);
   assert.ok(rig.log.notifications.some((entry) => /cleanup failed/.test(entry.title)));
+});
+
+/* ---------------- missing speech model (#194) ---------------- */
+
+const MISSING = { ok: false, reason: "missing", modelId: "stt-model", label: "Parakeet TDT 0.6B v3 (int8)" };
+
+test("pipeline: a missing built-in model refuses the recording before the mic opens", () => {
+  const rig = dictationRig({ cleanup: true, sttReadiness: () => MISSING, transcribe: async () => "unused" });
+
+  rig.pipeline.toggle();
+
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+  assert.strictEqual(rig.log.lastStart, null, "no record:start was sent");
+  assert.strictEqual(rig.log.overlaysCreated, 0, "no recording overlay was opened");
+  assert.deepStrictEqual(rig.log.warmups, [], "no engine was warmed for a dictation that can't run");
+  assert.deepStrictEqual(rig.log.transcribe, []);
+  assert.deepStrictEqual(rig.log.delivered, []);
+  assert.deepStrictEqual(rig.log.history, []);
+  assert.strictEqual(rig.log.notifications.length, 1);
+  const note = rig.log.notifications[0];
+  assert.match(note.title, /speech model not downloaded/);
+  assert.ok(note.body.includes(MISSING.label), "names the model by its registry label");
+  assert.strictEqual(rig.log.settingsOpened, 0);
+  rig.log.notes[0].handlers.click();
+  assert.strictEqual(rig.log.settingsOpened, 1, "the notice opens Settings");
+});
+
+test("pipeline: the model check runs on every press, so a finished download records at once", async () => {
+  let readiness = MISSING;
+  const rig = dictationRig({ sttReadiness: () => readiness, transcribe: async () => "hello" });
+
+  rig.pipeline.toggle();
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+
+  readiness = { ok: true };
+  await rig.dictate(speechWav(2));
+
+  assert.deepStrictEqual(rig.log.delivered, ["hello"]);
+});
+
+test("pipeline: the remote engine records as before", async () => {
+  const seen = [];
+  const rig = dictationRig({
+    engine: "remote",
+    sttReadiness: (sttCfg) => {
+      seen.push(sttCfg.engine);
+      return sttCfg.engine === "builtin" ? MISSING : { ok: true };
+    },
+    transcribe: async () => "remote words",
+  });
+
+  await rig.dictate(speechWav(2));
+
+  assert.deepStrictEqual(seen, ["remote"]);
+  assert.deepStrictEqual(rig.log.delivered, ["remote words"]);
+  assert.strictEqual(rig.log.notifications.length, 0);
+});
+
+test("pipeline: an unknown model id is reported, not thrown", () => {
+  const rig = dictationRig({ sttReadiness: () => ({ ok: false, reason: "unknown", modelId: "gone" }) });
+
+  assert.doesNotThrow(() => rig.pipeline.toggle());
+
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+  assert.match(rig.log.notifications[0].title, /no speech model/);
+});
+
+test("pipeline: without a notification service a missing model opens Settings", () => {
+  const rig = dictationRig({ sttReadiness: () => MISSING, notificationsSupported: false });
+
+  rig.pipeline.toggle();
+
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+  assert.strictEqual(rig.log.notifications.length, 0);
+  assert.strictEqual(rig.log.settingsOpened, 1);
 });

@@ -25,8 +25,15 @@ const { createPersistedRtfEstimator } = require("./util/rtf");
 const { wavDurationSec, wavSliceFromFrame } = require("./util/wav");
 const { transcribeChunked } = require("./chunked-decode");
 const logger = require("./util/logger");
+const { createNotifier, sttNotReadyNotice } = require("./setup-notices");
 
 let state = "idle"; // idle | recording | processing
+// Shows the "model not downloaded" notice; its click opens Settings.
+const setupNotifier = createNotifier({
+  Notification,
+  openSettings: () => windows.openSettings(),
+  logger,
+});
 let session = 0; // current dictation session id
 let abortController = null;
 const stateListeners = new Set();
@@ -322,6 +329,17 @@ function pauseToggle() {
 
 function startRecording() {
   const cfg = settings.get();
+  // A built-in model that isn't on disk can't transcribe this dictation: say
+  // so now, before the microphone opens, instead of after the user has spoken
+  // (the final pass would throw "not downloaded" and the take would be lost).
+  // Asked on every press, so finishing the download or switching engines works
+  // at once. Nothing has started yet, so there is nothing to undo.
+  const readiness = engines.getSttReadiness(cfg.stt);
+  if (!readiness.ok) {
+    logger.warn(`not recording: speech model ${readiness.modelId} is ${readiness.reason}`);
+    setupNotifier.show(sttNotReadyNotice(readiness), { critical: true });
+    return;
+  }
   const sid = ++session;
   setState("recording");
   const liveOn = cfg.stt.engine === "builtin" && cfg.stt.livePreview?.enabled;

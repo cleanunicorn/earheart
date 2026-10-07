@@ -47,6 +47,26 @@ function remove(kind, modelId) {
 /* ---------------- speech-to-text ---------------- */
 
 let loadedStt = null;
+const sttLoad = { inflight: null };
+
+// Share one in-flight load between concurrent callers asking for the same
+// thing. Recording start warms the engines and the final pass loads them again,
+// so on a cold start both callers can arrive before the first load settles;
+// each posting its own load made the worker build the model twice. Only the
+// in-flight promise is shared: once it settles (either way) the slot is
+// cleared, so a failed load is retried rather than replayed.
+function sharedLoad(slot, key, start) {
+  if (slot.inflight?.key === key) return slot.inflight.promise;
+  const entry = { key, promise: start() };
+  slot.inflight = entry;
+  entry.promise
+    .catch(() => {})
+    .finally(() => {
+      // A newer load (another model, or one after a worker exit) owns the slot.
+      if (slot.inflight === entry) slot.inflight = null;
+    });
+  return entry.promise;
+}
 
 // Load the STT model into the worker if it isn't already. Throws if the model
 // isn't downloaded yet — callers surface that (or fall back to the HTTP path).
@@ -56,12 +76,14 @@ async function ensureStt(modelId) {
     throw new Error(`STT model "${modelId}" is not downloaded yet`);
   }
   if (loadedStt !== modelId) {
-    await sttHost.request("load-stt", {
-      dir: manager.modelDir(modelsDir(), model),
-      sherpa: model.sherpa,
-      modelId,
+    await sharedLoad(sttLoad, modelId, async () => {
+      await sttHost.request("load-stt", {
+        dir: manager.modelDir(modelsDir(), model),
+        sherpa: model.sherpa,
+        modelId,
+      });
+      loadedStt = modelId;
     });
-    loadedStt = modelId;
   }
 }
 
@@ -149,8 +171,14 @@ function cleanupRequest(type, args, opts) {
   return cleanupHost.request(type, args, opts);
 }
 
+const cleanupLoad = { inflight: null };
+
+// The key includes the context size: a changed size is a different load.
 async function ensureCleanup(modelId) {
-  return cleanupRequest("load-cleanup", cleanupModel(modelId));
+  const model = cleanupModel(modelId);
+  return sharedLoad(cleanupLoad, `${modelId}:${model.contextSize}`, () =>
+    cleanupRequest("load-cleanup", model)
+  );
 }
 
 // Prefill-ahead: load the cleanup model if needed and evaluate the prompt
@@ -211,10 +239,12 @@ async function clean(transcript, cfg, signal, { onProgress } = {}) {
 // identity is authoritative inside the worker, checked on every operation.
 function forgetStt() {
   loadedStt = null;
+  sttLoad.inflight = null;
 }
 
 function forgetCleanup() {
   cleanupResident = false;
+  cleanupLoad.inflight = null;
 }
 
 function stop() {
@@ -241,8 +271,9 @@ function stopIfIdle(host) {
 }
 
 // Give an idle dictation's memory back to the OS by exiting the worker that
-// holds it. The next transcribe/clean re-forks it and re-runs
-// ensureStt/ensureCleanup.
+// holds it. The next transcribe/clean re-forks it and reloads the model: STT
+// through ensureStt, cleanup inside the worker, which every clean/prime
+// carries its model descriptor to.
 //
 // Exiting is the only thing that actually reclaims. Dropping the engine handles
 // in-process does not: sherpa-onnx exposes no free() at all, so the recognizer

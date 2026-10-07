@@ -82,3 +82,15 @@ test("waitForLoad defaults to a 15 s deadline", async (t) => {
   t.mock.timers.tick(1);
   await assert.rejects(wait, /within 15000 ms/);
 });
+
+test("waitForLoad cancels its deadline timer once the page loads", async () => {
+  const activeTimeouts = () =>
+    process.getActiveResourcesInfo().filter((kind) => kind === "Timeout").length;
+  const wc = fakeWebContents();
+  const before = activeTimeouts();
+  const wait = waitForLoad(wc, 60_000);
+  assert.strictEqual(activeTimeouts(), before + 1, "the deadline timer is armed");
+  wc.emit("did-finish-load");
+  await wait;
+  assert.strictEqual(activeTimeouts(), before, "the deadline timer is cleared");
+});

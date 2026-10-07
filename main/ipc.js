@@ -24,8 +24,12 @@ const {
 const { STYLES: CLEANUP_STYLES } = require("./cleanup-styles");
 const { encodeSilenceWav } = require("./util/wav");
 
+// One model's key in `downloads` and `busyModels` (the renderer's
+// modelDownloadKey uses the same shape).
+const modelKey = (kind, modelId) => `${kind}:${modelId}`;
+
 // In-flight model downloads, so the UI can cancel them and a removal can wait
-// for them. Keyed by kind:modelId; each entry is { controller, done }, where
+// for them. Keyed by modelKey; each entry is { controller, done }, where
 // `done` settles once the download has stopped writing and reported.
 const downloads = new Map();
 // Models whose files are being deleted or replaced. A download for one of
@@ -36,7 +40,7 @@ const busyModels = new Set();
 // Abort a model's in-flight download, if any, and wait until it has stopped
 // writing. Never throws: the download reports its own outcome.
 async function stopDownload(kind, modelId) {
-  const entry = downloads.get(`${kind}:${modelId}`);
+  const entry = downloads.get(modelKey(kind, modelId));
   if (!entry) return;
   entry.controller.abort();
   await entry.done.catch(() => {});
@@ -45,7 +49,7 @@ async function stopDownload(kind, modelId) {
 // Run `fn` with the given models marked busy: their downloads are stopped and
 // awaited first, and none can restart until `fn` settles.
 async function withModelsBusy(models, fn) {
-  const keys = [...new Set(models.map(({ kind, id }) => `${kind}:${id}`))];
+  const keys = [...new Set(models.map(({ kind, id }) => modelKey(kind, id)))];
   for (const key of keys) {
     if (busyModels.has(key)) throw new Error("This model is already being changed");
   }
@@ -418,7 +422,7 @@ function init({ applyHotkeys, onSettingsChanged }) {
 
   // Stream a model download to disk, posting progress to the requesting window.
   ipcMain.handle("models:download", async (event, { kind, modelId }) => {
-    const key = `${kind}:${modelId}`;
+    const key = modelKey(kind, modelId);
     if (downloads.has(key)) return { ok: false, error: "Already downloading" };
     if (busyModels.has(key)) {
       // Like every other terminal outcome (except "Already downloading", whose
@@ -460,7 +464,7 @@ function init({ applyHotkeys, onSettingsChanged }) {
   });
 
   ipcMain.handle("models:cancel", (event, { kind, modelId }) => {
-    const entry = downloads.get(`${kind}:${modelId}`);
+    const entry = downloads.get(modelKey(kind, modelId));
     if (entry) entry.controller.abort();
     return { ok: true };
   });

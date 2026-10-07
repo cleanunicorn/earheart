@@ -27,7 +27,10 @@ function createFakeChild() {
     emit(event, payload) {
       for (const cb of listeners[event]) cb(payload);
     },
-    kill() {},
+    killed: false,
+    kill() {
+      this.killed = true;
+    },
   };
 }
 
@@ -131,6 +134,31 @@ test("host: a request times out on silence, and progress resets the clock", asyn
   }
   child.emit("message", { id, ok: true, result: "slow but alive" });
   assert.strictEqual(await promise, "slow but alive");
+});
+
+test("host: a timeout retires the wedged worker so later requests reach a fresh one", async () => {
+  // A worker stuck in a native call never replies again. Rejecting only the
+  // timed-out request left it in place, and every later request queued behind
+  // it; with idle unload off, nothing ever recovered it.
+  const { child: wedged, host } = setup();
+  let exits = 0;
+  host.onExit(() => exits++);
+
+  const sibling = host.request("prime-cleanup", {}, { timeoutMs: 10_000 });
+  const silent = host.request("clean", {}, { timeoutMs: 20 });
+  await assert.rejects(silent, (err) => err.code === "ENGINE_TIMEOUT");
+  assert.strictEqual(wedged.killed, true, "the wedged worker is killed");
+  assert.strictEqual(exits, 1, "callers are told to forget what it had loaded");
+  // The other request on the wedged worker fails the same way a crash does, so
+  // its caller falls back instead of waiting out its own deadline.
+  await assert.rejects(sibling, (err) => err.code === "ENGINE_EXITED");
+  assert.strictEqual(host.busy(), false);
+
+  const fresh = (currentChild = createFakeChild());
+  const next = host.request("clean", {});
+  assert.strictEqual(fresh.sent.length, 1, "the next request forks a successor");
+  fresh.emit("message", { id: fresh.sent[0].id, ok: true, result: "from fresh" });
+  assert.strictEqual(await next, "from fresh");
 });
 
 test("host: concurrent requests get their own progress, routed by id", async () => {

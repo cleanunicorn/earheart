@@ -213,6 +213,38 @@ for (const { name, service, call } of clients) {
     });
   });
 
+  test(`remote ${name}: a connection dropped mid-reply says so, not "isn't JSON"`, async () => {
+    const handler = (req, res) => {
+      req.resume();
+      res.writeHead(200, { "content-type": "application/json" });
+      res.write('{"te');
+      setTimeout(() => res.socket.destroy(), 20);
+    };
+    await withServer(handler, async (baseUrl) => {
+      await assert.rejects(call({ baseUrl }), (err) => {
+        assert.strictEqual(err.message, `${service} dropped the connection before finishing its reply`);
+        assert.ok(err.cause, "the transport error is kept for the log");
+        return true;
+      });
+    });
+  });
+
+  test(`remote ${name}: a cancel while the reply streams in stays a cancel`, async () => {
+    const controller = new AbortController();
+    const handler = (req, res) => {
+      req.resume();
+      res.writeHead(200, { "content-type": "application/json" });
+      res.write('{"te');
+      setTimeout(() => controller.abort(), 20);
+    };
+    await withServer(handler, async (baseUrl) => {
+      await assert.rejects(call({ baseUrl }, controller.signal), (err) => {
+        assert.strictEqual(err.name, "AbortError");
+        return true;
+      });
+    });
+  });
+
   test(`remote ${name}: a cancel stays a cancel`, async () => {
     await withServer(() => {}, async (baseUrl) => {
       const controller = new AbortController();

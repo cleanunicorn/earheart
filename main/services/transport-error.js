@@ -20,9 +20,11 @@ function transportError(err, url, { service, timeoutS }) {
 }
 
 // The deadline covers the body too: a server that sends headers and then stalls
-// is a timeout, not a malformed reply. Anything else means it wasn't JSON. The
-// parse error is not kept as the cause: its message quotes the start of the
-// body, and providers echo keys and dictated text there.
+// is a timeout, not a malformed reply. A JSON parse failure (SyntaxError) means
+// the reply wasn't JSON; its error is not kept as the cause, because its
+// message quotes the start of the body, and providers echo keys and dictated
+// text there. Anything else (undici's "terminated") is the connection dropping
+// mid-reply.
 async function readJson(res, url, opts) {
   try {
     return await res.json();
@@ -30,7 +32,10 @@ async function readJson(res, url, opts) {
     if (err?.name === "AbortError" || err?.name === "TimeoutError") {
       throw transportError(err, url, opts);
     }
-    throw new Error(`${opts.service} returned a response that isn't JSON`);
+    if (err?.name === "SyntaxError") {
+      throw new Error(`${opts.service} returned a response that isn't JSON`);
+    }
+    throw new Error(`${opts.service} dropped the connection before finishing its reply`, { cause: err });
   }
 }
 

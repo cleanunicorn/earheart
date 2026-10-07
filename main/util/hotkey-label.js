@@ -72,7 +72,7 @@ function prettyHotkey(accelerator, platform = process.platform) {
 function registrationHint(platform = process.platform) {
   return platform === "linux"
     ? "already in use, or your desktop blocks global shortcuts — see the Wayland note in Settings"
-    : "already in use by another app — choose another combination";
+    : "already in use by another app";
 }
 
 module.exports = { prettyHotkey, registrationHint };

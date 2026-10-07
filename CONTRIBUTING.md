@@ -198,6 +198,7 @@ main/                    Electron main process
   main.js                lifecycle, single-instance, --toggle forwarding
   pipeline.js            record → transcribe → clean → deliver state machine
   hotkeys.js             global shortcut registration
+  setup-notices.js       launch policy + "fix your setup" notices (→ Settings)
   settings.js            JSON settings with deep-merged defaults
   history.js             local transcription history
   tray.js                tray icon + menu

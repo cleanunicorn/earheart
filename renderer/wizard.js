@@ -509,6 +509,12 @@ async function finish() {
   }
   current = result.settings;
   baseline = sharedBaseline(current);
+  // Main may have kept its own output mode (a tray change the wizard hadn't
+  // seen yet); show what was actually saved.
+  const savedRadio = document.querySelector(
+    `input[name="output-mode"][value="${displayedOutputMode(current.output)}"]`
+  );
+  if (savedRadio) savedRadio.checked = true;
   if (!result.hotkey.ok) {
     // Stay in the wizard so the user can pick a combination that registers.
     status.textContent = "";

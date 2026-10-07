@@ -128,8 +128,11 @@ for (const channel of ["settings:save", "wizard:complete"]) {
     writeMainSide(settings);
 
     const edited = { ...snapshot, history: { ...snapshot.history, enabled: false } };
-    handlers[channel]({}, { settings: edited, baseline });
+    const reply = handlers[channel]({}, { settings: edited, baseline });
 
+    // The reply carries what was saved, which the form then shows.
+    assert.strictEqual(reply.settings.output.mode, "clipboard");
+    assert.strictEqual(reply.settings.updates.remind, false);
     const disk = readFile();
     assert.strictEqual(disk.updates.skippedVersion, "0.34.0");
     assert.strictEqual(disk.updates.lastSeenVersion, "0.34.0");

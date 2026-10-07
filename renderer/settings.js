@@ -784,6 +784,10 @@ saveButton.addEventListener("click", async () => {
     result = await earheart.invoke("settings:save", { settings: current, baseline });
     current = result.settings;
     baseline = sharedBaseline(current);
+    // Main may have kept its own value for a shared field (a tray change this
+    // form hadn't seen yet), so show what was actually saved.
+    showOutputMode(current.output);
+    $("updates-remind").checked = current.updates.remind !== false;
     // Older mains don't report a pause result; treat that as fine.
     pauseResult = result.pauseHotkey ?? { ok: true };
     if (result.hotkey.ok && pauseResult.ok) {

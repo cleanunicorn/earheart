@@ -333,6 +333,8 @@ function microphonePage(source, page) {
       },
       createElement: () => baseDocument.createElement(),
       querySelector(selector) {
+        // finish() re-checks the radio for the saved mode afterwards.
+        if (selector.startsWith('input[name="output-mode"][value=')) return { checked: false };
         assert.strictEqual(selector, 'input[name="output-mode"]:checked');
         return { value: "paste-copy" };
       },
@@ -350,6 +352,7 @@ function microphonePage(source, page) {
     baseline: { outputMode: current.output.mode, remind: true },
     // The page's own copy of the shared classic script's global.
     sharedBaseline: require("../renderer/settings-sync").sharedBaseline,
+    displayedOutputMode: require("../renderer/settings-sync").displayedOutputMode,
     cleanupStyles: [{ id: "verbatim" }],
     $: (id) => elements[id] || baseDocument.getElementById(id),
     earheart: {

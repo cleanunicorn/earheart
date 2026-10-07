@@ -612,6 +612,32 @@ test("idle unload is clamped to the field's range, and blank still means never",
   }
 });
 
+test("Save names each limit it stored differently from what was typed", () => {
+  const adjustments = (maxSeconds, idle, saved) => {
+    const elements = {
+      "max-seconds": { value: maxSeconds, ...inputRange("max-seconds") },
+      "idle-unload": { value: idle, ...inputRange("idle-unload") },
+    };
+    const context = { $: (id) => elements[id] };
+    require("node:vm").runInNewContext(
+      `${extractFunction(js, "limitAdjustments")}; this.limitAdjustments = limitAdjustments;`,
+      context
+    );
+    return [...context.limitAdjustments({
+      audio: { maxRecordingSeconds: saved[0] },
+      engines: { idleUnloadMinutes: saved[1] },
+    })];
+  };
+  assert.deepStrictEqual(adjustments("-5", "9999", [10, 240]), [
+    "Max dictation length set to 10 s (allowed 10–3600)",
+    "Idle unload set to 240 min (allowed 0–240)",
+  ]);
+  assert.deepStrictEqual(adjustments("10.6", "2", [11, 2]), ["Max dictation length set to 11 s (allowed 10–3600)"]);
+  // Stored as typed, or left blank on purpose: nothing to report.
+  assert.deepStrictEqual(adjustments("300", "0", [300, 0]), []);
+  assert.deepStrictEqual(adjustments("", "", [300, 0]), []);
+});
+
 test("the overlay's recording cap accepts exactly the max-seconds field's range", () => {
   // overlay.js re-validates the cap it is sent; its bounds must not drift
   // from the field's, or a value Settings saved would be overridden.

@@ -721,6 +721,23 @@ function hotkeySaveMessage(hotkeyResult, pauseResult) {
   return `Saved, but the ${name} could not be registered`;
 }
 
+// What Save stored differently from what was typed in the Performance limits
+// (collect() and main both clamp to the fields' ranges), one phrase each. A
+// clean save closes the window, so without this a typed 9999 would quietly
+// become 240.
+function limitAdjustments(saved) {
+  const fields = [
+    { id: "max-seconds", label: "Max dictation length", unit: "s", value: saved.audio?.maxRecordingSeconds },
+    { id: "idle-unload", label: "Idle unload", unit: "min", value: saved.engines?.idleUnloadMinutes },
+  ];
+  return fields
+    .filter(({ id, value }) => {
+      const typed = $(id).value.trim();
+      return typed !== "" && Number(typed) !== value;
+    })
+    .map(({ id, label, unit, value }) => `${label} set to ${value} ${unit} (allowed ${$(id).min}–${$(id).max})`);
+}
+
 const saveButton = $("save");
 saveButton.addEventListener("click", async () => {
   const save = $("save-status");
@@ -737,8 +754,20 @@ saveButton.addEventListener("click", async () => {
     current = collect();
     result = await earheart.invoke("settings:save", current);
     current = result.settings;
+    const adjusted = limitAdjustments(current);
+    $("max-seconds").value = current.audio.maxRecordingSeconds;
+    $("idle-unload").value = current.engines.idleUnloadMinutes;
     // Older mains don't report a pause result; treat that as fine.
     pauseResult = result.pauseHotkey ?? { ok: true };
+    if (result.hotkey.ok && pauseResult.ok && adjusted.length) {
+      // Saved, but not as typed: stay open long enough to say so.
+      save.textContent = `Saved — ${adjusted.join("; ")}`;
+      save.className = "status ok";
+      hotkeyStatus.textContent = "";
+      pauseHotkeyStatus.textContent = "";
+      saveButton.disabled = false;
+      return;
+    }
     if (result.hotkey.ok && pauseResult.ok) {
       // Clean save — close the window so the user doesn't have to dismiss it.
       save.textContent = "Saved";

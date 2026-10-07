@@ -30,7 +30,7 @@
 //      overwriting a concurrent download's state.
 //  12. Failed model removals appear in the row and persistent live region.
 //  13. Save clamps the Performance limits (max dictation length, idle unload)
-//      to the fields' own ranges.
+//      to the fields' own ranges, and says so instead of closing.
 //
 // Run under Electron:
 //
@@ -87,6 +87,11 @@ function check(name, ok, detail) {
   const suffix = detail ? ` (${detail})` : "";
   console.log(`[settings-smoke] ${ok ? "ok  " : "FAIL"} ${name}${suffix}`);
 }
+
+// Like main.js: a closed window must not quit the app. Without this, a check
+// that closes the Settings window by mistake ends the run before the summary,
+// and Electron's default quit exits 0 — a silent pass.
+app.on("window-all-closed", () => {});
 
 app.whenReady().then(async () => {
   try {
@@ -622,8 +627,8 @@ app.whenReady().then(async () => {
     );
 
     // 13. The Performance limits clamp on the real Save: out-of-range entries
-    // reach disk as the field's own min/max, not as typed (#210). Last, since
-    // a clean save closes the window.
+    // reach disk as the field's own min/max, not as typed (#210), and the
+    // window stays open to say so. Last, since it saves the whole form.
     await js(`(() => {
       document.getElementById("max-seconds").value = "-5";
       document.getElementById("idle-unload").value = "9999";
@@ -637,6 +642,26 @@ app.whenReady().then(async () => {
       "Save clamps max dictation length and idle unload to their ranges",
       savedLimits.audio.maxRecordingSeconds === 10 && savedLimits.engines.idleUnloadMinutes === 240,
       `max=${savedLimits.audio.maxRecordingSeconds} idle=${savedLimits.engines.idleUnloadMinutes}`
+    );
+    const shownLimits = await waitFor(
+      () => js(`(() => {
+        const status = document.getElementById("save-status").textContent;
+        return status.startsWith("Saved —") && JSON.stringify({
+          status,
+          max: document.getElementById("max-seconds").value,
+          idle: document.getElementById("idle-unload").value,
+        });
+      })()`),
+      "Save never reported the adjusted limits"
+    ).then(JSON.parse);
+    check(
+      "Save keeps the window open and shows the limits it stored",
+      !win.isDestroyed() &&
+        shownLimits.max === "10" &&
+        shownLimits.idle === "240" &&
+        shownLimits.status.includes("Max dictation length set to 10 s") &&
+        shownLimits.status.includes("Idle unload set to 240 min"),
+      JSON.stringify(shownLimits)
     );
 
     const failed = checks.filter((c) => !c.ok);

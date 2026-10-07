@@ -375,8 +375,11 @@ interface; window chrome never exceeds 16px.
   (600 primary / 500 quiet).
 - **Hint** (400, 12px, 1.55): settings hints, descriptions, toggle
   descriptions, muted text, in Dim Text.
-- **Caption** (400, 11.5px): the overlay's detail line and update note, single
-  line with ellipsis.
+- **Caption** (400, 11.5px): the overlay's detail line and update note, both
+  wrapping at any point rather than truncating. The detail line sits centred
+  in the 32px waveform strip on 16px lines, so it shows up to two lines; a
+  longer one clips at two whole lines and carries its full text as a tooltip.
+  The update note wraps freely under the update title.
 - **Mono values** (400, 13px mono, 0.02em): hotkey accelerators, textareas
   (prompt, dictionary). The version readout is mono with tabular-nums.
 - **Timer** (400, 12px mono, tabular-nums, 0.03em): captured-audio time; Dim

@@ -164,7 +164,42 @@ app.whenReady().then(async () => {
         detailText: document.getElementById("detail-text").textContent,
         detailClientHeight: document.getElementById("detail-text").clientHeight,
         detailScrollHeight: document.getElementById("detail-text").scrollHeight,
+        detailLines: (() => {
+          const range = document.createRange();
+          range.selectNodeContents(document.getElementById("detail-text"));
+          return new Set([...range.getClientRects()].filter((r) => r.width > 0)
+            .map((r) => Math.round(r.top))).size;
+        })(),
+        detailWidth: document.getElementById("detail-text").clientWidth,
+        detailTextWidth: (() => {
+          const detail = document.getElementById("detail-text");
+          const probe = document.createElement("span");
+          probe.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap";
+          probe.style.font = getComputedStyle(detail).font;
+          probe.textContent = detail.textContent;
+          document.body.appendChild(probe);
+          const w = probe.getBoundingClientRect().width;
+          probe.remove();
+          return Math.round(w * 10) / 10;
+        })(),
       })`);
+
+    // A fixed notice must show whole in the 32px strip: at most two 16px
+    // lines. Line count alone only proves it for this machine's fonts: CI's
+    // Linux fallback font (DejaVu Sans) sets text ~8% wider and leaves a
+    // narrower strip, and wrapped the old mic notice to three lines there
+    // (#250). So also require headroom:
+    // the text's one-line width within 1.6x the line width, i.e. two lines
+    // minus the slack word wrapping can leave at a line end.
+    const TWO_LINE_BUDGET = 1.6;
+    const fitsTwoLines = (ui) =>
+      ui.detailLines <= 2 &&
+      ui.detailScrollHeight <= ui.detailClientHeight &&
+      ui.detailTextWidth <= TWO_LINE_BUDGET * ui.detailWidth;
+    const fitDetail = (ui) =>
+      `lines=${ui.detailLines} text=${ui.detailTextWidth}px line=${ui.detailWidth}px ` +
+      `ratio=${(ui.detailTextWidth / ui.detailWidth).toFixed(2)} (budget ${TWO_LINE_BUDGET}) ` +
+      `scroll=${ui.detailScrollHeight}/${ui.detailClientHeight}`;
 
     // Deterministic control of device errors and delayed streams for race coverage.
     await win.webContents.executeJavaScript(`(() => {
@@ -203,13 +238,16 @@ app.whenReady().then(async () => {
       JSON.stringify(fallbackCalls));
     check("fallback notice is fully visible while recording",
       fallbackUi.detailText.includes("using system default") &&
-        fallbackUi.detailScrollHeight <= fallbackUi.detailClientHeight,
-      JSON.stringify(fallbackUi));
+        fallbackUi.detailScrollHeight <= fallbackUi.detailClientHeight &&
+        fitsTwoLines(fallbackUi),
+      `${JSON.stringify(fallbackUi.detailText)} ${fitDetail(fallbackUi)}`);
     win.webContents.send("record:pause-toggle");
     await waitForStatus(win, "paused");
     fallbackUi = await uiState();
     check("fallback notice remains visible while paused",
       fallbackUi.detailText.includes("using system default"), fallbackUi.detailText);
+    check("fallback notice fits two lines with font headroom while paused",
+      fitsTwoLines(fallbackUi), fitDetail(fallbackUi));
     win.webContents.send("record:pause-toggle");
     await waitForStatus(win, "recording");
     fallbackUi = await uiState();
@@ -457,6 +495,11 @@ app.whenReady().then(async () => {
       `resume=${pausedUi.resumeDisplay} pause=${pausedUi.pauseDisplay} aria-pressed=${pausedUi.ariaPressed}`
     );
     check(
+      "paused hint fits two lines with font headroom",
+      fitsTwoLines(pausedUi),
+      fitDetail(pausedUi)
+    );
+    check(
       "paused hint takes the detail line (data-detail set)",
       pausedUi.dataDetail === true && pausedUi.detailDisplay === "block",
       `data-detail=${pausedUi.dataDetail} detail display=${pausedUi.detailDisplay}`
@@ -620,6 +663,216 @@ app.whenReady().then(async () => {
       errUi.detailTitle === longMsg,
       `title length=${errUi.detailTitle.length}, expected ${longMsg.length}`
     );
+
+    // ---- Detail line geometry inside the 32px wave strip -------------------
+    // The detail line shares #wave with the absolutely positioned canvas and
+    // progress track, so its placement comes from #wave's own layout. A
+    // one-line detail must sit centred in the strip, and a detail that wraps
+    // to two lines must fit inside it (#242: the line sat at the top, and a
+    // wrapped one spilled 4px past the strip). Measured from real layout, not
+    // from the CSS text, so any regression that moves the box is caught.
+    await win.webContents.executeJavaScript("document.fonts.ready.then(() => true)");
+    const waveGeometry = () =>
+      win.webContents.executeJavaScript(`(() => {
+        const box = (el) => {
+          const r = el.getBoundingClientRect();
+          return { top: r.top, bottom: r.bottom, left: r.left, right: r.right,
+                   width: r.width, height: r.height };
+        };
+        const detail = document.getElementById("detail-text");
+        const range = document.createRange();
+        range.selectNodeContents(detail);
+        const lines = [...range.getClientRects()].filter((r) => r.width > 0);
+        const lineTops = [...new Set(lines.map((r) => Math.round(r.top)))];
+        const progress = document.getElementById("progress");
+        return {
+          wave: box(document.getElementById("wave")),
+          meter: box(document.getElementById("meter")),
+          detail: box(detail),
+          progress: progress.hidden ? null : box(progress),
+          card: box(document.getElementById("card")),
+          lineCount: lineTops.length,
+          linesTop: Math.min(...lines.map((r) => r.top)),
+          linesBottom: Math.max(...lines.map((r) => r.bottom)),
+          scrollHeight: detail.scrollHeight,
+          clientHeight: detail.clientHeight,
+          title: detail.title,
+          text: detail.textContent,
+        };
+      })()`);
+    const centerOf = (r) => (r.top + r.bottom) / 2;
+    const fmt = (g) =>
+      `lines=${g.lineCount} wave=${g.wave.top.toFixed(1)}..${g.wave.bottom.toFixed(1)} ` +
+      `detail=${g.detail.top.toFixed(1)}..${g.detail.bottom.toFixed(1)} ` +
+      `Δcenter=${(centerOf(g.detail) - centerOf(g.wave)).toFixed(2)}px ` +
+      `scroll=${g.scrollHeight}/${g.clientHeight}`;
+    // The canvas fills the strip and the strip stays 32px, whatever the
+    // detail line is doing (AC: the detail fix must not move its siblings).
+    const meterFillsWave = (g) =>
+      g.wave.height === 32 &&
+      ["top", "bottom", "left", "right"].every(
+        (k) => Math.abs(g.meter[k] - g.wave[k]) <= 0.5
+      );
+    const stageDone = async (preview) => {
+      win.webContents.send("pipeline:status", {
+        status: "done",
+        detail: { preview, method: "paste" },
+      });
+      await waitForStatus(win, "done");
+      const deadline = Date.now() + 2000;
+      let g = await waveGeometry();
+      while (g.text !== preview && Date.now() < deadline) {
+        await sleep(10);
+        g = await waveGeometry();
+      }
+      return g;
+    };
+
+    const emptyGeo = await stageDone("");
+    check(
+      "the waveform canvas fills the 32px strip with no detail line",
+      meterFillsWave(emptyGeo),
+      `wave=${JSON.stringify(emptyGeo.wave)} meter=${JSON.stringify(emptyGeo.meter)}`
+    );
+
+    win.webContents.send("pipeline:status", { status: "empty" });
+    await waitForStatus(win, "empty");
+    const emptyHintUi = await uiState();
+    check(
+      "the nothing-heard hint fits two lines with font headroom",
+      emptyHintUi.detailText !== "" && fitsTwoLines(emptyHintUi),
+      `${JSON.stringify(emptyHintUi.detailText)} ${fitDetail(emptyHintUi)}`
+    );
+
+    const oneLine = await stageDone("staged preview");
+    check(
+      "a one-line detail is vertically centred in the wave strip",
+      oneLine.lineCount === 1 &&
+        Math.abs(centerOf(oneLine.detail) - centerOf(oneLine.wave)) <= 1,
+      fmt(oneLine)
+    );
+    check(
+      "the waveform canvas still fills the strip under a one-line detail",
+      meterFillsWave(oneLine) && oneLine.card.height === emptyGeo.card.height,
+      `meter=${JSON.stringify(oneLine.meter)} card h=${oneLine.card.height}/${emptyGeo.card.height}`
+    );
+
+    // Build a natural sentence that wraps to exactly two lines at the strip's
+    // real width and font, instead of guessing how a fixed sentence wraps on
+    // each OS. Measured on a detached copy of the detail's text styling so the
+    // live element is only ever written through the production status path.
+    const twoLineText = await win.webContents.executeJavaScript(`(() => {
+      const detail = document.getElementById("detail-text");
+      const probe = document.createElement("div");
+      const cs = getComputedStyle(detail);
+      Object.assign(probe.style, {
+        position: "absolute", visibility: "hidden", left: "0", top: "0",
+        width: detail.parentElement.getBoundingClientRect().width - 4 + "px",
+        font: cs.font, lineHeight: cs.lineHeight, whiteSpace: "normal",
+        overflowWrap: "anywhere",
+      });
+      document.body.appendChild(probe);
+      const words = "add a test for the retry path in the auth middleware".split(" ");
+      const lineCount = () => {
+        const range = document.createRange();
+        range.selectNodeContents(probe);
+        return new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+      };
+      let text = "";
+      for (let i = 0; i < 200; i++) {
+        const next = (text ? text + " " : "") + words[i % words.length];
+        probe.textContent = next;
+        if (lineCount() > 2) break;
+        text = next;
+      }
+      probe.textContent = text;
+      const lines = lineCount();
+      probe.remove();
+      return lines === 2 ? text : "";
+    })()`);
+    check(
+      "a two-line detail fixture can be built at the strip's width",
+      twoLineText.length > 0,
+      `chars=${twoLineText.length}`
+    );
+    const twoLine = await stageDone(twoLineText || "fixture unavailable");
+    const inside = (inner, outer) =>
+      inner.top >= outer.top - 1 &&
+      inner.bottom <= outer.bottom + 1 &&
+      inner.left >= outer.left - 1 &&
+      inner.right <= outer.right + 1;
+    check(
+      "a two-line detail fits inside the wave strip",
+      twoLine.lineCount === 2 &&
+        inside(twoLine.detail, twoLine.wave) &&
+        twoLine.linesTop >= twoLine.wave.top - 1 &&
+        twoLine.linesBottom <= twoLine.wave.bottom + 1 &&
+        twoLine.scrollHeight <= twoLine.clientHeight,
+      fmt(twoLine)
+    );
+    check(
+      "a two-line detail is vertically centred in the wave strip",
+      twoLine.lineCount === 2 &&
+        Math.abs(centerOf(twoLine.detail) - centerOf(twoLine.wave)) <= 1,
+      fmt(twoLine)
+    );
+    check(
+      "a two-line detail is fully shown, so it carries no tooltip",
+      twoLine.title === "",
+      `title=${JSON.stringify(twoLine.title)}`
+    );
+    check(
+      "the waveform canvas still fills the strip under a two-line detail",
+      meterFillsWave(twoLine) && twoLine.card.height === emptyGeo.card.height,
+      `meter=${JSON.stringify(twoLine.meter)} card h=${twoLine.card.height}/${emptyGeo.card.height}`
+    );
+
+    // Longer than two lines: the strip stays fixed and clips whole lines; the
+    // full message survives in the text and the tooltip.
+    win.webContents.send("pipeline:status", {
+      status: "error",
+      detail: { message: longMsg },
+    });
+    await waitForStatus(win, "error");
+    const longGeo = await waveGeometry();
+    check(
+      "a detail longer than two lines stays inside the wave strip",
+      inside(longGeo.detail, longGeo.wave) &&
+        longGeo.text === longMsg &&
+        longGeo.title === longMsg &&
+        longGeo.card.height === emptyGeo.card.height,
+      fmt(longGeo)
+    );
+
+    // The progress track rides along the strip's bottom edge, driven through
+    // the real pipeline:progress handler.
+    win.webContents.send("pipeline:status", { status: "transcribing" });
+    await waitForStatus(win, "transcribing");
+    win.webContents.send("pipeline:progress", { phase: "transcribing", fraction: 0.5 });
+    let progressGeo = await waveGeometry();
+    const progressDeadline = Date.now() + 2000;
+    while (!progressGeo.progress && Date.now() < progressDeadline) {
+      await sleep(10);
+      progressGeo = await waveGeometry();
+    }
+    const pg = progressGeo.progress;
+    check(
+      "the progress track spans the strip and sits 1px above its bottom",
+      pg !== null &&
+        Math.abs(pg.width - progressGeo.wave.width) <= 0.5 &&
+        Math.abs(pg.left - progressGeo.wave.left) <= 0.5 &&
+        pg.height === 3 &&
+        Math.abs(progressGeo.wave.bottom - pg.bottom - 1) <= 0.5 &&
+        meterFillsWave(progressGeo) &&
+        progressGeo.card.height === emptyGeo.card.height,
+      `progress=${JSON.stringify(pg)} wave=${JSON.stringify(progressGeo.wave)}`
+    );
+    // Leave the card as the checks above found it.
+    win.webContents.send("pipeline:status", {
+      status: "error",
+      detail: { message: longMsg },
+    });
+    await waitForStatus(win, "error");
 
     // ---- The update panel's two kinds -------------------------------------
     // Both are painted from an IPC payload the main process builds, so a

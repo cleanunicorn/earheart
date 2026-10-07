@@ -395,9 +395,13 @@ body {
 
 /* Flexes to fill the space between the status and the timer; min-width:0 lets
    it shrink below the canvas's intrinsic width (overlay.js keeps the canvas
-   backing store matched). */
+   backing store matched). It is also the flex container that centres the
+   detail line vertically; the canvas and progress track are absolutely
+   positioned, so they ignore that and keep filling the strip. */
 #wave {
   position: relative;
+  display: flex;
+  align-items: center;
   flex: 1;
   min-width: 0;
   height: 32px;
@@ -425,20 +429,23 @@ body {
 
 /* ---------- detail line (preview / error / hint) ---------- */
 
+/* Two 16px lines exactly fill the 32px strip, so there is no vertical padding
+   and the box is capped at the strip: a longer detail clips at two whole lines
+   and overlay.js mirrors the full text into the tooltip. */
 #detail-text {
   position: relative;
   box-sizing: border-box;
   flex: 1;
   min-width: 0;
+  max-height: 100%;
   display: block;
-  align-self: center;
   line-height: 16px;
   font-size: 11.5px;
   color: var(--text-dim);
   white-space: normal;
   overflow: hidden;
   overflow-wrap: anywhere;
-  padding: 2px;
+  padding: 0 2px;
 }
 
 /* Hide the empty detail line so the dimmed waveform reads on its own. */

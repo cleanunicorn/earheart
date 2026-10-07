@@ -609,7 +609,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
         // A saved USB/Bluetooth device can disappear between sessions. Retry
         // once with the system default instead of making every dictation fail.
         if (!deviceId || !isMissingMicrophone(err)) throw err;
-        microphoneNotice = "Selected microphone not found — using system default";
+        microphoneNotice = "Saved mic missing — using system default";
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: microphoneConstraints(),
         });

@@ -373,8 +373,9 @@ test(
     // for, and both look like a fetch rejection. So probe connectivity once
     // against a host that is deliberately NOT in the registry: if that is
     // unreachable, skip; otherwise every per-URL rejection is a real failure.
+    const head = (url) => fetch(url, { method: "HEAD", redirect: "follow" });
     try {
-      await fetch("https://example.com", { method: "HEAD", redirect: "follow" });
+      await head("https://example.com");
     } catch (err) {
       t.skip(`offline — connectivity canary unreachable (${err.message})`);
       return;
@@ -382,7 +383,7 @@ test(
     for (const { kind, id, file } of allModelFiles()) {
       let res;
       try {
-        res = await fetch(file.url, { method: "HEAD", redirect: "follow" });
+        res = await head(file.url);
       } catch (err) {
         assert.fail(`${kind}/${id} -> ${file.name}: ${err.cause?.message || err.message}`);
       }

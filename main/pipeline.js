@@ -450,6 +450,9 @@ async function process(sid, wavArrayBuffer) {
   abortController = controller;
   const { signal } = controller;
   const wav = Buffer.from(wavArrayBuffer);
+  // Once deliver() returns, the words are on the clipboard or pasted; a later
+  // failure (history, the done card) must not tell the user they were lost.
+  let delivered = false;
   const stale = () => session !== sid || signal.aborted;
 
   const builtinCleanup = cfg.cleanup.enabled && cfg.cleanup.engine === "builtin";
@@ -515,6 +518,7 @@ async function process(sid, wavArrayBuffer) {
 
     overlayStatus("delivering");
     const result = await deliver(text, cfg.output, signal);
+    delivered = true;
     if (cfg.history.enabled) {
       history.add(
         { raw, text, cleaned, delivered: result.method, ...(partial ? { incomplete: true } : {}) },
@@ -545,10 +549,14 @@ async function process(sid, wavArrayBuffer) {
   } catch (err) {
     if (stale()) return;
     logger.error("pipeline failed:", err);
+    if (delivered) {
+      hideOverlaySoon(sid, 1600);
+      return;
+    }
     overlayStatus("error", { message: String(err.message).slice(0, 200) });
     // Nothing was delivered: this is the one failure that loses the
     // dictation, and the overlay line is gone in five seconds.
-    notify({ title: "Earheart: dictation failed", body: String(err.message).slice(0, 180) });
+    notify({ title: "Earheart: dictation failed, nothing was delivered", body: String(err.message).slice(0, 180) });
     hideOverlaySoon(sid, 5000);
   } finally {
     if (abortController === controller) {

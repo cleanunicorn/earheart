@@ -786,7 +786,7 @@ test("pipeline: a failed transcription notifies, and the click opens Settings", 
   assert.deepStrictEqual(rig.log.delivered, []);
   assert.strictEqual(rig.log.notifications.length, 1);
   const [note] = rig.log.notifications;
-  assert.match(note.title, /dictation failed/);
+  assert.strictEqual(note.title, "Earheart: dictation failed, nothing was delivered");
   assert.strictEqual(note.body, "Couldn't reach api.example.test");
   assertClickOpensSettings(rig, note);
 });
@@ -919,4 +919,18 @@ test("pipeline: without a notification service a failed dictation opens nothing"
   assert.ok(rig.log.statuses.includes("error"));
   assert.strictEqual(rig.log.notifications.length, 0);
   assert.strictEqual(rig.log.settingsOpened, 0);
+});
+
+test("pipeline: a failure after the words were delivered doesn't say the dictation was lost", async () => {
+  const rig = dictationRig({
+    transcribe: async () => "Delivered words.",
+    onHistory: () => {
+      throw new Error("history disk full");
+    },
+  });
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(rig.log.delivered, ["Delivered words."]);
+  assert.ok(!rig.log.notifications.some((n) => /dictation failed/.test(n.title)), "no lost-dictation notice");
+  assert.ok(!rig.log.statuses.includes("error"));
+  assert.ok(rig.log.logs.some(([level, label]) => level === "error" && label === "pipeline failed:"));
 });

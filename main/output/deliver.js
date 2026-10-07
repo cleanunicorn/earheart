@@ -202,6 +202,10 @@ async function simulatePaste(signal) {
 // each leave only what they wrote).
 const URI_LIST_FORMAT = "text/uri-list";
 
+// How long the target app gets to consume the pasted transcript before the
+// previous clipboard contents are put back.
+const RESTORE_WINDOW_MS = 1000;
+
 /**
  * What the clipboard holds right now, in every form Electron can read back.
  * readText() alone is not enough: a screenshot, a file copy or rich text all
@@ -350,7 +354,7 @@ async function deliver(text, cfg, signal) {
     const timer = setTimeout(() => {
       pendingRestore = null;
       restoreIfUnchanged(previous, text);
-    }, 1000);
+    }, RESTORE_WINDOW_MS);
     pendingRestore = { timer, text, snap: previous };
   }
   return { method: cfg.mode };

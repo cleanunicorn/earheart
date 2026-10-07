@@ -367,16 +367,24 @@ test("registry: every cleanup model ships exactly one gguf file", () => {
 test(
   "registry: model urls are anonymously reachable (live)",
   { skip: !process.env.EARHEART_NET_TESTS && "set EARHEART_NET_TESTS=1 to run" },
-  async () => {
+  async (t) => {
+    // Offline (sandbox, no-network CI) is inconclusive, not a failure — but a
+    // registry URL whose host doesn't resolve is exactly what this test is
+    // for, and both look like a fetch rejection. So probe connectivity once
+    // against a host that is deliberately NOT in the registry: if that is
+    // unreachable, skip; otherwise every per-URL rejection is a real failure.
+    try {
+      await fetch("https://example.com", { method: "HEAD", redirect: "follow" });
+    } catch (err) {
+      t.skip(`offline — connectivity canary unreachable (${err.message})`);
+      return;
+    }
     for (const { kind, id, file } of allModelFiles()) {
       let res;
       try {
         res = await fetch(file.url, { method: "HEAD", redirect: "follow" });
       } catch (err) {
-        // No connectivity (offline CI, sandbox) — this check is inconclusive
-        // rather than a real failure, so don't fail the suite on it.
-        assert.ok(true, `${kind}/${id} -> ${file.name}: network unavailable (${err.message})`);
-        continue;
+        assert.fail(`${kind}/${id} -> ${file.name}: ${err.cause?.message || err.message}`);
       }
       assert.ok(
         res.status !== 401 && res.status !== 403,
@@ -1331,12 +1339,39 @@ test("cancellation while hashing preserves the complete partial", async () => {
         totalBytes: full.length,
       }));
 
+      // Abort from inside the hash loop, not before it: a timer would fire
+      // during the awaits that precede hashing (readPartial, mkdir, stat), so
+      // the pre-loop throwIfAborted would catch it and the per-chunk check
+      // would never run. Wrap the read stream's async iterator (the loop in
+      // updateHashFromFile is `for await`) and abort once the first chunk has
+      // been handed over, so chunk 1 is hashed and the per-chunk check is
+      // what stops the loop.
       const controller = new AbortController();
-      setTimeout(() => controller.abort(), 0);
-      await assert.rejects(
-        () => manager.download(dir, model, { signal: controller.signal }),
-        /abort/i
-      );
+      const realCreateReadStream = fs.createReadStream;
+      let chunks = 0;
+      fs.createReadStream = (...args) => {
+        const stream = realCreateReadStream(...args);
+        const iterate = stream[Symbol.asyncIterator].bind(stream);
+        stream[Symbol.asyncIterator] = async function* () {
+          for await (const chunk of iterate()) {
+            chunks++;
+            yield chunk;
+            controller.abort();
+          }
+        };
+        return stream;
+      };
+      try {
+        await assert.rejects(
+          () => manager.download(dir, model, { signal: controller.signal }),
+          /abort/i
+        );
+      } finally {
+        fs.createReadStream = realCreateReadStream;
+      }
+      const totalChunks = Math.ceil(full.length / (64 * 1024)); // fs ReadStream's highWaterMark
+      assert.ok(chunks >= 1, "the abort must land after hashing began");
+      assert.ok(chunks < totalChunks, `hashing kept going after the abort: ${chunks}/${totalChunks} chunks read`);
       assert.strictEqual(hits, 0);
       assert.ok(!fs.existsSync(dest));
       assert.strictEqual(fs.statSync(`${dest}.part`).size, full.length);
@@ -1736,9 +1771,15 @@ test("engines facade routes STT and cleanup to separate worker hosts", async () 
   assert.strictEqual(facade.unloadIdle(), true);
   assert.ok(stt.stopped && cleanup.stopped);
 
-  // stop tears down both workers too (app quit).
+  // stop tears down both workers too (app quit). unloadIdle() above already
+  // set both flags, so clear them first or this would hold with stop() gone.
+  stt.stopped = false;
+  cleanup.stopped = false;
   facade.stop();
   assert.ok(stt.stopped && cleanup.stopped);
+  // And it forgets what was resident: the next transcribe reloads the model.
+  await facade.transcribe(Buffer.from("wav"), STT_CFG);
+  assert.strictEqual(count(stt, "load-stt"), 2, "stop() forgets the resident STT model; the next call reloads it");
 });
 
 // Build a two-host facade over fake STT + cleanup workers. Each fake records

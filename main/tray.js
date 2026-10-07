@@ -1,6 +1,6 @@
 // System tray icon and menu. The icon doubles as a recording indicator.
 
-const { Tray, Menu, nativeImage, clipboard } = require("electron");
+const { Tray, Menu, Notification, nativeImage, clipboard } = require("electron");
 const path = require("node:path");
 const windows = require("./windows");
 const settings = require("./settings");
@@ -88,6 +88,16 @@ function setOutputMode(mode) {
   } catch (err) {
     logger.warn(`could not save the output mode: ${err.message}`);
     refresh();
+    // The menu has closed by now, so say so: otherwise the user walks away
+    // believing the mode changed. Best-effort, like every notification here.
+    try {
+      new Notification({
+        title: "Could not change the output mode",
+        body: `Earheart couldn't save the setting (${err.message}). It is unchanged.`,
+      }).show();
+    } catch (notifyErr) {
+      logger.warn(`output-mode notification failed: ${notifyErr.message}`);
+    }
   }
 }
 

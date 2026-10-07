@@ -24,6 +24,7 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
   if (stored) fs.writeFileSync(path.join(userData, "settings.json"), JSON.stringify(stored));
   const menus = [];
   const warnings = [];
+  const notifications = [];
   const entries = historyEntries;
   class FakeTray {
     on() {}
@@ -38,6 +39,14 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
       app: { getPath: () => userData },
       Tray: FakeTray,
       Menu: { buildFromTemplate: (template) => template },
+      Notification: class {
+        constructor(options) {
+          this.options = options;
+        }
+        show() {
+          notifications.push(this.options);
+        }
+      },
       nativeImage: {
         createFromPath: () => ({ isEmpty: () => false }),
         createEmpty: () => ({}),
@@ -85,7 +94,7 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
   const pipeline = { getState: () => "idle", onStateChange() {}, toggle() {}, cancel() {} };
   tray.init({ quit() {} }, pipeline);
   const file = path.join(userData, "settings.json");
-  return { settings, menus, warnings, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
+  return { settings, menus, warnings, notifications, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
 }
 
 const item = (menu, label) => menu.find((entry) => entry.label === label);
@@ -133,7 +142,7 @@ test("an output-mode click keeps updater bookkeeping written after the menu was 
 });
 
 test("a failed output-mode save warns, keeps memory equal to disk and restores the radio", (t) => {
-  const { settings, menus, warnings, readFile } = loadTray(t);
+  const { settings, menus, warnings, notifications, readFile } = loadTray(t);
   settings.save({ ...settings.get(), output: { ...settings.get().output, mode: "paste" } });
   const builtBefore = menus.length;
 
@@ -154,6 +163,8 @@ test("a failed output-mode save warns, keeps memory equal to disk and restores t
   assert.ok(menus.length > builtBefore, "the menu is rebuilt from the persisted mode");
   assert.strictEqual(item(menus.at(-1), "Paste into active app").checked, true);
   assert.strictEqual(item(menus.at(-1), "Copy to clipboard only").checked, false);
+  assert.strictEqual(notifications.length, 1, "the user is told the click didn't take");
+  assert.match(notifications[0].title, /Could not change the output mode/);
 });
 
 test("Copy last transcription is disabled when the history is empty", (t) => {

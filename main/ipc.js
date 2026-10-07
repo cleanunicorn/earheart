@@ -76,6 +76,20 @@ function withFields(base, source, fields) {
   return result;
 }
 
+// The definitions whose bytes must go before `model` replaces `existing` (the
+// stored definition with the same id, if any). The id has no commit, so an
+// upstream re-upload of the same repo+quant keeps it while the files change.
+// Bytes on disk under this id that don't belong to the new definition — the
+// previous revision's, or an orphan nothing owns — are deleted so they are
+// never mistaken for the new download. An unchanged re-add keeps its install.
+function staleDefinitions(existing, model) {
+  if (!existing) return [model];
+  if (engines.definitionFingerprint(existing) === engines.definitionFingerprint(model)) return [];
+  // Directories are kind/id, so a same-id definition of the other kind
+  // leaves bytes under both.
+  return existing.kind === model.kind ? [existing] : [existing, model];
+}
+
 function init({ applyHotkeys, onSettingsChanged }) {
   // Register any models the user added from a custom Hugging Face URL so they
   // resolve for download and for loading into the cleanup worker after a
@@ -302,17 +316,7 @@ function init({ applyHotkeys, onSettingsChanged }) {
       if (!chosen) return { ok: false, error: "That version is no longer available" };
       const model = hfBuild[kind](listing.repo, chosen);
       const existing = (settings.get().customModels || []).find((m) => m.id === model.id);
-      // The id has no commit, so an upstream re-upload of the same repo+quant
-      // keeps it while the files change. Bytes on disk under this id that
-      // don't belong to the new definition — the previous revision's, or an
-      // orphan nothing owns — are deleted before the definition is saved, so
-      // they are never mistaken for the new download. An unchanged re-add
-      // keeps its install.
-      const stale = !existing
-        ? [model]
-        : engines.definitionFingerprint(existing) !== engines.definitionFingerprint(model)
-          ? [existing, ...(existing.kind === model.kind ? [] : [model])]
-          : [];
+      const stale = staleDefinitions(existing, model);
       const customModels = await withModelsBusy(stale, async () => {
         for (const def of stale) await engines.removeFiles(def);
         const cfg = settings.get();

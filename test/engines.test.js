@@ -1885,6 +1885,44 @@ test("transcribe/clean reject early on an already-aborted signal without touchin
   assert.strictEqual(cleanup.calls.length, 0, "no cleanup worker request for a pre-aborted clean");
 });
 
+test("a saved Canary entry is refused with a way out before the worker is asked to load it", async () => {
+  // Exactly what buildSttModel saved for this repo before discovery checked
+  // the family: Canary weights wired up as Whisper.
+  const canary = {
+    id: "custom-csukuangfj-sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8-int8",
+    kind: "stt",
+    label: "sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8 · int8",
+    engine: "sherpa-parakeet",
+    custom: true,
+    source: { repo: "csukuangfj/sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8", variant: "int8" },
+    files: [{ name: "encoder.int8.onnx", url: "https://huggingface.co/x/resolve/c/encoder.int8.onnx" }],
+    sherpa: { encoder: "encoder.int8.onnx", decoder: "decoder.int8.onnx", tokens: "tokens.txt", modelType: "whisper" },
+  };
+  // A transducer that merely has "canary" in its name still loads.
+  const tdt = {
+    ...canary,
+    id: "custom-u-canary-hybrid-tdt-int8",
+    label: "canary-hybrid-tdt · int8",
+    source: { repo: "u/canary-hybrid-tdt", variant: "int8" },
+    sherpa: { encoder: "e.onnx", decoder: "d.onnx", joiner: "j.onnx", tokens: "tokens.txt", modelType: "transducer" },
+  };
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  try {
+    registry.setCustomModels([canary, tdt]);
+    await assert.rejects(facade.ensureStt(canary.id), (err) => {
+      assert.match(err.message, /NeMo Canary/);
+      assert.match(err.message, /Remove it in Settings/);
+      return true;
+    });
+    assert.deepStrictEqual(hostsBySvc["earheart-stt"].calls, [], "no load-stt for the refused entry");
+
+    await facade.ensureStt(tdt.id);
+    assert.deepStrictEqual(hostsBySvc["earheart-stt"].calls, ["load-stt"]);
+  } finally {
+    registry.setCustomModels([]);
+  }
+});
+
 /* ---------------- engine worker: STT load ---------------- */
 
 // Load main/engines/engine-worker.js outside a utilityProcess: a fake
@@ -1958,6 +1996,52 @@ test("engine worker: load-stt reports the thread count and provider it built the
     const again = await worker.send({ id: 2, ...request });
     assert.deepStrictEqual(again.result, first.result);
     assert.strictEqual(built.length, 1);
+  } finally {
+    worker.restore();
+  }
+});
+
+test("engine worker: load-stt routes on the declared family and never guesses Whisper", async () => {
+  const built = [];
+  const worker = loadWorkerWith({
+    OfflineRecognizer: class {
+      constructor(config) {
+        built.push(config.modelConfig);
+      }
+    },
+  });
+  const load = (id, sherpa) =>
+    worker.send({ id, type: "load-stt", dir: "/m", sherpa: { encoder: "e", decoder: "d", tokens: "t", ...sherpa }, modelId: `m${id}` });
+  try {
+    // Whisper only when it says so.
+    assert.strictEqual((await load(1, { modelType: "whisper" })).ok, true);
+    assert.deepStrictEqual(Object.keys(built[0].whisper), ["encoder", "decoder"]);
+    assert.strictEqual(built[0].transducer, undefined);
+    assert.strictEqual(built[0].modelType, "whisper");
+    // A joiner is a transducer; the legacy entries without a modelType are NeMo.
+    assert.strictEqual((await load(2, { joiner: "j" })).ok, true);
+    assert.ok(built[1].transducer.joiner.endsWith("j"));
+    assert.strictEqual(built[1].whisper, undefined);
+    assert.strictEqual(built[1].modelType, "nemo_transducer");
+    assert.strictEqual((await load(3, { joiner: "j", modelType: "transducer" })).ok, true);
+    assert.strictEqual(built[2].modelType, "transducer");
+
+    // No joiner and no declared type is no longer read as Whisper; neither is
+    // a declaration the files contradict, or a family the worker can't run.
+    for (const [id, sherpa] of [
+      [4, {}],
+      [5, { modelType: "whisper", joiner: "j" }],
+      [6, { modelType: "nemo_transducer" }],
+      [7, { modelType: "canary" }],
+    ]) {
+      const reply = await load(id, sherpa);
+      assert.strictEqual(reply.ok, false, JSON.stringify(sherpa));
+      assert.match(reply.error, /Unsupported speech model configuration/);
+    }
+    assert.strictEqual(built.length, 3, "no recognizer is built for a rejected config");
+    // ...and the refusal doesn't drop the model that was already resident.
+    assert.strictEqual((await load(3, { joiner: "j", modelType: "transducer" })).ok, true);
+    assert.strictEqual(built.length, 3);
   } finally {
     worker.restore();
   }

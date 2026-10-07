@@ -117,3 +117,40 @@ test("removing a custom cleanup model that isn't selected keeps the selection", 
   assert.strictEqual(saved[0].cleanup.builtin.model, "gemma-3-1b");
   assert.deepStrictEqual(saved[0].customModels, []);
 });
+
+/* ---------------- adding a Hugging Face STT repo of an unsupported family ---------------- */
+
+// Serve one repo tree to the handlers' global fetch for the length of a test.
+function serveTree(t, paths) {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const body = String(url).includes("/tree/")
+      ? paths.map((p) => ({ type: "file", path: p, size: 1 }))
+      : { sha: "c" };
+    return { ok: true, status: 200, async json() { return body; } };
+  };
+  t.after(() => { globalThis.fetch = realFetch; });
+}
+
+for (const [what, url, message] of [
+  ["a Canary repo", "csukuangfj/sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8", /NeMo Canary model, which Earheart can't run/],
+  ["an unidentified encoder-decoder repo", "u/fire-red-asr", /Couldn't tell which kind of speech model/],
+]) {
+  test(`Find versions and Add both refuse ${what}, and nothing is saved`, async (t) => {
+    t.after(() => registry.setCustomModels([]));
+    serveTree(t, ["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt"]);
+    const { handlers, saved } = loadIpcHandlers(configWith("gemma-3-1b"));
+
+    const found = await handlers["models:hf-variants"]({}, { kind: "stt", url });
+    assert.strictEqual(found.ok, false);
+    assert.match(found.error, message);
+
+    // Add re-discovers server-side, so a renderer that skipped Find can't
+    // save the entry either.
+    const added = await handlers["models:add-custom"]({}, { kind: "stt", url, variant: "int8" });
+    assert.strictEqual(added.ok, false);
+    assert.match(added.error, message);
+    assert.strictEqual(saved.length, 0);
+    assert.ok(!registry.listModels("stt").some((m) => m.custom), "nothing registered");
+  });
+}

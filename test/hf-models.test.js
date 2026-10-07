@@ -514,6 +514,111 @@ test("listSttVariants points optimum ONNX exports at a sherpa conversion", async
   );
 });
 
+/* ---------------- STT: the model family needs a positive marker ---------------- */
+
+// An encoder + decoder + tokens.txt tree with no joiner, at the top level.
+function seq2seqTree(names = ["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt"]) {
+  return stubFetch([
+    ["/tree/", { body: names.map((p) => ({ type: "file", path: p, size: 1 })) }],
+    ["/api/models/", { body: { sha: "c" } }],
+  ]);
+}
+
+// User-facing copy: never the engine's internal model-type ids.
+function assertReadable(message) {
+  assert.doesNotMatch(message, /nemo_transducer|modelType|\bwhisper\b/);
+}
+
+test("listSttVariants rejects a NeMo Canary bundle instead of configuring it as Whisper", async () => {
+  // csukuangfj/sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8: encoder,
+  // decoder and a plain tokens.txt, no joiner — the shape that used to fall
+  // through to the Whisper config.
+  await assert.rejects(
+    listSttVariants(
+      { owner: "csukuangfj", repo: "sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8" },
+      seq2seqTree()
+    ),
+    (err) => {
+      assert.match(err.message, /Canary/);
+      assert.match(err.message, /can't run/);
+      assertReadable(err.message);
+      return true;
+    }
+  );
+  // The marker in the file names counts too, whatever the repo is called.
+  await assert.rejects(
+    listSttVariants(
+      { owner: "u", repo: "my-asr" },
+      seq2seqTree(["canary-1b-encoder.onnx", "canary-1b-decoder.onnx", "canary-1b-tokens.txt"])
+    ),
+    /Canary/
+  );
+  // Canary without a tokens.txt still gets the family message, not a hunt
+  // for a symbol table that wouldn't help.
+  await assert.rejects(
+    listSttVariants(
+      { owner: "u", repo: "sherpa-onnx-nemo-canary-1b-v2" },
+      seq2seqTree(["encoder.onnx", "decoder.onnx"])
+    ),
+    /Canary/
+  );
+});
+
+test("listSttVariants rejects an encoder-decoder bundle that matches no known family", async () => {
+  for (const [repo, names] of [
+    // FireRedASR-style: generic names, nothing saying what it is.
+    ["sherpa-onnx-fire-red-asr-large-zh_en", ["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt"]],
+    // A shared prefix alone is not a Whisper marker.
+    ["some-asr", ["foo-encoder.onnx", "foo-decoder.onnx", "foo-tokens.txt"]],
+    // A Parakeet repo that lost its joiner is a broken transducer, not Whisper.
+    ["sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", ["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt"]],
+  ]) {
+    await assert.rejects(
+      listSttVariants({ owner: "u", repo }, seq2seqTree(names)),
+      (err) => {
+        assert.match(err.message, /Couldn't tell which kind of speech model/, repo);
+        assert.match(err.message, /Whisper export/, repo);
+        assertReadable(err.message);
+        return true;
+      }
+    );
+  }
+  // "whisper" only counts as a whole word: an owner that merely contains it
+  // doesn't make a generic bundle Whisper.
+  await assert.rejects(
+    listSttVariants({ owner: "notwhisperer", repo: "asr" }, seq2seqTree()),
+    /Couldn't tell/
+  );
+});
+
+test("listSttVariants keeps recognizing Whisper exports by their model-name prefix", async () => {
+  // A re-upload of csukuangfj/sherpa-onnx-whisper-tiny.en under a name without
+  // "whisper": the tiny.en- prefix shared by the bundle and its symbol table
+  // is the marker.
+  const out = await listSttVariants(
+    { owner: "u", repo: "my-dictation-model" },
+    seq2seqTree(["tiny.en-encoder.int8.onnx", "tiny.en-decoder.int8.onnx", "tiny.en-tokens.txt"])
+  );
+  assert.deepStrictEqual(out.variants[0].sherpa, {
+    encoder: "tiny.en-encoder.int8.onnx",
+    decoder: "tiny.en-decoder.int8.onnx",
+    tokens: "tiny.en-tokens.txt",
+    modelType: "whisper",
+  });
+  // ...and so is a delimited "whisper" in the repo name, generic files or not.
+  const named = await listSttVariants({ owner: "u", repo: "my_whisper_export" }, seq2seqTree());
+  assert.strictEqual(named.variants[0].sherpa.modelType, "whisper");
+});
+
+test("listSttVariants: a joiner makes a transducer even in a repo named canary", async () => {
+  const out = await listSttVariants(
+    { owner: "u", repo: "canary-hybrid-tdt" },
+    seq2seqTree(["encoder.onnx", "decoder.onnx", "joiner.onnx", "tokens.txt"])
+  );
+  assert.strictEqual(out.variants[0].sherpa.joiner, "joiner.onnx");
+  assert.strictEqual(out.variants[0].sherpa.modelType, "transducer");
+});
+
 test("buildSttModel preserves discovered checksums on the saved model entry", async () => {
   const fetchImpl = stubFetch([
     ["/tree/", { body: [

@@ -632,25 +632,61 @@ async function finishModelDownload(result) {
 
 earheart.on("models:done", (result) => finishModelDownload(result));
 
+// While a removal runs (main first stops any download of the model, which can
+// take a moment) the row says so and its buttons are disabled, so a second
+// click can't send the same removal again.
+function setRowRemoving(modelId, removing) {
+  for (const kind of ["stt", "cleanup"]) {
+    const ui = manage[kind];
+    if (!ui || ui.modelId !== modelId) continue;
+    for (const button of $(`${kind}-model-manage`).querySelectorAll("button")) {
+      button.disabled = removing;
+    }
+    if (removing && ui.status) {
+      ui.status.textContent = "Removing…";
+      ui.status.className = "status";
+    }
+  }
+}
+
 async function removeModel(kind, modelId) {
   const info = modelStatus[kind].find((m) => m.id === modelId);
   const label = info ? info.label : modelId;
   if (!confirm(`Remove ${label}? You'll need to download it again to use it.`)) {
     return;
   }
+  setRowRemoving(modelId, true);
   const res = await earheart.invoke("models:remove", { kind, modelId });
-  if (res.ok) await refreshModels();
-  else showModelError(modelId, res.error || "Could not remove model");
+  setRowRemoving(modelId, false);
+  if (res.ok) {
+    // Announce before refreshing, while modelStatus still has the label.
+    announceModelStatus(kind, modelId, "Removed");
+    await refreshModels();
+  } else {
+    showModelError(modelId, res.error || "Could not remove model");
+  }
 }
 
 // Remove a custom model entirely: its files (if downloaded) and its definition.
 async function removeCustomModel(modelId) {
   const info = [...modelStatus.stt, ...modelStatus.cleanup].find((m) => m.id === modelId);
   const label = info ? info.label : modelId;
-  if (!confirm(`Remove ${label} from your models?`)) return;
+  // An installed custom model loses its download too; say so, like the
+  // curated models' confirm does.
+  const question = info?.installed
+    ? `Remove ${label} and its downloaded files? You'll need to download it again to use it.`
+    : `Remove ${label} from your models?`;
+  if (!confirm(question)) return;
+  setRowRemoving(modelId, true);
   const res = await earheart.invoke("models:remove-custom", { modelId });
+  setRowRemoving(modelId, false);
   if (res.ok) {
     current.customModels = res.customModels;
+    // Main falls back to the default when the removed model was the saved
+    // one. Adopt that, or refreshModels would keep pointing the select at the
+    // removed id, which reads back as "" and gets saved as an empty model.
+    if (res.kind && res.model) current[res.kind].builtin.model = res.model;
+    announceModelStatus(res.kind || info?.kind, modelId, "Removed");
     await refreshModels();
   } else {
     showModelError(modelId, res.error || "Could not remove model");
@@ -772,6 +808,26 @@ const settingsChangesReady = followSettingsChanges(applySettingsChange);
 
 /* ---------- save ---------- */
 
+// Show each hotkey's registration failure under its field: the launch result
+// (from settings:get) when the window opens, then each Save's. A result is shown
+// only while the field holds the accelerator it was attempted with — after a
+// rejected save, settings keep the old working value, and an error about the
+// rejected one would describe a combination that is no longer there. Two kinds
+// are shown regardless: a result without an accelerator (an older main), and an
+// `unbound` one — a failed restore left the saved hotkey itself unregistered.
+function renderHotkeyStatus(status) {
+  const rows = [
+    [$("hotkey-status"), status?.hotkey, current.hotkey],
+    [$("pause-hotkey-status"), status?.pauseHotkey, current.pauseHotkey],
+  ];
+  for (const [row, result, shown] of rows) {
+    const stale =
+      !result?.unbound && result?.accelerator !== undefined && result.accelerator !== (shown || "");
+    row.textContent = result && !result.ok && !stale ? result.error : "";
+    row.className = "status err";
+  }
+}
+
 function hotkeySaveMessage(hotkeyResult, pauseResult) {
   if (!hotkeyResult.ok && !pauseResult.ok) {
     return "Saved, but the hotkeys could not be changed";
@@ -800,8 +856,6 @@ function limitAdjustments(saved) {
 const saveButton = $("save");
 saveButton.addEventListener("click", async () => {
   const save = $("save-status");
-  const hotkeyStatus = $("hotkey-status");
-  const pauseHotkeyStatus = $("pause-hotkey-status");
   let result;
   let pauseResult;
   // Acknowledge the click immediately and block a duplicate save while the
@@ -827,8 +881,7 @@ saveButton.addEventListener("click", async () => {
       // Saved, but not as typed: stay open long enough to say so.
       save.textContent = `Saved — ${adjusted.join("; ")}`;
       save.className = "status ok";
-      hotkeyStatus.textContent = "";
-      pauseHotkeyStatus.textContent = "";
+      renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult });
       saveButton.disabled = false;
       return;
     }
@@ -836,8 +889,7 @@ saveButton.addEventListener("click", async () => {
       // Clean save — close the window so the user doesn't have to dismiss it.
       save.textContent = "Saved";
       save.className = "status ok";
-      hotkeyStatus.textContent = "";
-      pauseHotkeyStatus.textContent = "";
+      renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult });
       earheart.invoke("settings:close");
       return;
     }
@@ -854,10 +906,7 @@ saveButton.addEventListener("click", async () => {
   saveButton.disabled = false;
   save.textContent = hotkeySaveMessage(result.hotkey, pauseResult);
   save.className = "status err";
-  hotkeyStatus.textContent = result.hotkey.ok ? "" : result.hotkey.error;
-  hotkeyStatus.className = "status err";
-  pauseHotkeyStatus.textContent = pauseResult.ok ? "" : pauseResult.error;
-  pauseHotkeyStatus.className = "status err";
+  renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult });
   setTimeout(() => {
     save.textContent = "";
   }, 4000);
@@ -1341,6 +1390,9 @@ earheart.on("updates:state", renderUpdateState);
   defaults = data.defaults;
   platform = data.platform;
   cleanupStyles = data.cleanupStyles || [];
+  // A hotkey that failed at launch shows now, not after a Save — and before
+  // the update and model round-trips below.
+  renderHotkeyStatus(data.hotkeyStatus);
   // The Accessibility permission only exists on macOS.
   if (platform === "darwin") $("accessibility-field").hidden = false;
   $("version").textContent = `v${data.version}`;

@@ -705,6 +705,107 @@ test("isInstalled accepts a legacy or malformed marker as presence-only", async 
   }
 });
 
+test("the marker records the definition fingerprint and a changed definition is not installed", async () => {
+  const a = Buffer.from("revision-a-bytes");
+  const { server, base } = await serveFiles({ "/aaa/m.gguf": a });
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "cleanup", id: "custom-o-r-gguf-q4-k-m",
+        label: "r · Q4_K_M",
+        files: [{ name: "m.gguf", bytes: a.length, url: `${base}/aaa/m.gguf` }],
+      };
+      await manager.download(dir, model);
+      const markerPath = path.join(manager.modelDir(dir, model), manager.MARKER);
+      const marker = JSON.parse(await fsp.readFile(markerPath, "utf8"));
+      assert.strictEqual(marker.fingerprint, manager.definitionFingerprint(model));
+      assert.deepStrictEqual(marker.files, { "m.gguf": a.length });
+      assert.strictEqual(manager.isInstalled(dir, model), true);
+
+      // A copy-only change (label/note) keeps the install.
+      assert.strictEqual(
+        manager.isInstalled(dir, { ...model, label: "renamed", note: "new note" }),
+        true
+      );
+      // Same id and same size, but a new upstream revision: not installed.
+      const reuploaded = {
+        ...model,
+        files: [{ name: "m.gguf", bytes: a.length, url: `${base}/bbb/m.gguf` }],
+      };
+      assert.notStrictEqual(
+        manager.definitionFingerprint(reuploaded),
+        manager.definitionFingerprint(model)
+      );
+      assert.strictEqual(manager.isInstalled(dir, reuploaded), false);
+      // A checksum appearing (or changing) is a different definition too.
+      const checksummed = {
+        ...model,
+        files: [{ ...model.files[0], sha256: "0".repeat(64) }],
+      };
+      assert.strictEqual(manager.isInstalled(dir, checksummed), false);
+
+      // A checksummed file re-pinned to a new commit with the same bytes (the
+      // registry refresh flow) is the same definition: no forced re-download.
+      const pinned = {
+        ...model,
+        files: [{ ...model.files[0], sha256: "a".repeat(64) }],
+      };
+      const repinned = {
+        ...pinned,
+        files: [{ ...pinned.files[0], url: `${base}/ccc/m.gguf` }],
+      };
+      assert.strictEqual(
+        manager.definitionFingerprint(repinned),
+        manager.definitionFingerprint(pinned)
+      );
+      // ...while a new checksum under the same name is a new revision.
+      assert.notStrictEqual(
+        manager.definitionFingerprint({ ...pinned, files: [{ ...pinned.files[0], sha256: "b".repeat(64) }] }),
+        manager.definitionFingerprint(pinned)
+      );
+
+      // A size-only marker from an older build carries no fingerprint, so it
+      // keeps counting as installed for any definition (upgrade safety).
+      await fsp.writeFile(markerPath, JSON.stringify({ files: { "m.gguf": a.length } }));
+      assert.strictEqual(manager.isInstalled(dir, reuploaded), true);
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("the definition fingerprint ignores file order", () => {
+  const files = [
+    { name: "encoder.onnx", url: "https://h/r/resolve/c/encoder.onnx", bytes: 10 },
+    { name: "tokens.txt", url: "https://h/r/resolve/c/tokens.txt", bytes: 2, sha256: "c".repeat(64) },
+    { name: "decoder.onnx", url: "https://h/r/resolve/c/decoder.onnx", bytes: 5 },
+  ];
+  const model = { kind: "stt", id: "custom-r-int8", files };
+  const reordered = { ...model, files: [files[2], files[0], files[1]] };
+  // A re-listing that returns the same files in another order is the same
+  // definition, so re-adding it must not wipe a complete install.
+  assert.strictEqual(manager.definitionFingerprint(reordered), manager.definitionFingerprint(model));
+  // Dropping a file is not.
+  assert.notStrictEqual(
+    manager.definitionFingerprint({ ...model, files: files.slice(1) }),
+    manager.definitionFingerprint(model)
+  );
+});
+
+test("remove clears a definition's directory from the definition alone, present or not", async () => {
+  await withTmp(async (dir) => {
+    const model = { kind: "stt", id: "custom-orphan", files: [{ name: "x.bin" }] };
+    const target = manager.modelDir(dir, model);
+    await fsp.mkdir(target, { recursive: true });
+    await fsp.writeFile(path.join(target, "x.bin"), "old");
+    await fsp.writeFile(path.join(target, manager.MARKER), "");
+    await manager.remove(dir, model);
+    assert.strictEqual(fs.existsSync(target), false);
+    // A missing directory is not an error.
+    await manager.remove(dir, model);
+  });
+});
+
 test("a transient failure retains bytes and retries with Range and If-Range", async () => {
   const full = Buffer.from("the-full-payload-".repeat(64));
   const sha = crypto.createHash("sha256").update(full).digest("hex");
@@ -1885,6 +1986,44 @@ test("transcribe/clean reject early on an already-aborted signal without touchin
   assert.strictEqual(cleanup.calls.length, 0, "no cleanup worker request for a pre-aborted clean");
 });
 
+test("a saved Canary entry is refused with a way out before the worker is asked to load it", async () => {
+  // Exactly what buildSttModel saved for this repo before discovery checked
+  // the family: Canary weights wired up as Whisper.
+  const canary = {
+    id: "custom-csukuangfj-sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8-int8",
+    kind: "stt",
+    label: "sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8 · int8",
+    engine: "sherpa-parakeet",
+    custom: true,
+    source: { repo: "csukuangfj/sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8", variant: "int8" },
+    files: [{ name: "encoder.int8.onnx", url: "https://huggingface.co/x/resolve/c/encoder.int8.onnx" }],
+    sherpa: { encoder: "encoder.int8.onnx", decoder: "decoder.int8.onnx", tokens: "tokens.txt", modelType: "whisper" },
+  };
+  // A transducer that merely has "canary" in its name still loads.
+  const tdt = {
+    ...canary,
+    id: "custom-u-canary-hybrid-tdt-int8",
+    label: "canary-hybrid-tdt · int8",
+    source: { repo: "u/canary-hybrid-tdt", variant: "int8" },
+    sherpa: { encoder: "e.onnx", decoder: "d.onnx", joiner: "j.onnx", tokens: "tokens.txt", modelType: "transducer" },
+  };
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  try {
+    registry.setCustomModels([canary, tdt]);
+    await assert.rejects(facade.ensureStt(canary.id), (err) => {
+      assert.match(err.message, /NeMo Canary/);
+      assert.match(err.message, /Remove it in Settings/);
+      return true;
+    });
+    assert.deepStrictEqual(hostsBySvc["earheart-stt"].calls, [], "no load-stt for the refused entry");
+
+    await facade.ensureStt(tdt.id);
+    assert.deepStrictEqual(hostsBySvc["earheart-stt"].calls, ["load-stt"]);
+  } finally {
+    registry.setCustomModels([]);
+  }
+});
+
 /* ---------------- engine worker: STT load ---------------- */
 
 // Load main/engines/engine-worker.js outside a utilityProcess: a fake
@@ -1963,6 +2102,52 @@ test("engine worker: load-stt reports the thread count and provider it built the
   }
 });
 
+test("engine worker: load-stt routes on the declared family and never guesses Whisper", async () => {
+  const built = [];
+  const worker = loadWorkerWith({
+    OfflineRecognizer: class {
+      constructor(config) {
+        built.push(config.modelConfig);
+      }
+    },
+  });
+  const load = (id, sherpa) =>
+    worker.send({ id, type: "load-stt", dir: "/m", sherpa: { encoder: "e", decoder: "d", tokens: "t", ...sherpa }, modelId: `m${id}` });
+  try {
+    // Whisper only when it says so.
+    assert.strictEqual((await load(1, { modelType: "whisper" })).ok, true);
+    assert.deepStrictEqual(Object.keys(built[0].whisper), ["encoder", "decoder"]);
+    assert.strictEqual(built[0].transducer, undefined);
+    assert.strictEqual(built[0].modelType, "whisper");
+    // A joiner is a transducer; the legacy entries without a modelType are NeMo.
+    assert.strictEqual((await load(2, { joiner: "j" })).ok, true);
+    assert.ok(built[1].transducer.joiner.endsWith("j"));
+    assert.strictEqual(built[1].whisper, undefined);
+    assert.strictEqual(built[1].modelType, "nemo_transducer");
+    assert.strictEqual((await load(3, { joiner: "j", modelType: "transducer" })).ok, true);
+    assert.strictEqual(built[2].modelType, "transducer");
+
+    // No joiner and no declared type is no longer read as Whisper; neither is
+    // a declaration the files contradict, or a family the worker can't run.
+    for (const [id, sherpa] of [
+      [4, {}],
+      [5, { modelType: "whisper", joiner: "j" }],
+      [6, { modelType: "nemo_transducer" }],
+      [7, { modelType: "canary" }],
+    ]) {
+      const reply = await load(id, sherpa);
+      assert.strictEqual(reply.ok, false, JSON.stringify(sherpa));
+      assert.match(reply.error, /Unsupported speech model configuration/);
+    }
+    assert.strictEqual(built.length, 3, "no recognizer is built for a rejected config");
+    // ...and the refusal doesn't drop the model that was already resident.
+    assert.strictEqual((await load(3, { joiner: "j", modelType: "transducer" })).ok, true);
+    assert.strictEqual(built.length, 3);
+  } finally {
+    worker.restore();
+  }
+});
+
 test("engines cleanup snapshots each selected model and cancellation reaches a cold worker", async () => {
   const requests = [];
   let finish;
@@ -2029,6 +2214,110 @@ test("cleanup worker exit rejects pending cleanup and subsequent cancellation is
   assert.strictEqual(cleanup.calls.length, requestsBeforeCancel);
   assert.strictEqual(facade.unloadIdle(), true);
   assert.strictEqual(cleanup.stopped, false, "the exited worker is already gone");
+});
+
+/* ---------------- STT readiness (#194) ---------------- */
+
+// Pressing the hotkey with the selected built-in model missing must be refused
+// before the microphone opens, and the startup notice must not say "ready".
+// Both ask getSttReadiness, which answers from the registry and the disk only.
+function readinessFacade({ installed = new Set(), isInstalled } = {}) {
+  const checked = [];
+  const managerStub = {
+    isInstalled:
+      isInstalled ||
+      ((base, model) => {
+        checked.push(model.id);
+        return installed.has(model.id);
+      }),
+    modelDir: (base, model) => path.join(base, model.kind, model.id),
+  };
+  const hostModule = {
+    createHost: () => ({ request: async () => ({}), stop() {}, onExit() {} }),
+  };
+  return { facade: loadFacadeWith({ host: hostModule, manager: managerStub }), checked };
+}
+
+test("getSttReadiness: an installed built-in model is ready", () => {
+  const id = registry.DEFAULT_STT_MODEL;
+  const { facade } = readinessFacade({ installed: new Set([id]) });
+
+  assert.deepStrictEqual(facade.getSttReadiness({ engine: "builtin", builtin: { model: id } }), { ok: true });
+});
+
+test("getSttReadiness: a missing built-in model names its registry label", () => {
+  const id = "parakeet-tdt-0.6b-v3-int8";
+  const { facade } = readinessFacade();
+
+  assert.deepStrictEqual(facade.getSttReadiness({ engine: "builtin", builtin: { model: id } }), {
+    ok: false,
+    reason: "missing",
+    modelId: id,
+    label: registry.getModel("stt", id).label,
+  });
+});
+
+test("getSttReadiness: an incomplete download is not ready", async (t) => {
+  // The real manager: a model directory without its completion marker.
+  const base = await fsp.mkdtemp(path.join(os.tmpdir(), "earheart-ready-"));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const id = registry.DEFAULT_STT_MODEL;
+  const model = registry.getModel("stt", id);
+  fs.mkdirSync(manager.modelDir(base, model), { recursive: true });
+  const { facade } = readinessFacade({ isInstalled: (dir, m) => manager.isInstalled(base, m) });
+
+  const readiness = facade.getSttReadiness({ engine: "builtin", builtin: { model: id } });
+
+  assert.strictEqual(readiness.ok, false);
+  assert.strictEqual(readiness.reason, "missing");
+});
+
+test("getSttReadiness: an unknown model id is reported, not thrown", () => {
+  const { facade } = readinessFacade();
+
+  assert.deepStrictEqual(facade.getSttReadiness({ engine: "builtin", builtin: { model: "gone" } }), {
+    ok: false,
+    reason: "unknown",
+    modelId: "gone",
+  });
+});
+
+test("getSttReadiness: a custom STT model resolves through the registry", (t) => {
+  const custom = {
+    id: "custom-acme-stt",
+    kind: "stt",
+    label: "Acme STT",
+    engine: "sherpa-parakeet",
+    custom: true,
+    files: [{ name: "model.onnx", url: "https://huggingface.co/acme/stt/resolve/c/model.onnx" }],
+  };
+  registry.setCustomModels([custom]);
+  t.after(() => registry.setCustomModels([]));
+  const { facade } = readinessFacade();
+
+  const readiness = facade.getSttReadiness({ engine: "builtin", builtin: { model: custom.id } });
+
+  assert.strictEqual(readiness.reason, "missing");
+  assert.strictEqual(readiness.label, "Acme STT");
+});
+
+test("getSttReadiness: the remote engine is ready without touching the disk", () => {
+  const { facade, checked } = readinessFacade();
+
+  assert.deepStrictEqual(facade.getSttReadiness({ engine: "remote", builtin: { model: "gone" } }), { ok: true });
+  assert.deepStrictEqual(checked, []);
+});
+
+test("getSttReadiness: a disk check that throws does not block dictation", () => {
+  const { facade } = readinessFacade({
+    isInstalled: () => {
+      throw new Error("EACCES");
+    },
+  });
+
+  const readiness = facade.getSttReadiness({ engine: "builtin", builtin: { model: registry.DEFAULT_STT_MODEL } });
+
+  assert.strictEqual(readiness.ok, true);
 });
 
 test("concurrent cold ensureCleanup calls share one load-cleanup", async () => {

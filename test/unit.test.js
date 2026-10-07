@@ -24,7 +24,7 @@ const autostart = require("../main/autostart");
 const { listRemoteModels } = require("../main/services/models-remote");
 const { reconcileTranscript } = require("../renderer/transcript");
 const { acceleratorFromEvent } = require("../renderer/hotkey-capture");
-const { prettyHotkey } = require("../main/util/hotkey-label");
+const { prettyHotkey, registrationHint } = require("../main/util/hotkey-label");
 const {
   explainMacPasteError,
   fixPastePermissions,
@@ -1161,6 +1161,17 @@ test("prettyHotkey names modifiers the way each platform does", () => {
   // The key itself passes through untouched, and unbound stays empty.
   assert.strictEqual(prettyHotkey("CommandOrControl+Up", "linux"), "Ctrl+Up");
   assert.strictEqual(prettyHotkey("", "linux"), "");
+});
+
+// The Wayland note only exists in Settings on Linux (renderer/settings.js hides
+// it elsewhere), so the hint must not point at it on macOS or Windows.
+test("registrationHint points only at help that exists on the platform", () => {
+  assert.match(registrationHint("linux"), /Wayland note in Settings/);
+  for (const platform of ["darwin", "win32"]) {
+    const hint = registrationHint(platform);
+    assert.doesNotMatch(hint, /Wayland/);
+    assert.match(hint, /already in use/);
+  }
 });
 
 // macOS reports the auto-paste permission failures with unrelated wording; each

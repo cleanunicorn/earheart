@@ -11,7 +11,7 @@ const Module = require("node:module");
 const ipcPath = require.resolve("../main/ipc");
 const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(ipcPath)] });
 
-function loadIpcHandlers({ previous, hotkeyResults, saveError = null }) {
+function loadIpcHandlers({ previous, hotkeyResults, saveError = null, getHotkeyStatus }) {
   const handlers = {};
   const calls = {
     applied: [],
@@ -101,6 +101,7 @@ function loadIpcHandlers({ previous, hotkeyResults, saveError = null }) {
       onSettingsChanged() {
         calls.settingsChanged += 1;
       },
+      getHotkeyStatus,
     });
   } finally {
     delete require.cache[ipcPath];
@@ -307,4 +308,48 @@ test("a failed write keeps its error when hotkey rollback throws", () => {
   assert.throws(() => handlers["settings:save"]({}, request(attempt)), /disk full/);
   assert.strictEqual(calls.warnings.length, 1);
   assert.match(calls.warnings[0], /could not restore hotkeys.*rollback blew up/);
+});
+
+// Settings renders the startup registration result when it opens, before any
+// Save — so settings:get has to carry it, and reading it must never re-register.
+test("settings:get reports the last hotkey registration without re-registering", () => {
+  const status = {
+    hotkey: { ok: false, error: "Could not register", accelerator: working.hotkey },
+    pauseHotkey: { ok: true, accelerator: working.pauseHotkey },
+  };
+  const { handlers, calls } = loadIpcHandlers({
+    previous: working,
+    hotkeyResults: { hotkey: { ok: true }, pauseHotkey: { ok: true } },
+    getHotkeyStatus: () => status,
+  });
+
+  const first = handlers["settings:get"]();
+  const second = handlers["settings:get"]();
+
+  assert.deepStrictEqual(first.hotkeyStatus, status);
+  assert.deepStrictEqual(second.hotkeyStatus, status);
+  assert.deepStrictEqual(calls.applied, []);
+});
+
+test("settings:get reports a later registration result", () => {
+  let status = { hotkey: { ok: false, error: "taken", accelerator: "A" }, pauseHotkey: { ok: true } };
+  const { handlers } = loadIpcHandlers({
+    previous: working,
+    hotkeyResults: { hotkey: { ok: true }, pauseHotkey: { ok: true } },
+    getHotkeyStatus: () => status,
+  });
+  assert.strictEqual(handlers["settings:get"]().hotkeyStatus.hotkey.ok, false);
+
+  status = { hotkey: { ok: true, accelerator: "B" }, pauseHotkey: { ok: true } };
+
+  assert.strictEqual(handlers["settings:get"]().hotkeyStatus.hotkey.ok, true);
+});
+
+test("settings:get reports no hotkey status when none is wired", () => {
+  const { handlers } = loadIpcHandlers({
+    previous: working,
+    hotkeyResults: { hotkey: { ok: true }, pauseHotkey: { ok: true } },
+  });
+
+  assert.strictEqual(handlers["settings:get"]().hotkeyStatus, null);
 });

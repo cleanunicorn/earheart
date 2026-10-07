@@ -158,6 +158,47 @@ test("every logs:open action the renderer branches on is one main can return", (
   assert.deepStrictEqual(unknown, [], `renderer tests actions main never sends: ${unknown.join(", ")}`);
 });
 
+// The source of `function name(…) { … }` in `source`, found by matching braces
+// rather than by a "\n}\n" terminator, so a CRLF checkout (core.autocrlf on
+// the Windows runner) can't make it run on into the rest of the file.
+function functionSource(source, name) {
+  const declaration = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(source);
+  assert.ok(declaration, `${name} function must exist`);
+  const bodyStart = source.indexOf("{", declaration.index + declaration[0].length);
+  let depth = 0;
+  for (let i = bodyStart; i < source.length; i++) {
+    if (source[i] === "{") depth++;
+    else if (source[i] === "}" && --depth === 0) return source.slice(declaration.index, i + 1);
+  }
+  assert.fail(`${name} function has an unclosed body`);
+}
+
+// models:remove-custom answers with the kind and model main saved after the
+// removal, and Settings adopts them so its select never falls back to the
+// removed id (which reads back "" and gets saved). Joined by bare field names:
+// a rename on either side would make the renderer skip the adoption silently,
+// caught only by the heavier settings smoke. Compare the success return's
+// fields with the fields removeCustomModel reads off the result.
+test("every models:remove-custom result field Settings reads is one main returns", () => {
+  const start = main.indexOf('ipcMain.handle("models:remove-custom"');
+  assert.notStrictEqual(start, -1, "models:remove-custom handler must exist");
+  const handler = main.slice(start, main.indexOf("ipcMain.handle(", start + 1));
+  const success = /return \{ ok: true, ([^}]*)\}/.exec(handler);
+  assert.ok(success, "models:remove-custom must return a literal success object");
+  const returned = new Set(["ok", "error", ...success[1].split(",").map((f) => f.split(":")[0].trim())]);
+  for (const field of ["customModels", "kind", "model"]) {
+    assert.ok(returned.has(field), `models:remove-custom no longer returns ${field}`);
+  }
+
+  const fn = functionSource(renderer, "removeCustomModel");
+  const read = channels(fn, /\bres\.([A-Za-z]+)/g);
+  for (const field of ["kind", "model"]) {
+    assert.ok(read.has(field), `removeCustomModel no longer reads res.${field}`);
+  }
+  const unknown = [...read].filter((f) => !returned.has(f)).sort();
+  assert.deepStrictEqual(unknown, [], `removeCustomModel reads fields main never returns: ${unknown.join(", ")}`);
+});
+
 test("every channel the renderers send is in SEND and has an ipcMain.on", () => {
   const sent = channels(renderer, /earheart\.send\(\s*"([a-z:-]+)"/g);
   assert.ok(sent.size > 5, `expected many sent channels, got ${sent.size}`);

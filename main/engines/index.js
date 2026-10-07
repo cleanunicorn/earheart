@@ -12,6 +12,7 @@ const settings = require("../settings");
 const { resolveCleanup } = require("../cleanup-styles");
 const { cleanContextFor } = require("../util/clean-budget");
 const { cleanupTurnPrefix } = require("../util/cleanup-turn");
+const { unsupportedSttFamily } = require("../services/hf-models");
 
 // STT and cleanup each get their own worker process so they run in parallel and
 // a crash in one engine can't take down the other (see host.js). Each lazily
@@ -36,12 +37,48 @@ function isInstalled(kind, modelId) {
   return manager.isInstalled(modelsDir(), resolve(kind, modelId));
 }
 
+// Whether a dictation with these STT settings can be transcribed, answered from
+// the registry and the disk only — cheap and synchronous, so the pipeline asks
+// on every hotkey press before opening the microphone, and startup asks before
+// saying "ready". Returns data, not copy (main/setup-notices.js words it):
+//   { ok: true }                                      remote engine, or installed
+//   { ok: false, reason: "missing", modelId, label }  built-in model not on disk
+//   { ok: false, reason: "unknown", modelId }         id not in the registry
+// It proves the files are there, not that the native engine will load them;
+// the final pass still surfaces a load failure.
+function getSttReadiness(sttCfg) {
+  if (sttCfg?.engine !== "builtin") return { ok: true };
+  const modelId = sttCfg.builtin?.model;
+  const model = registry.getModel("stt", modelId);
+  if (!model) return { ok: false, reason: "unknown", modelId };
+  let installed;
+  try {
+    installed = manager.isInstalled(modelsDir(), model);
+  } catch {
+    // An indeterminate check must never cost a dictation: let it record, and
+    // the final pass reports whatever is really wrong.
+    return { ok: true };
+  }
+  if (installed) return { ok: true };
+  return { ok: false, reason: "missing", modelId, label: model.label || modelId };
+}
+
 function download(kind, modelId, { onProgress, signal } = {}) {
   return manager.download(modelsDir(), resolve(kind, modelId), { onProgress, signal });
 }
 
 function remove(kind, modelId) {
   return manager.remove(modelsDir(), resolve(kind, modelId));
+}
+
+// Delete the files of a definition the registry may not hold (an orphaned
+// custom download, or the previous revision of a custom model being replaced).
+function removeFiles(model) {
+  return manager.remove(modelsDir(), model);
+}
+
+function definitionFingerprint(model) {
+  return manager.definitionFingerprint(model);
 }
 
 /* ---------------- speech-to-text ---------------- */
@@ -77,6 +114,20 @@ function sharedLoad(slot, key, start) {
 // isn't downloaded yet — callers surface that (or fall back to the HTTP path).
 async function ensureStt(modelId) {
   const model = resolve("stt", modelId);
+  // Hugging Face discovery used to save any joiner-less bundle as Whisper, so
+  // a Canary entry may already sit in settings with a Whisper config the
+  // worker can't tell apart from the real thing. Its id, label and repo still
+  // say what it is: refuse it here, with the way out, instead of loading it.
+  const family =
+    model.sherpa && !model.sherpa.joiner
+      ? unsupportedSttFamily([model.id, model.label, model.source && model.source.repo].join(" "))
+      : null;
+  if (family) {
+    throw new Error(
+      `"${model.label || modelId}" is a ${family} model, which Earheart can't run. ` +
+        "Remove it in Settings → Speech-to-text and add a Parakeet or Whisper model instead."
+    );
+  }
   if (!manager.isInstalled(modelsDir(), model)) {
     throw new Error(`STT model "${modelId}" is not downloaded yet`);
   }
@@ -334,8 +385,11 @@ cleanupHost.onExit(forgetCleanup);
 module.exports = {
   modelsDir,
   isInstalled,
+  getSttReadiness,
   download,
   remove,
+  removeFiles,
+  definitionFingerprint,
   ensureStt,
   transcribe,
   ensureCleanup,

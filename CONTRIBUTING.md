@@ -68,8 +68,10 @@ captured WAV covers everything said from that moment, and stop/cancel racing
 mic startup still resolve. The settings-smoke step drives the real settings
 window and asserts the settings-page contract: every section renders on one
 scroll, the index's scroll-spy highlight and focus handoff work, the roving
-tabindex is seated at load, and a setting saved from the tray reaches an open
-Settings window or wizard without discarding unsaved edits. CI runs all five on every platform.
+tabindex is seated at load, a setting saved from the tray reaches an open
+Settings window or wizard without discarding unsaved edits, and a microphone
+chosen while device enumeration is pending survives it and Save writes that
+choice to disk. CI runs all five on every platform.
 Built-in models download to Electron's `userData/models` on first use; the
 smoke checks don't need them present.
 
@@ -199,6 +201,7 @@ main/                    Electron main process
   main.js                lifecycle, single-instance, --toggle forwarding
   pipeline.js            record → transcribe → clean → deliver state machine
   hotkeys.js             global shortcut registration
+  setup-notices.js       launch policy + "fix your setup" notices (→ Settings)
   settings.js            JSON settings with deep-merged defaults
   history.js             local transcription history
   tray.js                tray icon + menu
@@ -240,6 +243,20 @@ Design constraints worth keeping:
   `node-llama-cpp` (cleanup) — which ship prebuilt binaries and are unpacked
   from the asar (`asarUnpack` in `electron-builder.yml`). Models are downloaded
   at first run, not bundled.
+- **Model files and definitions stay consistent.** A model's `.complete`
+  marker records each file's size and a fingerprint of its definition (each
+  file's name and checksum, or its URL and size when it has no checksum;
+  `definitionFingerprint` in `main/engines/model-manager.js`). Re-pinning a
+  checksummed model to a new commit with the same bytes therefore keeps its
+  install. A mismatch means "not installed", which
+  matters for custom models: their id has no commit, so an upstream re-upload
+  keeps the id. Markers written before fingerprints existed still count as
+  installed, so upgrades never force a re-download. Instead, re-adding a custom
+  model whose definition changed (or one with no stored definition) deletes the
+  bytes under its id before saving the new definition. Removing a model first
+  aborts and awaits its download (`main/ipc.js`). A delete that fails (e.g.
+  EBUSY on Windows) is reported, and the custom definition is kept so the user
+  can retry.
 - **The overlay window owns the microphone.** The main process never touches
   raw audio; it receives finished WAVs from the renderer — the final one on stop,
   plus periodic partial WAVs while recording for the live preview (re-transcribed,

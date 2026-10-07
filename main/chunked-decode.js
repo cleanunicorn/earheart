@@ -181,6 +181,8 @@ function assemble(pieces, owners) {
  * @param {object} deps
  * @param {(wav: Buffer, opts: {onDecodeMs?: (ms: number) => void}) => Promise<string>} deps.runTranscribe
  * @param {() => void} [deps.restartStt] retire a wedged worker before retrying
+ *   (engine hosts already retire it on the timeout, so this is a safeguard for
+ *   a transcribe backend that doesn't)
  * @param {number} [deps.maxSec]
  * @param {number} [deps.minPauseSec] shortest pause cut at (Infinity: none)
  * @param {number} [deps.minSoundSec] shorter sound is noise (0: off)

@@ -359,6 +359,7 @@ function addCustomHarness(cfg, listings) {
     engines: {
       removeFiles: async (def) => {
         if (failWipe) throw new Error("EBUSY: resource busy or locked");
+        manager.modelDir(os.tmpdir(), def); // throws for a kind/id the real delete would reject
         events.push(`wipe:${def.kind}:${def.id}:${def.files[0].url}`);
       },
     },
@@ -485,4 +486,21 @@ test("a second change to a model that is already being changed is refused", asyn
   assert.strictEqual(result.ok, true);
   assert.deepStrictEqual(removed, [customCleanup.id]);
   assert.strictEqual(saved.length, 1);
+});
+
+test("re-adding over a hand-edited definition that names no directory replaces it", async (t) => {
+  t.after(() => registry.setCustomModels([]));
+  // A trailing space can't name a directory; settings.json is hand-editable.
+  const broken = { ...customCleanup, id: "custom-o-r-gguf-q4-k-m", kind: "cleanup " };
+  const cfg = { ...configWith("gemma-3-1b"), customModels: [broken] };
+  const h = addCustomHarness(cfg, [ggufListing("aaa")]);
+
+  const result = await h.add();
+
+  assert.strictEqual(result.ok, true, result.error);
+  assert.deepStrictEqual(h.events, [
+    "wipe:cleanup:custom-o-r-gguf-q4-k-m:https://huggingface.co/o/r-GGUF/resolve/aaa/r-Q4_K_M.gguf",
+  ]);
+  const stored = h.saved.at(-1).customModels;
+  assert.deepStrictEqual(stored.map((m) => m.kind), ["cleanup"]);
 });

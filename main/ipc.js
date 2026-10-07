@@ -86,8 +86,13 @@ function staleDefinitions(existing, model) {
   if (!existing) return [model];
   if (engines.definitionFingerprint(existing) === engines.definitionFingerprint(model)) return [];
   // Directories are kind/id, so a same-id definition of the other kind
-  // leaves bytes under both.
-  return existing.kind === model.kind ? [existing] : [existing, model];
+  // leaves bytes under both. A hand-edited definition whose kind or id can't
+  // name a directory has no bytes the app could have written; skipping it
+  // lets the re-add replace the broken entry instead of failing on it.
+  const stale = existing.kind === model.kind ? [existing] : [existing, model];
+  return stale.filter(
+    (def) => engines.registry.isPathSegment(def.kind) && engines.registry.isPathSegment(def.id)
+  );
 }
 
 function init({ applyHotkeys, onSettingsChanged }) {

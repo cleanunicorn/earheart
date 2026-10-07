@@ -72,6 +72,7 @@ jobs:
   # as a step it would run three times over for the OS matrix.
   repo-hygiene:
     runs-on: ubuntu-latest
+    # A checkout plus two shell checks: seconds of work.
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -99,6 +100,7 @@ jobs:
 
   stt-server:
     runs-on: ubuntu-latest
+    # uv sync plus pytest: typically 1-2 min.
     timeout-minutes: 15
     defaults:
       run:

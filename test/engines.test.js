@@ -2035,10 +2035,10 @@ function holdLoads(host, loadType) {
 }
 
 test("concurrent cold ensureCleanup calls share one load-cleanup", async () => {
-  // The pipeline warms cleanup as recording starts and again before it cleans,
-  // so two callers can ask for the same cold model at once. Each used to post
-  // its own load; the worker is the only thing that kept the second one from
-  // loading a second copy of the model.
+  // Two callers asking for the same cold model at once share one request. The
+  // worker would also collapse a second load-cleanup (it queues loads and
+  // checks residency; see cleanup-worker.test.js), so this pins the facade's
+  // half: one round trip, not two.
   const { facade, hostsBySvc } = loadTwoHostFacade();
   const cleanup = hostsBySvc["earheart-cleanup"];
   const held = holdLoads(cleanup, "load-cleanup");

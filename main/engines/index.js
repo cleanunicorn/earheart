@@ -50,10 +50,12 @@ let loadedStt = null;
 const sttLoad = { inflight: null };
 
 // Share one in-flight load between concurrent callers asking for the same
-// thing. Recording start warms the engines and the final pass loads them again,
-// so on a cold start both callers can arrive before the first load settles;
-// each posting its own load made the worker build the model twice. Only the
-// in-flight promise is shared: once it settles (either way) the slot is
+// thing. Recording start warms STT and the final pass loads it again, so on a
+// cold start both callers can arrive before the first load settles; each
+// posting its own load-stt made the worker (whose STT load isn't queued) build
+// the recognizer twice. The cleanup worker queues its loads and checks
+// residency itself, so there the memo only saves a redundant round trip. Only
+// the in-flight promise is shared: once it settles (either way) the slot is
 // cleared, so a failed load is retried rather than replayed.
 function sharedLoad(slot, key, start) {
   if (slot.inflight?.key === key) return slot.inflight.promise;
@@ -173,7 +175,10 @@ function cleanupRequest(type, args, opts) {
 
 const cleanupLoad = { inflight: null };
 
-// The key includes the context size: a changed size is a different load.
+// Load the cleanup model ahead of use. The pipeline doesn't call this: it warms
+// with primeCleanup() and every clean() carries its model to the worker, which
+// loads it on demand. The key includes the context size: a changed size is a
+// different load.
 async function ensureCleanup(modelId) {
   const model = cleanupModel(modelId);
   return sharedLoad(cleanupLoad, `${modelId}:${model.contextSize}`, () =>

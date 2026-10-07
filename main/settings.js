@@ -313,6 +313,11 @@ function load() {
   return cached;
 }
 
+// Merge `next` onto the defaults and write it atomically. Throws when the
+// write fails, and memory then still equals the file, so callers that must
+// not fail (startup, bookkeeping) guard it. Only after a successful write does
+// the cache change and onChanged fire. Returns a detached copy of what was
+// saved.
 function save(next) {
   const merged = deepMerge(DEFAULTS, next);
   const file = settingsPath();

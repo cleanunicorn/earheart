@@ -22,6 +22,14 @@ test("stt-eval: cardinals, years, and the number shapes N3 models", () => {
   assert.strictEqual(e.intToWords(100), "one hundred");
   assert.strictEqual(e.intToWords(40000), "forty thousand");
   assert.strictEqual(e.intToWords(330117), "three hundred thirty thousand one hundred seventeen");
+  // The scale table must reach every safe integer: a bare 16-digit run used to
+  // feed quotients of 1000+ into the under-a-thousand speller.
+  assert.strictEqual(e.intToWords(999999999999999), "nine hundred ninety nine trillion nine hundred ninety nine billion nine hundred ninety nine million nine hundred ninety nine thousand nine hundred ninety nine");
+  assert.strictEqual(e.intToWords(1e15), "one quadrillion");
+  assert.strictEqual(
+    e.intToWords(Number.MAX_SAFE_INTEGER),
+    "nine quadrillion seven trillion one hundred ninety nine billion two hundred fifty four million seven hundred forty thousand nine hundred ninety one"
+  );
   assert.strictEqual(e.yearToWords(1963), "nineteen sixty three");
   assert.strictEqual(e.yearToWords(1900), "nineteen hundred");
   assert.strictEqual(e.yearToWords(1905), "nineteen oh five");
@@ -32,6 +40,7 @@ test("stt-eval: cardinals, years, and the number shapes N3 models", () => {
   const n = (s) => e.normalise(s).join(" ");
   assert.strictEqual(n("In 1963,"), "in nineteen sixty three");
   assert.strictEqual(n("40,000 people"), "forty thousand people");
+  assert.strictEqual(n("it cost 1000000000000000 dollars"), "it cost one quadrillion dollars");
   assert.strictEqual(n("2.5 km"), "two point five km");
   assert.strictEqual(n("20% of it"), "twenty percent of it");
   assert.strictEqual(n("the 3rd and 13th"), "the third and thirteenth");
@@ -705,6 +714,12 @@ test("stt-eval plan: --models narrows the plan and the baseline must exist", () 
     `${manifest.BASELINE_ID}|bracket-first`, "parakeet-tdt-0.6b-v2-int8|candidate", `${manifest.BASELINE_ID}|bracket-last`,
   ]);
   assert.throws(() => e.planModels(shipped, [], { baselineId: "nope" }), /not in the catalog/);
+  // A --models id that plans nothing is an error, not a quietly emptier run:
+  // a typo, or an exploratory candidate asked for without --exploratory.
+  assert.throws(
+    () => e.planModels(shipped, manifest.CANDIDATES, { baselineId: manifest.BASELINE_ID, models: ["parakeet-tdt-0.6b-v2-int8", "nope"] }),
+    (err) => /--models: "nope" is not planned/.test(err.message) && err.message.includes(manifest.BASELINE_ID)
+  );
 });
 
 /* ---------------- combining passes and the report (scripts/eval-stt.js) ---------------- */

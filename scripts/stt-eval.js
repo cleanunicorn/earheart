@@ -47,7 +47,10 @@ const ONES = [
   "seventeen", "eighteen", "nineteen",
 ];
 const TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+// Reaches every safe integer: MAX_SAFE_INTEGER is just over 9e15, so the
+// largest quotient any scale hands underThousand is 9.
 const SCALES = [
+  [1e15, "quadrillion"],
   [1e12, "trillion"],
   [1e9, "billion"],
   [1e6, "million"],
@@ -604,7 +607,15 @@ function planModels(shipped, candidates, { baselineId, exploratory = false, pass
   }
   // The closing bracket only checks the machine stayed quiet: speed's concern.
   if (pass !== "accuracy") list.push({ model: defaultModel, role: "bracket-last", arm: "shipped" });
-  return models ? list.filter((x) => models.includes(x.model.id)) : list;
+  if (!models) return list;
+  // A requested id that plans nothing (a typo, or an exploratory candidate
+  // without --exploratory) is an error, not a quietly emptier run.
+  const planned = [...new Set(list.map((x) => x.model.id))];
+  const unknown = models.filter((id) => !planned.includes(id));
+  if (unknown.length) {
+    throw new Error(`--models: ${unknown.map((id) => `"${id}"`).join(", ")} is not planned for this pass; planned: ${planned.join(", ")}`);
+  }
+  return list.filter((x) => models.includes(x.model.id));
 }
 
 /* ---------------- same machine, same runtime ---------------- */

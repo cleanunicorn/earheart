@@ -220,6 +220,7 @@ main/                    Electron main process
     host.js              createHost() factory: one worker process per host
     index.js             facade routing STT → sttHost, cleanup → cleanupHost
   output/deliver.js      clipboard + per-OS paste keystroke injection
+  output/mac-permissions.js  macOS permission probes, repair state and settings panes
 renderer/                overlay (mic capture → 16 kHz WAV, live transcript
                          preview), settings UI, first-run wizard
   transcript.js          pure two-layer (raw/cleaned) reconcile helper

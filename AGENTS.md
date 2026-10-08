@@ -33,8 +33,9 @@ The Makefile wraps most tasks; `make help` lists them all.
 - **Install / bootstrap:** `make install`
 - **Run locally:** `make run`
 - **Lint / format / type-check:** none — plain JavaScript, no linter configured.
-- **Test (all):** `make test` (`node --test`, no framework)
-- **Test (single file):** `node --test test/pipeline.test.js`
+- **Test (all):** `make test` (`node --test` with a 30 s per-test timeout, no
+  framework)
+- **Test (single file):** `node --test --test-timeout=30000 test/pipeline.test.js`
 - **Smoke checks (Linux):** `make smoke`, `make overlay-smoke`,
   `make settings-smoke` (each wraps `xvfb-run -a`), and
   `xvfb-run -a npx electron scripts/engine-smoke.js --no-sandbox` (no make
@@ -335,6 +336,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#architecture) for the full architecture.
 - **What to cover:** happy path, error paths, and edge cases for new code.
 - **Fixtures / stubs:** no network or models needed; the STT server suite uses
   synthetic WAVs and fake recognizers.
+- **Nothing may hang.** `npm test` runs with a 30 s per-test timeout and every
+  `ci.yml` job has `timeout-minutes`. In a test HTTP server, never assert
+  inside the handler — a throwing handler leaves the request unanswered and
+  the file alive after the failure. Record what the handler saw (see
+  `serveJson` in `test/unit.test.js`) and assert in the test body. In smoke
+  and screenshot scripts, wait for a page with `waitForLoad` from
+  `scripts/wait-for-load.js`, never a bare `once("did-finish-load")`.
+- **Leave nothing behind.** A test that calls `mkdtemp` registers
+  `t.after(() => fs.rmSync(dir, { recursive: true, force: true }))`.
 
 ## Security
 

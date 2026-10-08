@@ -13,6 +13,7 @@ const ROOT = path.join(__dirname, "..");
 const OUT = path.join(ROOT, "docs", "screenshots");
 const windows = require(path.join(ROOT, "main", "windows.js"));
 const ipc = require(path.join(ROOT, "main", "ipc.js"));
+const { waitForLoad } = require("./wait-for-load");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -34,14 +35,14 @@ app.whenReady().then(async () => {
 
   // Setup wizard, welcome step (the demo animation needs a beat to settle).
   const wizard = windows.openWizard();
-  await new Promise((r) => wizard.webContents.once("did-finish-load", r));
+  await waitForLoad(wizard.webContents);
   await sleep(1800);
   await shot(wizard, "wizard");
   windows.closeWizard();
 
   // Settings window, General section (the default view).
   const settings = windows.openSettings();
-  await new Promise((r) => settings.webContents.once("did-finish-load", r));
+  await waitForLoad(settings.webContents);
   await sleep(1200);
   await shot(settings, "settings");
   settings.close();
@@ -50,7 +51,7 @@ app.whenReady().then(async () => {
   // drawMeter/timerEl are top-level bindings in overlay.js, reachable from
   // executeJavaScript.
   const overlay = windows.createOverlay();
-  await new Promise((r) => overlay.webContents.once("did-finish-load", r));
+  await waitForLoad(overlay.webContents);
   windows.showOverlay();
   await sleep(800);
 

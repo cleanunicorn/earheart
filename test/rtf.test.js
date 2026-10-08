@@ -60,13 +60,19 @@ test("rtf: progressAt guards zero/invalid inputs", () => {
 
 /* ---------------- persistence across restarts ---------------- */
 
-function tmpStateFile() {
+// A fresh temp dir that the test removes when it ends.
+function tmpDir(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-rtf-"));
-  return path.join(dir, "stt-rtf.json");
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
 }
 
-test("persisted rtf: saves after record and reloads on the next construction", () => {
-  const file = tmpStateFile();
+function tmpStateFile(t) {
+  return path.join(tmpDir(t), "stt-rtf.json");
+}
+
+test("persisted rtf: saves after record and reloads on the next construction", (t) => {
+  const file = tmpStateFile(t);
 
   const first = createPersistedRtfEstimator(file);
   assert.strictEqual(first.estimate(), 0.25); // no file yet: default guess
@@ -80,8 +86,8 @@ test("persisted rtf: saves after record and reloads on the next construction", (
   assert.strictEqual(second.estimate(), learned);
 });
 
-test("persisted rtf: replaces state atomically through a temporary file", () => {
-  const file = tmpStateFile();
+test("persisted rtf: replaces state atomically through a temporary file", (t) => {
+  const file = tmpStateFile(t);
   const writes = [];
   const renames = [];
   const originalWrite = fs.writeFileSync;
@@ -107,8 +113,8 @@ test("persisted rtf: replaces state atomically through a temporary file", () => 
   assert.ok(!fs.existsSync(`${file}.${process.pid}.tmp`));
 });
 
-test("persisted rtf: missing or corrupt state falls back to the default", () => {
-  const file = tmpStateFile();
+test("persisted rtf: missing or corrupt state falls back to the default", (t) => {
+  const file = tmpStateFile(t);
   assert.strictEqual(createPersistedRtfEstimator(file).estimate(), 0.25);
 
   fs.writeFileSync(file, "not json");
@@ -121,11 +127,11 @@ test("persisted rtf: missing or corrupt state falls back to the default", () => 
   assert.strictEqual(createPersistedRtfEstimator(file).estimate(), 0.25);
 });
 
-test("persisted rtf: finite but absurd stored values are clamped on load", () => {
+test("persisted rtf: finite but absurd stored values are clamped on load", (t) => {
   // A hand-edited or units-mixed state file must not freeze the bar near 0%
   // (huge rtf) or snap it to the cap instantly (tiny rtf). Pins the
   // constructor clamp, which would otherwise look redundant with record()'s.
-  const file = tmpStateFile();
+  const file = tmpStateFile(t);
 
   fs.writeFileSync(file, JSON.stringify({ rtf: 50 }));
   assert.strictEqual(createPersistedRtfEstimator(file).estimate(), 2); // default max
@@ -134,17 +140,16 @@ test("persisted rtf: finite but absurd stored values are clamped on load", () =>
   assert.strictEqual(createPersistedRtfEstimator(file).estimate(), 0.02); // default min
 });
 
-test("persisted rtf: rejected samples don't touch the state file", () => {
-  const file = tmpStateFile();
+test("persisted rtf: rejected samples don't touch the state file", (t) => {
+  const file = tmpStateFile(t);
   const rtf = createPersistedRtfEstimator(file);
   rtf.record(0, 1); // garbage: ignored by the estimator
   assert.ok(!fs.existsSync(file));
 });
 
-test("persisted rtf: a failed save keeps the in-memory estimate working", () => {
+test("persisted rtf: a failed save keeps the in-memory estimate working", (t) => {
   // Point the state file at a directory so writeFileSync fails.
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-rtf-"));
-  const rtf = createPersistedRtfEstimator(dir);
+  const rtf = createPersistedRtfEstimator(tmpDir(t));
   rtf.record(10, 1); // save fails silently
   assert.ok(rtf.estimate() < 0.25); // EMA still updated for this session
 });

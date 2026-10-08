@@ -422,6 +422,15 @@ async function withTmp(fn) {
   }
 }
 
+// The byte offset a resume request asks for, or 0 when there is no Range
+// header. Test servers must never throw: an unanswered request keeps the
+// client waiting and the process alive, so handlers record what they saw and
+// the test body asserts on it afterwards.
+function rangeOffset(req) {
+  const match = /^bytes=(\d+)-$/.exec(req.headers.range || "");
+  return match ? Number(match[1]) : 0;
+}
+
 // Simulate a dropped connection only once the client has `bytes` of the body
 // on disk in its `.part` file. A fixed delay between the write and the drop
 // races the client: downloadFile writes its resume metadata before it starts
@@ -495,8 +504,6 @@ test("multi-file resume credits complete and partial files together", async () =
   const requests = [];
   const server = http.createServer((req, res) => {
     requests.push({ url: req.url, range: req.headers.range });
-    assert.strictEqual(req.url, "/partial.bin");
-    assert.strictEqual(req.headers.range, `bytes=${cut}-`);
     res.statusCode = 206;
     res.setHeader("etag", '"stable"');
     res.setHeader("content-range", `bytes ${cut}-${resumed.length - 1}/${resumed.length}`);
@@ -825,8 +832,7 @@ test("a transient failure retains bytes and retries with Range and If-Range", as
       res.write(full.subarray(0, cut), () => dropOnceOnDisk(res, () => part, cut));
       return;
     }
-    const offset = Number(req.headers.range.match(/^bytes=(\d+)-$/)[1]);
-    assert.strictEqual(offset, kept);
+    const offset = rangeOffset(req);
     res.statusCode = 206;
     res.setHeader("content-range", `bytes ${offset}-${full.length - 1}/${full.length}`);
     res.setHeader("content-length", full.length - offset);
@@ -853,6 +859,7 @@ test("a transient failure retains bytes and retries with Range and If-Range", as
       await manager.download(dir, model, { onProgress: (p) => progress.push(p.received) });
       assert.strictEqual(manager.isInstalled(dir, model), true);
       assert.deepStrictEqual(fs.readFileSync(dest), full);
+      assert.strictEqual(requests[1].range, `bytes=${kept}-`, "retry resumes at the kept bytes");
       assert.strictEqual(requests[1].ifRange, '"version-1"');
       assert.strictEqual(progress[0], kept, "retry begins at reusable on-disk bytes");
       for (let i = 1; i < progress.length; i++) {
@@ -870,10 +877,10 @@ test("a temporary HTTP error preserves partial state for a later resume", async 
   const sha = crypto.createHash("sha256").update(full).digest("hex");
   const cut = 160;
   let attempt = 0;
+  const requests = [];
   const server = http.createServer((req, res) => {
     attempt++;
-    assert.strictEqual(req.headers.range, `bytes=${cut}-`);
-    assert.strictEqual(req.headers["if-range"], '"stable"');
+    requests.push({ range: req.headers.range, ifRange: req.headers["if-range"] });
     if (attempt === 1) {
       res.statusCode = 503;
       res.end("try later");
@@ -911,6 +918,9 @@ test("a temporary HTTP error preserves partial state for a later resume", async 
 
       await manager.download(dir, model);
       assert.strictEqual(attempt, 2);
+      // Both attempts resume from the saved prefix with the saved validator.
+      const expected = { range: `bytes=${cut}-`, ifRange: '"stable"' };
+      assert.deepStrictEqual(requests, [expected, expected]);
       assert.deepStrictEqual(fs.readFileSync(dest), full);
       assert.strictEqual(manager.isInstalled(dir, model), true);
     });
@@ -987,8 +997,7 @@ test("a changed validator invalidates the partial and fetches a full representat
     if (attempt === 2) {
       // A non-compliant server sends a range despite the failed If-Range. The
       // changed ETag must still be noticed before any bytes are appended.
-      const offset = Number(req.headers.range.match(/^bytes=(\d+)-$/)[1]);
-      assert.strictEqual(offset, kept);
+      const offset = rangeOffset(req);
       res.statusCode = 206;
       res.setHeader("content-range", `bytes ${offset}-${newBody.length - 1}/${newBody.length}`);
       res.setHeader("content-length", newBody.length - offset);
@@ -1013,6 +1022,7 @@ test("a changed validator invalidates the partial and fetches a full representat
       assert.strictEqual(kept, cut, "the received prefix survives the drop");
       await manager.download(dir, model);
       assert.strictEqual(attempt, 3);
+      assert.strictEqual(requests[1].range, `bytes=${kept}-`);
       assert.strictEqual(requests[1].ifRange, '"old"');
       assert.strictEqual(requests[2].range, undefined);
       assert.deepStrictEqual(fs.readFileSync(dest), newBody);
@@ -1249,7 +1259,7 @@ test("cancellation preserves a resumable partial", async () => {
       res.write(full.subarray(0, 256));
       return;
     }
-    const offset = Number(req.headers.range.match(/^bytes=(\d+)-$/)[1]);
+    const offset = rangeOffset(req);
     res.statusCode = 206;
     res.setHeader("content-range", `bytes ${offset}-${full.length - 1}/${full.length}`);
     res.setHeader("content-length", full.length - offset);
@@ -1432,8 +1442,9 @@ test("corrupted resumed bytes fail the full checksum and are discarded", async (
   const full = Buffer.from("checksum-all-bytes-".repeat(64));
   const sha = crypto.createHash("sha256").update(full).digest("hex");
   const cut = 120;
+  const requests = [];
   const server = http.createServer((req, res) => {
-    assert.strictEqual(req.headers.range, `bytes=${cut}-`);
+    requests.push({ range: req.headers.range });
     res.statusCode = 206;
     res.setHeader("etag", '"stable"');
     res.setHeader("content-range", `bytes ${cut}-${full.length - 1}/${full.length}`);
@@ -1462,6 +1473,7 @@ test("corrupted resumed bytes fail the full checksum and are discarded", async (
       }));
 
       await assert.rejects(() => manager.download(dir, model), /Checksum mismatch/);
+      assert.deepStrictEqual(requests, [{ range: `bytes=${cut}-` }]);
       assert.ok(!fs.existsSync(`${dest}.part`));
       assert.ok(!fs.existsSync(`${dest}.part.json`));
       assert.strictEqual(manager.isInstalled(dir, model), false);

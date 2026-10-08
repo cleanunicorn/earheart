@@ -858,8 +858,14 @@ test("reconcileTranscript hides whitespace-only input", () => {
 
 /* ---------------- remote model listing ---------------- */
 
+// A one-route JSON server for the remote-listing tests. Each request is
+// recorded in `requests` so tests assert on it in their body: an assert that
+// throws inside the handler would leave the request unanswered and the file
+// alive after the failure.
 function serveJson(handler) {
+  const requests = [];
   const server = http.createServer((req, res) => {
+    requests.push({ url: req.url, headers: req.headers });
     const { status, body } = handler(req);
     res.statusCode = status;
     res.setHeader("content-type", "application/json");
@@ -867,36 +873,34 @@ function serveJson(handler) {
   });
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => {
-      resolve({ server, base: `http://127.0.0.1:${server.address().port}/v1` });
+      resolve({ server, base: `http://127.0.0.1:${server.address().port}/v1`, requests });
     });
   });
 }
 
 test("listRemoteModels parses OpenAI shape, sorts and de-dupes", async () => {
-  const { server, base } = await serveJson((req) => {
-    assert.strictEqual(req.url, "/v1/models");
-    assert.strictEqual(req.headers.authorization, "Bearer secret");
-    return {
-      status: 200,
-      body: { data: [{ id: "gpt-z" }, { id: "gpt-a" }, { id: "gpt-a" }] },
-    };
-  });
+  const { server, base, requests } = await serveJson(() => ({
+    status: 200,
+    body: { data: [{ id: "gpt-z" }, { id: "gpt-a" }, { id: "gpt-a" }] },
+  }));
   try {
     const models = await listRemoteModels({ baseUrl: base, apiKey: "secret" });
     assert.deepStrictEqual(models, ["gpt-a", "gpt-z"]);
+    assert.strictEqual(requests.length, 1);
+    assert.strictEqual(requests[0].url, "/v1/models");
+    assert.strictEqual(requests[0].headers.authorization, "Bearer secret");
   } finally {
     server.close();
   }
 });
 
 test("listRemoteModels accepts a bare array and omits the auth header without a key", async () => {
-  const { server, base } = await serveJson((req) => {
-    assert.strictEqual(req.headers.authorization, undefined);
-    return { status: 200, body: ["b", "a"] };
-  });
+  const { server, base, requests } = await serveJson(() => ({ status: 200, body: ["b", "a"] }));
   try {
     const models = await listRemoteModels({ baseUrl: base });
     assert.deepStrictEqual(models, ["a", "b"]);
+    assert.strictEqual(requests.length, 1);
+    assert.strictEqual(requests[0].headers.authorization, undefined);
   } finally {
     server.close();
   }
@@ -962,13 +966,14 @@ test("listRemoteModels rejects an unexpected JSON shape", async () => {
 });
 
 test("listRemoteModels strips a trailing slash before appending /models", async () => {
-  const { server, base } = await serveJson((req) => {
-    assert.strictEqual(req.url, "/v1/models"); // not /v1//models
-    return { status: 200, body: { data: [{ id: "m" }] } };
-  });
+  const { server, base, requests } = await serveJson(() => ({
+    status: 200,
+    body: { data: [{ id: "m" }] },
+  }));
   try {
     // base already ends in /v1; add another slash so joinUrl has to strip it.
     assert.deepStrictEqual(await listRemoteModels({ baseUrl: `${base}/` }), ["m"]);
+    assert.strictEqual(requests[0].url, "/v1/models"); // not /v1//models
   } finally {
     server.close();
   }

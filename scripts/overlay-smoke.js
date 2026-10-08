@@ -21,6 +21,7 @@
 
 const { app, ipcMain, session } = require("electron");
 const windows = require("../main/windows");
+const { waitForLoad } = require("./wait-for-load");
 const { wavToFloat32, wavDurationSec } = require("../main/util/wav");
 
 // The fake device makes getUserMedia succeed without hardware and produces a
@@ -128,9 +129,7 @@ app.whenReady().then(async () => {
     // The production overlay window (same flags, preload, throttling config the
     // shipped app runs with) — the same staging approach as scripts/screenshots.js.
     const win = windows.createOverlay();
-    await new Promise((resolve) =>
-      win.webContents.once("did-finish-load", resolve)
-    );
+    await waitForLoad(win.webContents);
 
     // Show the window the production way: showOverlay() positions it, shows
     // it without focus, and sends overlay:show — which the card answers by

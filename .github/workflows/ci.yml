@@ -14,6 +14,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    # Typical run: 2-3 min; the slowest observed was under 7 min. A hang
+    # otherwise runs to GitHub's 360-minute default.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -69,6 +72,8 @@ jobs:
   # as a step it would run three times over for the OS matrix.
   repo-hygiene:
     runs-on: ubuntu-latest
+    # A checkout plus two shell checks: seconds of work.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: No tracked symlinks
@@ -95,6 +100,8 @@ jobs:
 
   stt-server:
     runs-on: ubuntu-latest
+    # uv sync plus pytest: typically 1-2 min.
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: stt-server

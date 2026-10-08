@@ -841,6 +841,24 @@ test("stt-eval harness: argument parsing", () => {
   assert.deepStrictEqual([o.out, o.pass, o.limit, o.models, o.resume, o.resumeAcrossCode], ["x.json", "speed", 40, ["a", "b"], true, true]);
   assert.throws(() => harness.parseArgs(["--pass", "fast"]), /--pass must be/);
   assert.throws(() => harness.parseArgs(["--bogus"]), /unknown argument/);
+  // List flags keep their =value as the first entry, in both spellings.
+  assert.deepStrictEqual(harness.parseArgs(["--combine=acc.json", "speed.json"]).combine, ["acc.json", "speed.json"]);
+  assert.deepStrictEqual(harness.parseArgs(["--combine", "acc.json", "speed.json"]).combine, ["acc.json", "speed.json"]);
+  assert.deepStrictEqual(harness.parseArgs(["--discover=o/r", "o/r2@abc", "--keep"]).discover, ["o/r", "o/r2@abc"]);
+  // A valued flag without its value is an error, not undefined (or a TypeError).
+  assert.throws(() => harness.parseArgs(["--models"]), /--models needs a value/);
+  assert.throws(() => harness.parseArgs(["--out", "--pass", "speed"]), /--out needs a value/);
+  assert.throws(() => harness.parseArgs(["--cpu-lock"]), /--cpu-lock needs a value/);
+  // … but the documented empty pattern (no other-run watch) stays legal.
+  assert.strictEqual(harness.parseArgs(["--other-run-pattern="]).otherRunPattern, "");
+  assert.strictEqual(harness.parseArgs(["--other-run-pattern", ""]).otherRunPattern, "");
+  // Numbers that would silently change the run (NaN is falsy: a "full" run;
+  // NaN never waits for a quiet machine) are rejected.
+  for (const bad of ["abc", "-1", "2.5", "Infinity"]) assert.throws(() => harness.parseArgs(["--limit", bad]), /--limit needs a non-negative integer/, `--limit ${bad}`);
+  assert.strictEqual(harness.parseArgs(["--limit", "0"]).limit, 0);
+  for (const bad of ["abc", "-1", "NaN"]) assert.throws(() => harness.parseArgs(["--quiet-load", bad]), /--quiet-load needs a non-negative number/, `--quiet-load ${bad}`);
+  assert.strictEqual(harness.parseArgs(["--quiet-load", "Infinity"]).quietLoad, Infinity);
+  assert.strictEqual(harness.parseArgs(["--quiet-load=2.5"]).quietLoad, 2.5);
 });
 
 /* ---------------- the harness's recognizers: a timed-out decode never keeps running ---------------- */
@@ -1011,4 +1029,78 @@ test("stt-eval harness: a run is only 'complete' if its first/last default runs 
   assert.strictEqual(harness.runStatus(run(8, 0.05), { pass: "both" }), "unstable");
   // The accuracy pass has no brackets to judge.
   assert.strictEqual(harness.runStatus(run(17.9), { pass: "accuracy" }), "accuracy complete");
+});
+
+test("stt-eval harness: a skipped row makes the run incomplete, and only complete or partial runs exit 0", (t) => {
+  const shippedRows = registry.listModels("stt")
+    .filter((m) => m.id !== manifest.BASELINE_ID)
+    .map((m) => speedRow(m.id, "baseline", 0.03, 6));
+  const skipped = { id: "cand", label: "cand", role: "candidate", arm: "wired", path: "worker", status: "skipped", reason: "disk: 2000000000 B needed" };
+  const rows = [speedRow(manifest.BASELINE_ID, "bracket-first", 0.0425, 7), ...shippedRows, skipped, speedRow(manifest.BASELINE_ID, "bracket-last", 0.0429, 8)];
+  // Every shipped baseline measured and the brackets clean: without the
+  // skipped candidate this is "accuracy complete" / "complete".
+  assert.strictEqual(harness.runStatus({ machine: MACHINE, rows: rows.filter((r) => r !== skipped) }, { pass: "accuracy" }), "accuracy complete");
+  assert.strictEqual(harness.runStatus({ machine: MACHINE, rows }, { pass: "accuracy" }), "incomplete");
+  assert.strictEqual(harness.runStatus({ machine: MACHINE, rows }, { pass: "both" }), "incomplete");
+  assert.strictEqual(harness.runStatus({ machine: MACHINE, rows }, { pass: "speed" }), "incomplete");
+  // The report names the skipped row with its reason, and the run's status.
+  const acc = JSON.parse(fs.readFileSync(passFiles(t).accPath, "utf8"));
+  acc.rows.push(skipped);
+  acc.status = "incomplete";
+  const md = harness.report(acc);
+  assert.match(md, /^Status: incomplete$/m);
+  assert.match(md, /\| cand \| candidate \| worker \| — .*\| skipped: disk: 2000000000 B needed \|/);
+
+  for (const ok of ["complete", "accuracy complete", "speed complete", "partial (development subset)"]) {
+    assert.strictEqual(harness.runExitCode(ok), 0, ok);
+  }
+  // "incomplete" ends in "complete": a bare regex once let it exit 0.
+  for (const bad of ["incomplete", "unstable", "running", "accuracy: incomplete; speed: unstable", ""]) {
+    assert.strictEqual(harness.runExitCode(bad), 1, JSON.stringify(bad));
+  }
+});
+
+test("stt-eval harness: a timed pass refuses to start where the other-run watch cannot observe", () => {
+  // pgrep missing (Windows): every sample would be null, every attempt
+  // contended, and the pass would end "unstable" hours later.
+  assert.throws(() => harness.assertContentionObservable("speed", "bench-cleanup", null), /--other-run-pattern=/);
+  assert.throws(() => harness.assertContentionObservable("both", "bench-cleanup", null), /--pass accuracy/);
+  // The accuracy pass never uses the watch; an empty pattern turns it off; a
+  // working pgrep (match or no match) is observable.
+  assert.doesNotThrow(() => harness.assertContentionObservable("accuracy", "bench-cleanup", null));
+  assert.doesNotThrow(() => harness.assertContentionObservable("speed", "", null));
+  assert.doesNotThrow(() => harness.assertContentionObservable("speed", "bench-cleanup", false));
+  assert.doesNotThrow(() => harness.assertContentionObservable("speed", "bench-cleanup", true));
+});
+
+test("stt-eval harness: the disk guard does not count an installed model twice", () => {
+  const { MIN_FREE_BYTES, DISK_BUDGET_BYTES } = harness;
+  // Uncached: its bytes are still to come, so they count against both limits.
+  assert.strictEqual(harness.diskBlocked({ free: 30e9, used: 1e9, need: 2e9 }), null);
+  assert.match(harness.diskBlocked({ free: MIN_FREE_BYTES + 2e9 - 1, used: 1e9, need: 2e9 }), /floor/);
+  assert.match(harness.diskBlocked({ free: 30e9, used: DISK_BUDGET_BYTES - 2e9 + 1, need: 2e9 }), /budget/);
+  // Cached: nothing is downloaded, and dirSize(cacheDir) already holds it.
+  assert.strictEqual(harness.diskBlocked({ free: MIN_FREE_BYTES, used: DISK_BUDGET_BYTES, need: 0 }), null);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stt-disk-"));
+  const model = { id: "m", kind: "stt", files: [{ name: "a.bin", bytes: 2e9 }] };
+  const modelDir = path.join(dir, "stt", "m");
+  fs.mkdirSync(modelDir, { recursive: true });
+  fs.writeFileSync(path.join(modelDir, "a.bin"), "x");
+  fs.writeFileSync(path.join(modelDir, ".complete"), ""); // legacy marker: presence-only
+  try {
+    // Installed on disk (default) → need 0; the injected flags reach diskBlocked.
+    const free = fs.statfsSync(dir).bavail * fs.statfsSync(dir).bsize;
+    // A cache 1 GB under budget on a disk 1 B over the floor: the cached
+    // model fits (needs nothing); the same model uncached does not.
+    const budgetFull = { used: DISK_BUDGET_BYTES - 1e9, free: 30e9 };
+    assert.strictEqual(harness.diskCheck(dir, model, { ...budgetFull, free: MIN_FREE_BYTES + 1 }), null);
+    assert.match(harness.diskCheck(dir, model, { ...budgetFull, installed: false }), /budget/);
+    assert.match(harness.diskCheck(dir, model, { free: MIN_FREE_BYTES + 1, installed: false }), /floor/);
+    assert.strictEqual(harness.diskCheck(dir, model, { free, used: 1 }), null);
+    fs.rmSync(path.join(modelDir, ".complete"));
+    assert.match(harness.diskCheck(dir, model, budgetFull), /budget/, "no marker → not installed → full bytes needed");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

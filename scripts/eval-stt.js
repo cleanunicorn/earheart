@@ -5,6 +5,12 @@
 //   xvfb-run -a npx electron scripts/eval-stt.js --no-sandbox --out stt-eval.json   # Linux
 //   npx electron scripts/eval-stt.js --out stt-eval.json                            # macOS / Windows
 //
+// On Windows there is no pgrep, so the other-run watch (see --other-run-pattern)
+// cannot observe anything: a timed pass (speed / both) refuses to start there
+// unless the watch is turned off with --other-run-pattern= (or the pass is
+// --pass accuracy). Note that os.loadavg() is always 0 on Windows, so the quiet
+// gate is inert there too — a "clean" Windows speed row rests on nothing.
+//
 // On a machine that is not reliably quiet, split it (what produced the PR's
 // numbers): accuracy needs no quiet machine, speed does.
 //
@@ -165,22 +171,43 @@ function parseArgs(argv) {
       value = arg.slice(eq + 1);
       arg = arg.slice(0, eq);
     }
-    if (valued.has(arg) && value === null) value = argv[++i];
+    if (valued.has(arg) && value === null) {
+      // The value is the next argument — which must exist and not be a flag.
+      // (An empty value is legal: --other-run-pattern= turns the watch off.)
+      value = argv[++i];
+      if (value === undefined || value.startsWith("--")) throw new Error(`${arg} needs a value`);
+    }
+    // Numbers that silently change the run: NaN is falsy (--limit abc is a
+    // "full" run that runStatus does not call partial) and never compares
+    // (--quiet-load abc never waits), so both are rejected here.
+    const count = () => {
+      const n = Number(value);
+      if (value.trim() === "" || !Number.isInteger(n) || n < 0) throw new Error(`${arg} needs a non-negative integer (got ${value})`);
+      return n;
+    };
+    const load = () => {
+      const n = Number(value);
+      if (value.trim() === "" || Number.isNaN(n) || n < 0) throw new Error(`${arg} needs a non-negative number, or Infinity (got ${value})`);
+      return n;
+    };
     switch (arg) {
       case "--out": opts.out = value; break;
       case "--cache-dir": opts.cacheDir = value; break;
       case "--models": opts.models = value.split(",").filter(Boolean); break;
-      case "--limit": opts.limit = Number(value); break;
+      case "--limit": opts.limit = count(); break;
       case "--report": opts.report = value; break;
       case "--log": opts.log = value; break;
-      case "--quiet-load": opts.quietLoad = Number(value); break;
+      case "--quiet-load": opts.quietLoad = load(); break;
       case "--other-run-pattern": opts.otherRunPattern = value; break;
       case "--cpu-lock": opts.cpuLock = path.resolve(value); break;
       case "--pass":
         if (!["both", "accuracy", "speed"].includes(value)) throw new Error(`--pass must be accuracy, speed or both`);
         opts.pass = value;
         break;
+      // List flags: the =value (if any) is the first entry, the following
+      // non-flag arguments the rest.
       case "--combine":
+        if (value) opts.combine.push(value);
         while (argv[i + 1] && !argv[i + 1].startsWith("--")) opts.combine.push(argv[++i]);
         break;
       case "--keep": opts.keep = true; break;
@@ -189,6 +216,7 @@ function parseArgs(argv) {
       case "--resume-across-code": opts.resume = true; opts.resumeAcrossCode = true; break;
       case "--verify-shipped": opts.verifyShipped = true; break;
       case "--discover":
+        if (value) opts.discover.push(value);
         while (argv[i + 1] && !argv[i + 1].startsWith("--")) opts.discover.push(argv[++i]);
         break;
       default:
@@ -532,14 +560,28 @@ function dirSize(dir) {
   return total;
 }
 
-function diskCheck(cacheDir, model) {
-  const need = model.files.reduce((s, f) => s + (f.bytes || 0), 0);
-  const st = fs.statfsSync(cacheDir);
-  const free = st.bavail * st.bsize;
-  const used = dirSize(cacheDir);
+// The budget decision itself, on bytes: `need` is what the model would still
+// download, `used` what the cache already holds. Null when the model fits.
+function diskBlocked({ free, used, need }) {
   if (free - need < MIN_FREE_BYTES) return `disk: ${need} B needed, ${free} B free, floor ${MIN_FREE_BYTES} B`;
   if (used + need > DISK_BUDGET_BYTES) return `disk: ${used} B cached + ${need} B > budget ${DISK_BUDGET_BYTES} B`;
   return null;
+}
+
+// An installed model's files already live under cacheDir (so dirSize counts
+// them) and download() fetches nothing for them: it needs 0 further bytes.
+// Counting its declared size again used to skip a cached model near a limit.
+// The facts can be injected (tests); by default they are read from disk.
+function diskCheck(cacheDir, model, facts = {}) {
+  const installed = facts.installed !== undefined ? facts.installed : manager.isInstalled(cacheDir, model);
+  const need = installed ? 0 : model.files.reduce((s, f) => s + (f.bytes || 0), 0);
+  let free = facts.free;
+  if (free === undefined) {
+    const st = fs.statfsSync(cacheDir);
+    free = st.bavail * st.bsize;
+  }
+  const used = facts.used !== undefined ? facts.used : dirSize(cacheDir);
+  return diskBlocked({ free, used, need });
 }
 
 function scoreDecodes(corpus, decodes) {
@@ -855,7 +897,8 @@ function runStatus(result, opts) {
   const haveBaselines = registry.listModels("stt").every((m) =>
     rows.some((r) => r.id === m.id && r.status === "measured" && r.role !== "calibration")
   );
-  const failed = rows.some((r) => r.status === "failed");
+  // A skipped row (disk guard) is work not done, exactly like a failed one.
+  const failed = rows.some((r) => r.status === "failed" || r.status === "skipped");
   if (opts.models || opts.limit) return "partial (development subset)";
   if (!haveBaselines || failed) return "incomplete";
   if (opts.pass === "accuracy") return "accuracy complete";
@@ -864,6 +907,26 @@ function runStatus(result, opts) {
   // speed numbers are unusable.
   const { stable } = e.speedFileBrackets(result, judgeDefaults());
   return stable ? (opts.pass === "speed" ? "speed complete" : "complete") : "unstable";
+}
+
+// Exit 0 only for a run that did everything it set out to do (or a declared
+// development subset). Spelled out rather than a regex: "incomplete" ends in
+// "complete", and a bare /complete$/ once let every incomplete run exit 0.
+function runExitCode(status) {
+  if (["complete", "accuracy complete", "speed complete"].includes(status)) return 0;
+  if (typeof status === "string" && status.startsWith("partial")) return 0;
+  return 1;
+}
+
+// A timed pass needs the other-run watch to answer: where pgrep is missing
+// (Windows) every sample is null, every attempt is contended, and the pass
+// ends "unstable" hours later. `active` is a live otherRunActive() probe.
+function assertContentionObservable(pass, pattern, active) {
+  if (pass === "accuracy" || !pattern || active !== null) return;
+  throw new Error(
+    `cannot watch for another run (pgrep -f "${pattern}" is unavailable here), so a timed pass could never ` +
+      `produce a clean row: pass --other-run-pattern= to run without the watch, or --pass accuracy`
+  );
 }
 
 const lockOfPass = (res) => Boolean(res.cpuLock && res.cpuLock.role === "held for the whole pass");
@@ -924,6 +987,7 @@ async function run(opts) {
   if (opts.cpuLock && opts.pass !== "accuracy" && !lockHeld(opts.cpuLock)) {
     throw new Error(`a timed pass must run under the lock: flock ${opts.cpuLock} npx electron scripts/eval-stt.js …`);
   }
+  assertContentionObservable(opts.pass, opts.otherRunPattern, otherRunActive(opts.otherRunPattern));
   const corpus = await prepareCorpus(cacheDir, opts.limit, { speed: opts.pass === "speed" });
   const { clips, allClips, ...corpusInfo } = corpus;
   const previous = opts.resume && fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, "utf8")) : null;
@@ -986,11 +1050,14 @@ async function run(opts) {
         appendLog(`start ${entry.model.id} (${entry.role})${attempts.length ? ` — speed attempt ${attempts.length + 1}` : ""}`);
         row = await measureModel(entry, ctx);
         row.quietWait = waited;
+        // A skipped (disk guard) or failed row has no decodes to judge and no
+        // otherRun sample; it is reported with its reason, not re-measured.
+        if (row.status !== "measured") break;
         // Clean only if the gate held AND no other-run process was seen at
         // any sample during the decodes (unknown counts as not clean).
         row.contended = !waited || !waited.quiet || row.otherRun.active !== false;
         attempts.push({ contended: row.contended, decodeRtf: row.decodeRtf, otherRun: row.otherRun, loadavgBefore: row.loadavgBefore, loadavgAfter: row.loadavgAfter });
-        if (opts.pass === "accuracy" || row.status !== "measured" || !row.contended || attempts.length >= SPEED_ATTEMPTS) break;
+        if (opts.pass === "accuracy" || !row.contended || attempts.length >= SPEED_ATTEMPTS) break;
         log(`${entry.model.id} (${entry.role}): contended (other run ${row.otherRun.active}), re-measuring when quiet`);
       }
       // The pass's own tries at this row; the judged attempts across passes
@@ -1030,7 +1097,7 @@ async function run(opts) {
   process.stderr.write(`\n${report(result)}\n`);
   log(`status: ${result.status} -> ${out}`);
   appendLog(`run ${result.status}`);
-  return /complete$|^partial/.test(result.status) ? 0 : 1;
+  return runExitCode(result.status);
 }
 
 /* ---------------- report ---------------- */
@@ -1190,4 +1257,7 @@ if (process.versions.electron || require.main === module) {
   );
 }
 
-module.exports = { parseArgs, combine, report, runStatus, workerRecognizer, directRecognizer };
+module.exports = {
+  parseArgs, combine, report, runStatus, runExitCode, assertContentionObservable,
+  diskCheck, diskBlocked, MIN_FREE_BYTES, DISK_BUDGET_BYTES, workerRecognizer, directRecognizer,
+};

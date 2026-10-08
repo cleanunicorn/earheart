@@ -31,6 +31,16 @@ const htmlNames = new Set([...html.matchAll(/name="([a-z0-9-]+)"/g)].map((m) => 
 
 // The engine helpers build ids as `${kind}-…` for kind in {stt, cleanup}; expand
 // those template ids so the presence check covers what the script really queries.
+// True when `sel` sits in a rule's selector list of the comment-stripped
+// sheet — not in a comment, not as the prefix of a longer name, not inside
+// a declaration, and not only in a pseudo-qualified or :not()-wrapped form
+// (`.field:hover`, `:not(.capturing)`), which leaves the bare class unstyled.
+const cssRules = css.replace(/\/\*[\s\S]*?\*\//g, "");
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function definesRule(sel) {
+  return new RegExp(escapeRegExp(sel) + "(?![\\w:)-])[^{}]*\\{").test(cssRules);
+}
+
 function expand(id) {
   if (!id.includes("${kind}")) return [id];
   return ["stt", "cleanup"].map((k) => id.replace("${kind}", k));
@@ -607,8 +617,11 @@ test("shared classes the wizard relies on still exist in settings.css", () => {
   // breaks the wizard's chrome. Cheap tripwire that each selector still appears.
   // .capturing is toggled by hotkey-capture.js (which the wizard also loads)
   // and styled only here — the one visual cue that a hotkey field is armed.
+  // Match the selector in rule position of the comment-stripped sheet: the
+  // header comment names most of these, and a plain substring would also
+  // accept a longer name (.hint-x) or a value inside a declaration.
   const shared = [".field", ".row", ".hint", ".status", ".lead", ".choice", "button.primary", "button.ghost", "code", ".capturing"];
-  const missing = shared.filter((sel) => !css.includes(sel)).sort();
+  const missing = shared.filter((sel) => !definesRule(sel)).sort();
   assert.deepStrictEqual(missing, [], `settings.css no longer defines: ${missing.join(", ")}`);
 });
 

@@ -331,8 +331,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#architecture) for the full architecture.
   behavior is covered by the smoke scripts in `scripts/`.
 - **Location & naming:** `test/<area>.test.js`. `*-contract.test.js` files
   guard couplings between files: `ipc-contract` checks IPC channels across
-  main, preload, and renderer; `overlay-contract` and `settings-contract`
-  check renderer scripts against their HTML/CSS.
+  main, preload, and renderer in both directions (every channel used is
+  allowlisted and handled, every listener is fed and every push is heard, no
+  dead entries), including the overlay's data-driven `channel:` action
+  tables; `overlay-contract` and `settings-contract` check renderer scripts
+  against their HTML/CSS.
 - **What to cover:** happy path, error paths, and edge cases for new code.
 - **Fixtures / stubs:** no network or models needed; the STT server suite uses
   synthetic WAVs and fake recognizers.

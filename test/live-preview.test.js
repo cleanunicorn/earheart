@@ -221,25 +221,26 @@ test("a chunk that finishes decoding after the session ends is dropped", async (
 
 test("cleanup re-cleans the whole committed transcript and replaces the cleaned line", async () => {
   const h = harness();
+  // What each pass was handed is read back from h.cleanupCalls in the test
+  // body, never asserted inside the fake: an assert thrown there lands in
+  // live-preview's own catch (a cosmetic pass must never disturb dictation),
+  // so it can neither fail this test nor, in the cleanup path, stop the pause
+  // timer from re-arming and re-cleaning forever.
   h.setTranscribe(async () => "the first chunk");
-  h.setCleanup(async (raw) => {
-    assert.strictEqual(raw, "the first chunk", "first pass cleans the whole committed transcript");
-    return "The first chunk.";
-  });
+  h.setCleanup(async () => "The first chunk.");
   await h.lp.handleAudio(1, chunk(0, true));
   await tick();
+  assert.strictEqual(h.cleanupCalls[0][0], "the first chunk", "first pass cleans the whole committed transcript");
   assert.strictEqual(lastClean(h), "The first chunk.");
 
   // A second committed chunk re-cleans the WHOLE transcript (both chunks) and the
   // cleaned line is replaced with that result — not appended per-chunk. Cleaning
   // the whole thing is what makes the live cleaned line read like the final clean.
   h.setTranscribe(async () => "second chunk");
-  h.setCleanup(async (raw) => {
-    assert.strictEqual(raw, "the first chunk second chunk", "second pass cleans the full transcript");
-    return "The first chunk, second chunk.";
-  });
+  h.setCleanup(async () => "The first chunk, second chunk.");
   await h.lp.handleAudio(1, chunk(1, true));
   await tick();
+  assert.strictEqual(h.cleanupCalls[1][0], "the first chunk second chunk", "second pass cleans the full transcript");
   assert.strictEqual(lastClean(h), "The first chunk, second chunk.", "cleaned line is replaced, not appended");
 });
 
@@ -282,12 +283,10 @@ test("consecutive empty results then a real one cleans the whole transcript once
   await h.lp.handleAudio(1, chunk(1, true));
   await tick();
   h.setTranscribe(async () => "real");
-  h.setCleanup(async (raw) => {
-    assert.strictEqual(raw, "um uh real", "the non-empty pass cleans the whole transcript, not a delta");
-    return "Real.";
-  });
+  h.setCleanup(async () => "Real.");
   await h.lp.handleAudio(1, chunk(2, true));
   await tick();
+  assert.strictEqual(h.cleanupCalls[2][0], "um uh real", "the non-empty pass cleans the whole transcript, not a delta");
   assert.strictEqual(h.cleanupCalls.length, 3, "each commit cleaned once; no empty-driven loop");
   assert.deepStrictEqual(cleans(h), ["Real."], "the two empties emitted nothing; the real one emitted once");
 });
@@ -355,16 +354,16 @@ test("a failed cleanup pass retries on the next pause and recovers", async () =>
   const h = harness();
   h.setTranscribe(async () => "the first chunk");
   let n = 0;
-  h.setCleanup(async (raw) => {
+  h.setCleanup(async () => {
     n++;
     if (n === 1) throw new Error("cleanup boom"); // lastCleanedRaw must stay put
-    assert.strictEqual(raw, "the first chunk", "the retry re-cleans the whole transcript");
     return "The first chunk.";
   });
   await h.lp.handleAudio(1, chunk(0, true)); // commit -> pass 1 throws -> re-arm
   await tick();
   await tick(); // pass 2 recovers
   assert.ok(n >= 2, "the failed pass was retried");
+  assert.strictEqual(h.cleanupCalls.at(-1)[0], "the first chunk", "the retry re-cleans the whole transcript");
   assert.deepStrictEqual(cleans(h), ["The first chunk."], "nothing emitted until the recovery");
 });
 
@@ -406,12 +405,10 @@ test("a later whole-transcript pass rewrites earlier cleaned text (replace, not 
   // The second chunk's whole-transcript clean reworks the earlier sentence too;
   // the cleaned line is replaced with the new result, not appended to the old.
   h.setTranscribe(async () => "there world");
-  h.setCleanup(async (raw) => {
-    assert.strictEqual(raw, "hello there world", "the pass cleans the full transcript");
-    return "Hi there, world.";
-  });
+  h.setCleanup(async () => "Hi there, world.");
   await h.lp.handleAudio(1, chunk(1, true));
   await tick();
+  assert.strictEqual(h.cleanupCalls[1][0], "hello there world", "the pass cleans the full transcript");
   assert.strictEqual(lastClean(h), "Hi there, world.");
   assert.ok(!lastClean(h).startsWith("Hello."), "earlier cleaned text was rewritten, not kept");
 });
@@ -440,9 +437,12 @@ test("an in-progress (non-final) chunk does not trigger cleanup", async () => {
 test("cancel aborts in-flight work and resets accumulators", async () => {
   const h = harness();
   const d = deferred();
+  // Recorded at settle time (after cancel()), asserted in the test body: an
+  // assert inside the fake would be swallowed by handleAudio's own catch.
+  let abortedAtSettle;
   h.setTranscribe((wavArg, cfg, signal) =>
     d.promise.then((v) => {
-      assert.ok(signal.aborted, "signal aborted by cancel()");
+      abortedAtSettle = signal.aborted;
       return v;
     })
   );
@@ -450,6 +450,7 @@ test("cancel aborts in-flight work and resets accumulators", async () => {
   h.lp.cancel();
   d.resolve("after cancel");
   await p;
+  assert.strictEqual(abortedAtSettle, true, "signal aborted by cancel()");
   assert.strictEqual(h.sent.length, 0, "nothing sent after cancel");
 
   // After cancel, accumulators are reset: a fresh chunk 0 starts clean.

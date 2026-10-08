@@ -615,8 +615,10 @@ function planModels(shipped, candidates, { baselineId, exploratory = false, pass
   if (pass !== "accuracy") list.push({ model: defaultModel, role: "bracket-last", arm: "shipped" });
   if (!models) return list;
   // A requested id that plans nothing (a typo, or an exploratory candidate
-  // without --exploratory) is an error, not a quietly emptier run.
+  // without --exploratory) is an error, not a quietly emptier run — and so is
+  // a selection that leaves nothing to run (--models= or --models ,).
   const planned = [...new Set(list.map((x) => x.model.id))];
+  if (!models.length) throw new Error(`--models selects no model; planned: ${planned.join(", ")}`);
   const unknown = models.filter((id) => !planned.includes(id));
   if (unknown.length) {
     throw new Error(`--models: ${unknown.map((id) => `"${id}"`).join(", ")} is not planned for this pass; planned: ${planned.join(", ")}`);

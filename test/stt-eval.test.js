@@ -720,6 +720,9 @@ test("stt-eval plan: --models narrows the plan and the baseline must exist", () 
     () => e.planModels(shipped, manifest.CANDIDATES, { baselineId: manifest.BASELINE_ID, models: ["parakeet-tdt-0.6b-v2-int8", "nope"] }),
     (err) => /--models: "nope" is not planned/.test(err.message) && err.message.includes(manifest.BASELINE_ID)
   );
+  // An empty selection (--models= or --models ,) plans nothing: an error, not
+  // a "partial (development subset)" that exits 0 having measured no model.
+  assert.throws(() => e.planModels(shipped, manifest.CANDIDATES, { baselineId: manifest.BASELINE_ID, models: [] }), /--models selects no model/);
 });
 
 /* ---------------- combining passes and the report (scripts/eval-stt.js) ---------------- */

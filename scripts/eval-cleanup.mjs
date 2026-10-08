@@ -4,6 +4,9 @@
 //   node scripts/eval-cleanup.mjs <model.gguf> [seeds]
 //   CORPUS=fluent ARMS=polished/old,polished/new node scripts/eval-cleanup.mjs …
 //
+// ARMS names a subset of the arms in scripts/cleanup-arms.js; an id that is
+// not there is an error (a typo must not quietly run fewer arms).
+//
 // CORPUS picks the SHAPE of dictation (see scripts/dictation-corpus.js), and
 // the shape is the whole story:
 //
@@ -37,7 +40,6 @@ const { getLlama, LlamaChatSession } = llamaCpp;
 
 const require = createRequire(import.meta.url);
 const { DEFAULTS } = require("../main/settings");
-const { STYLES } = require("../main/cleanup-styles");
 const { stripStumbles } = require("../main/util/stumble-strip");
 const { SHORT, REPORTED, FLUENT } = require("./dictation-corpus");
 const { cleanupUserTurn, cleanupSamplingOptions, cleanupChatWrapper } = require("../main/util/cleanup-turn");
@@ -46,41 +48,14 @@ const { countFillers, countRepeats } = require("./cleanup-metrics");
 
 const BASE = DEFAULTS.cleanup.systemPrompt;
 
-const styleDirective = (id) => STYLES.find((s) => s.id === id).directive;
-const styleSampling = (id) => STYLES.find((s) => s.id === id).sampling;
-
-// The directives as they were before the sharpening, kept so the comparison can
-// be re-run against whatever main/cleanup-styles.js says today.
-const OLD_CLEAN =
-  "Remove filler words (um, uh, you know, like) and false starts. " +
-  "Collapse repeated words, restarted phrases and stutters into one clean " +
-  "version. Keep the speaker's wording and tone — do not summarize, expand " +
-  "or add anything.";
-const OLD_POLISHED =
-  "Produce clean, readable prose: remove fillers and false starts, fix " +
-  "grammar, and lightly rephrase awkward phrasing for clarity. Preserve " +
-  "the speaker's meaning, intent and approximate length — do not " +
-  "summarize, expand or invent details.";
-
-const OLD_CLEAN_S = { temperature: 0.2, topP: 0.95, topK: 40, minP: 0.05 };
-const OLD_POLISHED_S = { temperature: 0.4, topP: 1.0, topK: 0, minP: 0.02 };
-// Tighter sampling, the other candidate lever: unbounded nucleus/top-k was the
-// suspicion when "remove the fillers" started getting ignored.
-const TIGHT_POLISHED_S = { temperature: 0.3, topP: 0.95, topK: 40, minP: 0.02 };
-
-const ALL_ARMS = [
-  { id: "clean/old", directive: OLD_CLEAN, sampling: OLD_CLEAN_S },
-  { id: "clean/new", directive: styleDirective("clean"), sampling: styleSampling("clean") },
-  { id: "polished/old", directive: OLD_POLISHED, sampling: OLD_POLISHED_S },
-  { id: "polished/new", directive: styleDirective("polished"), sampling: styleSampling("polished") },
-  // Which lever did the work?
-  { id: "polished/prompt-only", directive: styleDirective("polished"), sampling: OLD_POLISHED_S },
-  { id: "polished/sampling-only", directive: OLD_POLISHED, sampling: TIGHT_POLISHED_S },
-  { id: "polished/tight-sampling", directive: styleDirective("polished"), sampling: TIGHT_POLISHED_S },
-];
-const ARMS = process.env.ARMS
-  ? ALL_ARMS.filter((a) => process.env.ARMS.split(",").includes(a.id))
-  : ALL_ARMS;
+// The arms (directive + sampling pairs), deduplicated at build time; a
+// duplicate is reported below rather than run twice. ARMS picks a subset by
+// id, and a misspelled id is an error, not a quietly narrower run.
+const { ALL_ARMS, DROPPED_ARMS, selectArms } = require("./cleanup-arms");
+const ARMS = selectArms(ALL_ARMS, process.env.ARMS);
+for (const d of DROPPED_ARMS) {
+  process.stderr.write(`arm ${d.id} not run: same directive and sampling as ${d.sameAs} with today's styles\n`);
+}
 
 const CORPORA = { short: SHORT, reported: REPORTED, fluent: [FLUENT.raw] };
 const corpusName = process.env.CORPUS || "fluent";

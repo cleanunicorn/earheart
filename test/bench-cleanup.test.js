@@ -85,6 +85,29 @@ test("parseArgs: probe and report modes", async () => {
   assert.deepStrictEqual(r.locked, [dir]);
   assert.throws(() => parseArgs(["--report", path.join(dir, "nope")]), UsageError);
   assert.throws(() => parseArgs(["--report", dir, `--locked=${path.join(dir, "nope")}`]), UsageError);
+  // The =value spelling means the same as the space form; it used to be
+  // dropped (report: undefined) with the directory read as a model path.
+  assert.strictEqual(parseArgs([`--report=${dir}`]).report, dir);
+  const rescore = path.join(dir, "runs.json");
+  fs.writeFileSync(rescore, "[]");
+  assert.strictEqual(parseArgs([`--rescore=${rescore}`]).rescore, parseArgs(["--rescore", rescore]).rescore);
+  assert.deepStrictEqual(parseArgs(["--probe=o/r", "f.gguf"]).probe, { repo: "o/r", file: "f.gguf" });
+  // A valued flag with nothing after it is a usage error naming the flag —
+  // not undefined, and not the TypeError from splitting it.
+  const needs = (flag) => (err) => err instanceof UsageError && err.message === `${flag} needs a value`;
+  assert.throws(() => parseArgs(["--report"]), needs("--report"));
+  assert.throws(() => parseArgs(["--rescore"]), needs("--rescore"));
+  assert.throws(() => parseArgs([`--report=${dir}`, "--probe"]), needs("--probe"));
+  for (const flag of ["--seeds", "--corpus", "--baselines", "--licences", "--also", "--locked", "--out", "--id"]) {
+    assert.throws(() => parseArgs([flag]), needs(flag), `bare ${flag}`);
+    // A following flag is not a value either (it must not be eaten).
+    assert.throws(() => parseArgs([flag, "--gpu"]), needs(flag), `${flag} --gpu`);
+  }
+  // Every valued flag takes both spellings.
+  const gguf = path.join(dir, "m.gguf");
+  fs.writeFileSync(gguf, "");
+  const spaced = parseArgs(["--out", dir, "--seeds", "3,5", "--corpus", "fluent", "--id", "ok", gguf]);
+  assert.deepStrictEqual([spaced.out, spaced.seeds, spaced.corpora, spaced.id], [dir, [3, 5], ["fluent"], "ok"]);
 });
 
 test("plan: FLUENT under clean + polished, REPORTED under clean, every seed", async () => {

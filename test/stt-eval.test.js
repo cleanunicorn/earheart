@@ -22,6 +22,14 @@ test("stt-eval: cardinals, years, and the number shapes N3 models", () => {
   assert.strictEqual(e.intToWords(100), "one hundred");
   assert.strictEqual(e.intToWords(40000), "forty thousand");
   assert.strictEqual(e.intToWords(330117), "three hundred thirty thousand one hundred seventeen");
+  // The scale table must reach every safe integer: a bare 16-digit run used to
+  // feed quotients of 1000+ into the under-a-thousand speller.
+  assert.strictEqual(e.intToWords(999999999999999), "nine hundred ninety nine trillion nine hundred ninety nine billion nine hundred ninety nine million nine hundred ninety nine thousand nine hundred ninety nine");
+  assert.strictEqual(e.intToWords(1e15), "one quadrillion");
+  assert.strictEqual(
+    e.intToWords(Number.MAX_SAFE_INTEGER),
+    "nine quadrillion seven trillion one hundred ninety nine billion two hundred fifty four million seven hundred forty thousand nine hundred ninety one"
+  );
   assert.strictEqual(e.yearToWords(1963), "nineteen sixty three");
   assert.strictEqual(e.yearToWords(1900), "nineteen hundred");
   assert.strictEqual(e.yearToWords(1905), "nineteen oh five");
@@ -32,6 +40,7 @@ test("stt-eval: cardinals, years, and the number shapes N3 models", () => {
   const n = (s) => e.normalise(s).join(" ");
   assert.strictEqual(n("In 1963,"), "in nineteen sixty three");
   assert.strictEqual(n("40,000 people"), "forty thousand people");
+  assert.strictEqual(n("it cost 1000000000000000 dollars"), "it cost one quadrillion dollars");
   assert.strictEqual(n("2.5 km"), "two point five km");
   assert.strictEqual(n("20% of it"), "twenty percent of it");
   assert.strictEqual(n("the 3rd and 13th"), "the third and thirteenth");
@@ -705,6 +714,22 @@ test("stt-eval plan: --models narrows the plan and the baseline must exist", () 
     `${manifest.BASELINE_ID}|bracket-first`, "parakeet-tdt-0.6b-v2-int8|candidate", `${manifest.BASELINE_ID}|bracket-last`,
   ]);
   assert.throws(() => e.planModels(shipped, [], { baselineId: "nope" }), /not in the catalog/);
+  // A --models id that plans nothing is an error, not a quietly emptier run:
+  // a typo, or an exploratory candidate asked for without --exploratory.
+  assert.throws(
+    () => e.planModels(shipped, manifest.CANDIDATES, { baselineId: manifest.BASELINE_ID, models: ["parakeet-tdt-0.6b-v2-int8", "nope"] }),
+    (err) => /--models: "nope" is not planned/.test(err.message) && err.message.includes(manifest.BASELINE_ID)
+  );
+  // An empty selection (--models= or --models ,) plans nothing: an error, not
+  // a "partial (development subset)" that exits 0 having measured no model.
+  assert.throws(() => e.planModels(shipped, manifest.CANDIDATES, { baselineId: manifest.BASELINE_ID, models: [] }), /--models selects no model/);
+  // An exploratory candidate asked for without --exploratory: the error says
+  // which flag plans it, not just that it is unplanned.
+  const exploratory = manifest.CANDIDATES.find((c) => c.arm === "exploratory").id;
+  assert.throws(
+    () => e.planModels(shipped, manifest.CANDIDATES, { baselineId: manifest.BASELINE_ID, models: [exploratory] }),
+    new RegExp(`"${exploratory}" is an exploratory candidate; pass --exploratory to plan it`)
+  );
 });
 
 /* ---------------- combining passes and the report (scripts/eval-stt.js) ---------------- */
@@ -826,6 +851,24 @@ test("stt-eval harness: argument parsing", () => {
   assert.deepStrictEqual([o.out, o.pass, o.limit, o.models, o.resume, o.resumeAcrossCode], ["x.json", "speed", 40, ["a", "b"], true, true]);
   assert.throws(() => harness.parseArgs(["--pass", "fast"]), /--pass must be/);
   assert.throws(() => harness.parseArgs(["--bogus"]), /unknown argument/);
+  // List flags keep their =value as the first entry, in both spellings.
+  assert.deepStrictEqual(harness.parseArgs(["--combine=acc.json", "speed.json"]).combine, ["acc.json", "speed.json"]);
+  assert.deepStrictEqual(harness.parseArgs(["--combine", "acc.json", "speed.json"]).combine, ["acc.json", "speed.json"]);
+  assert.deepStrictEqual(harness.parseArgs(["--discover=o/r", "o/r2@abc", "--keep"]).discover, ["o/r", "o/r2@abc"]);
+  // A valued flag without its value is an error, not undefined (or a TypeError).
+  assert.throws(() => harness.parseArgs(["--models"]), /--models needs a value/);
+  assert.throws(() => harness.parseArgs(["--out", "--pass", "speed"]), /--out needs a value/);
+  assert.throws(() => harness.parseArgs(["--cpu-lock"]), /--cpu-lock needs a value/);
+  // … but the documented empty pattern (no other-run watch) stays legal.
+  assert.strictEqual(harness.parseArgs(["--other-run-pattern="]).otherRunPattern, "");
+  assert.strictEqual(harness.parseArgs(["--other-run-pattern", ""]).otherRunPattern, "");
+  // Numbers that would silently change the run (NaN is falsy: a "full" run;
+  // NaN never waits for a quiet machine) are rejected.
+  for (const bad of ["abc", "-1", "2.5", "Infinity"]) assert.throws(() => harness.parseArgs(["--limit", bad]), /--limit needs a non-negative integer/, `--limit ${bad}`);
+  assert.strictEqual(harness.parseArgs(["--limit", "0"]).limit, 0);
+  for (const bad of ["abc", "-1", "NaN"]) assert.throws(() => harness.parseArgs(["--quiet-load", bad]), /--quiet-load needs a non-negative number/, `--quiet-load ${bad}`);
+  assert.strictEqual(harness.parseArgs(["--quiet-load", "Infinity"]).quietLoad, Infinity);
+  assert.strictEqual(harness.parseArgs(["--quiet-load=2.5"]).quietLoad, 2.5);
 });
 
 /* ---------------- the harness's recognizers: a timed-out decode never keeps running ---------------- */
@@ -996,4 +1039,110 @@ test("stt-eval harness: a run is only 'complete' if its first/last default runs 
   assert.strictEqual(harness.runStatus(run(8, 0.05), { pass: "both" }), "unstable");
   // The accuracy pass has no brackets to judge.
   assert.strictEqual(harness.runStatus(run(17.9), { pass: "accuracy" }), "accuracy complete");
+});
+
+test("stt-eval harness: a skipped row makes the run incomplete, and only complete or partial runs exit 0", (t) => {
+  const shippedRows = registry.listModels("stt")
+    .filter((m) => m.id !== manifest.BASELINE_ID)
+    .map((m) => speedRow(m.id, "baseline", 0.03, 6));
+  const skipped = { id: "cand", label: "cand", role: "candidate", arm: "wired", path: "worker", status: "skipped", reason: "disk: 2000000000 B needed" };
+  const rows = [speedRow(manifest.BASELINE_ID, "bracket-first", 0.0425, 7), ...shippedRows, skipped, speedRow(manifest.BASELINE_ID, "bracket-last", 0.0429, 8)];
+  // Every shipped baseline measured and the brackets clean: without the
+  // skipped candidate this is "accuracy complete" / "complete".
+  assert.strictEqual(harness.runStatus({ machine: MACHINE, rows: rows.filter((r) => r !== skipped) }, { pass: "accuracy" }), "accuracy complete");
+  assert.strictEqual(harness.runStatus({ machine: MACHINE, rows }, { pass: "accuracy" }), "incomplete");
+  assert.strictEqual(harness.runStatus({ machine: MACHINE, rows }, { pass: "both" }), "incomplete");
+  assert.strictEqual(harness.runStatus({ machine: MACHINE, rows }, { pass: "speed" }), "incomplete");
+  // The report names the skipped row with its reason, and the run's status.
+  const acc = JSON.parse(fs.readFileSync(passFiles(t).accPath, "utf8"));
+  acc.rows.push(skipped);
+  acc.status = "incomplete";
+  const md = harness.report(acc);
+  assert.match(md, /^Status: incomplete$/m);
+  assert.match(md, /\| cand \| candidate \| worker \| — .*\| skipped: disk: 2000000000 B needed \|/);
+
+  // A failed row (the other half of the same condition) is work not done too.
+  const failed = { ...skipped, id: "boom", label: "boom", status: "failed", reason: "worker exited 1" };
+  const withFailed = { machine: MACHINE, rows: rows.map((r) => (r === skipped ? failed : r)) };
+  for (const pass of ["accuracy", "both", "speed"]) assert.strictEqual(harness.runStatus(withFailed, { pass }), "incomplete", pass);
+  acc.rows[acc.rows.length - 1] = failed;
+  assert.match(harness.report(acc), /\| boom \| candidate \| worker \| — .*\| failed: worker exited 1 \|/);
+
+  for (const ok of ["complete", "accuracy complete", "speed complete", "partial (development subset)"]) {
+    assert.strictEqual(harness.runExitCode(ok), 0, ok);
+  }
+  // "incomplete" ends in "complete": a bare regex once let it exit 0.
+  for (const bad of ["incomplete", "unstable", "running", "accuracy: incomplete; speed: unstable", ""]) {
+    assert.strictEqual(harness.runExitCode(bad), 1, JSON.stringify(bad));
+  }
+});
+
+test("stt-eval judge: a skipped speed row is an unusable attempt, not a crash", (t) => {
+  // The disk guard skips a row before any decode, so it has no loadavgAfter;
+  // the judge used to read it for every row in a speed file.
+  const skipped = { id: "fast", role: "candidate", arm: "wired", path: "worker", status: "skipped", reason: "disk: 2000000000 B needed" };
+  const speedRows = [speedRow("base", "bracket-first", 0.0425, 7, { p50Rtf: 0.042, p95Rtf: 0.045 }), skipped, speedRow("base", "bracket-last", 0.0429, 8)];
+  const { accPath, speedPath } = passFiles(t, { speedOver: { rows: speedRows, status: "incomplete" } });
+  const combined = harness.combine(accPath, [speedPath], { baselineId: "base" });
+  const fast = combined.rows.find((r) => r.id === "fast");
+  assert.strictEqual(fast.speed, null);
+  assert.deepStrictEqual(fast.speedAttempts.map((a) => [a.usable, a.reason]), [[false, "skipped: disk: 2000000000 B needed"]]);
+  assert.match(combined.status, /speed: incomplete/);
+  assert.match(harness.report(combined), /\| fast \| candidate \|/);
+
+  // The default pass judges its own rows the same way (eval-stt.js run()).
+  const both = JSON.parse(fs.readFileSync(accPath, "utf8"));
+  both.rows = [{ ...both.rows[0], ...speedRows[0] }, { ...both.rows[1], ...skipped }, { ...both.rows[0], ...speedRows[2] }];
+  assert.doesNotThrow(() => e.judge(both, [{ res: both, name: "this run" }], { baselineId: "base", quietLoad: 4, bracketDrift: 0.1, werSlack: 0.01, minWords: 1 }));
+  assert.strictEqual(both.rows[1].speedAttempts[0].usable, false);
+});
+
+test("stt-eval harness: a timed pass refuses to start where the other-run watch cannot observe", () => {
+  // pgrep missing (Windows): every sample would be null, every attempt
+  // contended, and the pass would end "unstable" hours later.
+  assert.throws(() => harness.assertContentionObservable("speed", "bench-cleanup", null), /--other-run-pattern=/);
+  assert.throws(() => harness.assertContentionObservable("both", "bench-cleanup", null), /--pass accuracy/);
+  // The accuracy pass never uses the watch; an empty pattern turns it off; a
+  // working pgrep (match or no match) is observable.
+  assert.doesNotThrow(() => harness.assertContentionObservable("accuracy", "bench-cleanup", null));
+  assert.doesNotThrow(() => harness.assertContentionObservable("speed", "", null));
+  assert.doesNotThrow(() => harness.assertContentionObservable("speed", "bench-cleanup", false));
+  assert.doesNotThrow(() => harness.assertContentionObservable("speed", "bench-cleanup", true));
+});
+
+test("stt-eval harness: the disk guard does not count an installed model twice", (t) => {
+  const { MIN_FREE_BYTES, DISK_BUDGET_BYTES } = harness;
+  // Uncached: its bytes are still to come, so they count against both limits.
+  assert.strictEqual(harness.diskBlocked({ free: 30e9, used: 1e9, need: 2e9 }), null);
+  assert.match(harness.diskBlocked({ free: MIN_FREE_BYTES + 2e9 - 1, used: 1e9, need: 2e9 }), /floor/);
+  assert.match(harness.diskBlocked({ free: 30e9, used: DISK_BUDGET_BYTES - 2e9 + 1, need: 2e9 }), /budget/);
+  // Cached: nothing is downloaded, and dirSize(cacheDir) already holds it.
+  assert.strictEqual(harness.diskBlocked({ free: MIN_FREE_BYTES, used: DISK_BUDGET_BYTES, need: 0 }), null);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stt-disk-"));
+  const model = { id: "m", kind: "stt", files: [{ name: "a.bin", bytes: 2e9 }] };
+  const modelDir = path.join(dir, "stt", "m");
+  fs.mkdirSync(modelDir, { recursive: true });
+  fs.writeFileSync(path.join(modelDir, "a.bin"), "x");
+  fs.writeFileSync(path.join(modelDir, ".complete"), ""); // legacy marker: presence-only
+  try {
+    // Installed on disk (default) → need 0; the injected flags reach diskBlocked.
+    const free = fs.statfsSync(dir).bavail * fs.statfsSync(dir).bsize;
+    // A cache 1 GB under budget on a disk 1 B over the floor: the cached
+    // model fits (needs nothing); the same model uncached does not.
+    const budgetFull = { used: DISK_BUDGET_BYTES - 1e9, free: 30e9 };
+    assert.strictEqual(harness.diskCheck(dir, model, { ...budgetFull, free: MIN_FREE_BYTES + 1 }), null);
+    assert.match(harness.diskCheck(dir, model, { ...budgetFull, installed: false }), /budget/);
+    assert.match(harness.diskCheck(dir, model, { free: MIN_FREE_BYTES + 1, installed: false }), /floor/);
+    assert.strictEqual(harness.diskCheck(dir, model, { free, used: 1 }), null);
+    // The production call injects nothing: isInstalled, dirSize and statfs
+    // are read for real. Installed → 0 B needed, a 1 B cache → it fits
+    // whenever the test host itself is above the floor.
+    if (free >= MIN_FREE_BYTES) assert.strictEqual(harness.diskCheck(dir, model), null);
+    else t.diagnostic(`host has ${free} B free, under the ${MIN_FREE_BYTES} B floor: default-path assertion skipped`);
+    fs.rmSync(path.join(modelDir, ".complete"));
+    assert.match(harness.diskCheck(dir, model, budgetFull), /budget/, "no marker → not installed → full bytes needed");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

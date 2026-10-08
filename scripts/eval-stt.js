@@ -37,7 +37,8 @@
 // a split run; later speed files are re-measures), --cpu-lock <file> (see above),
 // --other-run-pattern <pgrep -f pattern> (processes of a parallel run whose
 // presence during a model's decodes makes its timing contended; default
-// "bench-cleanup|eval-cleanup"),
+// "bench-cleanup|eval-cleanup"; `--other-run-pattern=` (empty) turns the
+// watch off),
 // --exploratory (also measure families the worker can't run yet), --resume
 // (reuse the measured rows of an existing --out file, only if it is the same
 // pass, corpus selection, runtime and measuring code, and only rows whose model

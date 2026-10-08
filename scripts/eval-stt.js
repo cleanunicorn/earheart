@@ -621,11 +621,13 @@ function ablation(corpus, decodes) {
 async function measureModel(entry, ctx) {
   const { model, role, arm } = entry;
   const row = { id: model.id, label: model.label, role, arm, path: arm === "exploratory" || role === "calibration" ? "direct" : "worker" };
-  const blocked = diskCheck(ctx.cacheDir, model);
+  // One install check: it decides both what the disk guard still needs to
+  // fit and the cached/fetch label below.
+  const cached = manager.isInstalled(ctx.cacheDir, model);
+  const blocked = diskCheck(ctx.cacheDir, model, { installed: cached });
   if (blocked) return { ...row, status: "skipped", reason: blocked };
 
   const dl = Date.now();
-  const cached = manager.isInstalled(ctx.cacheDir, model);
   for (const f of model.files) log(`  ${cached ? "cached" : "fetch"} ${f.url} (${f.bytes} B, sha256 ${f.sha256})`);
   await manager.download(ctx.cacheDir, model);
   const dir = manager.modelDir(ctx.cacheDir, model);

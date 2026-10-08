@@ -8,11 +8,11 @@
 //
 //   xvfb-run -a npx electron scripts/e2e-latency.js --no-sandbox \
 //     --wav=/path/to/speech.wav --models=/path/to/models \
-//     --config=default --talk=30 --runs=2
+//     --config=default --talk=30 --runs=2 [--debug-chunks]
 //
+// Flags are --name=value; a flag without a value (--debug-chunks) is true.
 // --models points at a directory with the model-manager layout
-// (<kind>/<id>/files + .complete marker); use --link-models to build it from
-// loose files. --config:
+// (<kind>/<id>/files + .complete marker). --config:
 //   default      live preview on, cleanup on (app defaults)
 //   no-preview   live preview off, cleanup on
 //   stt-only     live preview off, cleanup off
@@ -27,17 +27,25 @@ const os = require("node:os");
 
 const argv = Object.fromEntries(
   process.argv
-    .filter((a) => a.startsWith("--") && a.includes("="))
-    .map((a) => a.slice(2).split(/=(.*)/s).slice(0, 2))
+    .filter((a) => a.startsWith("--"))
+    .map((a) =>
+      a.includes("=") ? a.slice(2).split(/=(.*)/s).slice(0, 2) : [a.slice(2), true]
+    )
 );
 const WAV = argv.wav;
-const MODELS = argv.models;
+// Resolved here: a relative path handed to symlinkSync below would resolve
+// against the temp userData dir and the link would dangle.
+const MODELS = typeof argv.models === "string" ? path.resolve(argv.models) : undefined;
 const CONFIG = argv.config || "default";
 const TALK_SEC = Number(argv.talk || 30);
 const RUNS = Number(argv.runs || 2);
 
 if (!WAV || !fs.existsSync(WAV)) {
   console.error("--wav=<file> is required (16kHz mono PCM16 works best)");
+  process.exit(2);
+}
+if (argv.models !== undefined && (!MODELS || !fs.existsSync(MODELS))) {
+  console.error("--models=<dir> must name an existing models directory");
   process.exit(2);
 }
 
@@ -47,8 +55,9 @@ const userData = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-e2e-"));
 app.setPath("userData", userData);
 
 // Install the models into userData/models by symlinking the provided dir.
+// "junction" needs no privilege on Windows and is ignored elsewhere.
 if (MODELS) {
-  fs.symlinkSync(MODELS, path.join(userData, "models"));
+  fs.symlinkSync(MODELS, path.join(userData, "models"), "junction");
 }
 
 const configs = {
@@ -113,20 +122,20 @@ app.whenReady().then(async () => {
     const pipeline = require("../main/pipeline");
     const history = require("../main/history");
 
-    // Timestamp every overlay-bound pipeline event so the phase breakdown is
-    // exact. The pipeline calls windows.sendToOverlay at call time, so wrapping
-    // the export is enough.
+    // Timestamp every pipeline:status send so the phase breakdown is exact.
+    // pipeline.js looks windows.sendToOverlay up at call time, so wrapping the
+    // export after require is enough for its own status sends. Live preview
+    // captured the original function when pipeline.js was required, so its
+    // pipeline:partial sends never pass through here — and are not reported.
     let events = [];
     const realSend = windows.sendToOverlay;
     windows.sendToOverlay = (channel, payload) => {
-      if (channel === "pipeline:status" || channel === "pipeline:partial") {
+      if (channel === "pipeline:status") {
         events.push({ t: Date.now(), channel, payload });
       }
       return realSend(channel, payload);
     };
 
-    const states = [];
-    pipeline.onStateChange((s) => states.push({ t: Date.now(), state: s }));
     pipeline.init();
 
     // --debug-chunks: log committed chunk boundaries and save captured WAVs,

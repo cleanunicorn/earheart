@@ -6,7 +6,6 @@ const assert = require("node:assert");
 
 const {
   titleToItem,
-  titleToKind,
   entryFromPullRequest,
   renderChangelog,
   parseChangelog,
@@ -29,12 +28,13 @@ test("titleToItem strips the conventional-commit machinery", () => {
   assert.equal(titleToItem("   "), "");
 });
 
-test("titleToKind maps the prefix to a user-facing word", () => {
-  assert.equal(titleToKind("feat: x"), "feature");
-  assert.equal(titleToKind("fix(ui): x"), "fix");
-  assert.equal(titleToKind("perf: x"), "fix");
-  assert.equal(titleToKind("refactor: x"), "change");
-  assert.equal(titleToKind("whatever"), "change");
+test("release titles retain their text across prefixes in changelog and feed", () => {
+  for (const prefix of ["feat", "fix(ui)", "perf", "refactor", "feat!"]) {
+    const entry = entryFromPullRequest({ version: "1.0.0", title: `${prefix}: Preserve words`, date: "2026-10-08" });
+    const parsed = parseChangelog(renderChangelog([entry]));
+    assert.deepStrictEqual(parsed, [entry]);
+    assert.deepStrictEqual(toFeed(parsed).versions[0].items, ["Preserve words"]);
+  }
 });
 
 test("entryFromPullRequest links the PR and keeps the date to a day", () => {
@@ -47,15 +47,15 @@ test("entryFromPullRequest links the PR and keeps the date to a day", () => {
   assert.deepStrictEqual(entry, {
     version: "0.25.0",
     date: "2026-08-04",
-    items: [{ text: "Show what's new before updating (#88)", kind: "feature" }],
+    items: [{ text: "Show what's new before updating (#88)" }],
   });
   assert.equal(entryFromPullRequest({ version: "0.1.0", title: "chore:" }), null);
 });
 
 test("a rendered changelog parses back to the same entries", () => {
   const entries = [
-    { version: "0.25.0", date: "2026-08-04", items: [{ text: "Show what's new (#88)", kind: "feature" }] },
-    { version: "0.24.1", date: "2026-07-30", items: [{ text: "Settle the settings residuals (#86)", kind: "fix" }] },
+    { version: "0.25.0", date: "2026-08-04", items: [{ text: "Show what's new (#88)" }] },
+    { version: "0.24.1", date: "2026-07-30", items: [{ text: "Settle the settings residuals (#86)" }] },
   ];
   const parsed = parseChangelog(renderChangelog(entries));
   assert.deepStrictEqual(
@@ -102,7 +102,7 @@ test("withEntry inserts newest-first and re-releasing replaces", () => {
   assert.deepStrictEqual(entries[0], {
     version: "0.25.0",
     date: "2026-08-05",
-    items: [{ text: "Corrected news (#88)", kind: "change" }],
+    items: [{ text: "Corrected news (#88)" }],
   });
   assert.ok(again.startsWith("# Changelog"), "the header survives a rewrite");
 });
@@ -111,7 +111,7 @@ test("toFeed publishes newest-first, capped, as plain strings", () => {
   const entries = Array.from({ length: 20 }, (_, i) => ({
     version: `0.${i + 1}.0`,
     date: "2026-01-01",
-    items: [{ text: `Change ${i + 1}`, kind: "fix" }],
+    items: [{ text: `Change ${i + 1}` }],
   }));
   const feed = toFeed(entries, { limit: 3 });
   assert.equal(feed.schema, 1);

@@ -383,7 +383,6 @@ sttHost.onExit(forgetStt);
 cleanupHost.onExit(forgetCleanup);
 
 module.exports = {
-  modelsDir,
   isInstalled,
   getSttReadiness,
   download,

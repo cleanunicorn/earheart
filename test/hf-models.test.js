@@ -206,7 +206,6 @@ test("buildCleanupModel produces a registry-shaped custom entry", () => {
   };
   const model = buildCleanupModel("unsloth/gemma-3-1b-it-GGUF", variant);
   assert.strictEqual(model.kind, "cleanup");
-  assert.strictEqual(model.engine, "llama-gguf");
   assert.strictEqual(model.custom, true);
   assert.strictEqual(model.gguf.file, "gemma-Q4_K_M.gguf");
   assert.strictEqual(model.id, "custom-unsloth-gemma-3-1b-it-gguf-q4-k-m");
@@ -636,7 +635,6 @@ test("buildSttModel preserves discovered checksums on the saved model entry", as
   const model = buildSttModel(discovered.repo, discovered.variants[0]);
 
   assert.strictEqual(model.kind, "stt");
-  assert.strictEqual(model.engine, "sherpa-parakeet");
   assert.strictEqual(model.custom, true);
   assert.strictEqual(
     model.id,

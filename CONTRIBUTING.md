@@ -235,6 +235,16 @@ engine can't take down the other. The native runtimes are loaded lazily inside
 each worker, so the app boots and the HTTP paths keep working even if a model
 isn't downloaded.
 
+Model definitions route by `kind` and their `sherpa` or `gguf` payload rather
+than an engine-name field. Custom models retain `source.repo`: the STT facade
+uses it to reject previously saved unsupported families. Model-status rows
+retain `kind` for removal announcements; size belongs to download progress,
+and the selected default comes from settings.
+
+STT evaluation fingerprints hash `registry.js` and `engine-worker.js` byte for
+byte, including comments. Changes to these files require fresh baselines;
+runs from different fingerprints cannot be combined.
+
 Design constraints worth keeping:
 
 - **Few runtime npm dependencies.** The app stays close to Electron's built-ins

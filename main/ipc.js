@@ -526,9 +526,7 @@ function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
         kind: m.kind,
         label: m.label,
         note: m.note,
-        default: !!m.default,
         custom: !!m.custom,
-        bytes: engines.registry.totalBytes(m),
         installed: engines.isInstalled(kind, m.id),
       }));
     return { stt: describe("stt"), cleanup: describe("cleanup") };

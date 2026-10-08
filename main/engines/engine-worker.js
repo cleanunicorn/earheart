@@ -19,6 +19,7 @@
 const path = require("node:path");
 const { wavToFloat32, SAMPLE_RATE } = require("../util/wav");
 const {
+  CLEAN_CONTEXT_MIN,
   cleanContextNeed,
   cleanMaxTokens,
   cleanBudgetMessage,
@@ -30,18 +31,6 @@ const port = process.parentPort;
 
 // Parakeet's mel-feature dimension, fixed by the model.
 const FEATURE_DIM = 80;
-// Cleanup engine defaults (overridable per request).
-//
-// A cleanup turn holds the rules prompt, the transcript and the generated
-// output at once — see main/util/clean-budget.js for why that grows at twice
-// the rate of the dictation, and what llama.cpp does when it doesn't fit. At
-// 2048 the ceiling arrived around 550 spoken words, well inside the default
-// recording cap, and the overflow cost the user the start of their dictation
-// with nothing reported. This is the floor the facade sends for a default-length
-// dictation (it sends more when the user allows longer ones); assertCleanBudget
-// below refuses a turn past whatever was allocated, instead of losing text.
-const DEFAULT_CONTEXT_SIZE = 4096;
-
 let recognizer = null; // sherpa-onnx OfflineRecognizer
 let sttModelId = null;
 let sttRuntime = null; // { numThreads, provider } the recognizer was built with
@@ -143,7 +132,9 @@ async function loadStt({ dir, sherpa, modelId }) {
   return { ready: true, ...runtime };
 }
 
-async function transcribe({ wav, language }) {
+// Builtin recognition ignores the per-request HTTP language option. Language
+// behavior comes from the selected model configuration.
+async function transcribe({ wav }) {
   if (!recognizer) throw new Error("STT model not loaded");
   const buf = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
   const { samples, sampleRate } = wavToFloat32(buf);
@@ -158,14 +149,12 @@ async function transcribe({ wav, language }) {
   const decodeMs = Date.now() - startedAt;
   const result = recognizer.getResult(stream);
   return { text: (result && result.text ? result.text : "").trim(), decodeMs };
-  // `language` is accepted for parity with the HTTP API; Parakeet v3
-  // auto-detects, so it is not forwarded.
 }
 
 /* ---------------- cleanup (node-llama-cpp / GGUF) ---------------- */
 
 async function loadCleanup({ modelPath, contextSize, cpuOnly }) {
-  const wanted = contextSize || DEFAULT_CONTEXT_SIZE;
+  const wanted = contextSize || CLEAN_CONTEXT_MIN;
   // Same model AND same context: the context is allocated at load time, so a
   // caller asking for a bigger one has to get a reload, not the old context.
   if (llamaModel && cleanupModelPath === modelPath && cleanupContextSize === wanted) {

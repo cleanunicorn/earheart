@@ -16,11 +16,11 @@
 //
 // Titles are conventional-commit prefixed because scripts/auto-release.js sizes the
 // version bump from that prefix; the prefix is machinery, not news, so it's
-// stripped for display and only its meaning (feature / fix) survives.
+// stripped for display so only the readable title survives. For release-sizing
+// policy, see scripts/auto-release.js.
 
-const { compareVersions } = require("./update-feed");
+const { compareVersions, REPO_SLUG } = require("./update-feed");
 
-const REPO_SLUG = "cleanunicorn/earheart";
 const CHANGELOG_HEADER = `# Changelog
 
 Written by the release workflow from the title of the pull request that cut
@@ -34,17 +34,6 @@ changed right after it updates.
 // a few releases still sees everything they missed, small enough that the asset
 // stays a couple of KB.
 const FEED_VERSIONS = 12;
-
-// Types that describe a user-visible change, and the word for it. Unmarked
-// chore, docs, ci, test, style, and build titles do not cut releases. Their
-// breaking `type!:` forms do; see scripts/auto-release.js. They fall back to
-// the generic "change" kind.
-const KINDS = {
-  feat: "feature",
-  fix: "fix",
-  perf: "fix",
-  refactor: "change",
-};
 
 /**
  * Turn a conventional-commit PR title into a sentence a user can read:
@@ -64,12 +53,6 @@ function titleToItem(title) {
   return text[0].toUpperCase() + text.slice(1);
 }
 
-/** The kind word for a conventional-commit title ("feature" / "fix" / "change"). */
-function titleToKind(title) {
-  const m = String(title || "").match(/^([a-z]+)(\([^)]*\))?!?:/i);
-  return (m && KINDS[m[1].toLowerCase()]) || "change";
-}
-
 /**
  * Build the changelog entry for a release cut from one merged pull request.
  * `date` is passed in (never read from the clock) so callers stay testable.
@@ -82,7 +65,7 @@ function entryFromPullRequest({ version, title, number, date }) {
   return {
     version: String(version).replace(/^v/i, ""),
     date: String(date || "").slice(0, 10),
-    items: [{ text: `${text}${suffix}`, kind: titleToKind(title) }],
+    items: [{ text: `${text}${suffix}` }],
   };
 }
 
@@ -99,11 +82,8 @@ function renderChangelog(entries) {
 }
 
 /**
- * Parse a changelog back into entries. Kinds aren't stored in the markdown —
- * the bullet text is what a human reads — so they're re-derived only where the
- * writer put them, i.e. nowhere: parsed items come back as plain "change"
- * unless the caller knows better. Unknown lines are ignored, so hand-edits and
- * extra prose between releases can't break a release build.
+ * Parse a changelog back into entries. Unknown lines are ignored, so
+ * hand-edits and extra prose between releases can't break a release build.
  */
 function parseChangelog(text) {
   const entries = [];
@@ -118,7 +98,7 @@ function parseChangelog(text) {
       continue;
     }
     const bullet = line.match(/^[-*]\s+(.+?)\s*$/);
-    if (bullet && current) current.items.push({ text: bullet[1], kind: "change" });
+    if (bullet && current) current.items.push({ text: bullet[1] });
   }
   return entries.filter((e) => e.items.length);
 }
@@ -180,10 +160,8 @@ function parseFeed(text) {
 
 /**
  * Entries as the app shows them: items flattened to plain strings, the shape
- * parseFeed already returns. The changelog side carries a `kind` per item for
- * the writer's benefit; nothing on screen uses it, and one shape downstream
- * means the local (CHANGELOG.md) and remote (release-notes.json) paths can't
- * drift into rendering each other's objects.
+ * parseFeed already returns. Sharing this shape keeps the local changelog
+ * and remote feed paths from drifting into rendering each other's objects.
  */
 function displayEntries(entries) {
   return entries.map((e) => ({
@@ -218,11 +196,8 @@ function summarize(entries, limit = 3) {
 
 module.exports = {
   CHANGELOG_HEADER,
-  FEED_VERSIONS,
   titleToItem,
-  titleToKind,
   entryFromPullRequest,
-  renderEntry,
   renderChangelog,
   parseChangelog,
   withEntry,

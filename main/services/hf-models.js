@@ -288,7 +288,6 @@ function buildCleanupModel(repoFull, variant) {
     kind: "cleanup",
     label: `${repoName} · ${variant.label}`,
     note: customNote(repoFull, variant),
-    engine: "llama-gguf",
     custom: true,
     source: { repo: repoFull, quant: variant.label },
     files: variant.files.map((f) => ({
@@ -624,7 +623,6 @@ function buildSttModel(repoFull, variant) {
     kind: "stt",
     label: `${repoName} · ${variant.label}`,
     note: customNote(repoFull, variant),
-    engine: "sherpa-parakeet",
     custom: true,
     source: { repo: repoFull, variant: variant.label },
     files: variant.files.map((f) => ({

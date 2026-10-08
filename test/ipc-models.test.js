@@ -90,6 +90,24 @@ function loadIpcHandlers(cfg, { engines = {}, hf = {}, route = {} } = {}) {
   return { handlers, saved, broadcasts, warnings };
 }
 
+test("models:status retains removal identity without summing download sizes", () => {
+  const model = { id: "custom-example", kind: "stt", label: "Example", note: "Local", custom: true };
+  const { handlers } = loadIpcHandlers({}, {
+    engines: {
+      registry: {
+        ...registry,
+        listModels: (kind) => kind === "stt" ? [model] : [],
+        totalBytes: () => { throw new Error("status must not sum files"); },
+      },
+      isInstalled: (kind, id) => kind === "stt" && id === model.id,
+    },
+  });
+  assert.deepStrictEqual(handlers["models:status"](), {
+    stt: [{ ...model, installed: true }],
+    cleanup: [],
+  });
+});
+
 const customCleanup = {
   id: "custom-acme-foo-q4-k-m",
   kind: "cleanup",

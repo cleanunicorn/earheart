@@ -22,7 +22,7 @@ async function shot(win, name) {
   console.log(`captured ${name}.png`);
 }
 
-app.whenReady().then(async () => {
+async function main() {
   fs.mkdirSync(OUT, { recursive: true });
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb) =>
     cb(true)
@@ -141,4 +141,12 @@ app.whenReady().then(async () => {
   await shot(overlay, "overlay-update-solo");
 
   app.exit(0);
+}
+
+// Any failure exits non-zero with the error; without this an unhandled
+// rejection left Electron running and `make screenshots` hung instead of
+// failing.
+app.whenReady().then(main).catch((err) => {
+  console.error("[screenshots] failed:", (err && err.stack) || err);
+  app.exit(1);
 });

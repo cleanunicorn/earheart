@@ -1,8 +1,9 @@
 // Ad-hoc harness: load a cleanup gguf (--model=<path>) and try ONE cleanup
 // prompt strategy (named by the first positional) against known inputs. One
 // strategy per process so a native crash in one doesn't take down the others.
-// Not in the test suite as a run; its model-free parts (the strategies and the
-// argument handling) are pinned by test/try-cleanup-prompts.test.js.
+// Not in the test suite as a run; strategy F's composition and the argument
+// handling are pinned by test/try-cleanup-prompts.test.js (B–E2 are historical
+// variants, kept for comparison and not pinned).
 //
 //   node scripts/try-cleanup-prompts.mjs <strategy> [input index] --model=<path>
 //

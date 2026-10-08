@@ -181,16 +181,13 @@ function parseArgs(argv) {
     // Numbers that silently change the run: NaN is falsy (--limit abc is a
     // "full" run that runStatus does not call partial) and never compares
     // (--quiet-load abc never waits), so both are rejected here.
-    const count = () => {
+    const number = (bad, what) => {
       const n = Number(value);
-      if (value.trim() === "" || !Number.isInteger(n) || n < 0) throw new Error(`${arg} needs a non-negative integer (got ${value})`);
+      if (value.trim() === "" || bad(n) || n < 0) throw new Error(`${arg} needs a non-negative ${what} (got ${value})`);
       return n;
     };
-    const load = () => {
-      const n = Number(value);
-      if (value.trim() === "" || Number.isNaN(n) || n < 0) throw new Error(`${arg} needs a non-negative number, or Infinity (got ${value})`);
-      return n;
-    };
+    const count = () => number((n) => !Number.isInteger(n), "integer");
+    const load = () => number(Number.isNaN, "number, or Infinity");
     switch (arg) {
       case "--out": opts.out = value; break;
       case "--cache-dir": opts.cacheDir = value; break;

@@ -8,11 +8,11 @@
 //
 //   xvfb-run -a npx electron scripts/e2e-latency.js --no-sandbox \
 //     --wav=/path/to/speech.wav --models=/path/to/models \
-//     --config=default --talk=30 --runs=2
+//     --config=default --talk=30 --runs=2 [--debug-chunks]
 //
+// Flags are --name=value; a flag without a value (--debug-chunks) is true.
 // --models points at a directory with the model-manager layout
-// (<kind>/<id>/files + .complete marker); use --link-models to build it from
-// loose files. --config:
+// (<kind>/<id>/files + .complete marker). --config:
 //   default      live preview on, cleanup on (app defaults)
 //   no-preview   live preview off, cleanup on
 //   stt-only     live preview off, cleanup off
@@ -20,199 +20,241 @@
 // Each run within one process reuses the already-warm engine workers, so run 1
 // measures the cold path and run 2 the warm path.
 
-const { app, ipcMain, session } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 
-const argv = Object.fromEntries(
-  process.argv
-    .filter((a) => a.startsWith("--") && a.includes("="))
-    .map((a) => a.slice(2).split(/=(.*)/s).slice(0, 2))
-);
-const WAV = argv.wav;
-const MODELS = argv.models;
-const CONFIG = argv.config || "default";
-const TALK_SEC = Number(argv.talk || 30);
-const RUNS = Number(argv.runs || 2);
-
-if (!WAV || !fs.existsSync(WAV)) {
-  console.error("--wav=<file> is required (16kHz mono PCM16 works best)");
-  process.exit(2);
+// Flags are --name=value; a bare --flag is true. Anything else (positionals,
+// Electron's own switches) is ignored, so --no-sandbox passes through.
+function parseArgs(args) {
+  return Object.fromEntries(
+    args
+      .filter((a) => a.startsWith("--"))
+      .map((a) => {
+        const [k, v] = a.slice(2).split(/=(.*)/s);
+        return [k, v ?? true];
+      })
+  );
 }
 
-// Fresh userData per invocation: settings and engine state never leak between
-// measurement sweeps.
-const userData = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-e2e-"));
-app.setPath("userData", userData);
-
-// Install the models into userData/models by symlinking the provided dir.
-if (MODELS) {
-  fs.symlinkSync(MODELS, path.join(userData, "models"));
-}
-
-const configs = {
-  default: {},
-  "no-preview": { stt: { livePreview: { enabled: false } } },
-  "stt-only": {
-    stt: { livePreview: { enabled: false } },
-    cleanup: { enabled: false },
-  },
-  "preview-raw": { cleanup: { enabled: false } },
-};
-const overrides = configs[CONFIG];
-if (!overrides) {
-  console.error(`unknown --config=${CONFIG}`);
-  process.exit(2);
-}
-// Base settings for a deterministic run: clipboard delivery (no external
-// keystroke tool), no idle unload mid-sweep, no history cap surprises.
-fs.writeFileSync(
-  path.join(userData, "settings.json"),
-  JSON.stringify(
-    deepMerge(
-      {
-        output: { mode: "clipboard" },
-        engines: { idleUnloadMinutes: 0 },
-        // Explicit engine fields: migrateLegacy treats a stored slice with no
-        // `engine` as a pre-engine config and maps it to "remote".
-        stt: { engine: "builtin" },
-        cleanup: { engine: "builtin" },
-      },
-      overrides
-    ),
-    null,
-    2
-  )
-);
-
-function deepMerge(base, override) {
-  const out = { ...base };
-  for (const [k, v] of Object.entries(override || {})) {
-    out[k] =
-      v && typeof v === "object" && !Array.isArray(v)
-        ? deepMerge(base[k] || {}, v)
-        : v;
+// --models, resolved against the cwd: a relative path handed to symlinkSync
+// would resolve against the temp userData dir and the link would dangle. The
+// raw value is tested, not the resolved one: path.resolve("") is the cwd, so an
+// empty --models= (an unset shell variable) must fail, not link the cwd in.
+// Returns { dir } (undefined when not given) or { error }.
+function resolveModels(value, cwd = process.cwd(), exists = fs.existsSync) {
+  if (value === undefined) return { dir: undefined };
+  if (typeof value !== "string" || !value) {
+    return { error: `--models=<dir> must name an existing models directory (got ${JSON.stringify(value)})` };
   }
-  return out;
+  const dir = path.resolve(cwd, value);
+  if (!exists(dir)) return { error: `--models=${value} does not exist (resolved to ${dir})` };
+  return { dir };
 }
 
-app.commandLine.appendSwitch("use-fake-device-for-media-stream");
-app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
-app.commandLine.appendSwitch("use-file-for-fake-audio-capture", WAV);
+module.exports = { parseArgs, resolveModels };
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Run only as the entry script. Electron's loader doesn't make the entry
+// require.main, so compare against the script it was started with; requiring
+// this file for its helpers (test/e2e-latency.test.js) never starts a run.
+const isEntry =
+  require.main === module ||
+  (!!process.versions.electron && !!process.argv[1] && path.resolve(process.argv[1]) === __filename);
+if (isEntry) main();
 
-app.whenReady().then(async () => {
-  try {
-    session.defaultSession.setPermissionRequestHandler((wc, permission, cb) =>
-      cb(true)
-    );
+function main() {
+  const { app, ipcMain, session } = require("electron");
+  const argv = parseArgs(process.argv);
+  const WAV = argv.wav;
+  const models = resolveModels(argv.models);
+  const MODELS = models.dir;
+  const CONFIG = argv.config || "default";
+  const TALK_SEC = Number(argv.talk || 30);
+  const RUNS = Number(argv.runs || 2);
 
-    const windows = require("../main/windows");
-    const pipeline = require("../main/pipeline");
-    const history = require("../main/history");
+  if (!WAV || !fs.existsSync(WAV)) {
+    console.error("--wav=<file> is required (16kHz mono PCM16 works best)");
+    process.exit(2);
+  }
+  if (models.error) {
+    console.error(models.error);
+    process.exit(2);
+  }
 
-    // Timestamp every overlay-bound pipeline event so the phase breakdown is
-    // exact. The pipeline calls windows.sendToOverlay at call time, so wrapping
-    // the export is enough.
-    let events = [];
-    const realSend = windows.sendToOverlay;
-    windows.sendToOverlay = (channel, payload) => {
-      if (channel === "pipeline:status" || channel === "pipeline:partial") {
-        events.push({ t: Date.now(), channel, payload });
-      }
-      return realSend(channel, payload);
-    };
+  // Fresh userData per invocation: settings and engine state never leak between
+  // measurement sweeps.
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-e2e-"));
+  app.setPath("userData", userData);
 
-    const states = [];
-    pipeline.onStateChange((s) => states.push({ t: Date.now(), state: s }));
-    pipeline.init();
+  // Install the models into userData/models by symlinking the provided dir.
+  // "junction" needs no privilege on Windows and is ignored elsewhere.
+  if (MODELS) {
+    fs.symlinkSync(MODELS, path.join(userData, "models"), "junction");
+  }
 
-    // --debug-chunks: log committed chunk boundaries and save captured WAVs,
-    // to diagnose where the silence-aware commit lands in real captures.
-    if (argv["debug-chunks"]) {
-      const { wavToFloat32 } = require("../main/util/wav");
-      ipcMain.on("audio:partial", (event, { seq, final, fromSample, wav }) => {
-        if (!final) return;
-        const { samples } = wavToFloat32(Buffer.from(wav));
-        let sum = 0;
-        for (const s of samples) sum += s * s;
-        const rms = Math.sqrt(sum / samples.length);
-        // RMS of the chunk's trailing 0.3s — what the overlay's quiet check saw.
-        let tsum = 0;
-        const tw = Math.min(samples.length, 4800);
-        for (let i = samples.length - tw; i < samples.length; i++) tsum += samples[i] * samples[i];
-        console.log(
-          `[e2e-chunks] commit seq=${seq} from=${fromSample} frames=${samples.length} rms=${rms.toFixed(4)} tailRms=${Math.sqrt(tsum / tw).toFixed(4)}`
-        );
-      });
-      ipcMain.on("audio:captured", (event, { sid, wav }) => {
-        const f = path.join(userData, `captured-${sid}.wav`);
-        fs.writeFileSync(f, Buffer.from(wav));
-        console.log(`[e2e-chunks] captured wav saved: ${f}`);
-      });
+  const configs = {
+    default: {},
+    "no-preview": { stt: { livePreview: { enabled: false } } },
+    "stt-only": {
+      stt: { livePreview: { enabled: false } },
+      cleanup: { enabled: false },
+    },
+    "preview-raw": { cleanup: { enabled: false } },
+  };
+  const overrides = configs[CONFIG];
+  if (!overrides) {
+    console.error(`unknown --config=${CONFIG}`);
+    process.exit(2);
+  }
+  // Base settings for a deterministic run: clipboard delivery (no external
+  // keystroke tool), no idle unload mid-sweep, no history cap surprises.
+  fs.writeFileSync(
+    path.join(userData, "settings.json"),
+    JSON.stringify(
+      deepMerge(
+        {
+          output: { mode: "clipboard" },
+          engines: { idleUnloadMinutes: 0 },
+          // Explicit engine fields: migrateLegacy treats a stored slice with no
+          // `engine` as a pre-engine config and maps it to "remote".
+          stt: { engine: "builtin" },
+          cleanup: { engine: "builtin" },
+        },
+        overrides
+      ),
+      null,
+      2
+    )
+  );
+
+  function deepMerge(base, override) {
+    const out = { ...base };
+    for (const [k, v] of Object.entries(override || {})) {
+      out[k] =
+        v && typeof v === "object" && !Array.isArray(v)
+          ? deepMerge(base[k] || {}, v)
+          : v;
     }
+    return out;
+  }
 
-    const waitForState = (want, timeoutMs = 300000) =>
-      new Promise((resolve, reject) => {
-        const t0 = Date.now();
-        const tick = setInterval(() => {
-          if (pipeline.getState() === want) {
-            clearInterval(tick);
-            resolve(Date.now());
-          } else if (Date.now() - t0 > timeoutMs) {
-            clearInterval(tick);
-            reject(new Error(`timed out waiting for state ${want}`));
-          }
-        }, 5);
-      });
+  app.commandLine.appendSwitch("use-fake-device-for-media-stream");
+  app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
+  app.commandLine.appendSwitch("use-file-for-fake-audio-capture", WAV);
 
-    const results = [];
-    for (let run = 1; run <= RUNS; run++) {
-      events = [];
-      pipeline.toggle();
-      await waitForState("recording");
-      // Wait for the mic to actually deliver (status recording appears on
-      // first samples), then speak for TALK_SEC.
-      await sleep(TALK_SEC * 1000);
-      const tStop = Date.now();
-      pipeline.toggle();
-      await waitForState("idle");
-      const tDone = Date.now();
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-      const phase = {};
-      for (const e of events.filter((e) => e.channel === "pipeline:status")) {
-        if (!(e.payload.status in phase)) phase[e.payload.status] = e.t - tStop;
-      }
-      const entry = history.list()[0];
-      results.push({
-        run,
-        config: CONFIG,
-        talkSec: TALK_SEC,
-        stopToIdleMs: tDone - tStop,
-        phaseStartsMs: phase,
-        rawChars: entry?.raw?.length ?? null,
-        textChars: entry?.text?.length ?? null,
-        raw: entry?.raw ?? null,
-        text: entry?.text ?? null,
-      });
-      console.log(
-        `[e2e] run ${run} (${CONFIG}, talk ${TALK_SEC}s): stop->done ${tDone - tStop}ms  phases=${JSON.stringify(phase)}`
+  app.whenReady().then(async () => {
+    try {
+      session.defaultSession.setPermissionRequestHandler((wc, permission, cb) =>
+        cb(true)
       );
-      await sleep(1500);
-    }
 
-    fs.writeFileSync(
-      path.join(userData, "e2e-results.json"),
-      JSON.stringify(results, null, 2)
-    );
-    console.log(`[e2e] RESULTS ${JSON.stringify(results.map(({ raw, text, ...r }) => r))}`);
-    console.log(`[e2e] transcripts in ${path.join(userData, "e2e-results.json")}`);
-    windows.destroyOverlay();
-    app.exit(0);
-  } catch (err) {
-    console.error("[e2e] failed:", (err && err.stack) || err);
-    app.exit(1);
-  }
-});
+      const windows = require("../main/windows");
+      const pipeline = require("../main/pipeline");
+      const history = require("../main/history");
+
+      // Timestamp every pipeline:status send so the phase breakdown is exact.
+      // pipeline.js looks windows.sendToOverlay up at call time, so wrapping the
+      // export after require is enough for its own status sends. Live preview
+      // captured the original function when pipeline.js was required, so its
+      // pipeline:partial sends never pass through here — and are not reported.
+      let events = [];
+      const realSend = windows.sendToOverlay;
+      windows.sendToOverlay = (channel, payload) => {
+        if (channel === "pipeline:status") {
+          events.push({ t: Date.now(), channel, payload });
+        }
+        return realSend(channel, payload);
+      };
+
+      pipeline.init();
+
+      // --debug-chunks: log committed chunk boundaries and save captured WAVs,
+      // to diagnose where the silence-aware commit lands in real captures.
+      if (argv["debug-chunks"]) {
+        const { wavToFloat32 } = require("../main/util/wav");
+        ipcMain.on("audio:partial", (event, { seq, final, fromSample, wav }) => {
+          if (!final) return;
+          const { samples } = wavToFloat32(Buffer.from(wav));
+          let sum = 0;
+          for (const s of samples) sum += s * s;
+          const rms = Math.sqrt(sum / samples.length);
+          // RMS of the chunk's trailing 0.3s — what the overlay's quiet check saw.
+          let tsum = 0;
+          const tw = Math.min(samples.length, 4800);
+          for (let i = samples.length - tw; i < samples.length; i++) tsum += samples[i] * samples[i];
+          console.log(
+            `[e2e-chunks] commit seq=${seq} from=${fromSample} frames=${samples.length} rms=${rms.toFixed(4)} tailRms=${Math.sqrt(tsum / tw).toFixed(4)}`
+          );
+        });
+        ipcMain.on("audio:captured", (event, { sid, wav }) => {
+          const f = path.join(userData, `captured-${sid}.wav`);
+          fs.writeFileSync(f, Buffer.from(wav));
+          console.log(`[e2e-chunks] captured wav saved: ${f}`);
+        });
+      }
+
+      const waitForState = (want, timeoutMs = 300000) =>
+        new Promise((resolve, reject) => {
+          const t0 = Date.now();
+          const tick = setInterval(() => {
+            if (pipeline.getState() === want) {
+              clearInterval(tick);
+              resolve(Date.now());
+            } else if (Date.now() - t0 > timeoutMs) {
+              clearInterval(tick);
+              reject(new Error(`timed out waiting for state ${want}`));
+            }
+          }, 5);
+        });
+
+      const results = [];
+      for (let run = 1; run <= RUNS; run++) {
+        events = [];
+        pipeline.toggle();
+        await waitForState("recording");
+        // Wait for the mic to actually deliver (status recording appears on
+        // first samples), then speak for TALK_SEC.
+        await sleep(TALK_SEC * 1000);
+        const tStop = Date.now();
+        pipeline.toggle();
+        await waitForState("idle");
+        const tDone = Date.now();
+
+        const phase = {};
+        for (const e of events) {
+          if (!(e.payload.status in phase)) phase[e.payload.status] = e.t - tStop;
+        }
+        const entry = history.list()[0];
+        results.push({
+          run,
+          config: CONFIG,
+          talkSec: TALK_SEC,
+          stopToIdleMs: tDone - tStop,
+          phaseStartsMs: phase,
+          rawChars: entry?.raw?.length ?? null,
+          textChars: entry?.text?.length ?? null,
+          raw: entry?.raw ?? null,
+          text: entry?.text ?? null,
+        });
+        console.log(
+          `[e2e] run ${run} (${CONFIG}, talk ${TALK_SEC}s): stop->done ${tDone - tStop}ms  phases=${JSON.stringify(phase)}`
+        );
+        await sleep(1500);
+      }
+
+      fs.writeFileSync(
+        path.join(userData, "e2e-results.json"),
+        JSON.stringify(results, null, 2)
+      );
+      console.log(`[e2e] RESULTS ${JSON.stringify(results.map(({ raw, text, ...r }) => r))}`);
+      console.log(`[e2e] transcripts in ${path.join(userData, "e2e-results.json")}`);
+      windows.destroyOverlay();
+      app.exit(0);
+    } catch (err) {
+      console.error("[e2e] failed:", (err && err.stack) || err);
+      app.exit(1);
+    }
+  });
+}

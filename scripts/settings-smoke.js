@@ -801,6 +801,13 @@ app.whenReady().then(async () => {
         true
       ).then(JSON.parse);
     const settingsPick = await readCleanupPick(win.webContents);
+    // The premise of the preselect checks: were the default the first catalog
+    // entry, a lost `select.value = …` would pass them silently.
+    check(
+      "the default cleanup model is not the first option (check 8's premise)",
+      settingsPick.first !== cleanupDefault.id,
+      JSON.stringify(settingsPick)
+    );
     check(
       "Settings preselects the default cleanup model on a fresh profile",
       settingsPick.value === cleanupDefault.id,
@@ -847,6 +854,11 @@ app.whenReady().then(async () => {
     check(
       "the wizard preselects the default cleanup model on a fresh profile",
       wizardPick.value === cleanupDefault.id,
+      JSON.stringify(wizardPick)
+    );
+    check(
+      "the default cleanup model is not the wizard's first option (check 8's premise)",
+      wizardPick.first !== cleanupDefault.id,
       JSON.stringify(wizardPick)
     );
     check(

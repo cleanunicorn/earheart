@@ -2,7 +2,9 @@
 // based on the slice's `engine` field ("builtin" | "remote"). Both backends take
 // the same (payload, cfg, signal) shape, so the only difference is which
 // implementation runs. The pipeline and the Settings "test" IPC handlers all go
-// through here, so the builtin-vs-remote choice lives in exactly one place.
+// through here for stage execution. Engine capability checks elsewhere govern
+// readiness, warming, previews and model management; failures do not retry with
+// the other backend.
 
 const stt = require("./stt");
 const cleanup = require("./cleanup");

@@ -57,7 +57,8 @@ function encodeSilenceWav(seconds) {
  * (for the sample rate) and `data`, so it tolerates WAVs with extra chunks.
  *
  * Only the format the overlay produces is supported: PCM (format 1), 16-bit,
- * mono. Anything else throws — callers fall back to the HTTP STT path.
+ * mono. Anything else throws; the selected built-in STT call rejects without
+ * retrying through HTTP.
  *
  * @param {Buffer} buf
  * @returns {{ samples: Float32Array, sampleRate: number }}

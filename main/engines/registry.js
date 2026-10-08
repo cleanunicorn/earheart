@@ -248,6 +248,8 @@ const MODELS = {
       ],
       gguf: { file: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf" },
     },
+    // Historical id persisted in settings and model directories; keep it even
+    // though the underlying model is Gemma 3 12B.
     "gemma-4-12b": {
       id: "gemma-4-12b",
       label: "Gemma 3 12B (best quality)",

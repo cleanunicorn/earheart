@@ -1,5 +1,5 @@
 // Window management: the recording overlay (a small always-on-top card that
-// also owns the microphone) and the settings window.
+// also owns the microphone), the settings window and the first-run wizard.
 
 const { BrowserWindow, ipcMain, screen } = require("electron");
 const path = require("node:path");
@@ -257,34 +257,20 @@ function raiseWithinTopmostBand(win) {
   win.moveTop();
 }
 
-// On macOS the card's "visible on every Space" state is a collection-behaviour bit
-// on the NSWindow, and createOverlay() sets it exactly once — at launch, on a window
-// that has never been ordered in, inside a busy whenReady handler. Whatever decides
-// whether that one assertion sticks (window realization timing, or the process
-// activation policy changing under us afterwards) is decided once and then frozen for
-// the rest of the run, with nothing here to notice or repair it. That is the shape
-// that produces "sometimes the card follows me to another desktop, sometimes it
-// doesn't": a single unverified sample of an operation we don't control, never taken
-// again. Re-assert it on every show, while the Space the user is on is the current one.
+// Re-assert visibility on every Space each time the overlay is shown on macOS.
+// The launch-time assertion may not stick because of window realization timing
+// or later activation-policy drift; it is not otherwise verified or repaired.
 //
-// skipTransformProcessType: the default path transforms the process between
-// UIElementApplication and ForegroundApplication and "will hide the window and dock
-// for a short time every time it is called" (Electron's own typings) — unacceptable
-// once per dictation. createOverlay() has already run that default path once, which is
-// what establishes the process type in the first place.
+// skipTransformProcessType avoids Electron's default transform between
+// UIElementApplication and ForegroundApplication, which briefly hides the window
+// and Dock on every call. createOverlay() runs that transform once at launch.
+// This assumes the process is still a UIElementApplication at dictation time;
+// the launch-time transform does not prove the policy has not drifted. If the
+// macOS verification run shows a Dock icon during dictation, drop the flag and
+// accept the flicker so the transform can restore the policy.
 //
-// What that does NOT establish — stated plainly, because the opening paragraph of
-// this comment names policy drift as one of the two suspected causes: createOverlay()
-// having run proves the transform happened at launch, not that the process is still a
-// UIElementApplication now. This call therefore *assumes* the policy has not drifted
-// since. If it has, passing the flag bypasses the very transform that would restore
-// it, and the assumption is wrong. That second mechanism is deliberately left open here
-// rather than guessed at: the macOS verification run checks for a Dock icon at
-// dictation time, and a "yes" there is the signal to drop this flag and pay the
-// flicker instead.
-//
-// Windows: this API is a documented no-op there. The darwin guard also keeps it off
-// Linux, where the creation-time call is all that has ever been needed.
+// Windows documents this API as a no-op. The darwin guard also keeps it off
+// Linux, where the creation-time call has been sufficient.
 function rejoinActiveSpace(win) {
   if (process.platform !== "darwin") return;
   const wasJoined = win.isVisibleOnAllWorkspaces();

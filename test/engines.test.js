@@ -195,7 +195,6 @@ test("registry pins the benchmarked Granite and Qwen GGUFs", () => {
     assert.ok(m, `${id} missing from the cleanup catalog`);
     assert.strictEqual(m.id, id);
     assert.strictEqual(m.kind, "cleanup");
-    assert.strictEqual(m.engine, "llama-gguf");
     assert.strictEqual(m.label, want.label);
     assert.strictEqual(m.note, want.note);
     assert.deepStrictEqual(m.files, [want.file]);

@@ -48,7 +48,6 @@ const MODELS = {
       id: "parakeet-tdt-0.6b-v3-int8",
       label: "Parakeet TDT 0.6B v3 (multilingual, int8)",
       kind: "stt",
-      engine: "sherpa-parakeet",
       // ~25 languages, auto-detected, faster-than-realtime on CPU. Same model
       // as the default with int8 weights: a quarter of the download, for
       // machines that struggle with full precision.
@@ -80,7 +79,6 @@ const MODELS = {
       id: "parakeet-tdt-0.6b-v3",
       label: "Parakeet TDT 0.6B v3 (multilingual, full precision)",
       kind: "stt",
-      engine: "sherpa-parakeet",
       default: true,
       // fp32 weights of the 25-language v3 model — slightly higher accuracy
       // than the int8 build at a larger download and more RAM/CPU per
@@ -115,7 +113,6 @@ const MODELS = {
       id: "parakeet-tdt-0.6b-v2",
       label: "Parakeet TDT 0.6B v2 (English only, full precision)",
       kind: "stt",
-      engine: "sherpa-parakeet",
       // English-only fp32 model. Top of the English ASR leaderboards; pick this
       // if you only dictate in English and want the best accuracy.
       note: "Runs on this computer · English only · ~2.5 GB · best English accuracy, needs a stronger machine",
@@ -148,7 +145,6 @@ const MODELS = {
       id: "parakeet-tdt-110m-en",
       label: "Parakeet TDT 110M (English only, fastest)",
       kind: "stt",
-      engine: "sherpa-parakeet",
       // English-only 110M-parameter Parakeet TDT, fp32 (there is no int8 build
       // of it). Measured by scripts/eval-stt.js against the default on FLEURS
       // en_us test, CPU at the app's 8 threads (Ryzen 9 3900X, Linux): decode
@@ -184,7 +180,6 @@ const MODELS = {
       id: "gemma-3-1b",
       label: "Gemma 3 1B (fast, small)",
       kind: "cleanup",
-      engine: "llama-gguf",
       // Honest about where it falls down. Measured on a 150-word dictation:
       // 1B leaves most "um"/"uh" in place and misses the spoken-code rule
       // ("src slash main dot pie"), where 4B gets both right. Someone picking a
@@ -201,7 +196,6 @@ const MODELS = {
       id: "granite-4.0-micro",
       label: "Granite 4.0 Micro (faster)",
       kind: "cleanup",
-      engine: "llama-gguf",
       // The default from the cleanup benchmark (#167, Ryzen 9 3900X CPU) until
       // Qwen3 4B Instruct 2507 replaced it: no
       // fillers left over five runs where both Gemma 3 1B and 4B left all 30,
@@ -222,7 +216,6 @@ const MODELS = {
       id: "gemma-3-4b",
       label: "Gemma 3 4B (balanced)",
       kind: "cleanup",
-      engine: "llama-gguf",
       note: "Runs on this computer · ~2.6 GB · needs ~6 GB RAM · removes fillers reliably",
       files: [
         { name: "gemma-3-4b-it-Q4_K_M.gguf", bytes: 2_489_757_856,
@@ -235,7 +228,6 @@ const MODELS = {
       id: "qwen3-4b-2507",
       label: "Qwen3 4B Instruct 2507 (recommended)",
       kind: "cleanup",
-      engine: "llama-gguf",
       default: true,
       // Same benchmark: also no fillers left, but a little slower than Granite
       // (21.1 s vs 18.6 s median) and a little lower retention (0.94 vs 0.95).
@@ -254,7 +246,6 @@ const MODELS = {
       id: "gemma-4-12b",
       label: "Gemma 3 12B (best quality)",
       kind: "cleanup",
-      engine: "llama-gguf",
       note: "Runs on this computer · ~7 GB · needs ~10 GB RAM, strong machine",
       files: [
         { name: "gemma-3-12b-it-Q4_K_M.gguf", bytes: 7_300_574_976,

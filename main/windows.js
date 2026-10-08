@@ -471,7 +471,6 @@ function broadcast(channel, payload) {
 
 module.exports = {
   createOverlay,
-  getOverlay,
   destroyOverlay,
   showOverlay,
   hideOverlay,

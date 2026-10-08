@@ -427,6 +427,5 @@ module.exports = {
   isFirstRun,
   migrateLegacy,
   DEFAULTS,
-  DEFAULT_CLEANUP_PROMPT,
   deepMerge,
 };

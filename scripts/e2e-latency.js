@@ -223,7 +223,7 @@ function main() {
         const tDone = Date.now();
 
         const phase = {};
-        for (const e of events.filter((e) => e.channel === "pipeline:status")) {
+        for (const e of events) {
           if (!(e.payload.status in phase)) phase[e.payload.status] = e.t - tStop;
         }
         const entry = history.list()[0];

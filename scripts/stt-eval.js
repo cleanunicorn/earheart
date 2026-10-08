@@ -621,7 +621,13 @@ function planModels(shipped, candidates, { baselineId, exploratory = false, pass
   if (!models.length) throw new Error(`--models selects no model; planned: ${planned.join(", ")}`);
   const unknown = models.filter((id) => !planned.includes(id));
   if (unknown.length) {
-    throw new Error(`--models: ${unknown.map((id) => `"${id}"`).join(", ")} is not planned for this pass; planned: ${planned.join(", ")}`);
+    const hints = unknown
+      .filter((id) => !exploratory && candidates.some((c) => c.id === id && c.arm === "exploratory"))
+      .map((id) => `"${id}" is an exploratory candidate; pass --exploratory to plan it`);
+    throw new Error(
+      `--models: ${unknown.map((id) => `"${id}"`).join(", ")} is not planned for this pass; planned: ${planned.join(", ")}` +
+        (hints.length ? ` (${hints.join("; ")})` : "")
+    );
   }
   return list.filter((x) => models.includes(x.model.id));
 }

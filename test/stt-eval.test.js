@@ -723,6 +723,13 @@ test("stt-eval plan: --models narrows the plan and the baseline must exist", () 
   // An empty selection (--models= or --models ,) plans nothing: an error, not
   // a "partial (development subset)" that exits 0 having measured no model.
   assert.throws(() => e.planModels(shipped, manifest.CANDIDATES, { baselineId: manifest.BASELINE_ID, models: [] }), /--models selects no model/);
+  // An exploratory candidate asked for without --exploratory: the error says
+  // which flag plans it, not just that it is unplanned.
+  const exploratory = manifest.CANDIDATES.find((c) => c.arm === "exploratory").id;
+  assert.throws(
+    () => e.planModels(shipped, manifest.CANDIDATES, { baselineId: manifest.BASELINE_ID, models: [exploratory] }),
+    new RegExp(`"${exploratory}" is an exploratory candidate; pass --exploratory to plan it`)
+  );
 });
 
 /* ---------------- combining passes and the report (scripts/eval-stt.js) ---------------- */

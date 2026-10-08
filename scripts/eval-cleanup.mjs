@@ -28,8 +28,8 @@
 // main/cleanup-styles.js (base prompt + style directive) and the single-user-
 // turn shape the engine worker sends (main/util/cleanup-turn.js). Only the
 // directive text and the sampling profile differ between arms. Not in the
-// test suite: it needs a multi-GB model. The shapes themselves are pinned in
-// test/unit.test.js.
+// test suite: it needs a multi-GB model. The corpora are shared with the tests
+// (FLUENT in test/unit.test.js; all three shapes in test/cleanup-metrics.test.js).
 
 import { createRequire } from "node:module";
 import * as llamaCpp from "node-llama-cpp";

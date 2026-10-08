@@ -1103,7 +1103,7 @@ test("stt-eval harness: a timed pass refuses to start where the other-run watch 
   assert.doesNotThrow(() => harness.assertContentionObservable("speed", "bench-cleanup", true));
 });
 
-test("stt-eval harness: the disk guard does not count an installed model twice", () => {
+test("stt-eval harness: the disk guard does not count an installed model twice", (t) => {
   const { MIN_FREE_BYTES, DISK_BUDGET_BYTES } = harness;
   // Uncached: its bytes are still to come, so they count against both limits.
   assert.strictEqual(harness.diskBlocked({ free: 30e9, used: 1e9, need: 2e9 }), null);
@@ -1128,6 +1128,11 @@ test("stt-eval harness: the disk guard does not count an installed model twice",
     assert.match(harness.diskCheck(dir, model, { ...budgetFull, installed: false }), /budget/);
     assert.match(harness.diskCheck(dir, model, { free: MIN_FREE_BYTES + 1, installed: false }), /floor/);
     assert.strictEqual(harness.diskCheck(dir, model, { free, used: 1 }), null);
+    // The production call injects nothing: isInstalled, dirSize and statfs
+    // are read for real. Installed → 0 B needed, a 1 B cache → it fits
+    // whenever the test host itself is above the floor.
+    if (free >= MIN_FREE_BYTES) assert.strictEqual(harness.diskCheck(dir, model), null);
+    else t.diagnostic(`host has ${free} B free, under the ${MIN_FREE_BYTES} B floor: default-path assertion skipped`);
     fs.rmSync(path.join(modelDir, ".complete"));
     assert.match(harness.diskCheck(dir, model, budgetFull), /budget/, "no marker → not installed → full bytes needed");
   } finally {

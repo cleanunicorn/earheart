@@ -90,11 +90,6 @@ function selectArms(allArms, requested) {
 }
 
 module.exports = {
-  OLD_CLEAN,
-  OLD_POLISHED,
-  OLD_CLEAN_S,
-  OLD_POLISHED_S,
-  TIGHT_POLISHED_S,
   RAW_ARMS,
   ALL_ARMS,
   DROPPED_ARMS,

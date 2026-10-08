@@ -568,7 +568,20 @@ async function main(argv) {
 // Run as a command; imported (by test/bench-cleanup.test.js) it only exports
 // its parts — benchModel takes the node-llama-cpp module as an argument, so a
 // test can hand it a fake one.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// True when this module is the script node was started with. import.meta.url
+// is the realpath, process.argv[1] the path as invoked, so a run through a
+// symlink must match either form (realpathSync throws if argv[1] is not a file).
+function isEntry(argv1) {
+  if (!argv1) return false;
+  const forms = [pathToFileURL(argv1).href];
+  try {
+    forms.push(pathToFileURL(fs.realpathSync(argv1)).href);
+  } catch {
+    // not a path on disk: only the literal form can match
+  }
+  return forms.includes(import.meta.url);
+}
+if (isEntry(process.argv[1])) {
   await main(process.argv.slice(2));
 }
 

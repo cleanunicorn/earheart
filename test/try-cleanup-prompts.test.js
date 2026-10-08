@@ -64,3 +64,28 @@ test("parseArgs: positional protocol kept, --model required, failures are usage 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("isEntry: the script runs when started directly or through a symlink, never when imported", async () => {
+  const { isEntry } = await load();
+  assert.strictEqual(isEntry(SCRIPT), true);
+  assert.strictEqual(isEntry(path.relative(process.cwd(), SCRIPT)), true);
+  assert.strictEqual(isEntry(undefined), false);
+  assert.strictEqual(isEntry(path.join(__dirname, "try-cleanup-prompts.test.js")), false);
+  assert.strictEqual(isEntry(path.join(__dirname, "does-not-exist.mjs")), false);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "try-cleanup-prompts-link-"));
+  try {
+    const link = path.join(dir, "linked.mjs");
+    try {
+      fs.symlinkSync(SCRIPT, link);
+    } catch (err) {
+      // Windows without Developer Mode cannot create file symlinks; the
+      // realpath branch is then unreachable here, and the direct forms above
+      // already pin the guard.
+      if (err.code !== "EPERM") throw err;
+      return;
+    }
+    assert.strictEqual(isEntry(link), true, "invoked through a symlink, import.meta.url is the realpath");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

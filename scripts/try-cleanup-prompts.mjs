@@ -128,9 +128,23 @@ async function run(args) {
   process.exit(0);
 }
 
+// True when this module is the script node was started with. import.meta.url
+// is the realpath, process.argv[1] the path as invoked, so a run through a
+// symlink must match either form (realpathSync throws if argv[1] is not a file).
+function isEntry(argv1) {
+  if (!argv1) return false;
+  const forms = [pathToFileURL(argv1).href];
+  try {
+    forms.push(pathToFileURL(fs.realpathSync(argv1)).href);
+  } catch {
+    // not a path on disk: only the literal form can match
+  }
+  return forms.includes(import.meta.url);
+}
+
 // Run as a command; imported (by test/try-cleanup-prompts.test.js) it only
 // exports its parts, and node-llama-cpp is loaded only on a run.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isEntry(process.argv[1])) {
   run(process.argv.slice(2)).catch((e) => {
     const usage = e instanceof UsageError;
     console.error(usage ? e.message : String(e).slice(0, 300));
@@ -138,4 +152,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   });
 }
 
-export { INPUTS, STRATEGIES, UsageError, parseArgs };
+export { INPUTS, STRATEGIES, UsageError, isEntry, parseArgs };

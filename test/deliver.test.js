@@ -91,9 +91,11 @@ function loadDeliver({ trusted, pasteError = null, tools = [], clip = { text: "o
     return realLoad.call(this, request, ...rest);
   };
   const file = require.resolve("../main/output/deliver");
-  delete require.cache[file];
+  for (const request of [file, "../main/output/mac-permissions", "../main/util/exec-file"]) {
+    delete require.cache[require.resolve(request)];
+  }
   try {
-    return { deliver: require(file).deliver, state, electron };
+    return { ...require(file), state, electron };
   } finally {
     Module._load = realLoad;
   }
@@ -148,6 +150,20 @@ for (const mode of ["paste", "paste-copy"]) {
     assert.strictEqual(state.prompts, 1);
   });
 }
+
+test("startup repair and skipped paste share the once-per-launch permission state", async (t) => {
+  onMac(t);
+  const { deliver, repairPastePermissions, state } = loadDeliver({ trusted: false });
+  assert.strictEqual(await repairPastePermissions(), "already-repaired");
+  assert.strictEqual(state.prompts, 1);
+
+  const result = await deliver("after startup", { mode: "paste-copy", pasteDelayMs: 0 });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.strictEqual(result.method, "clipboard");
+  assert.strictEqual(state.clip.text, "after startup");
+  assert.strictEqual(state.prompts, 1);
+  assert.deepStrictEqual(state.execs, []);
+});
 
 test("trusted paste drives the keystroke", async (t) => {
   onMac(t);

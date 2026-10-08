@@ -188,6 +188,12 @@ function parseArgs(argv) {
     };
     const count = () => number((n) => !Number.isInteger(n), "integer");
     const load = () => number(Number.isNaN, "number, or Infinity");
+    // List flags: the =value (if any) is the first entry, the following
+    // non-flag arguments the rest.
+    const pushList = (target) => {
+      if (value) target.push(value);
+      while (argv[i + 1] && !argv[i + 1].startsWith("--")) target.push(argv[++i]);
+    };
     switch (arg) {
       case "--out": opts.out = value; break;
       case "--cache-dir": opts.cacheDir = value; break;
@@ -202,21 +208,13 @@ function parseArgs(argv) {
         if (!["both", "accuracy", "speed"].includes(value)) throw new Error(`--pass must be accuracy, speed or both`);
         opts.pass = value;
         break;
-      // List flags: the =value (if any) is the first entry, the following
-      // non-flag arguments the rest.
-      case "--combine":
-        if (value) opts.combine.push(value);
-        while (argv[i + 1] && !argv[i + 1].startsWith("--")) opts.combine.push(argv[++i]);
-        break;
+      case "--combine": pushList(opts.combine); break;
       case "--keep": opts.keep = true; break;
       case "--exploratory": opts.exploratory = true; break;
       case "--resume": opts.resume = true; break;
       case "--resume-across-code": opts.resume = true; opts.resumeAcrossCode = true; break;
       case "--verify-shipped": opts.verifyShipped = true; break;
-      case "--discover":
-        if (value) opts.discover.push(value);
-        while (argv[i + 1] && !argv[i + 1].startsWith("--")) opts.discover.push(argv[++i]);
-        break;
+      case "--discover": pushList(opts.discover); break;
       default:
         // Chromium's own switches (--no-sandbox, …) reach the script too.
         if (!arg.startsWith("--no-sandbox") && !arg.startsWith("--enable-") && !arg.startsWith("--disable-")) {

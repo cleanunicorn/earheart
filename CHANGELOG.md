@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.35.10 — 2026-10-08
+
+- Non-text clipboard restore and pre-delivery history (#261)
+
 ## v0.35.9 — 2026-10-08
 
 - Stage updates privately and re-verify before install (#260)

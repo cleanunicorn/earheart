@@ -1060,6 +1060,26 @@ test("stt-eval harness: a skipped row makes the run incomplete, and only complet
   }
 });
 
+test("stt-eval judge: a skipped speed row is an unusable attempt, not a crash", (t) => {
+  // The disk guard skips a row before any decode, so it has no loadavgAfter;
+  // the judge used to read it for every row in a speed file.
+  const skipped = { id: "fast", role: "candidate", arm: "wired", path: "worker", status: "skipped", reason: "disk: 2000000000 B needed" };
+  const speedRows = [speedRow("base", "bracket-first", 0.0425, 7, { p50Rtf: 0.042, p95Rtf: 0.045 }), skipped, speedRow("base", "bracket-last", 0.0429, 8)];
+  const { accPath, speedPath } = passFiles(t, { speedOver: { rows: speedRows, status: "incomplete" } });
+  const combined = harness.combine(accPath, [speedPath], { baselineId: "base" });
+  const fast = combined.rows.find((r) => r.id === "fast");
+  assert.strictEqual(fast.speed, null);
+  assert.deepStrictEqual(fast.speedAttempts.map((a) => [a.usable, a.reason]), [[false, "skipped: disk: 2000000000 B needed"]]);
+  assert.match(combined.status, /speed: incomplete/);
+  assert.match(harness.report(combined), /\| fast \| candidate \|/);
+
+  // The default pass judges its own rows the same way (eval-stt.js run()).
+  const both = JSON.parse(fs.readFileSync(accPath, "utf8"));
+  both.rows = [{ ...both.rows[0], ...speedRows[0] }, { ...both.rows[1], ...skipped }, { ...both.rows[0], ...speedRows[2] }];
+  assert.doesNotThrow(() => e.judge(both, [{ res: both, name: "this run" }], { baselineId: "base", quietLoad: 4, bracketDrift: 0.1, werSlack: 0.01, minWords: 1 }));
+  assert.strictEqual(both.rows[1].speedAttempts[0].usable, false);
+});
+
 test("stt-eval harness: a timed pass refuses to start where the other-run watch cannot observe", () => {
   // pgrep missing (Windows): every sample would be null, every attempt
   // contended, and the pass would end "unstable" hours later.

@@ -502,6 +502,12 @@ function judge(acc, spds, cfg) {
     for (const f of files) {
       const s = f.rows.get(key(r));
       if (!s) continue;
+      // A row the pass skipped (disk guard) or that failed has no decodes and
+      // no load reading: an attempt that was not usable, with its reason.
+      if (s.status !== "measured") {
+        r.speedAttempts.push({ file: f.name, decodeRtf: undefined, endLoad: undefined, usable: false, reason: `${s.status}: ${s.reason}`, used: false });
+        continue;
+      }
       const c = speedCleanliness(s, f.res, cfg);
       const ref = f.rows.get(`${cfg.baselineId}|${refRole(r)}`);
       const refClean = Boolean(ref && speedCleanliness(ref, f.res, cfg).clean);

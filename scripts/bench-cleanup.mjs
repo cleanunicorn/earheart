@@ -102,9 +102,17 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const [k, v] = a.startsWith("--") ? a.slice(2).split(/=(.*)/s) : [null, null];
-    if (k === "probe") opts.probe = { repo: argv[++i], file: argv[++i] };
-    else if (k === "report") opts.report = argv[++i];
-    else if (k === "rescore") opts.rescore = argv[++i];
+    // A flag's value is its =value when spelled that way, else the next
+    // argument — which must exist (an absent value is a usage error, not
+    // `undefined` that a later check mistakes for a bad path).
+    const value = () => {
+      const x = v !== undefined ? v : argv[++i];
+      if (x === undefined) usage(`--${k} needs a value`);
+      return x;
+    };
+    if (k === "probe") opts.probe = { repo: value(), file: argv[++i] };
+    else if (k === "report") opts.report = value();
+    else if (k === "rescore") opts.rescore = value();
     else if (k === "licences") opts.licences = Object.fromEntries(v.split(",").map((kv) => kv.split("=")));
     else if (k === "baselines") opts.baselines = v.split(",");
     else if (k === "also") opts.also.push(v);

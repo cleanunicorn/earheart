@@ -85,6 +85,17 @@ test("parseArgs: probe and report modes", async () => {
   assert.deepStrictEqual(r.locked, [dir]);
   assert.throws(() => parseArgs(["--report", path.join(dir, "nope")]), UsageError);
   assert.throws(() => parseArgs(["--report", dir, `--locked=${path.join(dir, "nope")}`]), UsageError);
+  // The =value spelling means the same as the space form; it used to be
+  // dropped (report: undefined) with the directory read as a model path.
+  assert.strictEqual(parseArgs([`--report=${dir}`]).report, dir);
+  const rescore = path.join(dir, "runs.json");
+  fs.writeFileSync(rescore, "[]");
+  assert.strictEqual(parseArgs([`--rescore=${rescore}`]).rescore, parseArgs(["--rescore", rescore]).rescore);
+  assert.deepStrictEqual(parseArgs(["--probe=o/r", "f.gguf"]).probe, { repo: "o/r", file: "f.gguf" });
+  // A valued flag with nothing after it is a usage error, not undefined.
+  assert.throws(() => parseArgs(["--report"]), UsageError);
+  assert.throws(() => parseArgs(["--rescore"]), UsageError);
+  assert.throws(() => parseArgs([`--report=${dir}`, "--probe"]), UsageError);
 });
 
 test("plan: FLUENT under clean + polished, REPORTED under clean, every seed", async () => {

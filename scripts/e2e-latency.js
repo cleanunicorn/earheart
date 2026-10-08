@@ -35,7 +35,10 @@ const argv = Object.fromEntries(
 const WAV = argv.wav;
 // Resolved here: a relative path handed to symlinkSync below would resolve
 // against the temp userData dir and the link would dangle.
-const MODELS = typeof argv.models === "string" ? path.resolve(argv.models) : undefined;
+// The raw value is tested, not the resolved one: path.resolve("") is the cwd,
+// so an empty --models= (an unset shell variable) must fail, not link the cwd.
+const MODELS =
+  typeof argv.models === "string" && argv.models ? path.resolve(argv.models) : undefined;
 const CONFIG = argv.config || "default";
 const TALK_SEC = Number(argv.talk || 30);
 const RUNS = Number(argv.runs || 2);
@@ -45,7 +48,7 @@ if (!WAV || !fs.existsSync(WAV)) {
   process.exit(2);
 }
 if (argv.models !== undefined && (!MODELS || !fs.existsSync(MODELS))) {
-  console.error("--models=<dir> must name an existing models directory");
+  console.error(`--models=<dir> must name an existing models directory (got ${JSON.stringify(argv.models)})`);
   process.exit(2);
 }
 

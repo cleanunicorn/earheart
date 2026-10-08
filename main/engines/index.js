@@ -111,7 +111,8 @@ function sharedLoad(slot, key, start) {
 }
 
 // Load the STT model into the worker if it isn't already. Throws if the model
-// isn't downloaded yet — callers surface that (or fall back to the HTTP path).
+// isn't downloaded yet — the pipeline surfaces the error and preserves any
+// text already recovered; routing does not retry through HTTP.
 async function ensureStt(modelId) {
   const model = resolve("stt", modelId);
   // Hugging Face discovery used to save any joiner-less bundle as Whisper, so

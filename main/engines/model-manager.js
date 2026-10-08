@@ -8,10 +8,8 @@
 // `<name>.part.json`, then validated against its configured size and optional
 // SHA-256 checksum before being renamed into place — so a half-finished
 // download never looks complete. A model counts as installed once every file
-// is present and a `.complete` marker has been written. The marker records each
-// file's size as actually written, so `isInstalled` can reject a model whose
-// files were later truncated
-// (e.g. a disk filling up) rather than trusting mere file presence.
+// is present and a `.complete` marker has been written; see isInstalled() for
+// how the marker's sizes and definition identity are checked.
 
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
@@ -87,10 +85,10 @@ function readMarker(dir) {
 
 /**
  * True once the completion marker exists and every file is on disk at the size
- * recorded when it was downloaded. The recorded sizes (not the registry's
- * approximate `bytes`) are the source of truth, so a finished file that was
- * later truncated is treated as not installed. A marker that records a
- * definition fingerprint must match the current definition; one written before
+ * recorded when it was downloaded (including custom files without a configured
+ * `bytes` value). A finished file that was later truncated is not installed.
+ * A marker that records a definition fingerprint must match the current
+ * definition; one written before
  * fingerprints existed is trusted, so upgrading never forces a re-download.
  */
 function isInstalled(baseDir, model) {
@@ -368,8 +366,8 @@ async function downloadFile(baseDir, model, file, { partial, onSize, signal }) {
  * @param {AbortSignal} [opts.signal]
  */
 async function download(baseDir, model, { onProgress, signal } = {}) {
-  // Denominator for the progress bar. Registry sizes are approximate, so clamp
-  // the reported fraction to <=1 and let the final event snap to 100%.
+  // Catalog sizes are exact; custom files may omit size metadata. Clamp below
+  // 100% until every file has been verified and the completion marker written.
   const total = totalBytes(model) || 1;
   let received = 0;
   const report = (file) =>
@@ -419,9 +417,7 @@ async function download(baseDir, model, { onProgress, signal } = {}) {
     });
   }
 
-  // Record each file's actual on-disk size in the marker, so a later integrity
-  // check can catch truncation without relying on the registry's approximate
-  // sizes.
+  // Save verified sizes and definition identity for isInstalled().
   const sizes = {};
   for (const file of model.files) {
     sizes[file.name] = fs.statSync(filePath(baseDir, model, file)).size;

@@ -328,10 +328,9 @@ async function deliver(text, cfg, signal) {
   if (!accessibilityTrusted()) {
     logger.error("auto-paste skipped:", ACCESSIBILITY_OFF.hint);
     // Skipping the keystroke also skips the prompt System Events would have
-    // raised for a never-decided app, so raise it ourselves, once per launch.
-    // Once per launch, clear a stale grant this build hasn't repaired yet and
-    // raise the prompt. Not awaited: the transcript is already on the
-    // clipboard and the fallback must not wait on tccutil.
+    // raised for a never-decided app. Once per launch, clear a stale grant this
+    // build hasn't repaired yet and raise the prompt ourselves. Not awaited: the
+    // transcript is already on the clipboard; the fallback must not wait on tccutil.
     if (!repairRanThisLaunch) {
       repairPastePermissions().catch((err) => logger.warn("permission repair failed:", err));
     }
@@ -510,6 +509,19 @@ const repairMarker = {
   },
 };
 
+// Whether startup should run the repair: a returning user's visible launch in
+// a paste mode. A first run hasn't chosen how to deliver yet and a hidden login
+// launch stays silent; the first skipped paste covers both.
+function shouldRepairAtStartup({ smokeTest, firstRun, hidden, mode }) {
+  return !smokeTest && !firstRun && !hidden && mode !== "clipboard";
+}
+
+// Startup and the first skipped paste can both ask for the repair. One run
+// per launch, shared while in flight: two overlapping resets could clear a
+// grant the user accepted from the first prompt.
+let repairRanThisLaunch = false;
+let repairInFlight = null;
+
 /**
  * Repair auto-paste permissions without a click, once per build. Releases are
  * signed with one certificate, so grants normally survive updates — but when
@@ -526,19 +538,6 @@ const repairMarker = {
  * @returns {Promise<"not-needed"|"already-repaired"|"repaired"|"reset-failed">}
  *   "already-repaired" also covers the unpackaged app, which only prompts.
  */
-// Whether startup should run the repair: a returning user's visible launch in
-// a paste mode. A first run hasn't chosen how to deliver yet and a hidden login
-// launch stays silent; the first skipped paste covers both.
-function shouldRepairAtStartup({ smokeTest, firstRun, hidden, mode }) {
-  return !smokeTest && !firstRun && !hidden && mode !== "clipboard";
-}
-
-// Startup and the first skipped paste can both ask for the repair. One run
-// per launch, shared while in flight: two overlapping resets could clear a
-// grant the user accepted from the first prompt.
-let repairRanThisLaunch = false;
-let repairInFlight = null;
-
 function repairPastePermissions(options) {
   if (!repairInFlight) {
     repairRanThisLaunch = true;

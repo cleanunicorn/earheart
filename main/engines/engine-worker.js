@@ -4,7 +4,9 @@
 //
 // The native modules are required lazily and defensively: if they aren't
 // installed (or a model isn't downloaded yet) the worker answers with a clear
-// error and the caller falls back to the HTTP path — the app keeps working.
+// error. Routing does not retry through HTTP: STT failures surface in the
+// pipeline (with any recovered text preserved), and cleanup failures use the
+// raw transcript.
 //
 // Protocol: the parent posts { id, type, ...args }; we reply with
 // { id, ok: true, result } or { id, ok: false, error }. Long-running handlers

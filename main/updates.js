@@ -692,8 +692,8 @@ function installWindows(setupExe) {
 // Replace the running .app bundle. The swap itself happens in a detached
 // shell script after this process exits; the script also strips the
 // quarantine attribute so the updated (not notarized) app opens without a
-// Gatekeeper dialog — that's the whole reason updates
-// from inside the app work while a manual download needs `xattr -cr` once.
+// Gatekeeper dialog. A manual download needs an Open Anyway approval or
+// `xattr -dr com.apple.quarantine` on the downloaded app (see README).
 const MAC_SWAP_SCRIPT = `#!/bin/sh
 # earheart update swap: $1=pid $2=old-bundle $3=new-bundle
 PID="$1"; OLD="$2"; NEW="$3"

@@ -83,13 +83,14 @@ const DEFAULTS = {
     language: "",
     timeoutMs: 120000,
     // Live preview: while recording, show the transcript filling in (with a
-    // cleaned line behind it on pauses). Additive — the final transcribe/clean/
-    // deliver on stop is unchanged. Append-only chunked (audio is frozen into
-    // committed chunks; only the in-progress chunk is re-decoded each tick), so
+    // cleaned line behind it on pauses). The toggle controls display; built-in
+    // STT always commits audio chunks whose decodes feed the final transcript.
+    // Only the in-progress chunk is re-decoded each tick, so
     // decode cost stays flat no matter how long you talk. Cleanup re-cleans the
     // whole committed transcript per pause (O(n)) so the live line tracks the
     // final clean, but it's pause-gated and drop-if-busy so it stays cheap. See
-    // main/live-preview.js. Adds steady CPU while recording, hence the toggle.
+    // main/live-preview.js. Turning display off skips preview cleanup, while
+    // built-in STT chunk decoding continues.
     livePreview: {
       enabled: true,
       intervalMs: 1200, // how often the in-progress chunk is sent; lower = snappier, more CPU
@@ -275,11 +276,6 @@ function migrateLegacy(stored) {
   if (stored.stt?.livePreview?.chunkSeconds === 5) {
     stored.stt.livePreview.chunkSeconds = 10;
   }
-  // Configs written before the style slider existed carried a bare
-  // `cleanup.temperature` and no `style`. Fold them onto the "custom" style so
-  // behaviour is preserved exactly: their temperature is kept, and the neutral
-  // top-p/top-k/min-p baseline means nothing else reaches the model — just as
-  // before, when only temperature was ever sent.
   // Older defaults stored the prompt hard-wrapped at ~72 columns (it was written
   // as an indented template literal), which shows up in the Settings textarea as
   // broken mid-sentence lines and stray leading spaces. Anyone who never touched
@@ -293,6 +289,11 @@ function migrateLegacy(stored) {
   ) {
     stored.cleanup.systemPrompt = DEFAULT_CLEANUP_PROMPT;
   }
+  // Configs written before the style slider existed carried a bare
+  // `cleanup.temperature` and no `style`. Fold them onto the "custom" style so
+  // behaviour is preserved exactly: their temperature is kept, and the neutral
+  // top-p/top-k/min-p baseline means nothing else reaches the model — just as
+  // before, when only temperature was ever sent.
   if (stored.cleanup && stored.cleanup.style === undefined && stored.cleanup.temperature !== undefined) {
     stored.cleanup.style = "custom";
     stored.cleanup.custom = { temperature: stored.cleanup.temperature, ...NEUTRAL_SAMPLING };

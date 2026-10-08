@@ -1,7 +1,8 @@
 // Dictation corpora for the cleanup work — shared by the eval/bench harnesses
 // (scripts/eval-cleanup.mjs, scripts/bench-cleanup.mjs) and the tests
-// (test/cleanup-metrics.test.js, test/unit.test.js), so the shapes that broke
-// in production and the shapes the tests exercise can never drift apart.
+// (test/cleanup-metrics.test.js, test/unit.test.js, test/bench-cleanup.test.js),
+// so the shapes that broke in production and the shapes the tests exercise can
+// never drift apart.
 //
 // Each corpus is a different SHAPE of dictation, and the shape is what decides
 // whether the cleanup model removes fillers on its own:

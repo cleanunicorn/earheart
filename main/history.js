@@ -54,10 +54,11 @@ function load() {
 }
 
 // Persistence is deferred one event-loop turn and coalesced: add() returns
-// immediately (the disk write used to sit between delivery and the pipeline's
-// "done" status), a burst of adds writes once, and the flush still runs
-// within milliseconds — before any later quit event can be processed — so an
-// entry is durably on disk by the time the user could exit. The write itself
+// immediately (a synchronous disk write would now sit between the final text
+// and the paste, delaying it), a burst of adds writes once, and the flush
+// still runs within milliseconds — before any later quit event can be
+// processed — so an entry is durably on disk by the time the user could exit.
+// The write itself
 // goes through a temp file + rename (same pattern as model-manager/updates),
 // so a crash mid-write can never leave a truncated history.json behind; if an
 // older write did leave one, load() preserves it before starting fresh.

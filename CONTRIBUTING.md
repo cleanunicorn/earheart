@@ -271,7 +271,13 @@ Design constraints worth keeping:
   [docs/live-transcription-plan.md](docs/live-transcription-plan.md)).
 - **Never lose the user's words.** If cleanup fails, deliver the raw
   transcript; if paste fails, fall back to the clipboard; history keeps the
-  text either way. Built-in speech is decoded one utterance at a time
+  text either way. History is written as soon as the final text exists,
+  before delivery, so a paste cancelled mid-keystroke or a paste tool that
+  throws still leaves the row; and the clipboard restore after an auto-paste
+  puts back every format it captured (image, HTML, RTF, a file copy), never
+  plain text alone, and restores nothing rather than `""` when it could
+  capture nothing (`main/output/deliver.js`). Built-in speech is decoded one
+  utterance at a time
   (`main/chunked-decode.js`, cut at pauses, ≤ 20 s per decode) because the
   model drops whole sentences when several share a decode — while a fragment
   a hesitation cut off joins its neighbour, and a click or tap is never

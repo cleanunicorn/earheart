@@ -82,9 +82,17 @@ function parseArgs(args) {
     }
   }
   const name = positional[0] || "C";
-  const idx = parseInt(positional[1] ?? "-1", 10); // single input index
   if (!STRATEGIES[name]) {
     throw new UsageError(`unknown strategy ${name}; have: ${Object.keys(STRATEGIES)}`);
+  }
+  // Optional single input index; -1 means every input. Checked here so a bad
+  // index fails before the model loads, not as a TypeError after.
+  let idx = -1;
+  if (positional[1] !== undefined) {
+    if (!/^\d+$/.test(positional[1]) || Number(positional[1]) >= INPUTS.length) {
+      throw new UsageError(`input index must be 0..${INPUTS.length - 1}, got ${JSON.stringify(positional[1])}`);
+    }
+    idx = Number(positional[1]);
   }
   const modelPath = flags.model;
   if (typeof modelPath !== "string" || !modelPath) {
@@ -130,4 +138,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   });
 }
 
-export { STRATEGIES, UsageError, parseArgs };
+export { INPUTS, STRATEGIES, UsageError, parseArgs };

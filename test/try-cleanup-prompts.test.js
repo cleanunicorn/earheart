@@ -41,7 +41,7 @@ test("the script carries no copy of the production prompt and no per-OS model pa
 });
 
 test("parseArgs: positional protocol kept, --model required, failures are usage errors", async () => {
-  const { parseArgs, UsageError } = await load();
+  const { INPUTS, parseArgs, UsageError } = await load();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "try-cleanup-prompts-test-"));
   try {
     const model = path.join(dir, "m.gguf");
@@ -51,6 +51,11 @@ test("parseArgs: positional protocol kept, --model required, failures are usage 
     assert.deepStrictEqual(parseArgs([`--model=${model}`]), { name: "C", idx: -1, modelPath: model });
     // Flag position does not matter.
     assert.strictEqual(parseArgs([`--model=${model}`, "F"]).name, "F");
+    // The index is validated before any model loads: last valid, then past the end, non-numeric, negative, fractional.
+    assert.strictEqual(parseArgs(["B", String(INPUTS.length - 1), `--model=${model}`]).idx, INPUTS.length - 1);
+    for (const bad of [String(INPUTS.length), "abc", "-1", "2.5", "1abc"]) {
+      assert.throws(() => parseArgs(["B", bad, `--model=${model}`]), UsageError, `index ${bad}`);
+    }
     assert.throws(() => parseArgs(["B"]), UsageError, "missing --model");
     assert.throws(() => parseArgs(["B", "--model"]), UsageError, "bare --model");
     assert.throws(() => parseArgs(["Z", `--model=${model}`]), UsageError, "unknown strategy");

@@ -1054,6 +1054,13 @@ test("stt-eval harness: a skipped row makes the run incomplete, and only complet
   assert.match(md, /^Status: incomplete$/m);
   assert.match(md, /\| cand \| candidate \| worker \| — .*\| skipped: disk: 2000000000 B needed \|/);
 
+  // A failed row (the other half of the same condition) is work not done too.
+  const failed = { ...skipped, id: "boom", label: "boom", status: "failed", reason: "worker exited 1" };
+  const withFailed = { machine: MACHINE, rows: rows.map((r) => (r === skipped ? failed : r)) };
+  for (const pass of ["accuracy", "both", "speed"]) assert.strictEqual(harness.runStatus(withFailed, { pass }), "incomplete", pass);
+  acc.rows[acc.rows.length - 1] = failed;
+  assert.match(harness.report(acc), /\| boom \| candidate \| worker \| — .*\| failed: worker exited 1 \|/);
+
   for (const ok of ["complete", "accuracy complete", "speed complete", "partial (development subset)"]) {
     assert.strictEqual(harness.runExitCode(ok), 0, ok);
   }

@@ -71,21 +71,23 @@ function dedupeArms(arms) {
 const { arms: ALL_ARMS, dropped: DROPPED_ARMS } = dedupeArms(RAW_ARMS);
 
 /**
- * The arms an ARMS environment value asks for, in table order. Unset or empty
- * means every arm. An unknown id is an error (a typo must not quietly run a
- * narrower comparison), and so is a selection that leaves nothing to run.
+ * The arms a comma-separated selection asks for, in table order. Unset or
+ * empty means every arm. An unknown id is an error (a typo must not quietly
+ * run a narrower comparison), and so is a selection that leaves nothing to
+ * run. `dropped` names the duplicates dedupeArms removed from `allArms`, so
+ * asking for one explains itself; `label` is the setting's name in errors.
  */
-function selectArms(allArms, requested) {
+function selectArms(allArms, requested, { dropped = DROPPED_ARMS, label = "ARMS" } = {}) {
   if (requested === undefined || requested === null || requested === "") return allArms;
   const valid = allArms.map((a) => a.id);
   const wanted = [...new Set(requested.split(",").map((s) => s.trim()).filter(Boolean))];
   for (const id of wanted) {
     if (valid.includes(id)) continue;
-    const dropped = DROPPED_ARMS.find((d) => d.id === id);
-    const why = dropped ? ` (it is the same as ${dropped.sameAs} with today's styles)` : "";
-    throw new Error(`ARMS: unknown arm "${id}"${why}; valid: ${valid.join(", ")}`);
+    const twin = dropped.find((d) => d.id === id);
+    const why = twin ? ` (it is the same as ${twin.sameAs} with today's styles)` : "";
+    throw new Error(`${label}: unknown arm "${id}"${why}; valid: ${valid.join(", ")}`);
   }
-  if (!wanted.length) throw new Error(`ARMS selects no arm; valid: ${valid.join(", ")}`);
+  if (!wanted.length) throw new Error(`${label} selects no arm; valid: ${valid.join(", ")}`);
   return allArms.filter((a) => wanted.includes(a.id));
 }
 

@@ -53,6 +53,10 @@ test("cleanup-arms: dedupeArms keeps the first of equal arms, ignoring sampling 
   const { arms: kept, dropped } = dedupeArms(arms);
   assert.deepStrictEqual(ids(kept), ["a", "c", "d"]);
   assert.deepStrictEqual(dropped, [{ id: "b", sameAs: "a" }]);
+  // selectArms works over any deduplicated table, with its own dropped list
+  // and the setting's own name.
+  assert.deepStrictEqual(ids(selectArms(kept, "d,a", { dropped, label: "X" })), ["a", "d"]);
+  assert.throws(() => selectArms(kept, "b", { dropped, label: "X" }), /^Error: X: unknown arm "b" \(it is the same as a/);
 });
 
 test("cleanup-arms: selectArms validates ARMS instead of silently narrowing the run", () => {

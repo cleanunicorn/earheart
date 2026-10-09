@@ -331,8 +331,9 @@ a notification says so; clicking it opens Settings, where the service, its key
 and the paste options live.
 
 Settings → Advanced → Performance holds two limits. **Max dictation length**
-takes 10–3600 seconds (default 300); a dictation that reaches it stops and is
-transcribed. **Unload models after idle** takes 0–240 minutes (default 2); 0
+takes 10–3600 seconds (default 600, ten minutes); a dictation that reaches it
+stops and is transcribed. In its last minute the overlay says "Stopping soon…"
+and the timer counts down to the stop, so you can finish the thought. **Unload models after idle** takes 0–240 minutes (default 2); 0
 keeps the models loaded. A value outside a range is saved as the nearest limit,
 a blank max length keeps the saved value, and a blank idle field means 0.
 

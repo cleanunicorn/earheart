@@ -242,7 +242,7 @@ test("save clamps the dictation length and idle unload to the Settings ranges", 
     [{ maxSeconds: 99999, idle: 9999 }, { maxSeconds: seconds.max, idle: minutes.max }],
     [{ maxSeconds: seconds.min - 1, idle: minutes.max + 1 }, { maxSeconds: seconds.min, idle: minutes.max }],
     [{ maxSeconds: 420.6, idle: 2.4 }, { maxSeconds: 421, idle: 2 }],
-    [{ maxSeconds: NaN, idle: Infinity }, { maxSeconds: 300, idle: 2 }],
+    [{ maxSeconds: NaN, idle: Infinity }, { maxSeconds: 600, idle: 2 }],
     [{ maxSeconds: 300, idle: 0 }, { maxSeconds: 300, idle: 0 }],
   ]) {
     const next = { hotkey: "Kept", audio: { deviceId: "mic", maxRecordingSeconds: input.maxSeconds }, engines: { idleUnloadMinutes: input.idle } };
@@ -255,7 +255,7 @@ test("save clamps the dictation length and idle unload to the Settings ranges", 
     assert.strictEqual(returned.hotkey, "Kept");
     assert.strictEqual(JSON.stringify(next), snapshot, "save must not mutate its argument");
   }
-  assert.deepStrictEqual(limits(settings.DEFAULTS), { maxSeconds: 300, idle: 2 });
+  assert.deepStrictEqual(limits(settings.DEFAULTS), { maxSeconds: 600, idle: 2 });
 });
 
 test("a hand-edited settings file can't load an out-of-range limit", (t) => {
@@ -269,5 +269,5 @@ test("a hand-edited settings file can't load an out-of-range limit", (t) => {
   assert.strictEqual(settings.get().hotkey, "Mine");
   // Validation, not a migration: loading never rewrites the user's file.
   assert.strictEqual(fs.readFileSync(file, "utf8"), raw);
-  assert.deepStrictEqual(limits(settings.DEFAULTS), { maxSeconds: 300, idle: 2 });
+  assert.deepStrictEqual(limits(settings.DEFAULTS), { maxSeconds: 600, idle: 2 });
 });

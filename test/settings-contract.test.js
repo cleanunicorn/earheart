@@ -730,7 +730,7 @@ test("max dictation length is clamped to the field's range on save", () => {
   ]) {
     assert.strictEqual(collectLimits({ maxSeconds: typed }).maxSeconds, stored, `typed ${typed}`);
   }
-  // Blank keeps what was saved, or the 300 s default when nothing valid was.
+  // Blank keeps what was saved, or the 600 s default when nothing valid was.
   assert.strictEqual(collectLimits({ saved: { audio: { maxRecordingSeconds: 420 } } }).maxSeconds, 420);
   assert.strictEqual(collectLimits({}).maxSeconds, DEFAULTS.audio.maxRecordingSeconds);
 });
@@ -784,16 +784,49 @@ test("the overlay's recording cap accepts exactly the max-seconds field's range"
   const { min, max } = inputRange("max-seconds");
   assert.strictEqual(context.cap(Number(min)), Number(min));
   assert.strictEqual(context.cap(Number(max)), Number(max));
-  assert.strictEqual(context.cap(Number(min) - 1), 300);
-  assert.strictEqual(context.cap(Number(max) + 1), 300);
+  assert.strictEqual(context.cap(Number(min) - 1), 600);
+  assert.strictEqual(context.cap(Number(max) + 1), 600);
   // Its fallback is main's default, written down a second time in overlay.js.
   assert.strictEqual(context.cap(NaN), DEFAULTS.audio.maxRecordingSeconds);
   // Anything unusable takes that default; a cap in range is kept, rounded.
   for (const bad of [-5, 0, 1, 9, 99999, NaN, Infinity, -Infinity, "300", null, undefined]) {
-    assert.strictEqual(context.cap(bad), 300, `cap(${String(bad)})`);
+    assert.strictEqual(context.cap(bad), 600, `cap(${String(bad)})`);
   }
   for (const good of [10, 300, 3600]) assert.strictEqual(context.cap(good), good);
   assert.strictEqual(context.cap(10.6), 11);
   // Rejects, not clamps, just outside the range — main has already clamped.
-  assert.strictEqual(context.cap(9.4), 300);
+  assert.strictEqual(context.cap(9.4), 600);
+});
+
+test("the overlay counts down only the last minute before the cap", () => {
+  // The cap stops the take; the user gets the last 60 s of capture as a
+  // countdown so they can finish the thought instead of being cut off.
+  const overlayJs = fs.readFileSync(path.join(RENDERER, "overlay.js"), "utf8");
+  const context = {};
+  require("node:vm").runInNewContext(
+    `${extractFunction(overlayJs, "capCountdown")}; this.left = capCountdown;`,
+    context
+  );
+  const cap = DEFAULTS.audio.maxRecordingSeconds;
+  // Before the last minute: no countdown.
+  assert.strictEqual(context.left(0, cap), null);
+  assert.strictEqual(context.left((cap - 61) * 1000, cap), null);
+  assert.strictEqual(context.left((cap - 60) * 1000 - 1, cap), null);
+  // Inside it: whole seconds left, rounded up, never negative.
+  assert.strictEqual(context.left((cap - 60) * 1000, cap), 60);
+  assert.strictEqual(context.left((cap - 59.5) * 1000, cap), 60);
+  assert.strictEqual(context.left((cap - 1) * 1000 + 1, cap), 1);
+  assert.strictEqual(context.left(cap * 1000, cap), 0);
+  assert.strictEqual(context.left(cap * 1000 + 500, cap), 0);
+  // A cap shorter than a minute counts down from the start.
+  assert.strictEqual(context.left(0, 30), 30);
+});
+
+test("the overlay's last-minute warning has a style and is cleared", () => {
+  const overlayJs = fs.readFileSync(path.join(RENDERER, "overlay.js"), "utf8");
+  const overlayCss = fs.readFileSync(path.join(RENDERER, "overlay.css"), "utf8");
+  assert.match(overlayCss, /#card\[data-cap-warning\] #timer\s*\{[^}]*var\(--accent\)/);
+  assert.match(overlayJs, /toggleAttribute\("data-cap-warning", true\)/);
+  // Cleared both when a new take starts and when a warned take ends.
+  assert.strictEqual(overlayJs.match(/removeAttribute\("data-cap-warning"\)/g)?.length, 2);
 });

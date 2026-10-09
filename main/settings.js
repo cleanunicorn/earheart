@@ -120,7 +120,9 @@ const DEFAULTS = {
     // Raw sampling values for the "custom" style. Seeded with the default
     // style's profile so Custom values shows sensible starting numbers.
     custom: { ...styleById(DEFAULT_STYLE).sampling },
-    timeoutMs: 60000,
+    // A whole request, not a silence window: a full-length dictation's cleaned
+    // output (~2,000 tokens at the 600 s default) has to stream back inside it.
+    timeoutMs: 120000,
     systemPrompt: DEFAULT_CLEANUP_PROMPT,
     // Preferred terms (names, jargon, product words) the speaker uses and STT
     // tends to mishear. Injected into the cleanup prompt so near-misses get
@@ -131,7 +133,9 @@ const DEFAULTS = {
   },
   audio: {
     deviceId: "", // empty = system default microphone
-    maxRecordingSeconds: 300,
+    // Ten minutes. The built-in cleanup context is sized from this (see
+    // cleanContextFor in util/clean-budget.js), so raising it costs memory.
+    maxRecordingSeconds: 600,
   },
   engines: {
     // Built-in STT/cleanup models stay resident for fast repeat dictations,
@@ -275,6 +279,12 @@ function migrateLegacy(stored) {
   // pass, which the final-transcript assembly relies on).
   if (stored.stt?.livePreview?.chunkSeconds === 5) {
     stored.stt.livePreview.chunkSeconds = 10;
+  }
+  // Same for the remote cleanup timeout: 60 s was the default before the
+  // dictation cap doubled to 600 s and is not in the settings UI, so a stored
+  // 60 s is a persisted default — lift it with the cap it was sized for.
+  if (stored.cleanup?.timeoutMs === 60000) {
+    stored.cleanup.timeoutMs = 120000;
   }
   // Older defaults stored the prompt hard-wrapped at ~72 columns (it was written
   // as an indented template literal), which shows up in the Settings textarea as

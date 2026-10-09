@@ -422,6 +422,47 @@ app.whenReady().then(async () => {
     const capCapture = await capCaptureP;
     check("the take with a bad cap still delivers on stop", capCapture.sid === 210);
 
+    // ---- The last minute before the cap counts down -----------------------
+    // A 10 s cap is inside the 60 s warning window from the first samples, so
+    // the card says it is stopping soon and the timer counts down in the
+    // accent; stopping puts the take's length back on the timer.
+    const warnCaptureP = waitForMessage("audio:captured");
+    win.webContents.send("record:start", {
+      sid: 270,
+      deviceId: null,
+      maxSeconds: 10,
+      livePreview: { enabled: false },
+    });
+    await waitForStatus(win, "recording");
+    await sleep(600);
+    const warned = await win.webContents.executeJavaScript(`({
+      title: document.getElementById("status-text").textContent,
+      timer: document.getElementById("timer").textContent,
+      flagged: document.getElementById("card").hasAttribute("data-cap-warning"),
+      color: getComputedStyle(document.getElementById("timer")).color,
+      accent: (() => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--accent)";
+        document.getElementById("card").appendChild(probe);
+        const value = getComputedStyle(probe).color;
+        probe.remove();
+        return value;
+      })(),
+    })`);
+    check("the last minute says the take is stopping soon", warned.title === "Stopping soon…", warned.title);
+    check("the last minute counts down to the cap", /^−0:(10|09|08)$/.test(warned.timer), warned.timer);
+    check("the countdown wears the accent", warned.flagged && warned.color === warned.accent,
+      `flag=${warned.flagged} color=${warned.color} accent=${warned.accent}`);
+    win.webContents.send("record:stop");
+    const warnCapture = await warnCaptureP;
+    check("a warned take still delivers on stop", warnCapture.sid === 270);
+    const after = await win.webContents.executeJavaScript(`({
+      timer: document.getElementById("timer").textContent,
+      flagged: document.getElementById("card").hasAttribute("data-cap-warning"),
+    })`);
+    check("stopping restores the take's length on the timer", /^0:0\d$/.test(after.timer) && !after.flagged,
+      `timer=${after.timer} flag=${after.flagged}`);
+
     // ---- Session 2: stop racing mic startup resolves as abandoned ----------
     const cancelled2P = waitForMessage("record:cancelled");
     start(win, 2);

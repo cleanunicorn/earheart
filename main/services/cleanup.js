@@ -52,7 +52,7 @@ async function clean(transcript, cfg, signal) {
         ],
       }),
     },
-    { service: "Cleanup service", timeoutMs: cfg.timeoutMs || 60000, signal }
+    { service: "Cleanup service", timeoutMs: cfg.timeoutMs || 120000, signal }
   );
   const choice = data.choices?.[0];
   // The server cut the answer off at its token limit. A half-cleaned

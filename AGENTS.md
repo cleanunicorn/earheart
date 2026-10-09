@@ -334,7 +334,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#architecture) for the full architecture.
   main, preload, and renderer in both directions (every channel used is
   allowlisted and handled, every listener is fed and every push is heard, no
   dead entries), including the overlay's data-driven `channel:` action
-  tables; `overlay-contract` and `settings-contract` check renderer scripts
+  tables, and that each window's preload role allows exactly the channels
+  its own page uses; `overlay-contract` and `settings-contract` check renderer scripts
   against their HTML/CSS.
 - **What to cover:** happy path, error paths, and edge cases for new code.
 - **Fixtures / stubs:** no network or models needed; the STT server suite uses

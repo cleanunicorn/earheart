@@ -14,6 +14,7 @@ const OUT = path.join(ROOT, "docs", "screenshots");
 const windows = require(path.join(ROOT, "main", "windows.js"));
 const ipc = require(path.join(ROOT, "main", "ipc.js"));
 const { waitForLoad } = require("./wait-for-load");
+const { installPermissionHandler } = require(path.join(ROOT, "main", "window-guard.js"));
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -25,9 +26,9 @@ async function shot(win, name) {
 
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
-  session.defaultSession.setPermissionRequestHandler((wc, permission, cb) =>
-    cb(true)
-  );
+  // The shipped permission policy, so the microphone grant below is proven
+  // through the same handler the app installs (main/window-guard.js).
+  installPermissionHandler(session.defaultSession);
   ipc.init({
     applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
     onSettingsChanged: () => {},

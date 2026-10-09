@@ -22,6 +22,8 @@
 const { app, ipcMain, session } = require("electron");
 const windows = require("../main/windows");
 const { waitForLoad } = require("./wait-for-load");
+const { checkWindowLock } = require("./window-lock-smoke");
+const { installPermissionHandler } = require("../main/window-guard");
 const { wavToFloat32, wavDurationSec } = require("../main/util/wav");
 
 // The fake device makes getUserMedia succeed without hardware and produces a
@@ -118,9 +120,9 @@ const start = (win, sid, deviceId = null) =>
 
 app.whenReady().then(async () => {
   try {
-    session.defaultSession.setPermissionRequestHandler((wc, permission, cb) =>
-      cb(true)
-    );
+    // The shipped permission policy, so the microphone grant below is proven
+    // through the same handler the app installs (main/window-guard.js).
+    installPermissionHandler(session.defaultSession);
     ipcMain.on("record:error", (event, payload) => {
       micErrors.push(payload?.message || "unknown");
       console.error("[overlay-smoke] record:error:", payload?.message);
@@ -146,6 +148,15 @@ app.whenReady().then(async () => {
       if (!cardVisible) await sleep(10);
     }
     check("overlay:show makes the card visible", cardVisible);
+
+    // The window lock: the overlay renders live transcript text, so its
+    // bridge must not reach settings, and the page must stay put.
+    await checkWindowLock(win, {
+      role: "overlay",
+      refused: { method: "invoke", channel: "settings:get" },
+      allowed: { method: "on", channel: "updates:prompt" },
+      check,
+    });
 
     // One snapshot of the key/detail state the CSS+JS contract promises for a
     // given moment; read computed display (never #meter opacity — that is

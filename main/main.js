@@ -15,6 +15,7 @@ const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { createHost, LOADCHECK_TIMEOUT_MS } = require("./engines/host");
 const { createNotifier, announceStartup } = require("./setup-notices");
+const { installPermissionHandler } = require("./window-guard");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
 const startHidden = process.argv.includes("--hidden");
@@ -83,15 +84,9 @@ function main() {
       logger.warn(`could not apply start-on-boot: ${err.message}`);
     }
 
-    // The renderer asks for microphone and clipboard access; grant those.
-    // Everything the renderer can reach is our own local files (no remote
-    // content), so nothing else needs permissions.
-    const GRANTED = new Set(["media", "clipboard-sanitized-write"]);
-    session.defaultSession.setPermissionRequestHandler(
-      (webContents, permission, callback) => {
-        callback(GRANTED.has(permission));
-      }
-    );
+    // The renderer asks for microphone and clipboard access; grant those to
+    // the app's own pages and nothing else (main/window-guard.js).
+    installPermissionHandler(session.defaultSession);
 
     pipeline.init();
     ipc.init({

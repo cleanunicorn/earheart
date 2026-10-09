@@ -38,6 +38,9 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
         once: (event, handler) => {
           webContentsHandlers[event] = handler;
         },
+        setWindowOpenHandler: (handler) => {
+          webContentsHandlers.windowOpen = handler;
+        },
         send: (channel, payload) => calls.push(["send", channel, payload]),
         isLoading: () => false,
         reload: () => calls.push(["reload"]),
@@ -57,8 +60,8 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
       calls.push(["isVisibleOnAllWorkspaces", bit]);
       return bit;
     }
-    loadFile() {
-      calls.push(["loadFile"]);
+    loadFile(file, options) {
+      calls.push(["loadFile", file, options]);
     }
     setBounds(bounds) {
       calls.push(["setBounds", bounds]);
@@ -406,4 +409,74 @@ test("darwin: a re-apply that does not take is reported as such, not as a repair
   assert.strictEqual(warnings.length, 1);
   assert.match(warnings[0], /now false/);
   assert.strictEqual(countOf(calls.slice(show), "setVisibleOnAllWorkspaces"), 1);
+});
+
+// --- The shared window factory (#193, #217) ----------------------------------
+// Every window is built by one factory, so each gets context isolation, the
+// sandbox, its own preload role and the navigation guard — none can be added
+// later without them.
+
+test("every app window gets its role, isolation and the navigation guard", () => {
+  for (const [open, role] of [
+    ["createOverlay", "overlay"],
+    ["openSettings", "settings"],
+    ["openWizard", "wizard"],
+  ]) {
+    const { windows, calls, webContentsHandlers } = loadWindows();
+    windows[open]();
+    const [, options] = calls.find(([name]) => name === "construct");
+    const prefs = options.webPreferences;
+    assert.deepStrictEqual(prefs.additionalArguments, [`--earheart-role=${role}`], role);
+    assert.strictEqual(prefs.contextIsolation, true, role);
+    assert.strictEqual(prefs.nodeIntegration, false, role);
+    assert.strictEqual(prefs.sandbox, true, role);
+    assert.match(prefs.preload, /preload\.js$/, role);
+
+    const event = { url: "file:///tmp/evil.html", isSameDocument: false, prevented: false };
+    event.preventDefault = () => (event.prevented = true);
+    webContentsHandlers["will-navigate"](event);
+    assert.ok(event.prevented, `${role}: navigation away must be refused`);
+    assert.deepStrictEqual(webContentsHandlers.windowOpen({ url: "https://example.com/" }), { action: "deny" }, role);
+  }
+});
+
+test("the overlay keeps backgroundThrottling off; the forms keep their framed options", () => {
+  const { windows, calls } = loadWindows();
+  windows.createOverlay();
+  windows.openSettings();
+  windows.openWizard();
+  const [overlay, settingsWin, wizard] = calls.filter(([name]) => name === "construct").map(([, o]) => o);
+  assert.strictEqual(overlay.webPreferences.backgroundThrottling, false);
+  assert.strictEqual(overlay.backgroundColor, undefined, "the transparent overlay must not get the ink background");
+  for (const form of [settingsWin, wizard]) {
+    assert.strictEqual(form.autoHideMenuBar, true);
+    assert.strictEqual(form.backgroundColor, "#18181b");
+    assert.match(form.icon, /icon\.png$/);
+  }
+  assert.strictEqual(settingsWin.title, "Earheart");
+  assert.strictEqual(wizard.title, "Welcome to Earheart");
+});
+
+test("re-opening Settings or the wizard shows the existing window instead of a second one", () => {
+  const { windows, calls } = loadWindows();
+  const first = windows.openSettings();
+  const again = windows.openSettings();
+  assert.strictEqual(again, first);
+  const wizard = windows.openWizard();
+  assert.strictEqual(windows.openWizard(), wizard);
+  assert.strictEqual(countOf(calls, "construct"), 2);
+  assert.strictEqual(countOf(calls, "show"), 2);
+  assert.strictEqual(countOf(calls, "focus"), 2);
+});
+
+test("re-opening Settings from the wizard reloads it before bringing it forward", () => {
+  const { windows, calls } = loadWindows();
+  windows.openSettings();
+  const loadsBefore = countOf(calls, "loadFile");
+  windows.openSettings({ fromWizard: true });
+  assert.strictEqual(countOf(calls, "loadFile"), loadsBefore + 1);
+  const reload = calls.findLastIndex(([name]) => name === "loadFile");
+  assert.match(calls[reload][1], /settings\.html$/);
+  assert.deepStrictEqual(calls[reload][2], { query: { wizard: "1" } });
+  assert.ok(reload < indexOf(calls, "show"), "the reload must come before show");
 });

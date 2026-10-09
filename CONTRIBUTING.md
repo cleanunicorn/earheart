@@ -205,7 +205,8 @@ main/                    Electron main process
   settings.js            JSON settings with deep-merged defaults
   history.js             local transcription history
   tray.js                tray icon + menu
-  windows.js             overlay + settings + setup wizard windows
+  windows.js             overlay + settings + setup wizard windows (one factory)
+  window-guard.js        navigation lock + permission policy for app windows
   updates.js             in-app updater: check, download to userData/updates, verify, re-verify, install
   services/update-feed.js     latest*.yml parsing + install-kind detection
   services/release-notes.js   what's-new: CHANGELOG.md ⇄ release-notes.json
@@ -275,6 +276,18 @@ Design constraints worth keeping:
   creates exclusively, so a planted symlink is replaced, not followed.
   `installNow` re-hashes the staged file against the feed's sha512 right
   before installing and refuses a mismatch (#186).
+- **Each window holds only its own page and its own channels.** Every app
+  window is built by `createAppWindow` in `main/windows.js`, which passes a role
+  (`--earheart-role=overlay|settings|wizard`) to the sandboxed preload and
+  installs the navigation guard from `main/window-guard.js`: a page can't
+  navigate the window away (a dropped file or link, a `location` assignment),
+  open a popup, or attach a `<webview>`. `preload.js` exposes only that role's
+  channels, and a missing or unknown role gets none, so the overlay — which
+  renders live transcript text — can't read or save settings. Microphone and
+  clipboard-write are granted only to the app's own `renderer/*.html` pages.
+  A new IPC channel goes into the role table of each window that uses it;
+  `test/ipc-contract.test.js` fails on a channel a page uses but its role
+  lacks, and on one its role carries but the page never uses.
 - **The overlay window owns the microphone.** The main process never touches
   raw audio; it receives finished WAVs from the renderer — the final one on stop,
   plus periodic partial WAVs while recording for the live preview (re-transcribed,

@@ -212,6 +212,7 @@ main/                    Electron main process
   services/stt.js        OpenAI-compatible transcription client
   services/cleanup.js    OpenAI-compatible chat client
   services/models-remote.js   list a remote service's models (Settings)
+  services/service-url.js     shared base-URL check, Bearer header, 15 s timeout
   engines/               in-process STT + cleanup (no separate executable)
     registry.js          downloadable model catalogue
     model-manager.js     streaming, atomic, checksum-verified downloads

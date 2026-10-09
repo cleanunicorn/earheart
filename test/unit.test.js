@@ -980,12 +980,31 @@ test("listRemoteModels strips a trailing slash before appending /models", async 
     body: { data: [{ id: "m" }] },
   }));
   try {
-    // base already ends in /v1; add another slash so joinUrl has to strip it.
+    // base already ends in /v1; add another slash so serviceUrl has to strip it.
     assert.deepStrictEqual(await listRemoteModels({ baseUrl: `${base}/` }), ["m"]);
     assert.strictEqual(requests[0].url, "/v1/models"); // not /v1//models
   } finally {
     server.close();
   }
+});
+
+test("listRemoteModels trims whitespace around the base URL", async () => {
+  const { server, base, requests } = await serveJson(() => ({
+    status: 200,
+    body: { data: [{ id: "m" }] },
+  }));
+  try {
+    // A private joiner once encoded this as /v1%20/models.
+    assert.deepStrictEqual(await listRemoteModels({ baseUrl: ` ${base} ` }), ["m"]);
+    assert.strictEqual(requests[0].url, "/v1/models");
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels treats a non-string base URL as missing", async () => {
+  // A private joiner once threw "b.replace is not a function" here.
+  await assert.rejects(() => listRemoteModels({ baseUrl: 123 }), /^Error: Base URL is required$/);
 });
 
 test("listRemoteModels names the host it couldn't reach, in plain words", async () => {

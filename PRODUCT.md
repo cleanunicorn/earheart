@@ -85,8 +85,10 @@ shipped.
 - Used mid-task inside other applications; the overlay must never interrupt or
   take focus from the app being dictated into.
 - Global hotkey (default `Ctrl/Cmd+Shift+Space`) starts and stops dictation.
-  On GNOME/KDE Wayland, users bind a system shortcut to `earheart --toggle`
-  (single-instance).
+  Optional pause and discard hotkeys (unset by default) give the overlay's
+  other two keys a keyboard route; the discard hotkey is held only while a
+  dictation is live. On GNOME/KDE Wayland, users bind a system shortcut to
+  `earheart --toggle` (and `--pause`, `--discard`; single-instance).
 - First run: a wizard walks through hotkey → microphone → speech-to-text →
   cleanup → output, then downloads the on-device models (≈2.5 GB Parakeet +
   ≈2.5 GB Qwen3 4B Instruct 2507) with a progress bar. One-time download.

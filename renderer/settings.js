@@ -158,6 +158,20 @@ $("pause-hotkey-clear").addEventListener("click", () => {
   pauseHotkeyInput.value = "";
 });
 
+// The discard hotkey is optional in the same way: Clear unbinds it.
+const discardHotkeyInput = $("discard-hotkey");
+wireHotkeyCapture(discardHotkeyInput, {
+  apply: (accelerator) => {
+    current.discardHotkey = accelerator;
+    discardHotkeyInput.value = accelerator;
+  },
+  restore: () => current?.discardHotkey || "",
+});
+$("discard-hotkey-clear").addEventListener("click", () => {
+  current.discardHotkey = "";
+  discardHotkeyInput.value = "";
+});
+
 /* ---------- microphone list ---------- */
 
 async function loadMicrophones() {
@@ -225,6 +239,7 @@ function showOutputMode(output) {
 function populate() {
   hotkeyInput.value = current.hotkey;
   pauseHotkeyInput.value = current.pauseHotkey || "";
+  discardHotkeyInput.value = current.discardHotkey || "";
   showOutputMode(current.output);
 
   $("stt-url").value = current.stt.baseUrl;
@@ -259,6 +274,7 @@ function populate() {
   if (platform !== "linux") {
     $("wayland-note").style.display = "none";
     $("pause-wayland-note").style.display = "none";
+    $("discard-wayland-note").style.display = "none";
   }
 }
 
@@ -267,6 +283,7 @@ function collect() {
     ...current,
     hotkey: current.hotkey,
     pauseHotkey: current.pauseHotkey || "",
+    discardHotkey: current.discardHotkey || "",
     startOnBoot: $("start-on-boot").checked,
     updates: {
       ...current.updates,
@@ -819,6 +836,7 @@ function renderHotkeyStatus(status) {
   const rows = [
     [$("hotkey-status"), status?.hotkey, current.hotkey],
     [$("pause-hotkey-status"), status?.pauseHotkey, current.pauseHotkey],
+    [$("discard-hotkey-status"), status?.discardHotkey, current.discardHotkey],
   ];
   for (const [row, result, shown] of rows) {
     const stale =
@@ -828,12 +846,18 @@ function renderHotkeyStatus(status) {
   }
 }
 
-function hotkeySaveMessage(hotkeyResult, pauseResult) {
-  if (!hotkeyResult.ok && !pauseResult.ok) {
+function hotkeySaveMessage(hotkeyResult, pauseResult, discardResult) {
+  const failed = [
+    [hotkeyResult, "hotkey"],
+    [pauseResult, "pause hotkey"],
+    [discardResult, "discard hotkey"],
+  ].filter(([result]) => result && !result.ok);
+  // More than one slot failing is usually one coupled rollback; blaming a
+  // single field would be wrong.
+  if (failed.length > 1) {
     return "Saved, but the hotkeys could not be changed";
   }
-  const name = hotkeyResult.ok ? "pause hotkey" : "hotkey";
-  return `Saved, but the ${name} could not be registered`;
+  return `Saved, but the ${failed[0][1]} could not be registered`;
 }
 
 // What Save stored differently from what was typed in the Performance limits
@@ -858,6 +882,7 @@ saveButton.addEventListener("click", async () => {
   const save = $("save-status");
   let result;
   let pauseResult;
+  let discardResult;
   // Acknowledge the click immediately and block a duplicate save while the
   // round-trip is in flight.
   saveButton.disabled = true;
@@ -877,19 +902,22 @@ saveButton.addEventListener("click", async () => {
     $("idle-unload").value = current.engines.idleUnloadMinutes;
     // Older mains don't report a pause result; treat that as fine.
     pauseResult = result.pauseHotkey ?? { ok: true };
-    if (result.hotkey.ok && pauseResult.ok && adjusted.length) {
+    discardResult = result.discardHotkey ?? { ok: true };
+    const hotkeysOk = result.hotkey.ok && pauseResult.ok && discardResult.ok;
+    const hotkeyStatus = { hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult };
+    if (hotkeysOk && adjusted.length) {
       // Saved, but not as typed: stay open long enough to say so.
       save.textContent = `Saved — ${adjusted.join("; ")}`;
       save.className = "status ok";
-      renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult });
+      renderHotkeyStatus(hotkeyStatus);
       saveButton.disabled = false;
       return;
     }
-    if (result.hotkey.ok && pauseResult.ok) {
+    if (hotkeysOk) {
       // Clean save — close the window so the user doesn't have to dismiss it.
       save.textContent = "Saved";
       save.className = "status ok";
-      renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult });
+      renderHotkeyStatus(hotkeyStatus);
       earheart.invoke("settings:close");
       return;
     }
@@ -904,9 +932,9 @@ saveButton.addEventListener("click", async () => {
   // A hotkey couldn't be registered: keep the window open so the error is
   // visible and the user can pick a combination that works.
   saveButton.disabled = false;
-  save.textContent = hotkeySaveMessage(result.hotkey, pauseResult);
+  save.textContent = hotkeySaveMessage(result.hotkey, pauseResult, discardResult);
   save.className = "status err";
-  renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult });
+  renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult });
   setTimeout(() => {
     save.textContent = "";
   }, 4000);

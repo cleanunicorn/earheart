@@ -93,7 +93,7 @@ earheart --toggle
 
 Earheart is single-instance, so with the app already running a second
 invocation just toggles dictation in it (use the full path to the AppImage or
-binary if `earheart` isn't on your `PATH`). `earheart --pause` pauses and resumes the same way. This also
+binary if `earheart` isn't on your `PATH`). `earheart --pause` pauses and resumes the same way, and `earheart --discard` throws the dictation away (the overlay's ✕). This also
 works for a mouse button or a foot pedal on any platform.
 
 ## Editor agent panels — Cursor, Windsurf, VS Code, JetBrains

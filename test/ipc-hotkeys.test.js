@@ -195,6 +195,40 @@ test("settings save keeps a rejected pause off disk but in the reply", () => {
   assert.strictEqual(reply.pauseHotkey.error, "pause rejected");
 });
 
+test("settings save keeps a rejected discard hotkey off disk but in the reply", () => {
+  const before = { ...working, discardHotkey: "CommandOrControl+Alt+D" };
+  const attempt = submitted({ discardHotkey: "CommandOrControl+Alt+K" });
+  const results = {
+    hotkey: { ok: true },
+    pauseHotkey: { ok: true },
+    discardHotkey: { ok: false, error: "discard rejected" },
+  };
+  const { handlers, calls } = loadIpcHandlers({ previous: before, hotkeyResults: results });
+
+  const reply = handlers["settings:save"]({}, request(attempt));
+
+  assert.strictEqual(calls.saved[0].discardHotkey, before.discardHotkey);
+  assert.strictEqual(calls.saved[0].pauseHotkey, attempt.pauseHotkey, "the other slots still save");
+  assert.strictEqual(reply.settings.discardHotkey, attempt.discardHotkey);
+  assert.strictEqual(reply.discardHotkey.error, "discard rejected");
+});
+
+test("a cleared discard hotkey saves as unbound", () => {
+  const before = { ...working, discardHotkey: "CommandOrControl+Alt+D" };
+  const attempt = submitted({ discardHotkey: "" });
+  const results = {
+    hotkey: { ok: true },
+    pauseHotkey: { ok: true },
+    discardHotkey: { ok: true, empty: true },
+  };
+  const { handlers, calls } = loadIpcHandlers({ previous: before, hotkeyResults: results });
+
+  const reply = handlers["settings:save"]({}, request(attempt));
+
+  assert.strictEqual(calls.saved[0].discardHotkey, "");
+  assert.deepStrictEqual(reply.discardHotkey, { ok: true, empty: true });
+});
+
 test("an atomic pair rollback keeps both previous hotkeys on disk", () => {
   const attempt = submitted();
   const results = {

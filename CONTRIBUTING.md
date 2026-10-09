@@ -198,7 +198,7 @@ EARHEART_UPDATE_FEED=file:///tmp/feed npm start
 
 ```
 main/                    Electron main process
-  main.js                lifecycle, single-instance, --toggle forwarding
+  main.js                lifecycle, single-instance, --toggle/--pause/--discard forwarding
   pipeline.js            record → transcribe → clean → deliver state machine
   hotkeys.js             global shortcut registration
   setup-notices.js       launch policy + "fix your setup" notices (→ Settings)

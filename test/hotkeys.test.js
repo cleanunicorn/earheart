@@ -498,3 +498,187 @@ test("no hotkey error carries a raw Electron modifier name", () => {
     }
   }
 });
+
+// ---- discard hotkey: a third, optional slot held only while a dictation is live
+
+const D = "CommandOrControl+Alt+D";
+const E = "CommandOrControl+Alt+E";
+
+function all(record, pause, discard, onDiscard = () => {}) {
+  return { record, pause, discard, onRecord: () => {}, onPause: () => {}, onDiscard };
+}
+
+test("an empty discard hotkey is a valid unbound state and is never registered", () => {
+  const { hotkeys, calls } = loadHotkeys();
+  const result = hotkeys.applyAll(all(A, "", ""));
+  assert.deepStrictEqual(result.discard, { ok: true, empty: true });
+  clearCalls(calls);
+
+  hotkeys.armDiscard(true);
+  assert.deepStrictEqual(calls.registered, []);
+});
+
+test("saving a discard hotkey while idle checks it, then releases it", () => {
+  const { hotkeys, calls, bindings } = loadHotkeys();
+  const result = hotkeys.applyAll(all(A, "", D));
+
+  assert.deepStrictEqual(result.discard, { ok: true });
+  assert.ok(calls.registered.some(({ accelerator }) => accelerator === D), "Save tries the binding");
+  assert.strictEqual(bindings.has(D), false, "idle, the combination stays free for other apps");
+  assert.strictEqual(bindings.has(A), true);
+});
+
+test("the discard hotkey is held exactly while a dictation is live", () => {
+  let discarded = 0;
+  const { hotkeys, calls, bindings } = loadHotkeys();
+  hotkeys.applyAll(all(A, B, D, () => discarded++));
+  clearCalls(calls);
+
+  hotkeys.armDiscard(true); // recording starts
+  assert.strictEqual(bindings.has(D), true);
+  bindings.get(D)();
+  assert.strictEqual(discarded, 1, "the key runs the discard callback");
+
+  hotkeys.armDiscard(true); // recording -> processing: still live
+  assert.deepStrictEqual(calls.events, [`register:${D}`], "re-arming is a no-op");
+
+  hotkeys.armDiscard(false); // back to idle
+  assert.strictEqual(bindings.has(D), false);
+  hotkeys.armDiscard(false);
+  assert.deepStrictEqual(calls.events, [`register:${D}`, `unregister:${D}`], "disarming twice is a no-op");
+  assert.strictEqual(bindings.has(A) && bindings.has(B), true, "record and pause are untouched");
+
+  hotkeys.armDiscard(true); // the next dictation
+  assert.strictEqual(bindings.has(D), true);
+});
+
+test("a discard hotkey another app holds fails at Save and keeps the previous one", () => {
+  const { hotkeys, bindings, calls } = loadHotkeys({ occupied: [E] });
+  hotkeys.applyAll(all(A, "", D));
+
+  const result = hotkeys.applyAll(all(A, "", E));
+
+  assert.strictEqual(result.discard.ok, false);
+  assert.strictEqual(result.discard.error, `Could not register "${prettyHotkey(E)}" (${registrationHint()}).`);
+  clearCalls(calls);
+  hotkeys.armDiscard(true);
+  assert.deepStrictEqual(calls.events, [`register:${D}`], "the working binding is the one armed");
+  assert.strictEqual(bindings.has(D), true);
+});
+
+test("changing the discard hotkey mid-dictation swaps the held binding", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  hotkeys.applyAll(all(A, "", D));
+  hotkeys.armDiscard(true);
+
+  const result = hotkeys.applyAll(all(A, "", E));
+
+  assert.deepStrictEqual(result.discard, { ok: true });
+  assert.strictEqual(bindings.has(D), false);
+  assert.strictEqual(bindings.has(E), true, "still live, so the new binding stays held");
+  hotkeys.armDiscard(false);
+  assert.strictEqual(bindings.has(E), false);
+});
+
+test("clearing the discard hotkey mid-dictation releases it", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  hotkeys.applyAll(all(A, "", D));
+  hotkeys.armDiscard(true);
+
+  const result = hotkeys.applyAll(all(A, "", ""));
+
+  assert.deepStrictEqual(result.discard, { ok: true, empty: true });
+  assert.strictEqual(bindings.has(D), false);
+});
+
+test("a discard hotkey changed into the record hotkey is rejected; record keeps working", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  hotkeys.applyAll(all(A, B, D));
+
+  const result = hotkeys.applyAll(all(A, B, A));
+
+  assert.deepStrictEqual(result.record, { ok: true });
+  assert.strictEqual(result.discard.error, `"${prettyHotkey(A)}" is already used by the record hotkey`);
+  assert.strictEqual(bindings.has(A), true);
+  hotkeys.armDiscard(true);
+  assert.strictEqual(bindings.has(D), true, "the previous discard binding is kept");
+});
+
+test("a pause hotkey changed into the discard hotkey is rejected; both keep their bindings", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  hotkeys.applyAll(all(A, B, D));
+
+  const result = hotkeys.applyAll(all(A, D, D));
+
+  assert.strictEqual(result.pause.error, `"${prettyHotkey(D)}" is already used by the discard hotkey`);
+  assert.deepStrictEqual(result.discard, { ok: true });
+  assert.strictEqual(bindings.has(B), true, "pause keeps its old binding");
+  hotkeys.armDiscard(true);
+  assert.strictEqual(bindings.has(D), true);
+});
+
+test("a cold-start discard hotkey that duplicates pause yields and stays unbound", () => {
+  const { hotkeys, bindings, calls } = loadHotkeys();
+
+  const result = hotkeys.applyAll(all(A, B, B));
+
+  assert.deepStrictEqual(result.pause, { ok: true });
+  assert.strictEqual(result.discard.error, `"${prettyHotkey(B)}" is already used by the pause hotkey`);
+  assert.strictEqual(bindings.has(B), true);
+  clearCalls(calls);
+  hotkeys.armDiscard(true);
+  assert.deepStrictEqual(calls.registered, [], "nothing is armed over the pause hotkey");
+});
+
+test("a discard hotkey equal to a pause binding kept by a failed change is a collision", () => {
+  const { hotkeys } = loadHotkeys({ occupied: [C] });
+  hotkeys.applyAll(all(A, B, D));
+
+  // Pause asks for C (taken by another app) and keeps B; discard asks for B.
+  const result = hotkeys.applyAll(all(A, C, B));
+
+  assert.strictEqual(result.pause.ok, false);
+  assert.strictEqual(result.discard.error, `"${prettyHotkey(B)}" is already used by the pause hotkey`);
+});
+
+test("an arming failure is logged, not thrown, and the next dictation retries", () => {
+  let busy = false;
+  const { hotkeys, bindings, calls } = loadHotkeys({ registerImpl: (acc) => !(busy && acc === D) });
+  hotkeys.applyAll(all(A, "", D));
+  busy = true; // another app grabbed it after Save
+  clearCalls(calls);
+
+  hotkeys.armDiscard(true);
+  assert.strictEqual(bindings.has(D), false);
+  assert.match(calls.warnings.at(-1), /discard hotkey: Could not register/);
+  hotkeys.armDiscard(false); // nothing held, nothing to release
+  assert.ok(!calls.unregistered.includes(D));
+
+  busy = false;
+  hotkeys.armDiscard(true);
+  assert.strictEqual(bindings.has(D), true);
+});
+
+test("unregisterAll forgets the armed discard hotkey", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  hotkeys.applyAll(all(A, "", D));
+  hotkeys.armDiscard(true);
+
+  hotkeys.unregisterAll();
+  assert.strictEqual(bindings.has(D), false);
+  hotkeys.armDiscard(true);
+  assert.strictEqual(bindings.has(D), true, "a stale armed flag would skip this");
+});
+
+test("results report the discard slot with its accelerator", () => {
+  const { hotkeys } = loadHotkeys({ occupied: [D] });
+  const results = hotkeys.toHotkeyResults(hotkeys.applyAll(all(A, "", D)), {
+    hotkey: A,
+    pauseHotkey: "",
+    discardHotkey: D,
+  });
+
+  assert.strictEqual(results.discardHotkey.ok, false);
+  assert.strictEqual(results.discardHotkey.accelerator, D);
+  assert.deepStrictEqual(results.pauseHotkey, { ok: true, empty: true, accelerator: "" });
+});

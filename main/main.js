@@ -32,6 +32,8 @@ if (!gotLock) {
       pipeline.toggle();
     } else if (argv.includes("--pause")) {
       pipeline.pauseToggle();
+    } else if (argv.includes("--discard")) {
+      pipeline.discard();
     } else {
       windows.openSettings();
     }
@@ -43,17 +45,20 @@ if (!gotLock) {
 // rollback — kept so Settings can show it when it opens (settings:get).
 let lastHotkeyStatus = null;
 
-// Register both global hotkeys from settings as one transaction. The record
-// hotkey is required (empty is a misconfiguration); the pause hotkey is
-// optional (empty simply leaves it unbound).
+// Register the global hotkeys from settings. The record hotkey is required
+// (empty is a misconfiguration); the pause and discard hotkeys are optional
+// (empty simply leaves them unbound). Discard is only held while a dictation
+// is live — see the armDiscard wiring in main().
 function applyHotkeys(cfg) {
-  const pair = hotkeys.applyPair({
+  const slots = hotkeys.applyAll({
     record: cfg.hotkey,
     pause: cfg.pauseHotkey,
+    discard: cfg.discardHotkey,
     onRecord: () => pipeline.toggle(),
     onPause: () => pipeline.pauseToggle(),
+    onDiscard: () => pipeline.discard(),
   });
-  lastHotkeyStatus = hotkeys.toHotkeyResults(pair, cfg);
+  lastHotkeyStatus = hotkeys.toHotkeyResults(slots, cfg);
   return lastHotkeyStatus;
 }
 
@@ -94,6 +99,9 @@ function main() {
     );
 
     pipeline.init();
+    // The discard hotkey is held only while there is a dictation to discard
+    // (recording or processing); idle, the combination is the user's again.
+    pipeline.onStateChange((state) => hotkeys.armDiscard(state !== "idle"));
     ipc.init({
       applyHotkeys,
       // The tray rebuilds itself on every settings save (main/ipc.js).
@@ -127,6 +135,9 @@ function main() {
     }
     if (!hotkeyResults.pauseHotkey.ok) {
       logger.warn(hotkeyResults.pauseHotkey.error);
+    }
+    if (!hotkeyResults.discardHotkey.ok) {
+      logger.warn(hotkeyResults.discardHotkey.error);
     }
 
     // A returning user lands straight in the tray with a "ready" notice — or,

@@ -173,6 +173,10 @@ function formSyncFields(cfg) {
   return Object.fromEntries(FORM_SYNC_KEYS.map((key) => [key, cfg[key]]));
 }
 
+// The settings fields applyHotkeys registers. One that fails to register is
+// not saved: disk keeps the working value, the form keeps the attempt.
+const HOTKEY_FIELDS = ["hotkey", "pauseHotkey", "discardHotkey"];
+
 function withFields(base, source, fields) {
   const result = { ...base };
   for (const field of fields) {
@@ -267,9 +271,9 @@ function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
     const previous = settings.get();
     const candidate = withMainOwned(next, previous, baseline);
     const hotkeyResults = applyHotkeys(candidate);
-    const rejectedFields = ["hotkey", "pauseHotkey"].filter((field) => {
+    const rejectedFields = HOTKEY_FIELDS.filter((field) => {
       const result = hotkeyResults[field];
-      return !result.ok && !result.empty;
+      return result && !result.ok && !result.empty;
     });
     const persistedCandidate = withFields(candidate, previous, rejectedFields);
 
@@ -281,8 +285,8 @@ function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
       // the same state before surfacing the write failure to the renderer.
       try {
         const rollback = applyHotkeys(previous);
-        const failures = [rollback.hotkey, rollback.pauseHotkey]
-          .filter((result) => !result.ok)
+        const failures = HOTKEY_FIELDS.map((field) => rollback[field])
+          .filter((result) => result && !result.ok)
           .map((result) => result.error);
         if (failures.length) {
           logger.warn(`could not restore hotkeys after settings save failed: ${failures.join("; ")}`);
@@ -304,6 +308,7 @@ function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
         settings: responseSettings,
         hotkey: hotkeyResults.hotkey,
         pauseHotkey: hotkeyResults.pauseHotkey,
+        discardHotkey: hotkeyResults.discardHotkey,
       },
     };
   };

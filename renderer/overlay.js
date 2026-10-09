@@ -34,6 +34,9 @@ let generation = 0; // bumped on every start/teardown to invalidate stale awaits
 let currentSid = null; // session id from the main process
 let stopWhenReady = false; // stop arrived while getUserMedia was still pending
 let levels = new Array(24).fill(0);
+// The discard hotkey as the user reads it ("Ctrl+Alt+X"), from record:start;
+// empty when none is set. The ✕ key's tooltip names it.
+let discardHotkeyLabel = "";
 
 // Persistent audio engine. Opening the audio stack is the latency-critical path
 // of every dictation — whatever the user says before samples flow is lost — so
@@ -224,7 +227,9 @@ function setStatus(status, title, detail) {
     status === "done" ||
     status === "empty" ||
     status === "error";
-  cancelBtn.title = settled ? "Dismiss" : "Discard — nothing is typed";
+  cancelBtn.title = settled
+    ? "Dismiss"
+    : `Discard — nothing is typed${discardHotkeyLabel ? ` (${discardHotkeyLabel})` : ""}`;
   cancelBtn.setAttribute("aria-label", settled ? "Dismiss" : "Discard dictation");
   statusText.textContent = title;
   // The wave area steps back when a detail line (paste preview, error message,
@@ -611,7 +616,7 @@ function recordingCapSeconds(value) {
   return seconds >= 10 && seconds <= 3600 ? seconds : 600;
 }
 
-async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) {
+async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, discardHotkey }) {
   // A new session always supersedes whatever was running.
   teardown();
   const myGeneration = ++generation;
@@ -620,6 +625,8 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
     stream?.getTracks().forEach((track) => track.stop());
   };
   currentSid = sid;
+  // Read per take, so a binding saved in Settings shows on the next dictation.
+  discardHotkeyLabel = typeof discardHotkey === "string" ? discardHotkey : "";
   stopWhenReady = false;
   livePreview = live && live.enabled ? live : null;
   // Honest status: the mic is NOT live yet. "Listening…" appears only when
@@ -948,6 +955,9 @@ earheart.on("record:start", startRecording);
 earheart.on("record:stop", stopRecording);
 // Pause hotkey / `earheart --pause`: same action as the pause key.
 earheart.on("record:pause-toggle", togglePause);
+// Discard hotkey / `earheart --discard`: same action as the ✕ key, in every
+// phase (see cancelRecording).
+earheart.on("record:discard", cancelRecording);
 earheart.on("record:cancel", () => {
   teardown();
   clearTranscript();

@@ -325,8 +325,8 @@ Design constraints worth keeping:
   shipped CSS and governs the overlay, settings and wizard: one coral accent
   reserved for the voice, filled-white for the primary action, no drop
   shadows, and two hardcoded values that must stay in sync (`WAVE_COLOR` ↔
-  `--accent`, `INK_COLOR` ↔ `--ink`). Read it before changing any renderer
-  CSS.
+  `--accent`, `INK_COLOR` ↔ `--ink`, both tokens in `renderer/tokens.css`).
+  Read it before changing any renderer CSS.
 
 ## README screenshots
 

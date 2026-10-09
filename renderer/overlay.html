@@ -6,25 +6,11 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; style-src 'self'; script-src 'self'"
     />
+    <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="overlay.css" />
   </head>
   <body>
-    <!--
-      THESIS: A transcription bar that needs no manual — the live words ARE the
-      interface, and every control is a glyph the whole world already reads.
-      Refuses the hardware metaphor (tape, lamps, legends, eject) outright.
-      OWN-WORLD: Solid neutral near-black bar, hairline edges, white/gray text;
-      one coral accent (#fb4d5c, from the app icon's waveform-heart) that means
-      "Earheart is working with your voice" — the capture dot, the live
-      waveform, progress fills. Green/red exist only as tiny status dots.
-      Circular ghost keys; one filled white Done key.
-      STORY: A glance says: coral pulse + moving waveform + words appearing —
-      it hears me. Check finishes and types the text, X discards, pause holds.
-      FIRST VIEWPORT: One slim bar: status dot + word, live waveform, timer,
-      pause, Done (white), discard; the live transcript grows upward above.
-      FORM: Category canon (the clean minimal dictation bar), played straight —
-      standing exit taken by the user; craft bar: Wispr Flow / superwhisper.
-    -->
+    <!-- Design rationale and tokens: DESIGN.md. -->
     <!-- One solid bar: the live transcript fills the top and grows freely; the
          control row sits along the bottom. The whole card is the drag surface
          and carries the data-status state. -->

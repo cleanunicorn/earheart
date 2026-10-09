@@ -10,19 +10,10 @@
    overlay. */
 
 :root {
-  --ink: #18181b; /* the bar — solid, never translucent; one name across
-                     overlay.css, settings.css and INK_COLOR in windows.js */
-  --edge: rgba(255, 255, 255, 0.1); /* hairline card + panel edges */
-  --text: #f4f4f5; /* primary text */
+  /* Shared palette (--ink --edge --text --text-dim --wash --track --accent
+     --ok --err) lives in tokens.css; these are the overlay's own. */
   --text-mid: #d4d4d8; /* the status word */
-  --text-dim: #a1a1aa; /* secondary text, raw tail, idle icons (≥4.5:1 on --ink) */
   --text-faint: rgba(255, 255, 255, 0.28); /* disabled key glyphs */
-  --wash: rgba(255, 255, 255, 0.08); /* hover wash on ghost keys */
-  --track: rgba(255, 255, 255, 0.12); /* empty progress/download track fills */
-  --accent: #fb4d5c; /* the voice: capture dot, waveform, progress.
-                        Kept in sync with WAVE_COLOR in overlay.js. */
-  --ok: #34d399; /* status dot: delivered */
-  --err: #f87171; /* status dot + discard hover: failed / destructive */
   --idle: #71717a; /* status dot: idle / nothing heard */
 }
 

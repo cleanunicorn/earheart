@@ -321,7 +321,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#architecture) for the full architecture.
   `main/settings.js`.
 - **UI:** [DESIGN.md](DESIGN.md) governs the overlay, settings, and wizard. Two
   hardcoded values must stay in sync with the CSS: `WAVE_COLOR` ↔ `--accent`,
-  `INK_COLOR` ↔ `--ink`.
+  `INK_COLOR` ↔ `--ink`. Both tokens, like the rest of the shared palette,
+  live in `renderer/tokens.css`.
 - **Error handling:** degrade, don't drop — every failure path still delivers
   the user's text (see Golden rule 8).
 

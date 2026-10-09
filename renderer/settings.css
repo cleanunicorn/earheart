@@ -14,18 +14,10 @@
 :root {
   color-scheme: dark; /* native selects, spinners and dialogs render dark */
 
-  /* The bar's materials (shared with the overlay — see DESIGN.md). */
-  --ink: #18181b; /* the window itself — solid near-black */
-  --edge: rgba(255, 255, 255, 0.1); /* card and panel hairlines */
+  /* The bar's materials (--ink --edge --text --text-dim --wash --track
+     --accent --ok --err) live in tokens.css, shared with the overlay. */
   --seam: rgba(255, 255, 255, 0.08); /* dividers between regions */
-  --text: #f4f4f5; /* primary text */
-  --text-dim: #a1a1aa; /* secondary text, hints (≥4.5:1 on --ink) */
-  --wash: rgba(255, 255, 255, 0.08); /* hover fills */
   --wash-faint: rgba(255, 255, 255, 0.04); /* card fills, quiet hovers */
-  --track: rgba(255, 255, 255, 0.12); /* empty download track fills */
-  --accent: #fb4d5c; /* the voice — here only while a hotkey field captures */
-  --ok: #34d399; /* status text: success */
-  --err: #f87171; /* status text: fault; destructive hover */
 
   /* Settings-window derivatives. */
   --field: #101013; /* input fill — a step below the ink */
@@ -509,19 +501,11 @@ select {
   box-shadow: inset 0 0 0 1px var(--text);
 }
 
-/* The overlaid radio is invisible, so surface keyboard focus on the label. */
-.segmented label:has(input:focus-visible) {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
-}
-
 /* ---------- state badge (which engine choice means for your data) ----------
    Built-in vs external isn't just a technical fork — it decides whether
    audio/text ever leaves the machine, the product's #1 commitment. A quiet
    inline badge names that consequence in the moment it's chosen, instead of
-   leaving it to the segmented control's label alone. No red/green: this is
-   information, not a success/fault status, so it stays in the same
-   text-dim/wash register as everything else the app says about itself. */
+   leaving it to the segmented control's label alone. */
 /* The pill is swapped by hiding one state and showing the other, so the
    aria-live region has to be this wrapper — a container that never moves —
    rather than either pill. It also carries the spacing, so the gap below the
@@ -624,11 +608,6 @@ select {
   background: var(--text);
 }
 
-.option input:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
-}
-
 /* The three output-mode destinations read alike as prose ("paste", "paste
    and keep", "clipboard only"); a distinct pictogram per row (single box,
    doubled box, clipboard) lets the eye tell them apart before reading the
@@ -727,11 +706,6 @@ input.switch:checked::after {
   background: var(--ink);
 }
 
-input.switch:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
-}
-
 /* ---------- inline choice (checkbox/radio) — kept for the wizard ---------- */
 
 .choice {
@@ -797,11 +771,6 @@ input.switch:focus-visible {
   transform: none;
 }
 
-.choice input:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
-}
-
 /* ---------- text bits ---------- */
 
 .hint {
@@ -863,7 +832,13 @@ button:active:not(:disabled) {
   transform: scale(0.97);
 }
 
-button:focus-visible {
+/* The one keyboard focus ring for buttons and form controls. The segmented
+   control's radio is overlaid and invisible, so its ring goes on the label. */
+button:focus-visible,
+.segmented label:has(input:focus-visible),
+.option input:focus-visible,
+input.switch:focus-visible,
+.choice input:focus-visible {
   outline: 2px solid var(--text);
   outline-offset: 2px;
 }

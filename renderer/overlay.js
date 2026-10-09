@@ -324,13 +324,47 @@ function capturedMs(rec) {
   return (rec.pausedAt ?? Date.now()) - rec.startedAt - rec.pausedMs;
 }
 
+function clockText(seconds) {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+// Whole seconds left before the max-duration cap stops the take, once inside
+// the last minute; null before that. Rounded up, so the countdown reads 0:01
+// (not 0:00) for the final second the cap still lets through.
+function capCountdown(capturedMs, capSeconds, warnMs = 60000) {
+  const remainingMs = capSeconds * 1000 - capturedMs;
+  if (remainingMs > warnMs) return null;
+  return Math.max(0, Math.ceil(remainingMs / 1000));
+}
+
+// The status title while capturing: in the last minute before the cap it
+// says the take is about to stop, so the user can wrap up their thought.
+function listeningTitle(rec) {
+  return rec.capWarned ? "Stopping soon…" : "Listening…";
+}
+
 function updateTimer() {
   // startedAt is set on the FIRST audio samples, not at setup: the timer
   // counts captured audio, so it starts the moment "Listening…" appears —
   // and holds while the take is paused.
   if (!recording || !recording.startedAt) return;
-  const seconds = Math.floor(capturedMs(recording) / 1000);
-  timerEl.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  const captured = capturedMs(recording);
+  const left = capCountdown(captured, recording.maxSeconds);
+  if (left === null) {
+    timerEl.textContent = clockText(Math.floor(captured / 1000));
+    return;
+  }
+  // The last minute counts down to the cap instead of up, in the accent
+  // colour. The status title changes once, so assistive tech (the status is
+  // an aria-live region) announces the warning without a per-second chatter.
+  timerEl.textContent = `−${clockText(left)}`;
+  if (!recording.capWarned) {
+    recording.capWarned = true;
+    card.toggleAttribute("data-cap-warning", true);
+    if (!recording.pausedAt) {
+      setStatus("recording", listeningTitle(recording), recording.microphoneNotice || "");
+    }
+  }
 }
 
 function encodeWav(chunks) {
@@ -561,20 +595,20 @@ function micLive() {
     () => stopRecording(),
     recording.maxSeconds * 1000
   );
-  setStatus("recording", "Listening…", recording.microphoneNotice || "");
+  setStatus("recording", listeningTitle(recording), recording.microphoneNotice || "");
 }
 
 // The max-recording cap arrives over IPC and arms setTimeout(stopRecording,
 // cap * 1000) at the first samples and again on resume. Settings and main
 // already keep it to the field's 10–3600 s; anything else reaching here — a
-// negative cap fires at once, a huge one never — takes the 300 s default.
-// Unlike main's clamp it rejects rather than clamps (9.4 → 300, where main
+// negative cap fires at once, a huge one never — takes the 600 s default.
+// Unlike main's clamp it rejects rather than clamps (9.4 → 600, where main
 // stores 10): only main's already-clamped integers arrive here in practice,
 // so a value outside the range means something upstream broke.
 function recordingCapSeconds(value) {
-  if (!Number.isFinite(value)) return 300;
+  if (!Number.isFinite(value)) return 600;
   const seconds = Math.round(value);
-  return seconds >= 10 && seconds <= 3600 ? seconds : 300;
+  return seconds >= 10 && seconds <= 3600 ? seconds : 600;
 }
 
 async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) {
@@ -601,6 +635,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
   wavePushAt = 0;
   drawMeter(); // repaint blank; the rAF loop starts once mic is live
   timerEl.textContent = "0:00";
+  card.removeAttribute("data-cap-warning");
   let microphoneNotice = "";
 
   let streamPromise = null;
@@ -731,6 +766,8 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live }) 
       // timer share one clock.
       maxSeconds: recordingCapSeconds(maxSeconds),
       maxTimerId: null,
+      // Set by updateTimer() once the last minute before the cap begins.
+      capWarned: false,
       partialTimerId: livePreview
         ? setInterval(sendPartial, livePreview.intervalMs || 1200)
         : null,
@@ -790,6 +827,12 @@ function teardown({ collectTail = false } = {}) {
   clearInterval(rec.timerId);
   if (rec.maxTimerId) clearTimeout(rec.maxTimerId);
   if (rec.partialTimerId) clearInterval(rec.partialTimerId);
+  // A take stopped inside the last minute leaves the timer counting down;
+  // put back the take's length, which is what the dimmed timer shows after.
+  if (rec.capWarned) {
+    card.removeAttribute("data-cap-warning");
+    timerEl.textContent = clockText(Math.floor(capturedMs(rec) / 1000));
+  }
   // Tear down the session's graph but keep the shared context: disconnect the
   // nodes, retire the worklet processor, release the microphone.
   if (collectTail) {
@@ -897,7 +940,7 @@ function togglePause() {
     // Re-anchor the waveform's write clock: the wave didn't move while paused,
     // matching the capture — no gap is written for the gap.
     wavePushAt = 0;
-    setStatus("recording", "Listening…", recording.microphoneNotice || "");
+    setStatus("recording", listeningTitle(recording), recording.microphoneNotice || "");
   }
 }
 

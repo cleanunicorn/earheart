@@ -237,7 +237,8 @@ each barred from the overlay and the wizard.
 - **Coral Voice** (`coral-voice`): the app's one expressive color, from the
   icon's waveform-heart. On the overlay it appears only where the user's voice
   is live or being processed: the capture dot (filled) and warming/paused ring
-  (hollow), the canvas waveform, and the dictation progress fill. The value is
+  (hollow), the canvas waveform, the dictation progress fill, and the timer's
+  last-minute countdown before the cap stops a live take. The value is
   duplicated as `WAVE_COLOR` in `overlay.js` and must be kept in sync with
   `--accent` in `overlay.css`. Off the overlay it appears only under The
   Capture Exception below.
@@ -383,7 +384,9 @@ interface; window chrome never exceeds 16px.
 - **Mono values** (400, 13px mono, 0.02em): hotkey accelerators, textareas
   (prompt, dictionary). The version readout is mono with tabular-nums.
 - **Timer** (400, 12px mono, tabular-nums, 0.03em): captured-audio time; Dim
-  Text at rest, Primary Text while recording.
+  Text at rest, Primary Text while recording. In the last minute before the
+  max dictation length it counts down (`−0:42`) in Coral Voice
+  (5.33:1 on Bar Ink), and the status reads "Stopping soon…".
 - **History meta** (400, 11px mono, tabular-nums, 0.02em): timestamp rows
   under history entries.
 

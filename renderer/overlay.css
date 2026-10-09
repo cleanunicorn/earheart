@@ -504,6 +504,12 @@ body {
   color: var(--text);
 }
 
+/* The last minute before the max dictation length counts down in the
+   accent — the take is about to stop. */
+#card[data-cap-warning] #timer {
+  color: var(--accent);
+}
+
 /* ---------- keys ---------- */
 
 button {

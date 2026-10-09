@@ -20,6 +20,7 @@ const {
   cleanMaxTokens,
   cleanBudgetMessage,
 } = require("../main/util/clean-budget");
+const { DEFAULTS } = require("../main/settings");
 
 test("clean budget: the turn costs the prompt, the output and the slack", () => {
   // The prompt already contains the transcript; the transcript is counted a
@@ -84,19 +85,24 @@ test("clean budget: the refusal message names both numbers", () => {
   assert.match(message, /too long/i);
 });
 
-test("clean budget: 4096 covers the default recording cap", () => {
-  // 300s of speech at ~150 wpm is ~750 words; Gemma runs ~1.35 tokens a word,
-  // and the rules prompt is ~490 tokens. If this ever stops fitting, the
-  // default context has to move with it — the raw fallback is correct but the
-  // user loses cleanup on an ordinary dictation.
-  const transcriptTokens = Math.round(750 * 1.35);
-  const needed = cleanContextNeed(490 + transcriptTokens, transcriptTokens);
-  assert.ok(needed <= 4096, `default-cap dictation needs ${needed} tokens`);
+test("clean budget: the default recording cap's context fits a fast speaker", () => {
+  // 600 s is the shipped cap. Sized at ~150 wpm, but a fast dictation runs
+  // ~200 wpm: 2,000 words at ~1.35 tokens a word, with the ~700-token rules
+  // prompt (style directive and dictionary included). The prompt, the
+  // transcript and an equally long cleaned answer must all fit, or the user
+  // loses cleanup on an ordinary full-length dictation.
+  const size = cleanContextFor(DEFAULTS.audio.maxRecordingSeconds);
+  const transcriptTokens = Math.ceil(2000 * 1.35);
+  const needed = cleanContextNeed(700 + transcriptTokens, transcriptTokens);
+  assert.ok(needed <= size, `fast default-cap dictation needs ${needed}, context is ${size}`);
+  // ...and the generation cap leaves room for the whole cleaned answer.
+  assert.ok(cleanMaxTokens(transcriptTokens) >= transcriptTokens);
 });
 
-test("clean context: a default-length dictation keeps the smallest context", () => {
-  // 300s is the shipped cap. Nobody who hasn't changed it should pay for a
-  // bigger KV cache than a 5-minute dictation needs.
+test("clean context: a default-length dictation pays for no more than it needs", () => {
+  // A 10-minute cap needs 8192; nobody who hasn't changed it should pay for
+  // a bigger KV cache than that. Short caps keep the smallest context.
+  assert.strictEqual(cleanContextFor(DEFAULTS.audio.maxRecordingSeconds), 8192);
   assert.strictEqual(cleanContextFor(300), CLEAN_CONTEXT_MIN);
   assert.strictEqual(cleanContextFor(10), CLEAN_CONTEXT_MIN);
   assert.strictEqual(cleanContextFor(0), CLEAN_CONTEXT_MIN);

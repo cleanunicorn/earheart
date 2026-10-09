@@ -367,6 +367,15 @@ test("migrateLegacy leaves fresh and already-migrated configs untouched", () => 
   assert.deepStrictEqual(migrateLegacy(modern), modern);
 });
 
+test("migrateLegacy lifts the old 60 s remote cleanup timeout with the cap", () => {
+  // 60 s was the default (never in the settings UI) while dictations capped
+  // at 300 s; a 600 s dictation's cleanup needs the new 120 s.
+  assert.strictEqual(migrateLegacy({ cleanup: { timeoutMs: 60000 } }).cleanup.timeoutMs, 120000);
+  assert.strictEqual(DEFAULTS.cleanup.timeoutMs, 120000);
+  // A hand-edited value is the user's own and is kept.
+  assert.strictEqual(migrateLegacy({ cleanup: { timeoutMs: 300000 } }).cleanup.timeoutMs, 300000);
+});
+
 test("the default cleanup prompt carries no source hard wrapping", () => {
   // It is shown verbatim in a soft-wrapping textarea, so every line must be a
   // whole rule: no continuation lines, no leading indentation.

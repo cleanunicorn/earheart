@@ -15,7 +15,8 @@ work* here.
 
 ## Prerequisites
 
-- **Node.js ≥ 22 + npm** — `.nvmrc` is provided, so `nvm use` picks it up.
+- **Node.js ≥ 22.12 + npm** — the locked Electron toolchain needs 22.12.
+  `.nvmrc` is provided, so `nvm use` picks up the newest Node 22.
 - **The `gh` CLI** — for opening PRs.
 - **A display for the smoke checks** — on Linux, the `make` smoke targets
   already wrap Electron in `xvfb-run -a` (install Xvfb); on macOS and Windows
@@ -30,20 +31,22 @@ work* here.
 
 The Makefile wraps most tasks; `make help` lists them all.
 
-- **Install / bootstrap:** `make install`
+- **Install / bootstrap:** `make install` (`npm ci`, exactly as locked, then
+  fetches the Electron binary, as CI does). To add or bump a dependency, use
+  `make deps-update` (`npm install`) and commit the updated
+  `package-lock.json`.
 - **Run locally:** `make run`
 - **Lint / format / type-check:** none — plain JavaScript, no linter configured.
 - **Test (all):** `make test` (`node --test` with a 30 s per-test timeout, no
   framework)
 - **Test (single file):** `node --test --test-timeout=30000 test/pipeline.test.js`
-- **Smoke checks (Linux):** `make smoke`, `make overlay-smoke`,
-  `make settings-smoke` (each wraps `xvfb-run -a`), and
-  `xvfb-run -a npx electron scripts/engine-smoke.js --no-sandbox` (no make
-  target)
+- **Smoke checks (Linux):** `make smoke`, `make engine-smoke`,
+  `make overlay-smoke`, `make settings-smoke` (each wraps `xvfb-run -a`)
 - **Smoke checks (macOS / Windows):** the same commands without `xvfb-run`:
   `npx electron . --smoke-test --no-sandbox`, then
   `npx electron scripts/<engine|overlay|settings>-smoke.js --no-sandbox`
-- **STT server tests:** `cd stt-server && uv run --locked --extra test python -m pytest`
+- **STT server tests:** `make test-stt` (runs
+  `uv run --locked --extra test python -m pytest` in `stt-server/`)
 - **Cleanup model benchmark** (optional; needs a downloaded GGUF, not part of
   the gate): `node scripts/bench-cleanup.mjs --out=<dir outside the repo>
   <model.gguf>`; `--probe <owner/repo> <file.gguf>` checks a candidate on
@@ -190,7 +193,7 @@ platform:
 # Linux
 make test
 make smoke
-xvfb-run -a npx electron scripts/engine-smoke.js --no-sandbox
+make engine-smoke
 make overlay-smoke
 make settings-smoke
 ```
@@ -198,7 +201,7 @@ make settings-smoke
 The `make` smoke targets already call `xvfb-run -a`, so don't wrap them again.
 On macOS and Windows, use the plain `npx electron …` commands from
 [Commands](#commands) (as [ci.yml](.github/workflows/ci.yml) does). If you touched
-`stt-server/`, also run its pytest suite (see [Commands](#commands)).
+`stt-server/`, also run `make test-stt`.
 
 ### 6. Push and open a PR
 
@@ -335,7 +338,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#architecture) for the full architecture.
   allowlisted and handled, every listener is fed and every push is heard, no
   dead entries), including the overlay's data-driven `channel:` action
   tables; `overlay-contract` and `settings-contract` check renderer scripts
-  against their HTML/CSS.
+  against their HTML/CSS; `tooling-contract` checks that each install and
+  check target in the Makefile runs the same commands as its `ci.yml` steps,
+  and that `engines.node` is a floor every locked package accepts.
 - **What to cover:** happy path, error paths, and edge cases for new code.
 - **Fixtures / stubs:** no network or models needed; the STT server suite uses
   synthetic WAVs and fake recognizers.

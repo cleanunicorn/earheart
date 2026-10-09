@@ -5,7 +5,7 @@
   "main": "main/main.js",
   "license": "MIT",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12"
   },
   "author": {
     "name": "Earheart contributors",

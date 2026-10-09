@@ -38,7 +38,6 @@ function makeCfg(overrides = {}) {
  * Every observable side effect lands, in order, in `events`.
  */
 async function loadMain(
-  t,
   {
     argv = [],
     gotLock = true,
@@ -204,14 +203,14 @@ const before = (events, a, b) => {
   assert.ok(ia < ib, `${a} should happen before ${b}: ${events.join(", ")}`);
 };
 
-test("a second instance that loses the lock exits without starting the app", async (t) => {
-  const { events, appHandlers } = await loadMain(t, { gotLock: false });
+test("a second instance that loses the lock exits without starting the app", async () => {
+  const { events, appHandlers } = await loadMain({ gotLock: false });
   assert.deepStrictEqual(events, ["requestSingleInstanceLock", "app.exit:0"]);
   assert.deepStrictEqual(Object.keys(appHandlers), [], "no lifecycle handlers are wired");
 });
 
-test("the first instance forwards a second instance's --toggle and --pause", async (t) => {
-  const { events, appHandlers } = await loadMain(t);
+test("the first instance forwards a second instance's --toggle and --pause", async () => {
+  const { events, appHandlers } = await loadMain();
   const secondInstance = appHandlers["second-instance"];
   assert.strictEqual(typeof secondInstance, "function");
 
@@ -223,8 +222,8 @@ test("the first instance forwards a second instance's --toggle and --pause", asy
   assert.deepStrictEqual(events, ["pipeline.toggle", "pipeline.pauseToggle", "openSettings"]);
 });
 
-test("a healthy launch registers both hotkeys and announces ready", async (t) => {
-  const { events, shortcuts, ipcInit, permissionHandler } = await loadMain(t);
+test("a healthy launch registers both hotkeys and announces ready", async () => {
+  const { events, shortcuts, ipcInit, permissionHandler } = await loadMain();
 
   assert.strictEqual(events[1], "logger.init", "logging starts before anything can fail");
   before(events, "pipeline.init", "ipc.init");
@@ -259,8 +258,8 @@ test("a healthy launch registers both hotkeys and announces ready", async (t) =>
   assert.strictEqual(decide("geolocation"), false);
 });
 
-test("a record hotkey that fails to register opens Settings instead of a ready notice", async (t) => {
-  const { events, notices } = await loadMain(t, { occupied: [RECORD] });
+test("a record hotkey that fails to register opens Settings instead of a ready notice", async () => {
+  const { events, notices } = await loadMain({ occupied: [RECORD] });
   assert.ok(events.includes("openSettings"), events.join(", "));
   assert.deepStrictEqual(notices, [], "no 'press X to dictate' notice is shown");
   assert.ok(
@@ -269,21 +268,21 @@ test("a record hotkey that fails to register opens Settings instead of a ready n
   );
 });
 
-test("a hidden launch with a failed record hotkey shows a notice instead of Settings", async (t) => {
-  const { events, notices } = await loadMain(t, { argv: ["--hidden"], occupied: [RECORD] });
+test("a hidden launch with a failed record hotkey shows a notice instead of Settings", async () => {
+  const { events, notices } = await loadMain({ argv: ["--hidden"], occupied: [RECORD] });
   assert.ok(!events.includes("openSettings"), "autostart does not pop a window");
   assert.strictEqual(notices.length, 1);
   assert.strictEqual(notices[0].title, "Earheart: hotkey not working");
 });
 
-test("a first run opens the setup wizard", async (t) => {
-  const { events } = await loadMain(t, { firstRun: true });
+test("a first run opens the setup wizard", async () => {
+  const { events } = await loadMain({ firstRun: true });
   assert.ok(events.includes("openWizard"));
   assert.ok(!events.includes("openSettings"));
 });
 
-test("hotkeys still register when updates.init throws", async (t) => {
-  const { events, shortcuts } = await loadMain(t, {
+test("hotkeys still register when updates.init throws", async () => {
+  const { events, shortcuts } = await loadMain({
     updatesInit: () => {
       throw new Error("EACCES: permission denied");
     },
@@ -301,7 +300,7 @@ test("a smoke-test launch skips updates and notices, then quits", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const logged = [];
   t.mock.method(console, "log", (...args) => logged.push(args.join(" ")));
-  const { events, shortcuts } = await loadMain(t, { argv: ["--smoke-test"] });
+  const { events, shortcuts } = await loadMain({ argv: ["--smoke-test"] });
 
   assert.ok(!events.includes("updates.init"), "no update checks in CI");
   assert.ok(shortcuts.has(RECORD), "hotkeys are still exercised");
@@ -315,8 +314,8 @@ test("a smoke-test launch skips updates and notices, then quits", async (t) => {
   assert.ok(logged.includes("[earheart] smoke test OK"), logged.join("\n"));
 });
 
-test("quitting destroys the overlay, then releases hotkeys, engines and updates", async (t) => {
-  const { events, appHandlers } = await loadMain(t);
+test("quitting destroys the overlay, then releases hotkeys, engines and updates", async () => {
+  const { events, appHandlers } = await loadMain();
 
   // A tray app stays alive with every window closed.
   events.length = 0;

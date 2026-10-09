@@ -586,6 +586,36 @@ test("download verifies sha256 and rejects a mismatch", async () => {
   }
 });
 
+test("a custom model without a sha256 is rejected when it arrives one byte short", async () => {
+  // User-added models carry no checksum, so the exact-size check is their only
+  // integrity guard: a truncated file must never be marked installed.
+  const full = Buffer.from("custom model weights ".repeat(20));
+  const short = full.subarray(0, full.length - 1);
+  const { server, base } = await serveFiles({ "/m.gguf": short });
+  try {
+    await withTmp(async (dir) => {
+      const model = {
+        kind: "cleanup", id: "custom-short",
+        files: [{ name: "m.gguf", bytes: full.length, url: `${base}/m.gguf` }],
+      };
+      await assert.rejects(() => manager.download(dir, model), /Size mismatch for m\.gguf/);
+
+      const dest = manager.filePath(dir, model, model.files[0]);
+      assert.strictEqual(fs.existsSync(`${dest}.part`), false, ".part is discarded");
+      assert.strictEqual(fs.existsSync(`${dest}.part.json`), false, ".part.json is discarded");
+      assert.strictEqual(fs.existsSync(dest), false, "nothing is promoted to the final name");
+      assert.strictEqual(
+        fs.existsSync(path.join(manager.modelDir(dir, model), ".complete")),
+        false,
+        "no completion marker is written"
+      );
+      assert.strictEqual(manager.isInstalled(dir, model), false);
+    });
+  } finally {
+    server.close();
+  }
+});
+
 test("download skips files already on disk and remove frees them", async () => {
   const a = Buffer.from("already here");
   let hits = 0;

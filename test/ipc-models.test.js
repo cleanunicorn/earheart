@@ -1,4 +1,5 @@
-// Behaviour of the model-management IPC handlers in main/ipc.js.
+// Behaviour of the IPC handlers in main/ipc.js: model management first, then
+// the window, log, permission, updater, history and Test handlers.
 //
 // main/ipc.js requires Electron and most of the main process at load, so this
 // uses the same require.cache stubbing as pipeline.test.js: the module is given
@@ -8,6 +9,7 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert");
+const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const Module = require("node:module");
@@ -21,13 +23,28 @@ const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(ipcPa
 // Load main/ipc.js against fakes, run init(), and return its handlers keyed by
 // channel. `cfg` is the settings object the handlers read first; every save
 // lands in `saved` and becomes what the next read returns. `engines` overrides
-// members of the engines facade, `hf` members of services/hf-models, and every
-// window broadcast lands in `broadcasts`.
-function loadIpcHandlers(cfg, { engines = {}, hf = {}, route = {} } = {}) {
+// members of the engines facade, `hf` members of services/hf-models; `shell`,
+// `windows`, `deliver`, `history`, `autostart`, `updates` and `logger` override
+// those modules' members, and `init` the options init() receives. Every window
+// broadcast lands in `broadcasts`, and every other windows call in `windowCalls`.
+function loadIpcHandlers(cfg, {
+  engines = {},
+  hf = {},
+  route = {},
+  shell = {},
+  windows = {},
+  deliver = {},
+  history = {},
+  autostart = {},
+  updates = {},
+  logger = {},
+  init = {},
+} = {}) {
   const handlers = {};
   const saved = [];
   const broadcasts = [];
   const warnings = [];
+  const windowCalls = [];
   let stored = cfg;
   const settings = {
     DEFAULTS: {},
@@ -39,11 +56,12 @@ function loadIpcHandlers(cfg, { engines = {}, hf = {}, route = {} } = {}) {
       return next;
     },
   };
+  const recordWindowCall = (name) => (...args) => windowCalls.push([name, ...args]);
   const stubs = {
     [resolveFrom("electron")]: {
       app: { getPath: () => os.tmpdir(), getVersion: () => "0.0.0" },
       ipcMain: { handle: (channel, fn) => { handlers[channel] = fn; }, on() {} },
-      shell: {},
+      shell,
     },
     [resolveFrom("./settings")]: settings,
     [resolveFrom("./engines")]: {
@@ -58,14 +76,24 @@ function loadIpcHandlers(cfg, { engines = {}, hf = {}, route = {} } = {}) {
     [resolveFrom("./services/hf-models")]: { ...hfModels, ...hf },
     [resolveFrom("./windows")]: {
       broadcast: (channel, payload) => broadcasts.push({ channel, payload }),
+      openSettings: recordWindowCall("openSettings"),
+      closeSettings: recordWindowCall("closeSettings"),
+      openWizard: recordWindowCall("openWizard"),
+      closeWizard: recordWindowCall("closeWizard"),
+      ...windows,
     },
     [resolveFrom("./services/route")]: route,
-    [resolveFrom("./output/deliver")]: {},
-    [resolveFrom("./history")]: {},
-    [resolveFrom("./autostart")]: {},
-    [resolveFrom("./updates")]: {},
+    [resolveFrom("./output/deliver")]: deliver,
+    [resolveFrom("./history")]: history,
+    [resolveFrom("./autostart")]: autostart,
+    [resolveFrom("./updates")]: updates,
     [resolveFrom("./tray")]: { refresh() {} },
-    [resolveFrom("./util/logger")]: { info() {}, warn: (msg) => warnings.push(msg), error() {} },
+    [resolveFrom("./util/logger")]: {
+      info() {},
+      warn: (msg) => warnings.push(msg),
+      error() {},
+      ...logger,
+    },
   };
 
   const previous = {};
@@ -79,7 +107,7 @@ function loadIpcHandlers(cfg, { engines = {}, hf = {}, route = {} } = {}) {
   }
   delete require.cache[ipcPath];
   try {
-    require(ipcPath).init({ applyHotkeys: () => ({}), onSettingsChanged() {} });
+    require(ipcPath).init({ applyHotkeys: () => ({}), onSettingsChanged() {}, ...init });
   } finally {
     delete require.cache[ipcPath];
     for (const p of Object.keys(stubs)) {
@@ -87,7 +115,7 @@ function loadIpcHandlers(cfg, { engines = {}, hf = {}, route = {} } = {}) {
       else delete require.cache[p];
     }
   }
-  return { handlers, saved, broadcasts, warnings };
+  return { handlers, saved, broadcasts, warnings, windowCalls };
 }
 
 test("models:status retains removal identity without summing download sizes", () => {
@@ -704,4 +732,380 @@ test("the Settings Test results name an unreachable host in plain words", async 
     const result = await handlers[channel]({}, cfg);
     assert.deepStrictEqual(result, { ok: false, error: `Couldn't reach ${host}` }, channel);
   }
+});
+
+test("the Test and lookup handlers return the success shape the Settings UI reads", async () => {
+  const seen = [];
+  const { handlers } = loadIpcHandlers({}, {
+    route: {
+      transcribe: async (wav, cfg) => seen.push(["transcribe", Buffer.isBuffer(wav) || wav instanceof Uint8Array, cfg]),
+      clean: async (text, cfg) => {
+        seen.push(["clean", text, cfg]);
+        return "x".repeat(300);
+      },
+    },
+    hf: { listGgufQuants: async () => ({ repo: "o/r", recommended: "Q4_K_M", variants: [] }) },
+  });
+
+  assert.deepStrictEqual(await handlers["stt:test"]({}, { engine: "builtin" }), { ok: true });
+  // The sample is clipped so a runaway model can't flood the Settings card.
+  assert.deepStrictEqual(await handlers["cleanup:test"]({}, { engine: "builtin" }), {
+    ok: true,
+    sample: "x".repeat(200),
+  });
+  assert.deepStrictEqual(await handlers["models:hf-variants"]({}, { kind: "cleanup", url: "o/r" }), {
+    ok: true,
+    repo: "o/r",
+    recommended: "Q4_K_M",
+    variants: [],
+  });
+  assert.deepStrictEqual(seen, [
+    ["transcribe", true, { engine: "builtin" }],
+    ["clean", "um so this is uh a test of the cleanup service", { engine: "builtin" }],
+  ]);
+  await withReply(200, JSON.stringify({ data: [{ id: "b" }, { id: "a" }, { id: "a" }] }), async (baseUrl) => {
+    assert.deepStrictEqual(await handlers["models:list-remote"]({}, { baseUrl }), { ok: true, models: ["a", "b"] });
+  });
+});
+
+test("every Test and lookup handler turns a throw into { ok: false, error }", async () => {
+  const boom = () => {
+    throw new Error("boom");
+  };
+  const { handlers } = loadIpcHandlers({}, {
+    route: { transcribe: async () => boom(), clean: boom },
+    hf: { listGgufQuants: async () => boom() },
+    shell: { openExternal: async () => boom() },
+  });
+
+  for (const [channel, payload] of [
+    ["stt:test", {}],
+    ["cleanup:test", {}],
+    ["models:hf-variants", { kind: "cleanup", url: "o/r" }],
+    ["models:browse-hf", { kind: "cleanup" }],
+  ]) {
+    assert.deepStrictEqual(await handlers[channel]({}, payload), { ok: false, error: "boom" }, channel);
+  }
+  // A kind the renderer shouldn't send is refused before anything is fetched.
+  assert.deepStrictEqual(await handlers["models:hf-variants"]({}, { kind: "tts", url: "o/r" }), {
+    ok: false,
+    error: "Unknown model kind: tts",
+  });
+  // A non-http base URL never reaches fetch.
+  const remote = await handlers["models:list-remote"]({}, { baseUrl: "file:///etc" });
+  assert.strictEqual(remote.ok, false);
+  assert.strictEqual(typeof remote.error, "string");
+});
+
+test("models:browse-hf opens the hub search for the kind, never a renderer URL", async () => {
+  const opened = [];
+  const { handlers } = loadIpcHandlers({}, { shell: { openExternal: async (url) => opened.push(url) } });
+
+  assert.deepStrictEqual(await handlers["models:browse-hf"]({}, { kind: "stt", url: "https://evil.example" }), { ok: true });
+  assert.deepStrictEqual(await handlers["models:browse-hf"]({}, { kind: "nope" }), {
+    ok: false,
+    error: "Unknown model kind: nope",
+  });
+  assert.deepStrictEqual(opened, [hfModels.searchUrl("stt")]);
+});
+
+/* ---------------- model downloads ---------------- */
+
+test("a second download of the same model is refused and leaves the first running", async (t) => {
+  t.after(() => registry.setCustomModels([]));
+  const events = [];
+  const fake = abortableDownload(events);
+  const { handlers, broadcasts } = loadIpcHandlers(configWith("gemma-3-1b"), {
+    engines: { download: fake.download },
+  });
+  const key = { kind: "cleanup", modelId: "gemma-3-1b" };
+  const first = handlers["models:download"]({}, key);
+  await fake.started;
+
+  const second = await handlers["models:download"]({}, key);
+
+  // Settings matches this exact string to keep its row on the first transfer.
+  assert.deepStrictEqual(second, { ok: false, error: "Already downloading" });
+  assert.deepStrictEqual(events, ["download:cleanup:gemma-3-1b"], "only one transfer starts");
+  assert.deepStrictEqual(broadcasts.filter((b) => b.channel === "models:done"), [],
+    "the refused request reports nothing; the running transfer will");
+
+  assert.deepStrictEqual(await handlers["models:cancel"]({}, key), { ok: true });
+  fake.finishCleanup();
+  const result = await within(first, 1000, "download");
+  assert.deepStrictEqual(result, { ok: false, cancelled: true, error: "aborted" });
+  assert.deepStrictEqual(
+    broadcasts.filter((b) => b.channel === "models:done").map((b) => b.payload),
+    [{ kind: "cleanup", modelId: "gemma-3-1b", ok: false, cancelled: true, error: "aborted" }]
+  );
+});
+
+test("a finished download relays progress to every window and reports done", async () => {
+  const { handlers, broadcasts } = loadIpcHandlers({}, {
+    engines: {
+      download: async (kind, id, { onProgress }) => {
+        onProgress({ received: 5, total: 10 });
+      },
+    },
+  });
+
+  const result = await handlers["models:download"]({}, { kind: "stt", modelId: "parakeet-tdt-0.6b-v3" });
+
+  assert.deepStrictEqual(result, { ok: true });
+  assert.deepStrictEqual(broadcasts, [
+    { channel: "models:progress", payload: { kind: "stt", modelId: "parakeet-tdt-0.6b-v3", received: 5, total: 10 } },
+    { channel: "models:done", payload: { kind: "stt", modelId: "parakeet-tdt-0.6b-v3", ok: true } },
+  ]);
+});
+
+test("a failed download is reported as an error, not a cancellation, and can be retried", async () => {
+  let fail = true;
+  const { handlers, broadcasts } = loadIpcHandlers({}, {
+    engines: {
+      download: async () => {
+        if (fail) throw new Error("HTTP 503");
+      },
+    },
+  });
+  const key = { kind: "stt", modelId: "parakeet-tdt-0.6b-v3" };
+
+  assert.deepStrictEqual(await handlers["models:download"]({}, key), { ok: false, cancelled: false, error: "HTTP 503" });
+  fail = false;
+  // The failed transfer left no entry behind, so a retry isn't "Already downloading".
+  assert.deepStrictEqual(await handlers["models:download"]({}, key), { ok: true });
+  assert.deepStrictEqual(broadcasts.map((b) => b.payload.ok), [false, true]);
+});
+
+test("downloading an installed model reports done without a transfer", async () => {
+  const { handlers, broadcasts } = loadIpcHandlers({}, {
+    engines: {
+      isInstalled: () => true,
+      download: async () => {
+        throw new Error("must not download");
+      },
+    },
+  });
+
+  const result = await handlers["models:download"]({}, { kind: "stt", modelId: "parakeet-tdt-0.6b-v3" });
+
+  assert.deepStrictEqual(result, { ok: true });
+  assert.deepStrictEqual(broadcasts, [
+    { channel: "models:done", payload: { kind: "stt", modelId: "parakeet-tdt-0.6b-v3", ok: true } },
+  ]);
+});
+
+test("cancelling a model with no download in flight is a no-op", async () => {
+  const { handlers } = loadIpcHandlers({});
+  assert.deepStrictEqual(await handlers["models:cancel"]({}, { kind: "stt", modelId: "x" }), { ok: true });
+});
+
+// Like the real engines.isInstalled: an id the registry lacks throws.
+function registryIsInstalled(kind, modelId) {
+  if (!registry.getModel(kind, modelId)) throw new Error(`Unknown ${kind} model: ${modelId}`);
+  return false;
+}
+
+test("a download of a model the registry doesn't know settles with an error", async () => {
+  const { handlers, broadcasts } = loadIpcHandlers({}, { engines: { isInstalled: registryIsInstalled } });
+
+  const result = await handlers["models:download"]({}, { kind: "cleanup", modelId: "gone" });
+
+  assert.deepStrictEqual(result, { ok: false, error: "Unknown cleanup model: gone" });
+  // The row that showed "Downloading…" settles on models:done.
+  assert.deepStrictEqual(broadcasts.map((b) => b.channel), ["models:done"]);
+});
+
+/* ---------------- payloads a renderer may omit ---------------- */
+
+test("model handlers answer a missing payload instead of throwing", async () => {
+  const { handlers, saved } = loadIpcHandlers(configWith("gemma-3-1b"), {
+    engines: { isInstalled: registryIsInstalled },
+    route: {
+      transcribe: async (wav, cfg) => {
+        if (!cfg) throw new Error("no config");
+      },
+      clean: async (text, cfg) => {
+        if (!cfg) throw new Error("no config");
+        return text;
+      },
+    },
+  });
+
+  for (const channel of [
+    "models:download",
+    "models:cancel",
+    "models:remove",
+    "models:remove-custom",
+    "models:add-custom",
+    "models:hf-variants",
+    "models:browse-hf",
+    "models:list-remote",
+    "stt:test",
+    "cleanup:test",
+  ]) {
+    const result = await within(Promise.resolve(handlers[channel]({}, undefined)), 1000, channel);
+    assert.strictEqual(typeof result.ok, "boolean", `${channel}: ${JSON.stringify(result)}`);
+    if (!result.ok) assert.strictEqual(typeof result.error, "string", channel);
+  }
+  // models:cancel has nothing to cancel; nothing else may have written settings.
+  assert.deepStrictEqual(saved.map((s) => s.customModels.length), [1], "only remove-custom saves, a no-op filter");
+});
+
+/* ---------------- windows, logs, permissions, history, updates ---------------- */
+
+test("settings:close, wizard:open and wizard:skip drive the windows", async () => {
+  const cfg = { hotkey: "F9" };
+  const { handlers, saved, windowCalls } = loadIpcHandlers(cfg);
+
+  await handlers["settings:close"]();
+  await handlers["wizard:open"]();
+  const skipped = await handlers["wizard:skip"]();
+
+  // Skipping persists the current settings so the wizard runs only once, and
+  // opens Settings without the post-wizard review banner.
+  assert.deepStrictEqual(saved, [cfg]);
+  assert.deepStrictEqual(skipped, { settings: cfg });
+  assert.deepStrictEqual(windowCalls, [["closeSettings"], ["openWizard"], ["openSettings"], ["closeWizard"]]);
+});
+
+test("settings:get reports the OS start-on-boot state, or the stored one if the OS can't say", async () => {
+  let osState = () => true;
+  const { handlers } = loadIpcHandlers({ startOnBoot: false }, {
+    autostart: { isEnabled: () => osState() },
+  });
+
+  assert.strictEqual(handlers["settings:get"]().settings.startOnBoot, true);
+  osState = () => {
+    throw new Error("no login items");
+  };
+  assert.strictEqual(handlers["settings:get"]().settings.startOnBoot, true, "the last stored value");
+
+  const fresh = loadIpcHandlers({ startOnBoot: false }, { autostart: { isEnabled: osState } });
+  assert.strictEqual(fresh.handlers["settings:get"]().settings.startOnBoot, false);
+});
+
+test("a save still succeeds when start-on-boot can't be applied", async () => {
+  const ok = { ok: true };
+  const { handlers, saved, warnings } = loadIpcHandlers({ hotkey: "F9" }, {
+    autostart: {
+      apply: () => {
+        throw new Error("read-only autostart dir");
+      },
+    },
+    init: { applyHotkeys: () => ({ hotkey: ok, pauseHotkey: ok }) },
+  });
+
+  const reply = handlers["settings:save"]({}, { settings: { hotkey: "F10", startOnBoot: true } });
+
+  assert.strictEqual(reply.settings.hotkey, "F10");
+  assert.strictEqual(saved.length, 1);
+  assert.deepStrictEqual(warnings, ["could not apply start-on-boot: read-only autostart dir"]);
+});
+
+function withLogFile(t, { exists }) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-logs-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const logPath = path.join(dir, "error.log");
+  if (exists) fs.writeFileSync(logPath, "x");
+  return logPath;
+}
+
+test("logs:open opens the log, reveals it, or opens its folder, and always names the path", async (t) => {
+  const run = async (logPath, shell) => {
+    const { handlers } = loadIpcHandlers({}, { logger: { getLogPath: () => logPath }, shell });
+    return handlers["logs:open"]();
+  };
+  const present = withLogFile(t, { exists: true });
+  const missing = withLogFile(t, { exists: false });
+  const opened = [];
+  const openPath = (result) => async (p) => {
+    opened.push(p);
+    return result;
+  };
+
+  assert.deepStrictEqual(await run(null, {}), { ok: false, error: "No log file yet." });
+  assert.deepStrictEqual(await run(present, { openPath: openPath("") }), { ok: true, path: present, action: "opened" });
+  // No default app for .log: reveal it in the file manager instead.
+  assert.deepStrictEqual(
+    await run(present, { openPath: openPath("no app"), showItemInFolder: (p) => opened.push(`reveal ${p}`) }),
+    { ok: true, path: present, action: "revealed" }
+  );
+  assert.deepStrictEqual(
+    await run(present, {
+      openPath: openPath("no app"),
+      showItemInFolder: () => {
+        throw new Error("no file manager");
+      },
+    }),
+    { ok: false, error: "no app", path: present }
+  );
+  // A clean install has a log path but no file yet: open its folder.
+  assert.deepStrictEqual(await run(missing, { openPath: openPath("") }), { ok: true, path: missing, action: "folder" });
+  assert.deepStrictEqual(await run(missing, { openPath: openPath("denied") }), { ok: false, error: "denied", path: missing });
+  assert.deepStrictEqual(opened, [
+    present,
+    present,
+    `reveal ${present}`,
+    present,
+    path.dirname(missing),
+    path.dirname(missing),
+  ]);
+});
+
+test("the auto-paste permission handlers pass the platform answer through", async () => {
+  const check = { ok: false, missing: "accessibility" };
+  const fix = { ok: true, pane: "automation" };
+  const { handlers } = loadIpcHandlers({}, {
+    deliver: { checkPastePermissions: () => check, fixPastePermissions: async () => fix },
+  });
+
+  assert.strictEqual(await handlers["permissions:accessibility-check"](), check);
+  assert.strictEqual(await handlers["permissions:accessibility-fix"](), fix);
+});
+
+test("history:list returns the stored history", async () => {
+  const entries = [{ text: "hello" }];
+  const { handlers } = loadIpcHandlers({}, { history: { list: () => entries } });
+  assert.strictEqual(await handlers["history:list"](), entries);
+});
+
+test("each updater handler calls its updater action and answers what the UI reads", async () => {
+  const calls = [];
+  const state = { status: "idle" };
+  const record = (name) => (...args) => calls.push([name, ...args]);
+  const { handlers } = loadIpcHandlers({}, {
+    updates: {
+      getState: () => state,
+      check: async (opts) => calls.push(["check", opts]),
+      startUpdate: record("startUpdate"),
+      installNow: record("installNow"),
+      cancel: record("cancel"),
+      skipVersion: record("skipVersion"),
+      dismissPrompt: record("dismissPrompt"),
+      stopReminding: record("stopReminding"),
+    },
+  });
+
+  assert.strictEqual(await handlers["updates:get"](), state);
+  // A manual check answers with the state it produced.
+  assert.strictEqual(await handlers["updates:check"](), state);
+  for (const channel of [
+    "updates:apply",
+    "updates:install",
+    "updates:cancel",
+    "updates:skip",
+    "updates:dismiss",
+    "updates:remind-off",
+  ]) {
+    assert.deepStrictEqual(await handlers[channel](), { ok: true }, channel);
+  }
+  assert.deepStrictEqual(calls, [
+    ["check", { manual: true }],
+    ["startUpdate"],
+    ["installNow"],
+    ["cancel"],
+    ["skipVersion"],
+    ["dismissPrompt"],
+    ["stopReminding"],
+  ]);
 });

@@ -94,8 +94,9 @@ shipped.
   dmg (Apple Silicon only; Intel unsupported after v0.33.9), Linux AppImage +
   deb. Self-updates from GitHub releases with checksum verification.
 - Platform frictions that are part of the product experience: macOS build is
-  unsigned (one-time `xattr` quarantine strip, documented; updates clear it
-  automatically); macOS needs Microphone + Accessibility permissions; Linux
+  self-signed but not notarized (one-time Open Anyway approval or `xattr`
+  quarantine strip, documented; updates clear it automatically); macOS needs
+  Microphone + Accessibility + Automation permissions; Linux
   auto-paste needs `xdotool`/`wtype`/`ydotool`, with clipboard-only fallback.
 
 ## Capabilities and Constraints
@@ -139,7 +140,8 @@ shipped.
 - License: MIT; open-source identity is part of the brand.
 - Voice (confirmed as a good default, **not binding**): plain-spoken,
   friendly, technically honest, reassuring without overpromising — e.g. the
-  README's "This does **not** mean the app is broken." Future surfaces may
+  README's "Releases are signed, but not notarized by Apple, so the first
+  launch needs one approval." Future surfaces may
   evolve the voice.
 
 ## Evidence on Hand
@@ -168,7 +170,7 @@ shipped.
    configured; depth (endpoints, prompts, models, servers) stays available
    underneath, one Settings field away.
 5. **Honest about state and limits.** Progress that deliberately
-   under-promises, docs that admit rough edges (unsigned macOS build, Wayland
+   under-promises, docs that admit rough edges (un-notarized macOS build, Wayland
    hotkeys) and hand the user the fix.
 
 ## Accessibility & Inclusion

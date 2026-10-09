@@ -77,7 +77,7 @@ typography:
     letterSpacing: "0.02em"
 rounded:
   hairline: "2px"
-  download-bar: "3px"
+  download-bar: "2px"
   chip: "4px"
   input: "8px"
   icon: "9px"
@@ -644,7 +644,7 @@ corners anywhere.
 ### Progress fills
 - Overlay: 3px hairline tracks (Track fill, 2px radius); dictation progress
   fills Coral Voice, the update download fills white. Settings/wizard
-  download and update bars (`.dl-bar`): 6px tracks (white 0.12, 3px radius)
+  download and update bars (`.dl-bar`): 6px tracks (Track fill, 2px radius)
   with solid white fills — always white, never coral (One Voice Rule). All
   fills ease `width 0.15s linear`, driven from JS.
 - The overlay's dictation progress overlays the bottom of the wave area

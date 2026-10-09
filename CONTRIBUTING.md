@@ -25,7 +25,7 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | `make test` | Run unit tests (`node --test`, 30 s per-test timeout) |
 | `make smoke` | Boot the app headlessly and exit (CI-style sanity check) |
 | `make overlay-smoke` | Drive the overlay with a fake mic and check capture/UI sync |
-| `make settings-smoke` | Drive the settings window and check the index/scroll-spy contract and live settings sync |
+| `make settings-smoke` | Drive the settings window and check its UI, microphone picker, and live settings sync |
 | `make icons` | Regenerate app/tray icons into `assets/` |
 | `make screenshots` | Regenerate README screenshots into `docs/screenshots/` |
 | `make dist` | Build installers for the current platform |
@@ -34,7 +34,9 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | `make dist-win-docker` | Cross-build Windows packages from Linux via Docker+Wine |
 | `make install-stt` | Create the stt-server virtualenv and install it (uv) |
 | `make run-stt` | Run the local Parakeet STT server |
+| `make run-stt-int8` | Run the STT server with the smaller/faster int8 model |
 | `make clean` | Remove build output |
+| `make help` | List every target |
 
 ## Running the STT server from a checkout
 
@@ -200,6 +202,12 @@ EARHEART_UPDATE_FEED=file:///tmp/feed npm start
 main/                    Electron main process
   main.js                lifecycle, single-instance, --toggle forwarding
   pipeline.js            record → transcribe → clean → deliver state machine
+  live-preview.js        live transcript while recording; committed chunks
+                         become the final transcript's prefix (built-in STT)
+  chunked-decode.js      built-in STT decoded one utterance at a time
+  ipc.js                 IPC handlers for Settings + wizard (commitSettings)
+  cleanup-styles.js      cleanup style presets (Verbatim / Clean / Polished)
+  autostart.js           start-on-login per OS
   hotkeys.js             global shortcut registration
   setup-notices.js       launch policy + "fix your setup" notices (→ Settings)
   settings.js            JSON settings with deep-merged defaults
@@ -212,6 +220,11 @@ main/                    Electron main process
   services/stt.js        OpenAI-compatible transcription client
   services/cleanup.js    OpenAI-compatible chat client
   services/models-remote.js   list a remote service's models (Settings)
+  services/hf-models.js  discover custom Hugging Face models (GGUF, sherpa-onnx)
+  services/route.js      route a stage to the built-in engine or HTTP client
+  services/service-url.js     validate a service base URL + endpoint
+  services/transport-error.js plain copy for unreachable/timed-out services
+  services/update-fetch.js    updater metadata fetch with a deadline
   engines/               in-process STT + cleanup (no separate executable)
     registry.js          downloadable model catalogue
     model-manager.js     streaming, atomic, checksum-verified downloads
@@ -221,10 +234,20 @@ main/                    Electron main process
     index.js             facade routing STT → sttHost, cleanup → cleanupHost
   output/deliver.js      clipboard + per-OS paste keystroke injection
   output/mac-permissions.js  macOS permission probes, repair state and settings panes
+  util/                  small pure helpers: WAV, silence splitting, text
+                         joins, cleanup turn + context budget, stumble strip,
+                         decode-speed estimate, logger, exec, macOS signature
+preload.js               the renderer's whitelisted IPC bridge
 renderer/                overlay (mic capture → 16 kHz WAV, live transcript
                          preview), settings UI, first-run wizard
   transcript.js          pure two-layer (raw/cleaned) reconcile helper
+  recorder-worklet.js    AudioWorklet: PCM + level from the audio thread
+  microphone.js          mic constraints + error classification (overlay)
+  chunk-boundary.js      where to cut a live chunk at the hard cap
+  speech-probe.js        did a committed chunk carry speech?
   hotkey-capture.js      shared classic-script hotkey capture (settings + wizard)
+  settings-sync.js       forms follow settings saved while open (settings + wizard)
+  permission-status.js   status copy after "Fix auto-paste permission"
 stt-server/              Python: FastAPI + onnx-asr Parakeet server (optional)
 ```
 
@@ -277,9 +300,10 @@ Design constraints worth keeping:
   before installing and refuses a mismatch (#186).
 - **The overlay window owns the microphone.** The main process never touches
   raw audio; it receives finished WAVs from the renderer — the final one on stop,
-  plus periodic partial WAVs while recording for the live preview (re-transcribed,
-  and re-cleaned on pauses, best-effort; see
-  [docs/live-transcription-plan.md](docs/live-transcription-plan.md)).
+  plus chunk WAVs while recording. Their decodes drive the live preview
+  (re-cleaned on pauses, best-effort) and, with the built-in engine, become the
+  final transcript's prefix, so stop decodes only the tail (`main/live-preview.js`;
+  see [docs/live-transcription-plan.md](docs/live-transcription-plan.md)).
 - **Never lose the user's words.** If cleanup fails, deliver the raw
   transcript; if paste fails, fall back to the clipboard; history keeps the
   text either way. History is written as soon as the final text exists,

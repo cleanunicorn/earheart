@@ -38,8 +38,8 @@ jobs:
       - name: Create the draft release if it does not exist
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # With no checkout there's no git remote for gh to infer the repo
-          # from, so pass it explicitly (also matches publish-release).
+          # Pass the repo explicitly rather than inferring it from the
+          # checkout's remote (matches publish-release, which has no checkout).
           GH_REPO: ${{ github.repository }}
         run: |
           tag="${GITHUB_REF_NAME}"

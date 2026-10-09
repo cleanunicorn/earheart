@@ -6,8 +6,10 @@ directories:
   output: dist
   buildResources: build
 
-# Where `electron-builder --publish` uploads installers. releaseType: release
-# publishes immediately (not a draft) so tag builds are fully automatic.
+# Where `electron-builder --publish` uploads installers. release.yml pre-creates
+# a draft release for the tag; electron-builder uploads into that draft, and
+# release.yml's publish-release job makes it live once every platform has
+# uploaded. releaseType only applies if no release exists for the tag.
 publish:
   provider: github
   releaseType: release

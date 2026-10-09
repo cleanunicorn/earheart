@@ -52,6 +52,10 @@
 //  14. A microphone chosen while permission or device enumeration is pending
 //      survives completion (options and labels still refresh), and Save
 //      writes that choice to disk; an untouched saved microphone stays put.
+//  15. Each API key field says how the key is stored, matching what real
+//      safeStorage reports after `ready`, and a saved key reaches disk as
+//      ciphertext that decrypts back to it (secure storage) or, without it
+//      (e.g. Linux with no keyring under xvfb), as plaintext — never lost.
 //
 // Run under Electron:
 //
@@ -198,6 +202,37 @@ app.whenReady().then(async () => {
       select.dispatchEvent(new Event("change", { bubbles: true }));
     })()`);
     const definitionIds = () => (settings.get().customModels || []).map((m) => m.id);
+
+    // 15. API key storage note and the on-disk form of a saved key.
+    const keyStorage = settings.keyStorage();
+    const keyNotes = JSON.parse(await js(`JSON.stringify({
+      stt: document.getElementById("stt-key-storage").textContent,
+      cleanup: document.getElementById("cleanup-key-storage").textContent,
+    })`));
+    const expectedNote = keyStorage.secure ? /^Saved encrypted/ : /^Saved unencrypted/;
+    check(
+      "each API key field says how the key is stored",
+      expectedNote.test(keyNotes.stt) && expectedNote.test(keyNotes.cleanup),
+      `${JSON.stringify(keyStorage)} ${JSON.stringify(keyNotes)}`
+    );
+    const smokeKey = "sk-settings-smoke-key";
+    const beforeKey = settings.get();
+    settings.save({ ...beforeKey, stt: { ...beforeKey.stt, apiKey: smokeKey } });
+    const storedStt = JSON.parse(
+      fs.readFileSync(path.join(userData, "settings.json"), "utf8")
+    ).stt;
+    const { safeStorage } = require("electron");
+    const onDiskOk = keyStorage.secure
+      ? !JSON.stringify(storedStt).includes(smokeKey) &&
+        safeStorage.decryptString(Buffer.from(storedStt.apiKeyEncrypted, "base64")) === smokeKey
+      : storedStt.apiKey === smokeKey && !("apiKeyEncrypted" in storedStt);
+    check(
+      keyStorage.secure
+        ? "a saved API key is ciphertext on disk and decrypts back"
+        : "without secure storage a saved API key stays usable in plaintext",
+      onDiskOk && settings.get().stt.apiKey === smokeKey,
+      `backend=${keyStorage.backend}`
+    );
 
     // 13. Registration status on open, before any Save.
     const hotkeyRows = JSON.parse(await js(`JSON.stringify({

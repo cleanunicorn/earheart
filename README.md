@@ -432,9 +432,15 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
   for the optional local Parakeet server).
 - Transcripts go to an external cleanup endpoint only if you switch cleanup to
   a remote service; the default built-in cleanup stays on your machine.
-- History and settings live in plain local files (Electron's user data
-  directory). API keys are stored in that settings file — on shared machines,
-  prefer local services or OS-level disk encryption.
+- History and settings live in local files in Electron's user data directory,
+  readable only by your user account. Remote API keys in the settings file are
+  encrypted with your OS's secure storage (macOS Keychain, Windows DPAPI, or
+  the Linux Secret Service such as GNOME Keyring or KWallet). On Linux without
+  a keyring they are saved unencrypted, and Settings says so under each API key
+  field — set up a keyring and restart Earheart to encrypt them.
+- A settings file damaged by a crash or a bad hand-edit is kept as
+  `settings.json.corrupt-<timestamp>` next to the fresh one, so nothing is
+  silently thrown away.
 - No telemetry, no accounts, no cloud.
 
 ## Star history

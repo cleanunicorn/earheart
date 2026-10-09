@@ -122,7 +122,9 @@ shipped.
   runtime dependencies (the native engines). Stay close to Electron built-ins
   and platform tools rather than adding npm packages. Node 22+.
 - No telemetry, no accounts, no cloud requirement. Settings and history are
-  plain local files; API keys live in the settings file (documented tradeoff).
+  plain local files; remote API keys in the settings file are encrypted with
+  the OS's secure storage where it exists, and stored unencrypted — said so in
+  Settings — on Linux without a keyring.
 - Release process is automated: Conventional-Commit PR titles drive version
   bumps; merging to `main` can auto-publish a multi-platform release.
 - Companion project: `stt-server/` — an optional Python FastAPI Parakeet

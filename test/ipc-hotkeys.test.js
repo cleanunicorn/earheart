@@ -26,6 +26,7 @@ function loadIpcHandlers({ previous, hotkeyResults, saveError = null, getHotkeyS
   const settings = {
     DEFAULTS: {},
     get: () => current,
+    keyStorage: () => ({ secure: true, backend: null, unreadable: [] }),
     onChanged: () => () => {},
     save: (next) => {
       calls.saved.push(next);

@@ -202,7 +202,8 @@ main/                    Electron main process
   pipeline.js            record → transcribe → clean → deliver state machine
   hotkeys.js             global shortcut registration
   setup-notices.js       launch policy + "fix your setup" notices (→ Settings)
-  settings.js            JSON settings with deep-merged defaults
+  settings.js            JSON settings with deep-merged defaults, atomic 0600 writes
+  secret-store.js        remote API keys at rest: safeStorage encryption + status
   history.js             local transcription history
   tray.js                tray icon + menu
   windows.js             overlay + settings + setup wizard windows
@@ -320,6 +321,16 @@ Design constraints worth keeping:
   successful save fires `settings.onChanged`, which rebuilds the tray and
   sends `settings:changed` to the open forms; they apply only the fields that
   changed, so unsaved edits survive.
+- **Settings on disk are crash-safe and keys are encrypted where that's real.**
+  `settings.json` is written to a temp file, fsynced, and renamed over the old
+  one (owner-only `0600`); a file that isn't a JSON object is renamed to
+  `settings.json.corrupt-<timestamp>` before defaults load. Remote API keys
+  are stored as Electron `safeStorage` ciphertext (`apiKeyEncrypted`) when
+  the OS provides real secret storage; on Linux without a keyring
+  (`basic_text` backend) they stay plaintext and Settings says so. Memory,
+  `settings.get()` and the renderer only ever see plaintext keys, never
+  ciphertext. `safeStorage` answers only after app `ready`, so settings load
+  before then isn't cached and `save()` refuses. See `main/secret-store.js`.
 - **The UI has a design system.** [DESIGN.md](DESIGN.md) is derived from the
   shipped CSS and governs the overlay, settings and wizard: one coral accent
   reserved for the voice, filled-white for the primary action, no drop

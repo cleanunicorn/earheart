@@ -7,6 +7,7 @@ let baseline = null;
 let defaults = null;
 let platform = "linux";
 let modelStatus = null; // { stt: [...], cleanup: [...] } from the main process
+let keyStorage = null; // how main stores API keys (settings:get keyStorage)
 let cleanupStyles = []; // [{ id, label, hint }] — the cleanup style slider stops
 
 const $ = (id) => document.getElementById(id);
@@ -243,6 +244,7 @@ function populate() {
   $("cleanup-dictionary").value = (current.cleanup.dictionary || []).join("\n");
   $("cleanup-prompt").value = current.cleanup.systemPrompt;
   selectEngine("cleanup", current.cleanup.engine);
+  renderKeyStorage();
   $("cleanup-builtin-model").value = current.cleanup.builtin.model;
   syncCleanupEnabled();
   syncEngine("stt");
@@ -807,6 +809,36 @@ function announceSettingsChange(message) {
 const settingsChangesReady = followSettingsChanges(applySettingsChange);
 
 /* ---------- save ---------- */
+
+// Say under each API key field how the key is kept on disk. Main encrypts keys
+// with OS-backed storage when it can (main/secret-store.js); where it can't —
+// typically Linux without a keyring, where Electron's fallback is a hardcoded
+// password — the key is saved unencrypted and the note says so plainly. A
+// stored key that couldn't be decrypted reads as empty, so ask for it again
+// until the field holds something.
+function keyStorageNote(section, value) {
+  if (!keyStorage) return "";
+  if (keyStorage.unreadable?.includes(section) && !value) {
+    return "Your saved key couldn't be decrypted — the system keyring may be locked or was reset. Enter the key again.";
+  }
+  if (keyStorage.secure) {
+    if (platform === "darwin") return "Saved encrypted with your macOS Keychain.";
+    if (platform === "win32") return "Saved encrypted with your Windows account.";
+    return "Saved encrypted with your system keyring.";
+  }
+  if (platform === "linux") {
+    return "Saved unencrypted: no system keyring (such as GNOME Keyring or KWallet) is available. The settings file is readable only by your user account. Set up a keyring and restart Earheart to encrypt the key.";
+  }
+  return "Saved unencrypted: your system's secure storage isn't available. The settings file is readable only by your user account.";
+}
+
+function renderKeyStorage() {
+  $("stt-key-storage").textContent = keyStorageNote("stt", $("stt-key").value.trim());
+  $("cleanup-key-storage").textContent = keyStorageNote("cleanup", $("cleanup-key").value.trim());
+}
+
+$("stt-key").addEventListener("input", renderKeyStorage);
+$("cleanup-key").addEventListener("input", renderKeyStorage);
 
 // Show each hotkey's registration failure under its field: the launch result
 // (from settings:get) when the window opens, then each Save's. A result is shown
@@ -1390,6 +1422,7 @@ earheart.on("updates:state", renderUpdateState);
   defaults = data.defaults;
   platform = data.platform;
   cleanupStyles = data.cleanupStyles || [];
+  keyStorage = data.keyStorage || null;
   // A hotkey that failed at launch shows now, not after a Save — and before
   // the update and model round-trips below.
   renderHotkeyStatus(data.hotkeyStatus);

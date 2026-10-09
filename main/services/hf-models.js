@@ -100,6 +100,14 @@ async function hfJson(fetchImpl, url, signal, timeoutMs = DEFAULT_REQUEST_TIMEOU
   const requestSignal = signal
     ? AbortSignal.any([signal, timeout.signal])
     : timeout.signal;
+  // Our own timer fired (not the caller's signal): report the timeout instead
+  // of the error the abort surfaced as.
+  const failure = (message) =>
+    new Error(
+      timeout.signal.aborted && !signal?.aborted ? "Hugging Face request timed out" : message
+    );
+  // Two catches on purpose: one try around both phases would re-translate the
+  // gated / not-found / HTTP status errors thrown between them.
   try {
     let res;
     try {
@@ -108,10 +116,7 @@ async function hfJson(fetchImpl, url, signal, timeoutMs = DEFAULT_REQUEST_TIMEOU
         headers: { Accept: "application/json" },
       });
     } catch (err) {
-      if (timeout.signal.aborted && !signal?.aborted) {
-        throw new Error("Hugging Face request timed out");
-      }
-      throw new Error(`Could not reach Hugging Face: ${err.message}`);
+      throw failure(`Could not reach Hugging Face: ${err.message}`);
     }
     if (res.status === 401 || res.status === 403) {
       throw new Error(
@@ -123,10 +128,7 @@ async function hfJson(fetchImpl, url, signal, timeoutMs = DEFAULT_REQUEST_TIMEOU
     try {
       return await res.json();
     } catch {
-      if (timeout.signal.aborted && !signal?.aborted) {
-        throw new Error("Hugging Face request timed out");
-      }
-      throw new Error("Unexpected response from Hugging Face");
+      throw failure("Unexpected response from Hugging Face");
     }
   } finally {
     clearTimeout(timer);
@@ -174,6 +176,32 @@ function resolveUrl(owner, repo, commit, filePath) {
     .join("/")}`;
 }
 
+// A repo-tree file as a variant lists it: downloadable from the pinned commit,
+// with its LFS checksum when Hugging Face published one.
+function toFile({ owner, repo, commit }) {
+  return (f) => ({
+    name: f.name,
+    bytes: f.bytes || undefined,
+    ...(f.sha256 ? { sha256: f.sha256 } : {}),
+    url: resolveUrl(owner, repo, commit, f.path),
+  });
+}
+
+/** The recommended (default-selected) variant for a sorted variants list. */
+function recommendedVariant(variants) {
+  return variants.length ? variants[0].label : null;
+}
+
+// The shape both discoverers return. Sorts best-first by `priority` (lower is
+// better), then smallest download, so variants[0] is the recommended default
+// and anything the ranking doesn't know falls back to the smallest download.
+function rankedResult({ owner, repo, commit }, variants, priority) {
+  variants.sort(
+    (a, b) => priority(a.label) - priority(b.label) || a.totalBytes - b.totalBytes
+  );
+  return { repo: `${owner}/${repo}`, commit, recommended: recommendedVariant(variants), variants };
+}
+
 /* ---------------- cleanup: GGUF quantizations ---------------- */
 
 // Pull the quantization token out of a GGUF filename: "model-Q4_K_M.gguf" ->
@@ -201,11 +229,6 @@ function quantPriority(label) {
   if (i !== -1) return i;
   if (/^Q4/i.test(label)) return QUANT_RANK.length; // any other Q4 variant next
   return QUANT_RANK.length + 1;
-}
-
-/** The recommended (default-selected) variant for a sorted variants list. */
-function recommendedVariant(variants) {
-  return variants.length ? variants[0].label : null;
 }
 
 /**
@@ -238,21 +261,11 @@ async function listGgufQuants({ owner, repo, ref }, fetchImpl, options = {}) {
     return {
       label,
       totalBytes: group.reduce((s, f) => s + (f.bytes || 0), 0),
-      files: group.map((f) => ({
-        name: f.name,
-        bytes: f.bytes || undefined,
-        ...(f.sha256 ? { sha256: f.sha256 } : {}),
-        url: resolveUrl(owner, repo, commit, f.path),
-      })),
+      files: group.map(toFile({ owner, repo, commit })),
     };
   });
-  // Best-first by quant rank, then smallest download, so variants[0] is the
-  // recommended default and unlabeled repos fall back to the smallest file.
-  variants.sort(
-    (a, b) => quantPriority(a.label) - quantPriority(b.label) || a.totalBytes - b.totalBytes
-  );
-
-  return { repo: `${owner}/${repo}`, commit, recommended: recommendedVariant(variants), variants };
+  // Unlabeled repos fall back to the smallest file.
+  return rankedResult({ owner, repo, commit }, variants, quantPriority);
 }
 
 function slug(s) {
@@ -276,28 +289,37 @@ function customNote(repoFull, variant) {
   );
 }
 
-/**
- * Build a registry-shaped cleanup model entry from a chosen quantization, so
- * the download manager / engines / IPC treat it exactly like a built-in. LFS
- * SHA-256 values are retained when Hugging Face publishes them.
- */
-function buildCleanupModel(repoFull, variant) {
+// Build a registry-shaped model entry from a chosen variant, so the download
+// manager / engines / IPC treat it exactly like a built-in. LFS SHA-256 values
+// are retained when Hugging Face publishes them. `sourceKey` names what the
+// variant label is (a quant, a precision); `runtime` is the kind's loader
+// config, last in the entry.
+function buildModel(repoFull, variant, { kind, sourceKey, runtime }) {
   const repoName = repoFull.split("/")[1] || repoFull;
   return {
     id: `custom-${slug(repoFull)}-${slug(variant.label)}`,
-    kind: "cleanup",
+    kind,
     label: `${repoName} · ${variant.label}`,
     note: customNote(repoFull, variant),
     custom: true,
-    source: { repo: repoFull, quant: variant.label },
+    source: { repo: repoFull, [sourceKey]: variant.label },
     files: variant.files.map((f) => ({
       name: f.name,
       url: f.url,
       bytes: f.bytes,
       ...(f.sha256 ? { sha256: f.sha256 } : {}),
     })),
-    gguf: { file: variant.files[0].name },
+    ...runtime,
   };
+}
+
+/** A registry-shaped cleanup model entry from a chosen quantization. */
+function buildCleanupModel(repoFull, variant) {
+  return buildModel(repoFull, variant, {
+    kind: "cleanup",
+    sourceKey: "quant",
+    runtime: { gguf: { file: variant.files[0].name } },
+  });
 }
 
 /* ---------------- STT: sherpa-onnx model bundles ---------------- */
@@ -310,7 +332,7 @@ function buildCleanupModel(repoFull, variant) {
 //                 csukuangfj/sherpa-onnx-whisper-* exports
 // A joiner marks a transducer. A missing joiner does NOT mark Whisper: other
 // encoder-decoder families (NeMo Canary, FireRedASR …) ship the same files, so
-// Whisper needs its own positive marker (see sttFamily) and everything else is
+// Whisper needs its own positive marker (see assertSttFamily) and everything else is
 // rejected rather than guessed. Each variant's `sherpa` map carries the
 // family's explicit modelType, which is what the engine routes on.
 //
@@ -435,23 +457,11 @@ function samplePaths(files, limit = 3) {
   return files.slice(0, limit).map((f) => f.path).join(", ") + (files.length > limit ? ", …" : "");
 }
 
-/**
- * List the precisions (int8 / fp16 / fp32 / …) available in a sherpa-onnx
- * transducer or Whisper repo. Same return shape as listGgufQuants; each variant
- * additionally carries the `sherpa` file map the engine wires together — with a
- * `joiner` for transducers and without one for Whisper. Throws a readable
- * error for any other encoder-decoder family (Canary, or one it can't name).
- * @returns {Promise<{repo,commit,recommended,variants:Array<{label,totalBytes,files,sherpa}>}>}
- */
-async function listSttVariants({ owner, repo, ref }, fetchImpl, options = {}) {
-  const { commit, files } = await repoTree({ owner, repo, ref }, fetchImpl, options);
-
-  // Shallowest path wins when the same file name appears twice (files land in
-  // one flat directory on disk), so flat bundles keep their top-level files.
-  const byDepth = [...files].sort(
-    (a, b) => a.path.split("/").length - b.path.split("/").length
-  );
-
+// Check the repo holds a speech model family Earheart can run, and say what's
+// wrong when it doesn't. `byDepth` is the repo's files, shallowest first.
+// Returns the role .onnx files, the tokens.txt candidates and the family
+// ("transducer" | "whisper"); throws a readable error for anything else.
+function assertSttFamily(repoFull, byDepth) {
   const allOnnx = byDepth.filter((f) => ONNX_RE.test(f.name));
   if (allOnnx.length === 0) {
     throw new Error(
@@ -484,7 +494,7 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, options = {}) {
     );
   }
   // sherpa's Whisper exports name it "<model>-tokens.txt"; transducer bundles
-  // use a plain "tokens.txt". Match either, and pair one to each encoder below.
+  // use a plain "tokens.txt". Match either; assembleVariants pairs one to each encoder.
   const tokensFiles = byDepth.filter((f) => TOKENS_RE.test(f.name));
 
   // The family needs a positive marker. A joiner is one. Without it, an
@@ -492,7 +502,7 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, options = {}) {
   // know we can't run is named before anything else (even a missing
   // tokens.txt wouldn't be the real problem), and an unidentified bundle is
   // rejected rather than guessed.
-  const markerText = [`${owner}/${repo}`, ...onnx.map((f) => f.path), ...tokensFiles.map((f) => f.path)].join(" ");
+  const markerText = [repoFull, ...onnx.map((f) => f.path), ...tokensFiles.map((f) => f.path)].join(" ");
   const unsupported = hasJoiner ? null : unsupportedSttFamily(markerText);
   if (unsupported) {
     throw new Error(`This looks like a ${unsupported} model, which Earheart can't run yet. ${SUPPORTED_STT}.`);
@@ -521,7 +531,13 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, options = {}) {
         `guess one. ${SUPPORTED_STT}.`
     );
   }
+  return { onnx, tokensFiles, family };
+}
 
+// One variant per precision whose encoder lines up with the other roles the
+// family needs, each with its sidecars, its tokens.txt and the `sherpa` map
+// the engine wires together. Throws when no precision forms a whole model.
+function assembleVariants({ byDepth, onnx, tokensFiles, family, modelType, fileOf }) {
   // First (shallowest) file per component+precision.
   const component = new Map(); // "encoder:int8" -> file
   for (const f of onnx) {
@@ -532,23 +548,6 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, options = {}) {
   // fall back per component so an int8 encoder still forms a variant.
   const pick = (part, precision) =>
     component.get(`${part}:${precision}`) || component.get(`${part}:fp32`);
-
-  // sherpa-onnx needs to know the model flavor; for transducers the NeMo
-  // bundles (the Parakeet family this feature targets) say so in their repo
-  // names.
-  const modelType =
-    family === "whisper"
-      ? "whisper"
-      : /nemo|parakeet/i.test(`${owner}/${repo}`)
-        ? "nemo_transducer"
-        : "transducer";
-
-  const toFile = (f) => ({
-    name: f.name,
-    bytes: f.bytes || undefined,
-    ...(f.sha256 ? { sha256: f.sha256 } : {}),
-    url: resolveUrl(owner, repo, commit, f.path),
-  });
 
   // One variant per precision that actually has an encoder, rather than a fixed
   // int8/fp16/fp32 list, so repos shipping other quantizations still show up.
@@ -580,7 +579,7 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, options = {}) {
     variants.push({
       label: precision,
       totalBytes: all.reduce((s, f) => s + (f.bytes || 0), 0),
-      files: all.map(toFile),
+      files: all.map(fileOf),
       sherpa: {
         encoder: encoder.name,
         decoder: decoder.name,
@@ -602,37 +601,56 @@ async function listSttVariants({ owner, repo, ref }, fetchImpl, options = {}) {
         `precision (${samplePaths(onnx)})`
     );
   }
-  // Best-first by precision rank, then smallest download, so variants[0] is the
-  // recommended default and unranked quantizations sort last.
-  variants.sort(
-    (a, b) =>
-      precisionPriority(a.label) - precisionPriority(b.label) || a.totalBytes - b.totalBytes
-  );
-
-  return { repo: `${owner}/${repo}`, commit, recommended: recommendedVariant(variants), variants };
+  return variants;
 }
 
 /**
- * Build a registry-shaped STT model entry from a chosen precision variant,
- * mirroring buildCleanupModel.
+ * List the precisions (int8 / fp16 / fp32 / …) available in a sherpa-onnx
+ * transducer or Whisper repo. Same return shape as listGgufQuants; each variant
+ * additionally carries the `sherpa` file map the engine wires together — with a
+ * `joiner` for transducers and without one for Whisper. Throws a readable
+ * error for any other encoder-decoder family (Canary, or one it can't name).
+ * @returns {Promise<{repo,commit,recommended,variants:Array<{label,totalBytes,files,sherpa}>}>}
  */
+async function listSttVariants({ owner, repo, ref }, fetchImpl, options = {}) {
+  const { commit, files } = await repoTree({ owner, repo, ref }, fetchImpl, options);
+
+  // Shallowest path wins when the same file name appears twice (files land in
+  // one flat directory on disk), so flat bundles keep their top-level files.
+  const byDepth = [...files].sort(
+    (a, b) => a.path.split("/").length - b.path.split("/").length
+  );
+  const { onnx, tokensFiles, family } = assertSttFamily(`${owner}/${repo}`, byDepth);
+
+  // sherpa-onnx needs to know the model flavor; for transducers the NeMo
+  // bundles (the Parakeet family this feature targets) say so in their repo
+  // names.
+  const modelType =
+    family === "whisper"
+      ? "whisper"
+      : /nemo|parakeet/i.test(`${owner}/${repo}`)
+        ? "nemo_transducer"
+        : "transducer";
+
+  const variants = assembleVariants({
+    byDepth,
+    onnx,
+    tokensFiles,
+    family,
+    modelType,
+    fileOf: toFile({ owner, repo, commit }),
+  });
+  // Unranked quantizations sort last.
+  return rankedResult({ owner, repo, commit }, variants, precisionPriority);
+}
+
+/** A registry-shaped STT model entry from a chosen precision variant. */
 function buildSttModel(repoFull, variant) {
-  const repoName = repoFull.split("/")[1] || repoFull;
-  return {
-    id: `custom-${slug(repoFull)}-${slug(variant.label)}`,
+  return buildModel(repoFull, variant, {
     kind: "stt",
-    label: `${repoName} · ${variant.label}`,
-    note: customNote(repoFull, variant),
-    custom: true,
-    source: { repo: repoFull, variant: variant.label },
-    files: variant.files.map((f) => ({
-      name: f.name,
-      url: f.url,
-      bytes: f.bytes,
-      ...(f.sha256 ? { sha256: f.sha256 } : {}),
-    })),
-    sherpa: variant.sherpa,
-  };
+    sourceKey: "variant",
+    runtime: { sherpa: variant.sherpa },
+  });
 }
 
 module.exports = {

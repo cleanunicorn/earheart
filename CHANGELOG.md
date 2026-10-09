@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.36.0 — 2026-10-09
+
+- Raise the default dictation length to ten minutes and warn in its last minute (#271)
+
 ## v0.35.12 — 2026-10-08
 
 - Remove unused main-process metadata and exports (#269)

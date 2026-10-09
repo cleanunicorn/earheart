@@ -1,0 +1,20 @@
+/* Earheart's shared palette — the bar's materials, declared once and loaded
+   before overlay.css and settings.css (which the wizard layers on). Each sheet
+   adds only its own derivatives on top. See DESIGN.md.
+
+   Two values are duplicated outside CSS and must stay in sync:
+   --ink with INK_COLOR in main/windows.js, --accent with WAVE_COLOR in
+   overlay.js (test/overlay-contract.test.js pins both). */
+
+:root {
+  --ink: #18181b; /* the bar and the framed windows — solid near-black */
+  --edge: rgba(255, 255, 255, 0.1); /* hairline card + panel edges */
+  --text: #f4f4f5; /* primary text */
+  --text-dim: #a1a1aa; /* secondary text, hints (≥4.5:1 on --ink) */
+  --wash: rgba(255, 255, 255, 0.08); /* hover fills */
+  --track: rgba(255, 255, 255, 0.12); /* empty progress/download track fills */
+  --accent: #fb4d5c; /* the voice: capture dot, waveform, progress; in the
+                        framed windows only while a hotkey field captures */
+  --ok: #34d399; /* status: delivered / success */
+  --err: #f87171; /* status: failed / fault; destructive hover */
+}

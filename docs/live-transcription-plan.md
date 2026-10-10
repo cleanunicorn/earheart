@@ -2,8 +2,20 @@
 
 Adding real-time ("type as you talk") transcription to earheart.
 
-Today the flow is batch-only: you press the hotkey, speak, stop, and only then
-does any text appear. This plan adds a live transcript that fills in *while you
+> **Status:** Phase 1 (live preview) has shipped; Phase 2 (keystrokes into the
+> focused app) has not started and is the only open part of this plan. Phase 1
+> as built: `main/live-preview.js` runs the preview, STT and cleanup run in two
+> worker hosts (`sttHost` / `cleanupHost` in `main/engines/index.js`), chunks
+> target 10 s (`stt.livePreview.chunkSeconds`), and the preview is on by
+> default (`stt.livePreview.enabled`). With the built-in engine the committed
+> chunk decodes also become the final transcript's prefix, so on stop only the
+> audio tail past them is decoded (falling back to a full decode if a chunk
+> failed). The Phase 1 sections below are kept as the design record; where they
+> disagree with the code, the code and the notes in `main/live-preview.js` win.
+> Source references name files only; line numbers went stale.
+
+Before Phase 1 the flow was batch-only: you pressed the hotkey, spoke, stopped,
+and only then did any text appear. This plan adds a live transcript that fills in *while you
 speak*, in two phases — first a preview in the overlay, later keystrokes into
 the focused app.
 
@@ -12,11 +24,11 @@ the focused app.
 The current pipeline is whole-file by design:
 
 - The overlay buffers all audio in a `chunks[]` array and only encodes a WAV +
-  ships it on stop (`renderer/overlay.js:148`, `audio:captured`).
+  ships it on stop (`renderer/overlay.js`, `audio:captured`).
 - Both STT backends are whole-file. The builtin engine uses sherpa-onnx's
-  `OfflineRecognizer` with Parakeet-TDT (`main/engines/engine-worker.js:57`),
+  `OfflineRecognizer` with Parakeet-TDT (`main/engines/engine-worker.js`),
   decoded in one shot. The HTTP path POSTs a complete WAV to
-  `/audio/transcriptions` (`main/services/stt.js:29`). Parakeet-TDT is an
+  `/audio/transcriptions` (`main/services/stt.js`). Parakeet-TDT is an
   *offline* model — it has no native streaming decoder.
 
 So "stream as I talk" requires either re-transcribing a growing buffer
@@ -31,12 +43,12 @@ So "stream as I talk" requires either re-transcribing a growing buffer
 ## Architecture recap
 
 ```
-hotkey ─▶ pipeline.toggle()                         (main/pipeline.js:95)
+hotkey ─▶ pipeline.toggle()                         (main/pipeline.js)
             │
-   overlay records mic, buffers chunks[]            (renderer/overlay.js:113)
+   overlay records mic, buffers chunks[]            (renderer/overlay.js)
             │  on stop: encodeWav() ─▶ audio:captured
             ▼
-   pipeline.process(): transcribe ─▶ cleanup ─▶ deliver   (main/pipeline.js:144)
+   pipeline.process(): transcribe ─▶ cleanup ─▶ deliver   (main/pipeline.js)
             │
    builtin engine, utilityProcess worker            (main/engines/engine-worker.js)
 ```
@@ -44,13 +56,13 @@ hotkey ─▶ pipeline.toggle()                         (main/pipeline.js:95)
 - **Main process** orchestrates the pipeline and owns engine state.
 - **Overlay renderer** owns the microphone and the UI pill.
 - **Engine workers** (`utilityProcess`) run sherpa-onnx STT and node-llama-cpp
-  (GGUF) cleanup off the main thread. *Today this is a single shared worker* (`engine-worker.js`
-  hosts both engines, `host.js` routes to one child); Phase 1 splits this into
+  (GGUF) cleanup off the main thread. *Before Phase 1 this was a single shared worker* (`engine-worker.js`
+  hosts both engines, `host.js` routes to one child); Phase 1 split this into
   two workers — one for STT, one for cleanup — so they run in parallel (see the
   "Split the engine worker" change below).
-- IPC channels are whitelisted in `preload.js:5-42` — any new channel must be
+- IPC channels are whitelisted in `preload.js` — any new channel must be
   added there or it is silently dropped.
-- Every dictation has a session id (`session`, `main/pipeline.js:38`) echoed in
+- Every dictation has a session id (`session`, `main/pipeline.js`) echoed in
   overlay messages; events from a stale session are ignored.
 
 ---
@@ -61,8 +73,8 @@ hotkey ─▶ pipeline.toggle()                         (main/pipeline.js:95)
 > buffer every tick. That shipped, but measurement showed it's O(n²): decode time
 > grew with total length (1.7s at 30s, 6.3s at 73s), crossed the tick interval at
 > ~21s, and crashed the app after ~30s. It was replaced with **append-only
-> chunking** — the overlay ships audio in ~5s chunks, each transcribed once and
-> accumulated; only the in-progress chunk is re-decoded, so decode cost stays flat
+> chunking** — the overlay ships audio in ~10s chunks (the default was ~5s at
+> first), each transcribed once and accumulated; only the in-progress chunk is re-decoded, so decode cost stays flat
 > (~370ms per chunk regardless of dictation length). Cleanup, by contrast,
 > re-cleans the *whole* committed transcript on each pause and replaces the cleaned
 > line — `clean(a)+clean(b)` reads differently from `clean(a+b)`, so cleaning the
@@ -77,6 +89,8 @@ On speech pauses after a chunk commits, the main process re-cleans the **whole
 committed transcript** and replaces the partial **cleaned** transcript with the
 result. The overlay shows both as two layers (see below). On stop, the existing
 final pass (+ cleanup + deliver) runs unchanged over the whole authoritative audio.
+(As built, the built-in engine instead reuses the committed chunk decodes and
+decodes only the tail on stop — see the status note at the top.)
 
 No new model, no new dependency, fully private, reuses the whole pipeline.
 
@@ -113,8 +127,8 @@ keeps the main line from flickering.
 2. **`renderer/overlay.js`**
    - Alongside the existing meter rAF loop, add a partial timer (~1.2 s) that,
      while `recording` is set, calls `encodeWav(recording.chunks)`
-     (`overlay.js:81`) and sends `audio:partial { sid, wav }`.
-   - Stop and clear the timer in `teardown()` (`overlay.js:185`) so it never
+     (`overlay.js`) and sends `audio:partial { sid, wav }`.
+   - Stop and clear the timer in `teardown()` (`overlay.js`) so it never
      outlives a session.
    - Handle `pipeline:partial { kind, text }` where `kind` is `"raw"` or
      `"cleaned"`: update the raw tail or the cleaned line respectively, then
@@ -126,11 +140,11 @@ keeps the main line from flickering.
 
 3. **`preload.js`** — whitelist `audio:partial` (send, overlay → main) and
    `pipeline:partial` (listen, main → overlay) in the channel lists
-   (`preload.js:5-42`).
+   (`preload.js`).
 
 4. **`main/pipeline.js`**
    - Add an `ipcMain.on("audio:partial", …)` handler in `init()`
-     (`pipeline.js:209`). It must:
+     (`pipeline.js`). It must:
      - **Session-guard:** ignore if `sid !== session` or `state !== "recording"`.
      - **Drop-if-busy (STT):** keep a `partialInFlight` flag; if a previous
        partial decode hasn't returned, skip this one entirely (no queue — we only
@@ -154,12 +168,12 @@ keeps the main line from flickering.
      prefixes, so the cleaned line stays calm. Same drop-if-busy discipline as
      STT; a cleanup in flight blocks a new one.
    - Pass the `livePreview` flag into the `record:start` payload in
-     `startRecording()` (`pipeline.js:113`).
-   - In `process()` (`pipeline.js:144`), cancel/ignore any in-flight partial
+     `startRecording()` (`pipeline.js`).
+   - In `process()` (`pipeline.js`), cancel/ignore any in-flight partial
      **decode and cleanup** before the final transcribe + cleanup so they don't
      overlap on the single-instance engine worker.
 
-5. **Split the engine worker into two (`host.js`, `index.js`).** Today a single
+5. **Split the engine worker into two (`host.js`, `index.js`).** Before this change a single
    `utilityProcess` hosts both engines and serializes every request, so partial
    STT and partial cleanup would block each other. Run them in **two separate
    workers** so the raw tail (STT) and the cleaned line (cleanup) decode in
@@ -214,8 +228,8 @@ keeps the main line from flickering.
   stability window (~1 s) so normal mid-sentence pauses don't fire it constantly
   on long dictations.
 - **Default off vs. on.** Live preview adds steady CPU load while recording.
-  Lean toward defaulting it **on** for short dictations but make the toggle
-  prominent; revisit after measuring decode latency on the default model.
+  Decided: it ships **on** by default (`stt.livePreview.enabled: true`), with a
+  Settings toggle that turns the display (and preview cleanup) off.
 
 ### Done when
 
@@ -251,21 +265,21 @@ scaffolding.
   streaming-capable model (e.g. a streaming Zipformer) in
   `engine-worker.js`, alongside the existing offline recognizer. The overlay
   feeds PCM frames continuously (the worklet already produces frame chunks,
-  `overlay.js:148`) instead of re-encoding whole WAVs; the worker runs the
+  `overlay.js`) instead of re-encoding whole WAVs; the worker runs the
   `acceptWaveform` → `isReady` → `decode` → `getResult` loop with endpoint
   detection.
 - **Keep Parakeet for the final pass.** Streaming models are generally less
   accurate than offline Parakeet-TDT. Use the streaming model for the live
   preview/keystrokes and still run Parakeet once on stop for the authoritative
   transcript (then reconcile). This means two models resident — account for the
-  memory and the idle-unload logic (`pipeline.js:55`).
+  memory and the idle-unload logic (`pipeline.js`).
 - **Incremental injection.** Extend `main/output/deliver.js` with a mode that
   types committed words into the focused app as they stabilize and reconciles
   when a partial is revised (backspace/replace). This is the fiddly part —
   cursor races, undo stacks, and the interaction with the final cleanup pass
   (which rewrites text the user already saw typed) all need handling.
 
-Decide Phase 2's exact shape after Phase 1 ships and the live-preview UX is
+Phase 1 has shipped; decide Phase 2's exact shape once the live-preview UX is
 validated.
 
 ---
@@ -285,7 +299,7 @@ A structured read on this plan (Phase 1 first, Phase 2 deferred).
   deliver flow is untouched; live preview is layered on top and gated behind a
   toggle, so the failure mode degrades to today's behavior.
 - **Stateless partials.** `transcribe` already creates a fresh stream per call
-  (`engine-worker.js:80`), so repeated whole-buffer decodes need no engine
+  (`engine-worker.js`), so repeated whole-buffer decodes need no engine
   change and carry no cross-call state to corrupt.
 - **Reusable scaffolding.** The `pipeline:partial` IPC and overlay live-text
   element built in Phase 1 carry straight into Phase 2.
@@ -344,7 +358,7 @@ A structured read on this plan (Phase 1 first, Phase 2 deferred).
   final cleanup rewriting already-typed text are real, fiddly failure modes in
   Phase 2.
 - **Memory pressure in Phase 2.** Keeping a streaming model *and* Parakeet
-  resident competes with the existing idle-unload logic (`pipeline.js:55`) and
+  resident competes with the existing idle-unload logic (`pipeline.js`) and
   raises the app's footprint.
 
 ### Takeaway

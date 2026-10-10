@@ -107,11 +107,13 @@ label, and opinions are welcome.
 
 - **Live transcript while you speak (on by default)** — with the built-in
   engine the overlay fills in the text as you talk, with a cleaned-up version
-  settling in behind the raw words on pauses. The final transcript on stop is
-  unchanged. Without stealing focus, the overlay draws your voice and tracks
-  the finishing passes: transcription progress is estimated from your machine's
-  measured decode speed and deliberately stops short of the end; cleanup follows
-  actual generation. Toggle live transcription under Settings → Live transcript.
+  settling in behind the raw words on pauses. The live chunks also build the
+  final transcript (even with the display off): on stop, only the audio after
+  the last committed chunk is decoded, and if any chunk failed the whole
+  recording is decoded again instead. Without stealing focus, the overlay
+  draws your voice and tracks the finishing passes: transcription progress is
+  estimated from your machine's measured decode speed and deliberately stops
+  short of the end; cleanup follows actual generation. Toggle live transcription under Settings → Live transcript.
 - **Cleanup built for spoken prompts** — the default **Clean** style fixes
   punctuation and removes filler words and false starts without polishing away
   your intent. Choose **Verbatim** or **Polished** with the style slider and edit
@@ -186,8 +188,16 @@ Earheart checks GitHub releases for a new version on startup and twice a day
 **Update to vX.Y.Z** entry in the tray menu when one is out. It tells you what
 you'd be getting: the prompt on the dictation bar lists the top changes (every
 version between yours and the new one — Settings → Advanced shows the full
-list), and after it updates itself the bar says what changed. One click
-downloads the release, verifies its checksum and reinstalls in place:
+list), and after it updates itself the bar says what changed. The prompt
+appears under a dictation that has just finished, never mid-sentence, or on
+its own shortly after launch:
+
+<p align="center">
+  <img src="docs/screenshots/overlay-update.png" width="500" alt="Earheart update prompt above a finished dictation, with Update now, Skip this version and Don't remind me" /><br/>
+  <img src="docs/screenshots/overlay-update-solo.png" width="500" alt="Earheart update prompt shown on its own" />
+</p>
+
+One click downloads the release, verifies its checksum and reinstalls in place:
 
 - **Windows (installed):** the new installer runs silently and the app
   relaunches. The portable exe can't update itself — the app opens the
@@ -272,6 +282,10 @@ If a saved microphone is disconnected, dictation temporarily tries the system
 default and shows a notice on the recording bar. This fallback applies only to
 that dictation; it does not change the microphone saved in Settings.
 
+<p align="center">
+  <img src="docs/screenshots/overlay-microphone-fallback.png" width="500" alt="Earheart overlay listening with the notice: Saved mic missing — using system default" />
+</p>
+
 ### Transcript cleanup
 
 Cleanup is **on by default** and runs the built-in Qwen3 4B Instruct 2507 model in-process: a
@@ -313,6 +327,13 @@ and the distinction between output limits and context are explained in
 3. Speak, then press the hotkey again (or the bar's ✓ key). Earheart
    transcribes, optionally cleans up, and pastes the result right where you
    were typing. The ✕ key discards the dictation — nothing is typed.
+
+The bar's pause key (or your pause hotkey) holds a take: the timer and the
+waveform freeze, and nothing is captured until you resume.
+
+<p align="center">
+  <img src="docs/screenshots/overlay-paused.png" width="500" alt="Earheart overlay paused mid-dictation, with a resume key and a frozen waveform" />
+</p>
 
 Earheart lives in your system tray. From the tray menu you can start a
 dictation, open the transcription history, or change any choice you made in
@@ -361,6 +382,33 @@ transcription server, usable from any other dictation app that supports custom
 endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
 [stt-server/README.md](stt-server/README.md) for GPU use and other models.
 
+### Advanced: add a model from Hugging Face
+
+The built-in engines can also run a model that isn't in Earheart's list,
+straight from a Hugging Face repo:
+
+- **Speech-to-text** (Settings → Speech-to-text): a sherpa-onnx transducer
+  bundle (encoder, decoder, joiner + `tokens.txt`, e.g. the Parakeet TDT
+  exports) or a sherpa-onnx Whisper export (encoder, decoder + `tokens.txt`,
+  e.g. `csukuangfj/sherpa-onnx-whisper-turbo`). Other families, such as NeMo
+  Canary, are refused.
+- **Cleanup** (Settings → Cleanup): a GGUF chat model, e.g.
+  `unsloth/gemma-3-1b-it-GGUF`. Smaller models clean up faster.
+
+Under **Add a model from Hugging Face**, paste the repo URL or `owner/model`
+(**Browse Hugging Face** opens the hub pre-filtered to models that fit), click
+**Find versions**, pick a quantization or precision, then **Add** and
+**Download**. The download is pinned to the repo's commit at the time you
+added it. **Remove** deletes the files and forgets the model.
+
+**Checksums are weaker than for the built-in models.** Built-in models are
+pinned to a commit and a SHA-256 Earheart ships with. A custom model's files are
+verified against the SHA-256 Hugging Face publishes for files stored in Git LFS
+(the model weights); files without one, such as a small `tokens.txt`, are
+checked only for size. Each custom model's description in Settings says
+whether it is checksum-verified, partially checksum-verified, or not
+checksum-verified. Only add models from repos you trust.
+
 ## Platform notes
 
 ### Linux
@@ -408,7 +456,7 @@ endpoints (e.g. OpenWhispr) or from scripts via the OpenAI SDK. See
   control System Events when macOS asks on the first paste; later under
   Privacy & Security → Automation → Earheart → System Events). Releases are
   signed with the same certificate every time, so both permissions carry over
-  across updates. Updating from an older unsigned release (v0.31.x or
+  across updates. Updating from an older unsigned release (v0.31.5 or
   earlier) asks once more, and Earheart re-asks by itself on that first
   launch. If auto-paste stops working, use Settings → General → **Fix
   auto-paste permission**: it clears a stale entry, re-asks, and opens the pane

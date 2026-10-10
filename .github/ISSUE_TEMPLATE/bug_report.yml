@@ -91,8 +91,10 @@ body:
     attributes:
       label: Logs / errors
       description: |
-        Any error text, console output, or relevant log lines. Launch from a
-        terminal (`npm start`) to capture main-process logs if you can.
+        Any error text or relevant log lines. In Earheart, open Settings →
+        Advanced → **Open error log**, then paste the relevant lines of
+        earheart.log. Running from source? Paste the `npm start` terminal
+        output too.
       render: shell
 
   - type: textarea

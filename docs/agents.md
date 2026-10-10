@@ -39,9 +39,8 @@ wrong or a prompt gets reworded, these three fields in Settings → Cleanup help
    service names, `pnpm`, `kubectl`, `useEffect`, teammates' names.
    Speech-to-text has never heard of your project; the cleanup model corrects
    near-misses to these exact spellings (so cleanup must be on).
-3. **System prompt.** Editable. Until the dedicated Prompt style ships
-   ([#69](https://github.com/cleanunicorn/earheart/issues/69)), append a line
-   like this to make cleanup safe for instructions:
+3. **System prompt.** Editable. Append a line like this to make cleanup safe
+   for instructions:
 
    ```text
    This is a spoken instruction to a coding agent. Keep file paths, CLI flags,
@@ -133,7 +132,7 @@ The one thing to remember is the same everywhere — you press Enter.
 ## What Earheart doesn't do yet
 
 You press Enter — Earheart pastes, it doesn't submit. The agent can't ask *you*
-a question by voice, and it can't talk back. Those are being built in the open:
-see the [roadmap](https://github.com/cleanunicorn/earheart/issues/77) and the
+a question by voice, and it can't talk back. Ideas for agent workflows are
+tracked under the
 [`agents`](https://github.com/cleanunicorn/earheart/issues?q=is%3Aissue+label%3Aagents)
 label. Opinions welcome.

@@ -4,7 +4,7 @@
 
 const { resolveCleanup, remoteSamplingBody } = require("../cleanup-styles");
 const { CLEAN_RUNAWAY_MESSAGE } = require("../util/clean-budget");
-const { serviceUrl } = require("./service-url");
+const { serviceUrl, authHeaders } = require("./service-url");
 const { requestJson } = require("./transport-error");
 
 // Reasoning models may emit <think>...</think> blocks; strip them.
@@ -31,8 +31,7 @@ function stripThinking(text) {
  */
 async function clean(transcript, cfg, signal) {
   const url = serviceUrl(cfg?.baseUrl, "/chat/completions");
-  const headers = { "Content-Type": "application/json" };
-  if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
+  const headers = { "Content-Type": "application/json", ...authHeaders(cfg.apiKey) };
 
   // The selected style supplies the system prompt (base + its directive) and
   // the sampling profile; remoteSamplingBody emits only the portable fields.

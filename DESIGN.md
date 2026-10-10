@@ -211,8 +211,10 @@ setup wizard (`renderer/wizard.*`, which layers on `settings.css`) all speak
 this language; the framed windows extend the bar's grammar with white-wash
 cards, solid inputs, and pill buttons, documented below. The main process
 paints framed windows in Bar Ink before load (`INK_COLOR` in
-`main/windows.js`), which must stay in sync with `--ink` — the one name the
-value carries in both `overlay.css` and `settings.css`. The retired Tape
+`main/windows.js`), which must stay in sync with `--ink`. The shared palette
+(`--ink`, `--accent` and the other bar materials) is declared once, in
+`renderer/tokens.css`, which every page loads before its own sheet; `overlay.css`
+and `settings.css` add only their own derivatives. The retired Tape
 Transport and On-Air Lamp systems survive only as historical notes.
 
 **Key Characteristics:**
@@ -240,7 +242,7 @@ each barred from the overlay and the wizard.
   (hollow), the canvas waveform, the dictation progress fill, and the timer's
   last-minute countdown before the cap stops a live take. The value is
   duplicated as `WAVE_COLOR` in `overlay.js` and must be kept in sync with
-  `--accent` in `overlay.css`. Off the overlay it appears only under The
+  `--accent` in `tokens.css`. Off the overlay it appears only under The
   Capture Exception below.
 
 ### Neutral
@@ -641,7 +643,7 @@ corners anywhere.
   CSS box × devicePixelRatio so bars stay crisp at any width.
 - Outside capture it dims to a ghost of the take (opacity 0.25); when the
   detail line needs the space it steps back to 0.07.
-- `WAVE_COLOR` in `overlay.js` must equal `--accent` in `overlay.css`.
+- `WAVE_COLOR` in `overlay.js` must equal `--accent` in `tokens.css`.
 
 ### Progress fills
 - Overlay: 3px hairline tracks (Track fill, 2px radius); dictation progress

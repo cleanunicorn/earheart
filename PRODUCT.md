@@ -122,7 +122,7 @@ shipped.
   the raw-transcript fallbacks.
 - Tech constraints: plain JavaScript Electron app, no bundler, only two
   runtime dependencies (the native engines). Stay close to Electron built-ins
-  and platform tools rather than adding npm packages. Node 22+.
+  and platform tools rather than adding npm packages. Node 22.12+.
 - No telemetry, no accounts, no cloud requirement. Settings and history are
   plain local files; API keys live in the settings file (documented tradeoff).
 - Release process is automated: Conventional-Commit PR titles drive version

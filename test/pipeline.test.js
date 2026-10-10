@@ -1,7 +1,9 @@
 // Tests for the pipeline: the idle-unload timer (when models get evicted, and
 // what happens when a worker is busy at the moment the window elapses), and the
 // final transcription driven end to end through the registered IPC handlers
-// (bounded built-in decodes, and delivery when the STT worker dies mid-way).
+// (bounded built-in decodes, delivery when the STT worker dies mid-way, the
+// raw-transcript fallback when cleanup fails, and the cancel, stale-session
+// and empty-transcript paths that must keep nothing).
 //
 // main/pipeline.js requires Electron and most of the main process at load, so
 // this uses the same require.cache stubbing that engines.test.js uses for the
@@ -255,6 +257,8 @@ function dictationRig({
     statuses: [],
     settingsEvents: [],
     overlaySent: [],
+    hidden: 0,
+    cleanCancels: 0,
     lastStart: null,
   };
   let snapshot = null;
@@ -278,7 +282,9 @@ function dictationRig({
       },
       restartStt() {},
       unloadIdle: () => true,
-      cancelClean() {},
+      cancelClean() {
+        log.cleanCancels += 1;
+      },
       primeCleanup: async () => {
         log.warmups.push("cleanup");
       },
@@ -316,7 +322,9 @@ function dictationRig({
           log.settingsOpened += 1;
         },
         showOverlay() {},
-        hideOverlay() {},
+        hideOverlay() {
+          log.hidden += 1;
+        },
         sendToSettings: (channel) => log.settingsEvents.push(channel),
         sendToOverlay(channel, payload) {
           log.overlaySent.push(channel);
@@ -1028,4 +1036,221 @@ test("pipeline: a long error is clipped to the notification limit", async () => 
   });
   await rig.dictate(speechWav(1));
   assert.strictEqual(rig.log.notifications[0].body, "x".repeat(BODY_MAX));
+});
+
+/* ---------------- never lose the words: cancel, stale and empty paths (#196) ---------------- */
+
+// Let process() run to its end after the promise it is awaiting settles: its
+// continuations are microtasks, and a macrotask runs only once they drain.
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+// A cleanup that hangs until the test lets it go, so a cancel can land mid-clean.
+function heldCleanup() {
+  const held = {};
+  held.started = new Promise((resolve) => {
+    held.clean = (raw, cfg, signal) => {
+      held.signal = signal;
+      resolve();
+      return new Promise((res, rej) => {
+        held.finish = res;
+        signal.addEventListener("abort", () => held.rejectOnAbort && rej(new Error("aborted")));
+      });
+    };
+  });
+  return held;
+}
+
+function assertNothingKept(rig) {
+  assert.deepStrictEqual(rig.log.delivered, [], "a cancelled dictation is not delivered");
+  assert.deepStrictEqual(rig.log.history, [], "nor written to history");
+  assert.deepStrictEqual(rig.log.notifications, [], "nor reported as a failure");
+  assert.ok(!rig.log.logs.some(([, label]) => label === "cleanup failed:"), "nor logged as one");
+  for (const status of ["delivering", "done", "error"]) {
+    assert.ok(!rig.log.statuses.includes(status), `no "${status}" after the cancel`);
+  }
+}
+
+for (const [name, rejectOnAbort] of [
+  ["aborts cleanup and delivers nothing", true],
+  ["discards a cleanup that finishes anyway", false],
+]) {
+  test(`pipeline: a cancel while cleaning ${name}`, async () => {
+    // Cancel is the user saying "not this one": the dictation ends where it is.
+    // A cleanup the abort makes throw is not a cleanup failure (no raw-text
+    // fallback, no notice), and one that replies late is not delivered.
+    const held = heldCleanup();
+    held.rejectOnAbort = rejectOnAbort;
+    const rig = dictationRig({ cleanup: true, transcribe: async () => "words to drop", clean: held.clean });
+
+    rig.pipeline.toggle();
+    rig.handlers["audio:captured"]({}, { sid: rig.log.lastStart.sid, wav: speechWav(1) });
+    await held.started;
+    assert.strictEqual(rig.pipeline.getState(), "processing");
+    const cancelsBefore = rig.log.cleanCancels;
+
+    rig.pipeline.cancel();
+    assert.strictEqual(held.signal.aborted, true, "the cleanup request is aborted");
+    assert.strictEqual(rig.log.cleanCancels, cancelsBefore + 1, "and the worker told to stop generating");
+    assert.strictEqual(rig.pipeline.getState(), "idle");
+
+    if (!rejectOnAbort) held.finish("cleaned too late");
+    await flush();
+
+    assertNothingKept(rig);
+    assert.strictEqual(rig.pipeline.getState(), "idle");
+  });
+}
+
+test("pipeline: empty text says \"empty\", keeps nothing, and hides the overlay after 1.8 s", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "" });
+  await rig.dictate(speechWav(1));
+
+  assert.deepStrictEqual(rig.log.statuses, ["transcribing", "empty"]);
+  assert.deepStrictEqual(rig.log.delivered, []);
+  assert.deepStrictEqual(rig.log.history, []);
+  assert.deepStrictEqual(rig.log.notifications, []);
+
+  t.mock.timers.tick(1799);
+  assert.strictEqual(rig.log.hidden, 0, "the empty card stays up long enough to read");
+  t.mock.timers.tick(1);
+  assert.strictEqual(rig.log.hidden, 1);
+});
+
+test("pipeline: a new dictation started before the hide timer keeps its overlay", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "" });
+  await rig.dictate(speechWav(1));
+
+  rig.pipeline.toggle(); // the user is already talking again
+  assert.strictEqual(rig.pipeline.getState(), "recording");
+  t.mock.timers.tick(5000);
+  assert.strictEqual(rig.log.hidden, 0, "the old session's timer must not hide the new recording");
+});
+
+test("pipeline: a paste hint is notified in full and the card stays up 4 s", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const hint = "Grant Accessibility access, then paste with Cmd+V";
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => "Keep these words.",
+    deliver: async (text) => {
+      rig.log.delivered.push(text);
+      return { method: "clipboard", note: "Copied", hint };
+    },
+  });
+  await rig.dictate(speechWav(1));
+
+  assert.deepStrictEqual(rig.log.delivered, ["Keep these words."]);
+  assert.deepStrictEqual(rig.log.history, [{ raw: "Keep these words.", text: "Keep these words.", cleaned: false }]);
+  assert.deepStrictEqual(
+    rig.log.notifications.map(({ title, body }) => ({ title, body })),
+    [{ title: "Earheart: auto-paste failed, copied to clipboard", body: hint }]
+  );
+  assert.strictEqual(rig.log.done.method, "clipboard");
+
+  t.mock.timers.tick(3999);
+  assert.strictEqual(rig.log.hidden, 0, "a card with a note outlives the plain 1.6 s one");
+  t.mock.timers.tick(1);
+  assert.strictEqual(rig.log.hidden, 1);
+});
+
+// 8000 frames whose first half (amplitude 6000) is what the live preview
+// already committed and whose second half (8000) is the tail.
+function halfCommittedWav() {
+  const samples = new Int16Array(8000);
+  for (let i = 0; i < samples.length; i++) {
+    const amp = i < 4000 ? 6000 : 8000;
+    samples[i] = i % 2 ? amp : -amp;
+  }
+  return encodeWav(samples, SR);
+}
+const amplitudes = (w) => new Set(Array.from(wavToFloat32(w).samples, (x) => Math.round(Math.abs(x * 32768))));
+
+test("pipeline: a trusted snapshot decodes only the tail and joins it onto the committed text", async () => {
+  const seen = [];
+  const rig = dictationRig({
+    transcribe: async (n, w) => {
+      seen.push(w);
+      return "the tail";
+    },
+  });
+  await rig.dictate(halfCommittedWav(), { committedRaw: "committed words", decodedSamples: 4000, broken: false, chunks: [] });
+
+  assert.strictEqual(seen.length, 1, "one decode, of the tail only");
+  assert.strictEqual(wavToFloat32(seen[0]).samples.length, 4000, "4000 of 8000 frames");
+  assert.deepStrictEqual([...amplitudes(seen[0])], [8000], "and they are the last 4000");
+  assert.deepStrictEqual(rig.log.delivered, ["committed words the tail"]);
+  assert.deepStrictEqual(rig.log.history, [
+    { raw: "committed words the tail", text: "committed words the tail", cleaned: false },
+  ]);
+});
+
+test("pipeline: a broken snapshot decodes the whole recording and does not reuse its text", async () => {
+  const seen = [];
+  const rig = dictationRig({
+    transcribe: async (n, w) => {
+      seen.push(w);
+      return "all of it";
+    },
+  });
+  await rig.dictate(halfCommittedWav(), { committedRaw: "holey words", decodedSamples: 4000, broken: true, chunks: [] });
+
+  assert.strictEqual(seen.length, 1);
+  assert.strictEqual(wavToFloat32(seen[0]).samples.length, 8000, "every frame is decoded again");
+  assert.deepStrictEqual(rig.log.delivered, ["all of it"], "the broken text is salvage only, not a prefix");
+  assert.strictEqual(rig.log.history[0].incomplete, undefined);
+});
+
+test("pipeline: an empty or stale audio:captured payload is ignored, not thrown", () => {
+  const rig = dictationRig({ transcribe: async () => "unused" });
+  rig.pipeline.toggle();
+  const { sid } = rig.log.lastStart;
+
+  assert.doesNotThrow(() => rig.handlers["audio:captured"]({}));
+  assert.doesNotThrow(() => rig.handlers["audio:captured"]({}, { sid: sid - 1, wav: speechWav(1) }));
+
+  assert.strictEqual(rig.pipeline.getState(), "recording", "the real recording carries on");
+  assert.strictEqual(rig.log.transcribe.length, 0);
+});
+
+test("pipeline: record:error from the current recording ends it and hides the error after 5 s", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const rig = dictationRig({ transcribe: async () => "unused" });
+  rig.pipeline.toggle();
+  const { sid } = rig.log.lastStart;
+
+  rig.handlers["record:error"]({}, { sid: sid - 1, message: "old mic error" });
+  assert.strictEqual(rig.pipeline.getState(), "recording", "a stale session's error is ignored");
+
+  rig.handlers["record:error"]({}, { sid, message: "Microphone unavailable" });
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+  assert.deepStrictEqual(rig.log.statuses, ["error"]);
+  t.mock.timers.tick(4999);
+  assert.strictEqual(rig.log.hidden, 0);
+  t.mock.timers.tick(1);
+  assert.strictEqual(rig.log.hidden, 1);
+});
+
+test("pipeline: record:cancelled and pipeline:cancel end a recording without processing it", () => {
+  const rig = dictationRig({ transcribe: async () => "unused" });
+
+  rig.pipeline.toggle();
+  rig.handlers["record:cancelled"]({}, { sid: rig.log.lastStart.sid - 1 });
+  assert.strictEqual(rig.pipeline.getState(), "recording", "a stale session's cancel is ignored");
+  rig.handlers["record:cancelled"]({}, { sid: rig.log.lastStart.sid });
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+  assert.strictEqual(rig.log.hidden, 1);
+
+  rig.pipeline.toggle();
+  const { sid } = rig.log.lastStart;
+  rig.handlers["pipeline:cancel"]({});
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+  assert.ok(rig.log.overlaySent.includes("record:cancel"), "the overlay is told to drop the take");
+  assert.strictEqual(rig.log.hidden, 2);
+
+  // The overlay's late capture from the cancelled take is stale.
+  rig.handlers["audio:captured"]({}, { sid, wav: speechWav(1) });
+  assert.strictEqual(rig.log.transcribe.length, 0);
+  assert.deepStrictEqual(rig.log.delivered, []);
 });

@@ -7,6 +7,7 @@
       content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:"
     />
     <title>Welcome to Earheart</title>
+    <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="settings.css" />
     <link rel="stylesheet" href="wizard.css" />
   </head>
@@ -21,7 +22,7 @@
 
     <main>
       <!-- 1. Welcome -->
-      <section class="step active" id="step-welcome">
+      <section class="step active">
         <p class="lead">
           Earheart is private, hotkey-driven voice dictation. There is no
           account, no cloud requirement and nothing to learn — using it looks
@@ -31,7 +32,7 @@
         <div class="demo">
           <div class="demo-card">
             <div class="demo-visual">
-              <span class="keys" id="demo-keys"
+              <span class="keys"
                 ><kbd id="demo-mod">Ctrl</kbd><kbd>Shift</kbd><kbd>Space</kbd></span
               >
             </div>
@@ -118,7 +119,7 @@
       </section>
 
       <!-- 4. Speech-to-text -->
-      <section class="step" id="step-stt">
+      <section class="step">
         <h2>Speech becomes text on this computer</h2>
 
         <div id="stt-builtin-fields">
@@ -146,7 +147,7 @@
       </section>
 
       <!-- 5. Cleanup -->
-      <section class="step" id="step-cleanup">
+      <section class="step">
         <h2>Polish your transcripts automatically?</h2>
         <p class="lead">
           After transcription, a small language model can fix punctuation and

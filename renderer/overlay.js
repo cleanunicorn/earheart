@@ -121,7 +121,7 @@ const WAVE_COL_PX = 2.5; // CSS px per written column
 const WAVE_PUSH_MS = 80; // ms of audio per column (≈31px/s scroll speed)
 const WAVE_MAX_COLS = 600; // plenty to outrun any window width
 const WAVE_GAIN = 6; // level → amplitude gain, shared by both paint sites
-// The accent — kept in sync with --accent in overlay.css.
+// The accent — kept in sync with --accent in tokens.css.
 const WAVE_COLOR = "#fb4d5c";
 let waveHistory = []; // newest first: waveHistory[0] sits at the right edge
 let wavePushAt = 0; // rAF timestamp of the last written column

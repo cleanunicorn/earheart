@@ -5,7 +5,7 @@
 // radio-group name, so a markup redesign that drops or renames an element
 // breaks the window silently (the script throws at runtime, not at load).
 // wizard.html layers wizard.css on top of settings.css and reuses its :root
-// tokens, so a token rename breaks the wizard just as silently — and both
+// tokens (and the shared palette in tokens.css), so a token rename breaks the wizard just as silently — and both
 // pages load hotkey-capture.js before their own script, so a dropped or
 // reordered tag kills them just as quietly. These tests parse the files as
 // text — no DOM, no Electron — and assert those contracts hold, so a
@@ -23,6 +23,7 @@ const html = fs.readFileSync(path.join(RENDERER, "settings.html"), "utf8");
 const js = fs.readFileSync(path.join(RENDERER, "settings.js"), "utf8");
 const css = fs.readFileSync(path.join(RENDERER, "settings.css"), "utf8");
 const wizardCss = fs.readFileSync(path.join(RENDERER, "wizard.css"), "utf8");
+const tokensCss = fs.readFileSync(path.join(RENDERER, "tokens.css"), "utf8");
 const wizardHtml = fs.readFileSync(path.join(RENDERER, "wizard.html"), "utf8");
 const wizardJs = fs.readFileSync(path.join(RENDERER, "wizard.js"), "utf8");
 
@@ -599,17 +600,30 @@ test("settings.css forces [hidden] to win over component display rules", () => {
 });
 
 test("every CSS variable used by settings.css and wizard.css is defined in :root", () => {
-  // wizard.css layers on settings.css and reuses its tokens; a token rename in
-  // settings.css would leave the wizard rendering with invalid values silently.
-  const root = css.match(/:root\s*\{([\s\S]*?)\}/);
-  assert.ok(root, "settings.css should define a :root block");
-  const defined = new Set([...root[1].matchAll(/(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]));
+  // wizard.css layers on settings.css and reuses its tokens, and both see the
+  // shared palette from tokens.css; a token rename in either sheet would
+  // leave the wizard rendering with invalid values silently.
+  const defined = new Set();
+  for (const [file, source] of [["tokens.css", tokensCss], ["settings.css", css]]) {
+    const root = source.match(/:root\s*\{([\s\S]*?)\}/);
+    assert.ok(root, `${file} should define a :root block`);
+    for (const m of root[1].matchAll(/(--[a-z0-9-]+)\s*:/g)) defined.add(m[1]);
+  }
 
   const used = new Set(
     [...(css + wizardCss).matchAll(/var\((--[a-z0-9-]+)/g)].map((m) => m[1])
   );
   const undefinedVars = [...used].filter((v) => !defined.has(v)).sort();
   assert.deepStrictEqual(undefinedVars, [], `CSS vars used but not defined in :root: ${undefinedVars.join(", ")}`);
+});
+
+test("settings and the wizard load tokens.css before their own sheets", () => {
+  for (const [file, page, sheet] of [["settings.html", html, "settings.css"], ["wizard.html", wizardHtml, "settings.css"]]) {
+    const tokensAt = page.indexOf('href="tokens.css"');
+    const sheetAt = page.indexOf(`href="${sheet}"`);
+    assert.ok(tokensAt !== -1, `${file} must load tokens.css`);
+    assert.ok(sheetAt > tokensAt, `${file} must load tokens.css before ${sheet}`);
+  }
 });
 
 test("shared classes the wizard relies on still exist in settings.css", () => {
@@ -620,7 +634,7 @@ test("shared classes the wizard relies on still exist in settings.css", () => {
   // Match the selector in rule position of the comment-stripped sheet: the
   // header comment names most of these, and a plain substring would also
   // accept a longer name (.hint-x) or a value inside a declaration.
-  const shared = [".field", ".row", ".hint", ".status", ".lead", ".choice", "button.primary", "button.ghost", "code", ".capturing"];
+  const shared = [".field", ".row", ".hint", ".status", ".lead", ".choice", "button.primary", "button.ghost", "code", ".capturing", ".sr-only"];
   const missing = shared.filter((sel) => !definesRule(sel)).sort();
   assert.deepStrictEqual(missing, [], `settings.css no longer defines: ${missing.join(", ")}`);
 });

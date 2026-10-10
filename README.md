@@ -224,12 +224,12 @@ Settings → Speech-to-text lets you enter its URL and API key instead.
 
 ### Build from source
 
-If there's no release for your platform (requires Node 22+):
+If there's no release for your platform (requires Node 22.12+):
 
 ```bash
 git clone https://github.com/cleanunicorn/earheart
 cd earheart
-npm install
+npm ci
 npm run dist     # installers for the current platform land in dist/
 ```
 

@@ -215,6 +215,18 @@ function staleDefinitions(existing, model) {
   );
 }
 
+// Wrap a handler whose failures are answers, not exceptions: whatever it
+// throws reaches the renderer as { ok: false, error }, worded by `describe`.
+function wrap(fn, describe = (err) => err.message) {
+  return async (...args) => {
+    try {
+      return await fn(...args);
+    } catch (err) {
+      return { ok: false, error: describe(err) };
+    }
+  };
+}
+
 function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
   // Register any models the user added from a custom Hugging Face URL so they
   // resolve for download and for loading into the cleanup worker after a
@@ -391,26 +403,18 @@ function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
 
   // Round-trip a short silent WAV through the configured STT service (or the
   // in-process engine) to verify it actually works.
-  ipcMain.handle("stt:test", async (event, cfg) => {
-    try {
-      const wav = encodeSilenceWav(0.5);
-      await route.transcribe(wav, cfg);
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: err.message };
-    }
-  });
+  ipcMain.handle("stt:test", wrap(async (event, cfg) => {
+    const wav = encodeSilenceWav(0.5);
+    await route.transcribe(wav, cfg);
+    return { ok: true };
+  }));
 
   // List the models an external OpenAI-compatible service offers, so the
   // settings UI can present them as a pick-list instead of a free-text field.
-  ipcMain.handle("models:list-remote", async (event, cfg) => {
-    try {
-      const models = await listRemoteModels(cfg || {});
-      return { ok: true, models };
-    } catch (err) {
-      return { ok: false, error: err.message };
-    }
-  });
+  ipcMain.handle("models:list-remote", wrap(async (event, cfg) => {
+    const models = await listRemoteModels(cfg || {});
+    return { ok: true, models };
+  }));
 
   // Per-kind discovery + entry builders for custom Hugging Face models.
   const hfDiscover = { cleanup: listGgufQuants, stt: listSttVariants };
@@ -419,106 +423,86 @@ function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
   // List the downloadable variants (GGUF quantizations for cleanup, transducer
   // precisions for STT) in a Hugging Face repo — pasted as a URL or a bare
   // owner/model — so the settings UI can offer them as a pick-list. Read-only.
-  ipcMain.handle("models:hf-variants", async (event, { kind, url } = {}) => {
-    try {
-      if (!hfDiscover[kind]) return { ok: false, error: `Unknown model kind: ${kind}` };
-      const result = await hfDiscover[kind](parseRepoInput(url), fetch);
-      return { ok: true, ...result };
-    } catch (err) {
-      return { ok: false, error: err.message };
-    }
-  });
+  ipcMain.handle("models:hf-variants", wrap(async (event, { kind, url } = {}) => {
+    if (!hfDiscover[kind]) return { ok: false, error: `Unknown model kind: ${kind}` };
+    const result = await hfDiscover[kind](parseRepoInput(url), fetch);
+    return { ok: true, ...result };
+  }));
 
   // Open the Hugging Face hub in the browser, filtered to models Earheart can
   // run as this kind. The URL is built here from the kind, never taken from
   // the renderer, so the bridge can't be used to open arbitrary links.
-  ipcMain.handle("models:browse-hf", async (event, { kind } = {}) => {
-    try {
-      await shell.openExternal(searchUrl(kind));
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: err.message };
-    }
-  });
+  ipcMain.handle("models:browse-hf", wrap(async (event, { kind } = {}) => {
+    await shell.openExternal(searchUrl(kind));
+    return { ok: true };
+  }));
 
   // Add a custom model from a Hugging Face repo + chosen variant: build a
   // registry-shaped entry, persist it, and register it so it behaves like a
   // built-in (status/download/remove). Re-lists server-side rather than
   // trusting a file list from the renderer.
-  ipcMain.handle("models:add-custom", async (event, { kind, url, variant } = {}) => {
-    try {
-      if (!hfDiscover[kind]) return { ok: false, error: `Unknown model kind: ${kind}` };
-      const listing = await hfDiscover[kind](parseRepoInput(url), fetch);
-      const chosen =
-        listing.variants.find((v) => v.label === variant) ||
-        listing.variants.find((v) => v.label === listing.recommended);
-      if (!chosen) return { ok: false, error: "That version is no longer available" };
-      const model = hfBuild[kind](listing.repo, chosen);
-      const existing = (settings.get().customModels || []).find((m) => m.id === model.id);
-      const stale = staleDefinitions(existing, model);
-      const customModels = await withModelsBusy(stale, async () => {
-        for (const def of stale) await engines.removeFiles(def);
-        const cfg = settings.get();
-        // Dedupe by id so re-adding the same repo+quant just refreshes the entry.
-        const next = [...(cfg.customModels || []).filter((m) => m.id !== model.id), model];
-        settings.save({ ...cfg, customModels: next });
-        engines.registry.setCustomModels(next);
-        return next;
-      });
-      return { ok: true, modelId: model.id, customModels };
-    } catch (err) {
-      return { ok: false, error: deleteErrorMessage(err) };
-    }
-  });
+  ipcMain.handle("models:add-custom", wrap(async (event, { kind, url, variant } = {}) => {
+    if (!hfDiscover[kind]) return { ok: false, error: `Unknown model kind: ${kind}` };
+    const listing = await hfDiscover[kind](parseRepoInput(url), fetch);
+    const chosen =
+      listing.variants.find((v) => v.label === variant) ||
+      listing.variants.find((v) => v.label === listing.recommended);
+    if (!chosen) return { ok: false, error: "That version is no longer available" };
+    const model = hfBuild[kind](listing.repo, chosen);
+    const existing = (settings.get().customModels || []).find((m) => m.id === model.id);
+    const stale = staleDefinitions(existing, model);
+    const customModels = await withModelsBusy(stale, async () => {
+      for (const def of stale) await engines.removeFiles(def);
+      const cfg = settings.get();
+      // Dedupe by id so re-adding the same repo+quant just refreshes the entry.
+      const next = [...(cfg.customModels || []).filter((m) => m.id !== model.id), model];
+      settings.save({ ...cfg, customModels: next });
+      engines.registry.setCustomModels(next);
+      return next;
+    });
+    return { ok: true, modelId: model.id, customModels };
+  }, deleteErrorMessage));
 
   // Remove a custom model entirely: delete any downloaded files and drop its
   // definition from settings + the registry.
   // A file delete that fails (e.g. EBUSY on Windows for a loaded model) fails
   // the whole removal and keeps the definition, so the user can retry rather
   // than leave orphaned files with no entry to remove them.
-  ipcMain.handle("models:remove-custom", async (event, { modelId } = {}) => {
-    try {
-      // The stored definition knows which kind it is; a definition that's
-      // already gone still gets the cleanup-side fallbacks below.
-      const entry = (settings.get().customModels || []).find((m) => m.id === modelId);
-      const kind = entry && entry.kind === "stt" ? "stt" : "cleanup";
-      return await withModelsBusy([{ kind, id: modelId }], async () => {
-        // A definition the registry never accepted has no files to delete.
-        if (engines.registry.getModel(kind, modelId)) await engines.remove(kind, modelId);
-        // Read settings after the awaits so a save made meanwhile isn't lost.
-        const cfg = settings.get();
-        const customModels = (cfg.customModels || []).filter((m) => m.id !== modelId);
-        // If the removed model was the configured one for its kind, fall back to
-        // the default so the engine doesn't later fail to resolve a model that's
-        // gone.
-        const defaults = {
-          stt: engines.registry.DEFAULT_STT_MODEL,
-          cleanup: engines.registry.DEFAULT_CLEANUP_MODEL,
-        };
-        const kindCfg =
-          cfg[kind].builtin.model === modelId
-            ? { ...cfg[kind], builtin: { ...cfg[kind].builtin, model: defaults[kind] } }
-            : cfg[kind];
-        settings.save({ ...cfg, [kind]: kindCfg, customModels });
-        engines.registry.setCustomModels(customModels);
-        // The renderer adopts `model`: its select still holds the removed id,
-        // which would otherwise read back as "" on the next Save.
-        return { ok: true, customModels, kind, model: kindCfg.builtin.model };
-      });
-    } catch (err) {
-      return { ok: false, error: deleteErrorMessage(err) };
-    }
-  });
+  ipcMain.handle("models:remove-custom", wrap(async (event, { modelId } = {}) => {
+    // The stored definition knows which kind it is; a definition that's
+    // already gone still gets the cleanup-side fallbacks below.
+    const entry = (settings.get().customModels || []).find((m) => m.id === modelId);
+    const kind = entry && entry.kind === "stt" ? "stt" : "cleanup";
+    return await withModelsBusy([{ kind, id: modelId }], async () => {
+      // A definition the registry never accepted has no files to delete.
+      if (engines.registry.getModel(kind, modelId)) await engines.remove(kind, modelId);
+      // Read settings after the awaits so a save made meanwhile isn't lost.
+      const cfg = settings.get();
+      const customModels = (cfg.customModels || []).filter((m) => m.id !== modelId);
+      // If the removed model was the configured one for its kind, fall back to
+      // the default so the engine doesn't later fail to resolve a model that's
+      // gone.
+      const defaults = {
+        stt: engines.registry.DEFAULT_STT_MODEL,
+        cleanup: engines.registry.DEFAULT_CLEANUP_MODEL,
+      };
+      const kindCfg =
+        cfg[kind].builtin.model === modelId
+          ? { ...cfg[kind], builtin: { ...cfg[kind].builtin, model: defaults[kind] } }
+          : cfg[kind];
+      settings.save({ ...cfg, [kind]: kindCfg, customModels });
+      engines.registry.setCustomModels(customModels);
+      // The renderer adopts `model`: its select still holds the removed id,
+      // which would otherwise read back as "" on the next Save.
+      return { ok: true, customModels, kind, model: kindCfg.builtin.model };
+    });
+  }, deleteErrorMessage));
 
-  ipcMain.handle("cleanup:test", async (event, cfg) => {
-    try {
-      const sample = "um so this is uh a test of the cleanup service";
-      const result = await route.clean(sample, cfg);
-      return { ok: true, sample: result.slice(0, 200) };
-    } catch (err) {
-      return { ok: false, error: err.message };
-    }
-  });
+  ipcMain.handle("cleanup:test", wrap(async (event, cfg) => {
+    const sample = "um so this is uh a test of the cleanup service";
+    const result = await route.clean(sample, cfg);
+    return { ok: true, sample: result.slice(0, 200) };
+  }));
 
   // ---- in-process model management (wizard download step + Settings) ----
 
@@ -538,42 +522,40 @@ function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
   });
 
   // Stream a model download to disk, posting progress to the requesting window.
-  ipcMain.handle("models:download", async (event, { kind, modelId }) => {
+  ipcMain.handle("models:download", async (event, { kind, modelId } = {}) => {
     const key = modelKey(kind, modelId);
     if (downloads.has(key)) return { ok: false, error: "Already downloading" };
-    if (busyModels.has(key)) {
-      // Like every other terminal outcome (except "Already downloading", whose
-      // transfer will broadcast its own), report it to every window so a row
-      // that optimistically showed "Downloading…" settles.
-      const result = { ok: false, error: "This model is being removed" };
+    // Like every other terminal outcome (except "Already downloading", whose
+    // transfer will broadcast its own), report it to every window so a row
+    // that optimistically showed "Downloading…" settles.
+    const settle = (result) => {
       windows.broadcast("models:done", { kind, modelId, ...result });
       return result;
+    };
+    if (busyModels.has(key)) return settle({ ok: false, error: "This model is being removed" });
+    let installed;
+    try {
+      installed = engines.isInstalled(kind, modelId); // throws for a model the registry lacks
+    } catch (err) {
+      return settle({ ok: false, error: err.message });
     }
-    if (engines.isInstalled(kind, modelId)) {
-      const result = { ok: true };
-      windows.broadcast("models:done", { kind, modelId, ...result });
-      return result;
-    }
+    if (installed) return settle({ ok: true });
     const controller = new AbortController();
     const done = runDownload(kind, modelId, controller);
     downloads.set(key, { controller, done });
     return done;
   });
 
-  ipcMain.handle("models:cancel", (event, { kind, modelId }) => {
+  ipcMain.handle("models:cancel", (event, { kind, modelId } = {}) => {
     const entry = downloads.get(modelKey(kind, modelId));
     if (entry) entry.controller.abort();
     return { ok: true };
   });
 
-  ipcMain.handle("models:remove", async (event, { kind, modelId }) => {
-    try {
-      await withModelsBusy([{ kind, id: modelId }], () => engines.remove(kind, modelId));
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: deleteErrorMessage(err) };
-    }
-  });
+  ipcMain.handle("models:remove", wrap(async (event, { kind, modelId } = {}) => {
+    await withModelsBusy([{ kind, id: modelId }], () => engines.remove(kind, modelId));
+    return { ok: true };
+  }, deleteErrorMessage));
 
   ipcMain.handle("history:list", () => history.list());
   ipcMain.handle("history:clear", () => {

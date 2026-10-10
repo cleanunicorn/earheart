@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.36.1 — 2026-10-10
+
+- Keep hotkeys working when the updater fails to start, and clear stuck model downloads (#285)
+
 ## v0.36.0 — 2026-10-09
 
 - Raise the default dictation length to ten minutes and warn in its last minute (#271)

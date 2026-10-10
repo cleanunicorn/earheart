@@ -35,18 +35,6 @@ footer {
   justify-content: space-between;
 }
 
-/* Visually hidden, still read by AT (the dot row's spoken counterpart). */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 /* Step position as a row of dots: quiet stops, the current one white. */
 .dots {
   display: flex;

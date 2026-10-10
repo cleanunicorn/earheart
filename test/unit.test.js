@@ -376,6 +376,32 @@ test("migrateLegacy lifts the old 60 s remote cleanup timeout with the cap", () 
   assert.strictEqual(migrateLegacy({ cleanup: { timeoutMs: 300000 } }).cleanup.timeoutMs, 300000);
 });
 
+test("migrateLegacy lifts the old default live-preview chunk of 5 s to 10 s", () => {
+  // 5 s was the old default and never in the settings UI, so a stored 5 is a
+  // persisted default, not a choice.
+  const old = migrateLegacy({ stt: { engine: "builtin", livePreview: { chunkSeconds: 5 } } });
+  assert.strictEqual(old.stt.livePreview.chunkSeconds, 10);
+  // Any other stored value is the user's own and is kept.
+  const own = migrateLegacy({ stt: { engine: "builtin", livePreview: { chunkSeconds: 7 } } });
+  assert.strictEqual(own.stt.livePreview.chunkSeconds, 7);
+});
+
+test("migrateLegacy folds a bare cleanup temperature onto the custom style", () => {
+  // Configs from before the style slider carried only `temperature`; keeping
+  // it and pinning every other sampler to neutral reproduces what the model
+  // received before, when temperature was the only knob sent.
+  const migrated = migrateLegacy({ cleanup: { engine: "builtin", temperature: 0.7 } });
+  assert.strictEqual(migrated.cleanup.style, "custom");
+  assert.deepStrictEqual(migrated.cleanup.custom, { temperature: 0.7, topP: 1, topK: 0, minP: 0 });
+  assert.ok(!("temperature" in migrated.cleanup), "the bare temperature key is dropped");
+
+  // A config that already chose a style keeps it, temperature and all.
+  const styled = migrateLegacy({ cleanup: { engine: "builtin", style: "balanced", temperature: 0.7 } });
+  assert.strictEqual(styled.cleanup.style, "balanced");
+  assert.strictEqual(styled.cleanup.temperature, 0.7);
+  assert.ok(!("custom" in styled.cleanup));
+});
+
 test("the default cleanup prompt carries no source hard wrapping", () => {
   // It is shown verbatim in a soft-wrapping textarea, so every line must be a
   // whole rule: no continuation lines, no leading indentation.
@@ -980,12 +1006,31 @@ test("listRemoteModels strips a trailing slash before appending /models", async 
     body: { data: [{ id: "m" }] },
   }));
   try {
-    // base already ends in /v1; add another slash so joinUrl has to strip it.
+    // base already ends in /v1; add another slash so serviceUrl has to strip it.
     assert.deepStrictEqual(await listRemoteModels({ baseUrl: `${base}/` }), ["m"]);
     assert.strictEqual(requests[0].url, "/v1/models"); // not /v1//models
   } finally {
     server.close();
   }
+});
+
+test("listRemoteModels trims whitespace around the base URL", async () => {
+  const { server, base, requests } = await serveJson(() => ({
+    status: 200,
+    body: { data: [{ id: "m" }] },
+  }));
+  try {
+    // A private joiner once encoded this as /v1%20/models.
+    assert.deepStrictEqual(await listRemoteModels({ baseUrl: ` ${base} ` }), ["m"]);
+    assert.strictEqual(requests[0].url, "/v1/models");
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels treats a non-string base URL as missing", async () => {
+  // A private joiner once threw "b.replace is not a function" here.
+  await assert.rejects(() => listRemoteModels({ baseUrl: 123 }), /^Error: Base URL is required$/);
 });
 
 test("listRemoteModels names the host it couldn't reach, in plain words", async () => {

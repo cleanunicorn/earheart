@@ -212,14 +212,20 @@ function responseMetadata(res, file, totalBytesHint) {
   };
 }
 
+// The validators recorded in a partial's metadata, or null where absent or
+// not a string (the metadata file is untrusted on-disk JSON).
+function validators(metadata) {
+  return {
+    etag: typeof metadata.etag === "string" ? metadata.etag : null,
+    lastModified: typeof metadata.lastModified === "string" ? metadata.lastModified : null,
+  };
+}
+
 function ifRangeValue(metadata) {
   // RFC 9110 forbids weak entity tags in If-Range. Last-Modified is the next
   // best validator; with neither, the final SHA-256 still prevents installation
   // of bytes combined from incompatible representations.
-  const etag = typeof metadata.etag === "string" ? metadata.etag : null;
-  const lastModified = typeof metadata.lastModified === "string"
-    ? metadata.lastModified
-    : null;
+  const { etag, lastModified } = validators(metadata);
   if (etag && !etag.startsWith("W/")) return etag;
   return lastModified;
 }
@@ -236,12 +242,7 @@ function resumedResponseIsCompatible(res, partial, file) {
   if (file.bytes && range.total !== file.bytes) return false;
   if (partial.metadata.totalBytes && range.total !== partial.metadata.totalBytes) return false;
 
-  const oldEtag = typeof partial.metadata.etag === "string"
-    ? partial.metadata.etag
-    : null;
-  const oldModified = typeof partial.metadata.lastModified === "string"
-    ? partial.metadata.lastModified
-    : null;
+  const { etag: oldEtag, lastModified: oldModified } = validators(partial.metadata);
   const strongEtag = oldEtag && !oldEtag.startsWith("W/");
   if (strongEtag && res.headers.get("etag") !== oldEtag) return false;
   if (!strongEtag && oldModified && res.headers.get("last-modified") !== oldModified) {
@@ -255,69 +256,73 @@ function resumedResponseIsCompatible(res, partial, file) {
   return true;
 }
 
+function httpError(file, res) {
+  return new Error(`Download failed for ${file.name}: HTTP ${res.status}`);
+}
+
+async function installPart(paths, dest) {
+  await fsp.rename(paths.part, dest); // atomic: only a verified file lands in place
+  await fsp.rm(paths.meta, { force: true });
+}
+
 async function fetchFull(file, signal) {
   const res = await fetch(file.url, { signal });
-  if (res.status !== 200 || !res.body) {
-    throw new Error(`Download failed for ${file.name}: HTTP ${res.status}`);
-  }
+  if (res.status !== 200 || !res.body) throw httpError(file, res);
   return res;
 }
 
-async function downloadFile(baseDir, model, file, { partial, onSize, signal }) {
-  const dir = modelDir(baseDir, model);
-  await fsp.mkdir(dir, { recursive: true });
-  const dest = filePath(baseDir, model, file);
-  const paths = partialPaths(dest);
+// A crash can happen after the last byte lands but before verification and
+// rename. Finish that work locally instead of issuing an unsatisfiable range.
+// Returns { installed } when the partial was the whole verified file, else the
+// partial still worth resuming (null once a corrupted one is discarded).
+async function finalizePartial(paths, dest, file, partial, signal) {
+  if (!(partial && file.bytes && partial.size === file.bytes)) return { partial };
+  if (await verifyFile(paths.part, file, signal)) {
+    signal?.throwIfAborted();
+    await installPart(paths, dest);
+    return { installed: true };
+  }
+  await discardPartial(paths);
+  return { partial: null };
+}
 
-  // A crash can happen after the last byte lands but before verification and
-  // rename. Finish that work locally instead of issuing an unsatisfiable range.
-  if (partial && file.bytes && partial.size === file.bytes) {
-    if (await verifyFile(paths.part, file, signal)) {
-      signal?.throwIfAborted();
-      await fsp.rename(paths.part, dest);
-      await fsp.rm(paths.meta, { force: true });
-      return;
-    }
+// Request the rest of a partial (Range + If-Range), or the whole file when
+// there is none or the server cannot honour the range. Returns the response
+// and the byte offset its body starts at (0 means it replaces the partial).
+async function openResumableFetch(paths, file, partial, signal) {
+  if (!partial) return { res: await fetchFull(file, signal), offset: 0 };
+
+  const headers = { Range: `bytes=${partial.size}-` };
+  const validator = ifRangeValue(partial.metadata);
+  if (validator) headers["If-Range"] = validator;
+  const res = await fetch(file.url, { headers, signal });
+
+  if (res.status === 206 && resumedResponseIsCompatible(res, partial, file)) {
+    return { res, offset: partial.size };
+  } else if (res.status === 200 && res.body) {
+    // The host ignored Range or If-Range detected changed content. The body
+    // is already a complete representation, so safely truncate rather than
+    // append (and avoid wasting it on a second request).
+    return { res, offset: 0 };
+  } else if (res.status === 206 || res.status === 416) {
+    // Malformed ranges, 416, or a changed validator on a non-compliant 206
+    // invalidate the partial. Cancel that body and explicitly fetch afresh.
+    await res.body?.cancel().catch(() => {});
     await discardPartial(paths);
-    partial = null;
-  }
-
-  let hash = file.sha256 ? crypto.createHash("sha256") : null;
-  if (hash && partial) await updateHashFromFile(paths.part, hash, signal);
-
-  let res;
-  let offset = 0;
-  if (partial) {
-    const headers = { Range: `bytes=${partial.size}-` };
-    const validator = ifRangeValue(partial.metadata);
-    if (validator) headers["If-Range"] = validator;
-    res = await fetch(file.url, { headers, signal });
-
-    if (res.status === 206 && resumedResponseIsCompatible(res, partial, file)) {
-      offset = partial.size;
-    } else if (res.status === 200 && res.body) {
-      // The host ignored Range or If-Range detected changed content. The body
-      // is already a complete representation, so safely truncate rather than
-      // append (and avoid wasting it on a second request).
-      offset = 0;
-    } else if (res.status === 206 || res.status === 416) {
-      // Malformed ranges, 416, or a changed validator on a non-compliant 206
-      // invalidate the partial. Cancel that body and explicitly fetch afresh.
-      await res.body?.cancel().catch(() => {});
-      await discardPartial(paths);
-      partial = null;
-      res = await fetchFull(file, signal);
-    } else {
-      // A temporary HTTP error says nothing about the partial's validity. Keep
-      // it for the next attempt just as we do for a dropped connection.
-      await res.body?.cancel().catch(() => {});
-      throw new Error(`Download failed for ${file.name}: HTTP ${res.status}`);
-    }
+    return { res: await fetchFull(file, signal), offset: 0 };
   } else {
-    res = await fetchFull(file, signal);
+    // A temporary HTTP error says nothing about the partial's validity. Keep
+    // it for the next attempt just as we do for a dropped connection.
+    await res.body?.cancel().catch(() => {});
+    throw httpError(file, res);
   }
+}
 
-  if (!res.body) throw new Error(`Download failed for ${file.name}: HTTP ${res.status}`);
+// Stream the response into the .part file (appending at a non-zero offset),
+// then check the whole file's size and checksum. `hash` already holds the
+// partial's prefix; a full response starts it over. Bad bytes are discarded.
+async function streamAndVerify(paths, file, { res, offset, hash, onSize, signal }) {
+  if (!res.body) throw httpError(file, res);
   // A full response replaces, rather than extends, any previously hashed prefix.
   if (!offset && hash) hash = crypto.createHash("sha256");
   const range = offset ? parseContentRange(res.headers.get("content-range")) : null;
@@ -347,8 +352,24 @@ async function downloadFile(baseDir, model, file, { partial, onSize, signal }) {
     throw new Error(`Checksum mismatch for ${file.name}`);
   }
   signal?.throwIfAborted();
-  await fsp.rename(paths.part, dest); // atomic: only a verified file lands in place
-  await fsp.rm(paths.meta, { force: true });
+}
+
+async function downloadFile(baseDir, model, file, { partial, onSize, signal }) {
+  const dir = modelDir(baseDir, model);
+  await fsp.mkdir(dir, { recursive: true });
+  const dest = filePath(baseDir, model, file);
+  const paths = partialPaths(dest);
+
+  const finalized = await finalizePartial(paths, dest, file, partial, signal);
+  if (finalized.installed) return;
+  partial = finalized.partial;
+
+  const hash = file.sha256 ? crypto.createHash("sha256") : null;
+  if (hash && partial) await updateHashFromFile(paths.part, hash, signal);
+
+  const { res, offset } = await openResumableFetch(paths, file, partial, signal);
+  await streamAndVerify(paths, file, { res, offset, hash, onSize, signal });
+  await installPart(paths, dest);
 }
 
 /**

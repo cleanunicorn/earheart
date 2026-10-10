@@ -5,9 +5,18 @@
 
 # ----- app (Electron) -------------------------------------------------------
 
+# Electron fetches its binary on first use, not at install, so both install
+# targets fetch it up front: parallel test files that each trigger that
+# download race and fail. ci.yml runs the same two commands.
 .PHONY: install
-install: ## Install app dependencies (npm)
+install: ## Install app dependencies exactly as locked (npm ci, as CI does)
+	npm ci
+	npx --no install-electron
+
+.PHONY: deps-update
+deps-update: ## Install with npm install, which may update package-lock.json (commit the result)
 	npm install
+	npx --no install-electron
 
 .PHONY: run
 run: ## Run the app in development
@@ -20,6 +29,10 @@ test: ## Run unit tests
 .PHONY: smoke
 smoke: ## Boot the app headlessly and exit (CI-style sanity check)
 	xvfb-run -a npx electron . --smoke-test --no-sandbox
+
+.PHONY: engine-smoke
+engine-smoke: ## Boot the engine worker, round-trip a ping, and load both native addons
+	xvfb-run -a npx electron scripts/engine-smoke.js --no-sandbox
 
 .PHONY: overlay-smoke
 overlay-smoke: ## Drive the overlay with a fake mic and check capture/UI sync
@@ -90,6 +103,10 @@ dist-win-docker: ## Cross-build Windows packages from Linux via Docker+Wine
 .PHONY: install-stt
 install-stt: ## Create the stt-server virtualenv and install it (uv)
 	cd stt-server && uv sync --locked
+
+.PHONY: test-stt
+test-stt: ## Run the stt-server endpoint tests (no model downloads)
+	cd stt-server && uv run --locked --extra test python -m pytest
 
 .PHONY: run-stt
 run-stt: ## Run the local Parakeet STT server (downloads model on first run)

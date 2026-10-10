@@ -3,7 +3,7 @@
 // works against the bundled Parakeet server, OpenAI, Groq, speaches, or any
 // other compatible service — switching is just a base URL change.
 
-const { serviceUrl } = require("./service-url");
+const { serviceUrl, authHeaders } = require("./service-url");
 const { requestJson } = require("./transport-error");
 
 /**
@@ -21,14 +21,11 @@ async function transcribe(wav, cfg, signal) {
   if (cfg.language) form.append("language", cfg.language);
   form.append("response_format", "json");
 
-  const headers = {};
-  if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
-
   const data = await requestJson(
     url,
     {
       method: "POST",
-      headers,
+      headers: authHeaders(cfg.apiKey),
       body: form,
     },
     { service: "STT service", timeoutMs: cfg.timeoutMs || 120000, signal }

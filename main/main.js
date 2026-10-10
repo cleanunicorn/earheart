@@ -113,7 +113,13 @@ function main() {
       deliver.repairPastePermissions().catch((err) => logger.warn("permission repair failed:", err));
     }
     if (!isSmokeTest) {
-      updates.init({ onStateChange: () => tray.refresh() });
+      // Updates are optional; the hotkeys below are not. A throw here must
+      // never leave the app running with no way to dictate.
+      try {
+        updates.init({ onStateChange: () => tray.refresh() });
+      } catch (err) {
+        logger.warn(`update check setup failed: ${err.message}`);
+      }
     }
 
     const hotkeyResults = applyHotkeys(cfg);

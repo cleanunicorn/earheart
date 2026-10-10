@@ -17,14 +17,21 @@ jobs:
     # Typical run: 2-3 min; the slowest observed was under 7 min. A hang
     # otherwise runs to GitHub's 360-minute default.
     timeout-minutes: 30
+    # Each step below runs the command behind a Makefile target (named in the
+    # comments) rather than `make` itself, because Windows runners have no
+    # GNU Make. Golden rule 5: change a step and its target together.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
-      - run: npm ci
-      - run: npm test
+      - run: npm ci # make install
+      # Electron fetches its binary on first use; parallel test files that each
+      # trigger that download race and fail, so fetch it once up front.
+      - run: npx --no install-electron # make install
+      - run: npm test # make test
       # Electron needs a display; Linux runners are headless so wrap with xvfb.
+      # make smoke
       - name: Smoke test (headless)
         if: runner.os == 'Linux'
         run: xvfb-run -a npx electron . --smoke-test --no-sandbox
@@ -34,6 +41,7 @@ jobs:
       # Boot the engine utilityProcess worker, round-trip a ping, and load both
       # native addons, so a broken worker or an addon that no longer links
       # against this Electron's ABI surfaces here rather than at runtime.
+      # make engine-smoke
       - name: Engine worker boot (headless)
         if: runner.os == 'Linux'
         run: xvfb-run -a npx electron scripts/engine-smoke.js --no-sandbox
@@ -44,6 +52,7 @@ jobs:
       # verify the capture/UI sync contract: "Listening…" appears only once
       # samples actually flow, and the captured WAV covers everything said
       # from that moment on.
+      # make overlay-smoke
       - name: Overlay capture sync (headless)
         if: runner.os == 'Linux'
         run: xvfb-run -a npx electron scripts/overlay-smoke.js --no-sandbox
@@ -53,12 +62,39 @@ jobs:
       # Drive the real settings window and verify the settings-page contract:
       # one continuous scroll, the scroll-spy index, and the seated roving
       # tabindex.
+      # make settings-smoke
       - name: Settings panel smoke (headless)
         if: runner.os == 'Linux'
         run: xvfb-run -a npx electron scripts/settings-smoke.js --no-sandbox
       - name: Settings panel smoke
         if: runner.os != 'Linux'
         run: npx electron scripts/settings-smoke.js --no-sandbox
+
+  # `.nvmrc` floats to the newest Node 22, so the job above never sees the
+  # oldest Node that package.json's engines field promises. Install and unit-test
+  # on that floor, read from package.json so the two cannot drift. Linux only:
+  # the floor is about Node's own APIs, not the per-OS native binaries, and the
+  # smoke checks run on Electron's bundled Node, not this one.
+  node-floor:
+    runs-on: ubuntu-latest
+    # npm ci plus the unit tests: about a minute.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Read the engines.node floor
+        id: floor
+        run: |
+          floor=$(jq -r '.engines.node' package.json)
+          case "$floor" in
+            ">="[0-9]*) echo "version=${floor#>=}" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::engines.node must be a plain >=X.Y floor, got: $floor"; exit 1 ;;
+          esac
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ steps.floor.outputs.version }}
+      - run: npm ci # make install
+      - run: npx --no install-electron # make install
+      - run: npm test # make test
 
   # A tracked symlink is the one breakage the jobs above structurally cannot
   # catch: they run `npm ci`, which rebuilds node_modules over whatever the
@@ -109,6 +145,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - name: Endpoint tests (no model downloads)
+        # make test-stt (this job already runs inside stt-server/)
         run: uv run --locked --extra test python -m pytest
       - name: Entry-point smoke
         run: uv run --locked earheart-stt --help

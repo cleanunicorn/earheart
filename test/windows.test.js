@@ -31,6 +31,9 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
   return class FakeWindow {
     constructor(options) {
       calls.push(["construct", options]);
+      // Geometry is tracked so the drag and resize handlers can be driven
+      // against a window that really moves.
+      this.bounds = { x: options.x ?? 0, y: options.y ?? 0, width: options.width, height: options.height };
       this.webContents = {
         on: (event, handler) => {
           webContentsHandlers[event] = handler;
@@ -65,12 +68,21 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
     }
     setBounds(bounds) {
       calls.push(["setBounds", bounds]);
+      this.bounds = { ...this.bounds, ...bounds };
     }
     getSize() {
-      return [500, 95];
+      return [this.bounds.width, this.bounds.height];
     }
     setSize(w, h) {
       calls.push(["setSize", w, h]);
+      this.bounds = { ...this.bounds, width: w, height: h };
+    }
+    getPosition() {
+      return [this.bounds.x, this.bounds.y];
+    }
+    setPosition(x, y) {
+      calls.push(["setPosition", x, y]);
+      this.bounds = { ...this.bounds, x, y };
     }
     showInactive() {
       calls.push(["showInactive"]);
@@ -104,24 +116,50 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
 
 // Load a fresh main/windows.js against fakes. Fresh per test because the module
 // keeps the overlay as module-level singleton state.
-function loadWindows({ refuseRejoin = false } = {}) {
+//
+// `displays` is a mutable list of work areas (the first is primary), so a test
+// can unplug a monitor mid-run; `stored` is what settings.get() returns, and
+// every settings.save() lands in `saved`. ipcMain handlers are captured in
+// `ipc` so the overlay's drag/resize channels can be driven directly.
+function loadWindows({
+  refuseRejoin = false,
+  displays = [{ x: 0, y: 0, width: 1920, height: 1080 }],
+  stored = {},
+} = {}) {
   const calls = [];
   const warnings = [];
   const webContentsHandlers = {};
-  const workArea = { x: 0, y: 0, width: 1920, height: 1080 };
+  const ipc = {};
+  const saved = [];
+  // Nearest display: the one containing the point, else the closest by
+  // distance to its work area — a fair stand-in for Electron's choice.
+  const nearest = ({ x, y }) => {
+    const dist = (a) =>
+      Math.hypot(
+        Math.max(a.x - x, 0, x - (a.x + a.width)),
+        Math.max(a.y - y, 0, y - (a.y + a.height))
+      );
+    return displays.reduce((best, a) => (dist(a) < dist(best) ? a : best));
+  };
   const electron = {
     BrowserWindow: makeFakeWindow(calls, { refuseRejoin, webContentsHandlers }),
-    ipcMain: { on: () => {} },
+    ipcMain: {
+      on: (channel, handler) => {
+        ipc[channel] = handler;
+      },
+    },
     screen: {
-      getPrimaryDisplay: () => ({ workArea }),
-      getAllDisplays: () => [{ workArea }],
-      getDisplayNearestPoint: () => ({ workArea }),
+      getPrimaryDisplay: () => ({ workArea: displays[0] }),
+      getAllDisplays: () => displays.map((workArea) => ({ workArea })),
+      getDisplayNearestPoint: (point) => ({ workArea: nearest(point) }),
     },
   };
   const realLoad = Module._load;
   Module._load = function (request, ...rest) {
     if (request === "electron") return electron;
-    if (request === "./settings") return { get: () => ({}), save: () => {} };
+    if (request === "./settings") {
+      return { get: () => stored, save: (next) => saved.push(next) };
+    }
     if (request === "./util/logger") {
       return { info: () => {}, warn: (msg) => warnings.push(msg), error: () => {} };
     }
@@ -129,7 +167,7 @@ function loadWindows({ refuseRejoin = false } = {}) {
   };
   delete require.cache[WINDOWS];
   try {
-    return { windows: require(WINDOWS), calls, warnings, webContentsHandlers };
+    return { windows: require(WINDOWS), calls, warnings, webContentsHandlers, ipc, saved, displays };
   } finally {
     Module._load = realLoad;
     delete require.cache[WINDOWS];
@@ -479,4 +517,141 @@ test("re-opening Settings from the wizard reloads it before bringing it forward"
   assert.match(calls[reload][1], /settings\.html$/);
   assert.deepStrictEqual(calls[reload][2], { query: { wizard: "1" } });
   assert.ok(reload < indexOf(calls, "show"), "the reload must come before show");
+});
+
+/* ---------------- overlay placement ---------------- */
+
+// The default spot on a 1920x1080 primary display: bottom-center, 24 px up.
+const DEFAULT_SPOT = { x: 710, y: 961 };
+const constructedAt = (calls) => {
+  const [, options] = calls.find(([name]) => name === "construct");
+  return { x: options.x, y: options.y };
+};
+const lastOf = (calls, name) => calls.filter(([n]) => n === name).at(-1);
+
+test("a saved overlay position that still fits a display is restored", () => {
+  // A spot on a second monitor to the right of the primary.
+  const { windows, calls } = loadWindows({
+    displays: [
+      { x: 0, y: 0, width: 1920, height: 1080 },
+      { x: 1920, y: 0, width: 1920, height: 1080 },
+    ],
+    stored: { overlay: { x: 2500, y: 100 } },
+  });
+  windows.createOverlay();
+  assert.deepStrictEqual(constructedAt(calls), { x: 2500, y: 100 });
+});
+
+test("a saved overlay position off every display falls back to bottom-center", () => {
+  // The monitor it was saved on is unplugged.
+  const gone = loadWindows({ stored: { overlay: { x: 2500, y: 100 } } });
+  gone.windows.createOverlay();
+  assert.deepStrictEqual(constructedAt(gone.calls), DEFAULT_SPOT);
+
+  // Partly off-screen is not good enough either: the whole card must fit.
+  const straddling = loadWindows({ stored: { overlay: { x: 1500, y: 100 } } });
+  straddling.windows.createOverlay();
+  assert.deepStrictEqual(constructedAt(straddling.calls), DEFAULT_SPOT);
+
+  // A malformed saved position is ignored rather than trusted.
+  const malformed = loadWindows({ stored: { overlay: { x: "10", y: 20 } } });
+  malformed.windows.createOverlay();
+  assert.deepStrictEqual(constructedAt(malformed.calls), DEFAULT_SPOT);
+});
+
+test("showing the overlay re-clamps a remembered spot after the display shrinks", () => {
+  const { windows, calls, displays } = loadWindows({ stored: { overlay: { x: 1400, y: 900 } } });
+  windows.createOverlay();
+  assert.deepStrictEqual(constructedAt(calls), { x: 1400, y: 900 });
+
+  displays[0] = { x: 0, y: 0, width: 1280, height: 720 }; // resolution dropped
+  const show = calls.length;
+  windows.showOverlay();
+
+  const [, bounds] = calls.slice(show).find(([name]) => name === "setBounds");
+  assert.deepStrictEqual(bounds, { x: 1280 - 500, y: 720 - 95, width: 500, height: 95 });
+});
+
+test("dragging a grown overlay keeps it on-screen and saves its bottom-anchored spot", () => {
+  const { windows, calls, ipc, saved } = loadWindows({ stored: { output: { mode: "paste" } } });
+  windows.createOverlay();
+  // A live transcript grows the card upward to 200 px.
+  ipc["overlay:resize"]({}, { height: 200 });
+  assert.deepStrictEqual(lastOf(calls, "setBounds")[1], { x: 710, y: 856, width: 500, height: 200 });
+
+  ipc["overlay:drag-start"]({}, { x: 800, y: 900 });
+  ipc["overlay:drag"]({}, { x: 5000, y: 5000 }); // far past the bottom-right corner
+
+  // Clamped with the grown height, so the window's bottom edge stays on-screen.
+  assert.deepStrictEqual(lastOf(calls, "setPosition"), ["setPosition", 1920 - 500, 1080 - 200]);
+  assert.strictEqual(saved.length, 0, "nothing is written while the drag is in flight");
+
+  ipc["overlay:drag-end"]();
+  // Saved where a base-height card would sit with the same bottom edge, and
+  // merged into the current settings rather than replacing them.
+  assert.deepStrictEqual(saved, [{ output: { mode: "paste" }, overlay: { x: 1420, y: 1080 - 95 } }]);
+
+  // The next show resets to base height at that spot: same bottom edge.
+  const show = calls.length;
+  windows.showOverlay();
+  const [, bounds] = calls.slice(show).find(([name]) => name === "setBounds");
+  assert.deepStrictEqual(bounds, { x: 1420, y: 985, width: 500, height: 95 });
+});
+
+test("dragging clamps to an offset work area's top-left corner", () => {
+  const { windows, calls, ipc, saved } = loadWindows({
+    displays: [{ x: 100, y: 50, width: 1600, height: 900 }],
+  });
+  windows.createOverlay();
+  ipc["overlay:drag-start"]({}, { x: 0, y: 0 });
+  ipc["overlay:drag"]({}, { x: -5000, y: -5000 });
+  assert.deepStrictEqual(lastOf(calls, "setPosition"), ["setPosition", 100, 50]);
+  ipc["overlay:drag-end"]();
+  assert.deepStrictEqual(saved.at(-1).overlay, { x: 100, y: 50 });
+});
+
+test("drag events without a drag-start, and a drag-end without a move, change nothing", () => {
+  const { windows, calls, ipc, saved } = loadWindows();
+  windows.createOverlay();
+  ipc["overlay:drag"]({}, { x: 10, y: 10 });
+  assert.strictEqual(lastOf(calls, "setPosition"), undefined);
+  ipc["overlay:drag-start"]({}, { x: 0, y: 0 });
+  ipc["overlay:drag-end"]();
+  assert.deepStrictEqual(saved, []);
+});
+
+test("overlay resize is capped by the work area and floored at the base height", () => {
+  const { windows, calls, ipc } = loadWindows();
+  windows.createOverlay();
+  const bottom = DEFAULT_SPOT.y + 95;
+
+  // A runaway transcript: capped 48 px short of the work-area height, growing
+  // upward from a fixed bottom edge.
+  ipc["overlay:resize"]({}, { height: 5000 });
+  assert.deepStrictEqual(lastOf(calls, "setBounds")[1], {
+    x: 710, y: bottom - (1080 - 48), width: 500, height: 1080 - 48,
+  });
+
+  // Shrinking below the base card is floored at the base height.
+  ipc["overlay:resize"]({}, { height: 10 });
+  assert.deepStrictEqual(lastOf(calls, "setBounds")[1], { x: 710, y: 961, width: 500, height: 95 });
+
+  // An unchanged height or a non-number is a no-op.
+  const before = calls.length;
+  ipc["overlay:resize"]({}, { height: 95 });
+  ipc["overlay:resize"]({}, { height: "300" });
+  assert.strictEqual(calls.length, before);
+});
+
+test("overlay growth near the top of the screen is floored at the work-area top", () => {
+  const { windows, calls, ipc } = loadWindows();
+  windows.createOverlay();
+  ipc["overlay:drag-start"]({}, { x: 0, y: 0 });
+  ipc["overlay:drag"]({}, { x: 0, y: -2000 }); // card pinned to the top edge
+  assert.deepStrictEqual(lastOf(calls, "setPosition"), ["setPosition", 710, 0]);
+
+  ipc["overlay:resize"]({}, { height: 400 });
+  // Growing upward would push the top off-screen; it stays at y = 0 and the
+  // window extends downward instead.
+  assert.deepStrictEqual(lastOf(calls, "setBounds")[1], { x: 710, y: 0, width: 500, height: 400 });
 });

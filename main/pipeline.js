@@ -307,8 +307,8 @@ async function transcribeWithEstimate(wav, sttCfg, signal, stale, assembly) {
 // The builtin worker reports real token progress (generated vs transcript
 // length, capped below 1 — only the reply says done), so on success this sends
 // the explicit final 1; the remote path never showed a bar, so a completion
-// flash there would be noise. The raw-transcript fallback stays with the
-// caller — that's dictation policy, not progress plumbing.
+// flash there would be noise. The raw-transcript fallback lives one level up,
+// in cleanWithFallback — that's dictation policy, not progress plumbing.
 async function cleanWithProgress(raw, cleanupCfg, signal, stale) {
   const text = await route.clean(raw, cleanupCfg, signal, {
     onProgress: (fraction) => {
@@ -319,6 +319,26 @@ async function cleanWithProgress(raw, cleanupCfg, signal, stale) {
     sendProgress("cleaning", 1);
   }
   return text;
+}
+
+// Cleanup is an enhancement, never a gate (Golden rule 8): when it fails, the
+// raw transcript becomes the text and the user is told why. Never throws, so
+// the words always reach history and delivery. A failure caused by a cancel
+// (or a newer session) says nothing — the dictation is over, and the caller
+// re-checks stale() before using the result. Resolves to { text, cleaned }.
+async function cleanWithFallback(raw, cleanupCfg, signal, stale) {
+  try {
+    return { text: await cleanWithProgress(raw, cleanupCfg, signal, stale), cleaned: true };
+  } catch (err) {
+    if (!stale()) {
+      logger.error("cleanup failed:", err);
+      notify({
+        title: "Earheart: cleanup failed, used raw transcript",
+        body: err.message,
+      });
+    }
+    return { text: raw, cleaned: false };
+  }
 }
 
 function hideOverlaySoon(sid, ms) {
@@ -502,19 +522,7 @@ async function process(sid, wavArrayBuffer) {
     let cleaned = false;
     if (cfg.cleanup.enabled) {
       overlayStatus("cleaning");
-      try {
-        text = await cleanWithProgress(raw, cfg.cleanup, signal, stale);
-        cleaned = true;
-      } catch (err) {
-        if (stale()) return;
-        // Cleanup is an enhancement: fall back to the raw transcript and
-        // surface what happened instead of dropping the dictation.
-        logger.error("cleanup failed:", err);
-        notify({
-          title: "Earheart: cleanup failed, used raw transcript",
-          body: err.message,
-        });
-      }
+      ({ text, cleaned } = await cleanWithFallback(raw, cfg.cleanup, signal, stale));
       if (stale()) return;
     }
 
@@ -577,7 +585,7 @@ async function process(sid, wavArrayBuffer) {
 }
 
 function init() {
-  ipcMain.on("audio:captured", (event, { sid, wav }) => {
+  ipcMain.on("audio:captured", (event, { sid, wav } = {}) => {
     if (sid !== session || state !== "recording") return;
     process(sid, wav);
   });

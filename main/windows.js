@@ -23,8 +23,8 @@ const OVERLAY_WIDTH = 500;
 const OVERLAY_HEIGHT = 95;
 // Matches the card's fade-out transition in overlay.css.
 const OVERLAY_FADE_MS = 200;
-// Matches --ink in settings.css (the wizard layers on it), so neither
-// window flashes white before its stylesheet paints.
+// Matches --ink in renderer/tokens.css (which settings and the wizard load),
+// so neither window flashes white before its stylesheet paints.
 const INK_COLOR = "#18181b";
 
 let overlayWindow = null;

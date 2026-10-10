@@ -188,6 +188,130 @@ test("listGgufQuants reports a timeout when the response body stalls", async () 
   );
 });
 
+test("listGgufQuants keeps a non-timeout failure in each phase distinct from a timeout", async () => {
+  // Unreachable: the fetch itself fails.
+  const unreachable = async () => {
+    throw new Error("ECONNRESET");
+  };
+  await assert.rejects(
+    listGgufQuants({ owner: "u", repo: "r" }, unreachable, { timeoutMs: 1000 }),
+    { message: "Could not reach Hugging Face: ECONNRESET" }
+  );
+
+  // The body fails to parse.
+  const badBody = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => {
+      throw new SyntaxError("Unexpected token <");
+    },
+  });
+  await assert.rejects(
+    listGgufQuants({ owner: "u", repo: "r" }, badBody, { timeoutMs: 1000 }),
+    { message: "Unexpected response from Hugging Face" }
+  );
+
+  // A status error thrown between the two phases is not re-translated.
+  const serverError = stubFetch([["/api/models/", { status: 500, body: {} }]]);
+  await assert.rejects(
+    listGgufQuants({ owner: "u", repo: "r" }, serverError, { timeoutMs: 1000 }),
+    { message: "Hugging Face returned HTTP 500" }
+  );
+
+  // The caller cancelling is not our timeout.
+  const caller = new AbortController();
+  caller.abort();
+  const abortable = (_url, { signal }) =>
+    signal.aborted ? Promise.reject(new Error("aborted")) : new Promise(() => {});
+  await assert.rejects(
+    listGgufQuants({ owner: "u", repo: "r" }, abortable, { signal: caller.signal, timeoutMs: 1000 }),
+    { message: "Could not reach Hugging Face: aborted" }
+  );
+});
+
+test("discovery breaks a rank tie with the smaller download, for both kinds", async () => {
+  // Neither quant label is ranked, so both share the last priority.
+  const gguf = await listGgufQuants(
+    { owner: "u", repo: "r" },
+    stubFetch([
+      ["/tree/", { body: [
+        { type: "file", path: "big.gguf", size: 900 },
+        { type: "file", path: "small.gguf", size: 100 },
+      ] }],
+      ["/api/models/", { body: { sha: "c" } }],
+    ])
+  );
+  assert.deepStrictEqual(gguf.variants.map((v) => v.label), ["small", "big"]);
+  assert.strictEqual(gguf.recommended, "small");
+
+  // q4 and bnb4 are both unranked precisions.
+  const stt = await listSttVariants(
+    { owner: "u", repo: "parakeet" },
+    stubFetch([
+      ["/tree/", { body: [
+        { type: "file", path: "encoder.q4.onnx", size: 900 },
+        { type: "file", path: "decoder.q4.onnx", size: 1 },
+        { type: "file", path: "joiner.q4.onnx", size: 1 },
+        { type: "file", path: "encoder.bnb4.onnx", size: 100 },
+        { type: "file", path: "decoder.bnb4.onnx", size: 1 },
+        { type: "file", path: "joiner.bnb4.onnx", size: 1 },
+        { type: "file", path: "tokens.txt", size: 1 },
+      ] }],
+      ["/api/models/", { body: { sha: "c" } }],
+    ])
+  );
+  assert.deepStrictEqual(stt.variants.map((v) => v.label), ["bnb4", "q4"]);
+  assert.strictEqual(stt.recommended, "bnb4");
+});
+
+test("listSttVariants says when the roles never share a precision", async () => {
+  const fetchImpl = stubFetch([
+    ["/tree/", { body: [
+      { type: "file", path: "encoder.fp16.onnx", size: 1 },
+      { type: "file", path: "decoder.fp16.onnx", size: 1 },
+      { type: "file", path: "joiner.int8.onnx", size: 1 },
+      { type: "file", path: "tokens.txt", size: 1 },
+    ] }],
+    ["/api/models/", { body: { sha: "c" } }],
+  ]);
+  await assert.rejects(
+    listSttVariants({ owner: "u", repo: "parakeet" }, fetchImpl),
+    /encoder, decoder and joiner never share a precision \(encoder\.fp16\.onnx, decoder\.fp16\.onnx, joiner\.int8\.onnx\)/
+  );
+});
+
+test("both builders save the same entry shape, differing only by kind", () => {
+  const files = [{ name: "a.bin", url: "https://hf/a", bytes: 5, sha256: "f".repeat(64) }];
+  const shared = {
+    label: "r · X",
+    note: "Runs on this computer · Hugging Face · o/r · X · ~0.00 GB · checksum-verified",
+    custom: true,
+    files: [{ name: "a.bin", url: "https://hf/a", bytes: 5, sha256: "f".repeat(64) }],
+  };
+  const sherpa = { encoder: "e", decoder: "d", tokens: "t", modelType: "whisper" };
+
+  const cleanup = buildCleanupModel("o/r", { label: "X", totalBytes: 5, files });
+  assert.deepStrictEqual(cleanup, {
+    id: "custom-o-r-x",
+    kind: "cleanup",
+    ...shared,
+    source: { repo: "o/r", quant: "X" },
+    gguf: { file: "a.bin" },
+  });
+
+  const stt = buildSttModel("o/r", { label: "X", totalBytes: 5, files, sherpa });
+  assert.deepStrictEqual(stt, {
+    id: "custom-o-r-x",
+    kind: "stt",
+    ...shared,
+    source: { repo: "o/r", variant: "X" },
+    sherpa,
+  });
+  // Saved settings keep a stable key order: the runtime config comes last.
+  assert.deepStrictEqual(Object.keys(cleanup).slice(-2), ["files", "gguf"]);
+  assert.deepStrictEqual(Object.keys(stt).slice(-2), ["files", "sherpa"]);
+});
+
 test("recommendedVariant picks the first (best-sorted) entry", () => {
   assert.strictEqual(recommendedVariant([{ label: "Q4_K_M" }, { label: "Q8_0" }]), "Q4_K_M");
   assert.strictEqual(recommendedVariant([]), null);

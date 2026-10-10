@@ -7,12 +7,12 @@ read this whole codebase in an afternoon.
 
 ## Development setup
 
-Requires Node 22+ (an `.nvmrc` is provided, so `nvm use` picks it up).
+Requires Node 22.12+ (an `.nvmrc` is provided, so `nvm use` picks it up).
 
 ```bash
 git clone https://github.com/cleanunicorn/earheart
 cd earheart
-npm install
+npm ci
 npm start
 ```
 
@@ -20,10 +20,12 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 
 | Task | What it does |
 | --- | --- |
-| `make install` | Install app dependencies (npm) |
+| `make install` | Install app dependencies exactly as locked (`npm ci`, as CI does) |
+| `make deps-update` | Install with `npm install`, which may update `package-lock.json` (commit the result) |
 | `make run` | Run the app in development |
 | `make test` | Run unit tests (`node --test`, 30 s per-test timeout) |
 | `make smoke` | Boot the app headlessly and exit (CI-style sanity check) |
+| `make engine-smoke` | Boot the engine worker, round-trip a ping, and load both native addons |
 | `make overlay-smoke` | Drive the overlay with a fake mic and check capture/UI sync |
 | `make settings-smoke` | Drive the settings window and check the index/scroll-spy contract and live settings sync |
 | `make icons` | Regenerate app/tray icons into `assets/` |
@@ -33,6 +35,7 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | `make dist-linux` / `dist-mac` / `dist-win` | Per-platform packages |
 | `make dist-win-docker` | Cross-build Windows packages from Linux via Docker+Wine |
 | `make install-stt` | Create the stt-server virtualenv and install it (uv) |
+| `make test-stt` | Run the stt-server endpoint tests (no model downloads) |
 | `make run-stt` | Run the local Parakeet STT server |
 | `make clean` | Remove build output |
 
@@ -54,7 +57,7 @@ other models.
 ```bash
 npm test                       # unit tests (node --test, 30 s per-test timeout, no framework)
 make smoke                     # boots the full app with --smoke-test and exits
-npx electron scripts/engine-smoke.js --no-sandbox   # boot the engine worker, round-trip a ping
+make engine-smoke              # boot the engine worker, round-trip a ping
 make overlay-smoke             # drive the overlay with a fake mic, check capture/UI sync
 make settings-smoke            # drive the settings window, check the index/scroll-spy contract
 ```
@@ -75,9 +78,10 @@ choice to disk. CI runs all five on every platform.
 Built-in models download to Electron's `userData/models` on first use; the
 smoke checks don't need them present.
 
-The optional Python STT server has endpoint tests too. From `stt-server/`, run
-`uv run --locked --extra test python -m pytest`. CI runs the same suite with synthetic
-WAV uploads and fake recognizers, without downloading or loading speech models.
+The optional Python STT server has endpoint tests too: run `make test-stt`
+(or, from `stt-server/`, `uv run --locked --extra test python -m pytest`). CI
+runs the same suite with synthetic WAV uploads and fake recognizers, without
+downloading or loading speech models.
 
 ## Building installers
 
@@ -213,6 +217,7 @@ main/                    Electron main process
   services/stt.js        OpenAI-compatible transcription client
   services/cleanup.js    OpenAI-compatible chat client
   services/models-remote.js   list a remote service's models (Settings)
+  services/service-url.js     shared base-URL check, Bearer header, 15 s timeout
   engines/               in-process STT + cleanup (no separate executable)
     registry.js          downloadable model catalogue
     model-manager.js     streaming, atomic, checksum-verified downloads
@@ -337,8 +342,8 @@ Design constraints worth keeping:
   shipped CSS and governs the overlay, settings and wizard: one coral accent
   reserved for the voice, filled-white for the primary action, no drop
   shadows, and two hardcoded values that must stay in sync (`WAVE_COLOR` ↔
-  `--accent`, `INK_COLOR` ↔ `--ink`). Read it before changing any renderer
-  CSS.
+  `--accent`, `INK_COLOR` ↔ `--ink`, both tokens in `renderer/tokens.css`).
+  Read it before changing any renderer CSS.
 
 ## README screenshots
 

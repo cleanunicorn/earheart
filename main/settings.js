@@ -1,11 +1,14 @@
-// Settings persistence: a plain JSON file in Electron's userData directory.
-// Keys are grouped by concern so modules can take just the slice they need.
+// Settings persistence: a JSON file in Electron's userData directory, written
+// atomically with owner-only permissions. Remote API keys are encrypted at rest
+// where the OS offers secure storage (see main/secret-store.js). Keys are
+// grouped by concern so modules can take just the slice they need.
 
-const { app } = require("electron");
+const { app, safeStorage } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const registry = require("./engines/registry");
 const logger = require("./util/logger");
+const secretStore = require("./secret-store");
 const { DEFAULT_STYLE, styleById, NEUTRAL_SAMPLING } = require("./cleanup-styles");
 
 // The invariant core of the cleanup instructions, inlined into the model's user
@@ -340,34 +343,118 @@ function clampLimits(merged) {
   return out;
 }
 
+// safeStorage answers only after app `ready` (before it, Linux reports no
+// encryption at all). A stub without isReady (unit tests) counts as ready.
+function appReady() {
+  return typeof app?.isReady !== "function" || app.isReady();
+}
+
+// Stored ciphertext that couldn't be decrypted, by section (see
+// secret-store.js decodeSecrets), and whether keys are encrypted at rest.
+// Both are settled by the first load after `ready`.
+let unreadableSecrets = {};
+let keyStorageStatus = { secure: false, backend: null };
+
+// Move an unparseable settings.json aside, so starting from defaults never
+// destroys the user's only copy (custom models, prompts, keys). Same naming as
+// history.js. Best effort: if the rename fails the file stays where it is.
+function preserveCorrupt(file) {
+  let backup = `${file}.corrupt-${Date.now()}`;
+  let suffix = 0;
+  while (fs.existsSync(backup)) backup = `${file}.corrupt-${Date.now()}-${++suffix}`;
+  try {
+    fs.renameSync(file, backup);
+    try {
+      // It may hold plaintext keys; keep it as private as settings.json.
+      fs.chmodSync(backup, 0o600);
+    } catch {
+      // Permissions are best effort (e.g. on Windows).
+    }
+    logger.warn(`settings file was not valid JSON; preserved it at ${backup} and started from defaults`);
+  } catch (err) {
+    logger.warn(`settings file was not valid JSON and could not be preserved: ${err.message}`);
+  }
+}
+
+// The stored settings object, or {} on first run. A file that exists but
+// doesn't hold a JSON object (truncated, hand-edited, zero bytes) is moved
+// aside first; a file that can't be read at all (permissions) is left alone.
+function readStored() {
+  const file = settingsPath();
+  let text;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+  } catch {
+    // Not JSON: preserved below.
+  }
+  preserveCorrupt(file);
+  return {};
+}
+
 function load() {
   if (cached) return cached;
-  let stored = {};
-  try {
-    stored = JSON.parse(fs.readFileSync(settingsPath(), "utf8"));
-  } catch {
-    // First run or unreadable file: fall back to defaults.
+  const ready = appReady();
+  const stored = readStored();
+  const status = ready
+    ? secretStore.storageStatus(safeStorage, process.platform)
+    : { secure: false, backend: null };
+  const decoded = secretStore.decodeSecrets(stored, ready ? safeStorage : null);
+  const merged = clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored)));
+  // Before `ready` encrypted keys read as "", so the result is not cached:
+  // the first load after `ready` decrypts them. Nothing saves before then
+  // (save() refuses).
+  if (!ready) return merged;
+  cached = merged;
+  unreadableSecrets = decoded.unreadable;
+  keyStorageStatus = status;
+  for (const section of Object.keys(unreadableSecrets)) {
+    logger.warn(`the saved ${section} API key could not be decrypted; it is kept on disk until a new key is saved`);
   }
-  cached = clampLimits(deepMerge(DEFAULTS, migrateLegacy(stored)));
+  // A key saved in plaintext (an older version, or a keyring that has since
+  // become available) moves to ciphertext now rather than on the next save.
+  if (status.secure && secretStore.hasPlaintextSecrets(stored)) {
+    try {
+      writeFile(merged);
+      logger.info("encrypted the saved API keys with the system's secure storage");
+    } catch (err) {
+      logger.warn(`could not encrypt the saved API keys: ${err.message}`);
+    }
+  }
   return cached;
 }
 
-// Merge `next` onto the defaults and write it atomically. Throws when the
-// write fails, and memory then still equals the file, so callers that must
-// not fail (startup, bookkeeping) guard it. Only after a successful write does
-// the cache change and onChanged fire. Returns a detached copy of what was
-// saved.
-function save(next) {
-  const merged = clampLimits(deepMerge(DEFAULTS, next));
+// Write `merged` (plaintext keys) to settings.json: keys encrypted where
+// possible, a complete replacement written and fsynced beside the destination,
+// then renamed over it. A crash leaves the previous settings or a stray temp
+// file, never a truncated settings.json. Both files are owner-only (0600).
+function writeFile(merged) {
+  const { disk } = secretStore.encodeSecrets(merged, {
+    status: keyStorageStatus,
+    safeStorage,
+    unreadable: unreadableSecrets,
+    onError: (section, err) =>
+      logger.warn(`could not encrypt the ${section} API key, saving it unencrypted: ${err.message}`),
+  });
   const file = settingsPath();
   const tmp = `${file}.${process.pid}.tmp`;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   try {
-    // Write a complete replacement beside the destination, then swap it into
-    // place atomically. A crash can leave the previous settings or a harmless
-    // temp file, but never a truncated settings.json. The restrictive mode is
-    // especially important while API keys still live in this file.
-    fs.writeFileSync(tmp, JSON.stringify(merged, null, 2), { mode: 0o600 });
+    // A leftover temp file (crash of an earlier process with this pid) would
+    // keep its old mode, since `mode` applies only on creation.
+    fs.rmSync(tmp, { force: true });
+    const fd = fs.openSync(tmp, "w", 0o600);
+    try {
+      fs.writeFileSync(fd, JSON.stringify(disk, null, 2));
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     fs.renameSync(tmp, file);
   } catch (err) {
     try {
@@ -377,12 +464,39 @@ function save(next) {
     }
     throw err;
   }
+}
+
+// Merge `next` onto the defaults and write it atomically. Throws when the
+// write fails, and memory then still equals the file, so callers that must
+// not fail (startup, bookkeeping) guard it. Only after a successful write does
+// the cache change and onChanged fire. Returns a detached copy of what was
+// saved. Refuses before app `ready`: keys couldn't be encrypted yet, and a
+// stored key that hasn't been decrypted would be overwritten.
+function save(next) {
+  if (!appReady()) throw new Error("settings cannot be saved before the app is ready");
+  const previous = load();
+  const merged = clampLimits(deepMerge(DEFAULTS, next));
+  writeFile(merged);
   // Only now does the in-memory copy change: a failed save must leave get()
   // agreeing with the file, not handing out values that were never persisted.
-  const previous = load();
   cached = merged;
+  for (const section of Object.keys(unreadableSecrets)) {
+    if (merged[section]?.apiKey) delete unreadableSecrets[section];
+  }
   notifyChanged(previous);
   return clone(cached);
+}
+
+// How API keys are stored, for Settings: `secure` (encrypted with OS-backed
+// storage), the Linux `backend` name, and the sections whose stored key could
+// not be decrypted (`unreadable`). Never carries a key or ciphertext.
+function keyStorage() {
+  load();
+  return {
+    secure: keyStorageStatus.secure,
+    backend: keyStorageStatus.backend,
+    unreadable: Object.keys(unreadableSecrets),
+  };
 }
 
 // A copy of the current settings. Editing it changes nothing until it is
@@ -435,6 +549,7 @@ module.exports = {
   onChanged,
   effectiveOutputMode,
   isFirstRun,
+  keyStorage,
   migrateLegacy,
   DEFAULTS,
   deepMerge,

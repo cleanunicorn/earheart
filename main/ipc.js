@@ -258,6 +258,9 @@ function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
       // shortcut that failed at launch as soon as it opens. Read-only: asking
       // never re-registers anything.
       hotkeyStatus: getHotkeyStatus?.() ?? null,
+      // Whether API keys are encrypted at rest (or why not), for the note
+      // under the API key fields. Status only — never a key or ciphertext.
+      keyStorage: settings.keyStorage(),
       // Drives the cleanup style slider (id/label/hint per stop) and the
       // "Start from preset" seed values, so the UI copy and numbers stay in
       // lockstep with the presets the engines actually use.

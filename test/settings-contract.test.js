@@ -651,12 +651,24 @@ test("disabled cleanup controls are inert in settings and the wizard", () => {
 });
 
 test("a coupled hotkey rollback gets a neutral save banner", () => {
-  const normalized = js.replace(/\s+/g, " ");
-  assert.match(
-    normalized,
-    /function hotkeySaveMessage\(hotkeyResult, pauseResult\).*if \(!hotkeyResult\.ok && !pauseResult\.ok\) { return "Saved, but the hotkeys could not be changed"/,
-    "when both slot results fail, the banner must not blame either field"
+  const context = {};
+  require("node:vm").runInNewContext(
+    `${extractFunction(js, "hotkeySaveMessage")}; this.hotkeySaveMessage = hotkeySaveMessage;`,
+    context
   );
+  const ok = { ok: true };
+  const bad = { ok: false };
+  const neutral = "Saved, but the hotkeys could not be changed";
+  // When more than one slot fails, the banner must not blame either field.
+  assert.strictEqual(context.hotkeySaveMessage(bad, bad, ok), neutral);
+  assert.strictEqual(context.hotkeySaveMessage(ok, bad, bad), neutral);
+  assert.strictEqual(context.hotkeySaveMessage(bad, ok, bad), neutral);
+  // One failure names its own field.
+  assert.strictEqual(context.hotkeySaveMessage(bad, ok, ok), "Saved, but the hotkey could not be registered");
+  assert.strictEqual(context.hotkeySaveMessage(ok, bad, ok), "Saved, but the pause hotkey could not be registered");
+  assert.strictEqual(context.hotkeySaveMessage(ok, ok, bad), "Saved, but the discard hotkey could not be registered");
+  // An older main that reports no discard result counts it as fine.
+  assert.strictEqual(context.hotkeySaveMessage(ok, bad), "Saved, but the pause hotkey could not be registered");
 });
 
 test("Live transcript is its own section, between General and Speech-to-text", () => {

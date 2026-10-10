@@ -48,6 +48,7 @@ function loadIpcHandlers(cfg, {
   let stored = cfg;
   const settings = {
     DEFAULTS: {},
+    keyStorage: () => ({ secure: true, backend: null, unreadable: [] }),
     get: () => stored,
     onChanged: () => () => {},
     save: (next) => {

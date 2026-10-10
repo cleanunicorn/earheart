@@ -195,3 +195,119 @@ test("startRecording takes its cap through recordingCapSeconds", () => {
   assert.match(js, /maxSeconds:\s*recordingCapSeconds\(maxSeconds\)/);
   assert.doesNotMatch(js, /maxSeconds:\s*maxSeconds\s*\|\|/);
 });
+
+// The overlay never takes focus (so dictation never steals it from the target
+// app), so its keys can't be reached from the keyboard — each needs a global
+// route instead, or a keyboard-only user can't perform it (PRODUCT.md:
+// "overlay actions — must be fully usable without a mouse"; #215, where
+// Discard had none). Each dictation key maps to: the overlay handler its click
+// runs, the channel main pushes to run that SAME handler, the pipeline
+// function that pushes it, the hotkey setting bound to that function, the
+// Settings field that edits it, and the `earheart --<flag>` for desktops where
+// global shortcuts can't register. The update prompt's buttons are a separate
+// card, not dictation actions, and are out of scope here.
+const KEYBOARD_ROUTES = {
+  pause: {
+    handler: "togglePause",
+    channel: "record:pause-toggle",
+    sender: "pauseToggle",
+    entry: "pauseToggle",
+    setting: "pauseHotkey",
+    field: "pause-hotkey",
+    flag: "--pause",
+  },
+  stop: {
+    handler: "stopRecording",
+    channel: "record:stop",
+    sender: "stopRecording",
+    entry: "toggle",
+    setting: "hotkey",
+    field: "hotkey",
+    flag: "--toggle",
+  },
+  cancel: {
+    handler: "cancelRecording",
+    channel: "record:discard",
+    sender: "discard",
+    entry: "discard",
+    setting: "discardHotkey",
+    field: "discard-hotkey",
+    flag: "--discard",
+  },
+};
+
+function functionBody(source, name) {
+  const declaration = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(source);
+  assert.ok(declaration, `${name} function must exist`);
+  const bodyStart = source.indexOf("{", declaration.index + declaration[0].length - 1);
+  let depth = 0;
+  for (let i = bodyStart; i < source.length; i++) {
+    if (source[i] === "{") depth++;
+    else if (source[i] === "}" && --depth === 0) return source.slice(bodyStart, i + 1);
+  }
+  assert.fail(`${name} function has an unclosed body`);
+}
+
+test("every overlay dictation key has a keyboard route to the same handler", () => {
+  const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), "utf8");
+  const pipelineJs = read("main", "pipeline.js");
+  const mainJs = read("main", "main.js");
+  const settingsHtml = read("renderer", "settings.html");
+  const { DEFAULTS } = require("../main/settings");
+
+  const keys = [...html.matchAll(/<button id="([a-z-]+)"/g)]
+    .map((m) => m[1])
+    .filter((id) => !id.startsWith("update-"));
+  assert.deepStrictEqual(
+    keys.sort(),
+    Object.keys(KEYBOARD_ROUTES).sort(),
+    "a new overlay key needs a keyboard route in KEYBOARD_ROUTES"
+  );
+
+  for (const [id, route] of Object.entries(KEYBOARD_ROUTES)) {
+    const binding = js.match(new RegExp(`const (\\w+) = document\\.getElementById\\("${id}"\\)`));
+    assert.ok(binding, `overlay.js must bind #${id}`);
+    assert.match(
+      js,
+      new RegExp(`${binding[1]}\\.addEventListener\\("click", ${route.handler}\\)`),
+      `#${id}'s click must run ${route.handler}`
+    );
+    assert.match(
+      js,
+      new RegExp(`earheart\\.on\\("${route.channel}", ${route.handler}\\)`),
+      `${route.channel} must run ${route.handler}, the same handler as #${id}'s click`
+    );
+    assert.match(
+      functionBody(pipelineJs, route.sender),
+      new RegExp(`sendToOverlay\\("${route.channel}"`),
+      `pipeline.${route.sender} must push ${route.channel}`
+    );
+    if (route.entry !== route.sender) {
+      assert.match(
+        functionBody(pipelineJs, route.entry),
+        new RegExp(`\\b${route.sender}\\(\\)`),
+        `pipeline.${route.entry} must reach ${route.sender}`
+      );
+    }
+    assert.match(
+      pipelineJs,
+      new RegExp(`module\\.exports = \\{[^}]*\\b${route.entry},`),
+      `pipeline must export ${route.entry}`
+    );
+    assert.ok(Object.hasOwn(DEFAULTS, route.setting), `settings must default ${route.setting}`);
+    const slot = mainJs.match(new RegExp(`(\\w+): cfg\\.${route.setting},`));
+    assert.ok(slot, `applyHotkeys must register cfg.${route.setting}`);
+    const callback = `on${slot[1][0].toUpperCase()}${slot[1].slice(1)}`;
+    assert.match(
+      mainJs,
+      new RegExp(`${callback}: \\(\\) => pipeline\\.${route.entry}\\(\\)`),
+      `the ${route.setting} slot must call pipeline.${route.entry}`
+    );
+    assert.match(
+      mainJs,
+      new RegExp(`argv\\.includes\\("${route.flag}"\\)\\) \\{\\s*pipeline\\.${route.entry}\\(\\)`),
+      `earheart ${route.flag} must call pipeline.${route.entry}`
+    );
+    assert.match(settingsHtml, new RegExp(`<input id="${route.field}"`), `Settings must edit ${route.setting}`);
+  }
+});

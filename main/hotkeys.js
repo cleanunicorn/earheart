@@ -2,8 +2,8 @@
 //
 // Electron's globalShortcut works on Windows, macOS and Linux/X11. On some
 // Wayland desktops (notably GNOME) apps cannot grab global keys; for those,
-// bind a system shortcut to `earheart --toggle` (and `earheart --pause`)
-// instead — the second instance forwards the action to the running app and
+// bind a system shortcut to `earheart --toggle` (and `earheart --pause`,
+// `earheart --discard`) instead — the second instance forwards the action to the running app and
 // exits (see main.js).
 
 const { globalShortcut } = require("electron");
@@ -194,9 +194,124 @@ function applyPair(next) {
   return results;
 }
 
+// The discard slot. Unlike record and pause it is armed (registered with the
+// OS) only while a dictation is live — a third global grab held all day would
+// shadow some app's shortcut for nothing — so it lives outside the pair
+// transaction: `accelerator` is the configured binding, `armed` whether the
+// OS currently holds it for us.
+const discard = { accelerator: "", onTrigger: null, armed: false };
+
+function registrationFailure(accelerator, attempt) {
+  return attempt.error
+    ? `Invalid hotkey "${prettyHotkey(accelerator)}": ${attempt.error.message}`
+    : `Could not register "${prettyHotkey(accelerator)}" (${registrationHint()}).`;
+}
+
+function usedBy(name, accelerator) {
+  return `"${prettyHotkey(accelerator)}" is already used by the ${name} hotkey`;
+}
+
+// Take a new discard binding, or keep the old one and say why not. A changed
+// accelerator is registered once on the spot, so a combination Electron
+// rejects or another app holds fails at Save instead of silently mid-dictation;
+// unless a dictation is live it is released straight away.
+function setDiscard(accelerator, onTrigger) {
+  discard.onTrigger = onTrigger;
+  if (accelerator === discard.accelerator) {
+    return accelerator ? { ok: true } : { ok: true, empty: true };
+  }
+  if (!accelerator) {
+    if (discard.armed) globalShortcut.unregister(discard.accelerator);
+    discard.armed = false;
+    discard.accelerator = "";
+    return { ok: true, empty: true };
+  }
+  const attempt = attemptRegister(accelerator, () => discard.onTrigger?.());
+  if (!attempt.ok) return { ok: false, error: registrationFailure(accelerator, attempt) };
+  if (discard.armed) globalShortcut.unregister(discard.accelerator);
+  else globalShortcut.unregister(accelerator);
+  discard.accelerator = accelerator;
+  return { ok: true };
+}
+
+/**
+ * Apply all three hotkeys: the record/pause pair as one transaction (see
+ * applyPair), then the optional discard hotkey, which is armed only while a
+ * dictation is live (see armDiscard).
+ *
+ * The three must differ. As in the pair, a collision is charged to the slot
+ * that changed into it, and the other keeps working. When neither changed (a
+ * hand-edited file at launch), discard — the optional, newest slot — yields
+ * and stays unbound.
+ *
+ * @param {{record?: string, pause?: string, discard?: string,
+ *   onRecord: () => void, onPause: () => void, onDiscard: () => void}} next
+ * @returns {{record: object, pause: object, discard: object}}
+ */
+function applyAll(next) {
+  const target = { record: next.record || "", pause: next.pause || "", discard: next.discard || "" };
+  const previous = {
+    record: registered.get("record")?.accelerator || "",
+    pause: registered.get("pause")?.accelerator || "",
+    discard: discard.accelerator,
+  };
+  const charged = {};
+  if (target.discard) {
+    for (const name of ["record", "pause"]) {
+      if (target[name] !== target.discard) continue;
+      const discardChanged = target.discard !== previous.discard;
+      const otherChanged = target[name] !== previous[name];
+      if (otherChanged && !discardChanged) charged[name] = usedBy("discard", target[name]);
+      else charged.discard = usedBy(name, target.discard);
+    }
+  }
+  const pairNext = { ...next };
+  for (const name of ["record", "pause"]) {
+    if (charged[name]) pairNext[name] = previous[name];
+  }
+  const pair = applyPair(pairNext);
+  for (const name of ["record", "pause"]) {
+    if (charged[name]) pair[name] = { ok: false, error: charged[name] };
+  }
+
+  // A pair slot that failed keeps its old binding, which can be the very key
+  // discard asked for; that is a collision too, not a registration failure.
+  const holder = ["record", "pause"].find(
+    (name) => target.discard && registered.get(name)?.accelerator === target.discard
+  );
+  const discardError = charged.discard || (holder && usedBy(holder, target.discard));
+  if (!discardError) return { ...pair, discard: setDiscard(target.discard, next.onDiscard) };
+  discard.onTrigger = next.onDiscard;
+  // Keep the old binding unless the pair now holds it (a cold start's file).
+  const pairHeld = ["record", "pause"].some(
+    (name) => registered.get(name)?.accelerator === discard.accelerator
+  );
+  if (discard.accelerator && pairHeld) setDiscard("", next.onDiscard);
+  return { ...pair, discard: { ok: false, error: discardError } };
+}
+
+/**
+ * Register the discard hotkey while a dictation is live, release it otherwise.
+ * Idempotent. A failure is logged, not thrown: the overlay's ✕ and the tray's
+ * Cancel still work, and Settings showed the binding working when it was saved.
+ *
+ * @param {boolean} live
+ */
+function armDiscard(live) {
+  if (live && !discard.armed && discard.accelerator) {
+    const attempt = attemptRegister(discard.accelerator, () => discard.onTrigger?.());
+    if (attempt.ok) discard.armed = true;
+    else logger.warn(`discard hotkey: ${registrationFailure(discard.accelerator, attempt)}`);
+  } else if (!live && discard.armed) {
+    globalShortcut.unregister(discard.accelerator);
+    discard.armed = false;
+  }
+}
+
 function unregisterAll() {
   globalShortcut.unregisterAll();
   registered.clear();
+  discard.armed = false;
 }
 
 // The pair layer treats either empty slot as a valid unbound state. Adapt that
@@ -211,11 +326,20 @@ function toHotkeyResults(pair, accelerators) {
       : pair.record,
     pauseHotkey: pair.pause,
   };
+  // Only applyAll reports a discard slot; a bare pair result keeps two keys.
+  if (pair.discard) results.discardHotkey = pair.discard;
   if (!accelerators) return results;
-  return {
+  const withAccelerators = {
     hotkey: { ...results.hotkey, accelerator: accelerators.hotkey || "" },
     pauseHotkey: { ...results.pauseHotkey, accelerator: accelerators.pauseHotkey || "" },
   };
+  if (results.discardHotkey) {
+    withAccelerators.discardHotkey = {
+      ...results.discardHotkey,
+      accelerator: accelerators.discardHotkey || "",
+    };
+  }
+  return withAccelerators;
 }
 
-module.exports = { applyPair, toHotkeyResults, unregisterAll };
+module.exports = { applyPair, applyAll, armDiscard, toHotkeyResults, unregisterAll };

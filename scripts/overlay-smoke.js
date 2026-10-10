@@ -13,6 +13,8 @@
 //      again (suspend/resume reuse, no stale worklet).
 //   5. An unusable max-length cap (e.g. -5 s) falls back to the default
 //      instead of stopping the take the moment it goes live.
+//   6. The discard hotkey's push (record:discard) does what the ✕ key does in
+//      every phase, and the ✕ key's tooltip names the hotkey.
 //
 // Run under Electron:
 //
@@ -517,6 +519,42 @@ app.whenReady().then(async () => {
       `wav=${stats5.seconds.toFixed(2)}s rms=${stats5.rms.toFixed(4)}`
     );
 
+    // ---- Session 5b: the discard hotkey runs the ✕ key's own handler --------
+    // record:discard (pushed by the discard hotkey / `earheart --discard`)
+    // must do what clicking ✕ does in each phase: discard the take while
+    // recording, cancel while processing (and only dismiss during delivery —
+    // checked with the delivery state below).
+    win.webContents.send("record:start", {
+      sid: 51,
+      deviceId: null,
+      maxSeconds: 30,
+      livePreview: { enabled: false },
+      discardHotkey: "Ctrl+Alt+D",
+    });
+    await waitForStatus(win, "recording");
+    const discardTitle = await win.webContents.executeJavaScript(
+      `document.getElementById("cancel").title`
+    );
+    check(
+      "the ✕ key's tooltip names the discard hotkey",
+      discardTitle === "Discard — nothing is typed (Ctrl+Alt+D)",
+      `title=${JSON.stringify(discardTitle)}`
+    );
+    const discarded51P = waitForMessage("record:cancelled");
+    win.webContents.send("record:discard");
+    const discarded51 = await discarded51P;
+    check("the discard hotkey discards a live take", discarded51.sid === 51, `sid=${discarded51.sid}`);
+    win.webContents.send("pipeline:status", { status: "transcribing" });
+    await waitForStatus(win, "transcribing");
+    const processingCancelP = waitForMessage("pipeline:cancel");
+    win.webContents.send("record:discard");
+    const processingCancel = await processingCancelP;
+    check(
+      "the discard hotkey cancels while processing",
+      !processingCancel?.dismiss,
+      JSON.stringify(processingCancel ?? null)
+    );
+
     // ---- Session 6: pause holds capture; the paused span is excluded --------
     // Speak ~0.5s, pause ~0.6s (the fake mic keeps producing tone — none of it
     // may land in the capture), resume and speak ~0.5s more. The WAV must
@@ -664,6 +702,14 @@ app.whenReady().then(async () => {
       "delivery-time X sends a dismiss-only request",
       dismissRequest?.dismiss === true,
       JSON.stringify(dismissRequest)
+    );
+    const hotkeyDismissP = waitForMessage("pipeline:cancel");
+    win.webContents.send("record:discard");
+    const hotkeyDismiss = await hotkeyDismissP;
+    check(
+      "the discard hotkey during delivery sends the same dismiss-only request",
+      hotkeyDismiss?.dismiss === true,
+      JSON.stringify(hotkeyDismiss)
     );
 
     // ---- Terminal state: the keys go inert once the dictation lands --------

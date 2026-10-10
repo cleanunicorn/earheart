@@ -124,7 +124,8 @@ label, and opinions are welcome.
 - **Pause and resume mid-dictation** — hold a take while you talk to someone or
   take a call, then resume it. Paused time is never captured or counted against
   the maximum length. You can also bind a global pause hotkey in Settings →
-  General.
+  General, and a discard hotkey that throws a take away without reaching for
+  the mouse.
 - **Private by default** — speech and cleanup run in-process, with no account,
   telemetry, cloud requirement, or network hop.
 - **Works anywhere without an integration** — the global hotkey (default
@@ -335,6 +336,14 @@ waveform freeze, and nothing is captured until you resume.
   <img src="docs/screenshots/overlay-paused.png" width="500" alt="Earheart overlay paused mid-dictation, with a resume key and a frozen waveform" />
 </p>
 
+The overlay never takes focus, so its keys have global hotkeys instead: the
+record hotkey is ✓, and Settings → General can bind an optional **pause
+hotkey** and **discard hotkey** (both unset by default). The discard hotkey
+does exactly what ✕ does — throws the take away while recording or
+transcribing, only dismisses the bar once the paste is under way — and is
+held only while a dictation is running, so the combination is free the rest of
+the time. When set, ✕'s tooltip names it.
+
 Earheart lives in your system tray. From the tray menu you can start a
 dictation, open the transcription history, or change any choice you made in
 the wizard:
@@ -433,7 +442,8 @@ checksum-verified. Only add models from repos you trust.
   invocation just toggles dictation in it. Use the full path to the binary if
   `earheart` isn't on your `PATH`, e.g.
   `~/Applications/Earheart-<version>.AppImage --toggle`. The same works for
-  pause/resume with `earheart --pause`.
+  pause/resume with `earheart --pause`, and for discarding the dictation in
+  progress with `earheart --discard`.
 
 ### macOS
 

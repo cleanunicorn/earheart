@@ -55,6 +55,7 @@ async function loadMain(
   const ipcInit = {};
   const notices = [];
   let permissionHandler = null;
+  let stateListener = null;
 
   class FakeNotification {
     static isSupported() {
@@ -120,6 +121,8 @@ async function loadMain(
       init: () => events.push("pipeline.init"),
       toggle: () => events.push("pipeline.toggle"),
       pauseToggle: () => events.push("pipeline.pauseToggle"),
+      discard: () => events.push("pipeline.discard"),
+      onStateChange: (listener) => { stateListener = listener; },
       onSettingsChanged: () => {},
       onOverlayRendererGone: () => {},
     },
@@ -193,6 +196,7 @@ async function loadMain(
     ipcInit,
     notices,
     permissionHandler: () => permissionHandler,
+    changeState: (state) => stateListener(state),
   };
 }
 
@@ -244,6 +248,7 @@ test("a healthy launch registers both hotkeys and announces ready", async () => 
   assert.deepStrictEqual(ipcInit.getHotkeyStatus(), {
     hotkey: { ok: true, accelerator: RECORD },
     pauseHotkey: { ok: true, accelerator: PAUSE },
+    discardHotkey: { ok: true, empty: true, accelerator: "" },
   });
 
   // Only the microphone and clipboard writes from app pages are granted.
@@ -260,6 +265,21 @@ test("a healthy launch registers both hotkeys and announces ready", async () => 
   assert.strictEqual(decide("geolocation"), false);
   assert.strictEqual(decide("media", "https://example.com/"), false);
   assert.strictEqual(decide("clipboard-sanitized-write", "https://example.com/"), false);
+});
+
+test("discard is armed during a dictation and released on idle", async () => {
+  const discardHotkey = "CommandOrControl+Alt+Escape";
+  const { events, shortcuts, changeState } = await loadMain({ cfg: makeCfg({ discardHotkey }) });
+  assert.ok(!shortcuts.has(discardHotkey), "idle leaves the shortcut available");
+  changeState("recording");
+  assert.ok(shortcuts.has(discardHotkey));
+  events.length = 0;
+  shortcuts.get(discardHotkey)();
+  assert.deepStrictEqual(events, ["pipeline.discard"]);
+  changeState("transcribing");
+  assert.ok(shortcuts.has(discardHotkey), "processing remains discardable");
+  changeState("idle");
+  assert.ok(!shortcuts.has(discardHotkey));
 });
 
 test("a record hotkey that fails to register opens Settings instead of a ready notice", async () => {

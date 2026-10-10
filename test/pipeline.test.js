@@ -406,6 +406,65 @@ test("pipeline: record:start forwards the saved max dictation length to the over
   assert.strictEqual(rig.log.lastStart.maxSeconds, 420);
 });
 
+test("pipeline: record:start names the discard hotkey for the ✕ key's tooltip", () => {
+  const { prettyHotkey } = require("../main/util/hotkey-label");
+  const rig = dictationRig({ transcribe: async () => "unused" });
+  rig.pipeline.toggle();
+  assert.strictEqual(rig.log.lastStart.discardHotkey, "", "unset: nothing to name");
+  rig.pipeline.cancel();
+
+  rig.cfg.discardHotkey = "CommandOrControl+Alt+D";
+  rig.pipeline.toggle();
+  assert.strictEqual(rig.log.lastStart.discardHotkey, prettyHotkey("CommandOrControl+Alt+D"));
+  assert.doesNotMatch(rig.log.lastStart.discardHotkey, /CommandOrControl/);
+});
+
+// The discard hotkey must do exactly what the ✕ key does in each phase —
+// discard while recording, cancel while processing, only dismiss once the
+// paste is in flight — so it hands the press to the overlay's own ✕ handler
+// rather than deciding here (the handler mapping is pinned in
+// overlay-contract.test.js).
+test("pipeline: discard presses the overlay's ✕ while a dictation is live, and only then", async () => {
+  let finishDelivery;
+  let announceDeliveryStarted;
+  const pendingDelivery = new Promise((resolve) => {
+    finishDelivery = resolve;
+  });
+  const deliveryStarted = new Promise((resolve) => {
+    announceDeliveryStarted = resolve;
+  });
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => "dictated words",
+    deliver: async () => {
+      announceDeliveryStarted();
+      return pendingDelivery;
+    },
+  });
+  const discards = () => rig.log.overlaySent.filter((c) => c === "record:discard").length;
+
+  rig.pipeline.discard();
+  assert.strictEqual(discards(), 0, "idle: nothing to discard");
+
+  rig.pipeline.toggle();
+  rig.pipeline.discard();
+  assert.strictEqual(discards(), 1, "recording");
+  assert.strictEqual(rig.pipeline.getState(), "recording", "the overlay's handler decides, not the pipeline");
+
+  const idle = new Promise((resolve) => {
+    rig.pipeline.onStateChange((state) => state === "idle" && resolve());
+  });
+  rig.handlers["audio:captured"]({}, { sid: rig.log.lastStart.sid, wav: speechWav(1) });
+  await deliveryStarted;
+  rig.pipeline.discard();
+  assert.strictEqual(discards(), 2, "processing");
+
+  finishDelivery({ method: "paste" });
+  await idle;
+  rig.pipeline.discard();
+  assert.strictEqual(discards(), 2, "idle again: nothing to discard");
+});
+
 test("pipeline: overlay renderer loss rejects stale capture and allows the next hotkey", () => {
   const rig = dictationRig({ transcribe: async () => "unused" });
   const states = [];

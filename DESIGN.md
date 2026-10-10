@@ -496,7 +496,9 @@ corners anywhere.
   so it isn't hit by reflex next to Done. Its label follows
   the action it would perform: "Discard" while cancelling still means nothing
   is typed, "Dismiss" from delivery onward — during the paste and in the
-  terminal states — where the take can no longer be discarded.
+  terminal states — where the take can no longer be discarded. When a discard
+  hotkey is set, the "Discard" tooltip names it ("Discard — nothing is typed
+  (Ctrl+Alt+D)"); the hotkey runs the same handler as the click.
 - **Pause:** latching (`aria-pressed`); while paused it holds the Hover Wash
   fill and swaps to the play glyph.
 - **Focus:** `outline: 2px solid` Primary Text, 2px offset — the universal

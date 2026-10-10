@@ -25,6 +25,7 @@ const { createPersistedRtfEstimator } = require("./util/rtf");
 const { wavDurationSec, wavSliceFromFrame } = require("./util/wav");
 const { transcribeChunked } = require("./chunked-decode");
 const logger = require("./util/logger");
+const { prettyHotkey } = require("./util/hotkey-label");
 const { createNotifier, sttNotReadyNotice, BODY_MAX } = require("./setup-notices");
 
 let state = "idle"; // idle | recording | processing
@@ -366,6 +367,15 @@ function pauseToggle() {
   if (state === "recording") windows.sendToOverlay("record:pause-toggle");
 }
 
+// Discard hotkey / `earheart --discard`: press the overlay's ✕ key. The
+// overlay already knows what ✕ means in each phase (discard the take while
+// recording, cancel while processing, only dismiss once the paste is in
+// flight), so the keyboard route runs that same handler instead of a second
+// copy of those rules here. Idle, there is nothing to discard.
+function discard() {
+  if (state !== "idle") windows.sendToOverlay("record:discard");
+}
+
 function startRecording() {
   const cfg = settings.get();
   // A built-in model that isn't on disk can't transcribe this dictation: say
@@ -406,6 +416,8 @@ function startRecording() {
       sid,
       deviceId: cfg.audio.deviceId,
       maxSeconds: cfg.audio.maxRecordingSeconds,
+      // Named in the ✕ key's tooltip, so the keyboard route is discoverable.
+      discardHotkey: prettyHotkey(cfg.discardHotkey),
       // Chunked partial decoding runs whenever STT is builtin (the committed
       // chunk decodes become the final transcript's prefix — see
       // live-preview.js); `display` additionally paints the live transcript
@@ -638,6 +650,7 @@ module.exports = {
   init,
   toggle,
   pauseToggle,
+  discard,
   cancel,
   onOverlayRendererGone,
   getState,

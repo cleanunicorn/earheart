@@ -131,22 +131,26 @@ app.whenReady().then(async () => {
     // The shipped permission policy, so the microphone grant below is proven
     // through the same handler the app installs (main/window-guard.js).
     installPermissionHandler(session.defaultSession);
-    // A saved pause hotkey, so check 13 can show its launch failure too.
+    // Saved pause and discard hotkeys, so check 13 can show their launch
+    // failures too.
     settings.save({
       ...settings.get(),
       pauseHotkey: "CommandOrControl+Alt+P",
+      discardHotkey: "CommandOrControl+Alt+D",
       audio: { ...settings.get().audio, deviceId: "missing-saved-device" },
     });
     // Check 13: the launch registration result main.js would report — both
     // hotkeys failed on the values now saved.
     const launchHotkeyError = "Could not register the record hotkey (smoke)";
     const launchPauseError = "Could not register the pause hotkey (smoke)";
+    const launchDiscardError = "Could not register the discard hotkey (smoke)";
     ipc.init({
       applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
       onSettingsChanged: () => {},
       getHotkeyStatus: () => ({
         hotkey: { ok: false, error: launchHotkeyError, accelerator: settings.get().hotkey },
         pauseHotkey: { ok: false, error: launchPauseError, accelerator: settings.get().pauseHotkey },
+        discardHotkey: { ok: false, error: launchDiscardError, accelerator: settings.get().discardHotkey },
       }),
     });
     const downloads = new Map();
@@ -249,6 +253,8 @@ app.whenReady().then(async () => {
     const hotkeyRows = JSON.parse(await js(`JSON.stringify({
       record: document.getElementById("hotkey-status").textContent,
       pause: document.getElementById("pause-hotkey-status").textContent,
+      discard: document.getElementById("discard-hotkey-status").textContent,
+      discardField: document.getElementById("discard-hotkey").value,
     })`));
     check(
       "a hotkey that failed at launch shows under its field on open",
@@ -258,6 +264,11 @@ app.whenReady().then(async () => {
     check(
       "a pause hotkey that failed at launch shows under its field on open",
       hotkeyRows.pause === launchPauseError,
+      JSON.stringify(hotkeyRows)
+    );
+    check(
+      "the saved discard hotkey and its launch failure show under its field on open",
+      hotkeyRows.discardField === "CommandOrControl+Alt+D" && hotkeyRows.discard === launchDiscardError,
       JSON.stringify(hotkeyRows)
     );
     // A failure about an accelerator the field no longer holds (a rejected

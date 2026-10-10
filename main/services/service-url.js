@@ -19,4 +19,14 @@ function serviceUrl(baseUrl, route) {
   return base.replace(/\/+$/, "") + route;
 }
 
-module.exports = { serviceUrl };
+// Default deadline for a short metadata request (a model list, an update feed).
+// Transcription and cleanup take their own, longer, per-service timeout.
+const HTTP_TIMEOUT_MS = 15000;
+
+// The Bearer header OpenAI-compatible services expect, or none without a key,
+// so a keyless local server never sees an empty `Authorization`.
+function authHeaders(apiKey) {
+  return apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+}
+
+module.exports = { serviceUrl, authHeaders, HTTP_TIMEOUT_MS };

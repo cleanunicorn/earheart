@@ -3,13 +3,12 @@
 
 const fsp = require("node:fs/promises");
 const { fileURLToPath } = require("node:url");
-
-const DEFAULT_TIMEOUT_MS = 15000;
+const { HTTP_TIMEOUT_MS } = require("./service-url");
 
 /** Fetch a URL as text; supports file:// so local update feeds keep working. */
 async function fetchUpdateText(
   url,
-  { timeoutMs = DEFAULT_TIMEOUT_MS, fetchImpl = fetch } = {}
+  { timeoutMs = HTTP_TIMEOUT_MS, fetchImpl = fetch } = {}
 ) {
   if (url.startsWith("file://")) {
     return fsp.readFile(fileURLToPath(url), "utf8");

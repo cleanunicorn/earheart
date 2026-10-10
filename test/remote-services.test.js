@@ -1,7 +1,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 
-const { serviceUrl } = require("../main/services/service-url");
+const { serviceUrl, authHeaders, HTTP_TIMEOUT_MS } = require("../main/services/service-url");
 const { transcribe } = require("../main/services/stt");
 const { clean } = require("../main/services/cleanup");
 
@@ -52,6 +52,53 @@ test("serviceUrl rejects missing, invalid and non-network bases", () => {
   assert.throws(() => serviceUrl("", "/models"), /required/);
   assert.throws(() => serviceUrl("localhost:8080", "/models"), /http or https/);
   assert.throws(() => serviceUrl("file:///tmp/service", "/models"), /http or https/);
+});
+
+test("serviceUrl rejects a non-string base as missing", () => {
+  for (const base of [undefined, null, 123, {}]) {
+    assert.throws(() => serviceUrl(base, "/models"), /^Error: Base URL is required$/);
+  }
+});
+
+test("authHeaders sends a Bearer key and nothing without one", () => {
+  assert.deepStrictEqual(authHeaders("sk-test"), { Authorization: "Bearer sk-test" });
+  for (const key of [undefined, null, ""]) assert.deepStrictEqual(authHeaders(key), {});
+});
+
+test("HTTP_TIMEOUT_MS is the shared 15 s metadata deadline", () => {
+  assert.strictEqual(HTTP_TIMEOUT_MS, 15000);
+});
+
+// Record each request's auth and content-type headers; assert in the test body.
+function withHeaderServer(reply, run) {
+  const seen = [];
+  return withServer((req, res) => {
+    seen.push({ auth: req.headers.authorization, type: req.headers["content-type"] });
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(reply));
+    });
+  }, (baseUrl) => run(baseUrl, seen));
+}
+
+test("remote STT sends the API key as a Bearer header, and none without a key", async () => {
+  await withHeaderServer({ text: "hi" }, async (baseUrl, seen) => {
+    await transcribe(Buffer.alloc(0), { baseUrl, apiKey: "sk-stt" });
+    await transcribe(Buffer.alloc(0), { baseUrl });
+    assert.deepStrictEqual(seen.map((s) => s.auth), ["Bearer sk-stt", undefined]);
+    assert.match(seen[0].type, /^multipart\/form-data/);
+  });
+});
+
+test("remote cleanup sends JSON with the API key as a Bearer header, and none without a key", async () => {
+  const reply = { choices: [{ message: { content: "Hi." } }] };
+  await withHeaderServer(reply, async (baseUrl, seen) => {
+    await clean("hi", { baseUrl, apiKey: "sk-clean" });
+    await clean("hi", { baseUrl });
+    assert.deepStrictEqual(seen.map((s) => s.auth), ["Bearer sk-clean", undefined]);
+    assert.deepStrictEqual(seen.map((s) => s.type), ["application/json", "application/json"]);
+  });
 });
 
 test("remote STT rejects an unsafe service URL before making a request", async () => {

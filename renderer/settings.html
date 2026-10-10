@@ -7,28 +7,11 @@
       content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:"
     />
     <title>Earheart</title>
+    <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="settings.css" />
   </head>
   <body>
-    <!--
-      THESIS: Settings speaks the overlay's quiet-bar language — one continuous
-      page read top to bottom, every control visible; refuses the hidden-tab
-      shuffle and the retired hardware metaphor alike.
-      OWN-WORLD: The Quiet Transcription Bar on a framed window: solid
-      near-black ink #18181b, white-wash cards with hairline edges, plain solid
-      inputs, fully-rounded pill buttons, one filled white Save (the overlay's
-      Done-key grammar). Chosen things are white — washes, radio cores, switch
-      tracks. Coral #fb4d5c appears exactly once: a hotkey field mid-capture.
-      Green/red only as status text and the destructive hover.
-      STORY: Open the window, find the control from the index in seconds,
-      adjust, press the white Save pill; status text confirms.
-      FIRST VIEWPORT: Header; left index with General washed active; Dictation
-      card with hotkey fields fills the column; white Save in the fixed footer.
-      FORM: Single scrolling page + sticky index (structure carried over from
-      the prior direction); reskinned into the committed world of DESIGN.md.
-      No new roll: this pass inherits the world pass 1 committed via the
-      standing exit (category canon chosen by the user; no seed).
-    -->
+    <!-- Design rationale and tokens: DESIGN.md. -->
     <header>
       <img src="../assets/icon.png" alt="" width="34" height="34" />
       <div>
@@ -43,23 +26,23 @@
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/></svg>
           <span class="tab-label">General</span>
         </button>
-        <button class="tab" id="tabbtn-live" data-tab="live">
+        <button class="tab" data-tab="live">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="10" x2="4" y2="14"/><line x1="8" y1="7" x2="8" y2="17"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="16" y1="8" x2="16" y2="16"/><line x1="20" y1="10" x2="20" y2="14"/></svg>
           <span class="tab-label">Live transcript</span>
         </button>
-        <button class="tab" id="tabbtn-stt" data-tab="stt">
+        <button class="tab" data-tab="stt">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="10" x2="17" y2="10"/><line x1="7" y1="14" x2="13" y2="14"/></svg>
           <span class="tab-label">Speech-to-text</span>
         </button>
-        <button class="tab" id="tabbtn-cleanup" data-tab="cleanup">
+        <button class="tab" data-tab="cleanup">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6z"/></svg>
           <span class="tab-label">Cleanup</span>
         </button>
-        <button class="tab" id="tabbtn-history" data-tab="history">
+        <button class="tab" data-tab="history">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg>
           <span class="tab-label">History</span>
         </button>
-        <button class="tab" id="tabbtn-advanced" data-tab="advanced">
+        <button class="tab" data-tab="advanced">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="14" cy="6" r="2.2" fill="currentColor" stroke="none"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="8" cy="12" r="2.2" fill="currentColor" stroke="none"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="16" cy="18" r="2.2" fill="currentColor" stroke="none"/></svg>
           <span class="tab-label">Advanced</span>
         </button>
@@ -250,7 +233,7 @@
             </div>
             <div id="stt-model-manage" class="model-manage"></div>
 
-            <div class="field" id="stt-custom">
+            <div class="field">
               <label for="stt-hf-url">Add a model from Hugging Face</label>
               <input id="stt-hf-url"
                 placeholder="csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2" />

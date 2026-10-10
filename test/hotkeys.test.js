@@ -37,6 +37,7 @@ function loadHotkeys({ registerImpl = () => true, occupied = [] } = {}) {
         bindings.delete(accelerator);
       },
       unregisterAll() {
+        calls.events.push("unregisterAll");
         bindings.clear();
       },
     },
@@ -172,6 +173,56 @@ test("a rejected cold-start pause hotkey keeps the required record hotkey workin
   assert.deepStrictEqual(calls.unregistered, []);
   bindings.get(A)();
   assert.deepStrictEqual(triggered, ["record"]);
+});
+
+test("a cold-start collision whose record is rejected reports both slots", () => {
+  const X = "CommandOrControl+Shift+Space";
+  const { hotkeys, bindings } = loadHotkeys({ occupied: [X] });
+
+  const result = hotkeys.applyPair(pair(X, X));
+
+  assert.strictEqual(result.record.ok, false);
+  assert.match(result.record.error, /Could not register/);
+  assert.deepStrictEqual(result.pause, {
+    ok: false,
+    error: "Not changed: the record hotkey could not be registered",
+  });
+  assert.strictEqual(bindings.size, 0);
+});
+
+test("clearing the pause hotkey unregisters exactly its accelerator", () => {
+  const { hotkeys, calls, bindings } = loadHotkeys();
+  hotkeys.applyPair(pair(A, B));
+  clearCalls(calls);
+
+  const result = hotkeys.applyPair(pair(A, ""));
+
+  assert.deepStrictEqual(result, { record: { ok: true }, pause: { ok: true, empty: true } });
+  assert.deepStrictEqual(calls.events, [`unregister:${B}`]);
+  assert.strictEqual(bindings.has(A), true, "the record hotkey is untouched");
+  assert.strictEqual(bindings.has(B), false);
+
+  // The cleared slot is really empty: binding it again registers afresh.
+  clearCalls(calls);
+  hotkeys.applyPair(pair(A, B));
+  assert.deepStrictEqual(calls.events, [`register:${B}`]);
+});
+
+test("unregisterAll releases every hotkey and forgets the slots", () => {
+  const { hotkeys, calls, bindings } = loadHotkeys();
+  hotkeys.applyPair(pair(A, B));
+  clearCalls(calls);
+
+  hotkeys.unregisterAll();
+
+  assert.deepStrictEqual(calls.events, ["unregisterAll"]);
+  assert.strictEqual(bindings.size, 0);
+  // The module's own record must be cleared too: otherwise reapplying the same
+  // pair looks like "no change" and leaves the app with no hotkeys at all.
+  clearCalls(calls);
+  const result = hotkeys.applyPair(pair(A, B));
+  assert.deepStrictEqual(result, { record: { ok: true }, pause: { ok: true } });
+  assert.deepStrictEqual(calls.events, [`register:${A}`, `register:${B}`]);
 });
 
 test("reapplying the same pair does not drop and reacquire either hotkey", () => {

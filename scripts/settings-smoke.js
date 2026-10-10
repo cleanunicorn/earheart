@@ -86,6 +86,8 @@ app.setPath("userData", userData);
 
 const windows = require("../main/windows");
 const { waitForLoad } = require("./wait-for-load");
+const { checkWindowLock } = require("./window-lock-smoke");
+const { installPermissionHandler } = require("../main/window-guard");
 const history = require("../main/history");
 const ipc = require("../main/ipc");
 const engines = require("../main/engines");
@@ -126,9 +128,9 @@ app.on("window-all-closed", () => {});
 
 app.whenReady().then(async () => {
   try {
-    session.defaultSession.setPermissionRequestHandler((wc, permission, cb) =>
-      cb(true)
-    );
+    // The shipped permission policy, so the microphone grant below is proven
+    // through the same handler the app installs (main/window-guard.js).
+    installPermissionHandler(session.defaultSession);
     // A saved pause hotkey, so check 13 can show its launch failure too.
     settings.save({
       ...settings.get(),
@@ -233,6 +235,15 @@ app.whenReady().then(async () => {
       onDiskOk && settings.get().stt.apiKey === smokeKey,
       `backend=${keyStorage.backend}`
     );
+
+    // The window lock: Settings stays on its page and its bridge carries only
+    // its own channels (main/window-guard.js, preload.js roles).
+    await checkWindowLock(win, {
+      role: "settings",
+      refused: { method: "on", channel: "record:start" },
+      allowed: { method: "on", channel: "history:changed" },
+      check,
+    });
 
     // 13. Registration status on open, before any Save.
     const hotkeyRows = JSON.parse(await js(`JSON.stringify({
@@ -627,6 +638,12 @@ app.whenReady().then(async () => {
 
     const wizard = windows.openWizard();
     await waitForLoad(wizard.webContents);
+    await checkWindowLock(wizard, {
+      role: "wizard",
+      refused: { method: "invoke", channel: "history:list" },
+      allowed: { method: "invoke", channel: "models:status" },
+      check,
+    });
     await wizard.webContents.executeJavaScript(
       `earheart.invoke("models:download", { kind: "cleanup", modelId: ${JSON.stringify(cleanupModel)} }); "started"`,
       true

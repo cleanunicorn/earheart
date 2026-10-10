@@ -10,14 +10,22 @@
 // dead: logs:open had a handler and a caller but no allowlist entry. These
 // tests parse the files as text — no DOM, no Electron — so that class of
 // regression fails here instead of in the app.
+//
+// The preload gives each window (overlay, settings, wizard) only its own
+// channels, picked by the --earheart-role argument main passes. Its allowlists
+// are read here by running preload.js against a fake electron and probing the
+// bridge it exposes, so what is checked is what the bridge actually lets
+// through, not a regex over its source.
 
 const { test } = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
+const Module = require("node:module");
 
 const ROOT = path.join(__dirname, "..");
-const preload = fs.readFileSync(path.join(ROOT, "preload.js"), "utf8");
+const PRELOAD = path.join(ROOT, "preload.js");
+const preload = fs.readFileSync(PRELOAD, "utf8");
 
 function readAll(dir, ext) {
   let out = "";
@@ -29,6 +37,54 @@ function readAll(dir, ext) {
   return out;
 }
 
+// Run preload.js with `argv` as the renderer's command line and return the
+// window.earheart bridge it exposes.
+function bridgeFor(argv) {
+  let bridge = null;
+  const electron = {
+    contextBridge: { exposeInMainWorld: (key, api) => { if (key === "earheart") bridge = api; } },
+    ipcRenderer: { on() {}, removeListener() {}, send() {}, invoke: async () => {} },
+  };
+  const realLoad = Module._load;
+  const realArgv = process.argv;
+  Module._load = function (request, ...rest) {
+    return request === "electron" ? electron : realLoad.call(this, request, ...rest);
+  };
+  process.argv = argv;
+  delete require.cache[PRELOAD];
+  try {
+    require(PRELOAD);
+  } finally {
+    Module._load = realLoad;
+    process.argv = realArgv;
+    delete require.cache[PRELOAD];
+  }
+  assert.ok(bridge, "preload.js should expose window.earheart");
+  return bridge;
+}
+
+// Every channel-shaped literal in the preload or main: the universe the
+// probe below tries, so any entry a role allows is found.
+const CHANNEL_LITERAL = /"([a-z]+:[a-z-]+)"/g;
+
+// What one bridge lets through, per method.
+function probe(bridge, universe) {
+  const passes = (method, channel) => {
+    try {
+      const result = bridge[method](channel, () => {});
+      if (result && typeof result.catch === "function") result.catch(() => {});
+      return true;
+    } catch (err) {
+      assert.match(err.message, /^Unknown channel/);
+      return false;
+    }
+  };
+  const allowed = (method) => new Set([...universe].filter((c) => passes(method, c)));
+  return { LISTEN: allowed("on"), SEND: allowed("send"), INVOKE: allowed("invoke") };
+}
+
+const ROLE_NAMES = ["overlay", "settings", "wizard"];
+
 const renderer = readAll(path.join(ROOT, "renderer"), ".js");
 const main = readAll(path.join(ROOT, "main"), ".js");
 
@@ -36,16 +92,17 @@ function channels(source, regex) {
   return new Set([...source.matchAll(regex)].map((m) => m[1]));
 }
 
-// The three preload allowlists: const LISTEN|SEND|INVOKE = new Set([ "…", … ])
-function allowlist(name) {
-  const block = preload.match(new RegExp(`const ${name} = new Set\\(\\[([\\s\\S]*?)\\]\\)`));
-  assert.ok(block, `preload.js should define the ${name} allowlist`);
-  return channels(block[1], /"([a-z:-]+)"/g);
-}
+const UNIVERSE = new Set([...channels(preload, CHANNEL_LITERAL), ...channels(main, CHANNEL_LITERAL)]);
+const ROLES = Object.fromEntries(
+  ROLE_NAMES.map((role) => [role, probe(bridgeFor(["electron", `--earheart-role=${role}`]), UNIVERSE)])
+);
+const union = (kind) => new Set(ROLE_NAMES.flatMap((role) => [...ROLES[role][kind]]));
 
-const LISTEN = allowlist("LISTEN");
-const SEND = allowlist("SEND");
-const INVOKE = allowlist("INVOKE");
+// The union across windows: what at least one window may use. The checks
+// below that predate per-window roles run against these.
+const LISTEN = union("LISTEN");
+const SEND = union("SEND");
+const INVOKE = union("INVOKE");
 
 // Renderer → main request channels. bindTest threads its channel through as
 // a bare third argument (never an earheart.invoke("…") literal), so scan
@@ -57,11 +114,15 @@ const INVOKE = allowlist("INVOKE");
 // the two call-site scans this one is a property sweep over all of renderer/,
 // valid only while `channel:` names an IPC channel nowhere else; the pin
 // below holds that assumption.
-const invoked = new Set([
-  ...channels(renderer, /earheart\.invoke\(\s*"([a-z:-]+)"/g),
-  ...channels(renderer, /bindTest\(\s*"[^"]+"\s*,\s*"[^"]+"\s*,\s*"([a-z:-]+)"/g),
-  ...channels(renderer, /channel:\s*"([a-z:-]+)"/g),
-]);
+const invokedBy = (source) =>
+  new Set([
+    ...channels(source, /earheart\.invoke\(\s*"([a-z:-]+)"/g),
+    ...channels(source, /bindTest\(\s*"[^"]+"\s*,\s*"[^"]+"\s*,\s*"([a-z:-]+)"/g),
+    ...channels(source, /channel:\s*"([a-z:-]+)"/g),
+  ]);
+const listenedBy = (source) => channels(source, /earheart\.on\(\s*"([a-z:-]+)"/g);
+const sentBy = (source) => channels(source, /earheart\.send\(\s*"([a-z:-]+)"/g);
+const invoked = invokedBy(renderer);
 const handled = channels(main, /ipcMain\.handle\(\s*"([a-z:-]+)"/g);
 
 // Main → renderer pushes: every send helper and raw webContents.send that
@@ -69,7 +130,7 @@ const handled = channels(main, /ipcMain\.handle\(\s*"([a-z:-]+)"/g);
 // variable, so they are (correctly) not collected here.
 const PUSHED_RE = /(?:sendToForms|sendToSettings|sendToOverlay|broadcast|webContents\.send)\(\s*"([a-z:-]+)"/g;
 const pushed = channels(main, PUSHED_RE);
-const listened = channels(renderer, /earheart\.on\(\s*"([a-z:-]+)"/g);
+const listened = listenedBy(renderer);
 
 // The table scan adds no channel the literal call sites don't also name
 // today, so a rotted regex or a renamed property would change no outcome
@@ -177,10 +238,14 @@ test("the form baseline names exactly main's shared fields", () => {
 // logs:open answers with an `action` naming which of its three fallbacks ran,
 // and the renderer switches on that string to phrase the status line. The two
 // sides are joined by nothing but the literal, so renaming one silently drops
-// the other back to its default branch. `action:` appears nowhere else in
-// main, so a file-wide scan is the whole set.
+// the other back to its default branch. The handler lives in main/ipc.js and
+// `action:` appears nowhere else there, so a file-wide scan is the whole set.
+// (Not all of main/: the window guard's popup handler answers
+// { action: "deny" }, which is Electron's vocabulary, not logs:open's.)
 test("every logs:open action the renderer branches on is one main can return", () => {
-  const emitted = channels(main, /action:\s*"([a-z]+)"/g);
+  const ipcJs = fs.readFileSync(path.join(ROOT, "main", "ipc.js"), "utf8");
+  assert.match(ipcJs, /ipcMain\.handle\(\s*"logs:open"/, "logs:open should be handled in main/ipc.js");
+  const emitted = channels(ipcJs, /action:\s*"([a-z]+)"/g);
   assert.deepStrictEqual(
     [...emitted].sort(),
     ["folder", "opened", "revealed"],
@@ -310,3 +375,96 @@ for (const { channel, mustCarry } of PAYLOAD_CHANNELS) {
     );
   });
 }
+
+// --- Per-window allowlists ---------------------------------------------------
+// Each window's bridge carries exactly the channels its own page uses: nothing
+// it doesn't (the overlay renders live transcript text, so it must not be able
+// to save settings or read history), and nothing missing (a channel its page
+// uses but its role lacks is a dead button in that one window — which the
+// union checks above can't see). A page's scripts are the ones its HTML loads.
+const PAGES = { overlay: "overlay.html", settings: "settings.html", wizard: "wizard.html" };
+
+function pageScripts(page) {
+  const html = fs.readFileSync(path.join(ROOT, "renderer", page), "utf8");
+  const srcs = [...html.matchAll(/<script\s+src="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(srcs.length, `${page} should load scripts`);
+  return srcs.map((src) => fs.readFileSync(path.join(ROOT, "renderer", src), "utf8")).join("\n");
+}
+
+const sortedArr = (set) => [...set].sort();
+
+for (const role of ROLE_NAMES) {
+  test(`the ${role} window's bridge allows exactly the channels its page uses`, () => {
+    const source = pageScripts(PAGES[role]);
+    const allowed = ROLES[role];
+    assert.deepStrictEqual(sortedArr(allowed.INVOKE), sortedArr(invokedBy(source)), `${role} INVOKE`);
+    assert.deepStrictEqual(sortedArr(allowed.LISTEN), sortedArr(listenedBy(source)), `${role} LISTEN`);
+    assert.deepStrictEqual(sortedArr(allowed.SEND), sortedArr(sentBy(source)), `${role} SEND`);
+  });
+}
+
+test("the role tables are non-trivial and the overlay cannot touch settings or history", () => {
+  assert.ok(ROLES.settings.INVOKE.size > 20, `settings should invoke many channels, got ${ROLES.settings.INVOKE.size}`);
+  assert.ok(ROLES.overlay.SEND.size > 5, `overlay should send many channels, got ${ROLES.overlay.SEND.size}`);
+  for (const channel of ["settings:get", "settings:save", "history:list", "models:add-custom", "logs:open"]) {
+    assert.ok(!ROLES.overlay.INVOKE.has(channel), `overlay must not invoke ${channel}`);
+  }
+  assert.ok(!ROLES.wizard.INVOKE.has("history:list"), "the wizard must not read history");
+});
+
+// What main pushes through a window-specific helper must be heard by that
+// window's own bridge, or the push lands in a window that throws on subscribe.
+test("channels main pushes to one window are in that window's LISTEN", () => {
+  const targets = [
+    ["sendToOverlay", ["overlay"]],
+    ["sendToSettings", ["settings"]],
+    ["sendToForms", ["settings", "wizard"]],
+  ];
+  for (const [helper, roles] of targets) {
+    const pushedBy = channels(main, new RegExp(`${helper}\\(\\s*"([a-z:-]+)"`, "g"));
+    assert.ok(pushedBy.size, `main should push through ${helper}`);
+    for (const channel of pushedBy) {
+      const heard = roles.filter((r) => ROLES[r].LISTEN.has(channel));
+      assert.ok(heard.length, `${helper}("${channel}") is in no ${roles.join("/")} LISTEN allowlist`);
+    }
+  }
+});
+
+// Every role windows.js assigns must be one the preload knows, or that window
+// silently gets the empty allowlist.
+test("every window main creates is given a role the preload knows", () => {
+  const windowsJs = fs.readFileSync(path.join(ROOT, "main", "windows.js"), "utf8");
+  const assigned = [
+    ...channels(windowsJs, /createAppWindow\(\s*"([a-z]+)"/g),
+    ...channels(windowsJs, /createFormWindow\(\s*"([a-z]+)"/g),
+  ].sort();
+  assert.deepStrictEqual(assigned, [...ROLE_NAMES].sort());
+  // ...and no window is built around the factory (and its navigation guard).
+  assert.strictEqual(windowsJs.match(/new BrowserWindow\(/g)?.length, 1, "only createAppWindow constructs windows");
+});
+
+// The role is read from the renderer's command line, which page content can't
+// write. Anything other than exactly one known role gets no channels at all —
+// never "all channels" as a fallback.
+test("a missing, unknown, inherited or repeated role exposes no channels", () => {
+  const cases = {
+    "no role": ["electron"],
+    "unknown role": ["electron", "--earheart-role=admin"],
+    "prototype key": ["electron", "--earheart-role=__proto__"],
+    "inherited key": ["electron", "--earheart-role=toString"],
+    "empty role": ["electron", "--earheart-role="],
+    "role with suffix": ["electron", "--earheart-role=settingsx"],
+    "repeated role": ["electron", "--earheart-role=overlay", "--earheart-role=settings"],
+    "wrong flag": ["electron", "--earheart-roles=settings"],
+  };
+  for (const [name, argv] of Object.entries(cases)) {
+    const allowed = probe(bridgeFor(argv), UNIVERSE);
+    const all = [...allowed.LISTEN, ...allowed.SEND, ...allowed.INVOKE];
+    assert.deepStrictEqual(all, [], `${name}: expected no channels, got ${all.join(", ")}`);
+  }
+});
+
+test("a refused channel throws Unknown channel naming the window", () => {
+  const bridge = bridgeFor(["electron", "--earheart-role=overlay"]);
+  assert.throws(() => bridge.invoke("settings:save", {}), /^Error: Unknown channel: settings:save \(not allowed in the overlay window\)$/);
+});

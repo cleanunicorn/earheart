@@ -13,6 +13,7 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 const path = require("node:path");
 const Module = require("node:module");
+const { pathToFileURL } = require("node:url");
 
 const MAIN = require.resolve("../main/main");
 const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(MAIN)] });
@@ -245,17 +246,20 @@ test("a healthy launch registers both hotkeys and announces ready", async () => 
     pauseHotkey: { ok: true, accelerator: PAUSE },
   });
 
-  // Only the microphone and clipboard writes are granted to renderers.
-  const decide = (permission) => {
+  // Only the microphone and clipboard writes from app pages are granted.
+  const appUrl = pathToFileURL(path.join(__dirname, "../renderer/overlay.html")).href;
+  const decide = (permission, requestingUrl = appUrl) => {
     let granted;
     permissionHandler()(null, permission, (ok) => {
       granted = ok;
-    });
+    }, { requestingUrl });
     return granted;
   };
   assert.strictEqual(decide("media"), true);
   assert.strictEqual(decide("clipboard-sanitized-write"), true);
   assert.strictEqual(decide("geolocation"), false);
+  assert.strictEqual(decide("media", "https://example.com/"), false);
+  assert.strictEqual(decide("clipboard-sanitized-write", "https://example.com/"), false);
 });
 
 test("a record hotkey that fails to register opens Settings instead of a ready notice", async () => {

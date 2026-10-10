@@ -5,6 +5,7 @@ const { BrowserWindow, ipcMain, screen } = require("electron");
 const path = require("node:path");
 const settings = require("./settings");
 const logger = require("./util/logger");
+const { guardNavigation } = require("./window-guard");
 
 const PRELOAD = path.join(__dirname, "..", "preload.js");
 const RENDERER = path.join(__dirname, "..", "renderer");
@@ -35,6 +36,48 @@ let overlayHideTimer = null;
 let overlayPinned = false; // update prompt holds the card on screen
 let overlayRendererReloading = false;
 let pendingOverlayStatus = null;
+
+const alive = (win) => Boolean(win && !win.isDestroyed());
+
+// Every app window goes through here: the same preload with this window's role
+// (preload.js gives each role only the IPC channels its page uses; the role
+// travels on the renderer's command line, out of the page's reach), context
+// isolation, and the navigation guard that keeps that bridge on our own page.
+function createAppWindow(role, { webPreferences, ...options }) {
+  const win = new BrowserWindow({
+    ...options,
+    webPreferences: {
+      ...webPreferences,
+      preload: PRELOAD,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      additionalArguments: [`--earheart-role=${role}`],
+    },
+  });
+  guardNavigation(win.webContents, {
+    onBlocked: (what, url) => logger.warn(`${role} window: blocked ${what}${url ? ` to ${url}` : ""}`),
+  });
+  return win;
+}
+
+// Settings and the wizard keep one instance each: a second open brings the
+// existing window forward instead.
+function bringForward(win) {
+  win.show();
+  win.focus();
+  return win;
+}
+
+// Settings and the wizard: framed, and ink-painted until their stylesheet lands.
+function createFormWindow(role, options) {
+  return createAppWindow(role, {
+    ...options,
+    autoHideMenuBar: true,
+    backgroundColor: INK_COLOR,
+    icon: path.join(__dirname, "..", "assets", "icon.png"),
+  });
+}
 
 // Clamp a top-left position so the window stays on-screen. The height matters
 // for the bottom bound: a transcript-grown overlay is taller than OVERLAY_HEIGHT,
@@ -142,10 +185,10 @@ ipcMain.on("overlay:resize", (event, { height } = {}) => {
 });
 
 function createOverlay({ onOverlayRendererGone } = {}) {
-  if (overlayWindow && !overlayWindow.isDestroyed()) return overlayWindow;
+  if (alive(overlayWindow)) return overlayWindow;
   restoreOverlayPosition();
   const { x, y } = overlayPosition();
-  overlayWindow = new BrowserWindow({
+  overlayWindow = createAppWindow("overlay", {
     width: OVERLAY_WIDTH,
     height: OVERLAY_HEIGHT,
     x,
@@ -173,12 +216,7 @@ function createOverlay({ onOverlayRendererGone } = {}) {
     // straight to the web contents, so the controls work the moment it appears.
     acceptFirstMouse: true,
     hasShadow: false,
-    webPreferences: {
-      preload: PRELOAD,
-      contextIsolation: true,
-      nodeIntegration: false,
-      backgroundThrottling: false,
-    },
+    webPreferences: { backgroundThrottling: false },
   });
   overlayWindow.setAlwaysOnTop(true, "screen-saver");
   // macOS/Linux only — documented as a no-op on Windows, where a window's virtual
@@ -200,13 +238,13 @@ function createOverlay({ onOverlayRendererGone } = {}) {
     pendingOverlayStatus = null;
     const win = overlayWindow;
     onOverlayRendererGone?.();
-    if (!win || win.isDestroyed()) return;
+    if (!alive(win)) return;
     win.webContents.once("did-finish-load", () => {
       overlayRendererReloading = false;
       if (!pendingOverlayStatus) return;
       const { channel, payload } = pendingOverlayStatus;
       pendingOverlayStatus = null;
-      if (!win.isDestroyed()) win.webContents.send(channel, payload);
+      if (alive(win)) win.webContents.send(channel, payload);
     });
     win.webContents.reload();
   });
@@ -219,7 +257,7 @@ function createOverlay({ onOverlayRendererGone } = {}) {
 }
 
 function getOverlay() {
-  return overlayWindow && !overlayWindow.isDestroyed() ? overlayWindow : null;
+  return alive(overlayWindow) ? overlayWindow : null;
 }
 
 // The overlay is closable: false, which makes app.quit() silently abort on
@@ -230,7 +268,7 @@ function destroyOverlay() {
     clearTimeout(overlayHideTimer);
     overlayHideTimer = null;
   }
-  if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.destroy();
+  if (alive(overlayWindow)) overlayWindow.destroy();
   overlayWindow = null;
 }
 
@@ -366,19 +404,17 @@ function sendToOverlay(channel, payload) {
 }
 
 function openSettings({ fromWizard = false } = {}) {
-  if (settingsWindow && !settingsWindow.isDestroyed()) {
-    if (fromWizard) {
-      // The wizard was re-run while Settings was already open: reload so
-      // the form picks up the choices the wizard just saved.
-      settingsWindow.loadFile(path.join(RENDERER, "settings.html"), {
-        query: { wizard: "1" },
-      });
-    }
-    settingsWindow.show();
-    settingsWindow.focus();
-    return settingsWindow;
+  // The query lets the settings page show a "pre-configured by the setup
+  // wizard" banner when it opens right after the wizard finishes.
+  const load = (win) =>
+    win.loadFile(path.join(RENDERER, "settings.html"), fromWizard ? { query: { wizard: "1" } } : undefined);
+  if (alive(settingsWindow)) {
+    // The wizard was re-run while Settings was already open: reload so the
+    // form picks up the choices the wizard just saved.
+    if (fromWizard) load(settingsWindow);
+    return bringForward(settingsWindow);
   }
-  settingsWindow = new BrowserWindow({
+  settingsWindow = createFormWindow("settings", {
     // Index rail (180px) + the content column (max-width 620px in
     // settings.css) with its side padding; wide enough that grid-2 fields
     // stay comfortable. Widened with the rail when the index gained its
@@ -390,21 +426,8 @@ function openSettings({ fromWizard = false } = {}) {
     minWidth: 560,
     minHeight: 480,
     title: "Earheart",
-    autoHideMenuBar: true,
-    backgroundColor: INK_COLOR,
-    icon: path.join(__dirname, "..", "assets", "icon.png"),
-    webPreferences: {
-      preload: PRELOAD,
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
   });
-  settingsWindow.loadFile(
-    path.join(RENDERER, "settings.html"),
-    // The query lets the settings page show a "pre-configured by the setup
-    // wizard" banner when it opens right after the wizard finishes.
-    fromWizard ? { query: { wizard: "1" } } : undefined
-  );
+  load(settingsWindow);
   settingsWindow.on("closed", () => {
     settingsWindow = null;
   });
@@ -412,25 +435,13 @@ function openSettings({ fromWizard = false } = {}) {
 }
 
 function openWizard() {
-  if (wizardWindow && !wizardWindow.isDestroyed()) {
-    wizardWindow.show();
-    wizardWindow.focus();
-    return wizardWindow;
-  }
-  wizardWindow = new BrowserWindow({
+  if (alive(wizardWindow)) return bringForward(wizardWindow);
+  wizardWindow = createFormWindow("wizard", {
     width: 620,
     height: 680,
     minWidth: 560,
     minHeight: 560,
     title: "Welcome to Earheart",
-    autoHideMenuBar: true,
-    backgroundColor: INK_COLOR,
-    icon: path.join(__dirname, "..", "assets", "icon.png"),
-    webPreferences: {
-      preload: PRELOAD,
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
   });
   wizardWindow.loadFile(path.join(RENDERER, "wizard.html"));
   wizardWindow.on("closed", () => {
@@ -440,24 +451,22 @@ function openWizard() {
 }
 
 function closeWizard() {
-  if (wizardWindow && !wizardWindow.isDestroyed()) wizardWindow.close();
+  if (alive(wizardWindow)) wizardWindow.close();
 }
 
 function closeSettings() {
-  if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.close();
+  if (alive(settingsWindow)) settingsWindow.close();
 }
 
 function sendToSettings(channel, payload) {
-  if (settingsWindow && !settingsWindow.isDestroyed()) {
-    settingsWindow.webContents.send(channel, payload);
-  }
+  if (alive(settingsWindow)) settingsWindow.webContents.send(channel, payload);
 }
 
 // Send to the Settings and wizard windows only — for payloads that carry the
 // full settings (API keys included), which the overlay has no use for.
 function sendToForms(channel, payload) {
   for (const win of [settingsWindow, wizardWindow]) {
-    if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+    if (alive(win)) win.webContents.send(channel, payload);
   }
 }
 
@@ -465,7 +474,7 @@ function sendToForms(channel, payload) {
 // about (e.g. model download progress) so whichever is open stays in sync.
 function broadcast(channel, payload) {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send(channel, payload);
+    if (alive(win)) win.webContents.send(channel, payload);
   }
 }
 

@@ -905,15 +905,42 @@ function registryIsInstalled(kind, modelId) {
   return false;
 }
 
-test("a download of a model the registry doesn't know settles with an error", async () => {
-  const { handlers, broadcasts } = loadIpcHandlers({}, { engines: { isInstalled: registryIsInstalled } });
+for (const kind of ["stt", "cleanup"]) {
+  test(`an unknown ${kind} model reports its identity without transferring and can be retried`, async () => {
+    let available = false;
+    const transfers = [];
+    const { handlers, broadcasts } = loadIpcHandlers({}, {
+      engines: {
+        isInstalled: (kind, modelId) => available ? false : registryIsInstalled(kind, modelId),
+        download: async (kind, modelId) => { transfers.push({ kind, modelId }); },
+      },
+    });
+    const key = { kind, modelId: "gone" };
+    const rejected = { ok: false, error: `Unknown ${kind} model: gone` };
+    const rejectedNotification = { channel: "models:done", payload: { ...key, ...rejected } };
 
-  const result = await handlers["models:download"]({}, { kind: "cleanup", modelId: "gone" });
+    assert.deepStrictEqual(await handlers["models:download"]({}, key), rejected);
+    // Settings needs the identity and error, not merely the terminal channel,
+    // to clear and explain the row that optimistically showed "Downloading…".
+    assert.deepStrictEqual(broadcasts, [rejectedNotification]);
+    assert.deepStrictEqual(transfers, [], "an unknown model must never start a transfer");
 
-  assert.deepStrictEqual(result, { ok: false, error: "Unknown cleanup model: gone" });
-  // The row that showed "Downloading…" settles on models:done.
-  assert.deepStrictEqual(broadcasts.map((b) => b.channel), ["models:done"]);
-});
+    // A failed preflight must leave no running entry that blocks another attempt.
+    assert.deepStrictEqual(await handlers["models:download"]({}, key), rejected);
+    assert.deepStrictEqual(broadcasts, [rejectedNotification, rejectedNotification]);
+    assert.deepStrictEqual(transfers, [], "repeated rejection still starts no transfer");
+
+    // Once the model becomes available, retrying the same identity can succeed.
+    available = true;
+    assert.deepStrictEqual(await handlers["models:download"]({}, key), { ok: true });
+    assert.deepStrictEqual(transfers, [key]);
+    assert.deepStrictEqual(broadcasts, [
+      rejectedNotification,
+      rejectedNotification,
+      { channel: "models:done", payload: { ...key, ok: true } },
+    ]);
+  });
+}
 
 /* ---------------- payloads a renderer may omit ---------------- */
 

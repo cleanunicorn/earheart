@@ -366,7 +366,8 @@ paste's focus.
 Select the mistaken words in the full transcript, press Tab, and type the exact
 spelling. **Replace & remember** (Enter in the spelling field) changes only that
 occurrence and adds the spelling to your dictionary; **Replace only** makes a
-one-off correction. Repeat for other terms, or edit the transcript directly.
+one-off correction. Shift+Tab back to the transcript keeps your pending spelling.
+Repeat for other terms, or edit the transcript directly.
 **Undo replacement** reverses these replacements without removing words already
 remembered. Direct typing starts a new replacement-undo history.
 **Copy corrected prompt & close** (`Ctrl/Cmd+Enter`) copies the full draft. Back
@@ -374,7 +375,8 @@ in your coding agent, select the existing prompt before pasting if you want to
 replace it. Earheart does not automatically resend or submit the corrected text.
 
 The original history entry stays unchanged; the correction draft lasts until
-you close the editor. Closing or quitting with uncopied changes asks whether to
+you close the editor. Closing, quitting, or restarting to update with uncopied
+changes asks whether to
 keep editing or discard the draft. Escape in the spelling field cancels just
 that pending spelling. If another transcript is requested while a correction is
 open, Earheart keeps the active draft and explains how to finish it first.

@@ -745,3 +745,88 @@ test("init clears a leftover .update-old bundle on macOS", async (t) => {
 
   await waitFor(() => !fs.existsSync(`${bundle}.update-old`), ".update-old sweep");
 });
+
+// --- confirming before the installer starts --------------------------------
+//
+// A quit cancelled in before-quit (an uncopied correction draft) came after
+// the installer was already spawned and the state was "installing", leaving
+// the update stuck or the installer racing the live app. The confirmation now
+// runs first, once, and a "no" leaves everything as it was.
+
+test("a declined install confirmation starts nothing and keeps the update ready", POSIX, async (t) => {
+  const appImage = asAppImage(t);
+  const ctx = loadUpdates(t, { isPackaged: true });
+  const target = appImage(ctx.root);
+  const seen = [];
+  let answer = false;
+  ctx.updates.init({
+    confirmInstall: () => {
+      seen.push({ status: ctx.updates.getState().status, spawned: ctx.calls.spawn.length });
+      return answer;
+    },
+  });
+  await download(ctx.updates);
+
+  await ctx.updates.installNow();
+
+  assert.deepStrictEqual(seen, [{ status: "ready", spawned: 0 }], "asked before any state change or spawn");
+  assert.strictEqual(ctx.updates.getState().status, "ready");
+  assert.strictEqual(ctx.calls.spawn.length, 0);
+  assert.strictEqual(ctx.calls.quit, 0);
+  assert.strictEqual(fs.readFileSync(target, "utf8"), "old app\n");
+  assert.deepStrictEqual(fs.readFileSync(ctx.staged), ASSET_BYTES, "the staged update is kept");
+
+  // "Restart to update" still works once the user agrees.
+  answer = true;
+  await ctx.updates.installNow();
+  assert.strictEqual(seen.length, 2);
+  assert.strictEqual(ctx.updates.getState().status, "installing");
+  assert.deepStrictEqual(fs.readFileSync(target), ASSET_BYTES);
+  assert.strictEqual(ctx.calls.spawn.length, 1);
+  assert.strictEqual(ctx.calls.quit, 1);
+});
+
+test("two quick restart clicks ask for confirmation once", POSIX, async (t) => {
+  const appImage = asAppImage(t);
+  const ctx = loadUpdates(t, { isPackaged: true });
+  appImage(ctx.root);
+  let asked = 0;
+  ctx.updates.init({ confirmInstall: () => ++asked > 0 });
+  await download(ctx.updates);
+
+  await Promise.all([ctx.updates.installNow(), ctx.updates.installNow()]);
+
+  assert.strictEqual(asked, 1);
+  assert.strictEqual(ctx.calls.spawn.length, 1);
+  assert.strictEqual(ctx.calls.quit, 1);
+});
+
+test("a confirmation that throws or answers non-true counts as no", POSIX, async (t) => {
+  const appImage = asAppImage(t);
+  const ctx = loadUpdates(t, { isPackaged: true });
+  appImage(ctx.root);
+  const answers = [() => { throw new Error("dialog failed"); }, () => undefined, () => "yes"];
+  ctx.updates.init({ confirmInstall: () => answers.shift()() });
+  await download(ctx.updates);
+
+  for (let i = 0; i < 3; i++) await ctx.updates.installNow();
+
+  assert.strictEqual(ctx.updates.getState().status, "ready");
+  assert.strictEqual(ctx.calls.spawn.length, 0);
+  assert.strictEqual(ctx.calls.quit, 0);
+  assert.ok(ctx.logs.warn.some((line) => line.includes("dialog failed")), ctx.logs.warn.join("\n"));
+});
+
+test("a download that finishes while idle asks before installing straight away", POSIX, async (t) => {
+  const appImage = asAppImage(t);
+  const ctx = loadUpdates(t, { isPackaged: true, dictation: "idle" });
+  const target = appImage(ctx.root);
+  ctx.updates.init({ confirmInstall: () => false });
+
+  await download(ctx.updates);
+
+  assert.strictEqual(ctx.updates.getState().status, "ready");
+  assert.strictEqual(fs.readFileSync(target, "utf8"), "old app\n");
+  assert.strictEqual(ctx.calls.spawn.length, 0);
+  assert.strictEqual(ctx.calls.quit, 0);
+});

@@ -10,7 +10,7 @@ let composing = false;
 const replacements = [];
 
 function pendingSpelling() {
-  return selection && selection.text === transcript.value &&
+  return selection && selection.text === transcript.value && spelling.value.trim() &&
     spelling.value.trim() !== selection.text.slice(selection.start, selection.end);
 }
 
@@ -48,6 +48,10 @@ function captureSelection() {
   const selected = transcript.value.slice(transcript.selectionStart, transcript.selectionEnd);
   const start = transcript.selectionStart + selected.length - selected.trimStart().length;
   const end = transcript.selectionEnd - selected.length + selected.trimEnd().length;
+  // Focus changes can emit select/keyup again without a new selection. Keep
+  // a typed spelling until the user chooses another phrase or edits the text.
+  if (selection?.text === transcript.value &&
+      ((selection.start === start && selection.end === end) || (end <= start && pendingSpelling()))) return;
   selection = end > start ? { start, end, text: transcript.value } : null;
   spelling.value = selection ? transcript.value.slice(start, end) : "";
   updateActions();

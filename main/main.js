@@ -141,7 +141,17 @@ function main() {
       // Updates are optional; the hotkeys below are not. A throw here must
       // never leave the app running with no way to dictate.
       try {
-        updates.init({ onStateChange: () => tray.refresh() });
+        updates.init({
+          onStateChange: () => tray.refresh(),
+          // Ask about an uncopied correction before the installer starts, not
+          // in before-quit, which could only cancel after it is running. A
+          // confirmed editor closes at once, so quitting cannot ask again.
+          confirmInstall: () => {
+            if (!windows.confirmCorrectionClose()) return false;
+            windows.closeCorrection();
+            return true;
+          },
+        });
       } catch (err) {
         logger.warn(`update check setup failed: ${err.message}`);
       }

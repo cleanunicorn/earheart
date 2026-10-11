@@ -34,6 +34,10 @@ async function checkCorrection({ waitFor, check }) {
   await waitFor(() => run('document.activeElement.id === "spelling"'), "Tab did not reach spelling");
   await run('document.getElementById("spelling").select()');
   await win.webContents.insertText("kubectl");
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Tab", modifiers: ["shift"] });
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Tab", modifiers: ["shift"] });
+  await waitFor(() => run('document.activeElement.id === "transcript"'), "Shift+Tab did not return to transcript");
+  check("returning to the transcript preserves the typed spelling", await run('document.getElementById("spelling").value') === "kubectl");
   clipboard.writeText("untouched clipboard");
   await run('document.getElementById("copy").click()');
   check("copy refuses an unapplied spelling without changing the clipboard", !win.isDestroyed() && clipboard.readText() === "untouched clipboard" && await run('document.getElementById("status").textContent.includes("Apply your spelling")'));
@@ -75,7 +79,10 @@ async function checkCorrection({ waitFor, check }) {
     await waitFor(() => run('document.getElementById("status").textContent.includes("simulated disk failure")'), "save failure missing");
     check("save failure retains draft and does not learn a spelling", await run('document.getElementById("transcript").value') === corrected && !settings.get().cleanup.dictionary.includes("other"));
   } finally { settings.save = save; }
-  await run('document.getElementById("transcript").focus(); document.getElementById("transcript").setSelectionRange(0, 0); document.getElementById("transcript").dispatchEvent(new Event("select"))');
+  await run('document.getElementById("spelling").focus()');
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+  await waitFor(() => run('document.getElementById("spelling").value === ""'), "Escape did not cancel pending spelling");
   const write = clipboard.writeText;
   clipboard.writeText = () => { throw new Error("simulated clipboard failure"); };
   try {

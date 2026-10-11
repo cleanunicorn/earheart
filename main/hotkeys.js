@@ -367,9 +367,40 @@ function applyWithCorrection(next) {
   // The swap failed halfway: a dictation slot may already hold the old
   // correction key. Put every dictation slot back, then retake that key.
   if (holderOf(held)) {
+    // A combined transfer may have armed discard on an old record/pause key.
+    // Release that grab before restoring the pair, otherwise rollback rejects
+    // our own binding. Keep its configured value so applyLive still restores
+    // discard to its original key and reports a real OS failure if it cannot.
+    if (discard.armed && [before.record, before.pause].includes(discard.accelerator)) {
+      globalShortcut.unregister(discard.accelerator);
+      discard.armed = false;
+    }
     const reverted = applyLive({ ...next, ...before });
+    // If restoring discard itself fails, drop its temporary binding. Keeping
+    // it could shadow the old correction key or re-arm a rejected setting.
+    if (!reverted.discard.ok && discard.accelerator !== before.discard) {
+      setDiscard("", next.onDiscard);
+    }
+    const restored = dictationAccelerators();
     applied = { ...reverted };
     for (const name of DICTATION) {
+      if (restored[name] !== before[name]) {
+        // applyPair preserves its current pair when a restore is refused.
+        // Those are temporary settings here: release them rather than leaving
+        // a rejected callback armed (possibly on the old correction key).
+        if (name === "discard") setDiscard("", next.onDiscard);
+        else {
+          const temporary = registered.get(name);
+          if (temporary) globalShortcut.unregister(temporary.accelerator);
+          registered.delete(name);
+        }
+        if (before[name]) {
+          const restoreError = `Could not restore "${prettyHotkey(before[name])}" after rollback. The saved ${name} hotkey is now unbound until you save again or restart.`;
+          logger.warn(restoreError);
+          applied[name] = { ok: false, unbound: true, error: restoreError };
+        } else applied[name] = { ok: false, error: notChanged };
+        continue;
+      }
       if (target[name] !== before[name] && !charged[name]) {
         applied[name] = reverted[name].ok ? { ok: false, error: notChanged } : reverted[name];
       }

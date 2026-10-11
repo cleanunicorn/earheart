@@ -118,6 +118,7 @@ async function loadMain(
       destroyOverlay: () => events.push("destroyOverlay"),
       openSettings: () => events.push("openSettings"),
       confirmCorrectionClose: () => canCloseCorrection,
+      closeCorrection: () => events.push("closeCorrection"),
       openWizard: () => events.push("openWizard"),
       openCorrection: (entry) => events.push(`correct:${entry.text}`),
     },
@@ -380,4 +381,14 @@ test("cancelling quit with an uncopied correction keeps the recording overlay al
   appHandlers["before-quit"]({ preventDefault: () => { prevented = true; } });
   assert.strictEqual(prevented, true);
   assert.deepStrictEqual(events, []);
+});
+
+test("an update install asks about an uncopied correction first, then closes the editor so quit does not ask again", async () => {
+  for (const canCloseCorrection of [false, true]) {
+    let callbacks = null;
+    const { events } = await loadMain({ canCloseCorrection, updatesInit: (cb) => { callbacks = cb; } });
+    events.length = 0;
+    assert.strictEqual(callbacks.confirmInstall(), canCloseCorrection);
+    assert.deepStrictEqual(events, canCloseCorrection ? ["closeCorrection"] : [], "a kept draft keeps its editor");
+  }
 });

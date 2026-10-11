@@ -252,3 +252,48 @@ test("failed initialization leaves editing and copying disabled and reports the 
   assert.match(e.nodes.get("status").textContent, /transcript unavailable/);
   assert.deepEqual(e.dirty, []);
 });
+
+for (const event of ["keyup", "select", "mouseup"]) {
+  test(`returning to the same selection preserves a pending spelling (${event})`, async () => {
+    const e = await editor();
+    e.select(4, 15); e.type("kubectl");
+    e.transcript.focus();
+    e.fire("transcript", event, { key: "Tab", shiftKey: true });
+    assert.equal(e.spelling.value, "kubectl");
+    await e.click("remember");
+    assert.equal(e.transcript.value, "Run kubectl next.");
+  });
+}
+
+test("collapsing the selection preserves a pending spelling and copy guard", async () => {
+  const e = await editor();
+  e.select(4, 15); e.type("kubectl");
+  e.transcript.focus(); e.transcript.setSelectionRange(0, 0);
+  e.fire("transcript", "mouseup");
+  assert.equal(e.spelling.value, "kubectl");
+  await e.click("copy");
+  assert.equal(e.calls.some((c) => c.channel === "transcript:copy"), false);
+  await e.click("replace");
+  assert.equal(e.transcript.value, "Run kubectl next.");
+});
+
+test("choosing a different phrase starts a fresh spelling", async () => {
+  const e = await editor();
+  e.select(4, 15); e.type("kubectl");
+  e.select(16, 20);
+  assert.equal(e.spelling.value, "next");
+  e.type("later");
+  await e.click("replace");
+  assert.equal(e.transcript.value, "Run cube cuddle later.");
+});
+
+test("clearing a spelling cancels the pending replacement and allows copying", async () => {
+  const e = await editor();
+  e.select(4, 15); e.type("kubectl");
+  assert.equal(e.dirty.at(-1), true);
+  e.type("  ");
+  assert.equal(e.dirty.at(-1), false);
+  assert.equal(e.nodes.get("remember").disabled, true);
+  await e.click("copy");
+  assert.equal(e.calls.find((c) => c.channel === "transcript:copy").payload, "Run cube cuddle next.");
+});

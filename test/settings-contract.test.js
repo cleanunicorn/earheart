@@ -180,7 +180,7 @@ test("history exposes the preserved original when cleanup changed it", () => {
   );
   assert.match(
     normalized,
-    /historyCopyButton\("Copy original", item\.raw\)/,
+    /historyCopyButton\("Copy original", item\.raw, report\)/,
     "the original action must copy the preserved raw transcript"
   );
 });

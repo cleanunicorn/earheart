@@ -68,6 +68,10 @@ let state = {
 
 let installKind = "dev";
 let onStateChange = null;
+// Asked once before an install starts anything it can't take back (the
+// installer, the quit): false keeps the update at "ready". main.js wires it
+// to the correction editor's unsaved-draft prompt.
+let confirmInstall = () => true;
 let startupTimer = null;
 let intervalTimer = null;
 let downloadController = null;
@@ -148,6 +152,7 @@ const HINTS = {
 
 function init(callbacks = {}) {
   onStateChange = callbacks.onStateChange || null;
+  confirmInstall = callbacks.confirmInstall || (() => true);
   installKind = feed.detectInstallKind({
     platform: process.platform,
     isPackaged: app.isPackaged,
@@ -651,6 +656,19 @@ async function isVerified(file, sha512) {
  */
 async function installNow() {
   if (state.status !== "ready" || !staged) return;
+  // Before any state change or spawn: once the installer runs, a quit the
+  // user then cancels would leave it racing the live app (or the update
+  // stuck at "installing"). Declining keeps "Restart to update" on offer.
+  let confirmed = false;
+  try {
+    confirmed = confirmInstall() === true;
+  } catch (err) {
+    logger.warn(`update install confirmation failed: ${err.message}`);
+  }
+  if (!confirmed) {
+    logger.info("update install postponed: not confirmed (an uncopied correction is open)");
+    return;
+  }
   // Set before the await so a second click can't start a second install.
   setState({ status: "installing" });
   const { path: file, sha512 } = staged;

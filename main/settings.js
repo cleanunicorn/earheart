@@ -66,6 +66,8 @@ const DEFAULTS = {
   // key. Empty = not registered, unset by default for the same reason as
   // pauseHotkey; when set it is only held while a dictation is live.
   discardHotkey: "",
+  // Open the last saved transcript for explicit spelling corrections.
+  correctHotkey: "",
   // Launch Earheart automatically at login (it lands in the tray, ready for
   // the hotkey). Pushed to the OS by main/autostart.js — a native login item
   // on Windows/macOS, an XDG autostart .desktop file on Linux — on save, and

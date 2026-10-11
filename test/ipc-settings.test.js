@@ -16,11 +16,11 @@ const ipcPath = require.resolve("../main/ipc");
 const settingsPath = require.resolve("../main/settings");
 const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(ipcPath)] });
 
-function loadIpc(t, { remove = async () => {} } = {}) {
+function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy = canCorrect } = {}) {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-ipc-"));
   t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
   const handlers = {};
-  const calls = { broadcasts: [], trayRefresh: 0, historyCleared: 0 };
+  const calls = { broadcasts: [], trayRefresh: 0, historyCleared: 0, deliveries: [] };
   const stubs = {
     [resolveFrom("electron")]: {
       app: { getPath: () => userData, getVersion: () => "0.35.1" },
@@ -44,6 +44,7 @@ function loadIpc(t, { remove = async () => {} } = {}) {
     [resolveFrom("./windows")]: {
       sendToForms: (channel, payload) => calls.broadcasts.push({ channel, payload }),
       openSettings() {},
+      setCorrectionDirty() {},
       closeWizard() {},
     },
     [resolveFrom("./tray")]: {
@@ -58,7 +59,7 @@ function loadIpc(t, { remove = async () => {} } = {}) {
       },
     },
     [resolveFrom("./services/route")]: {},
-    [resolveFrom("./output/deliver")]: {},
+    [resolveFrom("./output/deliver")]: { deliver: async (text, cfg) => { calls.deliveries.push({ text, cfg }); return { method: "clipboard" }; } },
     [resolveFrom("./autostart")]: { apply() {}, isEnabled: () => false },
     [resolveFrom("./updates")]: {},
     [resolveFrom("./util/logger")]: { info() {}, warn() {}, error() {} },
@@ -81,6 +82,8 @@ function loadIpc(t, { remove = async () => {} } = {}) {
     require(ipcPath).init({
       applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
       onSettingsChanged() {},
+      canCorrect,
+      canCopy,
     });
   } finally {
     delete require.cache[ipcPath];
@@ -246,7 +249,7 @@ test("every successful save broadcasts settings:changed and refreshes the tray",
   for (const side of ["previous", "current"]) {
     assert.deepStrictEqual(
       Object.keys(changed[0].payload[side]).sort(),
-      ["customModels", "output", "overlay", "updates"],
+      ["customModels", "dictionary", "output", "overlay", "updates"],
       side
     );
   }
@@ -300,4 +303,61 @@ test("removing a custom model keeps settings written while its files were delete
   assert.strictEqual(result.ok, true);
   assert.deepStrictEqual(readFile().customModels, []);
   assert.deepStrictEqual(readFile().overlay, { x: 10, y: 20 });
+});
+
+test("remembered spellings survive a stale Settings save with independent dictionary edits", async (t) => {
+  const { settings, handlers, readFile } = loadIpc(t);
+  settings.save({ ...settings.get(), cleanup: { ...settings.get().cleanup, dictionary: ["remove", "keep"] } });
+  const snapshot = settings.get();
+  const baseline = require("../renderer/settings-sync").sharedBaseline(snapshot);
+  assert.strictEqual((await handlers["correction:remember"]({}, "kubectl")).ok, true);
+  snapshot.cleanup.dictionary = ["keep", "typed"];
+  await handlers["settings:save"]({}, { settings: snapshot, baseline });
+  assert.deepStrictEqual(readFile().cleanup.dictionary, ["keep", "kubectl", "typed"]);
+});
+
+test("remember failure preserves existing dictionary and reports failure", async (t) => {
+  const { settings, handlers } = loadIpc(t);
+  const before = settings.get().cleanup.dictionary;
+  const originalSave = settings.save;
+  settings.save = () => { throw new Error("disk full"); };
+  try {
+    assert.deepStrictEqual(await handlers["correction:remember"]({}, "kubectl"), { ok: false, error: "disk full" });
+  } finally { settings.save = originalSave; }
+  assert.deepStrictEqual(settings.get().cleanup.dictionary, before);
+});
+
+
+test("explicit transcript copies use clipboard-only delivery and reject invalid payloads", async (t) => {
+  const { handlers, calls } = loadIpc(t);
+  assert.deepStrictEqual(await handlers["transcript:copy"]({}, "corrected prompt"), { ok: true });
+  assert.deepStrictEqual(calls.deliveries, [{ text: "corrected prompt", cfg: { mode: "clipboard" } }]);
+  for (const value of [null, {}, " ", "x".repeat(1000001)]) {
+    assert.strictEqual((await handlers["transcript:copy"]({}, value)).ok, false);
+  }
+  assert.strictEqual(calls.deliveries.length, 1);
+});
+
+test("correction and copying cannot interrupt an active dictation", async (t) => {
+  const { handlers, calls } = loadIpc(t, { canCorrect: () => false });
+  for (const channel of ["correction:open", "transcript:copy"]) {
+    const result = await handlers[channel]({}, "text");
+    assert.strictEqual(result.ok, false);
+    assert.match(result.error, /current dictation/);
+  }
+  assert.strictEqual(calls.deliveries.length, 0);
+});
+
+
+test("an unavailable History entry cannot open a correction while idle", async (t) => {
+  const { handlers } = loadIpc(t);
+  const result = await handlers["correction:open"]({}, { text: "forged", at: "missing" });
+  assert.strictEqual(result.ok, false);
+  assert.match(result.error, /no longer in History/);
+});
+
+test("copying is allowed while recording even though correction cannot open", async (t) => {
+  const { handlers, calls } = loadIpc(t, { canCorrect: () => false, canCopy: () => true });
+  assert.strictEqual((await handlers["transcript:copy"]({}, "previous prompt")).ok, true);
+  assert.strictEqual(calls.deliveries.length, 1);
 });

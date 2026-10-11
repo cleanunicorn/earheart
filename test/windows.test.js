@@ -31,6 +31,7 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
   return class FakeWindow {
     constructor(options) {
       calls.push(["construct", options]);
+      this.handlers = {};
       // Geometry is tracked so the drag and resize handlers can be driven
       // against a window that really moves.
       this.bounds = { x: options.x ?? 0, y: options.y ?? 0, width: options.width, height: options.height };
@@ -99,7 +100,7 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
       calls.push(["moveTop"]);
     }
     isDestroyed() {
-      return false;
+      return this.closed || false;
     }
     isVisible() {
       return true;
@@ -110,7 +111,15 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
     destroy() {
       calls.push(["destroy"]);
     }
-    on() {}
+    on(name, handler) { this.handlers[name] = handler; }
+    close() {
+      let prevented = false;
+      this.handlers.close?.({ preventDefault: () => { prevented = true; } });
+      if (!prevented) {
+        this.closed = true;
+        this.handlers.closed?.();
+      }
+    }
   };
 }
 
@@ -125,6 +134,7 @@ function loadWindows({
   refuseRejoin = false,
   displays = [{ x: 0, y: 0, width: 1920, height: 1080 }],
   stored = {},
+  confirm = () => 0,
 } = {}) {
   const calls = [];
   const warnings = [];
@@ -143,6 +153,7 @@ function loadWindows({
   };
   const electron = {
     BrowserWindow: makeFakeWindow(calls, { refuseRejoin, webContentsHandlers }),
+    dialog: { showMessageBoxSync: (win, options) => { calls.push(["confirm", options]); return confirm(); } },
     ipcMain: {
       on: (channel, handler) => {
         ipc[channel] = handler;
@@ -654,4 +665,41 @@ test("overlay growth near the top of the screen is floored at the work-area top"
   // Growing upward would push the top off-screen; it stays at y = 0 and the
   // window extends downward instead.
   assert.deepStrictEqual(lastOf(calls, "setBounds")[1], { x: 710, y: 0, width: 500, height: 400 });
+});
+
+
+test("uncopied corrections require confirmation on native close and quit", () => {
+  let response = 0;
+  const { windows, calls } = loadWindows({ confirm: () => response });
+  const win = windows.openCorrection({ text: "original" });
+  windows.setCorrectionDirty({}, true);
+  assert.strictEqual(windows.confirmCorrectionClose(), true, "other renderers cannot mark this draft dirty");
+  assert.strictEqual(calls.filter(([name]) => name === "confirm").length, 0);
+  windows.setCorrectionDirty(win.webContents, true);
+  win.close();
+  assert.strictEqual(win.isDestroyed(), false);
+  assert.strictEqual(windows.getCorrectionText(), "original");
+  assert.strictEqual(windows.confirmCorrectionClose(), false, "quit asks the same question");
+  response = 1;
+  win.close();
+  assert.strictEqual(win.isDestroyed(), true);
+  assert.strictEqual(windows.getCorrectionText(), "");
+});
+
+test("a successfully copied draft closes without discard confirmation", () => {
+  const { windows, calls } = loadWindows();
+  const win = windows.openCorrection({ text: "original" });
+  windows.setCorrectionDirty(win.webContents, true);
+  windows.setCorrectionDirty(win.webContents, false);
+  windows.closeCorrection();
+  assert.strictEqual(win.isDestroyed(), true);
+  assert.strictEqual(calls.filter(([name]) => name === "confirm").length, 0);
+});
+
+test("opening another transcript keeps the active draft and explains why", () => {
+  const { windows, calls } = loadWindows();
+  const first = windows.openCorrection({ text: "first" });
+  assert.strictEqual(windows.openCorrection({ text: "second" }), first);
+  assert.strictEqual(windows.getCorrectionText(), "first");
+  assert.ok(calls.some(([name, channel, text]) => name === "send" && channel === "correction:notice" && text.includes("current correction is still open")));
 });

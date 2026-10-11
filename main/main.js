@@ -3,6 +3,7 @@
 
 const { app, session, Notification } = require("electron");
 const settings = require("./settings");
+const history = require("./history");
 const windows = require("./windows");
 const pipeline = require("./pipeline");
 const hotkeys = require("./hotkeys");
@@ -35,6 +36,8 @@ if (!gotLock) {
       pipeline.pauseToggle();
     } else if (argv.includes("--discard")) {
       pipeline.discard();
+    } else if (argv.includes("--correct-last")) {
+      openLastCorrection();
     } else {
       windows.openSettings();
     }
@@ -46,6 +49,11 @@ if (!gotLock) {
 // rollback — kept so Settings can show it when it opens (settings:get).
 let lastHotkeyStatus = null;
 
+function openLastCorrection() {
+  // A focusable editor must never steal the pending dictation's paste target.
+  if (pipeline.getState() === "idle") windows.openCorrection(history.list()[0]);
+}
+
 // Register the global hotkeys from settings. The record hotkey is required
 // (empty is a misconfiguration); the pause and discard hotkeys are optional
 // (empty simply leaves them unbound). Discard is only held while a dictation
@@ -55,6 +63,8 @@ function applyHotkeys(cfg) {
     record: cfg.hotkey,
     pause: cfg.pauseHotkey,
     discard: cfg.discardHotkey,
+    correct: cfg.correctHotkey,
+    onCorrect: openLastCorrection,
     onRecord: () => pipeline.toggle(),
     onPause: () => pipeline.pauseToggle(),
     onDiscard: () => pipeline.discard(),
@@ -99,6 +109,8 @@ function main() {
     pipeline.onStateChange((state) => hotkeys.armDiscard(state !== "idle"));
     ipc.init({
       applyHotkeys,
+      canCorrect: () => pipeline.getState() === "idle",
+      canCopy: () => pipeline.getState() !== "processing",
       // A binding another app took during capture is re-applied from the
       // saved settings, so the status Settings shows names the failure.
       suspendHotkeys: (on) => {
@@ -129,7 +141,17 @@ function main() {
       // Updates are optional; the hotkeys below are not. A throw here must
       // never leave the app running with no way to dictate.
       try {
-        updates.init({ onStateChange: () => tray.refresh() });
+        updates.init({
+          onStateChange: () => tray.refresh(),
+          // Ask about an uncopied correction before the installer starts, not
+          // in before-quit, which could only cancel after it is running. A
+          // confirmed editor closes at once, so quitting cannot ask again.
+          confirmInstall: () => {
+            if (!windows.confirmCorrectionClose()) return false;
+            windows.closeCorrection();
+            return true;
+          },
+        });
       } catch (err) {
         logger.warn(`update check setup failed: ${err.message}`);
       }
@@ -144,6 +166,10 @@ function main() {
     }
     if (!hotkeyResults.discardHotkey.ok) {
       logger.warn(hotkeyResults.discardHotkey.error);
+    }
+
+    if (hotkeyResults.correctHotkey && !hotkeyResults.correctHotkey.ok) {
+      logger.warn(hotkeyResults.correctHotkey.error);
     }
 
     // A returning user lands straight in the tray with a "ready" notice — or,
@@ -198,7 +224,11 @@ function main() {
   // The overlay is closable: false, which blocks app.quit() (it waits for
   // every window to close and the overlay refuses; electron#5891). Destroy
   // it first so quitting from the tray actually exits.
-  app.on("before-quit", () => {
+  app.on("before-quit", (event) => {
+    if (!windows.confirmCorrectionClose()) {
+      event.preventDefault();
+      return;
+    }
     windows.destroyOverlay();
   });
 

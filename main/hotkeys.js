@@ -258,10 +258,167 @@ function applyAll(next) {
   const wasSuspended = suspended;
   suspend(false);
   try {
-    return applyLive(next);
+    return applyWithCorrection(next);
   } finally {
     if (wasSuspended) suspend(true);
   }
+}
+
+// The correction shortcut is always available, unlike the live-only discard
+// shortcut, so it takes part in the dictation slots' transaction: a clash is
+// charged to the slot that changed into it, and a swap or transfer with a
+// dictation slot either completes or leaves both bindings as they were.
+const DICTATION = ["record", "pause", "discard"];
+
+// The accelerator each dictation slot holds now. Discard counts while idle
+// (configured, not armed): it re-grabs that key at the next dictation.
+function dictationAccelerators() {
+  return {
+    record: registered.get("record")?.accelerator || "",
+    pause: registered.get("pause")?.accelerator || "",
+    discard: discard.accelerator,
+  };
+}
+
+function setCorrect(accelerator, onTrigger) {
+  if (accelerator) registered.set("correct", { accelerator, onTrigger });
+  else registered.delete("correct");
+}
+
+function applyWithCorrection(next) {
+  if (next.correct === undefined && next.onCorrect === undefined) return applyLive(next);
+  const desired = next.correct || "";
+  const previous = registered.get("correct");
+  const held = previous?.accelerator || "";
+  const before = dictationAccelerators();
+  const target = Object.fromEntries(DICTATION.map((name) => [name, next[name] || ""]));
+  const dictation = { ...next };
+  const charged = {};
+  const keep = (name, error) => {
+    dictation[name] = before[name];
+    charged[name] = error;
+  };
+  const holderOf = (accelerator) => {
+    const now = dictationAccelerators();
+    return DICTATION.find((name) => accelerator && now[name] === accelerator);
+  };
+  const finish = (applied, correct) => {
+    const out = { ...applied, correct };
+    for (const name of Object.keys(charged)) out[name] = { ok: false, error: charged[name] };
+    return out;
+  };
+
+  // A clash in the requested settings goes to the slot that changed into it.
+  // When both changed — or on a cold start, where nothing is held yet — the
+  // optional correction key yields, so dictation keeps its shortcut.
+  let correctError = null;
+  for (const name of DICTATION) {
+    if (!desired || target[name] !== desired) continue;
+    if (desired === held && target[name] !== before[name]) keep(name, usedBy("correction", desired));
+    else correctError ??= usedBy(name, desired);
+  }
+  const goal = correctError ? held : desired;
+  const ok = (accelerator) => (accelerator ? { ok: true } : { ok: true, empty: true });
+  const notChanged = "Not changed: the correction hotkey could not be registered";
+
+  if (goal === held) {
+    // The correction key stays put: no dictation slot may take it.
+    for (const name of DICTATION) {
+      if (held && target[name] === held && !charged[name]) keep(name, usedBy("correction", held));
+    }
+    return finish(applyLive(dictation), correctError ? { ok: false, error: correctError } : ok(held));
+  }
+
+  // Dictation slots asking for the key the correction shortcut is leaving.
+  const takers = DICTATION.filter((name) => held && target[name] === held && !charged[name]);
+
+  if (!holderOf(goal)) {
+    // The new key is free: grab it before releasing the old one.
+    const attempt = goal ? attemptRegister(goal, next.onCorrect) : { ok: true };
+    if (!attempt.ok) {
+      for (const name of takers) keep(name, notChanged);
+      return finish(applyLive(dictation), { ok: false, error: registrationFailure(goal, attempt) });
+    }
+    if (held) globalShortcut.unregister(held);
+    setCorrect(goal, next.onCorrect);
+    return finish(applyLive(dictation), ok(goal));
+  }
+
+  // A dictation slot holds the new key and should be moving off it. In a swap
+  // it moves onto the correction key, which must be released first.
+  const releasedEarly = takers.length > 0;
+  if (releasedEarly) globalShortcut.unregister(held);
+  let applied = applyLive(dictation);
+  const blocker = holderOf(goal);
+  const attempt = blocker ? null : attemptRegister(goal, next.onCorrect);
+  if (attempt?.ok) {
+    if (!releasedEarly) globalShortcut.unregister(held);
+    setCorrect(goal, next.onCorrect);
+    return finish(applied, ok(goal));
+  }
+
+  const error = blocker
+    ? applied[blocker]?.ok === false
+      ? `Not changed: the ${blocker} hotkey could not be registered`
+      : usedBy(blocker, goal)
+    : registrationFailure(goal, attempt);
+  if (!releasedEarly) return finish(applied, { ok: false, error });
+
+  // The swap failed halfway: a dictation slot may already hold the old
+  // correction key. Put every dictation slot back, then retake that key.
+  if (holderOf(held)) {
+    // A combined transfer may have armed discard on an old record/pause key.
+    // Release that grab before restoring the pair, otherwise rollback rejects
+    // our own binding. Keep its configured value so applyLive still restores
+    // discard to its original key and reports a real OS failure if it cannot.
+    if (discard.armed && [before.record, before.pause].includes(discard.accelerator)) {
+      globalShortcut.unregister(discard.accelerator);
+      discard.armed = false;
+    }
+    const reverted = applyLive({ ...next, ...before });
+    // If restoring discard itself fails, drop its temporary binding. Keeping
+    // it could shadow the old correction key or re-arm a rejected setting.
+    if (!reverted.discard.ok && discard.accelerator !== before.discard) {
+      setDiscard("", next.onDiscard);
+    }
+    const restored = dictationAccelerators();
+    applied = { ...reverted };
+    for (const name of DICTATION) {
+      if (restored[name] !== before[name]) {
+        // applyPair preserves its current pair when a restore is refused.
+        // Those are temporary settings here: release them rather than leaving
+        // a rejected callback armed (possibly on the old correction key).
+        if (name === "discard") setDiscard("", next.onDiscard);
+        else {
+          const temporary = registered.get(name);
+          if (temporary) globalShortcut.unregister(temporary.accelerator);
+          registered.delete(name);
+        }
+        if (before[name]) {
+          const restoreError = `Could not restore "${prettyHotkey(before[name])}" after rollback. The saved ${name} hotkey is now unbound until you save again or restart.`;
+          logger.warn(restoreError);
+          applied[name] = { ok: false, unbound: true, error: restoreError };
+        } else applied[name] = { ok: false, error: notChanged };
+        continue;
+      }
+      if (target[name] !== before[name] && !charged[name]) {
+        applied[name] = reverted[name].ok ? { ok: false, error: notChanged } : reverted[name];
+      }
+    }
+  } else {
+    for (const name of takers) {
+      if (applied[name]?.ok !== false) applied[name] = { ok: false, error: notChanged };
+    }
+  }
+  const back = attemptRegister(held, previous.onTrigger);
+  if (!back.ok) {
+    registered.delete("correct");
+    const unbound = `Could not restore "${prettyHotkey(held)}" after rollback. The correction hotkey is now unbound until you save again or restart.`;
+    logger.warn(unbound);
+    const separator = /[.!?]$/.test(error) ? " " : ". ";
+    return finish(applied, { ok: false, unbound: true, error: `${error}${separator}${unbound}` });
+  }
+  return finish(applied, { ok: false, error });
 }
 
 function applyLive(next) {
@@ -386,6 +543,7 @@ function toHotkeyResults(pair, accelerators) {
   };
   // Only applyAll reports a discard slot; a bare pair result keeps two keys.
   if (pair.discard) results.discardHotkey = pair.discard;
+  if (pair.correct) results.correctHotkey = pair.correct;
   if (!accelerators) return results;
   const withAccelerators = {
     hotkey: { ...results.hotkey, accelerator: accelerators.hotkey || "" },
@@ -395,6 +553,11 @@ function toHotkeyResults(pair, accelerators) {
     withAccelerators.discardHotkey = {
       ...results.discardHotkey,
       accelerator: accelerators.discardHotkey || "",
+    };
+  }
+  if (results.correctHotkey) {
+    withAccelerators.correctHotkey = {
+      ...results.correctHotkey, accelerator: accelerators.correctHotkey || "",
     };
   }
   return withAccelerators;

@@ -209,7 +209,7 @@ main/                    Electron main process
   live-preview.js        live transcript while recording; committed chunks
                          become the final transcript's prefix (built-in STT)
   chunked-decode.js      built-in STT decoded one utterance at a time
-  ipc.js                 IPC handlers for Settings + wizard (commitSettings)
+  ipc.js                 IPC handlers for forms + transcript corrections
   cleanup-styles.js      cleanup style presets (Verbatim / Clean / Polished)
   autostart.js           start-on-login per OS
   hotkeys.js             global shortcut registration (released while a field captures)
@@ -218,7 +218,7 @@ main/                    Electron main process
   secret-store.js        remote API keys at rest: safeStorage encryption + status
   history.js             local transcription history
   tray.js                tray icon + menu
-  windows.js             overlay + settings + setup wizard windows (one factory)
+  windows.js             overlay + settings + wizard + correction windows (one factory)
   window-guard.js        navigation lock + permission policy for app windows
   updates.js             in-app updater: check, download to userData/updates, verify, re-verify, install
   services/update-feed.js     latest*.yml parsing + install-kind detection
@@ -245,7 +245,7 @@ main/                    Electron main process
                          decode-speed estimate, logger, exec, macOS signature
 preload.js               the renderer's whitelisted IPC bridge
 renderer/                overlay (mic capture → 16 kHz WAV, live transcript
-                         preview), settings UI, first-run wizard
+                         preview), settings UI, first-run wizard, correction editor
   transcript.js          pure two-layer (raw/cleaned) reconcile helper
   recorder-worklet.js    AudioWorklet: PCM + level from the audio thread
   microphone.js          mic constraints + error classification (overlay)
@@ -254,6 +254,8 @@ renderer/                overlay (mic capture → 16 kHz WAV, live transcript
   hotkey-capture.js      shared classic-script hotkey capture (settings + wizard);
                          suspends the global hotkeys while capturing
   settings-sync.js       forms follow settings saved while open (settings + wizard)
+  correction.js          selected-range spelling edits and explicit corrected copy
+  vocabulary.js          bounded remember operation + concurrent dictionary merge
   permission-status.js   status copy after "Fix auto-paste permission"
 stt-server/              Python: FastAPI + onnx-asr Parakeet server (optional)
 ```
@@ -307,7 +309,7 @@ Design constraints worth keeping:
   before installing and refuses a mismatch (#186).
 - **Each window holds only its own page and its own channels.** Every app
   window is built by `createAppWindow` in `main/windows.js`, which passes a role
-  (`--earheart-role=overlay|settings|wizard`) to the sandboxed preload and
+  (`--earheart-role=overlay|settings|wizard|correction`) to the sandboxed preload and
   installs the navigation guard from `main/window-guard.js`: a page can't
   navigate the window away (a dropped file or link, a `location` assignment),
   open a popup, or attach a `<webview>`. `preload.js` exposes only that role's
@@ -383,7 +385,7 @@ Design constraints worth keeping:
 ## README screenshots
 
 The screenshots in [docs/screenshots/](docs/screenshots/) are captured
-headlessly from the real windows (wizard, settings, overlay in staged
+headlessly from the real windows (wizard, settings, correction, overlay in staged
 recording/done states). If the UI changes, re-capture them:
 
 ```bash

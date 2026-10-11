@@ -1,9 +1,10 @@
-// IPC handlers backing the settings window and the setup wizard.
+// IPC handlers backing Settings, the setup wizard and transcript corrections.
 
 const { ipcMain, app, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const settings = require("./settings");
+const { mergeVocabulary, rememberVocabulary } = require("../renderer/vocabulary");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const history = require("./history");
@@ -122,6 +123,18 @@ function parseCommitRequest(request) {
 // so the user can change the field again.
 const SHARED_FIELDS = [
   {
+    name: "dictionary",
+    type: "array",
+    read: (cfg) => cfg.cleanup?.dictionary || [],
+    write: (cfg, live, seen) => ({
+      ...cfg,
+      cleanup: {
+        ...cfg.cleanup,
+        dictionary: mergeVocabulary(seen, cfg.cleanup?.dictionary, live.cleanup?.dictionary),
+      },
+    }),
+  },
+  {
     name: "outputMode",
     type: "string",
     // Compared as the mode delivery performs, so retiring the legacy
@@ -157,8 +170,9 @@ function withMainOwned(next, live, baseline) {
   }
   for (const field of SHARED_FIELDS) {
     const seen = baseline[field.name];
-    if (typeof seen !== field.type) continue;
-    if (field.read(live) !== seen) out = field.write(out, live);
+    if (field.type === "array" ? !Array.isArray(seen) : typeof seen !== field.type) continue;
+    // Arrays reconcile per-term edits; scalars only need a write when changed.
+    if (field.type === "array" || field.read(live) !== seen) out = field.write(out, live, seen);
   }
   return out;
 }
@@ -170,12 +184,15 @@ function withMainOwned(next, live, baseline) {
 const FORM_SYNC_KEYS = ["output", "updates", "overlay", "customModels"];
 
 function formSyncFields(cfg) {
-  return Object.fromEntries(FORM_SYNC_KEYS.map((key) => [key, cfg[key]]));
+  return {
+    ...Object.fromEntries(FORM_SYNC_KEYS.map((key) => [key, cfg[key]])),
+    dictionary: cfg.cleanup?.dictionary || [],
+  };
 }
 
 // The settings fields applyHotkeys registers. One that fails to register is
 // not saved: disk keeps the working value, the form keeps the attempt.
-const HOTKEY_FIELDS = ["hotkey", "pauseHotkey", "discardHotkey"];
+const HOTKEY_FIELDS = ["hotkey", "pauseHotkey", "discardHotkey", "correctHotkey"];
 
 function withFields(base, source, fields) {
   const result = { ...base };
@@ -227,7 +244,7 @@ function wrap(fn, describe = (err) => err.message) {
   };
 }
 
-function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus }) {
+function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true }) {
   // Register any models the user added from a custom Hugging Face URL so they
   // resolve for download and for loading into the cleanup worker after a
   // restart, exactly like the built-ins.
@@ -324,6 +341,7 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
         hotkey: hotkeyResults.hotkey,
         pauseHotkey: hotkeyResults.pauseHotkey,
         discardHotkey: hotkeyResults.discardHotkey,
+        correctHotkey: hotkeyResults.correctHotkey,
       },
     };
   };
@@ -582,6 +600,37 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     await withModelsBusy([{ kind, id: modelId }], () => engines.remove(kind, modelId));
     return { ok: true };
   }, deleteErrorMessage));
+
+  ipcMain.handle("correction:open", wrap((event, entry) => {
+    if (!canCorrect()) throw new Error("Finish the current dictation before correcting a transcript.");
+    // Resolve against saved history, not arbitrary renderer-supplied text.
+    const found = history.list().find((item) => item.at === entry?.at && item.text === entry?.text);
+    if (!found) throw new Error("This transcript is no longer in History.");
+    windows.openCorrection(found);
+    return { ok: true };
+  }));
+  ipcMain.handle("correction:get", () => ({
+    text: windows.getCorrectionText(), cleanupEnabled: settings.get().cleanup.enabled,
+  }));
+  ipcMain.handle("correction:remember", wrap((event, spelling) => {
+    const cfg = settings.get();
+    const dictionary = rememberVocabulary(cfg.cleanup.dictionary, spelling);
+    settings.save({ ...cfg, cleanup: { ...cfg.cleanup, dictionary } });
+    onSettingsChanged?.();
+    return { ok: true, cleanupEnabled: cfg.cleanup.enabled };
+  }));
+  ipcMain.handle("transcript:copy", wrap(async (event, text) => {
+    if (!canCopy()) throw new Error("Wait for the current dictation to finish processing before copying a transcript.");
+    if (typeof text !== "string" || !text.trim() || text.length > 1000000) {
+      throw new Error("The corrected prompt must contain text and be at most 1 million characters.");
+    }
+    // Settle any pending paste restoration so it cannot undo this explicit copy.
+    await deliver.deliver(text, { mode: "clipboard" });
+    windows.setCorrectionDirty(event.sender, false);
+    return { ok: true };
+  }));
+  ipcMain.on("correction:dirty", (event, dirty) => windows.setCorrectionDirty(event.sender, dirty));
+  ipcMain.handle("correction:close", () => windows.closeCorrection());
 
   ipcMain.handle("history:list", () => history.list());
   ipcMain.handle("history:clear", () => {

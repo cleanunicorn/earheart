@@ -1,0 +1,319 @@
+{
+  "modelSha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+  "cpu": "AMD Ryzen 9 3900X 12-Core Processor",
+  "backend": "cpu",
+  "seed": 17,
+  "style": "clean",
+  "dictionary": [
+    "kubectl",
+    "pnpm",
+    "useEffect",
+    "getUserById",
+    "Earheart",
+    "Vitest"
+  ],
+  "baseline": {
+    "exactTerms": 3,
+    "targetCases": 12,
+    "falseSubstitutions": 0,
+    "controlCases": 6,
+    "medianMs": 5183
+  },
+  "remembered": {
+    "exactTerms": 11,
+    "targetCases": 12,
+    "falseSubstitutions": 0,
+    "controlCases": 6,
+    "medianMs": 5839
+  },
+  "rows": [
+    {
+      "index": 0,
+      "input": "List the pods with cube cuddle before changing the deployment.",
+      "expected": "kubectl",
+      "arm": "baseline",
+      "output": "List the pods with cube cuddle before changing the deployment.",
+      "ms": 5180.919748
+    },
+    {
+      "index": 0,
+      "input": "List the pods with cube cuddle before changing the deployment.",
+      "expected": "kubectl",
+      "arm": "remembered",
+      "output": "List the pods with cube cuddle before changing the deployment.",
+      "ms": 5874.237747000001
+    },
+    {
+      "index": 1,
+      "input": "Run cube cuddle against the staging namespace and show the events.",
+      "expected": "kubectl",
+      "arm": "remembered",
+      "output": "Run kubectl cuddle against the staging namespace and show the events.",
+      "ms": 6023.773993999999
+    },
+    {
+      "index": 1,
+      "input": "Run cube cuddle against the staging namespace and show the events.",
+      "expected": "kubectl",
+      "arm": "baseline",
+      "output": "Run cube cuddle against the staging namespace and show the events.",
+      "ms": 5248.189629
+    },
+    {
+      "index": 2,
+      "input": "Install the dependencies with pee en pee em and run the tests.",
+      "expected": "pnpm",
+      "arm": "baseline",
+      "output": "Install the dependencies with pip and run the tests.",
+      "ms": 5098.637994000004
+    },
+    {
+      "index": 2,
+      "input": "Install the dependencies with pee en pee em and run the tests.",
+      "expected": "pnpm",
+      "arm": "remembered",
+      "output": "Install the dependencies with pnpm and run the tests.",
+      "ms": 6146.220738000004
+    },
+    {
+      "index": 3,
+      "input": "Use pee en pee em to update only the lockfile.",
+      "expected": "pnpm",
+      "arm": "remembered",
+      "output": "Use pnpm to update only the lockfile.",
+      "ms": 5779.225022999999
+    },
+    {
+      "index": 3,
+      "input": "Use pee en pee em to update only the lockfile.",
+      "expected": "pnpm",
+      "arm": "baseline",
+      "output": "Use pee en pee em to update only the lockfile.",
+      "ms": 5240.344434999999
+    },
+    {
+      "index": 4,
+      "input": "Move the subscription into use effect and return a cleanup function.",
+      "expected": "useEffect",
+      "arm": "baseline",
+      "output": "Move the subscription into useEffect and return a cleanup function.",
+      "ms": 5215.538290999997
+    },
+    {
+      "index": 4,
+      "input": "Move the subscription into use effect and return a cleanup function.",
+      "expected": "useEffect",
+      "arm": "remembered",
+      "output": "Move the subscription into useEffect and return a cleanup function.",
+      "ms": 5851.336820000004
+    },
+    {
+      "index": 5,
+      "input": "The use effect dependency list is missing the project identifier.",
+      "expected": "useEffect",
+      "arm": "remembered",
+      "output": "The useEffect dependency list is missing the project identifier.",
+      "ms": 5772.275962000007
+    },
+    {
+      "index": 5,
+      "input": "The use effect dependency list is missing the project identifier.",
+      "expected": "useEffect",
+      "arm": "baseline",
+      "output": "The use effect dependency list is missing the project identifier.",
+      "ms": 5148.591004999995
+    },
+    {
+      "index": 6,
+      "input": "Call get user by id before rendering the profile.",
+      "expected": "getUserById",
+      "arm": "baseline",
+      "output": "Call getUserById before rendering the profile.",
+      "ms": 4991.177960999994
+    },
+    {
+      "index": 6,
+      "input": "Call get user by id before rendering the profile.",
+      "expected": "getUserById",
+      "arm": "remembered",
+      "output": "Call getUserById before rendering the profile.",
+      "ms": 5625.629044000001
+    },
+    {
+      "index": 7,
+      "input": "Add a test for get user by id when the user is missing.",
+      "expected": "getUserById",
+      "arm": "remembered",
+      "output": "Add a test for getUserById when the user is missing.",
+      "ms": 5885.2153830000025
+    },
+    {
+      "index": 7,
+      "input": "Add a test for get user by id when the user is missing.",
+      "expected": "getUserById",
+      "arm": "baseline",
+      "output": "Add a test for getUserById when the user is missing.",
+      "ms": 5416.272779000006
+    },
+    {
+      "index": 8,
+      "input": "Add a keyboard shortcut to air heart for correcting the last prompt.",
+      "expected": "Earheart",
+      "arm": "baseline",
+      "output": "Add a keyboard shortcut to air heart for correcting the last prompt.",
+      "ms": 5386.819028999991
+    },
+    {
+      "index": 8,
+      "input": "Add a keyboard shortcut to air heart for correcting the last prompt.",
+      "expected": "Earheart",
+      "arm": "remembered",
+      "output": "Add a keyboard shortcut to Earheart for correcting the last prompt.",
+      "ms": 5991.3262870000035
+    },
+    {
+      "index": 9,
+      "input": "Check that air heart keeps the original transcript.",
+      "expected": "Earheart",
+      "arm": "remembered",
+      "output": "Check that Earheart keeps the original transcript.",
+      "ms": 5676.107952999999
+    },
+    {
+      "index": 9,
+      "input": "Check that air heart keeps the original transcript.",
+      "expected": "Earheart",
+      "arm": "baseline",
+      "output": "Check that air heart keeps the original transcript.",
+      "ms": 4993.758342000001
+    },
+    {
+      "index": 10,
+      "input": "Use vee test to cover the cancellation path.",
+      "expected": "Vitest",
+      "arm": "baseline",
+      "output": "Use vee test to cover the cancellation path.",
+      "ms": 5103.727672000008
+    },
+    {
+      "index": 10,
+      "input": "Use vee test to cover the cancellation path.",
+      "expected": "Vitest",
+      "arm": "remembered",
+      "output": "Use Vitest to cover the cancellation path.",
+      "ms": 5727.837822999994
+    },
+    {
+      "index": 11,
+      "input": "Run the vee test suite after updating the parser.",
+      "expected": "Vitest",
+      "arm": "remembered",
+      "output": "Run the Vitest test suite after updating the parser.",
+      "ms": 5862.658938999986
+    },
+    {
+      "index": 11,
+      "input": "Run the vee test suite after updating the parser.",
+      "expected": "Vitest",
+      "arm": "baseline",
+      "output": "Run the vee test suite after updating the parser.",
+      "ms": 5196.090630999999
+    },
+    {
+      "index": 12,
+      "input": "The cube has a blue face and rounded edges.",
+      "expected": null,
+      "arm": "baseline",
+      "output": "The cube has a blue face and rounded edges.",
+      "ms": 5066.481553999998
+    },
+    {
+      "index": 12,
+      "input": "The cube has a blue face and rounded edges.",
+      "expected": null,
+      "arm": "remembered",
+      "output": "The cube has a blue face and rounded edges.",
+      "ms": 5747.233448999992
+    },
+    {
+      "index": 13,
+      "input": "Explain the effect of this change on existing users.",
+      "expected": null,
+      "arm": "remembered",
+      "output": "Explain the effect of this change on existing users.",
+      "ms": 5825.917444000021
+    },
+    {
+      "index": 13,
+      "input": "Explain the effect of this change on existing users.",
+      "expected": null,
+      "arm": "baseline",
+      "output": "Explain the effect of this change on existing users.",
+      "ms": 5179.4040050000185
+    },
+    {
+      "index": 14,
+      "input": "Get the user by their email address before sending the reminder.",
+      "expected": null,
+      "arm": "baseline",
+      "output": "Get the user by their email address before sending the reminder.",
+      "ms": 5261.351495999988
+    },
+    {
+      "index": 14,
+      "input": "Get the user by their email address before sending the reminder.",
+      "expected": null,
+      "arm": "remembered",
+      "output": "Get the user by their email address before sending the reminder.",
+      "ms": 6625.850453000021
+    },
+    {
+      "index": 15,
+      "input": "Test the new validation rule with an empty input.",
+      "expected": null,
+      "arm": "remembered",
+      "output": "Test the new validation rule with an empty input.",
+      "ms": 6017.940669000003
+    },
+    {
+      "index": 15,
+      "input": "Test the new validation rule with an empty input.",
+      "expected": null,
+      "arm": "baseline",
+      "output": "Test the new validation rule with an empty input.",
+      "ms": 5397.662990000012
+    },
+    {
+      "index": 16,
+      "input": "Keep the heart icon aligned with the heading.",
+      "expected": null,
+      "arm": "baseline",
+      "output": "Keep the heart icon aligned with the heading.",
+      "ms": 5185.7201300000015
+    },
+    {
+      "index": 16,
+      "input": "Keep the heart icon aligned with the heading.",
+      "expected": null,
+      "arm": "remembered",
+      "output": "Keep the heart icon aligned with the heading.",
+      "ms": 5795.233941999992
+    },
+    {
+      "index": 17,
+      "input": "Install dependencies and rebuild the application.",
+      "expected": null,
+      "arm": "remembered",
+      "output": "Install dependencies and rebuild the application.",
+      "ms": 5628.082605999982
+    },
+    {
+      "index": 17,
+      "input": "Install dependencies and rebuild the application.",
+      "expected": null,
+      "arm": "baseline",
+      "output": "Install dependencies and rebuild the application.",
+      "ms": 4884.933214999997
+    }
+  ]
+}

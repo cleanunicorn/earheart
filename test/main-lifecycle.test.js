@@ -47,6 +47,8 @@ async function loadMain(
     occupied = [], // accelerators globalShortcut refuses
     updatesInit = () => {},
     notificationsSupported = true,
+    pipelineState = "idle",
+    canCloseCorrection = true,
   } = {}
 ) {
   const events = [];
@@ -115,9 +117,14 @@ async function loadMain(
       createOverlay: () => events.push("createOverlay"),
       destroyOverlay: () => events.push("destroyOverlay"),
       openSettings: () => events.push("openSettings"),
+      confirmCorrectionClose: () => canCloseCorrection,
+      closeCorrection: () => events.push("closeCorrection"),
       openWizard: () => events.push("openWizard"),
+      openCorrection: (entry) => events.push(`correct:${entry.text}`),
     },
+    "./history": { list: () => [{ text: "last transcript" }] },
     "./pipeline": {
+      getState: () => pipelineState,
       init: () => events.push("pipeline.init"),
       toggle: () => events.push("pipeline.toggle"),
       pauseToggle: () => events.push("pipeline.pauseToggle"),
@@ -249,6 +256,7 @@ test("a healthy launch registers both hotkeys and announces ready", async () => 
     hotkey: { ok: true, accelerator: RECORD },
     pauseHotkey: { ok: true, accelerator: PAUSE },
     discardHotkey: { ok: true, empty: true, accelerator: "" },
+    correctHotkey: { ok: true, empty: true, accelerator: "" },
   });
 
   // Only the microphone and clipboard writes from app pages are granted.
@@ -349,4 +357,38 @@ test("quitting destroys the overlay, then releases hotkeys, engines and updates"
   appHandlers["before-quit"]();
   appHandlers["will-quit"]();
   assert.deepStrictEqual(events, ["destroyOverlay", "unregisterAll", "engines.stop", "updates.dispose"]);
+});
+
+
+test("correction hotkey and desktop command open the latest saved transcript only when idle", async () => {
+  const key = "CommandOrControl+Alt+C";
+  for (const pipelineState of ["idle", "recording", "processing"]) {
+    const { shortcuts, appHandlers, events, ipcInit } = await loadMain({ cfg: makeCfg({ correctHotkey: key }), pipelineState });
+    events.length = 0;
+    shortcuts.get(key)();
+    appHandlers["second-instance"]({}, ["earheart", "--correct-last"]);
+    assert.deepStrictEqual(events, pipelineState === "idle" ? ["correct:last transcript", "correct:last transcript"] : []);
+    assert.strictEqual(ipcInit.canCorrect(), pipelineState === "idle");
+    assert.strictEqual(ipcInit.canCopy(), pipelineState !== "processing");
+  }
+});
+
+
+test("cancelling quit with an uncopied correction keeps the recording overlay alive", async () => {
+  const { events, appHandlers } = await loadMain({ canCloseCorrection: false });
+  events.length = 0;
+  let prevented = false;
+  appHandlers["before-quit"]({ preventDefault: () => { prevented = true; } });
+  assert.strictEqual(prevented, true);
+  assert.deepStrictEqual(events, []);
+});
+
+test("an update install asks about an uncopied correction first, then closes the editor so quit does not ask again", async () => {
+  for (const canCloseCorrection of [false, true]) {
+    let callbacks = null;
+    const { events } = await loadMain({ canCloseCorrection, updatesInit: (cb) => { callbacks = cb; } });
+    events.length = 0;
+    assert.strictEqual(callbacks.confirmInstall(), canCloseCorrection);
+    assert.deepStrictEqual(events, canCloseCorrection ? ["closeCorrection"] : [], "a kept draft keeps its editor");
+  }
 });

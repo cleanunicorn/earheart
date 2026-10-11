@@ -71,6 +71,8 @@ const ROLES = {
       "models:add-custom",
       "models:remove-custom",
       "history:list",
+      "correction:open",
+      "transcript:copy",
       "history:clear",
       "models:status",
       "models:download",
@@ -84,6 +86,10 @@ const ROLES = {
       "updates:skip",
       "logs:open",
     ],
+  },
+  correction: {
+    LISTEN: ["correction:notice"], SEND: ["correction:dirty"],
+    INVOKE: ["correction:get", "correction:remember", "transcript:copy", "correction:close"],
   },
   wizard: {
     LISTEN: ["models:progress", "settings:changed"],

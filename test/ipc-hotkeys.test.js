@@ -485,3 +485,22 @@ test("anything but true ends a capture, so a malformed payload cannot strand the
   handlers["hotkeys:capture"]({ sender }, undefined);
   assert.deepStrictEqual(calls.suspended, [false, true, false]);
 });
+
+
+test("settings save keeps a rejected correction hotkey off disk but in the reply", () => {
+  const before = { ...working, correctHotkey: "CommandOrControl+Alt+D" };
+  const attempt = submitted({ correctHotkey: "CommandOrControl+Alt+K" });
+  const results = {
+    hotkey: { ok: true },
+    pauseHotkey: { ok: true },
+    correctHotkey: { ok: false, error: "correction rejected" },
+  };
+  const { handlers, calls } = loadIpcHandlers({ previous: before, hotkeyResults: results });
+
+  const reply = handlers["settings:save"]({}, request(attempt));
+
+  assert.strictEqual(calls.saved[0].correctHotkey, before.correctHotkey);
+  assert.strictEqual(calls.saved[0].pauseHotkey, attempt.pauseHotkey, "the other slots still save");
+  assert.strictEqual(reply.settings.correctHotkey, attempt.correctHotkey);
+  assert.strictEqual(reply.correctHotkey.error, "correction rejected");
+});

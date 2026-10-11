@@ -83,7 +83,7 @@ function probe(bridge, universe) {
   return { LISTEN: allowed("on"), SEND: allowed("send"), INVOKE: allowed("invoke") };
 }
 
-const ROLE_NAMES = ["overlay", "settings", "wizard"];
+const ROLE_NAMES = ["overlay", "settings", "wizard", "correction"];
 
 const renderer = readAll(path.join(ROOT, "renderer"), ".js");
 const main = readAll(path.join(ROOT, "main"), ".js");
@@ -382,7 +382,7 @@ for (const { channel, mustCarry } of PAYLOAD_CHANNELS) {
 // to save settings or read history), and nothing missing (a channel its page
 // uses but its role lacks is a dead button in that one window — which the
 // union checks above can't see). A page's scripts are the ones its HTML loads.
-const PAGES = { overlay: "overlay.html", settings: "settings.html", wizard: "wizard.html" };
+const PAGES = { overlay: "overlay.html", settings: "settings.html", wizard: "wizard.html", correction: "correction.html" };
 
 function pageScripts(page) {
   const html = fs.readFileSync(path.join(ROOT, "renderer", page), "utf8");

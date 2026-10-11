@@ -173,6 +173,19 @@ $("discard-hotkey-clear").addEventListener("click", () => {
   discardHotkeyInput.value = "";
 });
 
+const correctHotkeyInput = $("correct-hotkey");
+wireHotkeyCapture(correctHotkeyInput, {
+  apply: (accelerator) => {
+    current.correctHotkey = accelerator;
+    correctHotkeyInput.value = accelerator;
+  },
+  restore: () => current?.correctHotkey || "",
+});
+$("correct-hotkey-clear").addEventListener("click", () => {
+  current.correctHotkey = "";
+  correctHotkeyInput.value = "";
+});
+
 /* ---------- microphone list ---------- */
 
 async function loadMicrophones() {
@@ -241,6 +254,7 @@ function populate() {
   hotkeyInput.value = current.hotkey;
   pauseHotkeyInput.value = current.pauseHotkey || "";
   discardHotkeyInput.value = current.discardHotkey || "";
+  correctHotkeyInput.value = current.correctHotkey || "";
   showOutputMode(current.output);
 
   $("stt-url").value = current.stt.baseUrl;
@@ -286,6 +300,7 @@ function collect() {
     hotkey: current.hotkey,
     pauseHotkey: current.pauseHotkey || "",
     discardHotkey: current.discardHotkey || "",
+    correctHotkey: current.correctHotkey || "",
     startOnBoot: $("start-on-boot").checked,
     updates: {
       ...current.updates,
@@ -776,6 +791,18 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
 // whole form, which would throw away edits the user hasn't saved yet.
 function applySettingsChange({ previous, current: saved }) {
   const flipped = [];
+  if (Array.isArray(saved.dictionary) && JSON.stringify(previous.dictionary) !== JSON.stringify(saved.dictionary)) {
+    const field = $("cleanup-dictionary");
+    const focused = document.activeElement === field;
+    const caret = [field.selectionStart, field.selectionEnd, field.selectionDirection];
+    const merged = mergeVocabulary(baseline.dictionary, field.value.split("\n"), saved.dictionary);
+    field.value = !focused && !field.value ? merged.join("\n")
+      : mergeVocabularyText(baseline.dictionary, field.value, saved.dictionary);
+    if (focused) field.setSelectionRange(...caret);
+    current.cleanup.dictionary = merged;
+    baseline.dictionary = [...saved.dictionary];
+    flipped.push("Dictionary updated with saved spellings.");
+  }
   current.overlay = saved.overlay;
   current.customModels = saved.customModels;
   current.updates = {
@@ -869,6 +896,7 @@ function renderHotkeyStatus(status) {
     [$("hotkey-status"), status?.hotkey, current.hotkey],
     [$("pause-hotkey-status"), status?.pauseHotkey, current.pauseHotkey],
     [$("discard-hotkey-status"), status?.discardHotkey, current.discardHotkey],
+    [$("correct-hotkey-status"), status?.correctHotkey, current.correctHotkey],
   ];
   for (const [row, result, shown] of rows) {
     const stale =
@@ -878,11 +906,12 @@ function renderHotkeyStatus(status) {
   }
 }
 
-function hotkeySaveMessage(hotkeyResult, pauseResult, discardResult) {
+function hotkeySaveMessage(hotkeyResult, pauseResult, discardResult, correctResult) {
   const failed = [
     [hotkeyResult, "hotkey"],
     [pauseResult, "pause hotkey"],
     [discardResult, "discard hotkey"],
+    [correctResult, "correction hotkey"],
   ].filter(([result]) => result && !result.ok);
   // More than one slot failing is usually one coupled rollback; blaming a
   // single field would be wrong.
@@ -915,6 +944,7 @@ saveButton.addEventListener("click", async () => {
   let result;
   let pauseResult;
   let discardResult;
+  let correctResult;
   // Acknowledge the click immediately and block a duplicate save while the
   // round-trip is in flight.
   saveButton.disabled = true;
@@ -935,8 +965,9 @@ saveButton.addEventListener("click", async () => {
     // Older mains don't report a pause result; treat that as fine.
     pauseResult = result.pauseHotkey ?? { ok: true };
     discardResult = result.discardHotkey ?? { ok: true };
-    const hotkeysOk = result.hotkey.ok && pauseResult.ok && discardResult.ok;
-    const hotkeyStatus = { hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult };
+    correctResult = result.correctHotkey ?? { ok: true };
+    const hotkeysOk = result.hotkey.ok && pauseResult.ok && discardResult.ok && correctResult.ok;
+    const hotkeyStatus = { hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult };
     if (hotkeysOk && adjusted.length) {
       // Saved, but not as typed: stay open long enough to say so.
       save.textContent = `Saved — ${adjusted.join("; ")}`;
@@ -964,9 +995,9 @@ saveButton.addEventListener("click", async () => {
   // A hotkey couldn't be registered: keep the window open so the error is
   // visible and the user can pick a combination that works.
   saveButton.disabled = false;
-  save.textContent = hotkeySaveMessage(result.hotkey, pauseResult, discardResult);
+  save.textContent = hotkeySaveMessage(result.hotkey, pauseResult, discardResult, correctResult);
   save.className = "status err";
-  renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult });
+  renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult });
   setTimeout(() => {
     save.textContent = "";
   }, 4000);
@@ -1162,14 +1193,18 @@ bindAddCustomModel("cleanup");
 const HISTORY_PAGE_SIZE = 5;
 let historyPage = 0; // 0 = the newest page
 
-function historyCopyButton(label, value) {
+function historyCopyButton(label, value, report) {
   const button = document.createElement("button");
   button.className = "copy";
   button.textContent = label;
   button.addEventListener("click", async () => {
-    await navigator.clipboard.writeText(value);
-    button.textContent = "Copied";
-    setTimeout(() => (button.textContent = label), 1200);
+    report("");
+    try {
+      const result = await earheart.invoke("transcript:copy", value);
+      if (!result.ok) throw new Error(result.error);
+      button.textContent = "Copied";
+      setTimeout(() => (button.textContent = label), 1200);
+    } catch (err) { report(`Could not copy: ${err.message}`); }
   });
   return button;
 }
@@ -1210,16 +1245,30 @@ async function renderHistory() {
     when.textContent = `${new Date(item.at).toLocaleString()}${item.cleaned ? " · cleaned" : ""}${
       item.incomplete ? " · incomplete" : ""
     }`;
+    const feedback = document.createElement("span");
+    feedback.className = "status err";
+    feedback.setAttribute("role", "status");
+    const report = (message) => { feedback.textContent = message; };
     const actions = document.createElement("span");
     actions.className = "actions";
-    actions.append(historyCopyButton("Copy", item.text));
+    actions.append(historyCopyButton("Copy", item.text, report));
+    const correct = document.createElement("button");
+    correct.textContent = "Correct…";
+    correct.addEventListener("click", async () => {
+      report("");
+      try {
+        const result = await earheart.invoke("correction:open", { at: item.at, text: item.text });
+        if (!result.ok) throw new Error(result.error);
+      } catch (err) { report(err.message); }
+    });
+    actions.append(correct);
     if (item.cleaned && typeof item.raw === "string" && item.raw !== item.text) {
-      const copyOriginal = historyCopyButton("Copy original", item.raw);
+      const copyOriginal = historyCopyButton("Copy original", item.raw, report);
       copyOriginal.title = "Copy the transcript before cleanup";
       actions.append(copyOriginal);
     }
     meta.append(when, actions);
-    li.append(text, meta);
+    li.append(text, meta, feedback);
     list.appendChild(li);
     // The card is laid out as soon as it is attached (the History section is
     // always visible), so overflow past the 3-line clamp is measurable here.

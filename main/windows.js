@@ -1,7 +1,7 @@
 // Window management: the recording overlay (a small always-on-top card that
-// also owns the microphone), the settings window and the first-run wizard.
+// also owns the microphone), Settings, the first-run wizard and correction editor.
 
-const { BrowserWindow, ipcMain, screen } = require("electron");
+const { BrowserWindow, ipcMain, screen, dialog } = require("electron");
 const path = require("node:path");
 const settings = require("./settings");
 const logger = require("./util/logger");
@@ -30,6 +30,9 @@ const INK_COLOR = "#18181b";
 let overlayWindow = null;
 let settingsWindow = null;
 let wizardWindow = null;
+let correctionWindow = null;
+let correctionText = "";
+let correctionDirty = false;
 let overlayCustomPosition = null; // set when the user drags the card
 let overlayDragOrigin = null; // { winX, winY, pointerX, pointerY }
 let overlayHideTimer = null;
@@ -434,6 +437,60 @@ function openSettings({ fromWizard = false } = {}) {
   return settingsWindow;
 }
 
+// Reopening keeps the current draft, even if a new dictation has arrived.
+function openCorrection(entry = null) {
+  if (alive(correctionWindow)) {
+    if (entry?.text && entry.text !== correctionText) {
+      correctionWindow.webContents.send("correction:notice", "Your current correction is still open. Copy or close it before opening another transcript.");
+    }
+    return bringForward(correctionWindow);
+  }
+  correctionText = typeof entry?.text === "string" ? entry.text : "";
+  correctionDirty = false;
+  correctionWindow = createFormWindow("correction", {
+    width: 720, height: 780, minWidth: 520, minHeight: 600,
+    title: "Correct transcript · Earheart",
+  });
+  correctionWindow.loadFile(path.join(RENDERER, "correction.html"));
+  correctionWindow.on("close", (event) => {
+    if (!confirmCorrectionClose()) event.preventDefault();
+  });
+  correctionWindow.on("closed", () => {
+    correctionWindow = null;
+    correctionText = "";
+    correctionDirty = false;
+  });
+  return correctionWindow;
+}
+
+function setCorrectionDirty(sender, dirty) {
+  if (alive(correctionWindow) && sender === correctionWindow.webContents) correctionDirty = dirty === true;
+}
+
+// Also checked before quitting, before main destroys the recording overlay.
+function confirmCorrectionClose() {
+  if (!alive(correctionWindow) || !correctionDirty) return true;
+  try {
+    const choice = dialog.showMessageBoxSync(correctionWindow, {
+      type: "question",
+      buttons: ["Keep editing", "Discard draft"],
+      defaultId: 0,
+      cancelId: 0,
+      message: "Discard your uncopied corrections?",
+      detail: "Your original transcript stays in History. Remembered spellings have already been saved.",
+    });
+    if (choice !== 1) return false;
+    correctionDirty = false;
+    return true;
+  } catch (err) {
+    logger.warn(`could not confirm closing the correction: ${err.message}`);
+    return false;
+  }
+}
+
+function getCorrectionText() { return correctionText; }
+function closeCorrection() { if (alive(correctionWindow)) correctionWindow.close(); }
+
 function openWizard() {
   if (alive(wizardWindow)) return bringForward(wizardWindow);
   wizardWindow = createFormWindow("wizard", {
@@ -487,6 +544,11 @@ module.exports = {
   isOverlayVisible,
   sendToOverlay,
   openSettings,
+  openCorrection,
+  getCorrectionText,
+  setCorrectionDirty,
+  confirmCorrectionClose,
+  closeCorrection,
   sendToSettings,
   sendToForms,
   broadcast,

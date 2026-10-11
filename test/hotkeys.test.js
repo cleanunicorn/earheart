@@ -820,3 +820,313 @@ test("a discard hotkey saved mid-dictation is held even when the old one failed 
   hotkeys.armDiscard(false);
   assert.strictEqual(bindings.has(E), false, "and it is released when the dictation ends");
 });
+
+test("correction shortcut triggers, suspends during capture and preserves old key on failed rebind", () => {
+  const { hotkeys, bindings } = loadHotkeys({ occupied: ["CommandOrControl+Alt+X"] });
+  let corrected = 0;
+  const next = { record: A, pause: B, correct: C, onRecord() {}, onPause() {}, onCorrect() { corrected++; } };
+  assert.strictEqual(hotkeys.applyAll(next).correct.ok, true);
+  bindings.get(C)();
+  assert.strictEqual(corrected, 1);
+  hotkeys.suspend(true);
+  assert.strictEqual(bindings.size, 0);
+  hotkeys.suspend(false);
+  bindings.get(C)();
+  assert.strictEqual(corrected, 2);
+  assert.strictEqual(hotkeys.applyAll({ ...next, correct: "CommandOrControl+Alt+X" }).correct.ok, false);
+  assert.ok(bindings.has(C));
+  assert.strictEqual(hotkeys.applyAll({ ...next, correct: "" }).correct.empty, true);
+  assert.ok(!bindings.has(C));
+});
+test("correction collisions do not steal any existing shortcut, including idle discard", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  const D = "CommandOrControl+Alt+D";
+  const next = { record: A, pause: B, discard: D, correct: C, onRecord() {}, onPause() {}, onDiscard() {}, onCorrect() {} };
+  hotkeys.applyAll(next);
+  for (const correct of [A, B, D]) {
+    assert.strictEqual(hotkeys.applyAll({ ...next, correct }).correct.ok, false);
+    assert.ok(bindings.has(C));
+  }
+  for (const slot of ["record", "pause", "discard"]) {
+    assert.strictEqual(hotkeys.applyAll({ ...next, [slot]: C })[slot].ok, false);
+    assert.ok(bindings.has(C));
+  }
+});
+
+test("transferring a correction key to dictation can roll back after a settings write failure", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  const D = "CommandOrControl+Alt+D";
+  const original = { record: A, pause: B, correct: C, onRecord() {}, onPause() {}, onCorrect() {} };
+  hotkeys.applyAll(original);
+  const changed = hotkeys.applyAll({ ...original, record: C, correct: D });
+  assert.strictEqual(changed.record.ok, true);
+  assert.strictEqual(changed.correct.ok, true);
+  const rollback = hotkeys.applyAll(original);
+  assert.strictEqual(rollback.record.ok, true);
+  assert.strictEqual(rollback.correct.ok, true);
+  assert.deepStrictEqual(new Set(bindings.keys()), new Set([A, B, C]));
+});
+
+// Correction transactions: a swap or transfer with a dictation slot completes
+// or leaves every binding as it was, and a clash is charged to the changed slot.
+function correctionSlots(hotkeys) {
+  const fired = [];
+  const next = {
+    record: A, pause: B, discard: "CommandOrControl+Alt+D", correct: C,
+    onRecord: () => fired.push("record"), onPause: () => fired.push("pause"),
+    onDiscard: () => fired.push("discard"), onCorrect: () => fired.push("correct"),
+  };
+  assert.ok(Object.values(hotkeys.applyAll(next)).every((result) => result.ok));
+  return { next, fired };
+}
+
+test("a dictation slot moving onto the unchanged correction key is the only one charged", () => {
+  for (const slot of ["record", "pause", "discard"]) {
+    const { hotkeys, bindings } = loadHotkeys();
+    const { next, fired } = correctionSlots(hotkeys);
+    const results = hotkeys.applyAll({ ...next, [slot]: C });
+    assert.deepStrictEqual(results[slot], {
+      ok: false, error: `"${prettyHotkey(C)}" is already used by the correction hotkey`,
+    });
+    assert.deepStrictEqual(results.correct, { ok: true }, `${slot}: correction still works`);
+    bindings.get(C)();
+    assert.deepStrictEqual(fired, ["correct"]);
+  }
+});
+
+test("a correction key moving onto an unchanged dictation key is the only one charged", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  const { next, fired } = correctionSlots(hotkeys);
+  const results = hotkeys.applyAll({ ...next, correct: A });
+  assert.strictEqual(results.record.ok, true);
+  assert.strictEqual(results.correct.ok, false);
+  assert.match(results.correct.error, /used by the record hotkey/);
+  bindings.get(A)();
+  bindings.get(C)();
+  assert.deepStrictEqual(fired, ["record", "correct"]);
+});
+
+test("when both slots change into one key, or on a cold start, the correction key yields", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  const { next } = correctionSlots(hotkeys);
+  const X = "CommandOrControl+Alt+X";
+  const both = hotkeys.applyAll({ ...next, record: X, correct: X });
+  assert.strictEqual(both.record.ok, true);
+  assert.match(both.correct.error, /used by the record hotkey/);
+  assert.ok(bindings.has(C), "the old correction key is kept");
+
+  const cold = loadHotkeys();
+  const results = cold.hotkeys.applyAll({ record: A, pause: "", correct: A, onRecord() {}, onPause() {}, onCorrect() {} });
+  assert.strictEqual(results.record.ok, true);
+  assert.strictEqual(results.correct.ok, false);
+  assert.deepStrictEqual([...cold.bindings.keys()], [A]);
+});
+
+test("correction swaps with record, pause and discard, then rolls back to the saved settings", () => {
+  for (const slot of ["record", "pause", "discard"]) {
+    for (const live of [false, true]) {
+      const label = `${slot}, dictation ${live ? "live" : "idle"}`;
+      const { hotkeys, bindings } = loadHotkeys();
+      const { next, fired } = correctionSlots(hotkeys);
+      hotkeys.armDiscard(live);
+      const theirs = next[slot];
+      // Discard is held by the OS only while a dictation is live.
+      const held = (key, owner) => owner !== "discard" || live ? bindings.has(key) : !bindings.has(key);
+      const press = (key) => bindings.get(key)?.();
+
+      const swapped = hotkeys.applyAll({ ...next, [slot]: C, correct: theirs });
+      assert.ok(Object.values(swapped).every((result) => result.ok), `${label}: ${JSON.stringify(swapped)}`);
+      assert.ok(held(C, slot) && held(theirs, "correct"), `${label}: swapped`);
+      press(theirs);
+      press(C);
+      assert.deepStrictEqual(fired, slot !== "discard" || live ? ["correct", slot] : ["correct"], label);
+
+      // A failed settings write re-applies the previous settings.
+      const rollback = hotkeys.applyAll(next);
+      assert.ok(Object.values(rollback).every((result) => result.ok), `${label}: rollback ${JSON.stringify(rollback)}`);
+      assert.ok(held(theirs, slot) && held(C, "correct"), `${label}: restored`);
+      assert.strictEqual(bindings.has(next.discard), live, `${label}: discard held only while live`);
+      fired.length = 0;
+      press(C);
+      press(theirs);
+      assert.deepStrictEqual(fired, slot !== "discard" || live ? ["correct", slot] : ["correct"], label);
+    }
+  }
+});
+
+test("a three-way rotation through the correction key completes", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  const { next, fired } = correctionSlots(hotkeys);
+  const results = hotkeys.applyAll({ ...next, record: B, pause: C, correct: A });
+  assert.ok(Object.values(results).every((result) => result.ok), JSON.stringify(results));
+  for (const key of [A, B, C]) bindings.get(key)();
+  assert.deepStrictEqual(fired, ["correct", "record", "pause"]);
+});
+
+test("a swap the OS refuses halfway keeps both old bindings", () => {
+  // record takes C (just released) but the OS refuses A for correction.
+  const { hotkeys, bindings } = loadHotkeys({
+    registerImpl: (accelerator, attempt) => !(accelerator === A && attempt === 2),
+  });
+  const { next, fired } = correctionSlots(hotkeys);
+  const results = hotkeys.applyAll({ ...next, record: C, correct: A });
+  assert.deepStrictEqual(results.record, { ok: false, error: "Not changed: the correction hotkey could not be registered" });
+  assert.strictEqual(results.correct.ok, false);
+  assert.match(results.correct.error, /Could not register/);
+  bindings.get(A)();
+  bindings.get(C)();
+  assert.deepStrictEqual(fired, ["record", "correct"]);
+});
+
+test("a swap whose dictation side the OS refuses keeps the correction key", () => {
+  const { hotkeys, bindings } = loadHotkeys({
+    registerImpl: (accelerator, attempt) => !(accelerator === C && attempt === 2),
+  });
+  const { next, fired } = correctionSlots(hotkeys);
+  const results = hotkeys.applyAll({ ...next, record: C, correct: A });
+  assert.strictEqual(results.record.ok, false);
+  assert.match(results.record.error, /Could not register/);
+  assert.deepStrictEqual(results.correct, { ok: false, error: "Not changed: the record hotkey could not be registered" });
+  bindings.get(A)();
+  bindings.get(C)();
+  assert.deepStrictEqual(fired, ["record", "correct"]);
+});
+
+test("a dictation slot waiting for the correction key stays put when the correction key cannot move", () => {
+  const X = "CommandOrControl+Alt+X";
+  const { hotkeys, bindings } = loadHotkeys({ occupied: [X] });
+  const { next, fired } = correctionSlots(hotkeys);
+  const results = hotkeys.applyAll({ ...next, record: C, pause: "CommandOrControl+Alt+P2", correct: X });
+  assert.deepStrictEqual(results.record, { ok: false, error: "Not changed: the correction hotkey could not be registered" });
+  assert.strictEqual(results.pause.ok, true, "an unrelated change still lands");
+  assert.strictEqual(results.correct.ok, false);
+  bindings.get(A)();
+  bindings.get(C)();
+  assert.deepStrictEqual(fired, ["record", "correct"]);
+});
+
+test("a swap that cannot retake the old correction key reports it unbound", () => {
+  const { hotkeys, bindings } = loadHotkeys({
+    // A refused for correction, then C refused when it is taken back.
+    registerImpl: (accelerator, attempt) => !(accelerator === A && attempt === 2) && !(accelerator === C && attempt === 3),
+  });
+  const { next } = correctionSlots(hotkeys);
+  const results = hotkeys.applyAll({ ...next, record: C, correct: A });
+  assert.strictEqual(results.correct.unbound, true);
+  assert.match(results.correct.error, /now unbound/);
+  assert.ok(bindings.has(A), "record is back on its own key");
+  hotkeys.suspend(true);
+  hotkeys.suspend(false);
+  assert.ok(!bindings.has(C), "an unbound correction key is not re-grabbed after capture");
+});
+
+test("a failed correction swap restores a pause key temporarily taken by live discard", () => {
+  const { hotkeys, bindings, calls } = loadHotkeys({
+    registerImpl: (accelerator, attempt) => !(accelerator === A && attempt === 2),
+  });
+  const { next, fired } = correctionSlots(hotkeys);
+  hotkeys.armDiscard(true);
+  const results = hotkeys.applyAll({ ...next, record: C, pause: "", discard: B, correct: A });
+  assert.deepStrictEqual(new Set(bindings.keys()), new Set([A, B, C, next.discard]));
+  for (const key of [A, B, C, next.discard]) bindings.get(key)();
+  assert.deepStrictEqual(fired, ["record", "pause", "correct", "discard"]);
+  for (const slot of ["record", "pause", "discard"]) {
+    assert.deepStrictEqual(results[slot], { ok: false, error: "Not changed: the correction hotkey could not be registered" });
+  }
+  assert.strictEqual(results.correct.ok, false);
+  assert.match(results.correct.error, /Could not register/);
+  assert.strictEqual(results.correct.unbound, undefined);
+  assert.deepStrictEqual(calls.warnings, []);
+  hotkeys.armDiscard(false);
+  assert.deepStrictEqual(new Set(bindings.keys()), new Set([A, B, C]));
+});
+
+test("a refused pair restore releases temporary callbacks before retaking correction", () => {
+  const E = "CommandOrControl+Alt+E";
+  const { hotkeys, bindings } = loadHotkeys({
+    // Refuse A for correction, then B when restoring the original pair.
+    registerImpl: (accelerator, attempt) => !(accelerator === A && attempt === 2) && !(accelerator === B && attempt === 2),
+  });
+  const { next, fired } = correctionSlots(hotkeys);
+  hotkeys.armDiscard(true);
+  const results = hotkeys.applyAll({ ...next, record: C, pause: E, correct: A });
+  assert.strictEqual(results.record.unbound, true);
+  assert.strictEqual(results.pause.unbound, true);
+  assert.strictEqual(results.correct.unbound, undefined);
+  assert.deepStrictEqual(new Set(bindings.keys()), new Set([C, next.discard]));
+  bindings.get(C)();
+  assert.deepStrictEqual(fired, ["correct"], "the correction key no longer triggers the temporary record callback");
+  hotkeys.suspend(true);
+  hotkeys.suspend(false);
+  assert.deepStrictEqual(new Set(bindings.keys()), new Set([C, next.discard]), "capture cannot resurrect rejected pair bindings");
+});
+
+test("a refused discard restore drops its temporary correction-key grab", () => {
+  let reject = false;
+  const D = "CommandOrControl+Alt+D";
+  const { hotkeys, bindings } = loadHotkeys({
+    registerImpl: (accelerator) => {
+      if (reject && accelerator === D) { reject = false; return false; }
+      return true;
+    },
+  });
+  const { next, fired } = correctionSlots(hotkeys);
+  hotkeys.armDiscard(true);
+  reject = true;
+  const results = hotkeys.applyAll({ ...next, record: D, pause: "", discard: C, correct: A });
+  assert.strictEqual(results.discard.unbound, true);
+  assert.match(results.discard.error, /saved discard hotkey is now unbound/);
+  assert.strictEqual(results.correct.unbound, undefined);
+  assert.deepStrictEqual(new Set(bindings.keys()), new Set([A, B, C]));
+  for (const key of [A, B, C]) bindings.get(key)();
+  assert.deepStrictEqual(fired, ["record", "pause", "correct"]);
+  hotkeys.armDiscard(false);
+  hotkeys.armDiscard(true);
+  assert.deepStrictEqual(new Set(bindings.keys()), new Set([A, B, C]), "rejected discard must not re-arm on correction's key");
+});
+
+test("combined transfers and one-shot OS failures match reported slots and callback ownership", () => {
+  const D = "CommandOrControl+Alt+D";
+  const E = "CommandOrControl+Alt+E";
+  const values = ["", A, B, C, D, E];
+  const slots = ["record", "pause", "discard", "correct"];
+  const before = { record: A, pause: B, discard: D, correct: C };
+  const callbacks = Object.fromEntries(slots.map((slot) => [
+    `on${slot[0].toUpperCase()}${slot.slice(1)}`, () => slot,
+  ]));
+  let checked = 0;
+  for (const fail of values) for (const live of [false, true]) {
+    for (const record of values) for (const pause of values) for (const discard of values) for (const correct of values) {
+      const target = { record, pause, discard, correct };
+      const keys = Object.values(target).filter(Boolean);
+      if (!record || new Set(keys).size !== keys.length) continue;
+      let ready = false;
+      let injected = false;
+      const { hotkeys, bindings } = loadHotkeys({ registerImpl: (accelerator) => {
+        if (ready && fail && accelerator === fail && !injected) {
+          injected = true;
+          return false;
+        }
+        return true;
+      } });
+      hotkeys.applyAll({ ...before, ...callbacks });
+      hotkeys.armDiscard(live);
+      ready = true;
+      const result = hotkeys.applyAll({ ...target, ...callbacks });
+      const label = JSON.stringify({ target, fail, live, result });
+      const expected = new Map();
+      for (const slot of slots) {
+        if (result[slot].unbound) {
+          assert.strictEqual(result[slot].ok, false, label);
+          continue;
+        }
+        const key = result[slot].ok ? target[slot] : before[slot];
+        if (key && (slot !== "discard" || live)) expected.set(key, slot);
+      }
+      assert.deepStrictEqual(new Set(bindings.keys()), new Set(expected.keys()), label);
+      for (const [key, slot] of expected) assert.strictEqual(bindings.get(key)(), slot, label);
+      checked++;
+    }
+  }
+  assert.strictEqual(checked, 4380);
+});

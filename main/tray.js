@@ -1,11 +1,12 @@
 // System tray icon and menu. The icon doubles as a recording indicator.
 
-const { Tray, Menu, Notification, nativeImage, clipboard } = require("electron");
+const { Tray, Menu, Notification, nativeImage } = require("electron");
 const path = require("node:path");
 const windows = require("./windows");
 const settings = require("./settings");
 const updates = require("./updates");
 const history = require("./history");
+const { deliver } = require("./output/deliver");
 const logger = require("./util/logger");
 
 let tray = null;
@@ -57,15 +58,28 @@ function buildMenu(app) {
     { type: "separator" },
     {
       label: "Copy last transcription",
-      enabled: !!lastEntry,
+      enabled: !!lastEntry && state !== "processing",
       // Re-read at click time so we copy the freshest entry even if the menu
       // was built a moment before the dictation landed.
-      click: () => {
+      click: async () => {
+        if (pipeline.getState() === "processing") return;
         const entry = history.list()[0];
-        if (entry) clipboard.writeText(entry.text);
+        if (!entry) return;
+        try { await deliver(entry.text, { mode: "clipboard" }); }
+        catch (err) {
+          logger.warn(`could not copy transcript: ${err.message}`);
+          try {
+            new Notification({ title: "Could not copy transcript", body: "Your transcript is still in History. Try copying it again." }).show();
+          } catch (notifyErr) { logger.warn(`copy notification failed: ${notifyErr.message}`); }
+        }
       },
     },
     { type: "separator" },
+    {
+      label: "Correct last transcription…",
+      enabled: !!lastEntry && state === "idle",
+      click: () => { if (pipeline.getState() === "idle") windows.openCorrection(history.list()[0]); },
+    },
     ...updateItems(),
     { label: "Settings…", click: () => windows.openSettings() },
     { type: "separator" },

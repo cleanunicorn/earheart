@@ -48,6 +48,28 @@ async function main() {
   await shot(settings, "settings");
   settings.close();
 
+  // Correction: synthetic transcript, no dictionary/history writes.
+  const correction = windows.openCorrection({ text: "Run cube cuddle against staging, then check the logs.\nKeep src/Foo.ts unchanged and add a test for the error path." });
+  await waitForLoad(correction.webContents);
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (await correction.webContents.executeJavaScript('!document.getElementById("copy").disabled')) break;
+    if (attempt === 99) throw new Error("correction editor did not initialize");
+    await sleep(50);
+  }
+  await correction.webContents.executeJavaScript(`
+    document.getElementById("transcript").focus();
+    document.getElementById("transcript").setSelectionRange(4, 15);
+    document.getElementById("transcript").dispatchEvent(new Event("select"));
+    document.getElementById("spelling").value = "kubectl";
+    document.getElementById("spelling").dispatchEvent(new Event("input"));
+    document.getElementById("spelling").focus();
+    "";
+  `);
+  await correction.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))");
+  await shot(correction, "correction");
+  windows.setCorrectionDirty(correction.webContents, false); // discard this synthetic staged draft
+  correction.close();
+
   // Overlay: staged recording and done states. setStatus/waveHistory/
   // drawMeter/timerEl are top-level bindings in overlay.js, reachable from
   // executeJavaScript.

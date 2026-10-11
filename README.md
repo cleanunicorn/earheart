@@ -121,6 +121,7 @@ label, and opinions are welcome.
   chat API also works. If cleanup fails, Earheart delivers the raw transcript.
 - **A dictionary for technical names** — teach Earheart the exact spelling of
   repo and product names, `pnpm`, `kubectl`, `useEffect`, or colleagues' names.
+  Select **Correct…** in History to fix a phrase and remember its spelling.
 - **Pause and resume mid-dictation** — hold a take while you talk to someone or
   take a call, then resume it. Paused time is never captured or counted against
   the maximum length. You can also bind a global pause hotkey in Settings →
@@ -354,6 +355,56 @@ the wizard:
 
 A mis-aimed paste never loses your words: the History section in Settings
 keeps recent transcriptions in a local file (you can turn this off).
+
+To fix a technical name, choose **Correct…** on a history entry or **Correct last
+transcription…** from the tray. You can also configure **Correct last transcript
+hotkey** in Settings → General (unbound by default), or bind
+`earheart --correct-last` in your desktop's shortcut settings while Earheart is
+running. Correction opens after dictation finishes, so it cannot steal a pending
+paste's focus.
+
+Select the mistaken words in the full transcript, press Tab, and type the exact
+spelling. **Replace & remember** (Enter in the spelling field) changes only that
+occurrence and adds the spelling to your dictionary; **Replace only** makes a
+one-off correction. Shift+Tab back to the transcript keeps your pending spelling.
+Repeat for other terms, or edit the transcript directly.
+**Undo replacement** reverses these replacements without removing words already
+remembered. Direct typing starts a new replacement-undo history.
+**Copy corrected prompt & close** (`Ctrl/Cmd+Enter`) copies the full draft. Back
+in your coding agent, select the existing prompt before pasting if you want to
+replace it. Earheart does not automatically resend or submit the corrected text.
+
+The original history entry stays unchanged; the correction draft lasts until
+you close the editor. Closing, quitting, or restarting to update with uncopied
+changes asks whether to
+keep editing or discard the draft. Escape in the spelling field cancels just
+that pending spelling. If another transcript is requested while a correction is
+open, Earheart keeps the active draft and explains how to finish it first.
+Remembered words save immediately and can be edited or
+removed in Settings → Cleanup → Dictionary. New remembered spellings are limited
+to 120 characters each, 256 unique entries and 8,192 total dictionary characters.
+They guide the cleanup model rather than retraining speech recognition, and only
+influence future dictations while cleanup is enabled. Exact duplicate spellings
+are ignored; differently cased identifiers remain distinct.
+
+![Correct a transcript and remember a spelling](docs/screenshots/correction.png)
+
+A small [held-out text evaluation](docs/evaluations/vocabulary-corrections.json)
+on the shipped Qwen3 4B model (Clean style, CPU, seed 17) measured:
+
+| Measure | Empty dictionary | Six remembered spellings |
+| --- | ---: | ---: |
+| Exact spelling in 12 technical prompts | 3/12 | 11/12 |
+| Dictionary terms incorrectly inserted in six unrelated prompts | 0/6 | 0/6 |
+| Median cleanup time across 18 prompts | 5,183 ms | 5,839 ms |
+
+These are synthetic text prompts on one AMD Ryzen 9 3900X, not a speech-recognition
+accuracy claim or a guarantee for other models. No prompt tuning used these
+cases. Reproduce with `node scripts/eval-vocabulary.mjs /path/to/model.gguf
+/tmp/vocabulary.json`; use the catalog's Qwen3 4B Instruct 2507 Q4_K_M model.
+The script uses the shipped cleanup prompt and scores the final postprocessed
+text. A missing exact spelling remains possible even after remembering it.
+
 
 When something goes wrong (a service can't be reached, cleanup fails and the
 raw transcript is used, auto-paste fails and the text waits on the clipboard)

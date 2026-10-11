@@ -1291,6 +1291,8 @@ app.whenReady().then(async () => {
       JSON.stringify(denied)
     );
 
+    await require("./correction-smoke").checkCorrection({ waitFor, check });
+
     const failed = checks.filter((c) => !c.ok);
     console.log(
       `[settings-smoke] ${checks.length - failed.length}/${checks.length} checks passed`

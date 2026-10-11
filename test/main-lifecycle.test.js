@@ -47,6 +47,7 @@ async function loadMain(
     occupied = [], // accelerators globalShortcut refuses
     updatesInit = () => {},
     notificationsSupported = true,
+    pipelineState = "idle",
   } = {}
 ) {
   const events = [];
@@ -116,8 +117,11 @@ async function loadMain(
       destroyOverlay: () => events.push("destroyOverlay"),
       openSettings: () => events.push("openSettings"),
       openWizard: () => events.push("openWizard"),
+      openCorrection: (entry) => events.push(`correct:${entry.text}`),
     },
+    "./history": { list: () => [{ text: "last transcript" }] },
     "./pipeline": {
+      getState: () => pipelineState,
       init: () => events.push("pipeline.init"),
       toggle: () => events.push("pipeline.toggle"),
       pauseToggle: () => events.push("pipeline.pauseToggle"),
@@ -249,6 +253,7 @@ test("a healthy launch registers both hotkeys and announces ready", async () => 
     hotkey: { ok: true, accelerator: RECORD },
     pauseHotkey: { ok: true, accelerator: PAUSE },
     discardHotkey: { ok: true, empty: true, accelerator: "" },
+    correctHotkey: { ok: true, empty: true, accelerator: "" },
   });
 
   // Only the microphone and clipboard writes from app pages are granted.
@@ -349,4 +354,17 @@ test("quitting destroys the overlay, then releases hotkeys, engines and updates"
   appHandlers["before-quit"]();
   appHandlers["will-quit"]();
   assert.deepStrictEqual(events, ["destroyOverlay", "unregisterAll", "engines.stop", "updates.dispose"]);
+});
+
+
+test("correction hotkey and desktop command open the latest saved transcript only when idle", async () => {
+  const key = "CommandOrControl+Alt+C";
+  for (const pipelineState of ["idle", "recording", "processing"]) {
+    const { shortcuts, appHandlers, events, ipcInit } = await loadMain({ cfg: makeCfg({ correctHotkey: key }), pipelineState });
+    events.length = 0;
+    shortcuts.get(key)();
+    appHandlers["second-instance"]({}, ["earheart", "--correct-last"]);
+    assert.deepStrictEqual(events, pipelineState === "idle" ? ["correct:last transcript", "correct:last transcript"] : []);
+    assert.strictEqual(ipcInit.canCorrect(), pipelineState === "idle");
+  }
 });

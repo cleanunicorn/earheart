@@ -66,6 +66,11 @@ function buildMenu(app) {
       },
     },
     { type: "separator" },
+    {
+      label: "Correct last transcription…",
+      enabled: !!lastEntry && state === "idle",
+      click: () => { if (pipeline.getState() === "idle") windows.openCorrection(history.list()[0]); },
+    },
     ...updateItems(),
     { label: "Settings…", click: () => windows.openSettings() },
     { type: "separator" },

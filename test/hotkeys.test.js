@@ -820,3 +820,35 @@ test("a discard hotkey saved mid-dictation is held even when the old one failed 
   hotkeys.armDiscard(false);
   assert.strictEqual(bindings.has(E), false, "and it is released when the dictation ends");
 });
+
+test("correction shortcut triggers, suspends during capture and preserves old key on failed rebind", () => {
+  const { hotkeys, bindings } = loadHotkeys({ occupied: ["CommandOrControl+Alt+X"] });
+  let corrected = 0;
+  const next = { record: A, pause: B, correct: C, onRecord() {}, onPause() {}, onCorrect() { corrected++; } };
+  assert.strictEqual(hotkeys.applyAll(next).correct.ok, true);
+  bindings.get(C)();
+  assert.strictEqual(corrected, 1);
+  hotkeys.suspend(true);
+  assert.strictEqual(bindings.size, 0);
+  hotkeys.suspend(false);
+  bindings.get(C)();
+  assert.strictEqual(corrected, 2);
+  assert.strictEqual(hotkeys.applyAll({ ...next, correct: "CommandOrControl+Alt+X" }).correct.ok, false);
+  assert.ok(bindings.has(C));
+  assert.strictEqual(hotkeys.applyAll({ ...next, correct: "" }).correct.empty, true);
+  assert.ok(!bindings.has(C));
+});
+test("correction collisions do not steal any existing shortcut, including idle discard", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  const D = "CommandOrControl+Alt+D";
+  const next = { record: A, pause: B, discard: D, correct: C, onRecord() {}, onPause() {}, onDiscard() {}, onCorrect() {} };
+  hotkeys.applyAll(next);
+  for (const correct of [A, B, D]) {
+    assert.strictEqual(hotkeys.applyAll({ ...next, correct }).correct.ok, false);
+    assert.ok(bindings.has(C));
+  }
+  for (const slot of ["record", "pause", "discard"]) {
+    assert.strictEqual(hotkeys.applyAll({ ...next, [slot]: C })[slot].ok, false);
+    assert.ok(bindings.has(C));
+  }
+});

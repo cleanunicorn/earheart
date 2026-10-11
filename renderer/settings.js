@@ -173,6 +173,19 @@ $("discard-hotkey-clear").addEventListener("click", () => {
   discardHotkeyInput.value = "";
 });
 
+const correctHotkeyInput = $("correct-hotkey");
+wireHotkeyCapture(correctHotkeyInput, {
+  apply: (accelerator) => {
+    current.correctHotkey = accelerator;
+    correctHotkeyInput.value = accelerator;
+  },
+  restore: () => current?.correctHotkey || "",
+});
+$("correct-hotkey-clear").addEventListener("click", () => {
+  current.correctHotkey = "";
+  correctHotkeyInput.value = "";
+});
+
 /* ---------- microphone list ---------- */
 
 async function loadMicrophones() {
@@ -241,6 +254,7 @@ function populate() {
   hotkeyInput.value = current.hotkey;
   pauseHotkeyInput.value = current.pauseHotkey || "";
   discardHotkeyInput.value = current.discardHotkey || "";
+  correctHotkeyInput.value = current.correctHotkey || "";
   showOutputMode(current.output);
 
   $("stt-url").value = current.stt.baseUrl;
@@ -286,6 +300,7 @@ function collect() {
     hotkey: current.hotkey,
     pauseHotkey: current.pauseHotkey || "",
     discardHotkey: current.discardHotkey || "",
+    correctHotkey: current.correctHotkey || "",
     startOnBoot: $("start-on-boot").checked,
     updates: {
       ...current.updates,
@@ -776,6 +791,13 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
 // whole form, which would throw away edits the user hasn't saved yet.
 function applySettingsChange({ previous, current: saved }) {
   const flipped = [];
+  if (Array.isArray(saved.dictionary) && JSON.stringify(previous.dictionary) !== JSON.stringify(saved.dictionary)) {
+    const edited = $("cleanup-dictionary").value.split("\n");
+    const merged = mergeVocabulary(baseline.dictionary, edited, saved.dictionary);
+    $("cleanup-dictionary").value = merged.join("\n");
+    current.cleanup.dictionary = merged;
+    baseline.dictionary = [...saved.dictionary];
+  }
   current.overlay = saved.overlay;
   current.customModels = saved.customModels;
   current.updates = {
@@ -869,6 +891,7 @@ function renderHotkeyStatus(status) {
     [$("hotkey-status"), status?.hotkey, current.hotkey],
     [$("pause-hotkey-status"), status?.pauseHotkey, current.pauseHotkey],
     [$("discard-hotkey-status"), status?.discardHotkey, current.discardHotkey],
+    [$("correct-hotkey-status"), status?.correctHotkey, current.correctHotkey],
   ];
   for (const [row, result, shown] of rows) {
     const stale =
@@ -878,11 +901,12 @@ function renderHotkeyStatus(status) {
   }
 }
 
-function hotkeySaveMessage(hotkeyResult, pauseResult, discardResult) {
+function hotkeySaveMessage(hotkeyResult, pauseResult, discardResult, correctResult) {
   const failed = [
     [hotkeyResult, "hotkey"],
     [pauseResult, "pause hotkey"],
     [discardResult, "discard hotkey"],
+    [correctResult, "correction hotkey"],
   ].filter(([result]) => result && !result.ok);
   // More than one slot failing is usually one coupled rollback; blaming a
   // single field would be wrong.
@@ -915,6 +939,7 @@ saveButton.addEventListener("click", async () => {
   let result;
   let pauseResult;
   let discardResult;
+  let correctResult;
   // Acknowledge the click immediately and block a duplicate save while the
   // round-trip is in flight.
   saveButton.disabled = true;
@@ -935,8 +960,9 @@ saveButton.addEventListener("click", async () => {
     // Older mains don't report a pause result; treat that as fine.
     pauseResult = result.pauseHotkey ?? { ok: true };
     discardResult = result.discardHotkey ?? { ok: true };
-    const hotkeysOk = result.hotkey.ok && pauseResult.ok && discardResult.ok;
-    const hotkeyStatus = { hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult };
+    correctResult = result.correctHotkey ?? { ok: true };
+    const hotkeysOk = result.hotkey.ok && pauseResult.ok && discardResult.ok && correctResult.ok;
+    const hotkeyStatus = { hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult };
     if (hotkeysOk && adjusted.length) {
       // Saved, but not as typed: stay open long enough to say so.
       save.textContent = `Saved — ${adjusted.join("; ")}`;
@@ -964,9 +990,9 @@ saveButton.addEventListener("click", async () => {
   // A hotkey couldn't be registered: keep the window open so the error is
   // visible and the user can pick a combination that works.
   saveButton.disabled = false;
-  save.textContent = hotkeySaveMessage(result.hotkey, pauseResult, discardResult);
+  save.textContent = hotkeySaveMessage(result.hotkey, pauseResult, discardResult, correctResult);
   save.className = "status err";
-  renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult });
+  renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult });
   setTimeout(() => {
     save.textContent = "";
   }, 4000);
@@ -1213,6 +1239,15 @@ async function renderHistory() {
     const actions = document.createElement("span");
     actions.className = "actions";
     actions.append(historyCopyButton("Copy", item.text));
+    const correct = document.createElement("button");
+    correct.textContent = "Correct…";
+    correct.addEventListener("click", async () => {
+      try {
+        const result = await earheart.invoke("correction:open", { at: item.at, text: item.text });
+        if (!result.ok) throw new Error(result.error);
+      } catch (err) { correct.textContent = err.message; }
+    });
+    actions.append(correct);
     if (item.cleaned && typeof item.raw === "string" && item.raw !== item.text) {
       const copyOriginal = historyCopyButton("Copy original", item.raw);
       copyOriginal.title = "Copy the transcript before cleanup";

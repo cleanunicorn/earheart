@@ -1,5 +1,5 @@
 // Least-privilege guards for the app's own windows. Every window loads one of
-// three local pages and keeps the window.earheart bridge for as long as it
+// four local pages and keeps the window.earheart bridge for as long as it
 // lives, so anything that swaps the page out — a dropped file or link
 // (Chromium navigates on drop), a stray location assignment, window.open —
 // would hand that bridge, and the settings it can read and write, to foreign
@@ -12,7 +12,7 @@ const path = require("node:path");
 const { fileURLToPath } = require("node:url");
 
 const RENDERER = path.join(__dirname, "..", "renderer");
-const APP_PAGES = new Set(["overlay.html", "settings.html", "wizard.html"]);
+const APP_PAGES = new Set(["overlay.html", "settings.html", "wizard.html", "correction.html"]);
 
 // True when `url` is one of the app's own renderer pages (a query such as
 // settings.html?wizard=1 is fine). Anything else — another file, another

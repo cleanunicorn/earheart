@@ -109,6 +109,16 @@
             </p>
             <p id="discard-hotkey-status" class="status" aria-live="polite"></p>
           </div>
+          <div class="field">
+            <label for="correct-hotkey">Correct last transcript hotkey</label>
+            <div class="row">
+              <input id="correct-hotkey" readonly placeholder="Not set — click, then press a key combination" />
+              <button id="correct-hotkey-clear" class="ghost">Clear</button>
+            </div>
+            <p class="hint">Open your last saved transcript, correct a spelling and remember it. Optional. On Wayland, bind <code>earheart --correct-last</code> in your desktop settings.</p>
+            <p id="correct-hotkey-status" class="status" aria-live="polite"></p>
+          </div>
+
         </div>
 
         <div class="card">
@@ -657,6 +667,7 @@
     </footer>
 
     <script src="hotkey-capture.js"></script>
+    <script src="vocabulary.js"></script>
     <script src="settings-sync.js"></script>
     <script src="permission-status.js"></script>
     <script src="settings.js"></script>

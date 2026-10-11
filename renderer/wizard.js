@@ -468,6 +468,10 @@ $("download-later").addEventListener("click", () => {
 // radios): take the values only main writes and show a changed output mode,
 // without touching anything else the user has chosen.
 function applySettingsChange({ previous, current: saved }) {
+  if (Array.isArray(saved.dictionary)) {
+    current.cleanup.dictionary = [...saved.dictionary];
+    baseline.dictionary = [...saved.dictionary];
+  }
   current.overlay = saved.overlay;
   current.customModels = saved.customModels;
   current.updates = { ...saved.updates };

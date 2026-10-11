@@ -1,5 +1,5 @@
 // Window management: the recording overlay (a small always-on-top card that
-// also owns the microphone), the settings window and the first-run wizard.
+// also owns the microphone), Settings, the first-run wizard and correction editor.
 
 const { BrowserWindow, ipcMain, screen } = require("electron");
 const path = require("node:path");
@@ -30,6 +30,8 @@ const INK_COLOR = "#18181b";
 let overlayWindow = null;
 let settingsWindow = null;
 let wizardWindow = null;
+let correctionWindow = null;
+let correctionText = "";
 let overlayCustomPosition = null; // set when the user drags the card
 let overlayDragOrigin = null; // { winX, winY, pointerX, pointerY }
 let overlayHideTimer = null;
@@ -434,6 +436,22 @@ function openSettings({ fromWizard = false } = {}) {
   return settingsWindow;
 }
 
+// Reopening keeps the current draft, even if a new dictation has arrived.
+function openCorrection(entry = null) {
+  if (alive(correctionWindow)) return bringForward(correctionWindow);
+  correctionText = typeof entry?.text === "string" ? entry.text : "";
+  correctionWindow = createFormWindow("correction", {
+    width: 720, height: 780, minWidth: 520, minHeight: 600,
+    title: "Correct transcript · Earheart",
+  });
+  correctionWindow.loadFile(path.join(RENDERER, "correction.html"));
+  correctionWindow.on("closed", () => { correctionWindow = null; correctionText = ""; });
+  return correctionWindow;
+}
+
+function getCorrectionText() { return correctionText; }
+function closeCorrection() { if (alive(correctionWindow)) correctionWindow.close(); }
+
 function openWizard() {
   if (alive(wizardWindow)) return bringForward(wizardWindow);
   wizardWindow = createFormWindow("wizard", {
@@ -487,6 +505,9 @@ module.exports = {
   isOverlayVisible,
   sendToOverlay,
   openSettings,
+  openCorrection,
+  getCorrectionText,
+  closeCorrection,
   sendToSettings,
   sendToForms,
   broadcast,

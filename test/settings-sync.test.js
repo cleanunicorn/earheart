@@ -44,11 +44,12 @@ test("changes that arrive before the form loads are applied in order on ready()"
 test("sharedBaseline reads the displayed mode and normalizes remind", () => {
   assert.deepStrictEqual(
     sharedBaseline({ output: { mode: "clipboard", restoreClipboard: true }, updates: { remind: false } }),
-    { outputMode: "clipboard", remind: false }
+    { outputMode: "clipboard", remind: false, dictionary: [] }
   );
   assert.deepStrictEqual(sharedBaseline({ output: { mode: "paste", restoreClipboard: true }, updates: {} }), {
     outputMode: "paste",
     remind: true,
+    dictionary: [],
   });
   assert.strictEqual(
     sharedBaseline({ output: { mode: "paste", restoreClipboard: false }, updates: {} }).outputMode,

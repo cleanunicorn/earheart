@@ -258,10 +258,43 @@ function applyAll(next) {
   const wasSuspended = suspended;
   suspend(false);
   try {
-    return applyLive(next);
+    return applyWithCorrection(next);
   } finally {
     if (wasSuspended) suspend(true);
   }
+}
+
+// The correction shortcut is always available, unlike the live-only discard
+// shortcut. Rebind it without releasing its old key until the new grab succeeds.
+function applyWithCorrection(next) {
+  if (next.correct === undefined && next.onCorrect === undefined) return applyLive(next);
+  const desired = next.correct || "";
+  const previous = registered.get("correct");
+  const slots = ["record", "pause", "discard"];
+  const configuredHolder = slots.find((name) => desired && next[name] === desired);
+  const actualHolder = slots.find((name) => desired &&
+    (name === "discard" ? discard.accelerator : registered.get(name)?.accelerator) === desired);
+  let result = desired ? { ok: true } : { ok: true, empty: true };
+  if (configuredHolder || actualHolder) {
+    result = { ok: false, error: usedBy(configuredHolder || actualHolder, desired) };
+  } else if (desired !== (previous?.accelerator || "")) {
+    const attempt = desired ? attemptRegister(desired, next.onCorrect) : { ok: true };
+    if (!attempt.ok) result = { ok: false, error: registrationFailure(desired, attempt) };
+    else {
+      if (previous) globalShortcut.unregister(previous.accelerator);
+      if (desired) registered.set("correct", { accelerator: desired, onTrigger: next.onCorrect });
+      else registered.delete("correct");
+    }
+  }
+  const held = registered.get("correct")?.accelerator;
+  const collisions = slots.filter((name) => held && next[name] === held);
+  const safe = { ...next };
+  for (const name of collisions) {
+    safe[name] = name === "discard" ? discard.accelerator : registered.get(name)?.accelerator || "";
+  }
+  const applied = applyLive(safe);
+  for (const name of collisions) applied[name] = { ok: false, error: usedBy("correction", held) };
+  return { ...applied, correct: result };
 }
 
 function applyLive(next) {
@@ -386,6 +419,7 @@ function toHotkeyResults(pair, accelerators) {
   };
   // Only applyAll reports a discard slot; a bare pair result keeps two keys.
   if (pair.discard) results.discardHotkey = pair.discard;
+  if (pair.correct) results.correctHotkey = pair.correct;
   if (!accelerators) return results;
   const withAccelerators = {
     hotkey: { ...results.hotkey, accelerator: accelerators.hotkey || "" },
@@ -395,6 +429,11 @@ function toHotkeyResults(pair, accelerators) {
     withAccelerators.discardHotkey = {
       ...results.discardHotkey,
       accelerator: accelerators.discardHotkey || "",
+    };
+  }
+  if (results.correctHotkey) {
+    withAccelerators.correctHotkey = {
+      ...results.correctHotkey, accelerator: accelerators.correctHotkey || "",
     };
   }
   return withAccelerators;

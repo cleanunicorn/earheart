@@ -246,7 +246,7 @@ test("every successful save broadcasts settings:changed and refreshes the tray",
   for (const side of ["previous", "current"]) {
     assert.deepStrictEqual(
       Object.keys(changed[0].payload[side]).sort(),
-      ["customModels", "output", "overlay", "updates"],
+      ["customModels", "dictionary", "output", "overlay", "updates"],
       side
     );
   }
@@ -300,4 +300,26 @@ test("removing a custom model keeps settings written while its files were delete
   assert.strictEqual(result.ok, true);
   assert.deepStrictEqual(readFile().customModels, []);
   assert.deepStrictEqual(readFile().overlay, { x: 10, y: 20 });
+});
+
+test("remembered spellings survive a stale Settings save with independent dictionary edits", async (t) => {
+  const { settings, handlers, readFile } = loadIpc(t);
+  settings.save({ ...settings.get(), cleanup: { ...settings.get().cleanup, dictionary: ["remove", "keep"] } });
+  const snapshot = settings.get();
+  const baseline = require("../renderer/settings-sync").sharedBaseline(snapshot);
+  assert.strictEqual((await handlers["correction:remember"]({}, "kubectl")).ok, true);
+  snapshot.cleanup.dictionary = ["keep", "typed"];
+  await handlers["settings:save"]({}, { settings: snapshot, baseline });
+  assert.deepStrictEqual(readFile().cleanup.dictionary, ["keep", "kubectl", "typed"]);
+});
+
+test("remember failure preserves existing dictionary and reports failure", async (t) => {
+  const { settings, handlers } = loadIpc(t);
+  const before = settings.get().cleanup.dictionary;
+  const originalSave = settings.save;
+  settings.save = () => { throw new Error("disk full"); };
+  try {
+    assert.deepStrictEqual(await handlers["correction:remember"]({}, "kubectl"), { ok: false, error: "disk full" });
+  } finally { settings.save = originalSave; }
+  assert.deepStrictEqual(settings.get().cleanup.dictionary, before);
 });

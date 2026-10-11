@@ -1,0 +1,16 @@
+:root { --field: #101013; --field-edge: #6b6b74; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ink); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+main { max-width: 760px; margin: auto; padding: 24px; }
+h1 { margin: 0 0 8px; font-size: 22px; }
+label { display: block; margin: 14px 0 6px; font-weight: 600; }
+.hint { color: var(--text-dim); font-size: 13px; }
+textarea, input { width: 100%; background: var(--field); color: var(--text); border: 1px solid var(--field-edge); border-radius: 6px; padding: 10px; font: inherit; }
+textarea { min-height: 190px; height: 30vh; resize: vertical; }
+button { border: 1px solid var(--field-edge); border-radius: 6px; background: var(--field); color: var(--text); padding: 9px 12px; font: inherit; cursor: pointer; }
+button.primary { background: var(--text); color: var(--ink); border-color: var(--text); font-weight: 600; }
+button:disabled { opacity: .45; cursor: default; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.actions, footer { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+footer { justify-content: space-between; border-top: 1px solid var(--field-edge); padding-top: 16px; }
+#status { min-height: 24px; }

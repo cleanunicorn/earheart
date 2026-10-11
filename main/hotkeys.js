@@ -229,8 +229,11 @@ function setDiscard(accelerator, onTrigger) {
   const attempt = attemptRegister(accelerator, () => discard.onTrigger?.());
   if (!attempt.ok) return { ok: false, error: registrationFailure(accelerator, attempt) };
   if (discard.armed) globalShortcut.unregister(discard.accelerator);
-  else globalShortcut.unregister(accelerator);
   discard.accelerator = accelerator;
+  // Keep the new binding held whenever a dictation is live — including one
+  // whose old binding failed to arm — not only when the old one was held.
+  discard.armed = discard.live && !suspended;
+  if (!discard.armed) globalShortcut.unregister(accelerator);
   return { ok: true };
 }
 
@@ -249,9 +252,19 @@ function setDiscard(accelerator, onTrigger) {
  * @returns {{record: object, pause: object, discard: object}}
  */
 function applyAll(next) {
-  // A save always lands on live shortcuts: registering the new pair while
-  // suspended would grab keys the capture field is still listening for.
+  // A save lands on live shortcuts, so every registration is really checked
+  // against the OS; if a field is still capturing (another window's), the
+  // hotkeys stand down again afterwards.
+  const wasSuspended = suspended;
   suspend(false);
+  try {
+    return applyLive(next);
+  } finally {
+    if (wasSuspended) suspend(true);
+  }
+}
+
+function applyLive(next) {
   const target = { record: next.record || "", pause: next.pause || "", discard: next.discard || "" };
   const previous = {
     record: registered.get("record")?.accelerator || "",
@@ -324,27 +337,32 @@ let suspended = false;
 /**
  * Release (true) or restore (false) every registered global hotkey without
  * changing the configured bindings. Idempotent. A binding that cannot be
- * restored is logged and left unbound until the next save or restart.
+ * restored is logged, left unbound, and named in the result so the caller
+ * can re-apply and report it.
  *
  * @param {boolean} on
+ * @returns {string[]} the slots ("record", "pause") that could not be restored
  */
 function suspend(on) {
-  if (on === suspended) return;
+  if (on === suspended) return [];
   suspended = on;
   if (on) {
     for (const entry of registered.values()) globalShortcut.unregister(entry.accelerator);
     if (discard.armed) globalShortcut.unregister(discard.accelerator);
     discard.armed = false;
-    return;
+    return [];
   }
+  const lost = [];
   for (const [name, entry] of [...registered]) {
     const attempt = attemptRegister(entry.accelerator, entry.onTrigger);
     if (!attempt.ok) {
       registered.delete(name);
+      lost.push(name);
       logger.warn(`${name} hotkey: ${registrationFailure(entry.accelerator, attempt)} after capture`);
     }
   }
   armDiscard(discard.live);
+  return lost;
 }
 
 function unregisterAll() {

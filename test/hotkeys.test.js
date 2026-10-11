@@ -771,14 +771,21 @@ test("a dictation that starts or ends while suspended is honored on resume", () 
   assert.strictEqual(bindings.has(A), true);
 });
 
-test("saving while suspended resumes first, so the new pair is actually registered", () => {
-  const { hotkeys, bindings } = loadHotkeys();
+test("a save while suspended checks the new pair with the OS, then stands down again", () => {
+  const { hotkeys, calls, bindings } = loadHotkeys({ occupied: [C] });
   hotkeys.applyAll(all(A, "", ""));
   hotkeys.suspend(true);
+  clearCalls(calls);
 
   const result = hotkeys.applyAll(all(B, "", ""));
-
   assert.strictEqual(result.record.ok, true);
+  assert.ok(calls.events.includes(`register:${B}`), "the new binding was really registered");
+  assert.deepStrictEqual([...bindings.keys()], [], "another field is still capturing");
+
+  const rejected = hotkeys.applyAll(all(C, "", ""));
+  assert.strictEqual(rejected.record.ok, false, "a taken key still fails at Save");
+
+  hotkeys.suspend(false);
   assert.deepStrictEqual([...bindings.keys()], [B]);
 });
 
@@ -789,9 +796,27 @@ test("a hotkey another app grabbed during capture is logged and left unbound", (
   hotkeys.applyAll(all(A, B, ""));
   hotkeys.suspend(true);
 
-  assert.doesNotThrow(() => hotkeys.suspend(false));
+  assert.deepStrictEqual(hotkeys.suspend(false), ["pause"]);
 
   assert.strictEqual(bindings.has(A), true, "record still comes back");
   assert.strictEqual(bindings.has(B), false);
   assert.match(calls.warnings.at(-1), /pause hotkey: .*after capture/);
+});
+
+test("a discard hotkey saved mid-dictation is held even when the old one failed to come back", () => {
+  const { hotkeys, bindings } = loadHotkeys({
+    registerImpl: (accelerator, attempt) => !(accelerator === D && attempt > 2),
+  });
+  hotkeys.applyAll(all(A, "", D)); // attempt 1: checked at Save
+  hotkeys.armDiscard(true); // attempt 2: recording starts, D held
+  hotkeys.suspend(true);
+  hotkeys.suspend(false); // attempt 3: another app took D during capture
+  assert.strictEqual(bindings.has(D), false);
+
+  const result = hotkeys.applyAll(all(A, "", E));
+
+  assert.deepStrictEqual(result.discard, { ok: true });
+  assert.strictEqual(bindings.has(E), true, "the live dictation can be discarded with the new key");
+  hotkeys.armDiscard(false);
+  assert.strictEqual(bindings.has(E), false, "and it is released when the dictation ends");
 });

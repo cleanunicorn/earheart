@@ -330,21 +330,24 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
 
   // A hotkey field in Settings or the wizard is capturing a new combination:
   // the global hotkeys stand down until every capturing window is done, so
-  // the keys reach the field instead of starting a dictation. A window that
-  // closes (or crashes) mid-capture counts as done, or the hotkeys would stay
-  // released until restart.
+  // the keys reach the field instead of starting a dictation. A window whose
+  // page goes away mid-capture (closed, crashed, reloaded) never sends the
+  // end, so that counts as done too, or the hotkeys would stay released.
   const capturing = new Set();
+  const watched = new WeakSet();
+  const endCapture = (contents) => {
+    if (capturing.delete(contents)) suspendHotkeys?.(capturing.size > 0);
+  };
   ipcMain.on("hotkeys:capture", (event, active) => {
     const contents = event.sender;
-    if (active === true && !capturing.has(contents)) {
-      capturing.add(contents);
-      contents.once("destroyed", () => {
-        capturing.delete(contents);
-        suspendHotkeys?.(capturing.size > 0);
-      });
-    } else if (active !== true) {
-      capturing.delete(contents);
+    if (!watched.has(contents)) {
+      watched.add(contents);
+      for (const gone of ["destroyed", "render-process-gone", "did-navigate"]) {
+        contents.on(gone, () => endCapture(contents));
+      }
     }
+    if (active === true) capturing.add(contents);
+    else capturing.delete(contents);
     suspendHotkeys?.(capturing.size > 0);
   });
 

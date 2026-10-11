@@ -397,15 +397,19 @@ test("settings:get reports no hotkey status when none is wired", () => {
 });
 
 // A fake webContents: enough for the capture handler to key on it and hear
-// it close.
+// its page go away.
 function fakeSender() {
   const listeners = {};
   return {
-    once(name, fn) {
-      listeners[name] = fn;
+    listeners,
+    on(name, fn) {
+      (listeners[name] ||= []).push(fn);
+    },
+    emit(name) {
+      for (const fn of listeners[name] || []) fn();
     },
     destroy() {
-      listeners.destroyed?.();
+      this.emit("destroyed");
     },
   };
 }
@@ -442,6 +446,33 @@ test("a window closed mid-capture restores the global hotkeys", () => {
   sender.destroy();
 
   assert.deepStrictEqual(calls.suspended, [true, false]);
+});
+
+for (const gone of ["render-process-gone", "did-navigate"]) {
+  test(`a page lost to ${gone} mid-capture restores the global hotkeys`, () => {
+    const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: {} });
+    const sender = fakeSender();
+
+    handlers["hotkeys:capture"]({ sender }, true);
+    sender.emit(gone);
+
+    assert.deepStrictEqual(calls.suspended, [true, false]);
+  });
+}
+
+test("each window's cleanup is wired once, however many captures it runs", () => {
+  const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: {} });
+  const sender = fakeSender();
+
+  for (let i = 0; i < 20; i++) {
+    handlers["hotkeys:capture"]({ sender }, true);
+    handlers["hotkeys:capture"]({ sender }, false);
+  }
+  assert.strictEqual(sender.listeners.destroyed.length, 1);
+
+  calls.suspended.length = 0;
+  sender.destroy();
+  assert.deepStrictEqual(calls.suspended, [], "a window that is not capturing changes nothing");
 });
 
 test("anything but true ends a capture, so a malformed payload cannot strand the hotkeys", () => {

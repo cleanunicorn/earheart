@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.38.1 — 2026-10-11
+
+- Let a hotkey field capture the current record hotkey (#288)
+
 ## v0.38.0 — 2026-10-10
 
 - Add an optional hotkey to discard a dictation (#284)

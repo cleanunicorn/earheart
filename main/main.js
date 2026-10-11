@@ -99,6 +99,7 @@ function main() {
     pipeline.onStateChange((state) => hotkeys.armDiscard(state !== "idle"));
     ipc.init({
       applyHotkeys,
+      suspendHotkeys: (on) => hotkeys.suspend(on),
       // The tray rebuilds itself on every settings save (main/ipc.js).
       getHotkeyStatus: () => lastHotkeyStatus,
       onSettingsChanged: () => {

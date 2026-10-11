@@ -212,7 +212,7 @@ main/                    Electron main process
   ipc.js                 IPC handlers for Settings + wizard (commitSettings)
   cleanup-styles.js      cleanup style presets (Verbatim / Clean / Polished)
   autostart.js           start-on-login per OS
-  hotkeys.js             global shortcut registration
+  hotkeys.js             global shortcut registration (released while a field captures)
   setup-notices.js       launch policy + "fix your setup" notices (→ Settings)
   settings.js            JSON settings with deep-merged defaults, atomic 0600 writes
   secret-store.js        remote API keys at rest: safeStorage encryption + status
@@ -251,7 +251,8 @@ renderer/                overlay (mic capture → 16 kHz WAV, live transcript
   microphone.js          mic constraints + error classification (overlay)
   chunk-boundary.js      where to cut a live chunk at the hard cap
   speech-probe.js        did a committed chunk carry speech?
-  hotkey-capture.js      shared classic-script hotkey capture (settings + wizard)
+  hotkey-capture.js      shared classic-script hotkey capture (settings + wizard);
+                         suspends the global hotkeys while capturing
   settings-sync.js       forms follow settings saved while open (settings + wizard)
   permission-status.js   status copy after "Fix auto-paste permission"
 stt-server/              Python: FastAPI + onnx-asr Parakeet server (optional)

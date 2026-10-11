@@ -733,3 +733,65 @@ test("results report the discard slot with its accelerator", () => {
   assert.strictEqual(results.discardHotkey.accelerator, D);
   assert.deepStrictEqual(results.pauseHotkey, { ok: true, empty: true, accelerator: "" });
 });
+
+test("suspending releases every held hotkey; resuming restores the same bindings", () => {
+  let recorded = 0;
+  const { hotkeys, calls, bindings } = loadHotkeys();
+  hotkeys.applyAll({ ...all(A, B, D), onRecord: () => recorded++ });
+  hotkeys.armDiscard(true);
+  clearCalls(calls);
+
+  hotkeys.suspend(true);
+  assert.deepStrictEqual([...bindings.keys()], [], "the capture field gets every key");
+  hotkeys.suspend(true);
+  assert.strictEqual(calls.unregistered.length, 3, "suspending twice is a no-op");
+
+  hotkeys.suspend(false);
+  assert.deepStrictEqual([...bindings.keys()].sort(), [A, B, D].sort());
+  bindings.get(A)();
+  assert.strictEqual(recorded, 1, "the restored record hotkey runs its callback");
+  hotkeys.suspend(false);
+  assert.strictEqual(calls.registered.length, 3, "resuming twice is a no-op");
+});
+
+test("a dictation that starts or ends while suspended is honored on resume", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  hotkeys.applyAll(all(A, "", D));
+  hotkeys.suspend(true);
+
+  hotkeys.armDiscard(true); // the tray starts a dictation mid-capture
+  assert.strictEqual(bindings.has(D), false, "nothing is grabbed while suspended");
+  hotkeys.suspend(false);
+  assert.strictEqual(bindings.has(D), true, "still live: discard is armed on resume");
+
+  hotkeys.suspend(true);
+  hotkeys.armDiscard(false); // the dictation ends mid-capture
+  hotkeys.suspend(false);
+  assert.strictEqual(bindings.has(D), false, "idle again: discard stays free");
+  assert.strictEqual(bindings.has(A), true);
+});
+
+test("saving while suspended resumes first, so the new pair is actually registered", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  hotkeys.applyAll(all(A, "", ""));
+  hotkeys.suspend(true);
+
+  const result = hotkeys.applyAll(all(B, "", ""));
+
+  assert.strictEqual(result.record.ok, true);
+  assert.deepStrictEqual([...bindings.keys()], [B]);
+});
+
+test("a hotkey another app grabbed during capture is logged and left unbound", () => {
+  const { hotkeys, calls, bindings } = loadHotkeys({
+    registerImpl: (accelerator, attempt) => !(accelerator === B && attempt > 1),
+  });
+  hotkeys.applyAll(all(A, B, ""));
+  hotkeys.suspend(true);
+
+  assert.doesNotThrow(() => hotkeys.suspend(false));
+
+  assert.strictEqual(bindings.has(A), true, "record still comes back");
+  assert.strictEqual(bindings.has(B), false);
+  assert.match(calls.warnings.at(-1), /pause hotkey: .*after capture/);
+});

@@ -227,7 +227,7 @@ function wrap(fn, describe = (err) => err.message) {
   };
 }
 
-function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
+function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus }) {
   // Register any models the user added from a custom Hugging Face URL so they
   // resolve for download and for loading into the cleanup worker after a
   // restart, exactly like the built-ins.
@@ -327,6 +327,26 @@ function init({ applyHotkeys, onSettingsChanged, getHotkeyStatus }) {
       },
     };
   };
+
+  // A hotkey field in Settings or the wizard is capturing a new combination:
+  // the global hotkeys stand down until every capturing window is done, so
+  // the keys reach the field instead of starting a dictation. A window that
+  // closes (or crashes) mid-capture counts as done, or the hotkeys would stay
+  // released until restart.
+  const capturing = new Set();
+  ipcMain.on("hotkeys:capture", (event, active) => {
+    const contents = event.sender;
+    if (active === true && !capturing.has(contents)) {
+      capturing.add(contents);
+      contents.once("destroyed", () => {
+        capturing.delete(contents);
+        suspendHotkeys?.(capturing.size > 0);
+      });
+    } else if (active !== true) {
+      capturing.delete(contents);
+    }
+    suspendHotkeys?.(capturing.size > 0);
+  });
 
   ipcMain.handle("settings:save", (event, request) => commitSettings(request).response);
 

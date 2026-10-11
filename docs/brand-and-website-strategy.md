@@ -165,11 +165,30 @@ Same method as §3.2 (`gh api users/<n>`, npm registry, Google RDAP for .dev/.ap
 
 **Ranking across §3.3 and §3.3b:** 1. Earheart (keep). 2. Vocable (brandable word). 3. Voxpaste / Talkpaste (name does the explaining). Before registering any non-Earheart name: USPTO/EUIPO search and `gh api "search/repositories?q=<n>+in:name"` collision count.
 
+### 3.3c Two-syllable candidates (manager re-check, 2026-10-11 ~10:00 UTC)
+
+37 two-syllable coinages checked with the §3.2 method; 29 lost on `.dev`/`.app`. Rejected on availability: sayla, dictu, voxen, parlo, parla, hushly, keyvox, sayvox, earvox, earsay, speaky, dictly, loqua, verbo, verbly, phono, sonus, auris, earlo, hearo, audix, talkly, voxit, heardo, earful, wordly, earsy, vocca, sayble. **Voxa** rejected separately: registered US mark 5866587 (class 9, voice software), npm/.com/.dev/.app/.ai/.io taken, 1,804 repos, live open-source namesake at askvoxa.dev.
+
+Survivors (npm, `.dev`, `.app` free; `.com` taken for all):
+
+| Candidate | Idea | GitHub user | Repos named | PyPI | Trademark sanity (web search only) |
+|---|---|---|---|---|---|
+| **Earwave** | ear + waveform; keeps the icon | free | 2 (0★) | free | none exact; EARWARE abandoned 2003 |
+| **Hearkey** | hear + hotkey | taken | 0 | free | none; AHAKEY (2026 filing, speech software) is a different word |
+| Oratus | Latin "having spoken" | free | 1 | free | none found |
+| Earbit | ear + bit | taken | 7 | — | `unknown:` not searched |
+| Earlit | ear + lit | taken | 3 | — | `unknown:` not searched |
+| Mictap | tap the mic | taken | 3 | free | none found |
+| Miccap | mic capture | taken | 4 | — | `unknown:` not searched |
+| Sayup | say + up | taken | 24 | — | `unknown:` not searched |
+
+**Assessment:** Earwave is the first candidate in any batch that beats Earheart on criterion 2 (says the job) without losing on 3–4, and it preserves the heart-as-waveform icon. Hearkey names the gesture with zero repo collisions. Before registering either: formal USPTO/EUIPO search, then `.dev` + `.app`.
+
 ### 3.4 Recommendation
 
 **Keep "Earheart".** It is the only candidate that passes criterion 1 as well as the best coinage (npm free, `.dev` + `.app` free, no competing software, no trademark found) while beating every coinage on criteria 3–4 (a real-sounding proper name, not a feature description). Criterion 5 is decisive: the rename cost is measurable and user-facing (§3.5 — a mandatory bridge release, ~5 GB of models to migrate, Linux shortcuts that silently break, a GitHub redirect to protect) and the benefit is near zero because the namespace is already clean. The weaknesses — spelled "Earhart" by ear, SEO collision with Amelia — are handled by owning `earheart.dev` + `earheart.app`, always pairing the name with the tagline, and never styling it "EarHeart". The icon stays; under a rename it would be orphaned and must be redrawn (`scripts/gen-icons.js`).
 
-**Fallbacks if the user wants a rename anyway:** **1. Talkpaste** — the cleanest namespace of all 35 checked (GitHub user, npm, `.dev`, `.app` all free; says the job; trade: memorability for clarity). **2. Vocable** — the only brandable option (`vocable.dev`, npm free, repo under `cleanunicorn/`; loses `.app` and the GitHub org name). Before registering either: run a real USPTO/EUIPO search (`unknown:` today).
+**Fallbacks if the user wants a rename anyway** (see also §3.3c, where Earwave and Hearkey rank above both)**:** **1. Talkpaste** — the cleanest namespace of all 35 checked (GitHub user, npm, `.dev`, `.app` all free; says the job; trade: memorability for clarity). **2. Vocable** — the only brandable option (`vocable.dev`, npm free, repo under `cleanunicorn/`; loses `.app` and the GitHub org name). Before registering either: run a real USPTO/EUIPO search (`unknown:` today).
 
 ### 3.5 AC3 — Rename migration plan (conditional on Q1 = rename)
 

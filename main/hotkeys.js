@@ -199,7 +199,7 @@ function applyPair(next) {
 // shadow some app's shortcut for nothing — so it lives outside the pair
 // transaction: `accelerator` is the configured binding, `armed` whether the
 // OS currently holds it for us.
-const discard = { accelerator: "", onTrigger: null, armed: false };
+const discard = { accelerator: "", onTrigger: null, armed: false, live: false };
 
 function registrationFailure(accelerator, attempt) {
   return attempt.error
@@ -229,8 +229,11 @@ function setDiscard(accelerator, onTrigger) {
   const attempt = attemptRegister(accelerator, () => discard.onTrigger?.());
   if (!attempt.ok) return { ok: false, error: registrationFailure(accelerator, attempt) };
   if (discard.armed) globalShortcut.unregister(discard.accelerator);
-  else globalShortcut.unregister(accelerator);
   discard.accelerator = accelerator;
+  // Keep the new binding held whenever a dictation is live — including one
+  // whose old binding failed to arm — not only when the old one was held.
+  discard.armed = discard.live && !suspended;
+  if (!discard.armed) globalShortcut.unregister(accelerator);
   return { ok: true };
 }
 
@@ -249,6 +252,19 @@ function setDiscard(accelerator, onTrigger) {
  * @returns {{record: object, pause: object, discard: object}}
  */
 function applyAll(next) {
+  // A save lands on live shortcuts, so every registration is really checked
+  // against the OS; if a field is still capturing (another window's), the
+  // hotkeys stand down again afterwards.
+  const wasSuspended = suspended;
+  suspend(false);
+  try {
+    return applyLive(next);
+  } finally {
+    if (wasSuspended) suspend(true);
+  }
+}
+
+function applyLive(next) {
   const target = { record: next.record || "", pause: next.pause || "", discard: next.discard || "" };
   const previous = {
     record: registered.get("record")?.accelerator || "",
@@ -298,6 +314,9 @@ function applyAll(next) {
  * @param {boolean} live
  */
 function armDiscard(live) {
+  discard.live = live;
+  // Suspended, the OS holds nothing; suspend(false) arms it if still live.
+  if (suspended) return;
   if (live && !discard.armed && discard.accelerator) {
     const attempt = attemptRegister(discard.accelerator, () => discard.onTrigger?.());
     if (attempt.ok) discard.armed = true;
@@ -308,10 +327,49 @@ function armDiscard(live) {
   }
 }
 
+// While Settings or the wizard captures a new combination, the global
+// shortcuts must not hold the keys: the OS would swallow the press — the
+// field never sees it, and the record hotkey starts a dictation instead of
+// being typed back in. Suspending releases the OS grabs but keeps every
+// binding, so resuming restores exactly what was registered.
+let suspended = false;
+
+/**
+ * Release (true) or restore (false) every registered global hotkey without
+ * changing the configured bindings. Idempotent. A binding that cannot be
+ * restored is logged, left unbound, and named in the result so the caller
+ * can re-apply and report it.
+ *
+ * @param {boolean} on
+ * @returns {string[]} the slots ("record", "pause") that could not be restored
+ */
+function suspend(on) {
+  if (on === suspended) return [];
+  suspended = on;
+  if (on) {
+    for (const entry of registered.values()) globalShortcut.unregister(entry.accelerator);
+    if (discard.armed) globalShortcut.unregister(discard.accelerator);
+    discard.armed = false;
+    return [];
+  }
+  const lost = [];
+  for (const [name, entry] of [...registered]) {
+    const attempt = attemptRegister(entry.accelerator, entry.onTrigger);
+    if (!attempt.ok) {
+      registered.delete(name);
+      lost.push(name);
+      logger.warn(`${name} hotkey: ${registrationFailure(entry.accelerator, attempt)} after capture`);
+    }
+  }
+  armDiscard(discard.live);
+  return lost;
+}
+
 function unregisterAll() {
   globalShortcut.unregisterAll();
   registered.clear();
   discard.armed = false;
+  suspended = false;
 }
 
 // The pair layer treats either empty slot as a valid unbound state. Adapt that
@@ -342,4 +400,4 @@ function toHotkeyResults(pair, accelerators) {
   return withAccelerators;
 }
 
-module.exports = { applyPair, applyAll, armDiscard, toHotkeyResults, unregisterAll };
+module.exports = { applyPair, applyAll, armDiscard, suspend, toHotkeyResults, unregisterAll };

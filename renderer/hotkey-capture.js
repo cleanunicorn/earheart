@@ -48,12 +48,18 @@ function acceleratorFromEvent(event) {
 
 // One capture wiring for a click-to-capture hotkey field: `apply` stores a
 // captured accelerator, `restore` yields what blur should show.
+//
+// While capturing, main releases the global hotkeys (hotkeys:capture):
+// otherwise the OS swallows a press of the current record hotkey — the
+// field never sees it, and a dictation starts instead.
 function wireHotkeyCapture(input, { apply, restore }) {
   function startCapture() {
+    if (!input.classList.contains("capturing")) earheart.send("hotkeys:capture", true);
     input.classList.add("capturing");
     input.value = "Press keys…";
   }
   function endCapture() {
+    if (input.classList.contains("capturing")) earheart.send("hotkeys:capture", false);
     input.classList.remove("capturing");
     input.value = restore();
   }

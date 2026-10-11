@@ -55,7 +55,7 @@ const ROLES = {
       "updates:state",
       "settings:changed",
     ],
-    SEND: [],
+    SEND: ["hotkeys:capture"],
     INVOKE: [
       "settings:get",
       "settings:save",
@@ -87,7 +87,7 @@ const ROLES = {
   },
   wizard: {
     LISTEN: ["models:progress", "settings:changed"],
-    SEND: [],
+    SEND: ["hotkeys:capture"],
     INVOKE: [
       "settings:get",
       "wizard:complete",

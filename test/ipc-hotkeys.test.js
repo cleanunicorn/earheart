@@ -21,6 +21,7 @@ function loadIpcHandlers({ previous, hotkeyResults, saveError = null, getHotkeyS
     opened: [],
     closed: 0,
     warnings: [],
+    suspended: [],
   };
   let current = previous;
   const settings = {
@@ -52,7 +53,10 @@ function loadIpcHandlers({ previous, hotkeyResults, saveError = null, getHotkeyS
   const stubs = {
     [resolveFrom("electron")]: {
       app: { getPath: () => os.tmpdir(), getVersion: () => "0.0.0" },
-      ipcMain: { handle: (channel, fn) => { handlers[channel] = fn; }, on() {} },
+      ipcMain: {
+        handle: (channel, fn) => { handlers[channel] = fn; },
+        on: (channel, fn) => { handlers[channel] = fn; },
+      },
       shell: {},
     },
     [resolveFrom("./settings")]: settings,
@@ -101,6 +105,9 @@ function loadIpcHandlers({ previous, hotkeyResults, saveError = null, getHotkeyS
       },
       onSettingsChanged() {
         calls.settingsChanged += 1;
+      },
+      suspendHotkeys(on) {
+        calls.suspended.push(on);
       },
       getHotkeyStatus,
     });
@@ -387,4 +394,94 @@ test("settings:get reports no hotkey status when none is wired", () => {
   });
 
   assert.strictEqual(handlers["settings:get"]().hotkeyStatus, null);
+});
+
+// A fake webContents: enough for the capture handler to key on it and hear
+// its page go away.
+function fakeSender() {
+  const listeners = {};
+  return {
+    listeners,
+    on(name, fn) {
+      (listeners[name] ||= []).push(fn);
+    },
+    emit(name) {
+      for (const fn of listeners[name] || []) fn();
+    },
+    destroy() {
+      this.emit("destroyed");
+    },
+  };
+}
+
+test("hotkey capture suspends the global hotkeys until it ends", () => {
+  const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: {} });
+  const sender = fakeSender();
+
+  handlers["hotkeys:capture"]({ sender }, true);
+  handlers["hotkeys:capture"]({ sender }, false);
+
+  assert.deepStrictEqual(calls.suspended, [true, false]);
+});
+
+test("hotkeys stay suspended while any window is still capturing", () => {
+  const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: {} });
+  const settingsWindow = fakeSender();
+  const wizardWindow = fakeSender();
+
+  handlers["hotkeys:capture"]({ sender: settingsWindow }, true);
+  handlers["hotkeys:capture"]({ sender: wizardWindow }, true);
+  handlers["hotkeys:capture"]({ sender: settingsWindow }, false);
+  assert.strictEqual(calls.suspended.at(-1), true, "the wizard is still capturing");
+
+  handlers["hotkeys:capture"]({ sender: wizardWindow }, false);
+  assert.strictEqual(calls.suspended.at(-1), false);
+});
+
+test("a window closed mid-capture restores the global hotkeys", () => {
+  const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: {} });
+  const sender = fakeSender();
+
+  handlers["hotkeys:capture"]({ sender }, true);
+  sender.destroy();
+
+  assert.deepStrictEqual(calls.suspended, [true, false]);
+});
+
+for (const gone of ["render-process-gone", "did-navigate"]) {
+  test(`a page lost to ${gone} mid-capture restores the global hotkeys`, () => {
+    const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: {} });
+    const sender = fakeSender();
+
+    handlers["hotkeys:capture"]({ sender }, true);
+    sender.emit(gone);
+
+    assert.deepStrictEqual(calls.suspended, [true, false]);
+  });
+}
+
+test("each window's cleanup is wired once, however many captures it runs", () => {
+  const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: {} });
+  const sender = fakeSender();
+
+  for (let i = 0; i < 20; i++) {
+    handlers["hotkeys:capture"]({ sender }, true);
+    handlers["hotkeys:capture"]({ sender }, false);
+  }
+  assert.strictEqual(sender.listeners.destroyed.length, 1);
+
+  calls.suspended.length = 0;
+  sender.destroy();
+  assert.deepStrictEqual(calls.suspended, [], "a window that is not capturing changes nothing");
+});
+
+test("anything but true ends a capture, so a malformed payload cannot strand the hotkeys", () => {
+  const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: {} });
+  const sender = fakeSender();
+
+  handlers["hotkeys:capture"]({ sender }, "yes");
+  assert.deepStrictEqual(calls.suspended, [false]);
+  handlers["hotkeys:capture"]({ sender }, true);
+  handlers["hotkeys:capture"]({ sender }, undefined);
+  assert.deepStrictEqual(calls.suspended, [false, true, false]);
 });

@@ -99,6 +99,11 @@ function main() {
     pipeline.onStateChange((state) => hotkeys.armDiscard(state !== "idle"));
     ipc.init({
       applyHotkeys,
+      // A binding another app took during capture is re-applied from the
+      // saved settings, so the status Settings shows names the failure.
+      suspendHotkeys: (on) => {
+        if (hotkeys.suspend(on).length) applyHotkeys(settings.get());
+      },
       // The tray rebuilds itself on every settings save (main/ipc.js).
       getHotkeyStatus: () => lastHotkeyStatus,
       onSettingsChanged: () => {

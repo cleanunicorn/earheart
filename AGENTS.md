@@ -302,7 +302,7 @@ main/                Electron main process (pipeline, hotkeys, settings, tray, w
 renderer/            overlay (mic → 16 kHz WAV, live preview), settings, wizard
 stt-server/          optional Python FastAPI Parakeet server
 scripts/             icons, screenshots, release notes, smoke tests, model evals
-docs/                agent setup recipes, feature write-ups, cleanup-model survey
+docs/                agent setup recipes, feature write-ups, cleanup-model survey, brand & website strategy
 test/                unit tests (node --test)
 .github/workflows/   ci, pr-title, auto-release, release
 DESIGN.md            the UI design system — read before changing renderer CSS

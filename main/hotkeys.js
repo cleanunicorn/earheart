@@ -272,11 +272,27 @@ function applyWithCorrection(next) {
   const previous = registered.get("correct");
   const slots = ["record", "pause", "discard"];
   const configuredHolder = slots.find((name) => desired && next[name] === desired);
-  const actualHolder = slots.find((name) => desired &&
+  const actualHolder = () => slots.find((name) => desired &&
     (name === "discard" ? discard.accelerator : registered.get(name)?.accelerator) === desired);
+  function applyProtectedDictation() {
+    const held = registered.get("correct")?.accelerator;
+    const collisions = slots.filter((name) => held && next[name] === held);
+    const safe = { ...next };
+    for (const name of collisions) {
+      safe[name] = name === "discard" ? discard.accelerator : registered.get(name)?.accelerator || "";
+    }
+    const applied = applyLive(safe);
+    for (const name of collisions) applied[name] = { ok: false, error: usedBy("correction", held) };
+    return applied;
+  }
+  // A dictation key may be moving away from the requested correction key.
+  // Free it first, still protecting the current correction binding. This also
+  // lets a failed settings write roll back a successful key transfer.
+  let applied = !configuredHolder && actualHolder() ? applyProtectedDictation() : null;
+  const holder = configuredHolder || actualHolder();
   let result = desired ? { ok: true } : { ok: true, empty: true };
-  if (configuredHolder || actualHolder) {
-    result = { ok: false, error: usedBy(configuredHolder || actualHolder, desired) };
+  if (holder) {
+    result = { ok: false, error: usedBy(holder, desired) };
   } else if (desired !== (previous?.accelerator || "")) {
     const attempt = desired ? attemptRegister(desired, next.onCorrect) : { ok: true };
     if (!attempt.ok) result = { ok: false, error: registrationFailure(desired, attempt) };
@@ -286,14 +302,7 @@ function applyWithCorrection(next) {
       else registered.delete("correct");
     }
   }
-  const held = registered.get("correct")?.accelerator;
-  const collisions = slots.filter((name) => held && next[name] === held);
-  const safe = { ...next };
-  for (const name of collisions) {
-    safe[name] = name === "discard" ? discard.accelerator : registered.get(name)?.accelerator || "";
-  }
-  const applied = applyLive(safe);
-  for (const name of collisions) applied[name] = { ok: false, error: usedBy("correction", held) };
+  if (!applied) applied = applyProtectedDictation();
   return { ...applied, correct: result };
 }
 

@@ -852,3 +852,17 @@ test("correction collisions do not steal any existing shortcut, including idle d
     assert.ok(bindings.has(C));
   }
 });
+
+test("transferring a correction key to dictation can roll back after a settings write failure", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  const D = "CommandOrControl+Alt+D";
+  const original = { record: A, pause: B, correct: C, onRecord() {}, onPause() {}, onCorrect() {} };
+  hotkeys.applyAll(original);
+  const changed = hotkeys.applyAll({ ...original, record: C, correct: D });
+  assert.strictEqual(changed.record.ok, true);
+  assert.strictEqual(changed.correct.ok, true);
+  const rollback = hotkeys.applyAll(original);
+  assert.strictEqual(rollback.record.ok, true);
+  assert.strictEqual(rollback.correct.ok, true);
+  assert.deepStrictEqual(new Set(bindings.keys()), new Set([A, B, C]));
+});

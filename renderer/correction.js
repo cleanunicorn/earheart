@@ -75,7 +75,7 @@ async function copy() {
   busy = true;
   updateActions();
   try {
-    const result = await earheart.invoke("correction:copy", transcript.value);
+    const result = await earheart.invoke("transcript:copy", transcript.value);
     if (!result.ok) throw new Error(result.error);
     await earheart.invoke("correction:close");
   } catch (err) {

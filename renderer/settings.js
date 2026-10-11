@@ -1193,9 +1193,12 @@ function historyCopyButton(label, value) {
   button.className = "copy";
   button.textContent = label;
   button.addEventListener("click", async () => {
-    await navigator.clipboard.writeText(value);
-    button.textContent = "Copied";
-    setTimeout(() => (button.textContent = label), 1200);
+    try {
+      const result = await earheart.invoke("transcript:copy", value);
+      if (!result.ok) throw new Error(result.error);
+      button.textContent = "Copied";
+      setTimeout(() => (button.textContent = label), 1200);
+    } catch (err) { button.textContent = `Could not copy: ${err.message}`; }
   });
   return button;
 }

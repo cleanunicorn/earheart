@@ -487,3 +487,15 @@ test("advertised but empty formats restore nothing", async (t) => {
   t.mock.timers.tick(1000);
   assert.deepStrictEqual(state.clip, { text: "hello" }, "no junk is written over the transcript");
 });
+
+test("an explicit copy survives a pending restore even when its text is unchanged", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  onMac(t);
+  const { deliver, state } = loadDeliver({ trusted: true, clip: { image: PNG } });
+  await pasteWithRestore(t, deliver, "corrected prompt");
+  const keystrokes = state.execs.length;
+  assert.strictEqual((await deliver("corrected prompt", { mode: "clipboard" })).method, "clipboard");
+  t.mock.timers.tick(1000);
+  assert.deepStrictEqual(state.clip, { text: "corrected prompt" });
+  assert.strictEqual(state.execs.length, keystrokes, "explicit copy never simulates a paste");
+});

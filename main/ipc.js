@@ -1,6 +1,6 @@
 // IPC handlers backing Settings, the setup wizard and transcript corrections.
 
-const { ipcMain, app, shell, clipboard } = require("electron");
+const { ipcMain, app, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const settings = require("./settings");
@@ -618,11 +618,13 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     onSettingsChanged?.();
     return { ok: true, cleanupEnabled: cfg.cleanup.enabled };
   }));
-  ipcMain.handle("correction:copy", wrap((event, text) => {
+  ipcMain.handle("transcript:copy", wrap(async (event, text) => {
+    if (!canCorrect()) throw new Error("Finish the current dictation before copying a transcript.");
     if (typeof text !== "string" || !text.trim() || text.length > 1000000) {
       throw new Error("The corrected prompt must contain text and be at most 1 million characters.");
     }
-    clipboard.writeText(text);
+    // Settle any pending paste restoration so it cannot undo this explicit copy.
+    await deliver.deliver(text, { mode: "clipboard" });
     return { ok: true };
   }));
   ipcMain.handle("correction:close", () => windows.closeCorrection());

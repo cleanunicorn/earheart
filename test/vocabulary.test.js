@@ -17,3 +17,9 @@ test("concurrent form edits retain new remembered words and intentional removals
   assert.deepEqual(mergeVocabulary(["old"], ["old"], ["new"]), ["new"]);
   assert.deepEqual(mergeVocabulary([], [], ["kubectl"]), ["kubectl"]);
 });
+
+test("live vocabulary merge preserves blank lines, spaces and unfinished form text", () => {
+  const { mergeVocabularyText } = require("../renderer/vocabulary");
+  assert.equal(mergeVocabularyText(["old"], " old \n\nnew draft\n", ["old", "kubectl"]), " old \n\nnew draft\n\nkubectl");
+  assert.equal(mergeVocabularyText(["old"], "old\nkeep", ["kubectl"]), "keep\nkubectl");
+});

@@ -1,6 +1,6 @@
 // Runs inside settings-smoke's real Electron app and throwaway profile.
 const assert = require("node:assert/strict");
-const { clipboard } = require("electron");
+const { clipboard, dialog } = require("electron");
 const windows = require("../main/windows");
 const settings = require("../main/settings");
 const history = require("../main/history");
@@ -15,7 +15,7 @@ async function checkCorrection({ waitFor, check }) {
   await waitFor(() => formRun('!!document.getElementById("cleanup-dictionary").value || document.getElementById("version").textContent.startsWith("v")'), "Settings did not initialize");
   await formRun(`document.querySelector('[data-tab="history"]').click()`);
   await waitFor(() => formRun(`Array.from(document.querySelectorAll('#history-list button')).some(b => b.textContent === 'Correct…')`), "history correction action missing");
-  await formRun('document.getElementById("cleanup-dictionary").value = "localDraft"');
+  await formRun('document.getElementById("cleanup-dictionary").value = "localDraft\\n\\n"; document.getElementById("cleanup-dictionary").focus(); document.getElementById("cleanup-dictionary").setSelectionRange(5, 5)');
   await formRun(`Array.from(document.querySelectorAll('#history-list button')).find(b => b.textContent === 'Correct…').click()`);
   // The real history action has already created it; a repeated open must keep it.
   const win = windows.openCorrection(history.list()[0]);
@@ -43,10 +43,22 @@ async function checkCorrection({ waitFor, check }) {
   check("keyboard selection replaces exactly one occurrence and preserves Unicode", await run('document.getElementById("transcript").value') === corrected);
   check("remember saves the exact spelling", settings.get().cleanup.dictionary.includes("kubectl"));
   check("correction preserves original history", history.list()[0].text === original && history.list()[0].raw === original);
+  // The main close guard receives renderer dirty state before native close.
+  await run('earheart.invoke("correction:get")');
+  const confirmClose = dialog.showMessageBoxSync;
+  let confirmations = 0;
+  dialog.showMessageBoxSync = () => { confirmations++; return 0; };
+  try {
+    win.close();
+    check("declining native close preserves the corrected draft", confirmations === 1 && !win.isDestroyed() && await run('document.getElementById("transcript").value') === corrected);
+  } finally { dialog.showMessageBoxSync = confirmClose; }
+
   await waitFor(() => formRun('document.getElementById("cleanup-dictionary").value.includes("kubectl")'), "Settings did not receive remembered word");
   check("remember preserves unsaved dictionary edits in Settings", await formRun('document.getElementById("cleanup-dictionary").value.includes("localDraft")'));
+  check("dictionary updates preserve blank lines and the caret", await formRun('document.getElementById("cleanup-dictionary").value.startsWith("localDraft\\n\\n") && document.getElementById("cleanup-dictionary").selectionStart === 5'));
   windows.openCorrection({ text: "a newer dictation" });
   check("reopening does not replace an active correction draft", await run('document.getElementById("transcript").value') === corrected);
+  await waitFor(() => run('document.getElementById("status").textContent.includes("current correction is still open")'), "different transcript notice missing");
 
   // Capture the actual new UI when explicitly requested, never user data.
   if (process.env.EARHEART_CORRECTION_SCREENSHOT) {
@@ -67,6 +79,9 @@ async function checkCorrection({ waitFor, check }) {
   const write = clipboard.writeText;
   clipboard.writeText = () => { throw new Error("simulated clipboard failure"); };
   try {
+    await formRun(`Array.from(document.querySelectorAll('#history-list button')).find(b => b.textContent === 'Copy').click()`);
+    await waitFor(() => formRun(`document.querySelector('#history-list .status').textContent.includes('Could not copy')`), "History copy failure missing");
+    check("History errors leave action labels usable", await formRun(`Array.from(document.querySelectorAll('#history-list button')).some(b => b.textContent === 'Copy')`));
     await run('document.getElementById("copy").click()');
     await waitFor(() => run('document.getElementById("status").textContent.includes("Could not copy")'), "copy failure missing");
     check("clipboard failure keeps the editor and draft", !win.isDestroyed() && await run('document.getElementById("transcript").value') === corrected);

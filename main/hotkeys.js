@@ -265,45 +265,129 @@ function applyAll(next) {
 }
 
 // The correction shortcut is always available, unlike the live-only discard
-// shortcut. Rebind it without releasing its old key until the new grab succeeds.
+// shortcut, so it takes part in the dictation slots' transaction: a clash is
+// charged to the slot that changed into it, and a swap or transfer with a
+// dictation slot either completes or leaves both bindings as they were.
+const DICTATION = ["record", "pause", "discard"];
+
+// The accelerator each dictation slot holds now. Discard counts while idle
+// (configured, not armed): it re-grabs that key at the next dictation.
+function dictationAccelerators() {
+  return {
+    record: registered.get("record")?.accelerator || "",
+    pause: registered.get("pause")?.accelerator || "",
+    discard: discard.accelerator,
+  };
+}
+
+function setCorrect(accelerator, onTrigger) {
+  if (accelerator) registered.set("correct", { accelerator, onTrigger });
+  else registered.delete("correct");
+}
+
 function applyWithCorrection(next) {
   if (next.correct === undefined && next.onCorrect === undefined) return applyLive(next);
   const desired = next.correct || "";
   const previous = registered.get("correct");
-  const slots = ["record", "pause", "discard"];
-  const configuredHolder = slots.find((name) => desired && next[name] === desired);
-  const actualHolder = () => slots.find((name) => desired &&
-    (name === "discard" ? discard.accelerator : registered.get(name)?.accelerator) === desired);
-  function applyProtectedDictation() {
-    const held = registered.get("correct")?.accelerator;
-    const collisions = slots.filter((name) => held && next[name] === held);
-    const safe = { ...next };
-    for (const name of collisions) {
-      safe[name] = name === "discard" ? discard.accelerator : registered.get(name)?.accelerator || "";
-    }
-    const applied = applyLive(safe);
-    for (const name of collisions) applied[name] = { ok: false, error: usedBy("correction", held) };
-    return applied;
+  const held = previous?.accelerator || "";
+  const before = dictationAccelerators();
+  const target = Object.fromEntries(DICTATION.map((name) => [name, next[name] || ""]));
+  const dictation = { ...next };
+  const charged = {};
+  const keep = (name, error) => {
+    dictation[name] = before[name];
+    charged[name] = error;
+  };
+  const holderOf = (accelerator) => {
+    const now = dictationAccelerators();
+    return DICTATION.find((name) => accelerator && now[name] === accelerator);
+  };
+  const finish = (applied, correct) => {
+    const out = { ...applied, correct };
+    for (const name of Object.keys(charged)) out[name] = { ok: false, error: charged[name] };
+    return out;
+  };
+
+  // A clash in the requested settings goes to the slot that changed into it.
+  // When both changed — or on a cold start, where nothing is held yet — the
+  // optional correction key yields, so dictation keeps its shortcut.
+  let correctError = null;
+  for (const name of DICTATION) {
+    if (!desired || target[name] !== desired) continue;
+    if (desired === held && target[name] !== before[name]) keep(name, usedBy("correction", desired));
+    else correctError ??= usedBy(name, desired);
   }
-  // A dictation key may be moving away from the requested correction key.
-  // Free it first, still protecting the current correction binding. This also
-  // lets a failed settings write roll back a successful key transfer.
-  let applied = !configuredHolder && actualHolder() ? applyProtectedDictation() : null;
-  const holder = configuredHolder || actualHolder();
-  let result = desired ? { ok: true } : { ok: true, empty: true };
-  if (holder) {
-    result = { ok: false, error: usedBy(holder, desired) };
-  } else if (desired !== (previous?.accelerator || "")) {
-    const attempt = desired ? attemptRegister(desired, next.onCorrect) : { ok: true };
-    if (!attempt.ok) result = { ok: false, error: registrationFailure(desired, attempt) };
-    else {
-      if (previous) globalShortcut.unregister(previous.accelerator);
-      if (desired) registered.set("correct", { accelerator: desired, onTrigger: next.onCorrect });
-      else registered.delete("correct");
+  const goal = correctError ? held : desired;
+  const ok = (accelerator) => (accelerator ? { ok: true } : { ok: true, empty: true });
+  const notChanged = "Not changed: the correction hotkey could not be registered";
+
+  if (goal === held) {
+    // The correction key stays put: no dictation slot may take it.
+    for (const name of DICTATION) {
+      if (held && target[name] === held && !charged[name]) keep(name, usedBy("correction", held));
+    }
+    return finish(applyLive(dictation), correctError ? { ok: false, error: correctError } : ok(held));
+  }
+
+  // Dictation slots asking for the key the correction shortcut is leaving.
+  const takers = DICTATION.filter((name) => held && target[name] === held && !charged[name]);
+
+  if (!holderOf(goal)) {
+    // The new key is free: grab it before releasing the old one.
+    const attempt = goal ? attemptRegister(goal, next.onCorrect) : { ok: true };
+    if (!attempt.ok) {
+      for (const name of takers) keep(name, notChanged);
+      return finish(applyLive(dictation), { ok: false, error: registrationFailure(goal, attempt) });
+    }
+    if (held) globalShortcut.unregister(held);
+    setCorrect(goal, next.onCorrect);
+    return finish(applyLive(dictation), ok(goal));
+  }
+
+  // A dictation slot holds the new key and should be moving off it. In a swap
+  // it moves onto the correction key, which must be released first.
+  const releasedEarly = takers.length > 0;
+  if (releasedEarly) globalShortcut.unregister(held);
+  let applied = applyLive(dictation);
+  const blocker = holderOf(goal);
+  const attempt = blocker ? null : attemptRegister(goal, next.onCorrect);
+  if (attempt?.ok) {
+    if (!releasedEarly) globalShortcut.unregister(held);
+    setCorrect(goal, next.onCorrect);
+    return finish(applied, ok(goal));
+  }
+
+  const error = blocker
+    ? applied[blocker]?.ok === false
+      ? `Not changed: the ${blocker} hotkey could not be registered`
+      : usedBy(blocker, goal)
+    : registrationFailure(goal, attempt);
+  if (!releasedEarly) return finish(applied, { ok: false, error });
+
+  // The swap failed halfway: a dictation slot may already hold the old
+  // correction key. Put every dictation slot back, then retake that key.
+  if (holderOf(held)) {
+    const reverted = applyLive({ ...next, ...before });
+    applied = { ...reverted };
+    for (const name of DICTATION) {
+      if (target[name] !== before[name] && !charged[name]) {
+        applied[name] = reverted[name].ok ? { ok: false, error: notChanged } : reverted[name];
+      }
+    }
+  } else {
+    for (const name of takers) {
+      if (applied[name]?.ok !== false) applied[name] = { ok: false, error: notChanged };
     }
   }
-  if (!applied) applied = applyProtectedDictation();
-  return { ...applied, correct: result };
+  const back = attemptRegister(held, previous.onTrigger);
+  if (!back.ok) {
+    registered.delete("correct");
+    const unbound = `Could not restore "${prettyHotkey(held)}" after rollback. The correction hotkey is now unbound until you save again or restart.`;
+    logger.warn(unbound);
+    const separator = /[.!?]$/.test(error) ? " " : ". ";
+    return finish(applied, { ok: false, unbound: true, error: `${error}${separator}${unbound}` });
+  }
+  return finish(applied, { ok: false, error });
 }
 
 function applyLive(next) {

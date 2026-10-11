@@ -171,7 +171,8 @@ function withMainOwned(next, live, baseline) {
   for (const field of SHARED_FIELDS) {
     const seen = baseline[field.name];
     if (field.type === "array" ? !Array.isArray(seen) : typeof seen !== field.type) continue;
-    if (field.read(live) !== seen) out = field.write(out, live, seen);
+    // Arrays reconcile per-term edits; scalars only need a write when changed.
+    if (field.type === "array" || field.read(live) !== seen) out = field.write(out, live, seen);
   }
   return out;
 }
@@ -243,7 +244,7 @@ function wrap(fn, describe = (err) => err.message) {
   };
 }
 
-function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true }) {
+function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true }) {
   // Register any models the user added from a custom Hugging Face URL so they
   // resolve for download and for loading into the cleanup worker after a
   // restart, exactly like the built-ins.
@@ -619,14 +620,16 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     return { ok: true, cleanupEnabled: cfg.cleanup.enabled };
   }));
   ipcMain.handle("transcript:copy", wrap(async (event, text) => {
-    if (!canCorrect()) throw new Error("Finish the current dictation before copying a transcript.");
+    if (!canCopy()) throw new Error("Wait for the current dictation to finish processing before copying a transcript.");
     if (typeof text !== "string" || !text.trim() || text.length > 1000000) {
       throw new Error("The corrected prompt must contain text and be at most 1 million characters.");
     }
     // Settle any pending paste restoration so it cannot undo this explicit copy.
     await deliver.deliver(text, { mode: "clipboard" });
+    windows.setCorrectionDirty(event.sender, false);
     return { ok: true };
   }));
+  ipcMain.on("correction:dirty", (event, dirty) => windows.setCorrectionDirty(event.sender, dirty));
   ipcMain.handle("correction:close", () => windows.closeCorrection());
 
   ipcMain.handle("history:list", () => history.list());

@@ -110,6 +110,7 @@ function main() {
     ipc.init({
       applyHotkeys,
       canCorrect: () => pipeline.getState() === "idle",
+      canCopy: () => pipeline.getState() !== "processing",
       // A binding another app took during capture is re-applied from the
       // saved settings, so the status Settings shows names the failure.
       suspendHotkeys: (on) => {
@@ -213,7 +214,11 @@ function main() {
   // The overlay is closable: false, which blocks app.quit() (it waits for
   // every window to close and the overlay refuses; electron#5891). Destroy
   // it first so quitting from the tray actually exits.
-  app.on("before-quit", () => {
+  app.on("before-quit", (event) => {
+    if (!windows.confirmCorrectionClose()) {
+      event.preventDefault();
+      return;
+    }
     windows.destroyOverlay();
   });
 

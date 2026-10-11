@@ -48,6 +48,7 @@ async function loadMain(
     updatesInit = () => {},
     notificationsSupported = true,
     pipelineState = "idle",
+    canCloseCorrection = true,
   } = {}
 ) {
   const events = [];
@@ -116,6 +117,7 @@ async function loadMain(
       createOverlay: () => events.push("createOverlay"),
       destroyOverlay: () => events.push("destroyOverlay"),
       openSettings: () => events.push("openSettings"),
+      confirmCorrectionClose: () => canCloseCorrection,
       openWizard: () => events.push("openWizard"),
       openCorrection: (entry) => events.push(`correct:${entry.text}`),
     },
@@ -366,5 +368,16 @@ test("correction hotkey and desktop command open the latest saved transcript onl
     appHandlers["second-instance"]({}, ["earheart", "--correct-last"]);
     assert.deepStrictEqual(events, pipelineState === "idle" ? ["correct:last transcript", "correct:last transcript"] : []);
     assert.strictEqual(ipcInit.canCorrect(), pipelineState === "idle");
+    assert.strictEqual(ipcInit.canCopy(), pipelineState !== "processing");
   }
+});
+
+
+test("cancelling quit with an uncopied correction keeps the recording overlay alive", async () => {
+  const { events, appHandlers } = await loadMain({ canCloseCorrection: false });
+  events.length = 0;
+  let prevented = false;
+  appHandlers["before-quit"]({ preventDefault: () => { prevented = true; } });
+  assert.strictEqual(prevented, true);
+  assert.deepStrictEqual(events, []);
 });

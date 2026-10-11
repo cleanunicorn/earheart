@@ -58,11 +58,11 @@ function buildMenu(app) {
     { type: "separator" },
     {
       label: "Copy last transcription",
-      enabled: !!lastEntry && state === "idle",
+      enabled: !!lastEntry && state !== "processing",
       // Re-read at click time so we copy the freshest entry even if the menu
       // was built a moment before the dictation landed.
       click: async () => {
-        if (pipeline.getState() !== "idle") return;
+        if (pipeline.getState() === "processing") return;
         const entry = history.list()[0];
         if (!entry) return;
         try { await deliver(entry.text, { mode: "clipboard" }); }

@@ -16,7 +16,7 @@ const ipcPath = require.resolve("../main/ipc");
 const settingsPath = require.resolve("../main/settings");
 const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(ipcPath)] });
 
-function loadIpc(t, { remove = async () => {}, canCorrect = () => true } = {}) {
+function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy = canCorrect } = {}) {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-ipc-"));
   t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
   const handlers = {};
@@ -44,6 +44,7 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true } = {}) {
     [resolveFrom("./windows")]: {
       sendToForms: (channel, payload) => calls.broadcasts.push({ channel, payload }),
       openSettings() {},
+      setCorrectionDirty() {},
       closeWizard() {},
     },
     [resolveFrom("./tray")]: {
@@ -82,6 +83,7 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true } = {}) {
       applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
       onSettingsChanged() {},
       canCorrect,
+      canCopy,
     });
   } finally {
     delete require.cache[ipcPath];
@@ -341,7 +343,21 @@ test("correction and copying cannot interrupt an active dictation", async (t) =>
   for (const channel of ["correction:open", "transcript:copy"]) {
     const result = await handlers[channel]({}, "text");
     assert.strictEqual(result.ok, false);
-    assert.match(result.error, /Finish the current dictation/);
+    assert.match(result.error, /current dictation/);
   }
   assert.strictEqual(calls.deliveries.length, 0);
+});
+
+
+test("an unavailable History entry cannot open a correction while idle", async (t) => {
+  const { handlers } = loadIpc(t);
+  const result = await handlers["correction:open"]({}, { text: "forged", at: "missing" });
+  assert.strictEqual(result.ok, false);
+  assert.match(result.error, /no longer in History/);
+});
+
+test("copying is allowed while recording even though correction cannot open", async (t) => {
+  const { handlers, calls } = loadIpc(t, { canCorrect: () => false, canCopy: () => true });
+  assert.strictEqual((await handlers["transcript:copy"]({}, "previous prompt")).ok, true);
+  assert.strictEqual(calls.deliveries.length, 1);
 });

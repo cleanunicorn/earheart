@@ -13,6 +13,15 @@ function mergeVocabulary(baseline, edited, live) {
     ...wanted.filter((term) => !before.has(term))]);
 }
 
+// Keep the form's line formatting while adding/removing concurrent terms.
+// A blank line the user is currently typing on must not vanish on an update.
+function mergeVocabularyText(baseline, text, live) {
+  const merged = new Set(mergeVocabulary(baseline, text.split("\n"), live));
+  const lines = text.split("\n").filter((line) => !line.trim() || merged.has(line.trim()));
+  const represented = new Set(vocabularyTerms(lines));
+  return [...lines, ...[...merged].filter((term) => !represented.has(term))].join("\n");
+}
+
 function rememberVocabulary(terms, spelling) {
   if (typeof spelling !== "string" || !spelling.trim()) throw new Error("Enter a spelling to remember.");
   const term = spelling.trim();
@@ -29,5 +38,5 @@ function rememberVocabulary(terms, spelling) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { vocabularyTerms, mergeVocabulary, rememberVocabulary };
+  module.exports = { vocabularyTerms, mergeVocabulary, mergeVocabularyText, rememberVocabulary };
 }

@@ -367,12 +367,18 @@ Select the mistaken words in the full transcript, press Tab, and type the exact
 spelling. **Replace & remember** (Enter in the spelling field) changes only that
 occurrence and adds the spelling to your dictionary; **Replace only** makes a
 one-off correction. Repeat for other terms, or edit the transcript directly.
+**Undo replacement** reverses these replacements without removing words already
+remembered. Direct typing starts a new replacement-undo history.
 **Copy corrected prompt & close** (`Ctrl/Cmd+Enter`) copies the full draft. Back
 in your coding agent, select the existing prompt before pasting if you want to
 replace it. Earheart does not automatically resend or submit the corrected text.
 
 The original history entry stays unchanged; the correction draft lasts until
-you close the editor. Remembered words save immediately and can be edited or
+you close the editor. Closing or quitting with uncopied changes asks whether to
+keep editing or discard the draft. Escape in the spelling field cancels just
+that pending spelling. If another transcript is requested while a correction is
+open, Earheart keeps the active draft and explains how to finish it first.
+Remembered words save immediately and can be edited or
 removed in Settings → Cleanup → Dictionary. New remembered spellings are limited
 to 120 characters each, 256 unique entries and 8,192 total dictionary characters.
 They guide the cleanup model rather than retraining speech recognition, and only

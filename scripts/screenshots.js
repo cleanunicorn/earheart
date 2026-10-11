@@ -67,6 +67,7 @@ async function main() {
   `);
   await correction.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))");
   await shot(correction, "correction");
+  windows.setCorrectionDirty(correction.webContents, false); // discard this synthetic staged draft
   correction.close();
 
   // Overlay: staged recording and done states. setStatus/waveHistory/

@@ -88,7 +88,7 @@ const ROLES = {
     ],
   },
   correction: {
-    LISTEN: [], SEND: [],
+    LISTEN: ["correction:notice"], SEND: ["correction:dirty"],
     INVOKE: ["correction:get", "correction:remember", "transcript:copy", "correction:close"],
   },
   wizard: {

@@ -792,11 +792,16 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
 function applySettingsChange({ previous, current: saved }) {
   const flipped = [];
   if (Array.isArray(saved.dictionary) && JSON.stringify(previous.dictionary) !== JSON.stringify(saved.dictionary)) {
-    const edited = $("cleanup-dictionary").value.split("\n");
-    const merged = mergeVocabulary(baseline.dictionary, edited, saved.dictionary);
-    $("cleanup-dictionary").value = merged.join("\n");
+    const field = $("cleanup-dictionary");
+    const focused = document.activeElement === field;
+    const caret = [field.selectionStart, field.selectionEnd, field.selectionDirection];
+    const merged = mergeVocabulary(baseline.dictionary, field.value.split("\n"), saved.dictionary);
+    field.value = !focused && !field.value ? merged.join("\n")
+      : mergeVocabularyText(baseline.dictionary, field.value, saved.dictionary);
+    if (focused) field.setSelectionRange(...caret);
     current.cleanup.dictionary = merged;
     baseline.dictionary = [...saved.dictionary];
+    flipped.push("Dictionary updated with saved spellings.");
   }
   current.overlay = saved.overlay;
   current.customModels = saved.customModels;
@@ -1188,17 +1193,18 @@ bindAddCustomModel("cleanup");
 const HISTORY_PAGE_SIZE = 5;
 let historyPage = 0; // 0 = the newest page
 
-function historyCopyButton(label, value) {
+function historyCopyButton(label, value, report) {
   const button = document.createElement("button");
   button.className = "copy";
   button.textContent = label;
   button.addEventListener("click", async () => {
+    report("");
     try {
       const result = await earheart.invoke("transcript:copy", value);
       if (!result.ok) throw new Error(result.error);
       button.textContent = "Copied";
       setTimeout(() => (button.textContent = label), 1200);
-    } catch (err) { button.textContent = `Could not copy: ${err.message}`; }
+    } catch (err) { report(`Could not copy: ${err.message}`); }
   });
   return button;
 }
@@ -1239,25 +1245,30 @@ async function renderHistory() {
     when.textContent = `${new Date(item.at).toLocaleString()}${item.cleaned ? " · cleaned" : ""}${
       item.incomplete ? " · incomplete" : ""
     }`;
+    const feedback = document.createElement("span");
+    feedback.className = "status err";
+    feedback.setAttribute("role", "status");
+    const report = (message) => { feedback.textContent = message; };
     const actions = document.createElement("span");
     actions.className = "actions";
-    actions.append(historyCopyButton("Copy", item.text));
+    actions.append(historyCopyButton("Copy", item.text, report));
     const correct = document.createElement("button");
     correct.textContent = "Correct…";
     correct.addEventListener("click", async () => {
+      report("");
       try {
         const result = await earheart.invoke("correction:open", { at: item.at, text: item.text });
         if (!result.ok) throw new Error(result.error);
-      } catch (err) { correct.textContent = err.message; }
+      } catch (err) { report(err.message); }
     });
     actions.append(correct);
     if (item.cleaned && typeof item.raw === "string" && item.raw !== item.text) {
-      const copyOriginal = historyCopyButton("Copy original", item.raw);
+      const copyOriginal = historyCopyButton("Copy original", item.raw, report);
       copyOriginal.title = "Copy the transcript before cleanup";
       actions.append(copyOriginal);
     }
     meta.append(when, actions);
-    li.append(text, meta);
+    li.append(text, meta, feedback);
     list.appendChild(li);
     // The card is laid out as soon as it is attached (the History section is
     // always visible), so overflow past the 3-line clamp is measurable here.

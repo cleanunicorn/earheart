@@ -119,6 +119,7 @@ test("remote STT errors expose only a fixed message and HTTP status", async () =
       transcribe(Buffer.alloc(0), { baseUrl, apiKey: "sk-client-secret" }),
       (err) => {
         assert.strictEqual(err.message, "STT service error 401 — check the API key in Settings");
+        assert.strictEqual(err.status, 401, "the status rides along for the retry classifier");
         assert.doesNotMatch(err.message, /secret-token|private transcript|sk-client-secret/);
         return true;
       }
@@ -198,6 +199,7 @@ test("remote cleanup reports a server error and a reply with no content", async 
   await withErrorServer(503, JSON.stringify({ error: { message: "my private words" } }), async (baseUrl) => {
     await assert.rejects(clean("my private words", { baseUrl, model: "m" }), (err) => {
       assert.strictEqual(err.message, "Cleanup service error 503");
+      assert.strictEqual(err.status, 503);
       assert.strictEqual(err.cause, undefined);
       return true;
     });
@@ -228,6 +230,7 @@ for (const { name, service, call } of clients) {
     const host = new URL(baseUrl).host;
     await assert.rejects(call({ baseUrl }), (err) => {
       assert.strictEqual(err.message, `Couldn't reach ${host}`);
+      assert.strictEqual(err.code, "SERVICE_UNREACHABLE", "classified for the pipeline's retry");
       assert.doesNotMatch(err.message, /fetch failed/);
       // The technical reason stays attached for the log.
       assert.ok(err.cause, "the original error is kept as the cause");
@@ -239,6 +242,7 @@ for (const { name, service, call } of clients) {
     await withServer(() => {}, async (baseUrl) => {
       await assert.rejects(call({ baseUrl, timeoutMs: 50 }), (err) => {
         assert.strictEqual(err.message, `${service} didn't answer within 0.05 s`);
+        assert.strictEqual(err.code, "SERVICE_TIMEOUT");
         assert.strictEqual(err.cause?.name, "TimeoutError");
         return true;
       });
@@ -254,6 +258,7 @@ for (const { name, service, call } of clients) {
     await withServer(handler, async (baseUrl) => {
       await assert.rejects(call({ baseUrl, timeoutMs: 100 }), (err) => {
         assert.strictEqual(err.message, `${service} didn't answer within 0.1 s`);
+        assert.strictEqual(err.code, "SERVICE_TIMEOUT");
         return true;
       });
     });
@@ -263,6 +268,7 @@ for (const { name, service, call } of clients) {
     await withErrorServer(200, "<html>secret-token-123</html>", async (baseUrl) => {
       await assert.rejects(call({ baseUrl }), (err) => {
         assert.strictEqual(err.message, `${service} returned a response that isn't JSON`);
+        assert.strictEqual(err.code, "SERVICE_BAD_REPLY");
         // The parse error quotes the body, so it must not ride along to the log.
         assert.strictEqual(err.cause, undefined);
         return true;
@@ -280,6 +286,7 @@ for (const { name, service, call } of clients) {
     await withServer(handler, async (baseUrl) => {
       await assert.rejects(call({ baseUrl }), (err) => {
         assert.strictEqual(err.message, `${service} dropped the connection before finishing its reply`);
+        assert.strictEqual(err.code, "SERVICE_DROPPED");
         assert.ok(err.cause, "the transport error is kept for the log");
         return true;
       });

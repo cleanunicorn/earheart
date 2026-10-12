@@ -712,6 +712,33 @@ app.whenReady().then(async () => {
       JSON.stringify(hotkeyDismiss)
     );
 
+    // ---- A stage being retried says so on its detail line ------------------
+    // The title stays the phase's; the detail line counts the tries, and the
+    // next plain status for the phase clears it again.
+    const readStatusLine = () =>
+      win.webContents.executeJavaScript(
+        `[document.getElementById("status-text").textContent, document.getElementById("detail-text").textContent]`
+      );
+    const waitForDetail = async (want) => {
+      const deadline = Date.now() + 15000;
+      for (;;) {
+        const line = await readStatusLine();
+        if (line[1] === want || Date.now() > deadline) return line;
+        await sleep(10);
+      }
+    };
+    win.webContents.send("pipeline:status", { status: "cleaning", detail: { retry: { attempt: 2, of: 3 } } });
+    await waitForStatus(win, "cleaning");
+    const retryLine = await waitForDetail("Retrying (try 2 of 3)…");
+    check(
+      "a retried stage keeps its title and counts the tries",
+      retryLine[0] === "Cleaning up…" && retryLine[1] === "Retrying (try 2 of 3)…",
+      JSON.stringify(retryLine)
+    );
+    win.webContents.send("pipeline:status", { status: "cleaning" });
+    const plainLine = await waitForDetail("");
+    check("a plain status clears the retry line", plainLine[1] === "", JSON.stringify(plainLine));
+
     // ---- Terminal state: the keys go inert once the dictation lands --------
     // Done is the bar's only filled key; a regression in setStatus's
     // enablement branch would leave it lit and clickable after delivery.

@@ -24,6 +24,7 @@ const { createLivePreview } = require("./live-preview");
 const { createPersistedRtfEstimator } = require("./util/rtf");
 const { wavDurationSec, wavSliceFromFrame } = require("./util/wav");
 const { transcribeChunked } = require("./chunked-decode");
+const { withRetry } = require("./util/retry");
 const logger = require("./util/logger");
 const { prettyHotkey } = require("./util/hotkey-label");
 const { createNotifier, sttNotReadyNotice, BODY_MAX } = require("./setup-notices");
@@ -75,6 +76,9 @@ async function transcribeLive(wav, sttCfg, signal) {
     runTranscribe: (piece, opts) => route.transcribe(piece, sttCfg, signal, opts),
     restartStt: engines.restartStt,
     stale: () => !!signal?.aborted,
+    // A chunk that fails is decoded again by the final pass; a recovery pass
+    // here would only compete with the recording's next chunk.
+    recover: false,
   });
   if (result.stale) throw new Error("aborted");
   if (result.partial) {
@@ -209,6 +213,17 @@ function decodePlan(wav, assembly) {
   return { ...plan, salvageText: assembly.committedRaw, salvageChunks: assembly.chunks || [] };
 }
 
+// A stage about to try again: log why, and say so on the overlay, whose phase
+// title stays and whose detail line counts the tries — a bar starting over
+// with no explanation would read as a hang. Re-sending the status also
+// retires the failed attempt's progress bar.
+function retryNotice(phase, what) {
+  return ({ attempt, of, err }) => {
+    logger.warn(`${what} failed, retrying (attempt ${attempt} of ${of}):`, err?.message);
+    overlayStatus(phase, { retry: { attempt, of } });
+  };
+}
+
 // Run the final transcription with the estimated transcribing bar. The builtin
 // decoder is one opaque blocking call, so the bar is elapsed time against the
 // audio duration times the learned decode speed; this helper owns that plumbing
@@ -243,7 +258,10 @@ async function transcribeWithEstimate(wav, sttCfg, signal, stale, assembly) {
     // no-op. A load that fails can't decode anything, but the words the live
     // preview already decoded are still the user's: deliver those.
     try {
-      await engines.ensureStt(sttCfg.builtin.model);
+      await withRetry(() => engines.ensureStt(sttCfg.builtin.model), {
+        stale,
+        onRetry: retryNotice("transcribing", "STT model load"),
+      });
     } catch (err) {
       const recovered = prefixText || salvageText;
       if (!recovered) throw err;
@@ -269,8 +287,13 @@ async function transcribeWithEstimate(wav, sttCfg, signal, stale, assembly) {
     : null;
   try {
     if (!rtf) {
-      // Remote STT: one upload, as the HTTP API expects.
-      return { text: await route.transcribe(decodeWav, sttCfg, signal), partial: false };
+      // Remote STT: one upload, as the HTTP API expects — another one if the
+      // service blinked.
+      const text = await withRetry(() => route.transcribe(decodeWav, sttCfg, signal), {
+        stale,
+        onRetry: retryNotice("transcribing", "STT request"),
+      });
+      return { text, partial: false };
     }
     // The RTF sample comes from the worker's own decode timing, not wall
     // clock: elapsed here also contains queueing behind an in-flight
@@ -323,18 +346,32 @@ async function cleanWithProgress(raw, cleanupCfg, signal, stale) {
 }
 
 // Cleanup is an enhancement, never a gate (Golden rule 8): when it fails, the
-// raw transcript becomes the text and the user is told why. Never throws, so
-// the words always reach history and delivery. A failure caused by a cancel
-// (or a newer session) says nothing — the dictation is over, and the caller
-// re-checks stale() before using the result. Resolves to { text, cleaned }.
+// raw transcript becomes the text and the user is told why. A failure that can
+// pass (a crashed or wedged worker, a service that blinked — util/retry.js) is
+// retried first, so the fallback is the last resort rather than the first.
+// Never throws, so the words always reach history and delivery. A failure
+// caused by a cancel (or a newer session) says nothing — the dictation is
+// over, and the caller re-checks stale() before using the result. Resolves to
+// { text, cleaned }.
 async function cleanWithFallback(raw, cleanupCfg, signal, stale) {
+  let attempts = 1;
   try {
-    return { text: await cleanWithProgress(raw, cleanupCfg, signal, stale), cleaned: true };
+    const text = await withRetry(
+      (n) => {
+        attempts = n;
+        return cleanWithProgress(raw, cleanupCfg, signal, stale);
+      },
+      { stale, onRetry: retryNotice("cleaning", "cleanup") }
+    );
+    return { text, cleaned: true };
   } catch (err) {
     if (!stale()) {
       logger.error("cleanup failed:", err);
       notify({
-        title: "Earheart: cleanup failed, used raw transcript",
+        title:
+          attempts > 1
+            ? `Earheart: cleanup failed ${attempts} times, used raw transcript`
+            : "Earheart: cleanup failed, used raw transcript",
         body: err.message,
       });
     }

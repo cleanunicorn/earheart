@@ -15,9 +15,10 @@
 // Why the pieces are driven from here rather than inside the worker: a piece
 // that finished is text in this process, so it survives the worker dying on a
 // later one. A piece whose worker died or went silent is retried once on a
-// fresh worker; one that still fails is skipped and the rest carry on, so the
-// user gets every word that could be decoded — marked `partial` — rather than
-// an error (golden rule 8: never lose the user's words).
+// fresh worker; one that still fails is set aside and the rest carry on, then
+// every piece set aside gets one more pass at the end. One that fails that too
+// is left out, so the user gets every word that could be decoded — marked
+// `partial` — rather than an error (golden rule 8: never lose the user's words).
 //
 // Dependency-injected like live-preview.js, so it runs without Electron: the
 // pipeline passes the real route.transcribe, and scripts/eval-long-decode.js a
@@ -194,6 +195,8 @@ function assemble(pieces, owners) {
  * @param {() => boolean} [deps.stale] true once the session was cancelled
  * @param {(ms: number) => void} [deps.onDecodeMs] each piece's worker decode time
  * @param {{warn: Function}} [deps.log]
+ * @param {boolean} [deps.recover] give pieces lost to a dying worker a second
+ *   pass (off for live-preview chunks: the final pass decodes those again)
  * @returns {Promise<{text: string, partial: boolean, stale?: boolean, pieces: object[]}>}
  */
 async function transcribeChunked(
@@ -212,6 +215,7 @@ async function transcribeChunked(
     stale = () => false,
     onDecodeMs,
     log,
+    recover = true,
   }
 ) {
   const plan = planPieces(wav, maxSec, minPauseSec, salvageChunks, { minSoundSec, minUtteranceSec, keepPauseSec });
@@ -226,94 +230,120 @@ async function transcribeChunked(
   let consecutiveFailures = 0;
   let lastFailedGroup = null; // the group the budget last counted
 
-  for (const piece of pieces) {
-    if (stale()) return { text: "", partial: false, stale: true, pieces };
-    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-      piece.skipped = true;
-      continue;
-    }
-    const pieceSamples = plan.samples.subarray(piece.fromFrame, piece.toFrame);
-    // Nothing a word could be made of — only noise, or silence: the model
-    // would invent a word from it ("A", "You"), so it is not decoded at all.
-    // The speech probe has the last say, so a low-gain voice that never
-    // clears the silence level still reaches the decoder. A recording that is
-    // one piece is always decoded: its answer, or its error (a model not yet
-    // downloaded), is the dictation's.
-    if (
-      minSoundSec > 0 &&
-      pieces.length > 1 &&
-      soundSeconds(pieceSamples, SAMPLE_RATE, { minSoundSec }) < minSoundSec &&
-      !containsSpeech(pieceSamples, SAMPLE_RATE)
-    ) {
-      Object.assign(piece, { ok: true, text: "", noise: true });
-      continue;
-    }
-    // A merged piece's long inner pauses are shortened for the decoder; any
-    // other piece goes as recorded.
-    const decodeSamples = squeezePauses(pieceSamples, SAMPLE_RATE, { keepPauseSec, minPauseSec, minSoundSec });
-    // squeezePauses hands back the same array when it dropped nothing.
-    const squeezed = decodeSamples !== pieceSamples;
-    let pieceWav;
-    if (squeezed) pieceWav = encodeWav(toPcm16(decodeSamples), SAMPLE_RATE);
-    else if (pieces.length === 1) pieceWav = wav;
-    else pieceWav = wavSlice(wav, piece.fromFrame, piece.toFrame);
-    for (;;) {
-      piece.attempts++;
-      try {
-        let text = ((await runTranscribe(pieceWav, { onDecodeMs })) || "").trim();
-        if (!text && containsSpeech(pieceSamples, SAMPLE_RATE)) {
-          // Speech in, nothing out: one more try with room around it. A still
-          // empty piece is a gap unless a covering live-preview salvage chunk
-          // supplies its words during final assembly.
-          const paddedWav = padded(decodeSamples, maxSec);
-          if (paddedWav) {
-            piece.attempts++;
-            text = ((await runTranscribe(paddedWav, { onDecodeMs })) || "").trim();
+  // Decode `list` in order; false once the session went stale.
+  async function decodePass(list) {
+    consecutiveFailures = 0;
+    lastFailedGroup = null;
+    for (const piece of list) {
+      if (stale()) return false;
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        piece.skipped = true;
+        continue;
+      }
+      const pieceSamples = plan.samples.subarray(piece.fromFrame, piece.toFrame);
+      // Nothing a word could be made of — only noise, or silence: the model
+      // would invent a word from it ("A", "You"), so it is not decoded at all.
+      // The speech probe has the last say, so a low-gain voice that never
+      // clears the silence level still reaches the decoder. A recording that is
+      // one piece is always decoded: its answer, or its error (a model not yet
+      // downloaded), is the dictation's.
+      if (
+        minSoundSec > 0 &&
+        pieces.length > 1 &&
+        soundSeconds(pieceSamples, SAMPLE_RATE, { minSoundSec }) < minSoundSec &&
+        !containsSpeech(pieceSamples, SAMPLE_RATE)
+      ) {
+        Object.assign(piece, { ok: true, text: "", noise: true });
+        continue;
+      }
+      // A merged piece's long inner pauses are shortened for the decoder; any
+      // other piece goes as recorded.
+      const decodeSamples = squeezePauses(pieceSamples, SAMPLE_RATE, { keepPauseSec, minPauseSec, minSoundSec });
+      // squeezePauses hands back the same array when it dropped nothing.
+      const squeezed = decodeSamples !== pieceSamples;
+      let pieceWav;
+      if (squeezed) pieceWav = encodeWav(toPcm16(decodeSamples), SAMPLE_RATE);
+      else if (pieces.length === 1) pieceWav = wav;
+      else pieceWav = wavSlice(wav, piece.fromFrame, piece.toFrame);
+      let tries = 0;
+      for (;;) {
+        tries++;
+        piece.attempts++;
+        try {
+          let text = ((await runTranscribe(pieceWav, { onDecodeMs })) || "").trim();
+          if (!text && containsSpeech(pieceSamples, SAMPLE_RATE)) {
+            // Speech in, nothing out: one more try with room around it. A still
+            // empty piece is a gap unless a covering live-preview salvage chunk
+            // supplies its words during final assembly.
+            const paddedWav = padded(decodeSamples, maxSec);
+            if (paddedWav) {
+              piece.attempts++;
+              text = ((await runTranscribe(paddedWav, { onDecodeMs })) || "").trim();
+            }
+            if (!text) {
+              const sec = (piece.toFrame - piece.fromFrame) / SAMPLE_RATE;
+              if (sec > EMPTY_SPEECH_MAX_SEC) throw emptySpeechError(); // lost: fails the piece below
+              piece.unconfirmed = true;
+              log?.warn(
+                `STT decode: piece ${(piece.fromFrame / SAMPLE_RATE).toFixed(1)}-${(piece.toFrame / SAMPLE_RATE).toFixed(1)}s ` +
+                  `(${sec.toFixed(1)} s) heard speech but decoded to no text; awaiting covering salvage`
+              );
+            }
           }
-          if (!text) {
-            const sec = (piece.toFrame - piece.fromFrame) / SAMPLE_RATE;
-            if (sec > EMPTY_SPEECH_MAX_SEC) throw emptySpeechError(); // lost: fails the piece below
-            piece.unconfirmed = true;
-            log?.warn(
-              `STT decode: piece ${(piece.fromFrame / SAMPLE_RATE).toFixed(1)}-${(piece.toFrame / SAMPLE_RATE).toFixed(1)}s ` +
-                `(${sec.toFixed(1)} s) heard speech but decoded to no text; awaiting covering salvage`
-            );
-          }
+          piece.ok = true;
+          piece.text = text;
+          break;
+        } catch (err) {
+          if (stale()) return false;
+          const fromSec = (piece.fromFrame / SAMPLE_RATE).toFixed(1);
+          const toSec = (piece.toFrame / SAMPLE_RATE).toFixed(1);
+          log?.warn(
+            `STT decode: piece ${fromSec}-${toSec}s attempt ${piece.attempts} failed:`,
+            err?.message,
+            err?.code ? `(${err.code}${err.exitCode !== undefined ? `, exit code ${err.exitCode}` : ""})` : ""
+          );
+          // A timed-out worker is still stuck in the native decode: it must be
+          // retired every time, or the retry — and on a last attempt, the next
+          // piece or dictation — queues behind it. The host already retires it
+          // on the timeout (host.js); this keeps the intent explicit here. An
+          // exited one is already gone (the host re-forks on the next request).
+          if (err?.code === "ENGINE_TIMEOUT") restartStt();
+          if (tries < 2 && retryable(err)) continue;
+          piece.error = err?.message || String(err);
+          piece.code = err?.code;
+          piece.exitCode = err?.exitCode;
+          firstError = firstError || err;
+          break;
         }
-        piece.ok = true;
-        piece.text = text;
-        break;
-      } catch (err) {
-        if (stale()) return { text: "", partial: false, stale: true, pieces };
-        const fromSec = (piece.fromFrame / SAMPLE_RATE).toFixed(1);
-        const toSec = (piece.toFrame / SAMPLE_RATE).toFixed(1);
-        log?.warn(
-          `STT decode: piece ${fromSec}-${toSec}s attempt ${piece.attempts} failed:`,
-          err?.message,
-          err?.code ? `(${err.code}${err.exitCode !== undefined ? `, exit code ${err.exitCode}` : ""})` : ""
-        );
-        // A timed-out worker is still stuck in the native decode: it must be
-        // retired every time, or the retry — and on a last attempt, the next
-        // piece or dictation — queues behind it. The host already retires it
-        // on the timeout (host.js); this keeps the intent explicit here. An
-        // exited one is already gone (the host re-forks on the next request).
-        if (err?.code === "ENGINE_TIMEOUT") restartStt();
-        if (piece.attempts < 2 && retryable(err)) continue;
-        piece.error = err?.message || String(err);
-        piece.code = err?.code;
-        piece.exitCode = err?.exitCode;
-        firstError = firstError || err;
-        break;
+      }
+      // Only a worker that keeps dying stops the run, counted once per group.
+      if (piece.ok || !retryable(piece)) {
+        consecutiveFailures = 0;
+        lastFailedGroup = null;
+      } else if (piece.group !== lastFailedGroup) {
+        consecutiveFailures++;
+        lastFailedGroup = piece.group;
       }
     }
-    // Only a worker that keeps dying stops the run, counted once per group.
-    if (piece.ok || !retryable(piece)) {
-      consecutiveFailures = 0;
-      lastFailedGroup = null;
-    } else if (piece.group !== lastFailedGroup) {
-      consecutiveFailures++;
-      lastFailedGroup = piece.group;
+    return true;
+  }
+
+  const STALE = { text: "", partial: false, stale: true, pieces };
+  if (!(await decodePass(pieces))) return STALE;
+  // Recovery pass: a piece lost to a worker that died or wedged — even after
+  // its own retry — or skipped once the failure budget ran out, gets one more
+  // go. By now the worker that failed it is gone (the host re-forks on an
+  // exit and retires one that timed out), so this pass runs on a fresh
+  // process, and a crash that was one bad moment no longer costs the words.
+  // A worker that keeps dying stops this pass the same way it stopped the
+  // first. Errors the worker replied with would only repeat, so they stay.
+  const missed = recover ? pieces.filter((p) => p.skipped || (!p.ok && retryable(p))) : [];
+  if (missed.length) {
+    log?.warn(`STT decode: ${missed.length} piece(s) missing after the first pass; trying them again`);
+    for (const p of missed) {
+      for (const key of ["skipped", "error", "code", "exitCode"]) delete p[key];
     }
+    if (!(await decodePass(missed))) return STALE;
   }
 
   const owners = salvageOwners(pieces, salvageChunks);

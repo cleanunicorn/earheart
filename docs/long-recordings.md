@@ -236,9 +236,14 @@ than alone.
 
 Pieces are decoded from the main process, so a finished piece is text that
 survives a worker crash on a later one. A piece whose worker exited or timed
-out is retried once on a fresh worker. If it still fails, it is skipped and
+out is retried once on a fresh worker. If it still fails, it is set aside and
 the rest continue. After two pieces in a row fail because the worker died,
-the rest are not tried. A piece that holds audible speech (by the overlay's
+the rest are set aside without a try. Once the pass ends, every piece set
+aside gets one more pass, under the same two-in-a-row stop, so a crash that
+was one bad moment doesn't cost its words. A piece that fails that pass too
+is left out. A decode error the worker replied with (not a crash) is never
+retried. Live-preview chunk decodes skip the second pass, because the final
+pass decodes a failed chunk again anyway. A piece that holds audible speech (by the overlay's
 own speech probe, `renderer/speech-probe.js`) but decodes to no text is
 decoded once more with 250 ms of silence around it (less when that would
 pass the 20 s cap; none, and no retry, for a piece already at the cap). In the lab that rescued

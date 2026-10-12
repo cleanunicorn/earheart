@@ -255,6 +255,7 @@ function dictationRig({
     notifications: [],
     logs: [],
     statuses: [],
+    retries: [],
     settingsEvents: [],
     overlaySent: [],
     hidden: 0,
@@ -334,6 +335,7 @@ function dictationRig({
           }
           if (channel === "pipeline:status") {
             log.statuses.push(payload.status);
+            if (payload.detail?.retry) log.retries.push({ status: payload.status, ...payload.detail.retry });
             if (payload.status === "done") log.done = payload.detail;
           }
         },
@@ -637,13 +639,13 @@ test("pipeline: remote STT still gets the whole recording in one request", async
 
 test("pipeline: an STT worker death mid-transcription delivers what decoded, then the next dictation works", async () => {
   // Dictation 1: 50 s of pause-less speech → pieces of 20, 20 and 10 s; the
-  // worker dies on piece 2 and again on its retry. Pieces 1 and 3 are the
-  // user's words and must be delivered.
+  // worker dies on piece 2, on its retry, and on both tries of the recovery
+  // pass. Pieces 1 and 3 are the user's words and must be delivered.
   let dead = true;
   const rig = dictationRig({
     cleanup: true,
     transcribe: async (n) => {
-      if (dead && (n === 1 || n === 2)) throw exited();
+      if (dead && [1, 2, 4, 5].includes(n)) throw exited();
       return `w${n}`;
     },
   });
@@ -662,7 +664,7 @@ test("pipeline: an STT worker death mid-transcription delivers what decoded, the
   // Dictation 2: the worker is back; a normal dictation, nothing stale carried over.
   dead = false;
   await rig.dictate(loudWav(10));
-  assert.deepStrictEqual(rig.log.delivered, ["cleaned(w0 w3)", "cleaned(w4)"]);
+  assert.deepStrictEqual(rig.log.delivered, ["cleaned(w0 w3)", "cleaned(w6)"]);
   assert.strictEqual(rig.log.history[1].incomplete, undefined);
   assert.strictEqual(rig.log.notifications.length, 1, "no second notification");
   assert.strictEqual(rig.pipeline.getState(), "idle");
@@ -852,6 +854,119 @@ test("pipeline: failed cleanup delivers raw once, records failure and notifies",
   }
 });
 
+test("pipeline: a cleanup failure that can pass is retried, and the user gets the cleaned text", async () => {
+  let attempts = 0;
+  const rig = dictationRig({
+    cleanup: true,
+    transcribe: async () => "keep these words",
+    clean: async (raw) => {
+      attempts++;
+      if (attempts === 1) throw exited();
+      return `cleaned(${raw})`;
+    },
+  });
+  await rig.dictate(speechWav(1));
+  assert.strictEqual(attempts, 2);
+  assert.deepStrictEqual(rig.log.delivered, ["cleaned(keep these words)"]);
+  assert.strictEqual(rig.log.history[0].cleaned, true);
+  assert.deepStrictEqual(rig.log.notifications, [], "a recovered cleanup is not a failure");
+  assert.deepStrictEqual(rig.log.retries, [{ status: "cleaning", attempt: 2, of: 3 }], "the overlay counts the tries");
+  assert.ok(
+    rig.log.logs.some(([level, msg]) => level === "warn" && /cleanup failed, retrying \(attempt 2 of 3\)/.test(msg)),
+    "the retry is logged"
+  );
+});
+
+test("pipeline: a cleanup that keeps failing falls back to the raw text after three tries", async () => {
+  let attempts = 0;
+  const rig = dictationRig({
+    cleanup: true,
+    transcribe: async () => "keep these words",
+    clean: async () => {
+      attempts++;
+      throw Object.assign(new Error("Cleanup service error 503"), { status: 503 });
+    },
+  });
+  await rig.dictate(speechWav(1));
+  assert.strictEqual(attempts, 3);
+  assert.deepStrictEqual(rig.log.delivered, ["keep these words"], "golden rule 8: the words still go out");
+  assert.strictEqual(rig.log.history[0].cleaned, false);
+  assert.deepStrictEqual(rig.log.retries.map((r) => r.attempt), [2, 3]);
+  const [note] = rig.log.notifications;
+  assert.strictEqual(note.title, "Earheart: cleanup failed 3 times, used raw transcript");
+  assert.strictEqual(note.body, "Cleanup service error 503");
+});
+
+test("pipeline: a cleanup failure a retry can't fix falls back at once", async () => {
+  let attempts = 0;
+  const rig = dictationRig({
+    cleanup: true,
+    transcribe: async () => "keep these words",
+    clean: async () => {
+      attempts++;
+      throw Object.assign(new Error("Cleanup service error 401 — check the API key in Settings"), { status: 401 });
+    },
+  });
+  await rig.dictate(speechWav(1));
+  assert.strictEqual(attempts, 1);
+  assert.deepStrictEqual(rig.log.retries, []);
+  assert.deepStrictEqual(rig.log.delivered, ["keep these words"]);
+  assert.strictEqual(rig.log.notifications[0].title, "Earheart: cleanup failed, used raw transcript");
+});
+
+test("pipeline: a cancel while cleanup waits to retry delivers nothing and retries nothing", async () => {
+  let attempts = 0;
+  let rig;
+  rig = dictationRig({
+    cleanup: true,
+    transcribe: async () => "keep these words",
+    clean: async () => {
+      attempts++;
+      // Cancel lands while the retry pauses.
+      setImmediate(() => rig.pipeline.cancel());
+      throw exited();
+    },
+  });
+  await rig.dictate(speechWav(1));
+  await new Promise((resolve) => setTimeout(resolve, 400)); // past the first retry pause
+  assert.strictEqual(attempts, 1);
+  assert.deepStrictEqual(rig.log.delivered, []);
+  assert.deepStrictEqual(rig.log.history, []);
+  assert.deepStrictEqual(rig.log.notifications, []);
+});
+
+test("pipeline: a remote STT request that couldn't reach the service is retried", async () => {
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async (n) => {
+      if (n === 0) throw Object.assign(new Error("Couldn't reach api.example.test"), { code: "SERVICE_UNREACHABLE" });
+      return "remote words";
+    },
+  });
+  await rig.dictate(speechWav(1));
+  assert.strictEqual(rig.log.transcribe.length, 2);
+  assert.deepStrictEqual(rig.log.delivered, ["remote words"]);
+  assert.deepStrictEqual(rig.log.retries, [{ status: "transcribing", attempt: 2, of: 3 }]);
+  assert.deepStrictEqual(rig.log.notifications, []);
+});
+
+test("pipeline: a built-in model load that crashed the worker is tried again", async () => {
+  let loads = 0;
+  const rig = dictationRig({
+    // Load 1 is the warm-up when recording starts (its failure is ignored);
+    // load 2 is the final pass's, which crashes; load 3 is its retry.
+    ensureStt: async () => {
+      if (++loads <= 2) throw exited();
+    },
+    transcribe: async () => "loaded on the second try",
+  });
+  await rig.dictate(speechWav(1));
+  assert.strictEqual(loads, 3);
+  assert.deepStrictEqual(rig.log.delivered, ["loaded on the second try"]);
+  assert.deepStrictEqual(rig.log.retries, [{ status: "transcribing", attempt: 2, of: 3 }]);
+  assert.ok(!rig.log.statuses.includes("error"));
+});
+
 // Every pipeline notification leads to Settings, where the service, key and
 // paste options live: clicking one must open it.
 function assertClickOpensSettings(rig, entry) {
@@ -884,9 +999,10 @@ test("pipeline: the interrupted, cleanup-failed and paste-failed notifications o
   const rig = dictationRig({
     cleanup: true,
     // 50 s of pause-less speech decodes in three pieces; the worker dies on
-    // the second and its retry, so the transcript is incomplete.
+    // the second, its retry and the recovery pass, so the transcript is
+    // incomplete.
     transcribe: async (n) => {
-      if (n === 1 || n === 2) throw exited();
+      if ([1, 2, 4, 5].includes(n)) throw exited();
       return `w${n}`;
     },
     clean: async () => {

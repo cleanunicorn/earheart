@@ -122,9 +122,12 @@ test("chunked decode: a timeout retires the wedged worker before the retry", asy
   assert.strictEqual(r.partial, false);
 });
 
-test("chunked decode: a piece that fails twice is skipped, later pieces still decode", async () => {
+test("chunked decode: a piece that fails on both passes is left out, later pieces still decode", async () => {
   const warned = [];
-  const w = fakeWorker({ 1: engineError("ENGINE_EXITED", 134), 2: engineError("ENGINE_EXITED", 134) });
+  // Piece 1 dies on its attempt and retry (calls 1, 2), piece 2 decodes
+  // (call 3), then the recovery pass tries piece 1 twice more (calls 4, 5).
+  const dead = engineError("ENGINE_EXITED", 134);
+  const w = fakeWorker({ 1: dead, 2: dead, 4: dead, 5: dead });
   const r = await transcribeChunked(wav(50), {
     runTranscribe: w.runTranscribe,
     log: { warn: (...a) => warned.push(a.join(" ")) },
@@ -145,11 +148,83 @@ test("chunked decode: an error the worker replied with is not retried", async ()
   assert.strictEqual(r.partial, true);
 });
 
-test("chunked decode: two failed pieces in a row stop the run, keeping what decoded", async () => {
+test("chunked decode: a piece lost to a crash is recovered by the end-of-run pass", async () => {
+  // Piece 1 dies on its attempt and retry; by the end the worker is back.
+  const warned = [];
+  const dead = engineError("ENGINE_EXITED", 134);
+  const w = fakeWorker({ 1: dead, 2: dead });
+  const r = await transcribeChunked(wav(50), {
+    runTranscribe: w.runTranscribe,
+    log: { warn: (...a) => warned.push(a.join(" ")) },
+  });
+  assert.strictEqual(r.text, "a0 a4 a3", "the recovered words land in recording order");
+  assert.strictEqual(r.partial, false, "nothing is missing any more");
+  assert.deepStrictEqual(r.pieces.map((p) => p.ok), [true, true, true]);
+  assert.strictEqual(r.pieces[1].code, undefined, "the first pass's failure is cleared");
+  assert.strictEqual(r.pieces[1].attempts, 3);
+  assert.ok(warned.some((m) => /1 piece\(s\) missing after the first pass/.test(m)), "the recovery is logged");
+});
+
+test("chunked decode: pieces skipped once the budget ran out are tried in the recovery pass", async () => {
+  // Pieces 1 and 2 die twice each (calls 1-4), so pieces 3 and 4 are skipped
+  // without a try. The worker comes back: the recovery pass decodes all four.
   const dead = engineError("ENGINE_EXITED", 134);
   const w = fakeWorker({ 1: dead, 2: dead, 3: dead, 4: dead });
   const r = await transcribeChunked(wav(100), { runTranscribe: w.runTranscribe });
-  assert.strictEqual(w.inputs.length, 5, "piece 0 + two pieces x two attempts, then stop");
+  assert.strictEqual(r.text, "a0 a5 a6 a7 a8");
+  assert.strictEqual(r.partial, false);
+  assert.ok(r.pieces.every((p) => p.ok && !p.skipped));
+});
+
+test("chunked decode: an error the worker replied with is not tried again at the end", async () => {
+  // A decode error the worker reported (not a crash) would only repeat.
+  let calls = 0;
+  const r = await transcribeChunked(wav(50), {
+    runTranscribe: async () => {
+      const n = calls++;
+      if (n === 1) throw new Error("decoder rejected the input");
+      return `a${n}`;
+    },
+  });
+  assert.strictEqual(calls, 3, "one call per piece, no retry and no recovery pass");
+  assert.strictEqual(r.text, "a0 a2");
+  assert.strictEqual(r.partial, true);
+});
+
+test("chunked decode: recover: false keeps a failed piece out without a second pass", async () => {
+  // Live-preview chunks: the final pass decodes a failed chunk again anyway.
+  const dead = engineError("ENGINE_EXITED", 134);
+  const w = fakeWorker({ 1: dead, 2: dead });
+  const r = await transcribeChunked(wav(50), { runTranscribe: w.runTranscribe, recover: false });
+  assert.strictEqual(w.inputs.length, 4, "three pieces and one retry");
+  assert.strictEqual(r.text, "a0 a3");
+  assert.strictEqual(r.partial, true);
+});
+
+test("chunked decode: a cancel during the recovery pass stops it", async () => {
+  const dead = engineError("ENGINE_EXITED", 134);
+  let cancelled = false;
+  let calls = 0;
+  const r = await transcribeChunked(wav(50), {
+    runTranscribe: async () => {
+      const n = calls++;
+      if (n === 1 || n === 2) throw dead;
+      if (n === 3) cancelled = true; // the last first-pass piece; cancel lands now
+      return `a${n}`;
+    },
+    stale: () => cancelled,
+  });
+  assert.strictEqual(r.stale, true);
+  assert.strictEqual(calls, 4, "the recovery pass never started");
+});
+
+test("chunked decode: two failed pieces in a row stop the run, keeping what decoded", async () => {
+  const dead = engineError("ENGINE_EXITED", 134);
+  const w = fakeWorker(Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map((n) => [n, dead])));
+  const r = await transcribeChunked(wav(100), { runTranscribe: w.runTranscribe });
+  // First pass: piece 0, then two pieces x two attempts, then stop. Recovery
+  // pass: the same budget again over what was missed, then stop for good.
+  assert.strictEqual(w.inputs.length, 9, "5 calls in the first pass, 4 in the recovery pass");
   assert.strictEqual(r.text, "a0");
   assert.strictEqual(r.partial, true);
   assert.strictEqual(r.pieces.length, 5);
@@ -158,8 +233,9 @@ test("chunked decode: two failed pieces in a row stop the run, keeping what deco
 
 test("chunked decode: nothing recovered at all throws the worker's error", async () => {
   const dead = engineError("ENGINE_EXITED", 134);
-  const w = fakeWorker({ 0: dead, 1: dead });
+  const w = fakeWorker({ 0: dead, 1: dead, 2: dead, 3: dead });
   await assert.rejects(transcribeChunked(wav(10), { runTranscribe: w.runTranscribe }), /engine process exited/);
+  assert.strictEqual(w.inputs.length, 4, "both passes were tried before giving up");
   // A model that isn't downloaded keeps today's error path too.
   await assert.rejects(
     transcribeChunked(wav(10), { runTranscribe: async () => { throw new Error("model not installed"); } }),
@@ -176,12 +252,12 @@ test("chunked decode: a failed tail still delivers the committed prefix", async 
 
 test("chunked decode: a broken snapshot's text is the salvage when no piece decodes", async () => {
   const dead = engineError("ENGINE_EXITED", 134);
-  const w = fakeWorker({ 0: dead, 1: dead });
+  const w = fakeWorker({ 0: dead, 1: dead, 2: dead, 3: dead });
   const r = await transcribeChunked(wav(10), { runTranscribe: w.runTranscribe, salvageText: "words with a hole" });
   assert.strictEqual(r.text, "words with a hole");
   assert.strictEqual(r.partial, true);
   // ...but never mixed into a run where pieces decoded (it would duplicate them).
-  const w2 = fakeWorker({ 1: dead, 2: dead });
+  const w2 = fakeWorker({ 1: dead, 2: dead, 3: dead, 4: dead });
   const r2 = await transcribeChunked(wav(30), { runTranscribe: w2.runTranscribe, salvageText: "words with a hole" });
   assert.strictEqual(r2.text, "a0");
   // ...and not used at all when everything decoded.
@@ -326,8 +402,9 @@ test("chunked decode: a failed piece is filled from the committed live-preview c
       salvage(45, 50, "c4"),
     ],
   });
-  // Pieces 0-10, 10-20, 20-30, 30-38, 38-40 (dies twice), 40-45, 45-50.
-  assert.deepStrictEqual(inputs, [10, 10, 10, 8, 2, 2, 5, 5]);
+  // Pieces 0-10, 10-20, 20-30, 30-38, 38-40 (dies twice), 40-45, 45-50, then
+  // the recovery pass tries 38-40 twice more.
+  assert.deepStrictEqual(inputs, [10, 10, 10, 8, 2, 2, 5, 5, 2, 2]);
   // "straddle" covers the dead 38-40 and the decoded 40-45: it replaces both.
   assert.strictEqual(r.text, "w0 w1 w2 w3 straddle w5");
   assert.strictEqual(r.partial, true);
@@ -337,7 +414,8 @@ test("chunked decode: a timeout on the retry retires that worker too", async () 
   // Otherwise the replacement stays inside its native decode and the next
   // piece — or the next dictation — queues behind it for another full timeout.
   const timeout = engineError("ENGINE_TIMEOUT");
-  const w = fakeWorker({ 0: timeout, 1: timeout });
+  // Piece 0 times out on both passes (calls 0, 1 and 3, 4); piece 1 decodes.
+  const w = fakeWorker({ 0: timeout, 1: timeout, 3: timeout, 4: timeout });
   let restarts = 0;
   const restartsSeenBy = [];
   const run = async (input, opts) => {
@@ -345,8 +423,8 @@ test("chunked decode: a timeout on the retry retires that worker too", async () 
     return w.runTranscribe(input, opts);
   };
   const r = await transcribeChunked(wav(30), { runTranscribe: run, restartStt: () => restarts++ });
-  assert.strictEqual(restarts, 2, "one restart per timed-out worker");
-  assert.deepStrictEqual(restartsSeenBy, [0, 1, 2], "the next piece is sent after both restarts");
+  assert.strictEqual(restarts, 4, "one restart per timed-out worker");
+  assert.deepStrictEqual(restartsSeenBy, [0, 1, 2, 2, 3], "every request is sent after the restart before it");
   assert.strictEqual(r.text, "a2");
   assert.strictEqual(r.partial, true);
 });
@@ -406,7 +484,9 @@ test("chunked decode: salvage cut points don't spend the dead-worker budget twic
     },
     salvageChunks: [salvage(0, 10, "c0"), salvage(10, 20, "c1"), salvage(20, 30, "c2"), salvage(30, 40, "c3")],
   });
-  assert.deepStrictEqual(calls, [10, 10, 10, 10, 10, 10, 10], "the tail is decoded too");
+  // 7 first-pass calls (the tail is decoded too), then the recovery pass
+  // tries each dead piece twice more — still one group, so it isn't cut short.
+  assert.deepStrictEqual(calls, Array(11).fill(10), "the tail is decoded too");
   assert.strictEqual(r.text, "w0 w1 c2 c3 w2");
   assert.deepStrictEqual([r.pieces.at(-1).ok, !!r.pieces.at(-1).skipped], [true, false]);
   assert.strictEqual(r.partial, true);

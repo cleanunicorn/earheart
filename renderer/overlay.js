@@ -1000,17 +1000,24 @@ earheart.on("pipeline:progress", ({ phase, fraction }) => {
   }
 });
 
+function retryDetail(detail) {
+  const retry = detail?.retry;
+  return retry ? `Retrying (try ${retry.attempt} of ${retry.of})…` : "";
+}
+
 earheart.on("pipeline:status", ({ status, detail }) => {
   // The live preview belongs to the recording phase; the moment the pipeline
   // reports a post-recording status, retire the transcript so it doesn't linger
   // alongside the control row's own status/preview.
   clearTranscript();
   switch (status) {
+    // A stage that failed for a reason that can pass is tried again; the
+    // title stays, the detail line counts the tries.
     case "transcribing":
-      setStatus("transcribing", "Transcribing…");
+      setStatus("transcribing", "Transcribing…", retryDetail(detail));
       break;
     case "cleaning":
-      setStatus("cleaning", "Cleaning up…");
+      setStatus("cleaning", "Cleaning up…", retryDetail(detail));
       break;
     case "delivering":
       setStatus("delivering", "Typing…");

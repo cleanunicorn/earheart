@@ -8,6 +8,14 @@
 // own wrapping on purpose: they take an injected fetch and talk to fixed hosts
 // (Hugging Face, the update feed, file:// in tests), not a service the user set up.
 
+// Each failure carries a `code` (or, for an HTTP error, its `status`) so the
+// pipeline can tell a passing failure it should retry (util/retry.js) from one
+// a retry would only repeat; the message stays the user-facing copy.
+function coded(err, code) {
+  err.code = code;
+  return err;
+}
+
 /**
  * @param {Error} err - what fetch() or the body read threw
  * @param {string} url - the request URL (its host names the unreachable server)
@@ -19,9 +27,9 @@ function transportError(err, url, { service, timeoutS }) {
   // tells a cancel apart by its name.
   if (err?.name === "AbortError") return err;
   if (err?.name === "TimeoutError") {
-    return new Error(`${service} didn't answer within ${timeoutS} s`, { cause: err });
+    return coded(new Error(`${service} didn't answer within ${timeoutS} s`, { cause: err }), "SERVICE_TIMEOUT");
   }
-  return new Error(`Couldn't reach ${new URL(url).host}`, { cause: err });
+  return coded(new Error(`Couldn't reach ${new URL(url).host}`, { cause: err }), "SERVICE_UNREACHABLE");
 }
 
 // The deadline covers the body too: a server that sends headers and then stalls
@@ -38,16 +46,19 @@ async function readJson(res, url, opts) {
       throw transportError(err, url, opts);
     }
     if (err?.name === "SyntaxError") {
-      throw new Error(`${opts.service} returned a response that isn't JSON`);
+      throw coded(new Error(`${opts.service} returned a response that isn't JSON`), "SERVICE_BAD_REPLY");
     }
-    throw new Error(`${opts.service} dropped the connection before finishing its reply`, { cause: err });
+    throw coded(
+      new Error(`${opts.service} dropped the connection before finishing its reply`, { cause: err }),
+      "SERVICE_DROPPED"
+    );
   }
 }
 
 // Unauthorized and forbidden almost always mean the key, so say where it lives.
 function statusError(service, status) {
   const hint = status === 401 || status === 403 ? " — check the API key in Settings" : "";
-  return new Error(`${service} error ${status}${hint}`);
+  return Object.assign(new Error(`${service} error ${status}${hint}`), { status });
 }
 
 /**

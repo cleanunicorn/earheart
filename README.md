@@ -118,7 +118,9 @@ label, and opinions are welcome.
   punctuation and removes filler words and false starts without polishing away
   your intent. Choose **Verbatim** or **Polished** with the style slider and edit
   the prompt underneath. Qwen3 4B Instruct 2507 runs in-process by default; any OpenAI-compatible
-  chat API also works. If cleanup fails, Earheart delivers the raw transcript.
+  chat API also works. If cleanup fails because the engine crashed or the
+  service blinked, Earheart tries again; if it still fails, it delivers the raw
+  transcript.
 - **A dictionary for technical names** — teach Earheart the exact spelling of
   repo and product names, `pnpm`, `kubectl`, `useEffect`, or colleagues' names.
   Select **Correct…** in History to fix a phrase and remember its spelling.
@@ -313,6 +315,11 @@ Compare **Copy original** and **Copy** in History and check whether the entry
 says **cleaned**. A completed cleanup can leave already clean text unchanged.
 If cleanup returns no usable text or reaches its output limit, Earheart
 notifies you, delivers the original transcript and records that cleanup failed.
+Those two aren't retried: the default style samples greedily, so the same
+transcript would give the same reply. A crashed or timed-out engine, an
+unreachable service, or an HTTP 408, 429 or 5xx is retried first: up to three
+tries in all, two after a timeout. The overlay shows "Retrying (try 2 of 3)…"
+while it does.
 
 For an unexpected result, include the exact app version, operating system,
 selected cleanup model (including GGUF filename/revision), cleanup style,

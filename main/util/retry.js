@@ -63,11 +63,15 @@ const realSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * @returns {Promise<T>}
  */
 async function withRetry(attempt, { stale = () => false, onRetry, sleep = realSleep } = {}) {
+  // The budget only ever shrinks: a timeout's smaller one holds even when a
+  // later try fails some other way, so "try 2 of 2" is never followed by a
+  // third.
+  let of = MAX_ATTEMPTS;
   for (let n = 1; ; n++) {
     try {
       return await attempt(n);
     } catch (err) {
-      const of = attemptsFor(err);
+      of = Math.min(of, attemptsFor(err));
       if (n >= of || stale()) throw err;
       await sleep(RETRY_DELAYS_MS[Math.min(n, RETRY_DELAYS_MS.length) - 1]);
       if (stale()) throw err;

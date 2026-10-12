@@ -95,6 +95,17 @@ test("retry: a timeout after a crash ends at the timeout's smaller budget", asyn
   assert.deepStrictEqual(seen.attempts, [1, 2]);
 });
 
+test("retry: a timeout's smaller budget holds when a later try fails another way", async () => {
+  // Found in review: the budget used to be recomputed from the latest error
+  // alone, so timeout → dropped connection ran a third try ("2 of 2", then
+  // "3 of 3") and could cost another full deadline before the fallback.
+  const dropped = coded("SERVICE_DROPPED");
+  const { promise, seen } = await run([coded("SERVICE_TIMEOUT"), dropped, "never"]);
+  await assert.rejects(promise, (err) => err === dropped, "the fallback gets the last error");
+  assert.deepStrictEqual(seen.attempts, [1, 2]);
+  assert.deepStrictEqual(seen.retries.map(({ attempt, of }) => [attempt, of]), [[2, 2]]);
+});
+
 test("retry: a cancelled dictation is not retried, before or after the pause", async () => {
   const err = coded("ENGINE_EXITED");
   const before = await run([err, "ok"], { stale: () => true });

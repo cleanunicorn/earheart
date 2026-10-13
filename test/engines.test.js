@@ -156,13 +156,13 @@ test("registry drops custom models whose paths could leave the model directory",
   }
 });
 
-test("exactly one cleanup model is marked default, and it is Qwen3 4B Instruct 2507", () => {
+test("exactly one cleanup model is marked default, and it is Granite 4.0 Micro", () => {
   const defaults = registry.listModels("cleanup").filter((m) => m.default);
   assert.strictEqual(defaults.length, 1);
   assert.strictEqual(defaults[0].id, registry.DEFAULT_CLEANUP_MODEL);
   // Pinned by name, like the STT default below: moving the default moves
   // every new install, so it has to be a deliberate change here too.
-  assert.strictEqual(registry.DEFAULT_CLEANUP_MODEL, "qwen3-4b-2507");
+  assert.strictEqual(registry.DEFAULT_CLEANUP_MODEL, "granite-4.0-micro");
 });
 
 // The exact files the cleanup benchmark measured (#167): a wrong byte count
@@ -170,8 +170,8 @@ test("exactly one cleanup model is marked default, and it is Qwen3 4B Instruct 2
 test("registry pins the benchmarked Granite and Qwen GGUFs", () => {
   const expected = {
     "granite-4.0-micro": {
-      label: "Granite 4.0 Micro (faster)",
-      note: "Runs on this computer · ~2.1 GB, 2.6× the 1B · needs ~6 GB RAM · removes fillers reliably, a little faster than Qwen",
+      label: "Granite 4.0 Micro (recommended)",
+      note: "Runs on this computer · ~2.1 GB, 2.6× the 1B · needs ~6 GB RAM · recommended: removes fillers reliably, faster than Qwen",
       file: {
         name: "granite-4.0-micro-Q4_K_M.gguf",
         bytes: 2_099_502_528,
@@ -180,8 +180,8 @@ test("registry pins the benchmarked Granite and Qwen GGUFs", () => {
       },
     },
     "qwen3-4b-2507": {
-      label: "Qwen3 4B Instruct 2507 (recommended)",
-      note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · recommended: removes fillers reliably",
+      label: "Qwen3 4B Instruct 2507 (cleanest polish)",
+      note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · removes fillers reliably, cleanest on the polished style",
       file: {
         name: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
         bytes: 2_497_281_120,
@@ -2430,12 +2430,12 @@ test("ensureCleanup memo: another model posts its own load, a failed load is not
   const held = holdLoads(cleanup, "load-cleanup");
 
   const a = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
-  const b = facade.ensureCleanup("granite-4.0-micro");
+  const b = facade.ensureCleanup("qwen3-4b-2507");
   assert.strictEqual(count(cleanup, "load-cleanup"), 2, "a different model is a different load");
   held[0].reject(new Error("cleanup load failed"));
   await assert.rejects(a, /cleanup load failed/);
   // The settled load must not clear the slot the still-running one now owns.
-  const joined = facade.ensureCleanup("granite-4.0-micro");
+  const joined = facade.ensureCleanup("qwen3-4b-2507");
   assert.strictEqual(count(cleanup, "load-cleanup"), 2, "a live load is still joined");
   held[1].resolve({ ready: true });
   await b;

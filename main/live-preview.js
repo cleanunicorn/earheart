@@ -15,8 +15,8 @@
 // cleaned line track the authoritative final whole-text clean. It's O(n) but
 // gated to pauses and drop-if-busy, so it stays cheap in practice.
 //
-// All best-effort and silent: a dropped or failed partial is cosmetic and must
-// never disturb the dictation.
+// All best-effort: failures are logged for diagnosis but must never interrupt
+// the dictation. Cleanup retries back off while the engine is failing.
 //
 // Beyond the on-screen preview, the committed chunk decodes double as the
 // FINAL transcript's prefix: snapshotFinal() hands the pipeline the committed
@@ -72,7 +72,7 @@ function residualTail(live, committed) {
   return liveWords.slice(committedWords.length).join(" ");
 }
 
-function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettings, isCurrent, onError }) {
+function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettings, isCurrent, onError, onCleanupError }) {
   const reportError = onError || (() => {});
   // Count rather than a flag: a committed-chunk decode may legitimately overlap
   // an in-progress one (finals skip drop-if-busy — see handleAudio), and two
@@ -106,6 +106,8 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   // overlay); this is all the cleanup side keeps. Always a trimmed value, so the
   // skip and re-arm guards both compare cleanTarget() against it in lock-step.
   let lastCleanedRaw = "";
+  let cleanupFailures = 0;
+  let lastCleanupErrorLogged = "";
   let pauseTimer = null; // fires a cleanup pass once a chunk has committed + settled
 
   function reset() {
@@ -113,6 +115,8 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
     liveRaw = "";
     lastSeq = -1;
     lastCleanedRaw = "";
+    cleanupFailures = 0;
+    lastCleanupErrorLogged = "";
     decodedSamples = 0;
     broken = false;
     committedChunks = [];
@@ -292,10 +296,12 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
     if (!cfg.cleanup.enabled || cfg.cleanup.engine !== "builtin") return;
     if (pauseTimer) clearTimeout(pauseTimer);
     const pauseMs = cfg.stt.livePreview?.cleanupPauseMs || 1000;
+    // New commits must not bypass backoff while the engine is failing.
+    const retryMs = cleanupFailures ? Math.min(30000, 1000 * 2 ** Math.min(cleanupFailures - 1, 5)) : 0;
     pauseTimer = setTimeout(() => {
       pauseTimer = null;
       runCleanupPass(sid, cfg, signal);
-    }, pauseMs);
+    }, Math.max(pauseMs, retryMs));
   }
 
   async function runCleanupPass(sid, cfg, signal) {
@@ -320,9 +326,17 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
         sendToOverlay("pipeline:partial", { kind: "cleaned", text });
       }
       lastCleanedRaw = toClean;
-    } catch {
-      // Cosmetic: a failed pass just leaves the raw tail showing. lastCleanedRaw
-      // is unchanged, so the next pause re-cleans the whole transcript and retries.
+      cleanupFailures = 0;
+      lastCleanupErrorLogged = "";
+    } catch (err) {
+      if (stale(sid, signal)) return; // expected cancellation, not an engine fault
+      cleanupFailures++;
+      const msg = err?.message || String(err);
+      if (msg !== lastCleanupErrorLogged) {
+        lastCleanupErrorLogged = msg;
+        if (onCleanupError) onCleanupError(err);
+      }
+      // Keep the raw tail and retry with backoff; never interrupt dictation.
     } finally {
       cleanupBusy = false;
       // More may have committed while we were cleaning; if so, re-clean after the

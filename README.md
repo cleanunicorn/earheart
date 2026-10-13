@@ -121,6 +121,10 @@ label, and opinions are welcome.
   chat API also works. If cleanup fails because the engine crashed or the
   service blinked, Earheart tries again; if it still fails, it delivers the raw
   transcript.
+  Live-preview cleanup failures are recorded in the app log and retried after
+  1, 2, 4, 8, 16, then 30 seconds (or the configured pause, if longer), so a
+  failing model doesn't reload every pause. Worker crashes and timeouts are
+  logged with the engine name and exit code or timeout, without transcript text.
 - **A dictionary for technical names** — teach Earheart the exact spelling of
   repo and product names, `pnpm`, `kubectl`, `useEffect`, or colleagues' names.
   Select **Correct…** in History to fix a phrase and remember its spelling.

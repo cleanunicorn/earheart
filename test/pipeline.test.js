@@ -237,6 +237,7 @@ function dictationRig({
   cleanup = false,
   transcribe,
   ensureStt,
+  primeCleanup,
   deliver: deliverText,
   onHistory,
   clean: cleanupText,
@@ -286,8 +287,9 @@ function dictationRig({
       cancelClean() {
         log.cleanCancels += 1;
       },
-      primeCleanup: async () => {
+      primeCleanup: async (...args) => {
         log.warmups.push("cleanup");
+        return primeCleanup?.(...args);
       },
       getSttReadiness: (sttCfg) => sttReadiness(sttCfg),
     },
@@ -396,6 +398,7 @@ function dictationRig({
     cfg,
     handlers,
     liveTranscribe: (...a) => liveDeps.runTranscribe(...a),
+    liveCleanupError: (...a) => liveDeps.onCleanupError(...a),
   };
 }
 
@@ -1370,3 +1373,33 @@ test("pipeline: record:cancelled and pipeline:cancel end a recording without pro
   assert.strictEqual(rig.log.transcribe.length, 0);
   assert.deepStrictEqual(rig.log.delivered, []);
 });
+
+test("pipeline: live cleanup errors reach the file logger", () => {
+  const rig = dictationRig();
+  // This callback is independent of the best-effort STT preview diagnostics.
+  const error = new Error("cleanup model failed to load");
+  rig.liveCleanupError(error);
+  assert.ok(rig.log.logs.some(([level, label, err]) =>
+    level === "warn" && /live preview cleanup failed/.test(label) && err === error));
+});
+
+test("pipeline: cleanup warm-up failures are logged without blocking recording", async () => {
+  const err = new Error("model load failed");
+  const rig = dictationRig({ cleanup: true, primeCleanup: async () => { throw err; } });
+  rig.pipeline.toggle();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.strictEqual(rig.pipeline.getState(), "recording");
+  assert.ok(rig.log.logs.some(([level, label, metadata, error]) =>
+    level === "warn" && label === "cleanup warm-up failed:" && error === err));
+  rig.pipeline.cancel();
+});
+
+for (const error of [new Error("cleanup cancelled"), Object.assign(new Error("aborted"), { name: "AbortError" })]) {
+  test(`pipeline: expected warm-up cancellation stays quiet (${error.name})`, async () => {
+    const rig = dictationRig({ cleanup: true, primeCleanup: async () => { throw error; } });
+    rig.pipeline.toggle();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.ok(!rig.log.logs.some(([, label]) => label === "cleanup warm-up failed:"));
+    rig.pipeline.cancel();
+  });
+}

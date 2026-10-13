@@ -47,6 +47,9 @@ const electronPath = require.resolve("electron", {
   m.exports = { utilityProcess: { fork: () => currentChild } };
   require.cache[electronPath] = m;
 }
+const logger = require("../main/util/logger");
+const diagnostics = [];
+logger.warn = (...args) => diagnostics.push(args);
 const { createHost, LOADCHECK_TIMEOUT_MS } = require(hostPath);
 
 // Fresh child + host pair for one test.
@@ -326,4 +329,29 @@ test("the loadcheck deadline covers Metal init on the macOS CI runner with headr
   assert.ok(LOADCHECK_TIMEOUT_MS >= 3 * measuredMetalInitMs, `${LOADCHECK_TIMEOUT_MS} ms`);
   // It must still fire before release.yml's 5-minute verify step kills both checks.
   assert.ok(2 * LOADCHECK_TIMEOUT_MS < 5 * 60 * 1000, `${LOADCHECK_TIMEOUT_MS} ms`);
+});
+
+test("host: crash and timeout diagnostics contain engine identity but no request payload", async () => {
+  diagnostics.length = 0;
+  const { child } = setup();
+  const host = createHost({ serviceName: "earheart-cleanup" });
+  const request = host.request("prime-cleanup", { text: "private dictation" });
+  child.emit("exit", 134);
+  await assert.rejects(request);
+  assert.deepStrictEqual(diagnostics[0], ["engine worker exited:", {
+    serviceName: "earheart-cleanup", exitCode: 134, requests: ["prime-cleanup"],
+  }]);
+  const { host: silent } = setup();
+  await assert.rejects(silent.request("clean", { transcript: "private dictation" }, { timeoutMs: 5 }));
+  assert.strictEqual(diagnostics[1][0], "engine worker timed out:");
+  assert.strictEqual(diagnostics[1][1].type, "clean");
+  assert.doesNotMatch(JSON.stringify(diagnostics), /private dictation/);
+  const count = diagnostics.length;
+  const { host: idle, child: worker } = setup();
+  const ping = idle.request("ping");
+  worker.emit("message", { id: worker.sent[0].id, ok: true });
+  await ping;
+  idle.stop();
+  worker.emit("exit", 0);
+  assert.strictEqual(diagnostics.length, count, "intentional stops are quiet");
 });

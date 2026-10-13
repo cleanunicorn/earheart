@@ -30,6 +30,7 @@ function harness({ cfg = builtinCfg(), current = true } = {}) {
   const sent = [];
   const transcribeCalls = [];
   const cleanupCalls = [];
+  const cleanupErrors = [];
   let transcribeImpl = async () => "hello world";
   let cleanupImpl = async (raw) => raw;
   // Default send records to `sent`; a test can override it to simulate a send
@@ -47,12 +48,14 @@ function harness({ cfg = builtinCfg(), current = true } = {}) {
     sendToOverlay: (channel, payload) => sendImpl(channel, payload),
     getSettings: () => cfg,
     isCurrent: () => current,
+    onCleanupError: (err) => cleanupErrors.push(err),
   });
   return {
     lp,
     sent,
     transcribeCalls,
     cleanupCalls,
+    cleanupErrors,
     setTranscribe: (fn) => (transcribeImpl = fn),
     setCleanup: (fn) => (cleanupImpl = fn),
     setSend: (fn) => (sendImpl = fn),
@@ -325,7 +328,7 @@ test("a cleaned send that throws leaves the marker so the next pause retries", a
   });
   await h.lp.handleAudio(1, chunk(0, true)); // pass 1: send throws -> catch -> re-arm
   await tick();
-  await tick(); // pass 2 resends successfully
+  await new Promise((r) => setTimeout(r, 1100)); // backed-off retry resends successfully
   assert.deepStrictEqual(cleans(h), ["The first chunk."], "the cleaned line is retried after a thrown send");
 });
 
@@ -361,7 +364,7 @@ test("a failed cleanup pass retries on the next pause and recovers", async () =>
   });
   await h.lp.handleAudio(1, chunk(0, true)); // commit -> pass 1 throws -> re-arm
   await tick();
-  await tick(); // pass 2 recovers
+  await new Promise((r) => setTimeout(r, 1100)); // backed-off retry recovers
   assert.ok(n >= 2, "the failed pass was retried");
   assert.strictEqual(h.cleanupCalls.at(-1)[0], "the first chunk", "the retry re-cleans the whole transcript");
   assert.deepStrictEqual(cleans(h), ["The first chunk."], "nothing emitted until the recovery");
@@ -773,4 +776,77 @@ test("a stale decode's completion does not free the new session's busy state", a
   live.resolve("live text");
   await current;
   await extra;
+});
+
+test("cleanup failures back off, dedupe logs, and reset after recovery", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const h = harness();
+  t.after(() => h.lp.cancel());
+  h.setCleanup(async () => { throw new Error("model load failed"); });
+  const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+  await h.lp.handleAudio(1, chunk(0, true));
+  t.mock.timers.tick(5);
+  await flush();
+  assert.strictEqual(h.cleanupCalls.length, 1);
+  assert.strictEqual(h.cleanupErrors.length, 1);
+  t.mock.timers.tick(999);
+  await flush();
+  assert.strictEqual(h.cleanupCalls.length, 1);
+  t.mock.timers.tick(1);
+  await flush();
+  assert.strictEqual(h.cleanupCalls.length, 2);
+  assert.strictEqual(h.cleanupErrors.length, 1, "same error is logged once");
+  // A new commit must retain the backoff instead of restoring a 5 ms retry.
+  await h.lp.handleAudio(1, chunk(1, true));
+  t.mock.timers.tick(1999);
+  await flush();
+  assert.strictEqual(h.cleanupCalls.length, 2);
+  h.setCleanup(async (raw) => raw);
+  t.mock.timers.tick(1);
+  await flush();
+  assert.strictEqual(h.cleanupCalls.length, 3);
+  h.setCleanup(async () => { throw new Error("model load failed"); });
+  await h.lp.handleAudio(1, chunk(2, true));
+  t.mock.timers.tick(5);
+  await flush();
+  assert.strictEqual(h.cleanupErrors.length, 2, "recovery resets error deduplication");
+});
+
+test("a cancelled cleanup rejection is quiet and does not re-arm retries", async (t) => {
+  const h = harness();
+  t.after(() => h.lp.cancel());
+  h.setCleanup((raw, cfg, signal) => new Promise((resolve, reject) => {
+    signal.addEventListener("abort", () => reject(new Error("cleanup cancelled")), { once: true });
+  }));
+  await h.lp.handleAudio(1, chunk(0, true));
+  await tick();
+  h.lp.cancel();
+  await tick();
+  assert.strictEqual(h.cleanupErrors.length, 0);
+  assert.strictEqual(h.cleanupCalls.length, 1);
+});
+
+test("persistent cleanup failures cap retries at 30 seconds and cancel clears the timer", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const h = harness();
+  t.after(() => h.lp.cancel());
+  h.setCleanup(async () => { throw new Error("model failed"); });
+  const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+  await h.lp.handleAudio(1, chunk(0, true));
+  t.mock.timers.tick(5);
+  await flush();
+  let calls = 1;
+  for (const ms of [1000, 2000, 4000, 8000, 16000, 30000, 30000]) {
+    t.mock.timers.tick(ms - 1);
+    await flush();
+    assert.strictEqual(h.cleanupCalls.length, calls);
+    t.mock.timers.tick(1);
+    await flush();
+    assert.strictEqual(h.cleanupCalls.length, ++calls);
+  }
+  assert.strictEqual(h.cleanupErrors.length, 1);
+  h.lp.cancel();
+  t.mock.timers.tick(60000);
+  await flush();
+  assert.strictEqual(h.cleanupCalls.length, calls);
 });

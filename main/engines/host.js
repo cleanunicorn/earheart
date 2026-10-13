@@ -10,6 +10,7 @@
 // types for its engine.
 
 const path = require("node:path");
+const logger = require("../util/logger");
 
 // Default silence deadline: a request is rejected after this long with no
 // reply AND no progress. Interim progress messages re-arm it (see request()),
@@ -97,6 +98,10 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
     });
     proc.on("exit", (code) => {
       if (child !== proc) return; // stop() already handled this one
+      logger.warn("engine worker exited:", {
+        serviceName, exitCode: code,
+        requests: [...pending.values()].map((entry) => entry.type),
+      });
       child = null;
       handleGone(code);
     });
@@ -129,6 +134,7 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
         clearTimeout(timer);
         timer = setTimeout(() => {
           if (pending.has(id)) {
+            logger.warn("engine worker timed out:", { serviceName, type, timeoutMs });
             pending.delete(id);
             reject(engineError(`engine request '${type}' timed out`, "ENGINE_TIMEOUT"));
             // Silence this long means the worker is wedged (a native call that
@@ -142,6 +148,7 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
       };
       arm();
       pending.set(id, {
+        type,
         onProgress,
         touch: arm,
         resolve: (v) => {

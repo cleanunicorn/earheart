@@ -99,6 +99,7 @@ const livePreview = createLivePreview({
   // swallowing their errors hid real breakage (STT model still loading or not
   // downloaded) — so surface them here for diagnosis without interrupting.
   onError: (err) => logger.warn("live preview partial failed:", err.message),
+  onCleanupError: (err) => logger.warn("live preview cleanup failed; retrying with backoff:", err),
 });
 
 // Idle eviction: after a dictation finishes, wait the configured idle window
@@ -379,6 +380,16 @@ async function cleanWithFallback(raw, cleanupCfg, signal, stale) {
   }
 }
 
+// Priming is best-effort, but a failed model startup must leave a diagnostic.
+// Cancellation while stopping a recording is expected and stays quiet.
+function primeCleanupLogged(cfg, sid, prefix) {
+  engines.primeCleanup(cfg, prefix).catch((err) => {
+    if (session !== sid || state === "idle" || err?.name === "AbortError" ||
+        err?.message === "cleanup cancelled") return;
+    logger.warn("cleanup warm-up failed:", { model: cfg.builtin?.model }, err);
+  });
+}
+
 function hideOverlaySoon(sid, ms) {
   setTimeout(() => {
     // Only hide if no new session started in the meantime.
@@ -443,7 +454,7 @@ function startRecording() {
     engines.ensureStt(cfg.stt.builtin.model).catch(() => {});
   }
   if (cfg.cleanup.enabled && cfg.cleanup.engine === "builtin") {
-    engines.primeCleanup(cfg.cleanup).catch(() => {});
+    primeCleanupLogged(cfg.cleanup, sid);
   }
   const win = windows.createOverlay();
   const begin = () => {
@@ -536,7 +547,7 @@ async function process(sid, wavArrayBuffer) {
     // WHILE the tail decodes on the STT worker. The final clean then only
     // prefills the tail's words before generating. Best effort.
     if (assembly && !assembly.broken && assembly.committedRaw) {
-      engines.primeCleanup(cfg.cleanup, assembly.committedRaw).catch(() => {});
+      primeCleanupLogged(cfg.cleanup, sid, assembly.committedRaw);
     }
   }
 

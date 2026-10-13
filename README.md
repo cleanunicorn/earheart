@@ -31,7 +31,7 @@ several turns correcting it.
 
 Earheart turns that part into talking. Press a global hotkey, say what you
 want, press it again: your speech is transcribed on-device (NVIDIA Parakeet),
-tidied up on-device (Qwen3 4B Instruct drops the *ums*, false starts and
+tidied up on-device (Granite 4.0 Micro drops the *ums*, false starts and
 backtracking), and **pasted straight into whatever app has focus** — the
 terminal running Claude Code, the Codex composer, Cursor's chat box, a GitHub
 issue, an email.
@@ -42,7 +42,7 @@ layout, your architecture, your unshipped work. Out of the box both models run
 **inside the app, on your computer** — no separate program, no Python, no
 account, no telemetry. The setup wizard downloads a
 [Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) speech model and
-a [Qwen3 4B Instruct 2507](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507)
+a [Granite 4.0 Micro](https://huggingface.co/ibm-granite/granite-4.0-micro)
 cleanup model (with a progress bar) and runs them in-process.
 
 It is still a general-purpose dictation app: the same hotkey works in email,
@@ -117,7 +117,7 @@ label, and opinions are welcome.
 - **Cleanup built for spoken prompts** — the default **Clean** style fixes
   punctuation and removes filler words and false starts without polishing away
   your intent. Choose **Verbatim** or **Polished** with the style slider and edit
-  the prompt underneath. Qwen3 4B Instruct 2507 runs in-process by default; any OpenAI-compatible
+  the prompt underneath. Granite 4.0 Micro runs in-process by default; any OpenAI-compatible
   chat API also works. If cleanup fails because the engine crashed or the
   service blinked, Earheart tries again; if it still fails, it delivers the raw
   transcript.
@@ -265,8 +265,8 @@ private with nothing to configure. Prefer a remote service? Switch any time in
 Settings → Speech-to-text or Settings → Cleanup.
 
 The wizard's last step downloads the models that run on your machine — the
-full-precision Parakeet speech model (≈ 2.5 GB) and the Qwen3 4B Instruct 2507
-cleanup model (≈ 2.5 GB) —
+full-precision Parakeet speech model (≈ 2.5 GB) and the Granite 4.0 Micro
+cleanup model (≈ 2.1 GB) —
 showing a progress bar as it goes. It's a one-time download; everything after
 that, speech-to-text runs faster than realtime, even on CPU. If a download is interrupted,
 retrying resumes from the saved partial file when possible. You can pick another
@@ -296,7 +296,7 @@ that dictation; it does not change the microphone saved in Settings.
 
 ### Transcript cleanup
 
-Cleanup is **on by default** and runs the built-in Qwen3 4B Instruct 2507 model in-process: a
+Cleanup is **on by default** and runs the built-in Granite 4.0 Micro model in-process: a
 language model fixes punctuation and removes filler words and false starts,
 with no network hop. You can disable it, pick another built-in model, or edit
 the prompt in Settings → Cleanup.
@@ -401,7 +401,7 @@ are ignored; differently cased identifiers remain distinct.
 ![Correct a transcript and remember a spelling](docs/screenshots/correction.png)
 
 A small [held-out text evaluation](docs/evaluations/vocabulary-corrections.json)
-on the shipped Qwen3 4B model (Clean style, CPU, seed 17) measured:
+on the Qwen3 4B model, the default when it ran (Clean style, CPU, seed 17) measured:
 
 | Measure | Empty dictionary | Six remembered spellings |
 | --- | ---: | ---: |
@@ -434,7 +434,7 @@ a blank max length keeps the saved value, and a blank idle field means 0.
 Both speech-to-text and cleanup steps are also **modular,
 OpenAI-compatible HTTP clients**, so you can choose where your voice goes:
 
-- **Built-in (default)**: Parakeet + Qwen3 run in-process — fully private,
+- **Built-in (default)**: Parakeet + Granite run in-process — fully private,
   nothing to install.
 - **Local server**: run the [Parakeet STT server](stt-server/) and an
   [Ollama](https://ollama.com)/llama.cpp model yourself.

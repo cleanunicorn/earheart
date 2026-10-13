@@ -441,7 +441,7 @@ test("new installs default to in-process engines", () => {
   assert.strictEqual(DEFAULTS.cleanup.engine, "builtin");
   assert.strictEqual(DEFAULTS.cleanup.enabled, true);
   assert.strictEqual(DEFAULTS.stt.builtin.model, "parakeet-tdt-0.6b-v3");
-  assert.strictEqual(DEFAULTS.cleanup.builtin.model, "qwen3-4b-2507");
+  assert.strictEqual(DEFAULTS.cleanup.builtin.model, "granite-4.0-micro");
 });
 
 test("customModels defaults to empty and a stored list survives the merge", () => {

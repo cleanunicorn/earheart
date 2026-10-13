@@ -194,17 +194,19 @@ const MODELS = {
     },
     "granite-4.0-micro": {
       id: "granite-4.0-micro",
-      label: "Granite 4.0 Micro (faster)",
+      label: "Granite 4.0 Micro (recommended)",
       kind: "cleanup",
-      // The default from the cleanup benchmark (#167, Ryzen 9 3900X CPU) until
-      // Qwen3 4B Instruct 2507 replaced it: no
+      default: true,
+      // The default, per the cleanup benchmark (#167, Ryzen 9 3900X CPU): no
       // fillers left over five runs where both Gemma 3 1B and 4B left all 30,
-      // at 0.95 content-word retention. The price is the download, ~2.6x the
-      // 1B's, and a slower clean on CPU (18.6 s vs 7.5 s median there).
+      // at 0.95 content-word retention, and faster than Qwen3 4B Instruct 2507
+      // (18.6 s vs 21.1 s median) at a smaller download (2.10 vs 2.50 GB). The
+      // price against the 1B is the download, ~2.6x, and a slower clean on
+      // CPU (18.6 s vs 7.5 s median there).
       // RAM is stated on the same scale as Gemma 3 4B's "~6 GB": measured the
       // same way (CPU, default 4096 context, peak RSS), Granite used 3,987 MiB
       // against Gemma 3 4B's 4,289 MiB, 0.93x of it.
-      note: "Runs on this computer · ~2.1 GB, 2.6× the 1B · needs ~6 GB RAM · removes fillers reliably, a little faster than Qwen",
+      note: "Runs on this computer · ~2.1 GB, 2.6× the 1B · needs ~6 GB RAM · recommended: removes fillers reliably, faster than Qwen",
       files: [
         { name: "granite-4.0-micro-Q4_K_M.gguf", bytes: 2_099_502_528,
           sha256: "97c417dcc0534b0737c74016fb2af083cb17c3b51eaac621192d23961b7024eb",
@@ -226,13 +228,14 @@ const MODELS = {
     },
     "qwen3-4b-2507": {
       id: "qwen3-4b-2507",
-      label: "Qwen3 4B Instruct 2507 (recommended)",
+      label: "Qwen3 4B Instruct 2507 (cleanest polish)",
       kind: "cleanup",
-      default: true,
-      // Same benchmark: also no fillers left, but a little slower than Granite
+      // The default before Granite 4.0 Micro. Same benchmark: also no fillers
+      // left, and cleaner than Granite on the polished style (0 "kind of like"
+      // left vs 2), but a little slower than Granite
       // (21.1 s vs 18.6 s median) and a little lower retention (0.94 vs 0.95).
       // RAM on the Gemma 3 4B scale: 4,817 MiB peak vs 4,289 MiB, 1.12x of it.
-      note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · recommended: removes fillers reliably",
+      note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · removes fillers reliably, cleanest on the polished style",
       files: [
         { name: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf", bytes: 2_497_281_120,
           sha256: "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
@@ -258,7 +261,7 @@ const MODELS = {
 };
 
 const DEFAULT_STT_MODEL = "parakeet-tdt-0.6b-v3";
-const DEFAULT_CLEANUP_MODEL = "qwen3-4b-2507";
+const DEFAULT_CLEANUP_MODEL = "granite-4.0-micro";
 
 // User-added models (cleanup GGUFs or STT bundles from a Hugging Face repo
 // the user pasted). Kept in

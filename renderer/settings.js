@@ -238,6 +238,7 @@ async function loadMicrophones() {
   } catch {
     // No microphone permission/device; leave "System default".
   }
+  if (!selectionChanged) formBaseline.set(select, { value: select.value, checked: select.checked });
 }
 
 /* ---------- populate / collect ---------- */
@@ -1392,9 +1393,10 @@ function renderSetupBanner() {
   if (!savedSetup || !modelStatus) return;
   const speech = modelStatus.stt.find((m) => m.id === savedSetup.stt.builtin?.model);
   const unavailable = savedSetup.stt.engine === "builtin" && !speech?.installed;
+  $("wizard-banner-title").textContent = unavailable ? "Setup saved." : "You\u0027re set.";
   $("wizard-saved-message").textContent = unavailable
     ? "Your setup is saved. Download speech in Settings → Speech-to-text before dictating."
-    : "Your setup is saved — click into any text field and press " + savedSetup.hotkey + " to dictate.";
+    : "Your setup is saved — click into any text field and press " + displayHotkey(savedSetup.hotkey) + " to dictate.";
   const id = savedSetup.cleanup.builtin?.model;
   const download = savedSetup.cleanup.enabled && savedSetup.cleanup.engine === "builtin" && modelDownloads.get(modelDownloadKey("cleanup", id));
   $("wizard-cleanup-progress").textContent = download

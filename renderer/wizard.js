@@ -1,6 +1,6 @@
 // First-run setup wizard renderer. Walks through hotkey, microphone,
-// speech-to-text, cleanup and output; the last step downloads any models that
-// run on this computer (with progress) before saving and handing over to the
+// speech-to-text, cleanup and output; speech downloads while choices continue,
+// with optional cleanup following speech before saving and handing over to the
 // settings window.
 
 let current = null; // settings object being edited
@@ -307,17 +307,23 @@ function updateDownloadCopy() {
   const cfg = collect();
   const speech = transfer("stt", cfg.stt.builtin.model);
   const size = (t) => Number.isFinite(t.total) ? ModelProgress.bytes(Math.max(0, t.total - t.received)) : "size unknown";
-  $("speech-download-hint").textContent = speech.phase === "ready" ? "Speech is already downloaded." : speech.phase === "downloading" ? "Speech downloading — " + ModelProgress.label(speech) + ". You can continue setup." : "Speech needs " + size(speech) + ". Download speech and continue starts it now while you finish setup.";
-  if (stepIndex === 3) $("next").textContent = ["ready", "downloading"].includes(speech.phase) ? "Next" : "Download speech and continue (" + size(speech) + ")";
+  $("speech-download-hint").textContent = speech.phase === "ready" ? "Speech is already downloaded." : speech.phase === "downloading" ? "Speech downloading — " + ModelProgress.label(speech) + ". You can continue setup." : "Speech needs " + size(speech) + ". Download speech starts it now while you finish setup.";
+  if (stepIndex === 3) $("next").textContent = ["ready", "downloading"].includes(speech.phase) ? "Next" : "Download speech (" + size(speech) + ")";
   if (stepIndex === 5) {
     const cleanup = cfg.cleanup.enabled ? transfer("cleanup", cfg.cleanup.builtin.model) : null;
-    $("next").textContent = cleanup && !["ready", "downloading"].includes(cleanup.phase) ? "Next: download cleanup (" + size(cleanup) + ")" : "Next";
+    $("next").textContent = cleanup && !["ready", "downloading"].includes(cleanup.phase) ? "Download cleanup (" + size(cleanup) + ")" : "Next";
     $("download-cost").textContent = (speech.phase === "ready" ? "Speech ready." : speech.phase === "downloading" ? "Speech already downloading — " + ModelProgress.label(speech) + "." : "Speech still needs its download.") + " " + (cleanup && cleanup.phase !== "ready" ? "Optional cleanup needs " + size(cleanup) + "; it starts after speech is ready." : "No additional download needed.");
   }
   if (stepIndex !== steps.length - 1) return;
   $("next").disabled = !speechReady() && !later;
   $("next").textContent = speechReady() || later ? "Finish setup" : "Downloading speech…";
-  $("finish-hint").textContent = speechReady() ? "Your setup will be saved. Click into any text field and press " + current.hotkey + " to speak." + (cfg.cleanup.enabled && transfer("cleanup", cfg.cleanup.builtin.model).phase !== "ready" ? " Optional cleanup keeps downloading in the background; dictation works with raw transcripts until it is ready." : "") : "Dictation won't work until you download speech in Settings → Speech-to-text. Cleanup is optional; without it you get raw transcripts.";
+  $("finish-hint").textContent = speechReady() ? "Your setup will be saved. Click into any text field and press " + displayHotkey(current.hotkey) + " to speak." + (cfg.cleanup.enabled && transfer("cleanup", cfg.cleanup.builtin.model).phase !== "ready" ? (transfer("cleanup", cfg.cleanup.builtin.model).phase === "downloading"
+      ? " Optional cleanup keeps downloading in the background; dictation works with raw transcripts until it is ready."
+      : " Optional cleanup is not downloaded; dictations use raw transcripts. Download or retry it in Settings → Cleanup.") : "") : later
+    ? "Dictation won't work until you download speech in Settings → Speech-to-text. Cleanup is optional; without it you get raw transcripts."
+    : speech.phase === "failed"
+      ? "Retry the speech download to enable dictation, or choose Download later and get speech in Settings."
+      : "Speech is downloading. Finish setup when it is ready; optional cleanup follows, and dictation works without cleanup.";
   const burden = neededModels(cfg).map((n) => transfer(n.kind, n.modelId)).filter((t) => t.burden);
   const known = burden.every((t) => Number.isFinite(t.total));
   const received = burden.reduce((n, t) => n + (t.phase === "ready" && t.total ? t.total : Math.min(t.received, t.total ?? t.received)), 0);
@@ -343,11 +349,13 @@ function settleDownload(t, result) {
   maybeStartCleanup();
 }
 async function startDownload(t, retry = false) {
-  if (leaving || (!retry && ["ready", "downloading", "failed", "skipped"].includes(t.phase))) return;
+  if (leaving || t.starting || (!retry && ["ready", "downloading", "failed", "skipped"].includes(t.phase))) return;
+  const generation = ++t.generation;
+  t.starting = true;
   // Let the cancelled same-id attempt finish broadcasting before a retry.
   if (retry && t.promise) await t.promise.catch(() => {});
-  if (leaving) return;
-  const generation = ++t.generation;
+  t.starting = false;
+  if (leaving || generation !== t.generation) return;
   t.phase = "downloading"; t.owned = true; later = false;
   updateDownloadCopy();
   t.promise = earheart.invoke("models:download", { kind: t.kind, modelId: t.modelId, owner: downloadOwner })
@@ -357,7 +365,10 @@ async function startDownload(t, retry = false) {
 function maybeStartCleanup() {
   if (leaving || later || !cleanupConsent || !speechReady()) return;
   const cfg = collect();
-  if (cfg.cleanup.enabled && cfg.cleanup.builtin.model === cleanupConsent) startDownload(transfer("cleanup", cleanupConsent));
+  if (cfg.cleanup.enabled && cfg.cleanup.builtin.model === cleanupConsent) {
+    const t = transfer("cleanup", cleanupConsent);
+    startDownload(t, t.phase === "skipped");
+  }
 }
 function cancelOwned(t) {
   t.generation++;
@@ -395,7 +406,7 @@ function enterDownloadStep() {
   updateDownloadCopy(); maybeStartCleanup();
 }
 earheart.on("models:progress", (p) => {
-  const t = transfer(p.kind, p.modelId); if (t.phase === "skipped" || leaving) return;
+  const t = transfer(p.kind, p.modelId); if (["skipped", "ready"].includes(t.phase) || leaving) return;
   t.phase = "downloading"; t.received = Math.max(0, p.received || 0); if (!t.total && p.total) t.total = p.total;
   updateDownloadCopy();
 });
@@ -501,6 +512,7 @@ async function finish() {
   });
 
   syncCleanupEnabled();
+  for (const n of neededModels()) transfer(n.kind, n.modelId);
 
   if (platform === "darwin") $("demo-mod").textContent = "⌘";
   if (platform !== "linux") $("wayland-note").style.display = "none";

@@ -65,6 +65,7 @@ let isModelDownloading = () => false;
 let missingCleanupNotified = false;
 const completedCleanup = new Set();
 const announcedCleanup = new Set();
+const primedCleanup = new Set();
 let backgroundPrime = false;
 const cleanupNotifier = createNotifier({
   Notification, logger, settingsWhenUnsupported: false,
@@ -92,10 +93,13 @@ function reconcileCompletedCleanup() {
   }
   if (state !== "idle") return;
   completedCleanup.delete(id);
-  backgroundPrime = true;
+  if (primedCleanup.has(id)) return;
+  primedCleanup.add(id);
+  const prime = {};
+  backgroundPrime = prime;
   engines.primeCleanup(cfg).catch((err) => {
     if (err?.name !== "AbortError" && err?.message !== "cleanup cancelled") logger.warn("cleanup warm-up failed:", { model: id }, err);
-  }).finally(() => { backgroundPrime = false; });
+  }).finally(() => { if (backgroundPrime === prime) backgroundPrime = false; });
 }
 function onCleanupDownloaded(id) {
   completedCleanup.add(id);

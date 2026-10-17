@@ -768,6 +768,10 @@ app.whenReady().then(async () => {
     check("raw cleanup-download reason coexists with paste guidance and incomplete status",
       rawNotice.visible && /still downloading/.test(rawNotice.reason) && rawNotice.detail === "Paste with Ctrl+V" && /incomplete/.test(rawNotice.title),
       JSON.stringify(rawNotice));
+    if (process.env.EARHEART_WIZARD_SCREENSHOTS) {
+      await win.webContents.executeJavaScript("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))");
+      require("node:fs").writeFileSync(require("node:path").join(process.env.EARHEART_WIZARD_SCREENSHOTS, "overlay-raw-cleanup.png"), (await win.webContents.capturePage()).toPNG());
+    }
     // An interrupted dictation says so where the delivery title goes: the
     // notification is gone seconds later, this is what stays on screen.
     win.webContents.send("pipeline:status", {

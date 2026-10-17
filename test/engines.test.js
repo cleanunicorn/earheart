@@ -2567,3 +2567,13 @@ test("a failed STT load is not reused by the next caller", async () => {
   held[1].resolve({ ready: true });
   assert.strictEqual(await retry, "transcribed");
 });
+
+test("cleanup readiness bypasses only known missing builtin files", () => {
+  const { facade } = readinessFacade();
+  assert.deepStrictEqual(facade.getCleanupReadiness({ engine: "remote" }), { ok: true });
+  assert.deepStrictEqual(facade.getCleanupReadiness({ enabled: false, engine: "builtin" }), { ok: true });
+  assert.strictEqual(facade.getCleanupReadiness({ enabled: true, engine: "builtin", builtin: { model: "granite-4.0-micro" } }).reason, "missing");
+  assert.strictEqual(facade.getCleanupReadiness({ enabled: true, engine: "builtin", builtin: { model: "unknown" } }).reason, "unknown");
+  const broken = readinessFacade({ isInstalled: () => { throw new Error("disk inaccessible"); } }).facade;
+  assert.deepStrictEqual(broken.getCleanupReadiness({ enabled: true, engine: "builtin", builtin: { model: "granite-4.0-micro" } }), { ok: true });
+});

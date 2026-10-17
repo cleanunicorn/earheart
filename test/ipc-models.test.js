@@ -119,20 +119,20 @@ function loadIpcHandlers(cfg, {
   return { handlers, saved, broadcasts, warnings, windowCalls };
 }
 
-test("models:status retains removal identity without summing download sizes", () => {
+test("models:status retains removal identity and unknown custom sizes", () => {
   const model = { id: "custom-example", kind: "stt", label: "Example", note: "Local", custom: true };
   const { handlers } = loadIpcHandlers({}, {
     engines: {
       registry: {
         ...registry,
         listModels: (kind) => kind === "stt" ? [model] : [],
-        totalBytes: () => { throw new Error("status must not sum files"); },
+        totalBytes: () => { throw new Error("incomplete files must remain unknown"); },
       },
       isInstalled: (kind, id) => kind === "stt" && id === model.id,
     },
   });
   assert.deepStrictEqual(handlers["models:status"](), {
-    stt: [{ ...model, installed: true }],
+    stt: [{ ...model, installed: true, bytes: null }],
     cleanup: [],
   });
 });
@@ -1137,3 +1137,24 @@ test("each updater handler calls its updater action and answers what the UI read
     ["stopReminding"],
   ]);
 });
+
+ test("models:status exposes catalog bytes and active progress before a window subscribes", async () => {
+  let release;
+  const completed = [];
+  const { handlers } = loadIpcHandlers({}, {
+    engines: { download: async (kind, id, { onProgress }) => {
+      onProgress({ received: 123, total: 456, fraction: 123 / 456 });
+      await new Promise((resolve) => { release = resolve; });
+    } },
+    init: { onCleanupDownloaded: (id) => completed.push(id) },
+  });
+  const key = { kind: "cleanup", modelId: "granite-4.0-micro" };
+  const task = handlers["models:download"]({}, key);
+  const row = handlers["models:status"]().cleanup.find((m) => m.id === key.modelId);
+  assert.strictEqual(row.bytes, registry.totalBytes(registry.getModel(key.kind, key.modelId)));
+  assert.deepStrictEqual(row.download, { received: 123, total: 456, fraction: 123 / 456 });
+  release();
+  await task;
+  assert.strictEqual(handlers["models:status"]().cleanup.find((m) => m.id === key.modelId).download, undefined);
+  assert.deepStrictEqual(completed, [key.modelId]);
+ });

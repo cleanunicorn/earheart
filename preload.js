@@ -49,6 +49,7 @@ const ROLES = {
   },
   settings: {
     LISTEN: [
+      "settings:navigate",
       "history:changed",
       "models:progress",
       "models:done",

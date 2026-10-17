@@ -54,8 +54,21 @@ async function checkWizard({ waitFor, check }) {
     await waitFor(() => active.get(cleanupKey), "cleanup did not start after speech");
     check("Finish enables while optional cleanup downloads", await until('!document.getElementById("next").disabled', "Finish blocked by cleanup"));
     check("Finish teaches actual hotkey", await js('document.getElementById("finish-hint").textContent.includes(current.hotkey)'));
-    await close();
+    const cleanupBytes = engines.registry.totalBytes(engines.registry.getModel("cleanup", cleanup));
+    active.get(cleanupKey).progress({ received: cleanupBytes / 4, total: cleanupBytes, fraction: 0.25 });
+    await click("next");
+    await waitFor(() => win.isDestroyed(), "Finish did not close wizard");
     check("closing wizard retains optional transfer", active.has(cleanupKey));
+    const handoff = externalSettings = windows.openSettings();
+    const form = (code) => handoff.webContents.executeJavaScript(code, true);
+    await waitFor(() => form('typeof formReady !== "undefined" && formReady && !document.getElementById("wizard-banner").hidden'), "saved banner did not initialize");
+    check("saved banner teaches committed hotkey without asking to save again", await form('document.getElementById("wizard-saved-message").textContent.includes(savedSetup.hotkey) && document.getElementById("wizard-saved-message").textContent.includes("saved")'));
+    check("saved banner hydrates background progress before another tick", await form('document.getElementById("wizard-cleanup-progress").textContent.includes("25%")'));
+    await form('document.getElementById("cleanup-prompt").value = "unsaved draft"');
+    settings.save({ ...settings.get(), hotkey: "F8" });
+    windows.openSettings({ fromWizard: true, section: "stt", model: true });
+    await waitFor(() => form('document.getElementById("wizard-saved-message").textContent.includes("F8")'), "existing Settings did not receive handoff");
+    check("existing Settings updates saved hotkey and preserves draft on navigation", await form('document.getElementById("cleanup-prompt").value === "unsaved draft" && document.getElementById("hotkey").value === "F8"'));
     active.get(cleanupKey).finish();
 
     installed.clear(); starts.length = 0; aborts.length = 0;
@@ -86,6 +99,8 @@ async function checkWizard({ waitFor, check }) {
     await click("skip");
     await waitFor(() => win.isDestroyed(), "Skip did not close wizard");
     check("Skip preserves independently started transfer", active.has(key));
+    await waitFor(() => sw.webContents.executeJavaScript('document.activeElement?.closest("#stt-model-manage") !== null', true), "Skip did not focus speech Download");
+    check("Skip opens missing speech Download without starting cleanup", !active.has(cleanupKey));
     active.get(key).finish();
   } finally {
     windows.closeSettings();

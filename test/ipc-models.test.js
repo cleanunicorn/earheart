@@ -70,6 +70,7 @@ function loadIpcHandlers(cfg, {
       remove: async () => {},
       removeFiles: async () => {},
       isInstalled: () => false,
+      getSttReadiness: () => ({ ok: true }),
       download: async () => {},
       definitionFingerprint: manager.definitionFingerprint,
       ...engines,
@@ -993,7 +994,7 @@ test("settings:close, wizard:open and wizard:skip drive the windows", async () =
   // opens Settings without the post-wizard review banner.
   assert.deepStrictEqual(saved, [cfg]);
   assert.deepStrictEqual(skipped, { settings: cfg });
-  assert.deepStrictEqual(windowCalls, [["closeSettings"], ["openWizard"], ["openSettings"], ["closeWizard"]]);
+  assert.deepStrictEqual(windowCalls, [["closeSettings"], ["openWizard"], ["openSettings", undefined], ["closeWizard"]]);
 });
 
 test("settings:get reports the OS start-on-boot state, or the stored one if the OS can't say", async () => {
@@ -1172,4 +1173,14 @@ test("wizard ownership token cannot cancel an independently started transfer", a
   await handlers["models:cancel"]({}, { ...key, owner: "wizard" });
   assert.equal(signal.aborted, false);
   finish(); await task;
+});
+
+test("wizard Skip directs missing speech to Download without starting a transfer", async () => {
+  let started = 0;
+  const { handlers, windowCalls } = loadIpcHandlers({ stt: { engine: "builtin" } }, {
+    engines: { getSttReadiness: () => ({ ok: false, reason: "missing" }), download: async () => started++ },
+  });
+  await handlers["wizard:skip"]();
+  assert.deepStrictEqual(windowCalls, [["openSettings", { section: "stt", model: true }], ["closeWizard"]]);
+  assert.equal(started, 0);
 });

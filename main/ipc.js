@@ -448,7 +448,7 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   // Skipping still persists the defaults so the wizard only ever runs once.
   ipcMain.handle("wizard:skip", () => {
     const saved = settings.save(settings.get());
-    windows.openSettings();
+    windows.openSettings(engines.getSttReadiness(saved.stt).reason === "missing" ? { section: "stt", model: true } : undefined);
     windows.closeWizard();
     return { settings: saved };
   });

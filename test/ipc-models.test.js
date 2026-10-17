@@ -1175,12 +1175,23 @@ test("wizard ownership token cannot cancel an independently started transfer", a
   finish(); await task;
 });
 
-test("wizard Skip directs missing speech to Download without starting a transfer", async () => {
-  let started = 0;
-  const { handlers, windowCalls } = loadIpcHandlers({ stt: { engine: "builtin" } }, {
-    engines: { getSttReadiness: () => ({ ok: false, reason: "missing" }), download: async () => started++ },
+for (const readiness of [
+  { ok: false, reason: "missing" },
+  { ok: false, reason: "unknown" },
+  { ok: true, label: "installed" },
+  { ok: true, label: "remote" },
+]) {
+  test("wizard Skip routes " + (readiness.reason || readiness.label) + " speech without downloading", async () => {
+    let started = 0;
+    const cfg = { stt: { engine: readiness.label === "remote" ? "remote" : "builtin" } };
+    const { handlers, windowCalls } = loadIpcHandlers(cfg, {
+      engines: { getSttReadiness: () => readiness, download: async () => started++ },
+    });
+    await handlers["wizard:skip"]();
+    assert.deepStrictEqual(windowCalls, [
+      ["openSettings", readiness.ok ? undefined : { section: "stt", model: true }],
+      ["closeWizard"],
+    ]);
+    assert.equal(started, 0);
   });
-  await handlers["wizard:skip"]();
-  assert.deepStrictEqual(windowCalls, [["openSettings", { section: "stt", model: true }], ["closeWizard"]]);
-  assert.equal(started, 0);
-});
+}

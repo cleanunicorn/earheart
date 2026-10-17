@@ -59,6 +59,49 @@ function notify({ title, body }) {
   failureNotifier.show({ title, body: String(body).slice(0, BODY_MAX) });
 }
 
+// Known missing optional files bypass cleanup, including after restart.
+// Real engine failures still use the retry and raw-transcript fallback.
+let isModelDownloading = () => false;
+let missingCleanupNotified = false;
+const completedCleanup = new Set();
+const announcedCleanup = new Set();
+let backgroundPrime = false;
+const cleanupNotifier = createNotifier({
+  Notification, logger, settingsWhenUnsupported: false,
+  openSettings: () => windows.openSettings({ section: "cleanup", model: true }),
+});
+function cleanupAvailability(cfg) {
+  const readiness = engines.getCleanupReadiness(cfg);
+  return readiness.reason === "missing" ? readiness : { ok: true };
+}
+function missingCleanupNotice(readiness) {
+  if (missingCleanupNotified) return;
+  missingCleanupNotified = true;
+  cleanupNotifier.show({
+    title: "Earheart: cleanup model not downloaded",
+    body: (readiness.label || readiness.modelId) + " is not downloaded — raw transcripts work. Click to download it in Settings → Cleanup.",
+  });
+}
+function reconcileCompletedCleanup() {
+  const cfg = settings.get().cleanup;
+  const id = cfg?.builtin?.model;
+  if (!cfg?.enabled || cfg.engine !== "builtin" || !completedCleanup.has(id) || !cleanupAvailability(cfg).ok) return;
+  if (!announcedCleanup.has(id)) {
+    announcedCleanup.add(id);
+    cleanupNotifier.show({ title: "Earheart: cleanup is ready", body: "Your next dictation can be cleaned automatically." });
+  }
+  if (state !== "idle") return;
+  completedCleanup.delete(id);
+  backgroundPrime = true;
+  engines.primeCleanup(cfg).catch((err) => {
+    if (err?.name !== "AbortError" && err?.message !== "cleanup cancelled") logger.warn("cleanup warm-up failed:", { model: id }, err);
+  }).finally(() => { backgroundPrime = false; });
+}
+function onCleanupDownloaded(id) {
+  completedCleanup.add(id);
+  reconcileCompletedCleanup();
+}
+
 // Live preview (the streaming partial transcript shown while recording) lives in
 // its own module; the pipeline just feeds it audio and cancels it at the right
 // lifecycle points. Dependencies are injected so it stays free of our private
@@ -92,6 +135,7 @@ async function transcribeLive(wav, sttCfg, signal) {
 const livePreview = createLivePreview({
   runTranscribe: transcribeLive,
   runCleanup: route.clean,
+  canCleanup: (cfg) => cleanupAvailability(cfg).ok,
   sendToOverlay: windows.sendToOverlay,
   getSettings: settings.get,
   isCurrent: (sid) => sid === session && state === "recording",
@@ -149,7 +193,7 @@ function setState(next) {
   // Models should stay resident while a dictation is active; only count idle
   // time once we're back to idle. Re-arming on each return to idle resets the
   // window after every dictation.
-  if (next === "idle") armIdleUnload();
+  if (next === "idle") { armIdleUnload(); reconcileCompletedCleanup(); }
   else cancelIdleUnload();
   for (const listener of stateListeners) listener(state);
 }
@@ -453,7 +497,10 @@ function startRecording() {
   if (cfg.stt.engine === "builtin") {
     engines.ensureStt(cfg.stt.builtin.model).catch(() => {});
   }
-  if (cfg.cleanup.enabled && cfg.cleanup.engine === "builtin") {
+  if (backgroundPrime) { engines.cancelClean(); backgroundPrime = false; }
+  const cleanupReady = cleanupAvailability(cfg.cleanup);
+  if (cleanupReady.reason === "missing" && !isModelDownloading("cleanup", cleanupReady.modelId)) missingCleanupNotice(cleanupReady);
+  if (cfg.cleanup.enabled && cfg.cleanup.engine === "builtin" && cleanupReady.ok) {
     primeCleanupLogged(cfg.cleanup, sid);
   }
   const win = windows.createOverlay();
@@ -537,7 +584,7 @@ async function process(sid, wavArrayBuffer) {
   let delivered = false;
   const stale = () => session !== sid || signal.aborted;
 
-  const builtinCleanup = cfg.cleanup.enabled && cfg.cleanup.engine === "builtin";
+  const builtinCleanup = cfg.cleanup.enabled && cfg.cleanup.engine === "builtin" && cleanupAvailability(cfg.cleanup).ok;
   if (builtinCleanup) {
     // Free the cleanup worker NOW: an in-flight live-preview clean would
     // otherwise keep generating and the final clean would queue behind it.
@@ -580,7 +627,9 @@ async function process(sid, wavArrayBuffer) {
 
     let text = raw;
     let cleaned = false;
-    if (cfg.cleanup.enabled) {
+    const cleanupReady = cleanupAvailability(cfg.cleanup);
+    const rawReason = cfg.cleanup.enabled && !cleanupReady.ok && isModelDownloading("cleanup", cleanupReady.modelId) ? "cleanup-downloading" : null;
+    if (cfg.cleanup.enabled && cleanupReady.ok) {
       overlayStatus("cleaning");
       ({ text, cleaned } = await cleanWithFallback(raw, cfg.cleanup, signal, stale));
       if (stale()) return;
@@ -620,6 +669,7 @@ async function process(sid, wavArrayBuffer) {
       // Same state the history entry records: the card outlives the
       // notification, so it must say the transcript is not the whole take.
       incomplete: partial,
+      rawReason,
     });
     hideOverlaySoon(sid, result.note ? 4000 : 1600);
   } catch (err) {
@@ -644,7 +694,8 @@ async function process(sid, wavArrayBuffer) {
   }
 }
 
-function init() {
+function init({ isDownloading = () => false } = {}) {
+  isModelDownloading = isDownloading;
   ipcMain.on("audio:captured", (event, { sid, wav } = {}) => {
     if (sid !== session || state !== "recording") return;
     process(sid, wav);
@@ -690,6 +741,7 @@ function init() {
 // worker back out to the full window. Re-arming still re-reads the setting, so
 // switching to 0 (never unload) cancels either kind of pending timer.
 function onSettingsChanged() {
+  reconcileCompletedCleanup();
   if (state !== "idle") return;
   armIdleUnload(idleUnloadRetrying ? IDLE_UNLOAD_RETRY_MS : undefined);
 }
@@ -704,4 +756,5 @@ module.exports = {
   getState,
   onStateChange,
   onSettingsChanged,
+  onCleanupDownloaded,
 };

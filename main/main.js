@@ -103,11 +103,12 @@ function main() {
     // the app's own pages and nothing else (main/window-guard.js).
     installPermissionHandler(session.defaultSession);
 
-    pipeline.init();
+    pipeline.init({ isDownloading: ipc.isDownloading });
     // The discard hotkey is held only while there is a dictation to discard
     // (recording or processing); idle, the combination is the user's again.
     pipeline.onStateChange((state) => hotkeys.armDiscard(state !== "idle"));
     ipc.init({
+      onCleanupDownloaded: pipeline.onCleanupDownloaded,
       applyHotkeys,
       canCorrect: () => pipeline.getState() === "idle",
       canCopy: () => pipeline.getState() !== "processing",

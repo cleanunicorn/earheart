@@ -632,6 +632,12 @@ corners anywhere.
   distinction, so the warming ring dims to 55% opacity instead — dimmer =
   "not capturing yet", full = paused.
 
+### Optional cleanup notice (overlay)
+- A neutral 12px Dim Text line above the control row says when a delivered
+  transcript is raw because cleanup is downloading. It keeps the delivery
+  preview/paste guidance and incomplete status in their existing slots;
+  no additional accent, status dot, or action is needed.
+
 ### Status text (settings/wizard)
 - 13px Dim Text lines beside or under their action; `.ok` in Delivered Green,
   `.err` in Failed Red; long unbroken errors wrap (`overflow-wrap: anywhere`).

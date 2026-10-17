@@ -34,6 +34,8 @@ const modelKey = (kind, modelId) => `${kind}:${modelId}`;
 // for them. Keyed by modelKey; each entry is { controller, done }, where
 // `done` settles once the download has stopped writing and reported.
 const downloads = new Map();
+let onCleanupDownloaded = () => {};
+const isDownloading = (kind, modelId) => downloads.has(modelKey(kind, modelId));
 // Models whose files are being deleted or replaced. A download for one of
 // these keys is refused until that finishes, so no new writer can start
 // between stopping the old one and removing its directory.
@@ -51,7 +53,8 @@ async function stopDownload(kind, modelId) {
 // Stream one model to disk and report its outcome to every window. Resolves
 // (never rejects) once the transfer has stopped writing, its `downloads` entry
 // is gone and models:done has been broadcast — what a removal waits for.
-async function runDownload(kind, modelId, controller) {
+async function runDownload(kind, modelId, entry) {
+  const { controller } = entry;
   let result;
   try {
     await engines.download(kind, modelId, {
@@ -59,6 +62,7 @@ async function runDownload(kind, modelId, controller) {
       // Broadcast so whichever window is open (wizard and/or Settings) tracks
       // the same download, not just the one that started it.
       onProgress: (p) => {
+        entry.progress = { ...p };
         windows.broadcast("models:progress", { kind, modelId, ...p });
       },
     });
@@ -70,6 +74,9 @@ async function runDownload(kind, modelId, controller) {
     downloads.delete(modelKey(kind, modelId));
   }
   windows.broadcast("models:done", { kind, modelId, ...result });
+  if (result.ok && kind === "cleanup") {
+    try { onCleanupDownloaded(modelId); } catch (err) { logger.warn("cleanup readiness notification failed:", err); }
+  }
   return result;
 }
 
@@ -244,7 +251,8 @@ function wrap(fn, describe = (err) => err.message) {
   };
 }
 
-function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true }) {
+function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {} }) {
+  onCleanupDownloaded = completed;
   // Register any models the user added from a custom Hugging Face URL so they
   // resolve for download and for loading into the cleanup worker after a
   // restart, exactly like the built-ins.
@@ -440,7 +448,7 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   // Skipping still persists the defaults so the wizard only ever runs once.
   ipcMain.handle("wizard:skip", () => {
     const saved = settings.save(settings.get());
-    windows.openSettings();
+    windows.openSettings(!engines.getSttReadiness(saved.stt).ok ? { section: "stt", model: true } : undefined);
     windows.closeWizard();
     return { settings: saved };
   });
@@ -561,12 +569,17 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
         note: m.note,
         custom: !!m.custom,
         installed: engines.isInstalled(kind, m.id),
+        bytes: Array.isArray(m.files) && m.files.length &&
+          m.files.every((f) => Number.isFinite(f.bytes) && f.bytes > 0)
+          ? engines.registry.totalBytes(m) : null,
+        ...(downloads.has(modelKey(kind, m.id))
+          ? { download: { ...downloads.get(modelKey(kind, m.id)).progress } } : {}),
       }));
     return { stt: describe("stt"), cleanup: describe("cleanup") };
   });
 
   // Stream a model download to disk, posting progress to the requesting window.
-  ipcMain.handle("models:download", async (event, { kind, modelId } = {}) => {
+  ipcMain.handle("models:download", async (event, { kind, modelId, owner } = {}) => {
     const key = modelKey(kind, modelId);
     if (downloads.has(key)) return { ok: false, error: "Already downloading" };
     // Like every other terminal outcome (except "Already downloading", whose
@@ -585,14 +598,15 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     }
     if (installed) return settle({ ok: true });
     const controller = new AbortController();
-    const done = runDownload(kind, modelId, controller);
-    downloads.set(key, { controller, done });
-    return done;
+    const entry = { controller, owner: typeof owner === "string" ? owner : null, progress: { received: 0 }, done: null };
+    downloads.set(key, entry);
+    entry.done = runDownload(kind, modelId, entry);
+    return entry.done;
   });
 
-  ipcMain.handle("models:cancel", (event, { kind, modelId } = {}) => {
+  ipcMain.handle("models:cancel", (event, { kind, modelId, owner } = {}) => {
     const entry = downloads.get(modelKey(kind, modelId));
-    if (entry) entry.controller.abort();
+    if (entry && (owner === undefined || owner === entry.owner)) entry.controller.abort();
     return { ok: true };
   });
 
@@ -675,4 +689,4 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   });
 }
 
-module.exports = { init };
+module.exports = { init, isDownloading };

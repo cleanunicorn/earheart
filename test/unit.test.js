@@ -1570,3 +1570,15 @@ test("ensureMacSignature leaves a valid signature alone and repairs a broken one
 
   assert.throws(() => ensureMacSignature("/A.app", { run: runWith(1, 1) }), /Could not sign the updated app: boom/);
 });
+
+test("onboarding hotkey prose names the platform key and preserves edited shortcuts", () => {
+  const { displayHotkey } = require("../renderer/hotkey-capture");
+  const previous = global.platform;
+  try {
+    global.platform = "linux";
+    assert.strictEqual(displayHotkey("CommandOrControl+Shift+Space"), "Ctrl+Shift+Space");
+    global.platform = "darwin";
+    assert.strictEqual(displayHotkey("CmdOrCtrl+Shift+Space"), "Cmd+Shift+Space");
+    assert.strictEqual(displayHotkey("F8"), "F8");
+  } finally { global.platform = previous; }
+});

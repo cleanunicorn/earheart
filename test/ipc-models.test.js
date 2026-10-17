@@ -70,6 +70,7 @@ function loadIpcHandlers(cfg, {
       remove: async () => {},
       removeFiles: async () => {},
       isInstalled: () => false,
+      getSttReadiness: () => ({ ok: true }),
       download: async () => {},
       definitionFingerprint: manager.definitionFingerprint,
       ...engines,
@@ -119,20 +120,20 @@ function loadIpcHandlers(cfg, {
   return { handlers, saved, broadcasts, warnings, windowCalls };
 }
 
-test("models:status retains removal identity without summing download sizes", () => {
+test("models:status retains removal identity and unknown custom sizes", () => {
   const model = { id: "custom-example", kind: "stt", label: "Example", note: "Local", custom: true };
   const { handlers } = loadIpcHandlers({}, {
     engines: {
       registry: {
         ...registry,
         listModels: (kind) => kind === "stt" ? [model] : [],
-        totalBytes: () => { throw new Error("status must not sum files"); },
+        totalBytes: () => { throw new Error("incomplete files must remain unknown"); },
       },
       isInstalled: (kind, id) => kind === "stt" && id === model.id,
     },
   });
   assert.deepStrictEqual(handlers["models:status"](), {
-    stt: [{ ...model, installed: true }],
+    stt: [{ ...model, installed: true, bytes: null }],
     cleanup: [],
   });
 });
@@ -993,7 +994,7 @@ test("settings:close, wizard:open and wizard:skip drive the windows", async () =
   // opens Settings without the post-wizard review banner.
   assert.deepStrictEqual(saved, [cfg]);
   assert.deepStrictEqual(skipped, { settings: cfg });
-  assert.deepStrictEqual(windowCalls, [["closeSettings"], ["openWizard"], ["openSettings"], ["closeWizard"]]);
+  assert.deepStrictEqual(windowCalls, [["closeSettings"], ["openWizard"], ["openSettings", undefined], ["closeWizard"]]);
 });
 
 test("settings:get reports the OS start-on-boot state, or the stored one if the OS can't say", async () => {
@@ -1137,3 +1138,60 @@ test("each updater handler calls its updater action and answers what the UI read
     ["stopReminding"],
   ]);
 });
+
+ test("models:status exposes catalog bytes and active progress before a window subscribes", async () => {
+  let release;
+  const completed = [];
+  const { handlers } = loadIpcHandlers({}, {
+    engines: { download: async (kind, id, { onProgress }) => {
+      onProgress({ received: 123, total: 456, fraction: 123 / 456 });
+      await new Promise((resolve) => { release = resolve; });
+    } },
+    init: { onCleanupDownloaded: (id) => completed.push(id) },
+  });
+  const key = { kind: "cleanup", modelId: "granite-4.0-micro" };
+  const task = handlers["models:download"]({}, key);
+  const row = handlers["models:status"]().cleanup.find((m) => m.id === key.modelId);
+  assert.strictEqual(row.bytes, registry.totalBytes(registry.getModel(key.kind, key.modelId)));
+  assert.deepStrictEqual(row.download, { received: 123, total: 456, fraction: 123 / 456 });
+  release();
+  await task;
+  assert.strictEqual(handlers["models:status"]().cleanup.find((m) => m.id === key.modelId).download, undefined);
+  assert.deepStrictEqual(completed, [key.modelId]);
+ });
+
+test("wizard ownership token cannot cancel an independently started transfer", async () => {
+  let signal;
+  let finish;
+  const { handlers } = loadIpcHandlers({}, { engines: { download: async (kind, id, opts) => {
+    signal = opts.signal;
+    await new Promise((resolve) => { finish = resolve; });
+  } } });
+  const key = { kind: "stt", modelId: "parakeet-tdt-0.6b-v3" };
+  const task = handlers["models:download"]({}, key);
+  assert.equal((await handlers["models:download"]({}, { ...key, owner: "wizard" })).error, "Already downloading");
+  await handlers["models:cancel"]({}, { ...key, owner: "wizard" });
+  assert.equal(signal.aborted, false);
+  finish(); await task;
+});
+
+for (const readiness of [
+  { ok: false, reason: "missing" },
+  { ok: false, reason: "unknown" },
+  { ok: true, label: "installed" },
+  { ok: true, label: "remote" },
+]) {
+  test("wizard Skip routes " + (readiness.reason || readiness.label) + " speech without downloading", async () => {
+    let started = 0;
+    const cfg = { stt: { engine: readiness.label === "remote" ? "remote" : "builtin" } };
+    const { handlers, windowCalls } = loadIpcHandlers(cfg, {
+      engines: { getSttReadiness: () => readiness, download: async () => started++ },
+    });
+    await handlers["wizard:skip"]();
+    assert.deepStrictEqual(windowCalls, [
+      ["openSettings", readiness.ok ? undefined : { section: "stt", model: true }],
+      ["closeWizard"],
+    ]);
+    assert.equal(started, 0);
+  });
+}

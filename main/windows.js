@@ -406,15 +406,16 @@ function sendToOverlay(channel, payload) {
   if (win) win.webContents.send(channel, payload);
 }
 
-function openSettings({ fromWizard = false } = {}) {
-  // The query lets the settings page show a "pre-configured by the setup
-  // wizard" banner when it opens right after the wizard finishes.
-  const load = (win) =>
-    win.loadFile(path.join(RENDERER, "settings.html"), fromWizard ? { query: { wizard: "1" } } : undefined);
+function openSettings({ fromWizard = false, section, model = false } = {}) {
+  const destination = ["general", "live", "stt", "cleanup", "history", "advanced"].includes(section) ? section : undefined;
+  const navigation = { fromWizard, section: destination, model: !!model };
+  const query = {
+    ...(fromWizard ? { wizard: "1" } : {}),
+    ...(destination ? { section: destination, ...(model ? { model: "1" } : {}) } : {}),
+  };
+  const load = (win) => win.loadFile(path.join(RENDERER, "settings.html"), Object.keys(query).length ? { query } : undefined);
   if (alive(settingsWindow)) {
-    // The wizard was re-run while Settings was already open: reload so the
-    // form picks up the choices the wizard just saved.
-    if (fromWizard) load(settingsWindow);
+    if (fromWizard || destination) settingsWindow.webContents.send("settings:navigate", navigation);
     return bringForward(settingsWindow);
   }
   settingsWindow = createFormWindow("settings", {

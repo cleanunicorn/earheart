@@ -197,6 +197,7 @@ const DONE_TITLE = {
 
 function setStatus(status, title, detail) {
   card.dataset.status = status;
+  document.getElementById("raw-reason").hidden = true;
   // The stop key only works while there's a take to stop (a paused take still
   // counts). Disable it for keyboard and assistive tech too, not just
   // visually — the unlit-key style and pointer-events guard live in
@@ -1038,6 +1039,10 @@ earheart.on("pipeline:status", ({ status, detail }) => {
         detail?.incomplete ? `${delivered} — incomplete` : delivered,
         detail?.note || detail?.preview
       );
+      const rawReason = document.getElementById("raw-reason");
+      rawReason.hidden = detail?.rawReason !== "cleanup-downloading";
+      rawReason.textContent = rawReason.hidden ? "" : "Raw transcript — cleanup model still downloading";
+      syncOverlayHeight();
       break;
     }
     case "empty":

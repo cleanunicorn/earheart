@@ -72,7 +72,7 @@ function residualTail(live, committed) {
   return liveWords.slice(committedWords.length).join(" ");
 }
 
-function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettings, isCurrent, onError, onCleanupError }) {
+function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettings, isCurrent, onError, onCleanupError, canCleanup = () => true }) {
   const reportError = onError || (() => {});
   // Count rather than a flag: a committed-chunk decode may legitimately overlap
   // an in-progress one (finals skip drop-if-busy — see handleAudio), and two
@@ -293,7 +293,7 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
     // Only clean live when cleanup is on and runs in-process: a remote cleanup
     // endpoint shouldn't be hit repeatedly mid-dictation. The final pass on stop
     // still cleans the whole authoritative transcript regardless of engine.
-    if (!cfg.cleanup.enabled || cfg.cleanup.engine !== "builtin") return;
+    if (!cfg.cleanup.enabled || cfg.cleanup.engine !== "builtin" || !canCleanup(cfg.cleanup)) return;
     if (pauseTimer) clearTimeout(pauseTimer);
     const pauseMs = cfg.stt.livePreview?.cleanupPauseMs || 1000;
     // New commits must not bypass backoff while the engine is failing.
@@ -305,7 +305,7 @@ function createLivePreview({ runTranscribe, runCleanup, sendToOverlay, getSettin
   }
 
   async function runCleanupPass(sid, cfg, signal) {
-    if (stale(sid, signal)) return;
+    if (stale(sid, signal) || !canCleanup(cfg.cleanup)) return;
     if (cleanupBusy) return; // drop-if-busy
     const toClean = cleanTarget();
     if (!toClean || toClean === lastCleanedRaw) return; // nothing new committed to clean

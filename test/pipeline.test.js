@@ -243,6 +243,8 @@ function dictationRig({
   clean: cleanupText,
   notificationThrows = false,
   sttReadiness = () => ({ ok: true }),
+  cleanupReadiness = () => ({ ok: true }),
+  isDownloading = () => false,
   notificationsSupported = true,
 } = {}) {
   const log = {
@@ -292,6 +294,7 @@ function dictationRig({
         return primeCleanup?.(...args);
       },
       getSttReadiness: (sttCfg) => sttReadiness(sttCfg),
+      getCleanupReadiness: (cfg) => cleanupReadiness(cfg),
     },
     settings: { get: () => cfg },
     overrides: {
@@ -380,7 +383,7 @@ function dictationRig({
       },
     },
   });
-  pipeline.init();
+  pipeline.init({ isDownloading });
   async function dictate(wav, snap = { committedRaw: "", decodedSamples: 0, broken: false }) {
     snapshot = engine === "builtin" ? snap : null;
     pipeline.toggle();
@@ -1403,3 +1406,55 @@ for (const error of [new Error("cleanup cancelled"), Object.assign(new Error("ab
     rig.pipeline.cancel();
   });
 }
+
+test("pipeline: missing optional cleanup bypasses phases and calls, retaining raw history with one notice per launch", async () => {
+  let calls = 0;
+  const rig = dictationRig({ cleanup: true, transcribe: async () => "raw words",
+    cleanupReadiness: () => ({ ok: false, reason: "missing", modelId: "cleanup-model", label: "Cleanup" }),
+    clean: async () => { calls++; throw new Error("must bypass"); } });
+  await rig.dictate(speechWav(1)); await rig.dictate(speechWav(1));
+  assert.equal(calls, 0);
+  assert.ok(!rig.log.warmups.includes("cleanup"));
+  assert.ok(!rig.log.statuses.includes("cleaning"));
+  assert.deepStrictEqual(rig.log.delivered, ["raw words", "raw words"]);
+  assert.equal(rig.log.history[0].cleaned, false);
+  assert.equal(rig.log.notifications.length, 1);
+  assert.match(rig.log.notifications[0].body, /Settings → Cleanup/);
+  rig.log.notifications[0].click();
+  assert.equal(rig.log.settingsOpened, 1);
+});
+test("pipeline: active optional download marks raw done and suppresses failure notices", async () => {
+  const rig = dictationRig({ cleanup: true, transcribe: async () => "raw",
+    cleanupReadiness: () => ({ ok: false, reason: "missing", modelId: "cleanup-model" }),
+    isDownloading: () => true });
+  await rig.dictate(speechWav(1));
+  assert.equal(rig.log.done.rawReason, "cleanup-downloading");
+  assert.equal(rig.log.notifications.length, 0);
+  assert.ok(!rig.log.warmups.includes("cleanup"));
+});
+test("pipeline: cleanup completion before save reconciles once and primes only when idle", async () => {
+  const rig = dictationRig({ cleanup: false, transcribe: async () => "raw" });
+  rig.cfg.cleanup.builtin = { model: "fresh" };
+  rig.pipeline.onCleanupDownloaded("fresh");
+  assert.equal(rig.log.notifications.length, 0);
+  rig.pipeline.toggle();
+  rig.cfg.cleanup.enabled = true;
+  rig.pipeline.onSettingsChanged();
+  assert.equal(rig.log.notifications.length, 1);
+  assert.ok(!rig.log.warmups.includes("cleanup"));
+  rig.pipeline.cancel();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepStrictEqual(rig.log.warmups.filter((k) => k === "cleanup"), ["cleanup"]);
+  rig.pipeline.onSettingsChanged();
+  assert.equal(rig.log.notifications.length, 1);
+});
+test("pipeline: completion during transcription rechecks disk before final cleanup", async () => {
+  let ready = false;
+  const rig = dictationRig({ cleanup: true,
+    cleanupReadiness: () => ready ? { ok: true } : { ok: false, reason: "missing", modelId: "fresh" },
+    isDownloading: () => true,
+    transcribe: async () => { ready = true; return "raw"; } });
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(rig.log.delivered, ["cleaned(raw)"]);
+  assert.equal(rig.log.done.rawReason, null);
+});

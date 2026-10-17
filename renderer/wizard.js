@@ -49,16 +49,28 @@ function showStep(index) {
   }
   if (steps[stepIndex].id === "step-output") renderSummary();
   if (steps[stepIndex].id === "step-finish") enterDownloadStep();
+  updateDownloadCopy();
 }
 
 $("back").addEventListener("click", () => showStep(stepIndex - 1));
 $("next").addEventListener("click", () => {
   if (stepIndex === steps.length - 1) finish();
-  else showStep(stepIndex + 1);
+  else {
+    if (stepIndex === 3) {
+      const t = transfer("stt", collect().stt.builtin.model);
+      startDownload(t, ["failed", "skipped"].includes(t.phase));
+    }
+    if (stepIndex === 5) {
+      cleanupConsent = collect().cleanup.enabled ? collect().cleanup.builtin.model : null;
+      later = false;
+    }
+    showStep(stepIndex + 1);
+  }
 });
 
-$("skip").addEventListener("click", () => {
-  // Persists the defaults and opens the regular settings window.
+$("skip").addEventListener("click", async () => {
+  leaving = true; cleanupConsent = null;
+  await Promise.all([...transfers.values()].map(cancelOwned));
   earheart.invoke("wizard:skip");
 });
 
@@ -131,6 +143,7 @@ function syncCleanupEnabled() {
   const fields = $("cleanup-fields");
   fields.classList.toggle("disabled", !on);
   fields.inert = !on;
+  reconcileCleanup();
 }
 
 $("cleanup-enabled").addEventListener("change", syncCleanupEnabled);
@@ -187,7 +200,7 @@ function collect() {
     ...current,
     output: {
       ...current.output,
-      mode: document.querySelector('input[name="output-mode"]:checked').value,
+      mode: document.querySelector("input[name=\"output-mode\"]:checked").value,
       // As in Settings: the explicit paste-copy mode replaces the legacy
       // restoreClipboard: false, so plain paste always restores.
       restoreClipboard: true,
@@ -259,207 +272,139 @@ function renderSummary() {
 }
 
 document
-  .querySelectorAll('input[name="output-mode"]')
+  .querySelectorAll("input[name=\"output-mode\"]")
   .forEach((radio) => radio.addEventListener("change", renderSummary));
 
-/* ---------- download step ---------- */
-
-// Models the user's choices require to run on this computer.
-function neededModels(cfg) {
-  const list = [];
-  if (cfg.stt.engine === "builtin") {
-    list.push({ kind: "stt", modelId: cfg.stt.builtin.model });
+/* ---------- download records outlive their visible rows ---------- */
+const transfers = new Map();
+const dlRows = new Map();
+const downloadOwner = crypto.randomUUID();
+let cleanupConsent = null;
+let later = false;
+let leaving = false;
+function neededModels(cfg = collect()) {
+  return [
+    ...(cfg.stt.engine === "builtin" ? [{ kind: "stt", modelId: cfg.stt.builtin.model }] : []),
+    ...(cfg.cleanup.enabled && cfg.cleanup.engine === "builtin" ? [{ kind: "cleanup", modelId: cfg.cleanup.builtin.model }] : []),
+  ];
+}
+function infoFor(kind, modelId) { return modelStatus?.[kind]?.find((m) => m.id === modelId); }
+function transfer(kind, modelId) {
+  const key = kind + ":" + modelId;
+  if (!transfers.has(key)) {
+    const info = infoFor(kind, modelId);
+    transfers.set(key, { kind, modelId, phase: info?.installed ? "ready" : info?.download ? "downloading" : "idle",
+      received: info?.download?.received || 0, total: info?.bytes, generation: 0, owned: false,
+      burden: !info?.installed, promise: null });
   }
-  if (cfg.cleanup.enabled && cfg.cleanup.engine === "builtin") {
-    list.push({ kind: "cleanup", modelId: cfg.cleanup.builtin.model });
-  }
-  return list;
+  return transfers.get(key);
 }
-
-const dlRows = new Map(); // "kind:id" -> { fill, status, retry, done }
-let downloadStarted = false;
-
-function infoFor(kind, modelId) {
-  return modelStatus[kind].find((m) => m.id === modelId);
+function speechReady() {
+  return collect().stt.engine !== "builtin" || transfer("stt", collect().stt.builtin.model).phase === "ready";
 }
-
-function setFill(row, fraction) {
-  row.fill.style.width = `${Math.round(fraction * 100)}%`;
-}
-
-function formatMB(bytes) {
-  return `${(bytes / 1e6).toFixed(0)} MB`;
-}
-
-// "42% · 280 MB / 660 MB" — concrete progress so a slow download reads as
-// working, not stalled.
-function progressLabel({ received, total, fraction }) {
-  const pct = Math.round((fraction ?? (total ? received / total : 0)) * 100);
-  if (!total) return `${pct}%`;
-  return `${pct}% · ${formatMB(received)} / ${formatMB(total)}`;
-}
-
-function checkAllDone() {
-  const allDone = [...dlRows.values()].every((r) => r.done);
-  $("next").disabled = !allDone;
-  $("next").textContent = allDone ? "Finish setup" : "Downloading…";
-}
-
-// Terminal download outcomes announce through one persistent sr-only live
-// region (like #step-position): a multi-minute first-run download would
-// otherwise end in silence for screen-reader users. Progress ticks stay
-// visual-only.
-function announceDownload(kind, modelId, message) {
-  const info = infoFor(kind, modelId);
-  $("dl-announce").textContent = `${info ? info.label : modelId}: ${message}`;
-}
-
-async function runDownload(kind, modelId) {
-  const key = `${kind}:${modelId}`;
-  const row = dlRows.get(key);
-  row.done = false;
-  row.retry.hidden = true;
-  row.status.textContent = "Downloading…";
-  row.status.className = "status";
-  checkAllDone();
-
-  const res = await earheart.invoke("models:download", { kind, modelId });
-  if (res.ok) {
-    setFill(row, 1);
-    row.status.textContent = "Ready ✓";
-    row.status.className = "status ok";
-    row.done = true;
-    announceDownload(kind, modelId, "Ready ✓");
-  } else if (res.cancelled) {
-    row.status.textContent = "Cancelled";
-    row.status.className = "status";
-    announceDownload(kind, modelId, "Cancelled");
-  } else if (res.error === "Already downloading") {
-    // A fast re-entry (toggling the selection) can race the previous transfer's
-    // teardown. The download is still progressing, so keep showing it as such
-    // rather than a hard error; progress events continue to update the row.
-    row.status.textContent = "Downloading…";
-    row.status.className = "status";
-  } else {
-    row.status.textContent = res.error || "Download failed";
-    row.status.className = "status err";
-    row.retry.hidden = false;
-    announceDownload(kind, modelId, row.status.textContent);
-  }
-  checkAllDone();
-}
-
-function buildRow(kind, modelId) {
-  const info = infoFor(kind, modelId);
-  const wrap = document.createElement("div");
-  wrap.className = "dl-item";
-
-  const head = document.createElement("div");
-  head.className = "dl-head";
-  const name = document.createElement("strong");
-  name.textContent = info ? info.label : modelId;
-  const status = document.createElement("span");
-  status.className = "status";
-  head.append(name, status);
-
-  const bar = document.createElement("div");
-  bar.className = "dl-bar";
-  const fill = document.createElement("div");
-  fill.className = "dl-fill";
-  bar.appendChild(fill);
-
-  const note = document.createElement("p");
-  note.className = "hint";
-  note.textContent = info ? info.note : "";
-
-  const retry = document.createElement("button");
-  retry.className = "ghost";
-  retry.textContent = "Retry";
-  retry.hidden = true;
-  retry.addEventListener("click", () => runDownload(kind, modelId));
-
-  wrap.append(head, bar, note, retry);
-  dlRows.set(`${kind}:${modelId}`, { fill, status, retry, done: false });
-  return wrap;
-}
-
-async function enterDownloadStep() {
+function updateDownloadCopy() {
+  if (!current || !modelStatus) return;
   const cfg = collect();
-  const needed = neededModels(cfg);
-
-  // Rebuild only when the set of needed models changes (revisiting the step
-  // after going back shouldn't restart finished downloads).
-  const signature = needed.map((n) => `${n.kind}:${n.modelId}`).sort().join(",");
-  if (downloadStarted && signature === enterDownloadStep.signature) {
-    checkAllDone();
-    return;
+  const speech = transfer("stt", cfg.stt.builtin.model);
+  const size = (t) => Number.isFinite(t.total) ? ModelProgress.bytes(Math.max(0, t.total - t.received)) : "size unknown";
+  $("speech-download-hint").textContent = speech.phase === "ready" ? "Speech is already downloaded." : speech.phase === "downloading" ? "Speech downloading — " + ModelProgress.label(speech) + ". You can continue setup." : "Speech needs " + size(speech) + ". Download speech and continue starts it now while you finish setup.";
+  if (stepIndex === 3) $("next").textContent = ["ready", "downloading"].includes(speech.phase) ? "Next" : "Download speech and continue (" + size(speech) + ")";
+  if (stepIndex === 5) {
+    const cleanup = cfg.cleanup.enabled ? transfer("cleanup", cfg.cleanup.builtin.model) : null;
+    $("next").textContent = cleanup && !["ready", "downloading"].includes(cleanup.phase) ? "Next: download cleanup (" + size(cleanup) + ")" : "Next";
+    $("download-cost").textContent = (speech.phase === "ready" ? "Speech ready." : speech.phase === "downloading" ? "Speech already downloading — " + ModelProgress.label(speech) + "." : "Speech still needs its download.") + " " + (cleanup && cleanup.phase !== "ready" ? "Optional cleanup needs " + size(cleanup) + "; it starts after speech is ready." : "No additional download needed.");
   }
-  enterDownloadStep.signature = signature;
-
-  // Cancel anything in flight from a previous selection.
-  for (const [key] of dlRows) {
-    const [kind, modelId] = key.split(":");
-    earheart.invoke("models:cancel", { kind, modelId });
-  }
-  dlRows.clear();
-  const listEl = $("download-list");
-  listEl.replaceChildren();
-
-  const toDownload = needed.filter((n) => {
-    const info = infoFor(n.kind, n.modelId);
-    return info && !info.installed;
-  });
-
-  $("download-none").hidden = needed.length > 0;
-  $("download-later-row").hidden = toDownload.length === 0;
-  $("download-title").textContent = toDownload.length
-    ? "Setting up the models that run on your computer"
-    : "You're all set";
-  $("download-intro").hidden = toDownload.length === 0;
-
-  // Show every needed model; already-installed ones render as Ready.
-  for (const n of needed) {
-    listEl.appendChild(buildRow(n.kind, n.modelId));
-    const row = dlRows.get(`${n.kind}:${n.modelId}`);
-    const info = infoFor(n.kind, n.modelId);
-    if (info && info.installed) {
-      setFill(row, 1);
-      row.status.textContent = "Ready ✓";
-      row.status.className = "status ok";
-      row.done = true;
-    }
-  }
-
-  downloadStarted = true;
-  checkAllDone();
-  // Kick off the downloads that are actually missing.
-  for (const n of toDownload) runDownload(n.kind, n.modelId);
-}
-
-earheart.on("models:progress", (p) => {
-  const row = dlRows.get(`${p.kind}:${p.modelId}`);
-  if (row && !row.done) {
-    setFill(row, p.fraction);
-    row.status.textContent = progressLabel(p);
-    row.status.className = "status";
-  }
-});
-
-$("download-later").addEventListener("click", () => {
-  // Stop in-flight downloads and let the user finish; models can be fetched
-  // later from Settings. The pipeline shows a clear error until they exist.
+  if (stepIndex !== steps.length - 1) return;
+  $("next").disabled = !speechReady() && !later;
+  $("next").textContent = speechReady() || later ? "Finish setup" : "Downloading speech…";
+  $("finish-hint").textContent = speechReady() ? "Your setup will be saved. Click into any text field and press " + current.hotkey + " to speak." + (cfg.cleanup.enabled && transfer("cleanup", cfg.cleanup.builtin.model).phase !== "ready" ? " Optional cleanup keeps downloading in the background; dictation works with raw transcripts until it is ready." : "") : "Dictation won't work until you download speech in Settings → Speech-to-text. Cleanup is optional; without it you get raw transcripts.";
+  const burden = neededModels(cfg).map((n) => transfer(n.kind, n.modelId)).filter((t) => t.burden);
+  const known = burden.every((t) => Number.isFinite(t.total));
+  const received = burden.reduce((n, t) => n + (t.phase === "ready" && t.total ? t.total : Math.min(t.received, t.total ?? t.received)), 0);
+  $("download-total").textContent = burden.length ? ModelProgress.bytes(received) + " of " + (known ? ModelProgress.bytes(burden.reduce((n, t) => n + t.total, 0)) : "an unknown total") : "Models already downloaded";
   for (const [key, row] of dlRows) {
-    if (row.done) continue;
-    const [kind, modelId] = key.split(":");
-    earheart.invoke("models:cancel", { kind, modelId });
-    row.done = true;
-    row.status.textContent = "Skipped — download later in Settings";
-    row.status.className = "status";
+    const t = transfers.get(key);
+    const skipped = t.kind === "stt" ? "Not downloaded — dictation won't work until you download it in Settings" : "Not downloaded — optional; you'll get raw transcripts without it";
+    row.status.textContent = t.phase === "ready" ? "Ready ✓" : t.phase === "skipped" ? skipped : t.phase === "failed" ? t.error : t.phase === "downloading" ? ModelProgress.label(t) : t.kind === "cleanup" ? "Waiting for speech — optional" : "Waiting for download";
+    row.status.className = "status" + (t.phase === "ready" ? " ok" : t.phase === "failed" ? " err" : "");
+    row.fill.style.width = (t.phase === "ready" ? 100 : ModelProgress.fraction(t) * 100) + "%";
+    row.retry.hidden = !["failed", "skipped"].includes(t.phase);
   }
-  // One summary announcement, not one per row.
-  $("dl-announce").textContent =
-    "Downloads skipped — you can fetch the models later from Settings.";
-  checkAllDone();
+}
+function announceDownload(t, message) { $("dl-announce").textContent = (infoFor(t.kind, t.modelId)?.label || t.modelId) + ": " + message; }
+function settleDownload(t, result) {
+  if (t.phase === "skipped" || leaving || t.phase === "ready") return;
+  if (result.error === "Already downloading") { t.owned = false; return; }
+  t.phase = result.ok ? "ready" : "failed";
+  t.error = result.cancelled ? "Cancelled — retry when ready" : result.error || "Download failed";
+  if (result.ok) { const info = infoFor(t.kind, t.modelId); if (info) info.installed = true; if (t.total) t.received = t.total; }
+  announceDownload(t, result.ok ? "Ready" : t.error);
+  updateDownloadCopy();
+  maybeStartCleanup();
+}
+async function startDownload(t, retry = false) {
+  if (leaving || (!retry && ["ready", "downloading", "failed", "skipped"].includes(t.phase))) return;
+  // Let the cancelled same-id attempt finish broadcasting before a retry.
+  if (retry && t.promise) await t.promise.catch(() => {});
+  if (leaving) return;
+  const generation = ++t.generation;
+  t.phase = "downloading"; t.owned = true; later = false;
+  updateDownloadCopy();
+  t.promise = earheart.invoke("models:download", { kind: t.kind, modelId: t.modelId, owner: downloadOwner })
+    .then((result) => { if (generation === t.generation) settleDownload(t, result); })
+    .catch((err) => { if (generation === t.generation) settleDownload(t, { ok: false, error: err.message }); });
+}
+function maybeStartCleanup() {
+  if (leaving || later || !cleanupConsent || !speechReady()) return;
+  const cfg = collect();
+  if (cfg.cleanup.enabled && cfg.cleanup.builtin.model === cleanupConsent) startDownload(transfer("cleanup", cleanupConsent));
+}
+function cancelOwned(t) {
+  t.generation++;
+  if (t.owned && t.phase === "downloading") return earheart.invoke("models:cancel", { kind: t.kind, modelId: t.modelId, owner: downloadOwner });
+  return Promise.resolve();
+}
+function reconcileCleanup() {
+  if (!current || !modelStatus) return;
+  const cfg = collect();
+  for (const t of transfers.values()) if (t.kind === "cleanup" && (!cfg.cleanup.enabled || t.modelId !== cfg.cleanup.builtin.model)) {
+    cancelOwned(t); if (t.owned && t.phase !== "ready") t.phase = "skipped";
+  }
+  if (!cfg.cleanup.enabled || cleanupConsent !== cfg.cleanup.builtin.model) cleanupConsent = null;
+  updateDownloadCopy();
+}
+function buildRow(t) {
+  const wrap = document.createElement("div"); wrap.className = "dl-item";
+  const head = document.createElement("div"); head.className = "dl-head";
+  const name = document.createElement("strong"); name.textContent = infoFor(t.kind, t.modelId)?.label || t.modelId;
+  const status = document.createElement("span"); head.append(name, status);
+  const bar = document.createElement("div"); bar.className = "dl-bar";
+  const fill = document.createElement("div"); fill.className = "dl-fill"; bar.append(fill);
+  const retry = document.createElement("button"); retry.className = "ghost"; retry.textContent = "Retry";
+  retry.addEventListener("click", () => {
+    if (t.kind === "cleanup") cleanupConsent = t.modelId;
+    if (t.kind === "cleanup" && !speechReady()) { t.phase = "idle"; later = false; updateDownloadCopy(); }
+    else startDownload(t, true);
+  });
+  wrap.append(head, bar, retry); dlRows.set(t.kind + ":" + t.modelId, { status, fill, retry }); return wrap;
+}
+function enterDownloadStep() {
+  dlRows.clear();
+  $("download-list").replaceChildren(...neededModels().map((n) => buildRow(transfer(n.kind, n.modelId))));
+  $("download-later-row").hidden = neededModels().every((n) => transfer(n.kind, n.modelId).phase === "ready");
+  updateDownloadCopy(); maybeStartCleanup();
+}
+earheart.on("models:progress", (p) => {
+  const t = transfer(p.kind, p.modelId); if (t.phase === "skipped" || leaving) return;
+  t.phase = "downloading"; t.received = Math.max(0, p.received || 0); if (!t.total && p.total) t.total = p.total;
+  updateDownloadCopy();
+});
+earheart.on("models:done", (p) => { const t = transfers.get(p.kind + ":" + p.modelId); if (t) settleDownload(t, p); });
+$("download-later").addEventListener("click", () => {
+  later = true; cleanupConsent = null;
+  for (const n of neededModels()) { const t = transfer(n.kind, n.modelId); if (t.phase === "ready") continue; cancelOwned(t); t.phase = "skipped"; }
+  $("dl-announce").textContent = "Downloads skipped. Speech is required for dictation; cleanup is optional. Download later in Settings.";
+  updateDownloadCopy();
 });
 
 /* ---------- changes saved elsewhere ---------- */
@@ -552,6 +497,7 @@ async function finish() {
   $("cleanup-builtin-model").addEventListener("change", () => {
     current.cleanup.builtin.model = $("cleanup-builtin-model").value;
     syncCleanupNote();
+    reconcileCleanup();
   });
 
   syncCleanupEnabled();

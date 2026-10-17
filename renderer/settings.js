@@ -746,12 +746,7 @@ async function refreshModels(preferred = {}) {
 
 // "42% · 280 MB / 660 MB" — concrete progress so a slow download reads as
 // working, not stalled.
-function progressLabel({ received, total, fraction }) {
-  const pct = Math.round((fraction ?? (total ? received / total : 0)) * 100);
-  if (!total) return `${pct}%`;
-  const mb = (b) => `${(b / 1e6).toFixed(0)} MB`;
-  return `${pct}% · ${mb(received)} / ${mb(total)}`;
-}
+const progressLabel = ModelProgress.label;
 
 earheart.on("models:progress", (p) => {
   const key = modelDownloadKey(p.kind, p.modelId);

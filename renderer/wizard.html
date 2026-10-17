@@ -16,7 +16,7 @@
       <img src="../assets/icon.png" alt="" width="34" height="34" />
       <div>
         <h1>Welcome to Earheart</h1>
-        <p>A couple of quick questions and you're dictating.</p>
+        <p>A few quick choices, then a one-time download.</p>
       </div>
     </header>
 
@@ -133,10 +133,7 @@
               <li>Faster than real time, even without a graphics card</li>
               <li>Understands 25 languages automatically</li>
             </ul>
-            <p class="hint">
-              The model (~2.5&nbsp;GB) downloads in the next step, with a
-              progress bar.
-            </p>
+            <p class="hint" id="speech-download-hint"></p>
           </div>
         </div>
 
@@ -169,6 +166,8 @@
                 by default) — like an editor that tidies every dictation for
                 you, fully offline.
               </p>
+              <details id="cleanup-customize">
+                <summary>Customize</summary>
               <div class="field">
                 <label for="cleanup-builtin-model">Quality</label>
                 <select id="cleanup-builtin-model"></select>
@@ -183,6 +182,7 @@
                 </div>
                 <p class="hint"><strong id="cleanup-style-label"></strong> — <span id="cleanup-style-hint"></span></p>
               </div>
+              </details>
             </div>
           </div>
 
@@ -214,6 +214,7 @@
         <div class="field">
           <label>Your setup</label>
           <dl id="summary"></dl>
+          <p class="hint" id="download-cost"></p>
         </div>
       </section>
 
@@ -225,7 +226,9 @@
           and works offline. This is a one-time download.
         </p>
 
+        <p id="download-total" class="hint"></p>
         <div id="download-list"></div>
+        <p id="finish-hint" class="hint"></p>
 
         <p class="hint" id="download-none" hidden>
           Nothing to download — you're using remote services. You're all set!
@@ -253,6 +256,7 @@
 
     <script src="hotkey-capture.js"></script>
     <script src="settings-sync.js"></script>
+    <script src="model-progress.js"></script>
     <script src="wizard.js"></script>
   </body>
 </html>

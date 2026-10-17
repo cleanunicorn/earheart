@@ -1158,3 +1158,18 @@ test("each updater handler calls its updater action and answers what the UI read
   assert.strictEqual(handlers["models:status"]().cleanup.find((m) => m.id === key.modelId).download, undefined);
   assert.deepStrictEqual(completed, [key.modelId]);
  });
+
+test("wizard ownership token cannot cancel an independently started transfer", async () => {
+  let signal;
+  let finish;
+  const { handlers } = loadIpcHandlers({}, { engines: { download: async (kind, id, opts) => {
+    signal = opts.signal;
+    await new Promise((resolve) => { finish = resolve; });
+  } } });
+  const key = { kind: "stt", modelId: "parakeet-tdt-0.6b-v3" };
+  const task = handlers["models:download"]({}, key);
+  assert.equal((await handlers["models:download"]({}, { ...key, owner: "wizard" })).error, "Already downloading");
+  await handlers["models:cancel"]({}, { ...key, owner: "wizard" });
+  assert.equal(signal.aborted, false);
+  finish(); await task;
+});

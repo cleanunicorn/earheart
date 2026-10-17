@@ -579,7 +579,7 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   });
 
   // Stream a model download to disk, posting progress to the requesting window.
-  ipcMain.handle("models:download", async (event, { kind, modelId } = {}) => {
+  ipcMain.handle("models:download", async (event, { kind, modelId, owner } = {}) => {
     const key = modelKey(kind, modelId);
     if (downloads.has(key)) return { ok: false, error: "Already downloading" };
     // Like every other terminal outcome (except "Already downloading", whose
@@ -598,15 +598,15 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     }
     if (installed) return settle({ ok: true });
     const controller = new AbortController();
-    const entry = { controller, progress: { received: 0 }, done: null };
+    const entry = { controller, owner: typeof owner === "string" ? owner : null, progress: { received: 0 }, done: null };
     downloads.set(key, entry);
     entry.done = runDownload(kind, modelId, entry);
     return entry.done;
   });
 
-  ipcMain.handle("models:cancel", (event, { kind, modelId } = {}) => {
+  ipcMain.handle("models:cancel", (event, { kind, modelId, owner } = {}) => {
     const entry = downloads.get(modelKey(kind, modelId));
-    if (entry) entry.controller.abort();
+    if (entry && (owner === undefined || owner === entry.owner)) entry.controller.abort();
     return { ok: true };
   });
 

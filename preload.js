@@ -92,7 +92,7 @@ const ROLES = {
     INVOKE: ["correction:get", "correction:remember", "transcript:copy", "correction:close"],
   },
   wizard: {
-    LISTEN: ["models:progress", "settings:changed"],
+    LISTEN: ["models:progress", "models:done", "settings:changed"],
     SEND: ["hotkeys:capture"],
     INVOKE: [
       "settings:get",

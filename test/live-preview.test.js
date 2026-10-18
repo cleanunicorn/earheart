@@ -26,7 +26,7 @@ const builtinCfg = (over = {}) => ({
 
 // Build a live-preview harness with controllable deps. `current` toggles whether
 // isCurrent() returns true; `sent` collects overlay messages.
-function harness({ cfg = builtinCfg(), current = true } = {}) {
+function harness({ cfg = builtinCfg(), current = true, canCleanup = () => true } = {}) {
   const sent = [];
   const transcribeCalls = [];
   const cleanupCalls = [];
@@ -49,6 +49,7 @@ function harness({ cfg = builtinCfg(), current = true } = {}) {
     getSettings: () => cfg,
     isCurrent: () => current,
     onCleanupError: (err) => cleanupErrors.push(err),
+    canCleanup,
   });
   return {
     lp,
@@ -849,4 +850,18 @@ test("persistent cleanup failures cap retries at 30 seconds and cancel clears th
   t.mock.timers.tick(60000);
   await flush();
   assert.strictEqual(h.cleanupCalls.length, calls);
+});
+
+test("missing cleanup avoids live work and a timer rechecks availability", async () => {
+  let ready = false;
+  const h = harness({ canCleanup: () => ready });
+  await h.lp.handleAudio(1, chunk(1, true));
+  await tick();
+  assert.equal(h.cleanupCalls.length, 0);
+  ready = true;
+  await h.lp.handleAudio(1, chunk(2, true));
+  ready = false;
+  await tick();
+  assert.equal(h.cleanupCalls.length, 0);
+  h.lp.cancel();
 });

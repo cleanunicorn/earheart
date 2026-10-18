@@ -4,6 +4,11 @@
 // keydown time — classic scripts share one global lexical environment, the
 // same arrangement overlay.html uses for transcript.js).
 
+// Prose names the actual platform key; capture fields keep stored notation.
+function displayHotkey(accelerator) {
+  return String(accelerator || "").replace(/CommandOrControl|CmdOrCtrl/gi, platform === "darwin" ? "Cmd" : "Ctrl");
+}
+
 const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
 
 const PRINTABLE_KEY_CODES = Object.assign(Object.create(null), {
@@ -100,5 +105,5 @@ function wireHotkeyCapture(input, { apply, restore }) {
 // MODIFIER_KEYS stays private, and wireHotkeyCapture's consumers are the
 // pages' classic-script globals, not require().
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { acceleratorFromEvent };
+  module.exports = { acceleratorFromEvent, displayHotkey };
 }

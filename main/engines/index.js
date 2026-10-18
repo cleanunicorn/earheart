@@ -46,10 +46,10 @@ function isInstalled(kind, modelId) {
 //   { ok: false, reason: "unknown", modelId }         id not in the registry
 // It proves the files are there, not that the native engine will load them;
 // the final pass still surfaces a load failure.
-function getSttReadiness(sttCfg) {
+function getModelReadiness(kind, sttCfg) {
   if (sttCfg?.engine !== "builtin") return { ok: true };
   const modelId = sttCfg.builtin?.model;
-  const model = registry.getModel("stt", modelId);
+  const model = registry.getModel(kind, modelId);
   if (!model) return { ok: false, reason: "unknown", modelId };
   let installed;
   try {
@@ -61,6 +61,13 @@ function getSttReadiness(sttCfg) {
   }
   if (installed) return { ok: true };
   return { ok: false, reason: "missing", modelId, label: model.label || modelId };
+}
+
+function getSttReadiness(cfg) { return getModelReadiness("stt", cfg); }
+
+function getCleanupReadiness(cfg) {
+  if (!cfg?.enabled) return { ok: true };
+  return getModelReadiness("cleanup", cfg);
 }
 
 function download(kind, modelId, { onProgress, signal } = {}) {
@@ -386,6 +393,7 @@ cleanupHost.onExit(forgetCleanup);
 module.exports = {
   isInstalled,
   getSttReadiness,
+  getCleanupReadiness,
   download,
   remove,
   removeFiles,

@@ -759,6 +759,19 @@ app.whenReady().then(async () => {
       doneUi.cancelTitle === "Dismiss" && doneUi.cancelAria === "Dismiss",
       `title=${JSON.stringify(doneUi.cancelTitle)} aria=${JSON.stringify(doneUi.cancelAria)}`
     );
+    win.webContents.send("pipeline:status", {
+      status: "done",
+      detail: { preview: "raw text", method: "clipboard", note: "Paste with Ctrl+V", incomplete: true, rawReason: "cleanup-downloading" },
+    });
+    await waitForStatus(win, "done");
+    const rawNotice = await win.webContents.executeJavaScript('({ reason: document.getElementById("raw-reason").textContent, visible: !document.getElementById("raw-reason").hidden, detail: document.getElementById("detail-text").textContent, title: document.getElementById("status-text").textContent })');
+    check("raw cleanup-download reason coexists with paste guidance and incomplete status",
+      rawNotice.visible && /still downloading/.test(rawNotice.reason) && rawNotice.detail === "Paste with Ctrl+V" && /incomplete/.test(rawNotice.title),
+      JSON.stringify(rawNotice));
+    if (process.env.EARHEART_WIZARD_SCREENSHOTS) {
+      await win.webContents.executeJavaScript("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))");
+      require("node:fs").writeFileSync(require("node:path").join(process.env.EARHEART_WIZARD_SCREENSHOTS, "overlay-raw-cleanup.png"), (await win.webContents.capturePage()).toPNG());
+    }
     // An interrupted dictation says so where the delivery title goes: the
     // notification is gone seconds later, this is what stays on screen.
     win.webContents.send("pipeline:status", {

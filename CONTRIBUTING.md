@@ -271,8 +271,15 @@ isn't downloaded.
 Model definitions route by `kind` and their `sherpa` or `gguf` payload rather
 than an engine-name field. Custom models retain `source.repo`: the STT facade
 uses it to reject previously saved unsupported families. Model-status rows
-retain `kind` for removal announcements; size belongs to download progress,
-and the selected default comes from settings.
+retain `kind` for removal announcements, catalog `bytes` (null when unknown)
+and an optional active `download` snapshot. Main owns transfer lifetimes;
+wizard records survive step navigation and consume progress plus terminal
+events. Speech starts after explicit consent, with optional cleanup queued
+behind speech readiness. The selected default comes from settings. Pipeline
+availability checks bypass known missing cleanup files; successful downloads
+signal readiness through injected main-process hooks and prime only while idle.
+Settings destinations use an initial query or a navigation push to an existing
+window, preserving its unsaved fields.
 
 STT evaluation fingerprints hash `registry.js` and `engine-worker.js` byte for
 byte, including comments. Changes to these files require fresh baselines;

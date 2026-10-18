@@ -238,6 +238,7 @@ async function loadMicrophones() {
   } catch {
     // No microphone permission/device; leave "System default".
   }
+  if (!selectionChanged) formBaseline.set(select, { value: select.value, checked: select.checked });
 }
 
 /* ---------- populate / collect ---------- */
@@ -732,6 +733,13 @@ async function removeCustomModel(modelId) {
 // kind, e.g. to select a model that was just added.
 async function refreshModels(preferred = {}) {
   modelStatus = await earheart.invoke("models:status");
+  for (const kind of ["stt", "cleanup"]) for (const info of modelStatus[kind]) {
+    if (info.download) modelDownloads.set(modelDownloadKey(kind, info.id), {
+      fraction: ModelProgress.fraction({ ...info.download, total: info.download.total || info.bytes }),
+      message: ModelProgress.label({ ...info.download, total: info.download.total || info.bytes }),
+    });
+  }
+  renderSetupBanner();
   for (const kind of ["stt", "cleanup"]) {
     const select = $(`${kind}-builtin-model`);
     const want = preferred[kind] || select.value || current[kind].builtin.model;
@@ -746,12 +754,7 @@ async function refreshModels(preferred = {}) {
 
 // "42% · 280 MB / 660 MB" — concrete progress so a slow download reads as
 // working, not stalled.
-function progressLabel({ received, total, fraction }) {
-  const pct = Math.round((fraction ?? (total ? received / total : 0)) * 100);
-  if (!total) return `${pct}%`;
-  const mb = (b) => `${(b / 1e6).toFixed(0)} MB`;
-  return `${pct}% · ${mb(received)} / ${mb(total)}`;
-}
+const progressLabel = ModelProgress.label;
 
 earheart.on("models:progress", (p) => {
   const key = modelDownloadKey(p.kind, p.modelId);
@@ -762,6 +765,7 @@ earheart.on("models:progress", (p) => {
   }
   download.fraction = p.fraction;
   download.message = progressLabel(p);
+  renderSetupBanner();
   const m = manage[p.kind];
   if (m && m.modelId === p.modelId && m.fill) {
     m.fill.style.width = `${Math.round(p.fraction * 100)}%`;
@@ -1376,14 +1380,59 @@ window.addEventListener("focus", async () => {
   if (status) setAccessibilityStatus(status.text, status.cls);
 });
 
-// Opened right after the setup wizard: tell the user their choices are
-// already filled in and saving as-is is fine.
-if (new URLSearchParams(location.search).has("wizard")) {
-  $("wizard-banner").hidden = false;
+// Saved setup uses committed settings, independently of unsaved form edits.
+let savedSetup = null;
+let formBaseline = new Map();
+let formReady = false;
+let pendingNavigation = null;
+function formSnapshot() {
+  return new Map([...document.querySelectorAll("input, select, textarea")].map((el) =>
+    [el, { value: el.value, checked: el.checked }]));
 }
-$("wizard-banner-dismiss").addEventListener("click", () => {
-  $("wizard-banner").hidden = true;
-});
+function renderSetupBanner() {
+  if (!savedSetup || !modelStatus) return;
+  const speech = modelStatus.stt.find((m) => m.id === savedSetup.stt.builtin?.model);
+  const unavailable = savedSetup.stt.engine === "builtin" && !speech?.installed;
+  $("wizard-banner-title").textContent = unavailable ? "Setup saved." : "You\u0027re set.";
+  $("wizard-saved-message").textContent = unavailable
+    ? "Your setup is saved. Download speech in Settings → Speech-to-text before dictating."
+    : "Your setup is saved — click into any text field and press " + displayHotkey(savedSetup.hotkey) + " to dictate.";
+  const id = savedSetup.cleanup.builtin?.model;
+  const download = savedSetup.cleanup.enabled && savedSetup.cleanup.engine === "builtin" && modelDownloads.get(modelDownloadKey("cleanup", id));
+  $("wizard-cleanup-progress").textContent = download
+    ? " Cleanup downloading — " + download.message + ". Dictations use raw transcripts until it is ready." : "";
+}
+async function navigateSettings(destination) {
+  if (!formReady) { pendingNavigation = destination; return; }
+  if (destination.fromWizard) {
+    const before = formSnapshot();
+    const dirty = new Map([...before].filter(([id, value]) => JSON.stringify(value) !== JSON.stringify(formBaseline.get(id))));
+    savedSetup = (await earheart.invoke("settings:get")).settings;
+    current = savedSetup;
+    baseline = sharedBaseline(current);
+    await refreshModels();
+    populate();
+    formBaseline = formSnapshot();
+    for (const [el, value] of dirty) {
+      el.value = value.value;
+      if ("checked" in el) el.checked = value.checked;
+    }
+    syncCleanupEnabled();
+    renderStyleLabel(); syncStyleMode();
+    syncEngine("stt"); syncEngine("cleanup");
+    $("wizard-banner").hidden = false;
+  }
+  renderSetupBanner();
+  if (!["general", "live", "stt", "cleanup", "history", "advanced"].includes(destination.section)) return;
+  activateTab(destination.section, { focusSection: true });
+  if (destination.model && ["stt", "cleanup"].includes(destination.section)) {
+    const target = $(destination.section + "-model-manage");
+    target?.scrollIntoView({ block: "center" });
+    target?.querySelector("button")?.focus({ preventScroll: true });
+  }
+}
+earheart.on("settings:navigate", (destination) => navigateSettings(destination));
+$("wizard-banner-dismiss").addEventListener("click", () => { $("wizard-banner").hidden = true; });
 
 /* ---------- updates ---------- */
 
@@ -1516,9 +1565,23 @@ earheart.on("updates:state", renderUpdateState);
   }
   renderUpdateState(await earheart.invoke("updates:get"));
   modelStatus = await earheart.invoke("models:status");
+  for (const kind of ["stt", "cleanup"]) for (const info of modelStatus[kind]) {
+    if (info.download) modelDownloads.set(modelDownloadKey(kind, info.id), {
+      fraction: ModelProgress.fraction({ ...info.download, total: info.download.total || info.bytes }),
+      message: ModelProgress.label({ ...info.download, total: info.download.total || info.bytes }),
+    });
+  }
+  renderSetupBanner();
   populateModelSelect("stt");
   populateModelSelect("cleanup");
   populate();
+  formBaseline = formSnapshot();
+  savedSetup = current;
+  formReady = true;
+  const query = new URLSearchParams(location.search);
+  await navigateSettings(pendingNavigation || {
+    fromWizard: query.has("wizard"), section: query.get("section"), model: query.has("model"),
+  });
   settingsChangesReady();
   renderHistory();
   loadMicrophones();

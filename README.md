@@ -264,15 +264,30 @@ both speech-to-text and cleanup, so first-run dictation is fully local and
 private with nothing to configure. Prefer a remote service? Switch any time in
 Settings → Speech-to-text or Settings → Cleanup.
 
-The wizard's last step downloads the models that run on your machine — the
-full-precision Parakeet speech model (≈ 2.5 GB) and the Granite 4.0 Micro
-cleanup model (≈ 2.1 GB) —
-showing a progress bar as it goes. It's a one-time download; everything after
-that, speech-to-text runs faster than realtime, even on CPU. If a download is interrupted,
-retrying resumes from the saved partial file when possible. You can pick another
-built-in model in the wizard or later in Settings — the int8 Parakeet (≈ 670 MB)
-or Gemma 3 1B (≈ 0.8 GB), for example, if the download or speed matters more
-than the last bit of accuracy.
+On the speech step, **Download speech** shows the remaining
+catalog size and starts the Parakeet download (≈ 2.5 GB) while you finish the
+other choices. Cleanup quality and style are under **Customize**. The output
+step asks separately to download your selected cleanup model (Granite 4.0
+Micro by default, ≈ 2.1 GB); cleanup waits until speech is ready so the two
+transfers do not share its bandwidth. The final step shows real combined bytes.
+
+**Finish setup** becomes available as soon as speech is ready. Optional cleanup
+continues after the wizard closes; Settings shows its live progress, and raw
+dictations say when cleanup is still downloading. Earheart announces when
+cleanup becomes ready and warms it while idle. Your setup is already saved:
+click any text field and press the hotkey shown in Settings to dictate.
+
+**Download later** stops the wizard's transfers. Dictation needs the speech
+model; cleanup is optional and raw transcripts work without it. **Skip setup**
+also stops wizard-started downloads and opens Speech-to-text with Download in
+view if speech is missing. Independently started Settings transfers keep running.
+After quitting, downloads do not restart automatically. Missing cleanup is
+quietly bypassed, with one notice per launch pointing to Settings → Cleanup.
+Explicit Download resumes a saved partial file when possible.
+
+You can choose another built-in model later in Settings — int8 Parakeet
+(≈ 670 MB) or Gemma 3 1B (≈ 0.8 GB), for example. Cleanup model choices are
+also available under Customize in the wizard.
 
 Every launch after that goes straight to the tray — no window to dismiss — and
 posts a short "ready, press *your hotkey*" notification. Click it to open

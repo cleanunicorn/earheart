@@ -1291,6 +1291,7 @@ app.whenReady().then(async () => {
       JSON.stringify(denied)
     );
 
+    await require("./wizard-smoke").checkWizard({ waitFor, check });
     await require("./correction-smoke").checkCorrection({ waitFor, check });
 
     const failed = checks.filter((c) => !c.ok);

@@ -518,16 +518,20 @@ test("re-opening Settings or the wizard shows the existing window instead of a s
   assert.strictEqual(countOf(calls, "focus"), 2);
 });
 
-test("re-opening Settings from the wizard reloads it before bringing it forward", () => {
+test("re-opening Settings from the wizard pushes navigation without reloading drafts", () => {
   const { windows, calls } = loadWindows();
   windows.openSettings();
   const loadsBefore = countOf(calls, "loadFile");
-  windows.openSettings({ fromWizard: true });
-  assert.strictEqual(countOf(calls, "loadFile"), loadsBefore + 1);
-  const reload = calls.findLastIndex(([name]) => name === "loadFile");
-  assert.match(calls[reload][1], /settings\.html$/);
-  assert.deepStrictEqual(calls[reload][2], { query: { wizard: "1" } });
-  assert.ok(reload < indexOf(calls, "show"), "the reload must come before show");
+  windows.openSettings({ fromWizard: true, section: "stt", model: true });
+  assert.strictEqual(countOf(calls, "loadFile"), loadsBefore);
+  assert.deepStrictEqual(calls.findLast(([name]) => name === "send"),
+    ["send", "settings:navigate", { fromWizard: true, section: "stt", model: true }]);
+});
+test("Settings validates initial destination and exposes model targeting", () => {
+  const { windows, calls } = loadWindows();
+  windows.openSettings({ section: "cleanup", model: true });
+  assert.deepStrictEqual(calls.find(([name]) => name === "loadFile")[2],
+    { query: { section: "cleanup", model: "1" } });
 });
 
 /* ---------------- overlay placement ---------------- */

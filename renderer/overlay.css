@@ -637,3 +637,11 @@ button:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Optional model availability is secondary; delivery warnings keep their slot. */
+#raw-reason {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 0 16px 8px;
+}

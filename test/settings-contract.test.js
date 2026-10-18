@@ -399,6 +399,7 @@ function microphonePage(source, page) {
     CSS: { escape: (value) => value },
     current,
     baseline: { outputMode: current.output.mode, remind: true },
+    formBaseline: new Map(),
     // The page's own copy of the shared classic script's global.
     sharedBaseline: require("../renderer/settings-sync").sharedBaseline,
     displayedOutputMode: require("../renderer/settings-sync").displayedOutputMode,

@@ -22,6 +22,8 @@ const OUTPUT_MODES = [
 ];
 
 function icon(name) {
+  // Pass the ICO path directly so Windows selects the native size for its DPI.
+  if (process.platform === "win32") return path.join(ASSETS, name.replace(/\.png$/, ".ico"));
   const img = nativeImage.createFromPath(path.join(ASSETS, name));
   return img.isEmpty() ? nativeImage.createEmpty() : img;
 }

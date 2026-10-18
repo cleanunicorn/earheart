@@ -398,3 +398,11 @@ recording/done states). If the UI changes, re-capture them:
 ```bash
 make screenshots       # runs scripts/screenshots.js under xvfb
 ```
+
+## Tray artwork
+
+`make icons` regenerates the shared heart-and-waveform artwork. macOS and Linux
+use the tray PNGs; Windows uses `tray.ico` and `tray-recording.ico`, each with
+16, 20, 24, 32, 40, 48 and 64 pixel images for different display scales. Both
+idle and recording icons come from the same renderer in `scripts/gen-icons.js`.
+Pass the ICO path directly to Electron so Windows can choose the native size.

@@ -272,7 +272,8 @@ Micro by default, ≈ 2.1 GB); cleanup waits until speech is ready so the two
 transfers do not share its bandwidth. The final step shows real combined bytes.
 
 **Finish setup** becomes available as soon as speech is ready. Optional cleanup
-continues after the wizard closes; Settings shows its live progress, and raw
+continues after the wizard closes (if its download failed, Finish setup starts
+it again); Settings shows its live progress, and raw
 dictations say when cleanup is still downloading. Earheart announces when
 cleanup becomes ready and warms it while idle. Your setup is already saved:
 click any text field and press the hotkey shown in Settings to dictate.
@@ -286,8 +287,12 @@ quietly bypassed, with one notice per launch pointing to Settings → Cleanup.
 Explicit Download resumes a saved partial file when possible.
 
 You can choose another built-in model later in Settings — int8 Parakeet
-(≈ 670 MB) or Gemma 3 1B (≈ 0.8 GB), for example. Cleanup model choices are
-also available under Customize in the wizard.
+(≈ 670 MB) or Gemma 3 1B (≈ 0.8 GB), for example. Pick it and press **Save**:
+a model that isn't downloaded yet downloads first, with its progress and
+**Cancel** in the model row, and Settings saves once it is installed. If the
+download fails or you cancel it, nothing is saved and Settings says why, so
+your previous model stays in use. Cleanup model choices are also available
+under Customize in the wizard.
 
 Every launch after that goes straight to the tray — no window to dismiss — and
 posts a short "ready, press *your hotkey*" notification. Click it to open
@@ -484,7 +489,7 @@ straight from a Hugging Face repo:
 Under **Add a model from Hugging Face**, paste the repo URL or `owner/model`
 (**Browse Hugging Face** opens the hub pre-filtered to models that fit), click
 **Find versions**, pick a quantization or precision, then **Add** and
-**Download**. The download is pinned to the repo's commit at the time you
+**Download** (or **Save**, which downloads the selected model first). The download is pinned to the repo's commit at the time you
 added it. **Remove** deletes the files and forgets the model.
 
 **Checksums are weaker than for the built-in models.** Built-in models are

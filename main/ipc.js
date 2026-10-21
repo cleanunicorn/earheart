@@ -579,9 +579,13 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   });
 
   // Stream a model download to disk, posting progress to the requesting window.
-  ipcMain.handle("models:download", async (event, { kind, modelId, owner } = {}) => {
+  // `join: true` (Settings' Save) waits for a transfer already in flight and
+  // returns its own outcome instead of refusing; the joiner never takes it over.
+  ipcMain.handle("models:download", async (event, { kind, modelId, owner, join } = {}) => {
     const key = modelKey(kind, modelId);
-    if (downloads.has(key)) return { ok: false, error: "Already downloading" };
+    if (downloads.has(key)) {
+      return join === true ? downloads.get(key).done : { ok: false, error: "Already downloading" };
+    }
     // Like every other terminal outcome (except "Already downloading", whose
     // transfer will broadcast its own), report it to every window so a row
     // that optimistically showed "Downloading…" settles.

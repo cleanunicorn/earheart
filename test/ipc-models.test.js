@@ -842,6 +842,69 @@ test("a second download of the same model is refused and leaves the first runnin
   );
 });
 
+test("a join request waits for the running download's own result without a second transfer", async () => {
+  const transfers = [];
+  let finish;
+  const { handlers, broadcasts } = loadIpcHandlers({}, {
+    engines: {
+      download: (kind, id) => {
+        transfers.push(`${kind}:${id}`);
+        return new Promise((resolve, reject) => { finish = { resolve, reject }; });
+      },
+    },
+  });
+  const key = { kind: "stt", modelId: "parakeet-tdt-0.6b-v3" };
+  const manual = handlers["models:download"]({}, { ...key, owner: "wizard" });
+
+  const joined = handlers["models:download"]({}, { ...key, join: true });
+  const again = handlers["models:download"]({}, { ...key, join: true });
+  finish.resolve();
+
+  assert.deepStrictEqual(await within(joined, 1000, "join"), { ok: true });
+  assert.deepStrictEqual(await within(again, 1000, "second join"), { ok: true });
+  assert.deepStrictEqual(await manual, { ok: true });
+  assert.deepStrictEqual(transfers, ["stt:parakeet-tdt-0.6b-v3"], "joining starts no transfer");
+  assert.strictEqual(broadcasts.filter((b) => b.channel === "models:done").length, 1,
+    "the transfer reports once, not once per joiner");
+});
+
+test("a join request reports the running download's failure, and owner-scoped cancel still applies", async () => {
+  const events = [];
+  const fake = abortableDownload(events);
+  const { handlers } = loadIpcHandlers({}, { engines: { download: fake.download } });
+  const key = { kind: "cleanup", modelId: "gemma-3-1b" };
+  const first = handlers["models:download"]({}, { ...key, owner: "wizard" });
+  await fake.started;
+  const joined = handlers["models:download"]({}, { ...key, join: true });
+
+  // A joiner never takes ownership: another owner's cancel is still ignored.
+  await handlers["models:cancel"]({}, { ...key, owner: "someone-else" });
+  assert.deepStrictEqual(events, ["download:cleanup:gemma-3-1b"]);
+  await handlers["models:cancel"]({}, { ...key, owner: "wizard" });
+  fake.finishCleanup();
+
+  const expected = { ok: false, cancelled: true, error: "aborted" };
+  assert.deepStrictEqual(await within(joined, 1000, "join"), expected);
+  assert.deepStrictEqual(await within(first, 1000, "download"), expected);
+});
+
+test("a join request with nothing in flight starts the download like a plain request", async () => {
+  const transfers = [];
+  const { handlers } = loadIpcHandlers({}, {
+    engines: {
+      download: async (kind, id) => {
+        transfers.push(`${kind}:${id}`);
+        throw new Error("checksum mismatch");
+      },
+    },
+  });
+
+  const result = await handlers["models:download"]({}, { kind: "stt", modelId: "parakeet-tdt-0.6b-v3", join: true });
+
+  assert.deepStrictEqual(result, { ok: false, cancelled: false, error: "checksum mismatch" });
+  assert.deepStrictEqual(transfers, ["stt:parakeet-tdt-0.6b-v3"]);
+});
+
 test("a finished download relays progress to every window and reports done", async () => {
   const { handlers, broadcasts } = loadIpcHandlers({}, {
     engines: {

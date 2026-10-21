@@ -40,6 +40,11 @@ const isDownloading = (kind, modelId) => downloads.has(modelKey(kind, modelId));
 // these keys is refused until that finishes, so no new writer can start
 // between stopping the old one and removing its directory.
 const busyModels = new Set();
+// Each model's last failed (not cancelled) download error, until a new
+// transfer starts. models:status reports it, so a window that opened after the
+// models:done broadcast (Settings handed over from the wizard) still learns of
+// the failure.
+const downloadFailures = new Map();
 
 // Abort a model's in-flight download, if any, and wait until it has stopped
 // writing. Never throws: the download reports its own outcome.
@@ -73,6 +78,7 @@ async function runDownload(kind, modelId, entry) {
   } finally {
     downloads.delete(modelKey(kind, modelId));
   }
+  if (!result.ok && !result.cancelled) downloadFailures.set(modelKey(kind, modelId), result.error);
   windows.broadcast("models:done", { kind, modelId, ...result });
   if (result.ok && kind === "cleanup") {
     try { onCleanupDownloaded(modelId); } catch (err) { logger.warn("cleanup readiness notification failed:", err); }
@@ -574,6 +580,8 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
           ? engines.registry.totalBytes(m) : null,
         ...(downloads.has(modelKey(kind, m.id))
           ? { download: { ...downloads.get(modelKey(kind, m.id)).progress } } : {}),
+        ...(downloadFailures.has(modelKey(kind, m.id))
+          ? { error: downloadFailures.get(modelKey(kind, m.id)) } : {}),
       }));
     return { stt: describe("stt"), cleanup: describe("cleanup") };
   });
@@ -603,6 +611,7 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     if (installed) return settle({ ok: true });
     const controller = new AbortController();
     const entry = { controller, owner: typeof owner === "string" ? owner : null, progress: { received: 0 }, done: null };
+    downloadFailures.delete(key);
     downloads.set(key, entry);
     entry.done = runDownload(kind, modelId, entry);
     return entry.done;

@@ -273,7 +273,7 @@ transfers do not share its bandwidth. The final step shows real combined bytes.
 
 **Finish setup** becomes available as soon as speech is ready. Optional cleanup
 continues after the wizard closes (if its download failed, Finish setup starts
-it again); Settings shows its live progress, and raw
+it again); Settings shows its live progress, or why it failed, and raw
 dictations say when cleanup is still downloading. Earheart announces when
 cleanup becomes ready and warms it while idle. Your setup is already saved:
 click any text field and press the hotkey shown in Settings to dictate.

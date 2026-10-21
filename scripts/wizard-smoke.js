@@ -172,7 +172,16 @@ async function checkWizard({ waitFor, check }) {
     }
     check("Finish setup restarts a failed optional cleanup and saves once",
       starts.slice(startsBeforeFinish).join() === cleanupKey && active.has(cleanupKey) && commits === 1);
-    active.get(cleanupKey).finish();
+    // The retry fails while Settings is still loading, before it can hear
+    // models:done: the saved-setup banner and the row still report it.
+    active.get(cleanupKey).fail();
+    const retryForm = externalSettings = windows.openSettings();
+    const retryJs = (code) => retryForm.webContents.executeJavaScript(code, true);
+    await waitFor(() => retryJs('typeof formReady !== "undefined" && formReady && !document.getElementById("wizard-banner").hidden'), "handoff banner did not initialize");
+    check("a background cleanup failure before Settings loads still shows in the banner and row",
+      await waitFor(() => retryJs('document.getElementById("wizard-cleanup-progress").textContent.includes("Cleanup download failed (offline fixture)") && [...document.querySelectorAll("#cleanup-model-manage button")].some((b) => b.textContent === "Retry download") && document.querySelector("#cleanup-model-manage .status").textContent === "offline fixture"'), "the failed retry was lost in the handoff"));
+    windows.closeSettings();
+    await waitFor(() => retryForm.isDestroyed(), "Settings did not close");
     installed.clear();
 
     // A transfer begun by Settings is adopted, never cancelled by wizard Skip.

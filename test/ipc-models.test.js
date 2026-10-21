@@ -905,6 +905,53 @@ test("a join request with nothing in flight starts the download like a plain req
   assert.deepStrictEqual(transfers, ["stt:parakeet-tdt-0.6b-v3"]);
 });
 
+// A window that opens after a background download failed (Settings handed
+// over from the wizard) learns the failure from models:status, not only from
+// the models:done broadcast it may have missed.
+test("models:status keeps a model's last download failure until a new transfer starts", async () => {
+  let outcome = "fail";
+  let hold;
+  const { handlers } = loadIpcHandlers({}, {
+    engines: {
+      download: () => {
+        if (outcome === "fail") return Promise.reject(new Error("offline"));
+        if (outcome === "hold") return new Promise((resolve) => { hold = resolve; });
+        return Promise.resolve();
+      },
+    },
+  });
+  const key = { kind: "cleanup", modelId: "gemma-3-1b" };
+  const statusOf = async () =>
+    (await handlers["models:status"]()).cleanup.find((m) => m.id === key.modelId);
+
+  await handlers["models:download"]({}, key);
+  assert.strictEqual((await statusOf()).error, "offline");
+
+  outcome = "hold";
+  const running = handlers["models:download"]({}, key);
+  const during = await statusOf();
+  assert.ok(!("error" in during), "a running retry clears the old failure");
+  assert.ok(during.download, "and reports its progress instead");
+  hold();
+  await running;
+  assert.ok(!("error" in (await statusOf())), "success leaves no failure behind");
+});
+
+test("models:status reports no failure for a cancelled download", async () => {
+  const events = [];
+  const fake = abortableDownload(events);
+  const { handlers } = loadIpcHandlers({}, { engines: { download: fake.download } });
+  const key = { kind: "cleanup", modelId: "gemma-3-1b" };
+  const download = handlers["models:download"]({}, key);
+  await fake.started;
+  await handlers["models:cancel"]({}, key);
+  fake.finishCleanup();
+  await download;
+
+  const info = (await handlers["models:status"]()).cleanup.find((m) => m.id === key.modelId);
+  assert.ok(!("error" in info), JSON.stringify(info));
+});
+
 test("a finished download relays progress to every window and reports done", async () => {
   const { handlers, broadcasts } = loadIpcHandlers({}, {
     engines: {

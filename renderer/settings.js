@@ -596,8 +596,11 @@ function renderManage(kind) {
       btn.className = "ghost";
       btn.onclick = () => earheart.invoke("models:cancel", { kind, modelId });
     } else {
-      status.textContent = "Not downloaded";
-      btn.textContent = "Download";
+      // Main keeps the last failure, so it shows even when this window
+      // opened after the download's models:done (e.g. a wizard handoff).
+      status.textContent = info.error || "Not downloaded";
+      if (info.error) status.className = "status err";
+      btn.textContent = info.error ? "Retry download" : "Download";
       btn.className = "ghost";
       btn.onclick = () => downloadModel(kind, modelId);
     }
@@ -1465,9 +1468,18 @@ function renderSetupBanner() {
     ? "Your setup is saved. Download speech in Settings → Speech-to-text before dictating."
     : "Your setup is saved — click into any text field and press " + displayHotkey(savedSetup.hotkey) + " to dictate.";
   const id = savedSetup.cleanup.builtin?.model;
-  const download = savedSetup.cleanup.enabled && savedSetup.cleanup.engine === "builtin" && modelDownloads.get(modelDownloadKey("cleanup", id));
+  const usesCleanup = savedSetup.cleanup.enabled && savedSetup.cleanup.engine === "builtin";
+  const download = usesCleanup && modelDownloads.get(modelDownloadKey("cleanup", id));
+  // From status, not only live events: a background cleanup download can fail
+  // before this window subscribed to models:done.
+  const cleanup = usesCleanup && modelStatus.cleanup.find((m) => m.id === id);
   $("wizard-cleanup-progress").textContent = download
-    ? " Cleanup downloading — " + download.message + ". Dictations use raw transcripts until it is ready." : "";
+    ? " Cleanup downloading — " + download.message + ". Dictations use raw transcripts until it is ready."
+    : cleanup && !cleanup.installed
+      ? cleanup.error
+        ? " Cleanup download failed (" + cleanup.error + "). Dictations use raw transcripts; retry it in Settings → Cleanup."
+        : " Cleanup isn't downloaded. Dictations use raw transcripts; download it in Settings → Cleanup."
+      : "";
 }
 async function navigateSettings(destination) {
   if (!formReady) { pendingNavigation = destination; return; }

@@ -272,7 +272,9 @@ Model definitions route by `kind` and their `sherpa` or `gguf` payload rather
 than an engine-name field. Custom models retain `source.repo`: the STT facade
 uses it to reject previously saved unsupported families. Model-status rows
 retain `kind` for removal announcements, catalog `bytes` (null when unknown)
-and an optional active `download` snapshot. Main owns transfer lifetimes;
+an optional active `download` snapshot, and the last failed (not cancelled)
+download's `error` until a new transfer starts, so a window opened after the
+`models:done` broadcast (the wizard's Settings handoff) still shows it. Main owns transfer lifetimes;
 wizard records survive step navigation and consume progress plus terminal
 events. `models:download` with `join: true` returns an in-flight transfer's
 own outcome instead of "Already downloading", without taking it over.

@@ -52,6 +52,11 @@
 //  14. A microphone chosen while permission or device enumeration is pending
 //      survives completion (options and labels still refresh), and Save
 //      writes that choice to disk; an untouched saved microphone stays put.
+//  16. Save with a built-in model that isn't downloaded downloads it first
+//      (with the row's progress), saves only once it is installed, never saves
+//      or says "Saved" when the download fails or is cancelled, starts no
+//      second transfer for repeated clicks or a Download already running, and
+//      downloads nothing when the selection is already installed.
 //  15. Each API key field says how the key is stored, matching what real
 //      safeStorage reports after `ready`, and a saved key reaches disk as
 //      ciphertext that decrypts back to it (secure storage) or, without it
@@ -154,12 +159,15 @@ app.whenReady().then(async () => {
       }),
     });
     const downloads = new Map();
+    // Every transfer the engine was asked for, in order (check 16 counts them).
+    const downloadCalls = [];
     const installedModels = new Set();
     const isInstalled = engines.isInstalled;
     engines.isInstalled = (kind, modelId) =>
       installedModels.has(`${kind}:${modelId}`) || isInstalled(kind, modelId);
     engines.download = (kind, modelId, { onProgress, signal }) =>
       new Promise((resolve, reject) => {
+        downloadCalls.push(`${kind}:${modelId}`);
         signal.addEventListener("abort", () => reject(new Error("aborted")), {
           once: true,
         });
@@ -930,6 +938,18 @@ app.whenReady().then(async () => {
       JSON.stringify(wizardNote)
     );
 
+    // Save downloads a selected built-in model that is missing before it
+    // persists (check 16). The Saves from here on test other fields, so the
+    // models they select — the form's, and the defaults a custom-model removal
+    // falls back to — count as downloaded.
+    const selectedModels = JSON.parse(await js(`JSON.stringify([
+      "stt:" + document.getElementById("stt-builtin-model").value,
+      "cleanup:" + document.getElementById("cleanup-builtin-model").value,
+    ])`));
+    for (const key of [...selectedModels, `stt:${registry.DEFAULT_STT_MODEL}`, `cleanup:${registry.DEFAULT_CLEANUP_MODEL}`]) {
+      installedModels.add(key);
+    }
+
     // 13. The Performance limits clamp on the real Save: out-of-range entries
     // reach disk as the field's own min/max, not as typed (#210), and the
     // window stays open to say so. Last, since it saves the whole form.
@@ -1290,6 +1310,160 @@ app.whenReady().then(async () => {
       denied.value === "" && denied.stopped === 0 && !denied.error,
       JSON.stringify(denied)
     );
+
+    // 16. Save downloads a selected built-in model that isn't installed, and
+    // persists only after it is. Each case opens a fresh window (a clean Save
+    // closes it) and holds the fake engine's transfer open.
+    const savedJson = () => JSON.parse(fs.readFileSync(path.join(userData, "settings.json"), "utf8"));
+    const notInstalled = (kind) => registry.listModels(kind)
+      .map((m) => m.id)
+      .find((id) => !installedModels.has(`${kind}:${id}`) && !isInstalled(kind, id));
+    const saveSttModel = notInstalled("stt");
+    const saveCleanupModel = notInstalled("cleanup");
+    let saveCount = 0;
+    const countedSave = settings.save;
+    settings.save = (next) => {
+      saveCount++;
+      return countedSave(next);
+    };
+    async function openSaveWindow() {
+      const saveWin = windows.openSettings();
+      await waitForLoad(saveWin.webContents);
+      await sleep(1200);
+      const run = (code) => saveWin.webContents.executeJavaScript(code, true);
+      const select = (kind, modelId) => run(`(() => {
+        const select = document.getElementById(${JSON.stringify(`${kind}-builtin-model`)});
+        select.value = ${JSON.stringify(modelId)};
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      })()`);
+      const state = (kind) => run(`JSON.stringify({
+        save: document.getElementById("save-status").textContent,
+        saveClass: document.getElementById("save-status").className,
+        saveDisabled: document.getElementById("save").disabled,
+        row: document.querySelector(${JSON.stringify(`#${kind}-model-manage .status`)})?.textContent,
+        width: document.querySelector(${JSON.stringify(`#${kind}-model-manage .dl-fill`)})?.style.width,
+        buttons: [...document.querySelectorAll(${JSON.stringify(`#${kind}-model-manage button`)})].map((b) => b.textContent),
+      })`).then(JSON.parse);
+      return { saveWin, run, select, state };
+    }
+    try {
+      // Download on Save, with progress; a second click starts nothing more.
+      {
+        const { saveWin, run, select, state } = await openSaveWindow();
+        const callsBefore = downloadCalls.length;
+        const savesBefore = saveCount;
+        await select("stt", saveSttModel);
+        await run(`document.getElementById("save").click(); document.getElementById("save").click(); true`);
+        await waitFor(() => downloadCalls.length > callsBefore, "Save did not start the selected model's download");
+        downloads.get(`stt:${saveSttModel}`).onProgress({ fraction: 0.42, received: 42, total: 100 });
+        await run(`document.getElementById("save").click(); true`);
+        const during = await waitFor(
+          () => state("stt").then((s) => s.width === "42%" && s),
+          "Save-triggered download never showed progress"
+        );
+        check(
+          "Save downloads a selected model that isn't downloaded, without a Download click",
+          downloadCalls.slice(callsBefore).join() === `stt:${saveSttModel}` &&
+            saveCount === savesBefore &&
+            savedJson().stt.builtin.model !== saveSttModel,
+          JSON.stringify({ calls: downloadCalls.slice(callsBefore), saves: saveCount - savesBefore })
+        );
+        check(
+          "Save shows the download's progress and keeps Save disabled while it runs",
+          during.row.startsWith("42%") && during.buttons.includes("Cancel") &&
+            /^Downloading .+ before saving…$/.test(during.save) && during.saveDisabled,
+          JSON.stringify(during)
+        );
+        downloads.get(`stt:${saveSttModel}`).resolve();
+        await waitFor(() => saveWin.isDestroyed(), "Save did not close Settings after the download");
+        check(
+          "Save persists the model once it is downloaded, once, after repeated clicks",
+          savedJson().stt.builtin.model === saveSttModel &&
+            saveCount === savesBefore + 1 &&
+            downloadCalls.slice(callsBefore).length === 1,
+          JSON.stringify({ calls: downloadCalls.slice(callsBefore), saves: saveCount - savesBefore })
+        );
+      }
+
+      // Failure, cancel, then a Download already running when Save is clicked.
+      {
+        const { saveWin, run, select, state } = await openSaveWindow();
+        const savesBefore = saveCount;
+        const savedCleanup = savedJson().cleanup.builtin.model;
+        await select("cleanup", saveCleanupModel);
+        let callsBefore = downloadCalls.length;
+        await run(`document.getElementById("save").click(); true`);
+        await waitFor(() => downloadCalls.length > callsBefore, "Save did not start the cleanup download");
+        downloads.get(`cleanup:${saveCleanupModel}`).reject(new Error("checksum mismatch"));
+        const failed = await waitFor(
+          // The row settles on models:done after its own status refresh.
+          () => state("cleanup").then((s) => s.save.startsWith("Not saved") && !s.buttons.includes("Cancel") && s),
+          "a failed download never reported Not saved"
+        );
+        check(
+          "a failed Save-triggered download shows the error and saves nothing",
+          /checksum mismatch/.test(failed.save) && failed.saveClass === "status err" &&
+            !failed.saveDisabled && !saveWin.isDestroyed() &&
+            saveCount === savesBefore && savedJson().cleanup.builtin.model === savedCleanup &&
+            failed.row === "checksum mismatch" && failed.buttons.includes("Retry download"),
+          JSON.stringify(failed)
+        );
+
+        callsBefore = downloadCalls.length;
+        await run(`document.getElementById("save").click(); true`);
+        await waitFor(() => downloadCalls.length > callsBefore, "a second Save did not retry the download");
+        await waitFor(
+          () => state("cleanup").then((s) => s.buttons.includes("Cancel")),
+          "the retried download did not offer Cancel"
+        );
+        await run(`[...document.querySelectorAll("#cleanup-model-manage button")].find((b) => b.textContent === "Cancel").click(); true`);
+        const cancelled = await waitFor(
+          // The row settles on models:done after its own status refresh.
+          () => state("cleanup").then((s) => s.save.startsWith("Not saved") && !s.buttons.includes("Cancel") && s),
+          "a cancelled download never reported Not saved"
+        );
+        check(
+          "cancelling a Save-triggered download says so and saves nothing",
+          /Download cancelled/.test(cancelled.save) && !cancelled.saveDisabled &&
+            saveCount === savesBefore && savedJson().cleanup.builtin.model === savedCleanup,
+          JSON.stringify(cancelled)
+        );
+
+        callsBefore = downloadCalls.length;
+        await run(`[...document.querySelectorAll("#cleanup-model-manage button")].find((b) => b.textContent === "Download").click(); true`);
+        await waitFor(() => downloadCalls.length > callsBefore, "Download did not start");
+        await run(`document.getElementById("save").click(); true`);
+        await sleep(150);
+        const joined = { calls: downloadCalls.slice(callsBefore), saves: saveCount - savesBefore, open: !saveWin.isDestroyed() };
+        downloads.get(`cleanup:${saveCleanupModel}`).resolve();
+        await waitFor(() => saveWin.isDestroyed(), "Save did not close Settings after the running download finished");
+        check(
+          "Save during a running Download waits for it instead of starting another",
+          joined.calls.length === 1 && joined.saves === 0 && joined.open &&
+            downloadCalls.slice(callsBefore).length === 1 &&
+            saveCount === savesBefore + 1 && savedJson().cleanup.builtin.model === saveCleanupModel,
+          JSON.stringify(joined)
+        );
+      }
+
+      // Installed selection: Save behaves as before.
+      {
+        const { saveWin, run } = await openSaveWindow();
+        const callsBefore = downloadCalls.length;
+        const savesBefore = saveCount;
+        await run(`document.getElementById("save").click(); true`);
+        await waitFor(() => saveWin.isDestroyed(), "a clean Save with installed models did not close Settings");
+        check(
+          "Save with downloaded models downloads nothing and saves once",
+          downloadCalls.length === callsBefore && saveCount === savesBefore + 1,
+          JSON.stringify({ calls: downloadCalls.slice(callsBefore), saves: saveCount - savesBefore })
+        );
+      }
+    } finally {
+      settings.save = countedSave;
+      // A failed case leaves its window open; close it so the next block starts clean.
+      windows.closeSettings();
+    }
 
     await require("./wizard-smoke").checkWizard({ waitFor, check });
     await require("./correction-smoke").checkCorrection({ waitFor, check });

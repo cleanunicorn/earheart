@@ -1320,6 +1320,9 @@ app.whenReady().then(async () => {
       .find((id) => !installedModels.has(`${kind}:${id}`) && !isInstalled(kind, id));
     const saveSttModel = notInstalled("stt");
     const saveCleanupModel = notInstalled("cleanup");
+    // The wizard checks after this block read the saved models; put back the
+    // ones saved before it.
+    const modelsBeforeSaves = { stt: settings.get().stt.builtin, cleanup: settings.get().cleanup.builtin };
     let saveCount = 0;
     const countedSave = settings.save;
     settings.save = (next) => {
@@ -1446,6 +1449,59 @@ app.whenReady().then(async () => {
         );
       }
 
+      // Two missing models in one Save: speech first, then the cleanup model the
+      // form holds when speech finishes (it changed meanwhile); a failure on
+      // the second saves nothing, and the next Save downloads only what is
+      // still missing.
+      {
+        const missingModels = (kind) => registry.listModels(kind)
+          .map((m) => m.id)
+          .filter((id) => !installedModels.has(`${kind}:${id}`) && !isInstalled(kind, id));
+        const [sttTwo] = missingModels("stt");
+        const [cleanupFirst, cleanupSwitched] = missingModels("cleanup");
+        const { saveWin, run, select, state } = await openSaveWindow();
+        const savesBefore = saveCount;
+        const before = savedJson();
+        let callsBefore = downloadCalls.length;
+        await select("stt", sttTwo);
+        await select("cleanup", cleanupFirst);
+        await run(`document.getElementById("save").click(); true`);
+        await waitFor(() => downloadCalls.length > callsBefore, "a two-model Save did not start speech");
+        await select("cleanup", cleanupSwitched);
+        downloads.get(`stt:${sttTwo}`).resolve();
+        await waitFor(() => downloadCalls.length > callsBefore + 1, "a two-model Save did not continue to cleanup");
+        const sequence = { calls: downloadCalls.slice(callsBefore), saves: saveCount - savesBefore };
+        check(
+          "one Save downloads speech, then the cleanup model selected when speech finished, before saving",
+          sequence.calls.join() === `stt:${sttTwo},cleanup:${cleanupSwitched}` && sequence.saves === 0,
+          JSON.stringify(sequence)
+        );
+        downloads.get(`cleanup:${cleanupSwitched}`).reject(new Error("offline"));
+        const failedSecond = await waitFor(
+          () => state("cleanup").then((s) => s.save.startsWith("Not saved") && !s.buttons.includes("Cancel") && s),
+          "a failed second download never reported Not saved"
+        );
+        check(
+          "a failed second download saves neither model",
+          /offline/.test(failedSecond.save) && saveCount === savesBefore &&
+            savedJson().stt.builtin.model === before.stt.builtin.model &&
+            savedJson().cleanup.builtin.model === before.cleanup.builtin.model,
+          JSON.stringify({ failedSecond, saved: savedJson().stt.builtin.model })
+        );
+        callsBefore = downloadCalls.length;
+        await run(`document.getElementById("save").click(); true`);
+        await waitFor(() => downloadCalls.length > callsBefore, "the retried Save did not start cleanup");
+        downloads.get(`cleanup:${cleanupSwitched}`).resolve();
+        await waitFor(() => saveWin.isDestroyed(), "the retried Save did not close Settings");
+        check(
+          "the next Save downloads only what is still missing and saves both once",
+          downloadCalls.slice(callsBefore).join() === `cleanup:${cleanupSwitched}` &&
+            saveCount === savesBefore + 1 &&
+            savedJson().stt.builtin.model === sttTwo && savedJson().cleanup.builtin.model === cleanupSwitched,
+          JSON.stringify({ calls: downloadCalls.slice(callsBefore), saves: saveCount - savesBefore })
+        );
+      }
+
       // Installed selection: Save behaves as before.
       {
         const { saveWin, run } = await openSaveWindow();
@@ -1463,6 +1519,12 @@ app.whenReady().then(async () => {
       settings.save = countedSave;
       // A failed case leaves its window open; close it so the next block starts clean.
       windows.closeSettings();
+      const saved = settings.get();
+      settings.save({
+        ...saved,
+        stt: { ...saved.stt, builtin: modelsBeforeSaves.stt },
+        cleanup: { ...saved.cleanup, builtin: modelsBeforeSaves.cleanup },
+      });
     }
 
     await require("./wizard-smoke").checkWizard({ waitFor, check });

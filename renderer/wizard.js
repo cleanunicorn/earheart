@@ -12,6 +12,7 @@ let platform = "linux";
 let micLoaded = false;
 let modelStatus = null; // { stt: [...], cleanup: [...] } from the main process
 let cleanupStyles = []; // [{ id, label, hint }] — the cleanup style slider stops
+let finishing = false; // Finish setup's save is in flight
 
 const $ = (id) => document.getElementById(id);
 
@@ -54,7 +55,7 @@ function showStep(index) {
 
 $("back").addEventListener("click", () => showStep(stepIndex - 1));
 $("next").addEventListener("click", () => {
-  if (stepIndex === steps.length - 1) finish();
+  if (stepIndex === steps.length - 1) finishSetup();
   else {
     if (stepIndex === 3) {
       const t = transfer("stt", collect().stt.builtin.model);
@@ -282,6 +283,7 @@ const downloadOwner = crypto.randomUUID();
 let cleanupConsent = null;
 let later = false;
 let leaving = false;
+
 function neededModels(cfg = collect()) {
   return [
     ...(cfg.stt.engine === "builtin" ? [{ kind: "stt", modelId: cfg.stt.builtin.model }] : []),
@@ -302,6 +304,13 @@ function transfer(kind, modelId) {
 function speechReady() {
   return collect().stt.engine !== "builtin" || transfer("stt", collect().stt.builtin.model).phase === "ready";
 }
+// The selected optional cleanup whose download failed or never started, which
+// Finish setup starts again (Download later is the explicit way to skip it).
+function cleanupNeedsRestart(cfg = collect()) {
+  if (later || !cfg.cleanup.enabled || cfg.cleanup.engine !== "builtin" || !speechReady()) return null;
+  const t = transfer("cleanup", cfg.cleanup.builtin.model);
+  return ["failed", "idle"].includes(t.phase) ? t : null;
+}
 function updateDownloadCopy() {
   if (!current || !modelStatus) return;
   const cfg = collect();
@@ -315,11 +324,14 @@ function updateDownloadCopy() {
     $("download-cost").textContent = (speech.phase === "ready" ? "Speech ready." : speech.phase === "downloading" ? "Speech already downloading — " + ModelProgress.label(speech) + "." : "Speech still needs its download.") + " " + (cleanup && cleanup.phase !== "ready" ? "Optional cleanup needs " + size(cleanup) + "; it starts after speech is ready." : "No additional download needed.");
   }
   if (stepIndex !== steps.length - 1) return;
-  $("next").disabled = !speechReady() && !later;
+  $("next").disabled = finishing || (!speechReady() && !later);
   $("next").textContent = speechReady() || later ? "Finish setup" : "Downloading speech…";
-  $("finish-hint").textContent = speechReady() ? "Your setup will be saved. Click into any text field and press " + displayHotkey(current.hotkey) + " to speak." + (cfg.cleanup.enabled && transfer("cleanup", cfg.cleanup.builtin.model).phase !== "ready" ? (transfer("cleanup", cfg.cleanup.builtin.model).phase === "downloading"
+  const cleanupPhase = cfg.cleanup.enabled ? transfer("cleanup", cfg.cleanup.builtin.model).phase : "ready";
+  $("finish-hint").textContent = speechReady() ? "Your setup will be saved. Click into any text field and press " + displayHotkey(current.hotkey) + " to speak." + (cleanupPhase !== "ready" ? (cleanupPhase === "downloading"
       ? " Optional cleanup keeps downloading in the background; dictation works with raw transcripts until it is ready."
-      : " Optional cleanup is not downloaded; dictations use raw transcripts. Download or retry it in Settings → Cleanup.") : "") : later
+      : cleanupNeedsRestart()
+        ? " Optional cleanup didn't finish downloading; Finish setup retries it in the background, and dictation works with raw transcripts until it is ready."
+        : " Optional cleanup is not downloaded; dictations use raw transcripts. Download or retry it in Settings → Cleanup.") : "") : later
     ? "Dictation won't work until you download speech in Settings → Speech-to-text. Cleanup is optional; without it you get raw transcripts."
     : speech.phase === "failed"
       ? "Retry the speech download to enable dictation, or choose Download later and get speech in Settings."
@@ -454,6 +466,31 @@ function applySettingsChange({ previous, current: saved }) {
 const settingsChangesReady = followSettingsChanges(applySettingsChange);
 
 /* ---------- finish ---------- */
+
+// Finish setup: one save per click burst, since progress updates must not
+// re-enable Finish while it is in flight (updateDownloadCopy reads
+// `finishing`).
+async function finishSetup() {
+  if (finishing) return;
+  finishing = true;
+  $("next").disabled = true;
+  try {
+    // Restart a failed optional cleanup download before saving, as a
+    // background transfer like a fresh one: speech is already downloaded
+    // (Finish waits for it), and dictation uses raw transcripts until cleanup
+    // is ready.
+    const cleanup = cleanupNeedsRestart();
+    if (cleanup) {
+      cleanupConsent = cleanup.modelId;
+      await startDownload(cleanup, cleanup.phase === "failed");
+    }
+    await finish();
+  } finally {
+    finishing = false;
+    if (stepIndex === steps.length - 1) updateDownloadCopy();
+    else $("next").disabled = false;
+  }
+}
 
 async function finish() {
   const status = $("finish-status");

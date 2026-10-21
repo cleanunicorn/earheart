@@ -223,4 +223,27 @@ fs.writeFileSync(
   render(64, { grad: RED, dot: true })
 );
 
+// Windows uses a multi-resolution ICO of the same artwork. Render each size
+// directly so the small waveform is not blurred by downscaling a larger PNG.
+function encodeIco(opts) {
+  const sizes = [16, 20, 24, 32, 40, 48, 64];
+  const images = sizes.map((size) => render(size, opts));
+  const header = Buffer.alloc(6 + sizes.length * 16);
+  header.writeUInt16LE(1, 2); // ICO (not cursor)
+  header.writeUInt16LE(sizes.length, 4);
+  let offset = header.length;
+  images.forEach((png, i) => {
+    const entry = 6 + i * 16;
+    header[entry] = header[entry + 1] = sizes[i];
+    header.writeUInt16LE(1, entry + 4); // planes
+    header.writeUInt16LE(32, entry + 6); // RGBA
+    header.writeUInt32LE(png.length, entry + 8);
+    header.writeUInt32LE(offset, entry + 12);
+    offset += png.length;
+  });
+  return Buffer.concat([header, ...images]);
+}
+fs.writeFileSync(path.join(out, "tray.ico"), encodeIco({ grad: CORAL }));
+fs.writeFileSync(path.join(out, "tray-recording.ico"), encodeIco({ grad: RED, dot: true }));
+
 console.log("Icons written to assets/");

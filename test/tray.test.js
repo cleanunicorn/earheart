@@ -23,12 +23,14 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
   t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
   if (stored) fs.writeFileSync(path.join(userData, "settings.json"), JSON.stringify(stored));
   const menus = [];
+  const images = [];
   const warnings = [];
   const notifications = [];
   const entries = historyEntries;
   class FakeTray {
+    constructor(image) { images.push(image); }
     on() {}
-    setImage() {}
+    setImage(image) { images.push(image); }
     setToolTip() {}
     setContextMenu(menu) {
       menus.push(menu);
@@ -94,7 +96,7 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
   const pipeline = { getState: () => "idle", onStateChange() {}, toggle() {}, cancel() {} };
   tray.init({ quit() {} }, pipeline);
   const file = path.join(userData, "settings.json");
-  return { settings, menus, warnings, notifications, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
+  return { tray, pipeline, images, settings, menus, warnings, notifications, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
 }
 
 const item = (menu, label) => menu.find((entry) => entry.label === label);
@@ -196,3 +198,48 @@ test("a legacy paste-and-keep profile shows as paste-copy and a paste click rest
     { mode: "paste", restoreClipboard: true }
   );
 });
+
+for (const platform of ["win32", "darwin", "linux"]) {
+  test(`tray artwork follows idle/recording/processing on ${platform}`, (t) => {
+    const original = Object.getOwnPropertyDescriptor(process, "platform");
+    Object.defineProperty(process, "platform", { value: platform });
+    try {
+      const { tray, pipeline, images } = loadTray(t);
+      for (const state of ["recording", "processing", "idle"]) {
+        pipeline.getState = () => state;
+        tray.refresh();
+      }
+      if (platform === "win32") {
+        assert.deepStrictEqual(images.map((image) => path.basename(image)), [
+          "tray.ico", "tray.ico", "tray-recording.ico", "tray.ico", "tray.ico",
+        ]);
+        for (const file of new Set(images)) {
+          const ico = fs.readFileSync(file);
+          assert.equal(ico.readUInt16LE(0), 0);
+          assert.equal(ico.readUInt16LE(2), 1);
+          assert.equal(ico.readUInt16LE(4), 7);
+          for (let i = 0; i < 7; i++) {
+            const entry = 6 + i * 16;
+            const size = [16, 20, 24, 32, 40, 48, 64][i];
+            assert.equal(ico[entry], size);
+            assert.equal(ico[entry + 1], size);
+            const length = ico.readUInt32LE(entry + 8);
+            const offset = ico.readUInt32LE(entry + 12);
+            assert.ok(offset + length <= ico.length);
+            const png = ico.subarray(offset, offset + length);
+            assert.equal(png.subarray(1, 4).toString(), "PNG");
+            assert.equal(png.readUInt32BE(16), size);
+            assert.equal(png.readUInt32BE(20), size);
+            if (size === 32) {
+              assert.deepStrictEqual(png, fs.readFileSync(file.replace(/\.ico$/, ".png")));
+            }
+          }
+        }
+      } else {
+        assert.ok(images.every((image) => !image.isEmpty()));
+      }
+    } finally {
+      Object.defineProperty(process, "platform", original);
+    }
+  });
+}

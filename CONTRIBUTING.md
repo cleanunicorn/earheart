@@ -272,9 +272,18 @@ Model definitions route by `kind` and their `sherpa` or `gguf` payload rather
 than an engine-name field. Custom models retain `source.repo`: the STT facade
 uses it to reject previously saved unsupported families. Model-status rows
 retain `kind` for removal announcements, catalog `bytes` (null when unknown)
-and an optional active `download` snapshot. Main owns transfer lifetimes;
+an optional active `download` snapshot, and the last failed (not cancelled)
+download's `error` until a new transfer starts, so a window opened after the
+`models:done` broadcast (the wizard's Settings handoff) still shows it. Main owns transfer lifetimes;
 wizard records survive step navigation and consume progress plus terminal
-events. Speech starts after explicit consent, with optional cleanup queued
+events. `models:download` with `join: true` returns an in-flight transfer's
+own outcome instead of "Already downloading", without taking it over.
+Settings' Save uses it: `renderer/model-save.js` lists the selected built-in
+models that are missing, Save downloads each (speech first) and re-collects
+the form until none is missing, and only then calls `settings:save`
+(persist-after-download; a failed or cancelled download saves nothing).
+The wizard's Finish setup restarts a failed optional cleanup download in the
+background before saving. Speech starts after explicit consent, with optional cleanup queued
 behind speech readiness. The selected default comes from settings. Pipeline
 availability checks bypass known missing cleanup files; successful downloads
 signal readiness through injected main-process hooks and prime only while idle.

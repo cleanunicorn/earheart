@@ -596,8 +596,11 @@ function renderManage(kind) {
       btn.className = "ghost";
       btn.onclick = () => earheart.invoke("models:cancel", { kind, modelId });
     } else {
-      status.textContent = "Not downloaded";
-      btn.textContent = "Download";
+      // Main keeps the last failure, so it shows even when this window
+      // opened after the download's models:done (e.g. a wizard handoff).
+      status.textContent = info.error || "Not downloaded";
+      if (info.error) status.className = "status err";
+      btn.textContent = info.error ? "Retry download" : "Download";
       btn.className = "ghost";
       btn.onclick = () => downloadModel(kind, modelId);
     }
@@ -942,8 +945,63 @@ function limitAdjustments(saved) {
     .map(({ id, label, unit, value }) => `${label} set to ${value} ${unit} (allowed ${$(id).min}–${$(id).max})`);
 }
 
+// Start (or join) one model's download for Save, through the same row state a
+// Download click uses, and resolve with its outcome.
+async function saveDownload(kind, modelId) {
+  const key = modelDownloadKey(kind, modelId);
+  if (!modelDownloads.has(key)) modelDownloads.set(key, { fraction: 0, message: "Downloading…" });
+  renderManage(kind);
+  $(`${kind}-model-manage`).scrollIntoView({ block: "nearest" });
+  try {
+    // join: a transfer already running (a Download click, the wizard) is
+    // awaited, not started twice.
+    return await earheart.invoke("models:download", { kind, modelId, join: true });
+  } catch (err) {
+    finishModelDownload({ kind, modelId, ok: false, error: err.message });
+    return { ok: false, error: err.message };
+  }
+}
+
+// Persist only models that can run: download every selected built-in model
+// that is missing, then collect the form again (it may have changed during the
+// download) until nothing is missing. Returns the settings to save; throws with
+// the reason when a download fails or is cancelled, so nothing is saved.
+async function downloadSelectedModels(save) {
+  const finished = new Set();
+  for (;;) {
+    if (!ModelSave.used(collect()).length) return collect();
+    // Fresh status: another window may have downloaded or removed a model.
+    await refreshModels();
+    const next = collect();
+    const [needed] = ModelSave.missing(next, modelStatus);
+    if (!needed) return next;
+    const key = modelDownloadKey(needed.kind, needed.modelId);
+    if (finished.has(key)) throw new Error(`${needed.label}: downloaded, but still not available`);
+    save.textContent = `Downloading ${needed.label} before saving…`;
+    save.className = "status";
+    const result = await saveDownload(needed.kind, needed.modelId);
+    if (!result?.ok) {
+      throw new Error(`${needed.label}: ${result?.cancelled ? "Download cancelled" : result?.error || "Download failed"}`);
+    }
+    finished.add(key);
+  }
+}
+
 const saveButton = $("save");
+// Set before Save's first await, so a second click (or a programmatic one)
+// can't start another save while a download or the commit is in flight.
+let saving = false;
 saveButton.addEventListener("click", async () => {
+  if (saving) return;
+  saving = true;
+  try {
+    await saveSettings();
+  } finally {
+    saving = false;
+  }
+});
+
+async function saveSettings() {
   const save = $("save-status");
   let result;
   let pauseResult;
@@ -954,8 +1012,20 @@ saveButton.addEventListener("click", async () => {
   saveButton.disabled = true;
   save.textContent = "Saving…";
   save.className = "status";
+  let next;
   try {
-    current = collect();
+    next = await downloadSelectedModels(save);
+  } catch (err) {
+    // Nothing was saved: say so, and leave the form as the user set it.
+    save.textContent = `Not saved — ${err.message}`;
+    save.className = "status err";
+    saveButton.disabled = false;
+    return;
+  }
+  save.textContent = "Saving…";
+  save.className = "status";
+  try {
+    current = next;
     result = await earheart.invoke("settings:save", { settings: current, baseline });
     current = result.settings;
     baseline = sharedBaseline(current);
@@ -1005,7 +1075,7 @@ saveButton.addEventListener("click", async () => {
   setTimeout(() => {
     save.textContent = "";
   }, 4000);
-});
+}
 
 /* ---------- connection tests ---------- */
 
@@ -1398,9 +1468,18 @@ function renderSetupBanner() {
     ? "Your setup is saved. Download speech in Settings → Speech-to-text before dictating."
     : "Your setup is saved — click into any text field and press " + displayHotkey(savedSetup.hotkey) + " to dictate.";
   const id = savedSetup.cleanup.builtin?.model;
-  const download = savedSetup.cleanup.enabled && savedSetup.cleanup.engine === "builtin" && modelDownloads.get(modelDownloadKey("cleanup", id));
+  const usesCleanup = savedSetup.cleanup.enabled && savedSetup.cleanup.engine === "builtin";
+  const download = usesCleanup && modelDownloads.get(modelDownloadKey("cleanup", id));
+  // From status, not only live events: a background cleanup download can fail
+  // before this window subscribed to models:done.
+  const cleanup = usesCleanup && modelStatus.cleanup.find((m) => m.id === id);
   $("wizard-cleanup-progress").textContent = download
-    ? " Cleanup downloading — " + download.message + ". Dictations use raw transcripts until it is ready." : "";
+    ? " Cleanup downloading — " + download.message + ". Dictations use raw transcripts until it is ready."
+    : cleanup && !cleanup.installed
+      ? cleanup.error
+        ? " Cleanup download failed (" + cleanup.error + "). Dictations use raw transcripts; retry it in Settings → Cleanup."
+        : " Cleanup isn't downloaded. Dictations use raw transcripts; download it in Settings → Cleanup."
+      : "";
 }
 async function navigateSettings(destination) {
   if (!formReady) { pendingNavigation = destination; return; }

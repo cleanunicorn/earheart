@@ -1540,6 +1540,15 @@ app.whenReady().then(async () => {
           open && saved.save === "Saved" && !saved.saveDisabled,
           JSON.stringify({ open, saved })
         );
+        // An interaction that changes nothing keeps "Saved": the snapshot
+        // must match the form right after Save, not just differ after edits.
+        await run(`(() => {
+          document.querySelector(".tab").click();
+          document.body.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift", bubbles: true }));
+        })()`);
+        await sleep(100);
+        const kept = await run(`document.getElementById("save-status").textContent`);
+        check("a click or key that edits nothing keeps Saved", kept === "Saved", JSON.stringify(kept));
         await run(`(() => {
           const field = document.getElementById("max-seconds");
           field.value = String(Number(field.value) + 1);

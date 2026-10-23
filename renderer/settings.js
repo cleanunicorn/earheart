@@ -753,6 +753,9 @@ async function refreshModels(preferred = {}) {
   }
   renderManage("stt");
   renderManage("cleanup");
+  // A model added, downloaded or removed can move a select after the click
+  // that started it was already checked.
+  clearStaleSaved();
 }
 
 // "42% · 280 MB / 660 MB" — concrete progress so a slow download reads as
@@ -797,6 +800,9 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
 // show a shared field only when this save changed it — never repopulate the
 // whole form, which would throw away edits the user hasn't saved yet.
 function applySettingsChange({ previous, current: saved }) {
+  // Main already saved this change (the tray, the correction window, an
+  // overlay drag), so a form that matched the last Save still matches disk.
+  const matchedSave = savedForm !== null && JSON.stringify(collect()) === savedForm;
   const flipped = [];
   if (Array.isArray(saved.dictionary) && JSON.stringify(previous.dictionary) !== JSON.stringify(saved.dictionary)) {
     const field = $("cleanup-dictionary");
@@ -841,6 +847,10 @@ function applySettingsChange({ previous, current: saved }) {
     $("updates-remind").checked = remind;
     baseline.remind = remind;
   }
+  // Re-take the snapshot so the next click doesn't clear "Saved"; a form that
+  // already held unsaved edits drops it.
+  if (matchedSave) savedForm = JSON.stringify(collect());
+  clearStaleSaved();
   announceSettingsChange(flipped.join(" "));
 }
 

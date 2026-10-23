@@ -170,9 +170,10 @@ function bareTokens(text) {
     .filter(Boolean);
 }
 
-// Prose that looks like a path: dotted abbreviations (e.g, u.s, a.m — the
-// trailing dot is already shed) and slash pairs ("and/or").
-const ABBREVIATION = /^(?:\p{L}\.)+\p{L}$/u;
+// Prose that looks like a path: dotted abbreviations (the trailing dot is
+// already shed) and slash pairs ("and/or"). Two single letters are named, not
+// matched by shape: x.c and a.h are C files, and must keep their case.
+const ABBREVIATION = /^(?:(?:\p{L}\.){2,}\p{L}|e\.g|i\.e|a\.m|p\.m|u\.s|u\.k|e\.u|n\.b|p\.s|q\.v|c\.f|v\.s)$/iu;
 const PROSE_SLASH = /^(?:and\/or|either\/or|yes\/no|he\/she|his\/her|him\/her|s\/he|w\/o|n\/a)$/i;
 
 function literalTokens(text) {
@@ -194,11 +195,12 @@ function literalTokens(text) {
   return out;
 }
 
-// Occurrences of `literal` in `text`, exactly, not inside a longer word —
-// literals may hold spaces or end in punctuation ("npm run build", foo(), C++).
+// Occurrences of `literal` in `text`, exactly, not inside a longer word or
+// hyphenated name (make in make-test, --force in ---force) — literals may hold
+// spaces or end in punctuation ("npm run build", foo(), C++).
 function countLiteral(text, literal) {
   const escaped = literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "gu");
+  const re = new RegExp(`(?<![\\p{L}\\p{N}_-])${escaped}(?![\\p{L}\\p{N}_-])`, "gu");
   return (text.match(re) || []).length;
 }
 

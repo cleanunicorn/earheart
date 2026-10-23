@@ -440,12 +440,17 @@ test("scoreOutput: annotated literals match exactly, spaces and punctuation incl
   const same = "Run npm run build, then foo() with C++ and @types/node.";
   assert.strictEqual(score(same, same, ["npm run build", "foo()", "C++", "@types/node"]), 0);
   assert.strictEqual(score(same, "Run npm build, then foo() with C++ and @types/node.", ["npm run build"]), 1);
-  // Not inside a longer word, and as often as listed.
+  // Not inside a longer word or hyphenated name, and as often as listed.
   assert.strictEqual(score("Run make twice: make, make.", "Run remake twice: make.", ["make", "make"]), 1);
+  assert.strictEqual(score("Use --force and make.", "Use ---force and make-test.", ["--force", "make"]), 2);
 });
 
 test("literalTokens: prose that only looks like a path stays prose", () => {
-  assert.deepStrictEqual(literalTokens("See e.g. the u.s. office at 10 a.m. and/or yes/no, version 1.2.3 and v2.0."), []);
+  assert.deepStrictEqual(literalTokens("See e.g. the u.s. office at 10 a.m. a.k.a. noon and/or yes/no, version 1.2.3 and v2.0."), []);
+  // ...but a one-letter file name is a file name.
+  assert.deepStrictEqual(literalTokens("Open x.c and a.h."), ["x.c", "a.h"]);
+  const c = scoreOutput({ input: "Open x.c and check it.", output: "Open X.c and check it.", corpus: "fluent" });
+  assert.strictEqual(c.literalLost, 1);
   const s = scoreOutput({ input: "See e.g. the u.s. office.", output: "See E.g. the U.S. office.", corpus: "fluent" });
   assert.strictEqual(s.literalLost, 0, "a casing fix to an abbreviation isn't a lost literal");
 });

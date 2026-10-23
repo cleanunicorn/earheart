@@ -20,8 +20,11 @@ const drain = () => new Promise((resolve) => setImmediate(resolve));
 function worker({
   loadGate, promptGate, promptStarted, preloadGate, preloadStarted,
   env = { EARHEART_LLAMA_GPU: "off" }, gpuFails = false, stopReason = "eogToken",
+  contextFailsAbove = Infinity,
 } = {}) {
   const events = [];
+  // Kept apart from `events`, whose exact sequence the older tests pin.
+  const contextEvents = [];
   const getLlamaCalls = [];
   const runtime = {
     async getLlama(options) {
@@ -37,6 +40,8 @@ function worker({
           return {
             tokenize: (text) => text.split(/\s+/),
             async createContext({ contextSize }) {
+              contextEvents.push(`context:${modelPath}:${contextSize}`);
+              if (contextSize > contextFailsAbove) throw new Error("out of memory");
               return {
                 contextSize,
                 getSequence: () => ({ modelPath }),
@@ -107,7 +112,7 @@ function worker({
       onMessage({ data: { id, type, ...args } });
     });
   }
-  return { send, events, getLlamaCalls };
+  return { send, events, contextEvents, getLlamaCalls };
 }
 const model = (modelPath) => ({ modelPath, contextSize: 4096, cpuOnly: true });
 const turn = (modelPath) => ({ model: model(modelPath), transcript: "hello", systemPrompt: "rules" });
@@ -266,4 +271,63 @@ test("cleanup worker: a GPU load failure retries once on a CPU-only runtime", as
   // The CPU runtime is kept: the next clean doesn't probe the GPU again.
   assert.equal((await w.send("clean", turn("A"))).result, "A");
   assert.equal(w.getLlamaCalls.length, 2);
+});
+
+// #297: the context is sized from the real instructions, not a fixed
+// allowance. The fake tokenizer counts whitespace-separated words, so a prompt
+// of N words is N tokens (plus the turn's own "Transcript:" label).
+const words = (count, word = "term") => Array.from({ length: count }, (_, i) => `${word}${i}`).join("\n");
+const budgeted = (modelPath) => ({ modelPath, contextSize: 4096, transcriptTokens: 203, cpuOnly: true });
+
+test("cleanup worker: a token-dense dictionary grows the context instead of refusing a short turn", async () => {
+  const w = worker();
+  // ~6,900 instruction tokens: the issue's 256-term dictionary on Qwen3 4B.
+  const reply = await w.send("clean", { model: budgeted("A"), transcript: "Run the test suite.", systemPrompt: words(6900) });
+  assert.equal(reply.ok, true, reply.error);
+  assert.deepEqual(w.contextEvents, ["context:A:4096", "context:A:8192"]);
+  assert.deepEqual(w.events.filter((event) => event.startsWith("load:")), ["load:A"], "the model is not reloaded");
+});
+
+test("cleanup worker: a long custom prompt past the memory ceiling is refused and names the instructions", async () => {
+  const w = worker();
+  const reply = await w.send("clean", { model: budgeted("A"), transcript: "hello", systemPrompt: words(20000, "rule") });
+  assert.equal(reply.ok, false);
+  assert.match(reply.error, /instructions and dictionary/);
+  assert.match(reply.error, /Remove dictionary words or shorten the custom prompt/);
+  assert.deepEqual(w.contextEvents, ["context:A:4096", "context:A:16384"], "never past the ceiling");
+  assert.equal(w.events.some((event) => event.startsWith("prompt:")), false, "nothing was generated");
+});
+
+test("cleanup worker: the context follows dictionary changes after the model is loaded", async () => {
+  const w = worker();
+  const send = (systemPrompt) => w.send("clean", { model: budgeted("A"), transcript: "hello", systemPrompt });
+  assert.equal((await send("rules")).ok, true);
+  assert.equal((await send(words(6900))).ok, true);
+  assert.equal((await send(words(6900))).ok, true);
+  assert.equal((await send("rules")).ok, true);
+  // Grown once, kept while it still fits, back to main's size once it shrinks.
+  assert.deepEqual(w.contextEvents, ["context:A:4096", "context:A:8192", "context:A:4096"]);
+  assert.deepEqual(w.events.filter((event) => event.startsWith("load:")), ["load:A"]);
+});
+
+test("cleanup worker: a context that can't grow keeps the raw transcript and recovers", async () => {
+  const w = worker({ contextFailsAbove: 4096 });
+  const big = await w.send("clean", { model: budgeted("A"), transcript: "hello", systemPrompt: words(6900) });
+  assert.equal(big.ok, false);
+  assert.match(big.error, /Could not size the cleanup context.*out of memory/);
+  assert.equal(w.events.some((event) => event.startsWith("prompt:")), false, "nothing was generated");
+  // Main's size is restored, so the next ordinary turn runs without a reload.
+  const small = await w.send("clean", { model: budgeted("A"), transcript: "hello", systemPrompt: "rules" });
+  assert.equal(small.ok, true, small.error);
+  assert.deepEqual(w.contextEvents, ["context:A:4096", "context:A:8192", "context:A:4096"]);
+  assert.deepEqual(w.events.filter((event) => event.startsWith("load:")), ["load:A"]);
+});
+
+test("cleanup worker: a prime sizes the context as the clean will, so the clean doesn't rebuild it", async () => {
+  const w = worker();
+  const systemPrompt = words(6900);
+  const primed = await w.send("prime-cleanup", { model: budgeted("A"), systemPrompt, text: `${systemPrompt}\n\nTranscript:\n` });
+  assert.equal(primed.ok, true, primed.error);
+  assert.equal((await w.send("clean", { model: budgeted("A"), transcript: "hello", systemPrompt })).ok, true);
+  assert.deepEqual(w.contextEvents, ["context:A:4096", "context:A:8192"]);
 });

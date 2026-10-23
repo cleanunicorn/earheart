@@ -23,11 +23,12 @@ const { wavToFloat32, SAMPLE_RATE } = require("../util/wav");
 const {
   CLEAN_CONTEXT_MIN,
   cleanContextNeed,
+  cleanContextSize,
   cleanMaxTokens,
   cleanBudgetMessage,
   CLEAN_RUNAWAY_MESSAGE,
 } = require("../util/clean-budget");
-const { cleanupUserTurn, cleanupSamplingOptions, cleanupChatWrapper } = require("../util/cleanup-turn");
+const { cleanupUserTurn, cleanupTurnPrefix, cleanupSamplingOptions, cleanupChatWrapper } = require("../util/cleanup-turn");
 
 const port = process.parentPort;
 
@@ -44,6 +45,8 @@ let llamaContext = null;
 let llamaSession = null;
 let cleanupModelPath = null;
 let cleanupContextSize = 0; // context the loaded model was given, 0 = none loaded
+// The size main asked for (the floor); llamaContext.contextSize may be larger
+// once fitCleanupContext has measured the instructions.
 
 function reply(id, promise) {
   Promise.resolve(promise)
@@ -263,6 +266,52 @@ function freshSession(mod) {
   return llamaSession;
 }
 
+// Tokens in the instructions alone (rules, style directive, dictionary), as the
+// turn's prefix carries them; null when the tokenizer won't count.
+function instructionTokens(systemPrompt) {
+  try {
+    return llamaModel.tokenize(cleanupTurnPrefix(systemPrompt || "", "")).length;
+  } catch {
+    return null;
+  }
+}
+
+// Size the context for the real instructions (#297). Main sizes it before
+// anything is measured, with a fixed allowance for the instructions
+// (cleanContextFor); a token-dense dictionary or a long custom prompt can
+// outgrow that, and then even a short dictation is refused. Grow to fit —
+// never past CLEAN_CONTEXT_MAX, the memory ceiling — and come back down to
+// main's size once they shrink. Only the context is rebuilt, not the model.
+// A failed rebuild restores main's size and throws, so the caller keeps the
+// raw transcript; the turn that didn't fit is never run in a context it
+// overflows.
+async function fitCleanupContext(model, systemPrompt) {
+  if (!llamaModel || !llamaContext || !Number.isFinite(model?.transcriptTokens)) return;
+  const instructions = instructionTokens(systemPrompt);
+  if (instructions === null) return;
+  const wanted = Math.max(cleanupContextSize, cleanContextSize(instructions, model.transcriptTokens));
+  if (wanted === llamaContext.contextSize) return;
+  const floor = cleanupContextSize;
+  const rebuild = async (contextSize) => {
+    if (llamaSession && llamaSession.dispose) llamaSession.dispose();
+    llamaSession = null;
+    const old = llamaContext;
+    llamaContext = null;
+    if (old && old.dispose) await old.dispose();
+    llamaContext = await llamaModel.createContext({ contextSize });
+  };
+  try {
+    await rebuild(wanted);
+  } catch (err) {
+    try {
+      await rebuild(floor);
+    } catch {
+      await disposeCleanup();
+    }
+    throw new Error(`Could not size the cleanup context for the dictionary (${err.message})`);
+  }
+}
+
 // Refuse a turn that cannot fit in the context instead of letting llama.cpp's
 // context shift silently drop the start of the transcript — a cleaned result
 // that quietly loses the user's words is worse than no cleaning at all, and the
@@ -273,7 +322,7 @@ function freshSession(mod) {
 // Both soft cases return rather than throw: nothing loaded is the caller's
 // existing error to raise, and a tokenizer that won't count is no reason to
 // refuse a turn that may well fit.
-function assertCleanBudget(userTurn, transcript) {
+function assertCleanBudget(userTurn, transcript, systemPrompt) {
   if (!llamaModel || !llamaContext) return;
   let needed;
   try {
@@ -285,7 +334,9 @@ function assertCleanBudget(userTurn, transcript) {
     return; // tokenizer unavailable: let the generation try anyway
   }
   const available = llamaContext.contextSize;
-  if (needed > available) throw new Error(cleanBudgetMessage(needed, available));
+  if (needed > available) {
+    throw new Error(cleanBudgetMessage(needed, available, instructionTokens(systemPrompt) || 0));
+  }
 }
 
 // Transcript length in tokens, for the generation cap. Falls back to a
@@ -302,6 +353,7 @@ function transcriptTokens(transcript) {
 async function clean({ model, operationId, transcript, systemPrompt, sampling }, emitProgress) {
   return queuedCleanupOp(async (signal) => {
     await loadCleanup(model);
+    await fitCleanupContext(model, systemPrompt);
     if (signal.aborted) throw new Error("cleanup cancelled");
     const mod = await import("node-llama-cpp");
     const session = freshSession(mod);
@@ -309,7 +361,7 @@ async function clean({ model, operationId, transcript, systemPrompt, sampling },
     // state (llama.cpp skips the shared token prefix), which is what makes the
     // prefill-ahead of "prime-cleanup" pay off here.
     const userTurn = cleanupUserTurn(systemPrompt, transcript);
-    assertCleanBudget(userTurn, transcript);
+    assertCleanBudget(userTurn, transcript, systemPrompt);
     // Cleaned output tracks the input's length closely (punctuation in, fillers
     // out), so generated-chars / transcript-chars is an honest progress ratio.
     const total = Math.max(1, transcript.length);
@@ -336,9 +388,11 @@ async function clean({ model, operationId, transcript, systemPrompt, sampling },
 // already-committed transcript when available) into the context without
 // generating anything, so the next clean() starts generating almost
 // immediately. Cancellable and best-effort like the live-preview cleans.
-async function primeCleanup({ model, text }) {
+async function primeCleanup({ model, text, systemPrompt }) {
   return queuedCleanupOp(async (signal) => {
     await loadCleanup(model);
+    // Sized as clean() will size it, so the primed state survives to the turn.
+    if (systemPrompt !== undefined) await fitCleanupContext(model, systemPrompt);
     if (signal.aborted) throw new Error("cleanup cancelled");
     const mod = await import("node-llama-cpp");
     const session = freshSession(mod);

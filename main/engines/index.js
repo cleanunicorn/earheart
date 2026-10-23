@@ -10,7 +10,7 @@ const manager = require("./model-manager");
 const hostModule = require("./host");
 const settings = require("../settings");
 const { resolveCleanup } = require("../cleanup-styles");
-const { cleanContextFor } = require("../util/clean-budget");
+const { cleanContextFor, cleanTranscriptBudget } = require("../util/clean-budget");
 const { cleanupTurnPrefix } = require("../util/cleanup-turn");
 const { unsupportedSttFamily } = require("../services/hf-models");
 
@@ -214,7 +214,9 @@ function runningEmulated() {
 // once (main/util/clean-budget.js). Someone who raises Max dictation length
 // gets a context that can still hold what they say; everyone else keeps the
 // smaller KV cache. A changed size reloads the model: the context is allocated
-// at load time, so the worker can't grow one in place.
+// at load time, so the worker can't grow one in place. `transcriptTokens` lets
+// the worker grow the context past this size when the real instructions
+// (dictionary, custom prompt) outgrow their allowance (#297).
 function cleanupModel(modelId) {
   const model = resolve("cleanup", modelId);
   if (!manager.isInstalled(modelsDir(), model)) {
@@ -223,6 +225,7 @@ function cleanupModel(modelId) {
   return {
     modelPath: path.join(manager.modelDir(modelsDir(), model), model.gguf.file),
     contextSize: cleanContextFor(settings.get().audio?.maxRecordingSeconds),
+    transcriptTokens: cleanTranscriptBudget(settings.get().audio?.maxRecordingSeconds),
     // Avoid the native GPU probe under Windows-on-ARM / Rosetta emulation.
     cpuOnly: runningEmulated(),
   };
@@ -260,6 +263,7 @@ async function primeCleanup(cfg, transcriptPrefix = "") {
   const { systemPrompt } = resolveCleanup(cfg);
   return cleanupRequest("prime-cleanup", {
     model,
+    systemPrompt,
     text: cleanupTurnPrefix(systemPrompt, transcriptPrefix),
   });
 }

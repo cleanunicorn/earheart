@@ -61,7 +61,7 @@ function stripFillers(text) {
       // Opening a sentence? The next word has to take over the capital.
       // (":" and ";" continue a sentence, so they are not boundaries here.)
       const head = whole.slice(0, offset);
-      const opensSentence = /(?:^|[.!?\n]["')\]]?\s*)$/.test(head);
+      const opensSentence = /(?:^|[.!?\n]["'”’)\]]?\s*)$/.test(head);
       // At the start of a line there is nothing to separate from; at the end of
       // one there is nothing left to separate.
       const startsLine = head === "" || head.endsWith("\n");

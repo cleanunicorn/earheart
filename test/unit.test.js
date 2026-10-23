@@ -615,6 +615,7 @@ test("stripStumbles still tidies the prose around a literal", () => {
   );
   // A quoted sentence still ends its sentence: the next one takes the capital.
   assert.strictEqual(stripStumbles('She said "stop." Um, then we left.'), 'She said "stop." Then we left.');
+  assert.strictEqual(stripStumbles("She said “stop.” Um, then we left."), "She said “stop.” Then we left.");
 });
 
 test("stripStumbles leaves a text with more literals than placeholders unchanged", () => {

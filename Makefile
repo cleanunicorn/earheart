@@ -73,6 +73,12 @@ dist-mac: ## Build macOS packages (dmg, zip) — run on macOS
 dist-win: ## Build Windows packages (NSIS, portable) — run on Windows
 	npm run dist:win
 
+# electronuserland/builder:wine as of 2026-10-23; update the digest deliberately.
+WIN_DOCKER_DIGEST := sha256:d91127d54da6c183efcbc587534daba402108b63be9d92844114c735dffe4e37
+# The version package-lock.json pins for a package (the Windows addons are
+# os-gated optional deps, so the lockfile records them even on Linux).
+locked = $(shell node -p "require('./package-lock.json').packages['node_modules/$(1)'].version")
+
 .PHONY: dist-win-docker
 dist-win-docker: ## Cross-build Windows packages from Linux via Docker+Wine
 	# The app ships native, per-platform addons (sherpa-onnx-node, node-llama-cpp)
@@ -90,12 +96,18 @@ dist-win-docker: ## Cross-build Windows packages from Linux via Docker+Wine
 	# NOTE: this produces a build but can't be runtime-verified from Linux — the
 	# supported, fully-tested path is CI (release.yml builds Windows on
 	# windows-latest) or `npm run dist:win` on a real Windows machine.
+	#
+	# Pinned (#174): the image by digest, so a re-pushed `wine` tag can't change
+	# the toolchain under a build, and the Windows addons at the versions the
+	# lockfile pins for every other platform, so the binaries match the JS
+	# wrappers npm ci installed.
 	docker run --rm --security-opt seccomp=unconfined \
 		-v "$(CURDIR)":/project -v /project/node_modules -w /project \
-		electronuserland/builder:wine \
+		electronuserland/builder:wine@$(WIN_DOCKER_DIGEST) \
 		/bin/bash -c "npm ci && \
 			npm install --no-save --force --os=win32 --cpu=x64 \
-				sherpa-onnx-win-x64 @node-llama-cpp/win-x64 && \
+				sherpa-onnx-win-x64@$(call locked,sherpa-onnx-win-x64) \
+				@node-llama-cpp/win-x64@$(call locked,@node-llama-cpp/win-x64) && \
 			npm run dist:win"
 
 # ----- speech-to-text server (Python) ---------------------------------------

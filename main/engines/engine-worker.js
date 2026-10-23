@@ -175,7 +175,7 @@ async function rebuildCleanupContext(contextSize) {
 
 async function loadCleanup({ modelPath, contextSize, cpuOnly }) {
   const wanted = contextSize || CLEAN_CONTEXT_MIN;
-  if (llamaModel && cleanupModelPath === modelPath) {
+  if (llamaModel && llamaContext && cleanupModelPath === modelPath) {
     if (cleanupContextSize === wanted) return { ready: true };
     // Same model, new floor (Max dictation length changed): the context is
     // allocated with the model's runtime, so rebuild just the context when it
@@ -187,6 +187,8 @@ async function loadCleanup({ modelPath, contextSize, cpuOnly }) {
       return { ready: true };
     } catch (err) {
       console.error(`[engine-worker] cleanup context resize failed (${err.message}); reloading`);
+      // The context is gone; never leave a model that looks loaded without one.
+      await disposeCleanup();
     }
   }
   // node-llama-cpp v3 is ESM-only; reach it via dynamic import from CommonJS.
@@ -318,8 +320,15 @@ async function fitCleanupContext(model, systemPrompt) {
   const instructions = instructionTokens(systemPrompt);
   if (instructions === null) return;
   const floor = cleanupContextSize;
-  let wanted = Math.max(floor, cleanContextSize(instructions, model.transcriptTokens));
-  while (cleanupGrowFailedAt && wanted >= cleanupGrowFailedAt && wanted > floor) wanted /= 2;
+  let wanted = cleanContextSize(instructions, model.transcriptTokens);
+  // Never past what the model was trained on: a custom GGUF with a short
+  // training context degrades when stretched. The turn is judged afterwards.
+  const trained = llamaModel.trainContextSize;
+  if (Number.isFinite(trained) && trained > 0) wanted = Math.min(wanted, trained);
+  wanted = Math.max(floor, wanted);
+  while (cleanupGrowFailedAt && wanted >= cleanupGrowFailedAt && wanted > floor) {
+    wanted = Math.max(floor, wanted / 2);
+  }
   if (wanted === llamaContext.contextSize) return;
   try {
     await rebuildCleanupContext(wanted);

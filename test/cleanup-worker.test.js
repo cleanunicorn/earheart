@@ -20,7 +20,7 @@ const drain = () => new Promise((resolve) => setImmediate(resolve));
 function worker({
   loadGate, promptGate, promptStarted, preloadGate, preloadStarted,
   env = { EARHEART_LLAMA_GPU: "off" }, gpuFails = false, stopReason = "eogToken",
-  contextFailsAbove = Infinity,
+  contextFailsAbove = Infinity, trainContextSize,
 } = {}) {
   const events = [];
   // Kept apart from `events`, whose exact sequence the older tests pin.
@@ -39,6 +39,7 @@ function worker({
           if (gpu && gpuFails) throw new Error("out of VRAM");
           return {
             tokenize: (text) => text.split(/\s+/),
+            trainContextSize,
             async createContext({ contextSize }) {
               contextEvents.push(`context:${modelPath}:${contextSize}`);
               if (contextSize > contextFailsAbove) throw new Error("out of memory");
@@ -349,6 +350,30 @@ test("cleanup worker: a prime sizes the context as the clean will, so the clean 
   const systemPrompt = words(6900);
   const primed = await w.send("prime-cleanup", { model: budgeted("A"), systemPrompt, text: `${systemPrompt}\n\nTranscript:\n` });
   assert.equal(primed.ok, true, primed.error);
+  // Already grown by the prime itself...
+  assert.deepEqual(w.contextEvents, ["context:A:4096", "context:A:8192"]);
+  const afterPrime = w.events.length;
   assert.equal((await w.send("clean", { model: budgeted("A"), transcript: "hello", systemPrompt })).ok, true);
+  // ...so the clean neither rebuilds nor drops the primed session.
+  assert.deepEqual(w.contextEvents, ["context:A:4096", "context:A:8192"]);
+  assert.deepEqual(w.events.slice(afterPrime).filter((event) => event.startsWith("dispose-")), []);
+});
+
+test("cleanup worker: after the ceiling fails, the next turn settles one step down and stays there", async () => {
+  const w = worker({ contextFailsAbove: 8192 });
+  // A 600 s budget sizes 6,000 instruction tokens at 16384; "hello" fits 8192.
+  const model = { ...budgeted("A"), transcriptTokens: 2025 };
+  const send = () => w.send("clean", { model, transcript: "hello", systemPrompt: words(6000) });
+  assert.equal((await send()).ok, false, "16384 failed and 6,000 instruction tokens don't fit 4096");
+  assert.equal((await send()).ok, true, "8192 is tried next and fits");
+  assert.equal((await send()).ok, true);
+  assert.deepEqual(w.contextEvents, ["context:A:4096", "context:A:16384", "context:A:4096", "context:A:8192"]);
+});
+
+test("cleanup worker: the context never grows past the model's training context", async () => {
+  const w = worker({ trainContextSize: 8192 });
+  const reply = await w.send("clean", { model: budgeted("A"), transcript: "hello", systemPrompt: words(9000) });
+  assert.equal(reply.ok, false);
+  assert.match(reply.error, /instructions and dictionary/);
   assert.deepEqual(w.contextEvents, ["context:A:4096", "context:A:8192"]);
 });

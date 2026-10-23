@@ -174,7 +174,23 @@ function collapseRepeats(text) {
 //     (--force, -v), or a code identifier (camelCase, snake_case).
 // A repeat that is NOT marked ("run echo echo") can't be told from a stutter
 // and is still collapsed: marking it is what keeps it.
-const LITERAL_SPAN = /```[\s\S]*?```|`[^`\n]+`|"[^"\n]*"|“[^”\n]*”|(?<![\p{L}\p{N}])'[^'\n]*'(?![\p{L}\p{N}])/gu;
+// A leading elision ('cause, 'tis, 'em) opens no quote: paired with a later
+// possessive (dogs') it would shield the prose between them.
+const ELISION = "(?!(?:cause|cos|tis|twas|til|em|n|bout|round|kay)\\b)";
+const LITERAL_SPAN = new RegExp(
+  [
+    "```[\\s\\S]*?```",
+    "`[^`\\n]+`",
+    '"[^"\\n]*"',
+    "“[^”\\n]*”",
+    `(?<![\\p{L}\\p{N}])'${ELISION}[^'\\n]*'(?![\\p{L}\\p{N}])`,
+    `(?<![\\p{L}\\p{N}])‘${ELISION}[^’\\n]*’(?![\\p{L}\\p{N}])`,
+  ].join("|"),
+  "giu"
+);
+// A quote's own closing punctuation ("stop.") stays outside the mask, so the
+// sentence it ends still ends for the filler pass.
+const QUOTE_CLOSE = /([.!?]+["”'’])$/u;
 const LITERAL_TOKEN = /[^\s]+/gu;
 // What surrounds a token without being part of it: sentence punctuation stays
 // outside, so a path ending a sentence still ends it for the filler pass.
@@ -202,16 +218,27 @@ const PUA = /[\uE000-\uF8FF]/;
 function maskLiterals(text) {
   if (PUA.test(text)) return null;
   const saved = [];
+  // 6400 placeholders (U+E000–U+F8FF); past that a placeholder would be a
+  // real character that can't be put back, so the text is left alone.
+  let overflow = false;
   const hold = (literal) => {
+    if (saved.length >= 0x1900) {
+      overflow = true;
+      return literal;
+    }
     saved.push(literal);
     return String.fromCharCode(0xe000 + saved.length - 1);
   };
-  let masked = text.replace(LITERAL_SPAN, hold);
+  let masked = text.replace(LITERAL_SPAN, (span) => {
+    const close = span.startsWith("`") ? null : span.match(QUOTE_CLOSE);
+    return close ? hold(span.slice(0, -close[1].length)) + close[1] : hold(span);
+  });
   masked = masked.replace(LITERAL_TOKEN, (token) => {
     if (PUA.test(token)) return token;
     const [, open, core, close] = token.match(TOKEN_EDGES);
     return core && isLiteralToken(core) ? `${open}${hold(core)}${close}` : token;
   });
+  if (overflow) return null;
   return {
     masked,
     unmask: (s) => s.replace(/[\uE000-\uF8FF]/g, (ch) => saved[ch.charCodeAt(0) - 0xe000]),

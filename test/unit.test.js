@@ -585,13 +585,14 @@ test("stripStumbles leaves code, paths and quoted strings exactly as they are", 
     'Set the string to "um".',
     "Set the string to “um”.",
     "Set it to 'um' now.",
+    "Set it to ‘um’ now.",
     "```\nfor x in x x; do echo um; done\n```",
     "Pass --um to the uh_handler and read ./um/notes.",
     "Call fooBar fooBar on the parser.",
   ];
   for (const text of kept) {
     const out = stripStumbles(text);
-    for (const literal of text.match(/`[^`]+`|```[\s\S]+```|"[^"]*"|“[^”]*”|'um'|src\/um\/parser\.js|--um|uh_handler|\.\/um\/notes|fooBar fooBar/g) || []) {
+    for (const literal of text.match(/`[^`]+`|```[\s\S]+```|"[^"]*"|“[^”]*”|'um'|‘um’|src\/um\/parser\.js|--um|uh_handler|\.\/um\/notes|fooBar fooBar/g) || []) {
       assert.ok(out.includes(literal), `${JSON.stringify(literal)} survives in ${JSON.stringify(out)}`);
     }
   }
@@ -607,6 +608,18 @@ test("stripStumbles still tidies the prose around a literal", () => {
   assert.strictEqual(stripStumbles("It's um fine, don't worry."), "It's fine, don't worry.");
   // An unmarked repeat can't be told from a stutter: marking it keeps it.
   assert.strictEqual(stripStumbles("run echo echo"), "run echo");
+  // An elision opens no quote, so the prose up to a later possessive is tidied.
+  assert.strictEqual(
+    stripStumbles("I left 'cause um the the dogs' toys were um gone."),
+    "I left 'cause the dogs' toys were gone."
+  );
+  // A quoted sentence still ends its sentence: the next one takes the capital.
+  assert.strictEqual(stripStumbles('She said "stop." Um, then we left.'), 'She said "stop." Then we left.');
+});
+
+test("stripStumbles leaves a text with more literals than placeholders unchanged", () => {
+  const text = Array.from({ length: 6500 }, (_, i) => `f${i}.js um`).join(" ");
+  assert.strictEqual(stripStumbles(text), text);
 });
 
 test("stripStumbles leaves text holding private-use characters alone", () => {

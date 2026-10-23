@@ -371,9 +371,12 @@ test("cleanup worker: after the ceiling fails, the next turn settles one step do
 });
 
 test("cleanup worker: the context never grows past the model's training context", async () => {
-  const w = worker({ trainContextSize: 8192 });
+  const w = worker({ trainContextSize: 12000 });
   const reply = await w.send("clean", { model: budgeted("A"), transcript: "hello", systemPrompt: words(9000) });
   assert.equal(reply.ok, false);
   assert.match(reply.error, /instructions and dictionary/);
+  // 12000 rounds down to a doubling step, so the size stays one llama.cpp
+  // keeps exactly and the next turn doesn't rebuild.
+  assert.equal((await w.send("clean", { model: budgeted("A"), transcript: "hello", systemPrompt: words(9000) })).ok, false);
   assert.deepEqual(w.contextEvents, ["context:A:4096", "context:A:8192"]);
 });

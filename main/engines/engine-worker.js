@@ -321,10 +321,12 @@ async function fitCleanupContext(model, systemPrompt) {
   if (instructions === null) return;
   const floor = cleanupContextSize;
   let wanted = cleanContextSize(instructions, model.transcriptTokens);
-  // Never past what the model was trained on: a custom GGUF with a short
-  // training context degrades when stretched. The turn is judged afterwards.
+  // Not past what the model was trained on (unless main's floor already is):
+  // a custom GGUF with a short training context degrades when stretched. The
+  // cap is rounded down to a power of two, so every size stays on the doubling
+  // steps llama.cpp keeps exactly and the size check below can match.
   const trained = llamaModel.trainContextSize;
-  if (Number.isFinite(trained) && trained > 0) wanted = Math.min(wanted, trained);
+  if (Number.isFinite(trained) && trained > 0) wanted = Math.min(wanted, 2 ** Math.floor(Math.log2(trained)));
   wanted = Math.max(floor, wanted);
   while (cleanupGrowFailedAt && wanted >= cleanupGrowFailedAt && wanted > floor) {
     wanted = Math.max(floor, wanted / 2);

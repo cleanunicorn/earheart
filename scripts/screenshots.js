@@ -8,6 +8,17 @@
 const { app, session } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
+const { createDemoProfile, removeAfterExit } = require("./demo-profile");
+
+// A throwaway demo profile, set before anything below can read userData or
+// logs (settings, history, models and the logger all resolve them from the
+// app), so the shots never show — or migrate — the contributor's own profile
+// (#295). Removed after the process exits, whichever way it exits: Chromium
+// writes into it while shutting down.
+const profile = createDemoProfile();
+app.setPath("userData", profile.dir);
+app.setPath("logs", profile.logs);
+removeAfterExit(profile.dir);
 
 const ROOT = path.join(__dirname, "..");
 const OUT = path.join(ROOT, "docs", "screenshots");

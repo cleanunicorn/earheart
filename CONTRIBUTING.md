@@ -408,6 +408,11 @@ recording/done states). If the UI changes, re-capture them:
 make screenshots       # runs scripts/screenshots.js under xvfb
 ```
 
+The capture runs in a throwaway demo profile (`scripts/demo-profile.js`) with
+fixed settings, never your own: your hotkeys, microphone and setup don't reach
+the images, and your settings file is neither read nor migrated. The profile
+lives in the OS temp dir and is deleted once the run exits, however it exits.
+
 ## Tray artwork
 
 `make icons` regenerates the shared heart-and-waveform artwork. macOS and Linux

@@ -1741,3 +1741,35 @@ test("pipeline: a retry of a built-in take decodes the whole recording, not a st
   assert.deepStrictEqual(rig.log.delivered, ["the whole explanation"]);
   assert.strictEqual(Math.round(rig.log.transcribe.at(-1).sec), 5, "the whole take was decoded");
 });
+
+test("pipeline: a new take cancelled before delivery, or cut short, keeps the held recording", async () => {
+  const stt = flakyStt();
+  const held = heldCleanup();
+  held.rejectOnAbort = true;
+  const rig = dictationRig({ engine: "remote", cleanup: true, transcribe: stt.transcribe, clean: held.clean });
+  const take = speechWav(30);
+  await rig.dictate(take);
+  stt.down = false;
+  stt.reply = "said again";
+  // Cancelled while the new take is cleaning: its words never land, and the
+  // held recording must not go with them.
+  const idle = new Promise((resolve) => rig.pipeline.onStateChange((s) => s === "idle" && resolve()));
+  rig.pipeline.toggle();
+  rig.handlers["audio:captured"]({}, { sid: rig.log.lastStart.sid, wav: speechWav(3) });
+  await held.started;
+  rig.pipeline.cancel();
+  await idle;
+  await flush();
+  assert.deepStrictEqual(rig.log.delivered, []);
+  assert.strictEqual(rig.pipeline.getFailedTake().bytes, take.length);
+});
+
+test("pipeline: a partial salvage doesn't supersede the held recording", async () => {
+  const rig = dictationRig({ transcribe: async () => { throw exited(); } });
+  const take = speechWav(30);
+  await rig.dictate(take); // nothing recovered: held
+  assert.strictEqual(rig.pipeline.getFailedTake().bytes, take.length);
+  await rig.dictate(speechWav(40), { committedRaw: "words said so far", decodedSamples: 30 * SR, broken: false });
+  assert.deepStrictEqual(rig.log.delivered, ["words said so far"]);
+  assert.strictEqual(rig.pipeline.getFailedTake().bytes, take.length, "the engine that cut it short failed the held one too");
+});

@@ -687,10 +687,6 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
     );
     transcribed = true;
     if (stale()) return;
-    // New words exist: a failed take held from before is superseded. Not
-    // sooner — a mis-press, a mic check, or a take that hears nothing or fails
-    // too must not cost the recording (a retry already took it out).
-    if (raw && !retry) failedTake.discard();
 
     if (!raw) {
       overlayStatus("empty");
@@ -734,6 +730,11 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
     overlayStatus("delivering");
     const result = await deliver(text, cfg.output, signal);
     delivered = true;
+    // New words have landed: a failed take held from before is superseded.
+    // Not sooner — a mis-press, a mic check, a take that hears nothing, fails,
+    // is cut short by a dying engine, or is cancelled before delivery must not
+    // cost the recording (a retry already took it out).
+    if (!retry && !partial) failedTake.discard();
     if (stale()) return;
 
     if (result.hint) {
@@ -777,12 +778,13 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
       ...(kept ? { failedTake: { expiresInSec: kept.expiresInSec, ...(earlier ? { earlier: true } : {}) } } : {}),
     });
     if (kept) {
-      const minutes = Math.round(kept.expiresInSec / 60);
+      // Never "0 minutes", never more time than is left.
+      const minutes = Math.max(1, Math.floor(kept.expiresInSec / 60));
       notify({
         title: earlier
           ? "Earheart: transcription failed, earlier recording still kept"
           : "Earheart: transcription failed, recording kept",
-        body: `Retry it from the tray menu or the overlay, or run earheart --retry, within ${minutes} minutes. ${err.message}`,
+        body: `Retry it from the tray menu or the overlay, or run earheart --retry, within ${minutes} minute${minutes === 1 ? "" : "s"}. ${err.message}`,
       });
     } else {
       notify({ title: "Earheart: dictation failed, nothing was delivered", body: err.message });

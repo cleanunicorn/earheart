@@ -727,7 +727,8 @@ test("Save never closes Settings; the footer's Close button does", () => {
   assert.equal(js.match(/settings:close/g).length, 1, "only the Close button closes Settings");
   // With the window staying open, a failed Save's clear-timer must not wipe
   // the next Save's "Saved".
-  assert.match(save, /^async function saveSettings\(\) \{\n  const save = \$\("save-status"\);\n  clearTimeout\(saveStatusTimer\);/);
+  // \r?\n: Windows checkouts carry CRLF.
+  assert.match(save, /^async function saveSettings\(\) \{\r?\n  const save = \$\("save-status"\);\r?\n  clearTimeout\(saveStatusTimer\);/);
   assert.match(save, /saveStatusTimer = setTimeout\(/);
   assert.doesNotMatch(save.replace(/saveStatusTimer = setTimeout\(/g, ""), /\bsetTimeout\(/);
 });

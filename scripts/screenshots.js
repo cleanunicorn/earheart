@@ -38,8 +38,11 @@ async function main() {
   // The shipped permission policy, so the microphone grant below is proven
   // through the same handler the app installs (main/window-guard.js).
   installPermissionHandler(session.defaultSession);
-  // Start on boot reads the OS login item, not the profile; show the demo's.
-  require(path.join(ROOT, "main", "autostart.js")).isEnabled = () => false;
+  // Start on boot reads and writes the OS login item, not the profile: show
+  // the demo's value, and never touch the real entry.
+  const autostart = require(path.join(ROOT, "main", "autostart.js"));
+  autostart.isEnabled = () => false;
+  autostart.apply = () => {};
   ipc.init({
     applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
     onSettingsChanged: () => {},

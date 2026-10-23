@@ -91,6 +91,8 @@ function removeAfterExit(dir, { pid = process.pid, root = os.tmpdir(), onError =
     detached: true,
     stdio: "ignore",
     windowsHide: true,
+    // Not the checkout: Windows won't remove a directory a process sits in.
+    cwd: os.tmpdir(),
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
   });
   child.on("error", onError);
@@ -129,7 +131,7 @@ function isolateProfile(app, { prefix } = {}) {
  * @param {{ dir: string }} profile
  */
 function assertIsolated(app, profile) {
-  for (const name of ["userData", "sessionData", "logs"]) {
+  for (const name of ["userData", "sessionData", "logs", "crashDumps"]) {
     const resolved = path.resolve(app.getPath(name));
     if (resolved !== profile.dir && !resolved.startsWith(profile.dir + path.sep)) {
       throw new Error(`${name} is ${resolved}, outside the demo profile ${profile.dir}`);

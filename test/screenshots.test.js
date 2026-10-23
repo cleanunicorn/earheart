@@ -67,14 +67,17 @@ for (const script of ["screenshots.js", "overlay-smoke.js"]) {
 }
 
 test("screenshots.js: start on boot shows the demo's value, not the OS login item", () => {
-  const stub = source.indexOf('"autostart.js")).isEnabled = () => false');
-  strict.ok(stub > 0 && stub < source.indexOf("ipc.init("), "stub autostart before ipc.init");
+  const init = source.indexOf("ipc.init(");
+  for (const stub of ["autostart.isEnabled = () => false", "autostart.apply = () => {}"]) {
+    const at = source.indexOf(stub);
+    strict.ok(at > 0 && at < init, `${stub} before ipc.init`);
+  }
 });
 
 test("demo profile: assertIsolated rejects a path outside the profile", (t) => {
   const root = tempRoot(t);
   const profile = createDemoProfile({ root });
-  const paths = { userData: profile.dir, sessionData: profile.dir, logs: profile.logs };
+  const paths = { userData: profile.dir, sessionData: profile.dir, logs: profile.logs, crashDumps: path.join(profile.dir, "Crashpad") };
   const app = { getPath: (name) => paths[name] };
   strict.doesNotThrow(() => assertIsolated(app, profile));
   paths.logs = path.join(root, "Logs", "Electron");

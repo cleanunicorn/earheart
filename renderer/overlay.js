@@ -1058,7 +1058,7 @@ earheart.on("pipeline:status", ({ status, detail }) => {
       // The recording survived the failure: offer it back (#293).
       if (detail?.failedTake) {
         const minutes = Math.max(1, Math.round(detail.failedTake.expiresInSec / 60));
-        takeNote.textContent = `Recording kept for ${minutes} min`;
+        takeNote.textContent = `${detail.failedTake.earlier ? "Earlier recording" : "Recording"} kept for ${minutes} min`;
         takeActions.hidden = false;
         // ✕ only dismisses the card; next to a Discard pill, say what stays.
         cancelBtn.title = "Dismiss — the recording stays in the tray menu";

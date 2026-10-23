@@ -393,8 +393,9 @@ memory for 10 minutes. You can fix the service or switch engines in Settings,
 then choose **Retry transcription** on the overlay or **Retry failed
 transcription** from the tray, or run `earheart --retry`. You don't have to say
 it all again. **Discard** (or `earheart --discard`) lets it go. The recording is
-never written to disk. It's gone when you quit, when it expires, or once you
-dictate something new.
+never written to disk. It's gone when you quit, when it expires, or once a new
+dictation transcribes. If a new dictation fails too, Earheart keeps the longer
+of the two recordings.
 
 To fix a technical name, choose **Correct…** on a history entry or **Correct last
 transcription…** from the tray. You can also configure **Correct last transcript

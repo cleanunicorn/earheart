@@ -515,8 +515,15 @@ function retryFailedTake() {
     windows.showOverlay();
     process(sid, wav, { retry: true });
   };
-  if (win.webContents.isLoading()) win.webContents.once("did-finish-load", begin);
-  else begin();
+  if (win.webContents.isLoading()) {
+    win.webContents.once("did-finish-load", begin);
+    // A load that fails never finishes: don't let it block every later retry.
+    win.webContents.once("did-fail-load", () => {
+      if (retryPending === sid) retryPending = null;
+    });
+  } else {
+    begin();
+  }
   return true;
 }
 
@@ -680,6 +687,10 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
     );
     transcribed = true;
     if (stale()) return;
+    // New words exist: a failed take held from before is superseded. Not
+    // sooner — a mis-press, a mic check, or a take that hears nothing or fails
+    // too must not cost the recording (a retry already took it out).
+    if (raw && !retry) failedTake.discard();
 
     if (!raw) {
       overlayStatus("empty");
@@ -755,15 +766,22 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
     // History (written above, before delivery). A transcription failure has
     // only the audio, so the take is held for a retry instead of lost (#293).
     // Either way the overlay line goes, so the notice has to say it.
-    const kept = transcribed ? null : failedTake.keep(wav);
+    // Only one take is held. When one already is (the service is still down
+    // and the user tried again), keep the longer: a quick "testing?" must not
+    // replace the five minutes it was testing for.
+    const held = transcribed ? null : failedTake.info();
+    const earlier = !!held && held.bytes > wav.length;
+    const kept = transcribed ? null : earlier ? held : failedTake.keep(wav);
     overlayStatus("error", {
       message: String(err.message).slice(0, 200),
-      ...(kept ? { failedTake: { expiresInSec: kept.expiresInSec } } : {}),
+      ...(kept ? { failedTake: { expiresInSec: kept.expiresInSec, ...(earlier ? { earlier: true } : {}) } } : {}),
     });
     if (kept) {
       const minutes = Math.round(kept.expiresInSec / 60);
       notify({
-        title: "Earheart: transcription failed, recording kept",
+        title: earlier
+          ? "Earheart: transcription failed, earlier recording still kept"
+          : "Earheart: transcription failed, recording kept",
         body: `Retry it from the tray menu or the overlay, or run earheart --retry, within ${minutes} minutes. ${err.message}`,
       });
     } else {
@@ -782,10 +800,6 @@ function init({ isDownloading = () => false } = {}) {
   isModelDownloading = isDownloading;
   ipcMain.on("audio:captured", (event, { sid, wav } = {}) => {
     if (sid !== session || state !== "recording") return;
-    // Speaking again supersedes a failed take held for retry — once there is
-    // new audio, not when the hotkey is pressed: a mic check, a mis-press or a
-    // cancelled take must not cost the recording.
-    failedTake.discard();
     process(sid, wav);
   });
 

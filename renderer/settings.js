@@ -1059,7 +1059,13 @@ async function saveSettings() {
   save.className = "status";
   try {
     current = next;
+    // The controls stay live during the round-trip: remember what was sent, so
+    // an edit made meanwhile is never vouched for by "Saved".
+    const sent = formSnapshot();
     result = await earheart.invoke("settings:save", { settings: current, baseline });
+    const editedWhileSaving = [...formSnapshot()].some(
+      ([el, value]) => JSON.stringify(value) !== JSON.stringify(sent.get(el))
+    );
     current = result.settings;
     baseline = sharedBaseline(current);
     // Main may have kept its own value for a shared field (a tray change this
@@ -1079,9 +1085,18 @@ async function saveSettings() {
       // Save never closes the window (#298): a window that vanished on its own
       // read as a crash. "Saved" stays until the form is edited again; Close
       // dismisses the window.
-      save.textContent = adjusted.length ? `Saved — ${adjusted.join("; ")}` : "Saved";
-      save.className = "status ok";
-      savedForm = JSON.stringify(collect());
+      const saved = adjusted.length ? `Saved — ${adjusted.join("; ")}` : "Saved";
+      if (editedWhileSaving) {
+        // What was sent is saved; the edits since are not. Say so, and take no
+        // snapshot that would vouch for them.
+        save.textContent = `${saved}. Changes made while saving aren't saved yet.`;
+        save.className = "status";
+        savedForm = null;
+      } else {
+        save.textContent = saved;
+        save.className = "status ok";
+        savedForm = JSON.stringify(collect());
+      }
       renderHotkeyStatus(hotkeyStatus);
       saveButton.disabled = false;
       return;

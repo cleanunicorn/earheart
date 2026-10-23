@@ -97,6 +97,15 @@ const { checkWindowLock } = require("./window-lock-smoke");
 const { installPermissionHandler } = require("../main/window-guard");
 const history = require("../main/history");
 const ipc = require("../main/ipc");
+// Keep each invoke handler ipc.init registers, so a check can wrap one (hold
+// settings:save's reply open) and put the real one back.
+const { ipcMain } = require("electron");
+const invokeHandlers = new Map();
+const registerHandler = ipcMain.handle.bind(ipcMain);
+ipcMain.handle = (channel, handler) => {
+  invokeHandlers.set(channel, handler);
+  return registerHandler(channel, handler);
+};
 const engines = require("../main/engines");
 const { registry } = engines;
 
@@ -114,8 +123,8 @@ app.on("window-all-closed", () => {});
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Each read is bounded too: an executeJavaScript whose window is destroyed
 // mid-call never settles, and would otherwise hang the run past every check.
-async function waitFor(read, message) {
-  for (let attempt = 0; attempt < 100; attempt++) {
+async function waitFor(read, message, attempts = 100) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
     let timer;
     const value = await Promise.race([
       read(),
@@ -130,13 +139,19 @@ async function waitFor(read, message) {
 }
 
 // Save keeps Settings open (#298): wait for its "Saved", then dismiss the
-// window through the footer's Close button, as a user would.
+// window through the footer's Close button, as a user would. A Save is
+// several round-trips (models:status, settings:save, hotkey registration), so
+// it gets a longer budget than one poll loop on a loaded machine.
 async function savedThenClose(win, message) {
   const run = (code) => win.webContents.executeJavaScript(code, true);
   await waitFor(
     () => !win.isDestroyed() && run(`document.getElementById("save-status").className === "status ok"`),
-    message
-  );
+    message,
+    500
+  ).catch(async (err) => {
+    const shown = win.isDestroyed() ? "(window closed)" : await run(`document.getElementById("save-status").textContent`);
+    throw new Error(`${err.message}; status: ${JSON.stringify(shown)}`);
+  });
   await clickClose(win);
 }
 
@@ -1612,6 +1627,59 @@ app.whenReady().then(async () => {
             !/F9$/.test(savedJson().pauseHotkey || ""),
           JSON.stringify({ saves: saveCount - savesBefore })
         );
+      }
+
+      // An edit made while the save is in flight is not in what was saved:
+      // Save must say so instead of "Saved", and disk keeps the sent value.
+      {
+        const { saveWin, run } = await openSaveWindow();
+        const before = savedJson().stt.language;
+        const typed = before === "fr" ? "de" : "fr";
+        const realSave = invokeHandlers.get("settings:save");
+        let release;
+        const held = new Promise((resolve) => { release = resolve; });
+        let reached = false;
+        ipcMain.removeHandler("settings:save");
+        registerHandler("settings:save", async (...args) => {
+          const reply = await realSave(...args);
+          reached = true;
+          await held;
+          return reply;
+        });
+        try {
+          await run(`document.getElementById("save").click(); true`);
+          await waitFor(() => reached, "the held Save never reached main");
+          await run(`(() => {
+            const field = document.getElementById("stt-language");
+            field.value = ${JSON.stringify(typed)};
+            field.dispatchEvent(new Event("input", { bubbles: true }));
+          })()`);
+          release();
+          const during = await waitFor(
+            () => run(`(() => {
+              const status = document.getElementById("save-status");
+              return status.textContent.startsWith("Saved") && JSON.stringify({
+                text: status.textContent,
+                className: status.className,
+                field: document.getElementById("stt-language").value,
+              });
+            })()`),
+            "the held Save never finished"
+          ).then(JSON.parse);
+          await sleep(100);
+          const later = await run(`document.getElementById("save-status").textContent`);
+          check(
+            "an edit made while saving is not vouched for by Saved",
+            during.className === "status" && /aren't saved yet/.test(during.text) &&
+              later === during.text && during.field === typed && savedJson().stt.language === before,
+            JSON.stringify({ during, later, saved: savedJson().stt.language })
+          );
+        } finally {
+          release();
+          ipcMain.removeHandler("settings:save");
+          registerHandler("settings:save", realSave);
+        }
+        await clickClose(saveWin);
       }
     } finally {
       settings.save = countedSave;

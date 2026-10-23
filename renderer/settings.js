@@ -1000,13 +1000,21 @@ saveButton.addEventListener("click", async () => {
   }
 });
 
-// A "Saved" result describes the form as it was saved; once the user edits it,
-// drop the message so it never vouches for unsaved changes.
-for (const event of ["input", "change"]) {
-  panelHost.addEventListener(event, () => {
-    const save = $("save-status");
-    if (save.className === "status ok") save.textContent = "";
-  });
+// The form as the last successful Save left it. "Saved" stays only while the
+// form still matches, so it never vouches for unsaved changes. Many edits
+// (hotkey capture, Reset, "Start from preset") set values directly and fire
+// no input event, so after any interaction compare the form itself.
+let savedForm = null;
+function clearStaleSaved() {
+  const save = $("save-status");
+  if (savedForm === null || save.className !== "status ok") return;
+  if (JSON.stringify(collect()) === savedForm) return;
+  savedForm = null;
+  save.textContent = "";
+}
+for (const event of ["input", "change", "click", "keydown", "keyup"]) {
+  // Capture phase plus a task: runs after the control's own handler.
+  document.addEventListener(event, () => setTimeout(clearStaleSaved), true);
 }
 
 $("close").addEventListener("click", () => earheart.invoke("settings:close"));
@@ -1058,6 +1066,7 @@ async function saveSettings() {
       // dismisses the window.
       save.textContent = adjusted.length ? `Saved — ${adjusted.join("; ")}` : "Saved";
       save.className = "status ok";
+      savedForm = JSON.stringify(collect());
       renderHotkeyStatus(hotkeyStatus);
       saveButton.disabled = false;
       return;

@@ -427,9 +427,10 @@ its right) beside one scrolling column of sections capped at 620px
 (`.panel { max-width: 620px }`), then a fixed footer commit row (seam above,
 right-aligned: status, a plain Close button, then the white Save pill). Save
 never closes the window — it says "Saved" and stays — so a window never
-vanishes on its own. The index is a scroll spy with roving tabindex: the entry currently in view takes the wash; clicking glides the
-page (`scroll-behavior: smooth`) and moves focus to the section legend. Below
-600px the index docks horizontally above the page.
+vanishes on its own. The index is a scroll spy with roving tabindex: the
+entry currently in view takes the wash; clicking glides the page
+(`scroll-behavior: smooth`) and moves focus to the section legend. Below 600px
+the index docks horizontally above the page.
 
 **The setup wizard** (620×680, 560×560 minimum). Layers on `settings.css`:
 same header and materials. Steps (max-width 640px) center vertically in the

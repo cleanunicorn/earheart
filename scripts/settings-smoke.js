@@ -1147,8 +1147,8 @@ app.whenReady().then(async () => {
       JSON.stringify({ afterRemove, removed })
     );
 
-    // Save goes through the real settings:save handler (and then closes the
-    // window), so count saves to know when the renderer's own one has landed.
+    // Save goes through the real settings:save handler, so count saves to
+    // know when the renderer's own one has landed.
     let rendererSaves = 0;
     const saveSettings = settings.save;
     settings.save = (next) => {
@@ -1540,18 +1540,47 @@ app.whenReady().then(async () => {
           open && saved.save === "Saved" && !saved.saveDisabled,
           JSON.stringify({ open, saved })
         );
-        const edited = await run(`(() => {
+        await run(`(() => {
           const field = document.getElementById("max-seconds");
           field.value = String(Number(field.value) + 1);
           field.dispatchEvent(new Event("input", { bubbles: true }));
-          return document.getElementById("save-status").textContent;
         })()`);
-        check("editing the form after a Save clears Saved", edited === "", JSON.stringify(edited));
+        const edited = await waitFor(
+          () => run(`document.getElementById("save-status").textContent === ""`),
+          "editing the form did not clear Saved"
+        );
+        check("editing the form after a Save clears Saved", edited);
+        // A hotkey capture sets the value directly and fires no input event;
+        // it must clear "Saved" too.
+        await run(`(() => {
+          const field = document.getElementById("max-seconds");
+          field.value = String(Number(field.value) - 1);
+          document.getElementById("save").click();
+        })()`);
+        await waitFor(
+          () => state("stt").then((s) => s.save === "Saved"),
+          "a second clean Save never reported Saved"
+        );
+        await run(`(() => {
+          const field = document.getElementById("pause-hotkey");
+          field.click();
+          field.dispatchEvent(new KeyboardEvent("keydown", {
+            key: "F9", code: "F9", ctrlKey: true, altKey: true, shiftKey: true, bubbles: true, cancelable: true,
+          }));
+          field.blur();
+        })()`);
+        const captured = await waitFor(
+          () => run(`document.getElementById("save-status").textContent === "" &&
+            document.getElementById("pause-hotkey").value`),
+          "a captured hotkey did not clear Saved"
+        );
+        check("capturing a hotkey after a Save clears Saved", /Alt\+Shift\+F9$/.test(captured), JSON.stringify(captured));
         await run(`document.getElementById("close").click(); true`);
         await waitFor(() => saveWin.isDestroyed(), "Close did not close Settings");
         check(
           "Close closes Settings without saving the edit",
-          saveWin.isDestroyed() && saveCount === savesBefore + 1,
+          saveWin.isDestroyed() && saveCount === savesBefore + 2 &&
+            !/F9$/.test(savedJson().pauseHotkey || ""),
           JSON.stringify({ saves: saveCount - savesBefore })
         );
       }
@@ -1568,7 +1597,7 @@ app.whenReady().then(async () => {
     }
 
     await require("./wizard-smoke").checkWizard({ waitFor, check });
-    await require("./correction-smoke").checkCorrection({ waitFor, check });
+    await require("./correction-smoke").checkCorrection({ waitFor, check, savedThenClose });
 
     const failed = checks.filter((c) => !c.ok);
     console.log(

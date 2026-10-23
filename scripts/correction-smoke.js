@@ -6,7 +6,7 @@ const settings = require("../main/settings");
 const history = require("../main/history");
 const { waitForLoad } = require("./wait-for-load");
 
-async function checkCorrection({ waitFor, check }) {
+async function checkCorrection({ waitFor, check, savedThenClose }) {
   const original = "Run cube cuddle, then check cube cuddle.\nKeep src/Foo.ts and 🚀 unchanged.";
   history.add({ text: original, raw: original, cleaned: false }, { enabled: true, limit: 100 });
   const form = windows.openSettings();
@@ -98,7 +98,7 @@ async function checkCorrection({ waitFor, check }) {
   await waitFor(() => win.isDestroyed(), "copy shortcut did not close editor");
   check("copy shortcut writes the entire corrected prompt", clipboard.readText() === corrected);
   await formRun('document.getElementById("save").click()');
-  await waitFor(() => form.isDestroyed(), "Settings save did not close");
+  await savedThenClose(form, "Settings save never reported Saved");
   check("Settings save retains both remembered words and unsaved edits", settings.get().cleanup.dictionary.includes("kubectl") && settings.get().cleanup.dictionary.includes("localDraft"));
   const cfg = settings.get();
   settings.save({ ...cfg, cleanup: { ...cfg.cleanup, enabled: false } });

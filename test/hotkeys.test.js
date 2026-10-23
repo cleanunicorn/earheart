@@ -1213,3 +1213,32 @@ test("a correction rotation's rollback never moves record off its restored key",
   assert.ok(!result.record.unbound, `record stays bound: ${JSON.stringify(result.record)}`);
   assert.strictEqual(bindings.has(A), true, "record is back on A");
 });
+
+test("a pair undo that loses a binding reports it instead of the change it replaced", () => {
+  // record A -> D, pause B -> A, discard D -> E (occupied). Pause takes A on
+  // the way forward; then another app is quicker to A once the undo lets go
+  // of it, so the undo — and its own rollback — can't hold it again.
+  const { hotkeys, bindings } = loadHotkeys({
+    occupied: [E],
+    registerImpl: (accelerator, attempt) => !(accelerator === A && attempt > 2),
+  });
+  hotkeys.applyAll(all(A, B, D)); // A's first registration
+  const result = hotkeys.applyAll(all(D, A, E)); // pause takes A: the second
+  for (const [name, key] of [["record", D], ["pause", A]]) {
+    if (result[name].ok) assert.strictEqual(bindings.has(key), true, `${name} reports ok, so it must hold ${key}`);
+  }
+  assert.ok(["record", "pause"].some((name) => result[name].unbound), JSON.stringify(result));
+});
+
+test("a four-way rotation through correction never leaves record unbound", () => {
+  const K = (n) => `CommandOrControl+${n}`;
+  const occupied = [];
+  const { hotkeys } = loadHotkeys({ occupied });
+  const f = () => {};
+  const cfg = (record, pause, discardKey, correct) => ({ record, pause, discard: discardKey, correct, onRecord: f, onPause: f, onDiscard: f, onCorrect: f });
+  hotkeys.applyAll(cfg(K(1), K(2), K(4), K(3)));
+  occupied.push(K(5)); // nothing; then another app takes record's old key once free
+  occupied.push(K(1));
+  const result = hotkeys.applyAll(cfg(K(3), K(4), K(1), K(2)));
+  assert.ok(!result.record.unbound, JSON.stringify(result.record));
+});

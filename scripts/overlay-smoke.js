@@ -22,6 +22,11 @@
 //   npx electron scripts/overlay-smoke.js                            # macOS/Win
 
 const { app, ipcMain, session } = require("electron");
+// A throwaway profile, set before main/ loads: the overlay reads settings
+// (its saved position among them), and a contributor's own profile must
+// neither steer the run nor be written by it (#295).
+const { isolateProfile, assertIsolated } = require("./demo-profile");
+const profile = isolateProfile(app, { prefix: "earheart-overlay-smoke-" });
 const windows = require("../main/windows");
 const { waitForLoad } = require("./wait-for-load");
 const { checkWindowLock } = require("./window-lock-smoke");
@@ -122,6 +127,7 @@ const start = (win, sid, deviceId = null) =>
 
 app.whenReady().then(async () => {
   try {
+    assertIsolated(app, profile);
     // The shipped permission policy, so the microphone grant below is proven
     // through the same handler the app installs (main/window-guard.js).
     installPermissionHandler(session.defaultSession);

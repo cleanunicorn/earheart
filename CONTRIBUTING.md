@@ -412,6 +412,7 @@ The capture runs in a throwaway demo profile (`scripts/demo-profile.js`) with
 fixed settings, never your own: your hotkeys, microphone and setup don't reach
 the images, and your settings file is neither read nor migrated. The profile
 lives in the OS temp dir and is deleted once the run exits, however it exits.
+The overlay smoke runs in one the same way.
 
 ## Tray artwork
 

@@ -13,7 +13,7 @@ const path = require("node:path");
 const os = require("node:os");
 const { spawn } = require("node:child_process");
 const strict = require("node:assert/strict");
-const { DEMO_SETTINGS, createDemoProfile, isDemoProfile, removeAfterExit } = require("../scripts/demo-profile");
+const { DEMO_SETTINGS, createDemoProfile, isDemoProfile, removeAfterExit, assertIsolated } = require("../scripts/demo-profile");
 
 const source = fs.readFileSync(path.join(__dirname, "..", "scripts", "screenshots.js"), "utf8");
 
@@ -28,23 +28,15 @@ test("screenshots.js runs its body through a catch that exits non-zero", () => {
 });
 
 // The capture runs in a throwaway demo profile, never the contributor's own
-// (#295): scripts/demo-profile.js seeds it, and screenshots.js must point
-// userData and logs at it before anything reads them, and have it removed
-// however the run exits.
+// (#295): scripts/demo-profile.js seeds it, and each staging script must point
+// userData and logs at it before anything reads them and have it removed
+// however the run exits. Whether a real profile stays untouched needs Electron
+// itself, so it is checked by hand (see the PR); these pin what makes it so.
 
 function tempRoot(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-demo-test-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
-}
-
-// A stand-in for the contributor's real profile, with settings unlike the demo.
-function sentinelProfile(root, name, hotkey) {
-  const dir = path.join(root, name, "earheart");
-  fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, "settings.json");
-  fs.writeFileSync(file, JSON.stringify({ hotkey, audio: { deviceId: `${name}-usb-mic` } }));
-  return { dir, file, before: fs.readFileSync(file, "utf8"), entries: fs.readdirSync(dir) };
 }
 
 test("demo profile: seeded with the demo settings, nothing else", (t) => {
@@ -56,56 +48,59 @@ test("demo profile: seeded with the demo settings, nothing else", (t) => {
   strict.equal(profile.logs, path.join(profile.dir, "logs"));
   profile.remove();
   strict.equal(fs.existsSync(profile.dir), false);
-  profile.remove(); // idempotent: a second exit path finds nothing to remove
+  profile.remove(); // idempotent
+  strict.throws(() => createDemoProfile({ root, prefix: "my-" }), /unknown demo profile prefix/);
 });
 
-test("demo profile: two different real profiles stage the same demo, and neither is touched", (t) => {
-  const root = tempRoot(t);
-  const saved = { HOME: process.env.HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME, APPDATA: process.env.APPDATA };
-  t.after(() => {
-    for (const [key, value] of Object.entries(saved)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
+for (const script of ["screenshots.js", "overlay-smoke.js"]) {
+  test(`${script}: isolated before any project module loads, and checked once ready`, () => {
+    const text = fs.readFileSync(path.join(__dirname, "..", "scripts", script), "utf8");
+    const isolated = text.search(/const profile = isolateProfile\(app(, \{ prefix: "[^"]+" \})?\);/);
+    strict.ok(isolated > 0, `${script} must call isolateProfile(app)`);
+    const firstLocal = Math.min(
+      ...[...text.matchAll(/require\((?!"electron"|"node:|"\.\/demo-profile")[^)]*\)/g)].map((m) => m.index)
+    );
+    strict.ok(firstLocal > isolated, `${script} loads a module before its profile is isolated`);
+    const ready = text.indexOf("assertIsolated(app, profile)");
+    strict.ok(ready > firstLocal, `${script} must check the isolation once ready`);
   });
-  const staged = [];
-  for (const [name, hotkey] of [["alice", "Alt+F1"], ["bob", "CommandOrControl+Alt+J"]]) {
-    const real = sentinelProfile(root, name, hotkey);
-    process.env.HOME = process.env.XDG_CONFIG_HOME = process.env.APPDATA = path.dirname(real.dir);
-    const profile = createDemoProfile({ root });
-    staged.push(fs.readFileSync(path.join(profile.dir, "settings.json"), "utf8"));
-    profile.remove();
-    strict.equal(fs.readFileSync(real.file, "utf8"), real.before, `${name}'s settings changed`);
-    strict.deepEqual(fs.readdirSync(real.dir), real.entries, `${name}'s profile gained files`);
-  }
-  strict.equal(staged[0], staged[1]);
+}
+
+test("screenshots.js: start on boot shows the demo's value, not the OS login item", () => {
+  const stub = source.indexOf('"autostart.js")).isEnabled = () => false');
+  strict.ok(stub > 0 && stub < source.indexOf("ipc.init("), "stub autostart before ipc.init");
 });
 
-test("screenshots: the demo profile is in place before anything reads userData or logs", () => {
-    const userData = source.indexOf('app.setPath("userData", profile.dir)');
-  const logs = source.indexOf('app.setPath("logs", profile.logs)');
-  strict.ok(userData > 0 && logs > 0, "screenshots.js must set userData and logs to the demo profile");
-  // Every project module (main/ and the other scripts) loads after both.
-  const firstLocal = Math.min(
-    ...[...source.matchAll(/require\((?!"electron"|"node:|"\.\/demo-profile")[^)]*\)/g)].map((m) => m.index)
-  );
-  strict.ok(firstLocal > Math.max(userData, logs), "a module loads before the demo profile is set");
-  // Removal is armed at once, so every exit path (a crash included) cleans up.
-  const armed = source.indexOf("removeAfterExit(profile.dir)");
-  strict.ok(armed > logs && armed < firstLocal, "the demo profile's removal must be armed before anything runs");
-});
-
-test("demo profile: removed once the process that used it exits", async (t) => {
+test("demo profile: assertIsolated rejects a path outside the profile", (t) => {
   const root = tempRoot(t);
   const profile = createDemoProfile({ root });
-  // Stand in for Electron: a process that writes into the profile until it
-  // exits, as Chromium does while shutting down.
+  const paths = { userData: profile.dir, sessionData: profile.dir, logs: profile.logs };
+  const app = { getPath: (name) => paths[name] };
+  strict.doesNotThrow(() => assertIsolated(app, profile));
+  paths.logs = path.join(root, "Logs", "Electron");
+  strict.throws(() => assertIsolated(app, profile), /logs is .* outside the demo profile/);
+  paths.logs = `${profile.dir}-sibling`;
+  strict.throws(() => assertIsolated(app, profile), /outside the demo profile/);
+});
+
+test("demo profile: removed only after the process that used it exits", async (t) => {
+  const root = tempRoot(t);
+  const profile = createDemoProfile({ root });
+  const marker = path.join(profile.dir, "Local State");
+  // Stand in for Electron: until it exits, it keeps the profile alive and
+  // written, as Chromium does while shutting down. A delete before the exit
+  // would be undone by the next write and fail the check below.
   const owner = spawn(process.execPath, ["-e", `
     const fs = require("node:fs");
-    setTimeout(() => { fs.writeFileSync(${JSON.stringify(path.join(profile.dir, "Local State"))}, "{}"); }, 300);
-    setTimeout(() => {}, 400);
+    const timer = setInterval(() => {
+      fs.mkdirSync(${JSON.stringify(profile.dir)}, { recursive: true });
+      fs.writeFileSync(${JSON.stringify(marker)}, "{}");
+    }, 20);
+    setTimeout(() => clearInterval(timer), 600);
   `], { stdio: "ignore" });
-  removeAfterExit(profile.dir, owner.pid, root);
+  removeAfterExit(profile.dir, { pid: owner.pid, root });
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  strict.equal(fs.existsSync(profile.dir), true, "deleted while its owner was still running");
   await new Promise((resolve) => owner.on("exit", resolve));
   for (let i = 0; i < 50 && fs.existsSync(profile.dir); i++) await new Promise((r) => setTimeout(r, 100));
   strict.equal(fs.existsSync(profile.dir), false, "the profile outlived its owner");
@@ -118,6 +113,7 @@ test("demo profile: removal refuses anything that isn't a demo profile", (t) => 
   strict.equal(isDemoProfile(other, root), false);
   strict.equal(isDemoProfile(path.join(root, "nested", "earheart-screenshots-x"), root), false);
   strict.equal(isDemoProfile(path.join(root, "earheart-screenshots-x"), root), true);
-  strict.throws(() => removeAfterExit(other, process.pid, root), /not a demo profile/);
+  strict.equal(isDemoProfile(path.join(root, "earheart-overlay-smoke-x") + path.sep, root), true);
+  strict.throws(() => removeAfterExit(other, { pid: process.pid, root }), /not a demo profile/);
   strict.equal(fs.existsSync(other), true);
 });

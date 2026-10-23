@@ -442,6 +442,14 @@ raw transcript is used, auto-paste fails and the text waits on the clipboard)
 a notification says so; clicking it opens Settings, where the service, its key
 and the paste options live.
 
+If another app changes the clipboard in the moment between Earheart copying
+your transcript and pasting it (another copy, or a clipboard manager), Earheart
+pastes nothing rather than paste someone else's text, and leaves that newer
+copy alone. **Copy last transcription** in the tray menu has your transcript,
+even with History turned off. The check runs just before the keystroke; the
+operating system's own paste can't be made atomic, so a change in the last
+instant can still win.
+
 Settings → Advanced → Performance holds two limits. **Max dictation length**
 takes 10–3600 seconds (default 600, ten minutes); a dictation that reaches it
 stops and is transcribed. In its last minute the overlay says "Stopping soon…"

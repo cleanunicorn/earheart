@@ -240,6 +240,32 @@ function restoreIfUnchanged(snap, transcript) {
   }
 }
 
+// True when another app has put something else on the clipboard since we wrote
+// `text`, during the paste delay (another copy, a clipboard manager). Pasting
+// then would type THEIR content into the target — an unrelated command or
+// private text reaching an agent's input (#291). A clipboard that can't be
+// read is no evidence of that (some sessions can't read it from an unfocused
+// window): only text other than ours, or anything else on it — an image, a
+// file copy — counts. What's left is the OS's own race between this check and
+// the keystroke landing; it narrows the window, it can't close it.
+function clipboardTakenOver(text) {
+  try {
+    if (clipboard.readText() === text) return false;
+    return clipboard.availableFormats().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+// What the user is told when the paste was held back: the newer copy is
+// theirs, and the transcript is a click away instead.
+const CLIPBOARD_CHANGED = {
+  note: "Copy it from the tray menu",
+  hint:
+    "Another app changed the clipboard before Earheart could paste, so nothing was pasted and that copy was left as it was. " +
+    "Copy the transcript from the tray menu (Copy last transcription).",
+};
+
 // The restore armed by the last paste: `{ timer, text, snap }`, where `text` is
 // the transcript it put on the clipboard and `snap` what it promised to put
 // back. One at a time: a new dictation settles the previous one first.
@@ -250,7 +276,9 @@ let pendingRestore = null;
  * @param {string} text
  * @param {object} cfg - settings.output slice
  * @param {AbortSignal} [signal]
- * @returns {Promise<{method: "paste"|"paste-copy"|"clipboard"|"cancelled", note?: string, hint?: string}>}
+ * @returns {Promise<{method: "paste"|"paste-copy"|"clipboard"|"clipboard-changed"|"cancelled", note?: string, hint?: string}>}
+ *   "clipboard-changed": another app took the clipboard over before the paste,
+ *   so nothing was pasted and the transcript is NOT on the clipboard.
  *   `note` is a one-line reason auto-paste fell back to the clipboard (short
  *   enough for the overlay); `hint` is the full instruction for a notification.
  */
@@ -304,6 +332,13 @@ async function deliver(text, cfg, signal) {
     // clipboard and the fallback must not wait on tccutil.
     repairPastePermissionsOnce();
     return { method: "clipboard", ...ACCESSIBILITY_OFF };
+  }
+  // Last moment before the keystroke: is what we'd paste still ours? If not,
+  // paste nothing and leave the newer copy alone — no restore either, the
+  // clipboard is no longer ours to put back.
+  if (clipboardTakenOver(text)) {
+    logger.warn("auto-paste skipped: the clipboard changed during the paste delay");
+    return { method: "clipboard-changed", ...CLIPBOARD_CHANGED };
   }
   try {
     await simulatePaste(signal);

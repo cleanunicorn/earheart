@@ -499,3 +499,51 @@ test("an explicit copy survives a pending restore even when its text is unchange
   assert.deepStrictEqual(state.clip, { text: "corrected prompt" });
   assert.strictEqual(state.execs.length, keystrokes, "explicit copy never simulates a paste");
 });
+
+// #291: another app replaces the clipboard during the paste delay (another
+// copy, a clipboard manager). Pasting then would type ITS content into the
+// target; nothing may be pasted, and the newer copy must be left alone.
+for (const mode of ["paste", "paste-copy"]) {
+  test(`${mode}: a clipboard taken over before the keystroke pastes nothing and keeps the newer copy`, async (t) => {
+    onLinuxX11(t);
+    const { deliver, state } = loadDeliver({ trusted: true, tools: ["xdotool"] });
+    const pending = deliver("Dictated agent prompt", { mode, restoreClipboard: true, pasteDelayMs: 30 });
+    setTimeout(() => { state.clip = { text: "Unrelated text copied during paste delay" }; }, 5);
+    const result = await pending;
+    assert.strictEqual(result.method, "clipboard-changed");
+    assert.match(result.hint, /nothing was pasted/);
+    assert.deepStrictEqual(state.execs, [], "no keystroke");
+    assert.strictEqual(state.clip.text, "Unrelated text copied during paste delay");
+    // Nor does a later restore put anything over it.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await deliver("next", { mode: "clipboard" });
+    assert.strictEqual(state.clip.text, "next");
+  });
+}
+
+test("a clipboard taken over by an image (no text) is not pasted either", async (t) => {
+  onLinuxX11(t);
+  const { deliver, state } = loadDeliver({ trusted: true, tools: ["xdotool"] });
+  const pending = deliver("Dictated agent prompt", { mode: "paste", restoreClipboard: true, pasteDelayMs: 30 });
+  setTimeout(() => { state.clip = { image: { isEmpty: () => false, toPNG: () => Buffer.from("png") } }; }, 5);
+  assert.strictEqual((await pending).method, "clipboard-changed");
+  assert.deepStrictEqual(state.execs, []);
+});
+
+test("a clipboard that reads as empty is no evidence: the paste goes ahead", async (t) => {
+  // Some sessions can't read the clipboard from an unfocused window; refusing
+  // every paste there would break auto-paste outright.
+  onLinuxX11(t);
+  const { deliver, state } = loadDeliver({ trusted: true, tools: ["xdotool"] });
+  const pending = deliver("Dictated agent prompt", { mode: "paste-copy", pasteDelayMs: 30 });
+  setTimeout(() => { state.clip = {}; }, 5);
+  assert.strictEqual((await pending).method, "paste-copy");
+  assert.deepStrictEqual(state.execs, ["xdotool"]);
+});
+
+test("an unchanged clipboard still pastes", async (t) => {
+  onLinuxX11(t);
+  const { deliver, state } = loadDeliver({ trusted: true, tools: ["xdotool"] });
+  assert.strictEqual((await deliver("hi", { mode: "paste", restoreClipboard: true, pasteDelayMs: 5 })).method, "paste");
+  assert.deepStrictEqual(state.execs, ["xdotool"]);
+});

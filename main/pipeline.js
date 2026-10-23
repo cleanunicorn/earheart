@@ -210,6 +210,16 @@ function getState() {
   return state;
 }
 
+// The last transcript delivery held back because another app took over the
+// clipboard first (#291): not pasted, not on the clipboard, and with History
+// off, nowhere else. Kept in memory (never on disk) for the tray's "Copy last
+// transcription" until the next delivery lands.
+let undelivered = null;
+
+function getUndelivered() {
+  return undelivered;
+}
+
 function overlayStatus(status, detail) {
   windows.sendToOverlay("pipeline:status", { status, detail });
 }
@@ -655,9 +665,13 @@ async function process(sid, wavArrayBuffer) {
     overlayStatus("delivering");
     const result = await deliver(text, cfg.output, signal);
     delivered = true;
+    undelivered = result.method === "clipboard-changed" ? text : null;
     if (stale()) return;
 
-    if (result.hint) {
+    if (result.method === "clipboard-changed") {
+      // Nothing was pasted or copied: the newer clipboard is the user's.
+      notify({ title: "Earheart: not pasted, the clipboard changed", body: result.hint });
+    } else if (result.hint) {
       // The overlay's detail row clips after a couple of dozen characters and
       // hides itself seconds later; the full instruction needs somewhere to
       // stay, same as a cleanup failure does.
@@ -758,6 +772,7 @@ module.exports = {
   cancel,
   onOverlayRendererGone,
   getState,
+  getUndelivered,
   onStateChange,
   onSettingsChanged,
   onCleanupDownloaded,

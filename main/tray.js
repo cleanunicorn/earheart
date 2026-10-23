@@ -34,6 +34,9 @@ function buildMenu(app) {
   const shownMode = settings.effectiveOutputMode(cfg.output);
   const state = pipeline.getState();
   const lastEntry = history.list()[0];
+  // A delivery held back because the clipboard changed (#291) is the last
+  // transcript too, and with History off the only copy of it.
+  const lastText = pipeline.getUndelivered() ?? lastEntry?.text;
   return Menu.buildFromTemplate([
     {
       label:
@@ -60,14 +63,14 @@ function buildMenu(app) {
     { type: "separator" },
     {
       label: "Copy last transcription",
-      enabled: !!lastEntry && state !== "processing",
+      enabled: !!lastText && state !== "processing",
       // Re-read at click time so we copy the freshest entry even if the menu
       // was built a moment before the dictation landed.
       click: async () => {
         if (pipeline.getState() === "processing") return;
-        const entry = history.list()[0];
-        if (!entry) return;
-        try { await deliver(entry.text, { mode: "clipboard" }); }
+        const text = pipeline.getUndelivered() ?? history.list()[0]?.text;
+        if (!text) return;
+        try { await deliver(text, { mode: "clipboard" }); }
         catch (err) {
           logger.warn(`could not copy transcript: ${err.message}`);
           try {

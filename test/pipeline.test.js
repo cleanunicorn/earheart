@@ -1458,3 +1458,27 @@ test("pipeline: completion during transcription rechecks disk before final clean
   assert.deepStrictEqual(rig.log.delivered, ["cleaned(raw)"]);
   assert.equal(rig.log.done.rawReason, null);
 });
+
+/* ---------------- a paste held back because the clipboard changed (#291) ---------------- */
+
+test("pipeline: a delivery the clipboard change held back says so and stays copyable", async () => {
+  let result = { method: "clipboard-changed", note: "Copy it from the tray menu", hint: "Another app changed the clipboard before Earheart could paste, so nothing was pasted." };
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => "the agent prompt",
+    deliver: async (text) => {
+      rig.log.delivered.push(text);
+      return result;
+    },
+  });
+  await rig.dictate(speechWav(2));
+  const [note] = rig.log.notifications;
+  assert.strictEqual(note.title, "Earheart: not pasted, the clipboard changed");
+  assert.match(note.body, /nothing was pasted/);
+  assert.strictEqual(rig.log.done.method, "clipboard-changed");
+  assert.strictEqual(rig.pipeline.getUndelivered(), "the agent prompt");
+  // The next delivery that lands supersedes it.
+  result = { method: "paste" };
+  await rig.dictate(speechWav(2));
+  assert.strictEqual(rig.pipeline.getUndelivered(), null);
+});

@@ -26,6 +26,7 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
   const images = [];
   const warnings = [];
   const notifications = [];
+  const copies = [];
   const entries = historyEntries;
   class FakeTray {
     constructor(image) { images.push(image); }
@@ -53,7 +54,7 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
         createFromPath: () => ({ isEmpty: () => false }),
         createEmpty: () => ({}),
       },
-      clipboard: { writeText() {} },
+      clipboard: { writeText: (text) => copies.push(text) },
     },
     [resolveFrom("./windows")]: { openSettings() {} },
     [resolveFrom("./updates")]: { getState: () => ({ status: "idle" }) },
@@ -78,8 +79,12 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
     m.exports = exports;
     require.cache[p] = m;
   }
+  // deliver.js too: it binds the electron stub (the clipboard the copy tests
+  // read) when first loaded, so a cached copy would write to an earlier test's.
+  const deliverPath = resolveFrom("./output/deliver");
   delete require.cache[trayPath];
   delete require.cache[settingsPath];
+  delete require.cache[deliverPath];
   let tray;
   let settings;
   try {
@@ -88,15 +93,23 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
   } finally {
     delete require.cache[trayPath];
     delete require.cache[settingsPath];
+    delete require.cache[deliverPath];
     for (const [p, old] of previous) {
       if (old) require.cache[p] = old;
       else delete require.cache[p];
     }
   }
-  const pipeline = { getState: () => "idle", onStateChange() {}, toggle() {}, cancel() {} };
+  const pipeline = {
+    getState: () => "idle",
+    onStateChange() {},
+    toggle() {},
+    cancel() {},
+    undelivered: null,
+    getUndelivered() { return this.undelivered; },
+  };
   tray.init({ quit() {} }, pipeline);
   const file = path.join(userData, "settings.json");
-  return { tray, pipeline, images, settings, menus, warnings, notifications, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
+  return { tray, pipeline, images, settings, menus, warnings, notifications, copies, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
 }
 
 const item = (menu, label) => menu.find((entry) => entry.label === label);
@@ -243,3 +256,22 @@ for (const platform of ["win32", "darwin", "linux"]) {
     }
   });
 }
+
+// #291: a delivery held back because the clipboard changed is offered by
+// "Copy last transcription" — with History off it is the only copy there is.
+test("Copy last transcription copies a delivery the clipboard change held back", async (t) => {
+  const { tray, pipeline, menus, copies } = loadTray(t, { historyEntries: [{ text: "older entry" }] });
+  pipeline.undelivered = "held back transcript";
+  tray.refresh();
+  const copy = item(menus.at(-1), "Copy last transcription");
+  assert.strictEqual(copy.enabled, true);
+  await copy.click();
+  assert.deepStrictEqual(copies, ["held back transcript"]);
+});
+
+test("Copy last transcription works with History off when a delivery was held back", (t) => {
+  const { tray, pipeline, menus } = loadTray(t, { historyEntries: [] });
+  pipeline.undelivered = "held back transcript";
+  tray.refresh();
+  assert.strictEqual(item(menus.at(-1), "Copy last transcription").enabled, true);
+});

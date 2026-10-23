@@ -104,14 +104,15 @@ function list() {
 // antivirus scan holding the file) leaves the transcripts on disk, and
 // showing an empty history would be a promise the next launch breaks. Then
 // the list, and any pending write of it, stay as they were, for a retry.
-// Returns { ok: true } or { ok: false, error }.
+// Returns { ok: true } or { ok: false, error } — error is the short code
+// (EBUSY, EPERM, …): the full message carries the path to the user's home.
 function clear() {
   try {
     fs.unlinkSync(historyPath());
   } catch (err) {
     if (err.code !== "ENOENT") {
       logger.warn("history clear failed:", err.message);
-      return { ok: false, error: err.message };
+      return { ok: false, error: err.code || "unknown error" };
     }
   }
   cached = [];

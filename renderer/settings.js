@@ -1371,6 +1371,17 @@ $("history-older").addEventListener("click", () => {
   renderHistory();
 });
 
+// What a failed Clear history tells the user to do, by the reason the delete
+// failed: a file held open (Windows, an antivirus scan, a backup) clears once
+// it's let go; a refused delete (permissions, a locked file attribute) won't
+// until that's fixed.
+function historyClearError(code) {
+  const what = `Couldn't delete the saved transcriptions, so they're still on this computer (${code}). `;
+  return code === "EBUSY"
+    ? `${what}Close anything that might be using the history file, such as a backup or antivirus scan, and try again.`
+    : `${what}Check that you can change files in Earheart's settings folder, then try again.`;
+}
+
 $("history-clear").addEventListener("click", async () => {
   // Unlike a removed model, cleared history is gone for good — gate it the
   // same way model removal already is.
@@ -1379,11 +1390,10 @@ $("history-clear").addEventListener("click", async () => {
   // A failed delete left the transcripts on disk: say so, and keep showing
   // them so the user can try again (#287).
   const status = $("history-clear-status");
+  // Emptied first, so a second failure in a row is announced again.
+  status.textContent = "";
   status.hidden = res?.ok !== false;
-  status.textContent = status.hidden
-    ? ""
-    : `Couldn't delete the saved transcriptions, so they're still on this computer (${res.error}). ` +
-      "Close anything that might be using the history file, such as a backup or antivirus scan, and try again.";
+  if (!status.hidden) status.textContent = historyClearError(res.error);
   renderHistory();
 });
 

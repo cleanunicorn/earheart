@@ -101,7 +101,7 @@ for (const code of ["EPERM", "EBUSY", "EACCES"]) {
     } finally {
       fs.unlinkSync = original;
     }
-    assert.deepStrictEqual(result, { ok: false, error: `${code}: simulated` });
+    assert.deepStrictEqual(result, { ok: false, error: code }, "the code, not a message with the user's path");
     assert.deepStrictEqual(history.list().map((e) => e.text), ["keep me"], "still shown, for a retry");
     assert.deepStrictEqual(loadHistory(dir).list().map((e) => e.text), ["keep me"], "and still on disk");
   });

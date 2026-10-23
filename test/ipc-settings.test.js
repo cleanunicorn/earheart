@@ -283,7 +283,7 @@ test("history:clear refreshes the tray", (t) => {
 
 // #287: a failed delete reached Settings as success.
 test("history:clear hands a failed delete back to Settings", (t) => {
-  const failed = { ok: false, error: "EPERM: operation not permitted" };
+  const failed = { ok: false, error: "EPERM" };
   const { handlers } = loadIpc(t, { clearResult: failed });
   assert.deepStrictEqual(handlers["history:clear"](), failed);
 });

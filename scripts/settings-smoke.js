@@ -362,7 +362,7 @@ app.whenReady().then(async () => {
       `meta=${JSON.stringify(wholeRow?.meta)}`
     );
 
-    // 9b. A Clear history whose delete fails (#287) says so and keeps the
+    // 9 (cont.). A Clear history whose delete fails (#287) says so and keeps the
     // rows, through the real handler and history module: only the unlink is
     // made to fail, as a file locked by an antivirus scan would.
     const realUnlink = fs.unlinkSync;
@@ -390,7 +390,8 @@ app.whenReady().then(async () => {
     }
     check(
       "a Clear history that can't delete the file says so and keeps the transcripts",
-      /still on this computer/.test(failedClear.status) && /EPERM/.test(failedClear.status) &&
+      /still on this computer/.test(failedClear.status) && /\(EPERM\)/.test(failedClear.status) &&
+        /settings folder/.test(failedClear.status) && !/history\.json/.test(failedClear.status) &&
         failedClear.rows === historyRows.length && history.list().length === historyRows.length,
       JSON.stringify(failedClear)
     );

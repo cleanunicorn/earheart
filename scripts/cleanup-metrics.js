@@ -21,11 +21,20 @@ const {
   FILLER,
   REPEAT,
   isStrippableFiller,
+  maskLiterals,
 } = require("../main/util/stumble-strip");
+
+// The text the backstop actually edits: literals (code, quoted strings, paths,
+// flags, identifiers) masked out as it masks them, so a filler inside
+// src/um/parser.js isn't counted against a model the backstop rightly leaves
+// alone. A text it won't mask at all, it leaves alone entirely.
+function editable(text) {
+  return maskLiterals(text)?.masked ?? "";
+}
 
 // Counts what the backstop would strip (an all-caps "UM" is kept as an acronym).
 function countFillers(text) {
-  return (text.match(FILLER) || []).filter(isStrippableFiller).length;
+  return (editable(text).match(FILLER) || []).filter(isStrippableFiller).length;
 }
 
 // The rest of the fillers the Clean and Polished directives tell the model to
@@ -53,7 +62,7 @@ function countMarkers(text) {
 // the delivered column can never report a repeat the backstop keeps on purpose.
 function countRepeats(text) {
   let n = 0;
-  text.replace(REPEAT, (m) => {
+  editable(text).replace(REPEAT, (m) => {
     if (collapseRepeats(m) !== m) n++;
     return m;
   });

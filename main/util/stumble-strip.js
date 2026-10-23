@@ -164,19 +164,78 @@ function collapseRepeats(text) {
   return out.length > 0 ? out : text;
 }
 
+// Literal text both passes must leave alone (#290). The cleanup model was told
+// to reproduce commands, paths and quoted strings exactly, and this backstop
+// runs after it: `echo echo` is a command and its argument, not a stutter;
+// "um" in src/um/parser.js is a directory; "um" in quotes is the string.
+//   - spans: fenced and inline code, and quoted strings — double quotes, and
+//     single quotes only at word edges, so "don't" is not a quote;
+//   - tokens: a path or file name (src/um, parser.js, ./x, ~/x, /etc), a flag
+//     (--force, -v), or a code identifier (camelCase, snake_case).
+// A repeat that is NOT marked ("run echo echo") can't be told from a stutter
+// and is still collapsed: marking it is what keeps it.
+const LITERAL_SPAN = /```[\s\S]*?```|`[^`\n]+`|"[^"\n]*"|“[^”\n]*”|(?<![\p{L}\p{N}])'[^'\n]*'(?![\p{L}\p{N}])/gu;
+const LITERAL_TOKEN = /[^\s]+/gu;
+// What surrounds a token without being part of it: sentence punctuation stays
+// outside, so a path ending a sentence still ends it for the filler pass.
+const TOKEN_EDGES = /^([(\[{<]*)([\s\S]*?)([.,;:!?)\]}>]*)$/u;
+
+function isLiteralToken(t) {
+  return (
+    /[\p{L}\p{N}_][./\\_][\p{L}\p{N}_]/u.test(t) ||
+    /^(?:\.{1,2}|~)?\/[\p{L}\p{N}_]/u.test(t) ||
+    /^--?[A-Za-z]/.test(t) ||
+    /\p{Ll}\p{Lu}/u.test(t)
+  );
+}
+
+// Private-use characters stand in for the literals while the passes run: no
+// letter or digit, so neither regex reads into or across them.
+const PUA = /[\uE000-\uF8FF]/;
+
+/**
+ * Swap literal text for placeholders. Returns null when the text already
+ * holds private-use characters, which a placeholder could be confused with.
+ * @param {string} text
+ * @returns {{ masked: string, unmask: (s: string) => string } | null}
+ */
+function maskLiterals(text) {
+  if (PUA.test(text)) return null;
+  const saved = [];
+  const hold = (literal) => {
+    saved.push(literal);
+    return String.fromCharCode(0xe000 + saved.length - 1);
+  };
+  let masked = text.replace(LITERAL_SPAN, hold);
+  masked = masked.replace(LITERAL_TOKEN, (token) => {
+    if (PUA.test(token)) return token;
+    const [, open, core, close] = token.match(TOKEN_EDGES);
+    return core && isLiteralToken(core) ? `${open}${hold(core)}${close}` : token;
+  });
+  return {
+    masked,
+    unmask: (s) => s.replace(/[\uE000-\uF8FF]/g, (ch) => saved[ch.charCodeAt(0) - 0xe000]),
+  };
+}
+
 /**
  * The full deterministic pass: drop fillers, then collapse the repeats —
  * in that order, because removing a filler can leave one behind
- * ("the um the file" -> "the the file" -> "the file").
+ * ("the um the file" -> "the the file" -> "the file"). Literal text (code,
+ * quoted strings, paths, flags, identifiers) is never touched; a text that
+ * can't be masked safely is returned as it came.
  *
  * @param {string} text
  * @returns {string}
  */
 function stripStumbles(text) {
-  return collapseRepeats(stripFillers(text));
+  if (typeof text !== "string" || text === "") return text;
+  const literals = maskLiterals(text);
+  if (!literals) return text;
+  return literals.unmask(collapseRepeats(stripFillers(literals.masked)));
 }
 
 // FILLER, REPEAT and isStrippableFiller are exported for the cleanup
 // benchmark (scripts/cleanup-metrics.js), which counts exactly what this
 // backstop strips and so must use the same rules, not a copy of them.
-module.exports = { stripStumbles, stripFillers, collapseRepeats, FILLER, REPEAT, isStrippableFiller };
+module.exports = { stripStumbles, stripFillers, collapseRepeats, maskLiterals, FILLER, REPEAT, isStrippableFiller };

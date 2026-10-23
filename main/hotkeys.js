@@ -453,7 +453,11 @@ function applyLive(next) {
     (name) => target.discard && registered.get(name)?.accelerator === target.discard
   );
   const discardError = charged.discard || (holder && usedBy(holder, target.discard));
-  if (!discardError) return { ...pair, discard: setDiscard(target.discard, next.onDiscard) };
+  if (!discardError) {
+    const discardResult = setDiscard(target.discard, next.onDiscard);
+    const yielded = discardResult.ok ? null : vacateFailed(pair, previous, next, discardResult);
+    return { ...pair, discard: yielded || discardResult };
+  }
   discard.onTrigger = next.onDiscard;
   // Keep the old binding unless the pair now holds it (a cold start's file).
   const pairHeld = ["record", "pause"].some(
@@ -461,6 +465,42 @@ function applyLive(next) {
   );
   if (discard.accelerator && pairHeld) setDiscard("", next.onDiscard);
   return { ...pair, discard: { ok: false, error: discardError } };
+}
+
+// A pair slot moved onto the old discard key in the same save that moved
+// discard off it — and discard's new key failed, so it never left (#286).
+// Two slots now claim one key; the next dictation's discard can't arm. The
+// transfer is one change, so it fails as one: the pair slot goes back to its
+// previous key and says why. Should even that key be gone (another app took
+// it meanwhile), discard — the optional slot — yields instead, so the saved
+// bindings always differ.
+// Returns the discard result to report when discard had to yield, else null.
+function vacateFailed(pair, previous, next, failure) {
+  const taker = ["record", "pause"].find(
+    (name) => discard.accelerator && registered.get(name)?.accelerator === discard.accelerator
+  );
+  if (!taker) return null;
+  const kept = discard.accelerator;
+  const undo = applyPair({
+    ...next,
+    record: registered.get("record")?.accelerator || "",
+    pause: registered.get("pause")?.accelerator || "",
+    [taker]: previous[taker],
+  });
+  if (undo[taker].ok && registered.get(taker)?.accelerator !== kept) {
+    pair[taker] = {
+      ok: false,
+      error: `Not changed: "${prettyHotkey(kept)}" is still the discard hotkey, because the new discard hotkey could not be registered.`,
+    };
+    return null;
+  }
+  setDiscard("", next.onDiscard);
+  // `unbound`: the slot itself is now empty, not just the attempt refused.
+  return {
+    ok: false,
+    unbound: true,
+    error: `${failure.error} The discard hotkey is now unbound: "${prettyHotkey(kept)}" went to the ${taker} hotkey.`,
+  };
 }
 
 /**

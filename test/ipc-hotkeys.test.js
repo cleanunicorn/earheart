@@ -221,6 +221,37 @@ test("settings save keeps a rejected discard hotkey off disk but in the reply", 
   assert.strictEqual(reply.discardHotkey.error, "discard rejected");
 });
 
+// #286: record moved onto the old discard key while discard's new key failed.
+test("a pair slot rolled back for a failed discard move keeps distinct keys on disk", () => {
+  const before = { ...working, discardHotkey: "CommandOrControl+Alt+D" };
+  const attempt = submitted({ hotkey: "CommandOrControl+Alt+D", discardHotkey: "CommandOrControl+Alt+E" });
+  const results = {
+    hotkey: { ok: false, error: "Not changed: still the discard hotkey" },
+    pauseHotkey: { ok: true },
+    discardHotkey: { ok: false, error: "discard rejected" },
+  };
+  const { handlers, calls } = loadIpcHandlers({ previous: before, hotkeyResults: results });
+  handlers["settings:save"]({}, request(attempt));
+  const disk = calls.saved[0];
+  assert.strictEqual(disk.hotkey, working.hotkey);
+  assert.strictEqual(disk.discardHotkey, before.discardHotkey);
+  assert.notStrictEqual(disk.hotkey, disk.discardHotkey);
+});
+
+test("a discard hotkey that yielded its key saves as unbound, not as the clashing old key", () => {
+  const before = { ...working, discardHotkey: "CommandOrControl+Alt+D" };
+  const attempt = submitted({ hotkey: "CommandOrControl+Alt+D", discardHotkey: "CommandOrControl+Alt+E" });
+  const results = {
+    hotkey: { ok: true },
+    pauseHotkey: { ok: true },
+    discardHotkey: { ok: false, unbound: true, error: "now unbound" },
+  };
+  const { handlers, calls } = loadIpcHandlers({ previous: before, hotkeyResults: results });
+  handlers["settings:save"]({}, request(attempt));
+  assert.strictEqual(calls.saved[0].hotkey, "CommandOrControl+Alt+D");
+  assert.strictEqual(calls.saved[0].discardHotkey, "");
+});
+
 test("a cleared discard hotkey saves as unbound", () => {
   const before = { ...working, discardHotkey: "CommandOrControl+Alt+D" };
   const attempt = submitted({ discardHotkey: "" });

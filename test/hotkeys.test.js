@@ -1130,3 +1130,40 @@ test("combined transfers and one-shot OS failures match reported slots and callb
   }
   assert.strictEqual(checked, 4380);
 });
+
+// #286: a pair slot moving onto the old discard key in the same save that
+// moves discard off it — when discard's new key fails, discard never left.
+for (const slot of ["record", "pause"]) {
+  test(`${slot} taking the old discard key rolls back when the new discard key fails`, () => {
+    const { hotkeys, bindings } = loadHotkeys({ occupied: [E] });
+    hotkeys.applyAll(all(A, B, D));
+    const attempt = slot === "record" ? all(D, B, E) : all(A, D, E);
+
+    const result = hotkeys.applyAll(attempt);
+
+    assert.strictEqual(result.discard.ok, false);
+    assert.strictEqual(result[slot].ok, false, `${slot} is reported not changed`);
+    assert.match(result[slot].error, /still the discard hotkey/);
+    // Distinct again: the pair slot is back on its old key, discard keeps D.
+    assert.strictEqual(bindings.has(slot === "record" ? A : B), true);
+    assert.strictEqual(bindings.has(D), false, "D is discard's, not held while idle");
+    hotkeys.armDiscard(true);
+    assert.strictEqual(bindings.has(D), true, "the next dictation's discard arms");
+  });
+}
+
+test("if the rolled-back key is gone too, discard yields and is reported unbound", () => {
+  const occupied = [E];
+  const { hotkeys, bindings } = loadHotkeys({ occupied });
+  hotkeys.applyAll(all(A, B, D));
+  // Another app grabs A the moment record lets go of it.
+  occupied.push(A);
+  const result = hotkeys.applyAll(all(D, B, E));
+
+  assert.strictEqual(result.record.ok, true, "record keeps D");
+  assert.strictEqual(result.discard.ok, false);
+  assert.strictEqual(result.discard.unbound, true);
+  assert.match(result.discard.error, /now unbound/);
+  hotkeys.armDiscard(true);
+  assert.strictEqual(bindings.get(D) !== undefined, true, "D belongs to record alone");
+});

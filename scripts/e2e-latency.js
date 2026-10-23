@@ -151,6 +151,7 @@ function main() {
       );
 
       const windows = require("../main/windows");
+      windows.init(); // the overlay's drag/resize handlers, as main.js does
       const pipeline = require("../main/pipeline");
       const history = require("../main/history");
 

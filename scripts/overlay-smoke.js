@@ -23,6 +23,8 @@
 
 const { app, ipcMain, session } = require("electron");
 const windows = require("../main/windows");
+// The overlay's drag and resize handlers, as main.js registers them.
+windows.init();
 const { waitForLoad } = require("./wait-for-load");
 const { checkWindowLock } = require("./window-lock-smoke");
 const { installPermissionHandler } = require("../main/window-guard");

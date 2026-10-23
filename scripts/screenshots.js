@@ -29,6 +29,10 @@ async function main() {
   // The shipped permission policy, so the microphone grant below is proven
   // through the same handler the app installs (main/window-guard.js).
   installPermissionHandler(session.defaultSession);
+  // As main.js wires them: the overlay's resize (the update card grows the
+  // window) and custom models from the settings.
+  windows.init();
+  require(path.join(ROOT, "main", "engines", "catalog.js")).bindCustomModels(require(path.join(ROOT, "main", "settings.js")));
   ipc.init({
     applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
     onSettingsChanged: () => {},

@@ -259,10 +259,9 @@ function wrap(fn, describe = (err) => err.message) {
 
 function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {} }) {
   onCleanupDownloaded = completed;
-  // Register any models the user added from a custom Hugging Face URL so they
-  // resolve for download and for loading into the cleanup worker after a
-  // restart, exactly like the built-ins.
-  engines.registry.setCustomModels(settings.get().customModels || []);
+  // Custom models reach the registry through the settings themselves
+  // (engines/catalog.js, bound in main.js), not through this layer: the saves
+  // below are what register or drop them.
 
   // Every successful save, from any writer, reaches the open forms (so they
   // show a tray or updater change) and rebuilds the tray menu (so its radios
@@ -515,7 +514,6 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
       // Dedupe by id so re-adding the same repo+quant just refreshes the entry.
       const next = [...(cfg.customModels || []).filter((m) => m.id !== model.id), model];
       settings.save({ ...cfg, customModels: next });
-      engines.registry.setCustomModels(next);
       return next;
     });
     return { ok: true, modelId: model.id, customModels };
@@ -549,7 +547,6 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
           ? { ...cfg[kind], builtin: { ...cfg[kind].builtin, model: defaults[kind] } }
           : cfg[kind];
       settings.save({ ...cfg, [kind]: kindCfg, customModels });
-      engines.registry.setCustomModels(customModels);
       // The renderer adopts `model`: its select still holds the removed id,
       // which would otherwise read back as "" on the next Save.
       return { ok: true, customModels, kind, model: kindCfg.builtin.model };

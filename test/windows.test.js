@@ -135,6 +135,7 @@ function loadWindows({
   displays = [{ x: 0, y: 0, width: 1920, height: 1080 }],
   stored = {},
   confirm = () => 0,
+  init = true,
 } = {}) {
   const calls = [];
   const warnings = [];
@@ -178,7 +179,9 @@ function loadWindows({
   };
   delete require.cache[WINDOWS];
   try {
-    return { windows: require(WINDOWS), calls, warnings, webContentsHandlers, ipc, saved, displays };
+    const windows = require(WINDOWS);
+    if (init) windows.init(); // the overlay's handlers, as main.js registers them
+    return { windows, calls, warnings, webContentsHandlers, ipc, saved, displays };
   } finally {
     Module._load = realLoad;
     delete require.cache[WINDOWS];
@@ -706,4 +709,17 @@ test("opening another transcript keeps the active draft and explains why", () =>
   assert.strictEqual(windows.openCorrection({ text: "second" }), first);
   assert.strictEqual(windows.getCorrectionText(), "first");
   assert.ok(calls.some(([name, channel, text]) => name === "send" && channel === "correction:notice" && text.includes("current correction is still open")));
+});
+
+// #204: the overlay's IPC handlers are registered by init() from the
+// composition root, never as a side effect of requiring the module.
+test("requiring windows.js registers no IPC handler until init(), which is idempotent", () => {
+  const { windows, ipc } = loadWindows({ init: false });
+  assert.deepStrictEqual(Object.keys(ipc), []);
+  windows.init();
+  const channels = Object.keys(ipc).sort();
+  assert.deepStrictEqual(channels, ["overlay:drag", "overlay:drag-end", "overlay:drag-start", "overlay:resize"]);
+  const handlers = channels.map((c) => ipc[c]);
+  windows.init();
+  assert.deepStrictEqual(channels.map((c) => ipc[c]), handlers, "a second init registers nothing new");
 });

@@ -30,6 +30,8 @@
 // fp32 builds store the encoder weights in a separate `encoder.weights`
 // external-data file alongside `encoder.onnx`; both must be downloaded into
 // the same directory for the loader to find them.
+const logger = require("../util/logger");
+
 const sttUrl = (repo, commit, file) =>
   `https://huggingface.co/csukuangfj/${repo}/resolve/${commit}/${file}`;
 
@@ -321,7 +323,9 @@ function setCustomModels(list) {
     // A row that could name a path outside its managed directory is dropped
     // rather than left to throw from every model listing.
     if (!customModelPathSegments(m).every(isPathSegment)) {
-      console.warn(`[earheart] ignoring custom model with an invalid path segment: ${m.id}`);
+      // The log, not just the console: a dropped model must leave a trace in
+      // earheart.log (#204). Before logger.init() it is console-only, as before.
+      logger.warn(`ignoring custom model with an invalid path segment: ${m.id}`);
       continue;
     }
     customModels.push(m);

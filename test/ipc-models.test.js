@@ -46,14 +46,20 @@ function loadIpcHandlers(cfg, {
   const warnings = [];
   const windowCalls = [];
   let stored = cfg;
+  const changeListeners = new Set();
   const settings = {
     DEFAULTS: {},
     keyStorage: () => ({ secure: true, backend: null, unreadable: [] }),
     get: () => stored,
-    onChanged: () => () => {},
+    onChanged: (fn) => {
+      changeListeners.add(fn);
+      return () => changeListeners.delete(fn);
+    },
     save: (next) => {
+      const previous = stored;
       saved.push(next);
       stored = next;
+      for (const fn of changeListeners) fn({ previous, current: next });
       return next;
     },
   };
@@ -78,6 +84,8 @@ function loadIpcHandlers(cfg, {
     [resolveFrom("./services/hf-models")]: { ...hfModels, ...hf },
     [resolveFrom("./windows")]: {
       broadcast: (channel, payload) => broadcasts.push({ channel, payload }),
+      // A save reaches the open forms (ipc.js's own settings listener).
+      sendToForms: (channel, payload) => broadcasts.push({ channel, payload }),
       openSettings: recordWindowCall("openSettings"),
       closeSettings: recordWindowCall("closeSettings"),
       openWizard: recordWindowCall("openWizard"),
@@ -108,6 +116,8 @@ function loadIpcHandlers(cfg, {
     require.cache[p] = m;
   }
   delete require.cache[ipcPath];
+  // As main.js wires it: custom models follow the settings (engines/catalog.js).
+  require("../main/engines/catalog").bindCustomModels(settings);
   try {
     require(ipcPath).init({ applyHotkeys: () => ({}), onSettingsChanged() {}, ...init });
   } finally {
@@ -161,7 +171,6 @@ test("removing the selected custom cleanup model falls back to Granite 4.0 Micro
   const { handlers, saved } = loadIpcHandlers(configWith(customCleanup.id));
 
   const result = await handlers["models:remove-custom"]({}, { modelId: customCleanup.id });
-
   assert.strictEqual(result.ok, true);
   // The renderer adopts this, so its Save can't fall back to a missing option.
   assert.strictEqual(result.kind, "cleanup");

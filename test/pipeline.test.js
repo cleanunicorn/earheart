@@ -1458,3 +1458,20 @@ test("pipeline: completion during transcription rechecks disk before final clean
   assert.deepStrictEqual(rig.log.delivered, ["cleaned(raw)"]);
   assert.equal(rig.log.done.rawReason, null);
 });
+
+/* ---------------- deliver as one line (#68) ---------------- */
+
+test("pipeline: 'deliver as one line' joins the delivered text and keeps History's as spoken", async () => {
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "First part.\n\nSecond part." });
+  rig.cfg.output.singleLine = true;
+  await rig.dictate(speechWav(2));
+  assert.deepStrictEqual(rig.log.delivered, ["First part. Second part."]);
+  assert.strictEqual(rig.log.history[0].text, "First part.\n\nSecond part.");
+  assert.strictEqual(rig.log.done.preview, "First part. Second part.");
+});
+
+test("pipeline: without the setting a multi-line transcript is delivered as it is", async () => {
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "First part.\n\nSecond part." });
+  await rig.dictate(speechWav(2));
+  assert.deepStrictEqual(rig.log.delivered, ["First part.\n\nSecond part."]);
+});

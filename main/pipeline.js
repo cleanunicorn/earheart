@@ -19,6 +19,7 @@ const settings = require("./settings");
 const route = require("./services/route");
 const engines = require("./engines");
 const { deliver } = require("./output/deliver");
+const { joinLines } = require("./output/single-line");
 const history = require("./history");
 const { createLivePreview } = require("./live-preview");
 const { createPersistedRtfEstimator } = require("./util/rtf");
@@ -653,7 +654,10 @@ async function process(sid, wavArrayBuffer) {
     }
 
     overlayStatus("delivering");
-    const result = await deliver(text, cfg.output, signal);
+    // One line for a terminal agent, if the user asked (#68). History above
+    // already holds the transcript as it was.
+    const outgoing = cfg.output.singleLine ? joinLines(text) : text;
+    const result = await deliver(outgoing, cfg.output, signal);
     delivered = true;
     if (stale()) return;
 
@@ -667,7 +671,7 @@ async function process(sid, wavArrayBuffer) {
       });
     }
     overlayStatus("done", {
-      preview: text.length > 120 ? `${text.slice(0, 120)}…` : text,
+      preview: outgoing.length > 120 ? `${outgoing.slice(0, 120)}…` : outgoing,
       method: result.method,
       note: result.note,
       // Same state the history entry records: the card outlives the

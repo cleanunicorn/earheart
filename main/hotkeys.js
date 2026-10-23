@@ -375,7 +375,9 @@ function applyWithCorrection(next) {
       globalShortcut.unregister(discard.accelerator);
       discard.armed = false;
     }
-    const reverted = applyLive({ ...next, ...before });
+    // No transfer to undo here: this IS the undo, and its "previous" is the
+    // temporary state (see vacateFailed).
+    const reverted = applyLive({ ...next, ...before }, { vacate: false });
     // If restoring discard itself fails, drop its temporary binding. Keeping
     // it could shadow the old correction key or re-arm a rejected setting.
     if (!reverted.discard.ok && discard.accelerator !== before.discard) {
@@ -421,7 +423,7 @@ function applyWithCorrection(next) {
   return finish(applied, { ok: false, error });
 }
 
-function applyLive(next) {
+function applyLive(next, { vacate = true } = {}) {
   const target = { record: next.record || "", pause: next.pause || "", discard: next.discard || "" };
   const previous = {
     record: registered.get("record")?.accelerator || "",
@@ -455,25 +457,33 @@ function applyLive(next) {
   const discardError = charged.discard || (holder && usedBy(holder, target.discard));
   if (!discardError) {
     const discardResult = setDiscard(target.discard, next.onDiscard);
-    const yielded = discardResult.ok ? null : vacateFailed(pair, previous, next, discardResult);
+    const yielded = discardResult.ok || !vacate ? null : vacateFailed(pair, previous, next, discardResult);
     return { ...pair, discard: yielded || discardResult };
   }
   discard.onTrigger = next.onDiscard;
-  // Keep the old binding unless the pair now holds it (a cold start's file).
+  const failure = { ok: false, error: discardError };
+  if (vacate) {
+    // Before the spread: vacateFailed rewrites the pair results it undoes.
+    const yielded = vacateFailed(pair, previous, next, failure);
+    return { ...pair, discard: yielded || failure };
+  }
+  // Keep the old binding unless the pair now holds it.
   const pairHeld = ["record", "pause"].some(
     (name) => registered.get(name)?.accelerator === discard.accelerator
   );
   if (discard.accelerator && pairHeld) setDiscard("", next.onDiscard);
-  return { ...pair, discard: { ok: false, error: discardError } };
+  return { ...pair, discard: failure };
 }
 
 // A pair slot moved onto the old discard key in the same save that moved
-// discard off it — and discard's new key failed, so it never left (#286).
-// Two slots now claim one key; the next dictation's discard can't arm. The
-// transfer is one change, so it fails as one: the pair slot goes back to its
-// previous key and says why. Should even that key be gone (another app took
-// it meanwhile), discard — the optional slot — yields instead, so the saved
-// bindings always differ.
+// discard off it — and discard's move failed (its new key wouldn't register,
+// or clashed), so it never left (#286). Two slots now claim one key; the next
+// dictation's discard can't arm. The transfer is one change, so it fails as
+// one: the pair slot goes back to its previous key (both pair slots, when the
+// other one moved onto that key) and says why. Should that key be gone too
+// (another app took it meanwhile), or never have differed (a hand-edited file
+// at launch), discard — the optional slot — yields instead, so the bindings
+// always differ.
 // Returns the discard result to report when discard had to yield, else null.
 function vacateFailed(pair, previous, next, failure) {
   const taker = ["record", "pause"].find(
@@ -481,25 +491,30 @@ function vacateFailed(pair, previous, next, failure) {
   );
   if (!taker) return null;
   const kept = discard.accelerator;
-  const undo = applyPair({
-    ...next,
-    record: registered.get("record")?.accelerator || "",
-    pause: registered.get("pause")?.accelerator || "",
-    [taker]: previous[taker],
-  });
-  if (undo[taker].ok && registered.get(taker)?.accelerator !== kept) {
-    pair[taker] = {
-      ok: false,
-      error: `Not changed: "${prettyHotkey(kept)}" is still the discard hotkey, because the new discard hotkey could not be registered.`,
-    };
+  const other = taker === "record" ? "pause" : "record";
+  const now = (name) => registered.get(name)?.accelerator || "";
+  const pairNow = { record: now("record"), pause: now("pause") };
+  let undo = applyPair({ ...next, ...pairNow, [taker]: previous[taker] });
+  let both = false;
+  if (!undo[taker].ok && previous[taker] && now(other) === previous[taker]) {
+    undo = applyPair({ ...next, record: previous.record, pause: previous.pause });
+    both = true;
+  }
+  if (undo[taker].ok && now(taker) !== kept) {
+    const notChanged = (name, key) =>
+      `Not changed: "${prettyHotkey(key)}" is still the ${name === taker ? "discard" : taker} hotkey, because the new discard hotkey could not be set.`;
+    pair[taker] = { ok: false, error: notChanged(taker, kept) };
+    if (both && undo[other].ok) pair[other] = { ok: false, error: notChanged(other, previous[taker]) };
     return null;
   }
   setDiscard("", next.onDiscard);
-  // `unbound`: the slot itself is now empty, not just the attempt refused.
+  // `cleared`: the slot is now empty and is saved that way — unlike
+  // `unbound`, where the saved key stands for the next save or launch.
+  const separator = /[.!?]$/.test(failure.error) ? " " : ". ";
   return {
     ok: false,
-    unbound: true,
-    error: `${failure.error} The discard hotkey is now unbound: "${prettyHotkey(kept)}" went to the ${taker} hotkey.`,
+    cleared: true,
+    error: `${failure.error}${separator}The discard hotkey is now unbound: "${prettyHotkey(kept)}" went to the ${taker} hotkey.`,
   };
 }
 

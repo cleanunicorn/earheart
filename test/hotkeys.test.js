@@ -1162,8 +1162,54 @@ test("if the rolled-back key is gone too, discard yields and is reported unbound
 
   assert.strictEqual(result.record.ok, true, "record keeps D");
   assert.strictEqual(result.discard.ok, false);
-  assert.strictEqual(result.discard.unbound, true);
+  assert.strictEqual(result.discard.cleared, true);
   assert.match(result.discard.error, /now unbound/);
   hotkeys.armDiscard(true);
   assert.strictEqual(bindings.get(D) !== undefined, true, "D belongs to record alone");
+});
+
+test("a pair slot taking discard's key while discard's move is rejected as a clash rolls back", () => {
+  // pause -> D (discard's key) and discard -> A (record's unchanged key, a clash).
+  const { hotkeys, bindings } = loadHotkeys();
+  hotkeys.applyAll(all(A, B, D));
+  const result = hotkeys.applyAll(all(A, D, A));
+  assert.strictEqual(result.discard.ok, false);
+  assert.strictEqual(result.pause.ok, false, "pause didn't move onto the key discard kept");
+  assert.strictEqual(bindings.has(B), true);
+  hotkeys.armDiscard(true);
+  assert.strictEqual(bindings.has(D), true, "discard still arms on D");
+});
+
+test("when both pair slots moved, a failed discard move rolls both back instead of dropping discard", () => {
+  // record A -> D, pause B -> A, discard D -> E (occupied).
+  const { hotkeys, bindings } = loadHotkeys({ occupied: [E] });
+  hotkeys.applyAll(all(A, B, D));
+  const result = hotkeys.applyAll(all(D, A, E));
+  assert.strictEqual(result.record.ok, false);
+  assert.strictEqual(result.pause.ok, false);
+  assert.ok(!result.discard.cleared, "discard kept its key");
+  assert.strictEqual(bindings.has(A) && bindings.has(B), true);
+  hotkeys.armDiscard(true);
+  assert.strictEqual(bindings.has(D), true);
+});
+
+test("a hand-edited clash at launch still makes discard yield", () => {
+  const { hotkeys } = loadHotkeys();
+  const result = hotkeys.applyAll(all(A, D, D));
+  assert.strictEqual(result.pause.ok, true);
+  assert.strictEqual(result.discard.ok, false);
+});
+
+test("a correction rotation's rollback never moves record off its restored key", () => {
+  // record A, pause B, discard D, correction C; another app holds D while
+  // idle. One save: record -> C, discard -> A, correction -> D.
+  const C = "CommandOrControl+Alt+C";
+  const occupied = [];
+  const { hotkeys, bindings } = loadHotkeys({ occupied });
+  const f = () => {};
+  hotkeys.applyAll({ record: A, pause: B, discard: D, correct: C, onRecord: f, onPause: f, onDiscard: f, onCorrect: f });
+  occupied.push(D);
+  const result = hotkeys.applyAll({ record: C, pause: B, discard: A, correct: D, onRecord: f, onPause: f, onDiscard: f, onCorrect: f });
+  assert.ok(!result.record.unbound, `record stays bound: ${JSON.stringify(result.record)}`);
+  assert.strictEqual(bindings.has(A), true, "record is back on A");
 });

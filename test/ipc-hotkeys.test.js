@@ -244,12 +244,26 @@ test("a discard hotkey that yielded its key saves as unbound, not as the clashin
   const results = {
     hotkey: { ok: true },
     pauseHotkey: { ok: true },
-    discardHotkey: { ok: false, unbound: true, error: "now unbound" },
+    discardHotkey: { ok: false, cleared: true, error: "now unbound" },
   };
   const { handlers, calls } = loadIpcHandlers({ previous: before, hotkeyResults: results });
   handlers["settings:save"]({}, request(attempt));
   assert.strictEqual(calls.saved[0].hotkey, "CommandOrControl+Alt+D");
   assert.strictEqual(calls.saved[0].discardHotkey, "");
+});
+
+test("a discard hotkey left unbound by a failed live restore keeps its saved key", () => {
+  // `unbound` means the saved key stands until the next save or launch.
+  const before = { ...working, discardHotkey: "CommandOrControl+Alt+D" };
+  const attempt = submitted({ discardHotkey: "CommandOrControl+Alt+C" });
+  const results = {
+    hotkey: { ok: true },
+    pauseHotkey: { ok: true },
+    discardHotkey: { ok: false, unbound: true, error: "could not restore" },
+  };
+  const { handlers, calls } = loadIpcHandlers({ previous: before, hotkeyResults: results });
+  handlers["settings:save"]({}, request(attempt));
+  assert.strictEqual(calls.saved[0].discardHotkey, before.discardHotkey);
 });
 
 test("a cleared discard hotkey saves as unbound", () => {

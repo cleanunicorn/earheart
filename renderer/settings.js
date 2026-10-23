@@ -1375,7 +1375,15 @@ $("history-clear").addEventListener("click", async () => {
   // Unlike a removed model, cleared history is gone for good — gate it the
   // same way model removal already is.
   if (!confirm("Clear all saved transcriptions? This can't be undone.")) return;
-  await earheart.invoke("history:clear");
+  const res = await earheart.invoke("history:clear");
+  // A failed delete left the transcripts on disk: say so, and keep showing
+  // them so the user can try again (#287).
+  const status = $("history-clear-status");
+  status.hidden = res?.ok !== false;
+  status.textContent = status.hidden
+    ? ""
+    : `Couldn't delete the saved transcriptions, so they're still on this computer (${res.error}). ` +
+      "Close anything that might be using the history file, such as a backup or antivirus scan, and try again.";
   renderHistory();
 });
 

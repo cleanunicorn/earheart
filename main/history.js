@@ -99,18 +99,25 @@ function list() {
   return load();
 }
 
+// Delete the saved history. Only a delete that worked — or found nothing to
+// delete (ENOENT) — empties the list (#287): a failed one (EPERM, EBUSY, an
+// antivirus scan holding the file) leaves the transcripts on disk, and
+// showing an empty history would be a promise the next launch breaks. Then
+// the list, and any pending write of it, stay as they were, for a retry.
+// Returns { ok: true } or { ok: false, error }.
 function clear() {
-  cached = [];
-  // Cancel any pending flush so it can't recreate the file after the delete.
-  flushScheduled = false;
   try {
     fs.unlinkSync(historyPath());
   } catch (err) {
-    // ENOENT just means there was nothing to delete; anything else (EPERM,
-    // EBUSY — an AV scanner holding the file) means the transcripts are still
-    // on disk after the UI said they're gone, which deserves a trace.
-    if (err.code !== "ENOENT") logger.warn("history clear failed:", err.message);
+    if (err.code !== "ENOENT") {
+      logger.warn("history clear failed:", err.message);
+      return { ok: false, error: err.message };
+    }
   }
+  cached = [];
+  // Cancel any pending flush so it can't recreate the file after the delete.
+  flushScheduled = false;
+  return { ok: true };
 }
 
 module.exports = { add, list, clear, validEntries };

@@ -74,3 +74,80 @@ test("history removes a temp file when the replacement fails", async (t) => {
 
   assert.deepStrictEqual(fs.readdirSync(dir).filter((name) => name.endsWith(".tmp")), []);
 });
+
+/* ---- Clear history only clears what it deleted (#287) ---- */
+
+function historyDir(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-history-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+const CFG = { enabled: true, limit: 100 };
+
+for (const code of ["EPERM", "EBUSY", "EACCES"]) {
+  test(`a clear that can't delete the file (${code}) says so and keeps the transcripts`, async (t) => {
+    const dir = historyDir(t);
+    const history = loadHistory(dir);
+    history.add({ text: "keep me" }, CFG);
+    await flush();
+    const original = fs.unlinkSync;
+    fs.unlinkSync = () => {
+      throw Object.assign(new Error(`${code}: simulated`), { code });
+    };
+    let result;
+    try {
+      result = history.clear();
+    } finally {
+      fs.unlinkSync = original;
+    }
+    assert.deepStrictEqual(result, { ok: false, error: `${code}: simulated` });
+    assert.deepStrictEqual(history.list().map((e) => e.text), ["keep me"], "still shown, for a retry");
+    assert.deepStrictEqual(loadHistory(dir).list().map((e) => e.text), ["keep me"], "and still on disk");
+  });
+}
+
+test("a successful clear stays cleared after a restart", async (t) => {
+  const dir = historyDir(t);
+  const history = loadHistory(dir);
+  history.add({ text: "gone" }, CFG);
+  await flush();
+  assert.deepStrictEqual(history.clear(), { ok: true });
+  assert.deepStrictEqual(history.list(), []);
+  assert.deepStrictEqual(loadHistory(dir).list(), []);
+});
+
+test("clearing a history that was never written succeeds", (t) => {
+  const history = loadHistory(historyDir(t));
+  assert.deepStrictEqual(history.clear(), { ok: true });
+  assert.deepStrictEqual(history.list(), []);
+});
+
+test("a clear cancels the pending write, so it can't bring the entries back", async (t) => {
+  const dir = historyDir(t);
+  const history = loadHistory(dir);
+  history.add({ text: "never written" }, CFG);
+  assert.deepStrictEqual(history.clear(), { ok: true }); // before the flush runs
+  await flush();
+  assert.deepStrictEqual(fs.readdirSync(dir), []);
+  assert.deepStrictEqual(loadHistory(dir).list(), []);
+});
+
+test("a failed clear keeps the pending write, so the entry still reaches disk", async (t) => {
+  const dir = historyDir(t);
+  const history = loadHistory(dir);
+  history.add({ text: "first" }, CFG);
+  await flush();
+  history.add({ text: "pending" }, CFG);
+  const original = fs.unlinkSync;
+  fs.unlinkSync = () => {
+    throw Object.assign(new Error("EBUSY: simulated"), { code: "EBUSY" });
+  };
+  try {
+    assert.strictEqual(history.clear().ok, false);
+  } finally {
+    fs.unlinkSync = original;
+  }
+  await flush();
+  assert.deepStrictEqual(loadHistory(dir).list().map((e) => e.text), ["pending", "first"]);
+});

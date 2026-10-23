@@ -17,7 +17,12 @@ const registry = require("./registry");
  */
 function bindCustomModels(settings) {
   registry.setCustomModels(settings.get().customModels || []);
-  return settings.onChanged(({ current }) => registry.setCustomModels(current.customModels || []));
+  // Most saves (an overlay drag, a tray toggle) leave the list alone: only a
+  // changed one is re-registered, so a dropped row isn't re-logged each time.
+  return settings.onChanged(({ previous, current }) => {
+    if (JSON.stringify(previous?.customModels) === JSON.stringify(current.customModels)) return;
+    registry.setCustomModels(current.customModels || []);
+  });
 }
 
 module.exports = { bindCustomModels };

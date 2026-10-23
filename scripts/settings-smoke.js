@@ -1036,7 +1036,7 @@ app.whenReady().then(async () => {
       },
       customModels: [customStt, customCleanup, customListed],
     });
-    registry.setCustomModels(settings.get().customModels);
+    // The save registers them (engines/catalog.js, bound above).
     win.webContents.reload();
     await waitForLoad(win.webContents);
     await sleep(1200);

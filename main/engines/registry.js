@@ -267,7 +267,8 @@ const DEFAULT_CLEANUP_MODEL = "granite-4.0-micro";
 
 // User-added models (cleanup GGUFs or STT bundles from a Hugging Face repo
 // the user pasted). Kept in
-// memory and registered at startup from persisted settings (see main/ipc.js),
+// memory and registered from the persisted settings, then kept in step with
+// every save (main/engines/catalog.js, bound in main/main.js),
 // so they resolve through the same getModel/listModels path the built-ins use
 // — no special-casing in the download manager, engines, or IPC layers. Same
 // shape as a MODELS entry; files include sha256 when Hugging Face publishes an

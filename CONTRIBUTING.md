@@ -233,6 +233,7 @@ main/                    Electron main process
   services/update-fetch.js    updater metadata fetch with a deadline
   engines/               in-process STT + cleanup (no separate executable)
     registry.js          downloadable model catalogue
+    catalog.js           keeps the registry's custom models in step with settings
     model-manager.js     streaming, atomic, checksum-verified downloads
     engine-worker.js     utilityProcess: sherpa-onnx (STT) + node-llama-cpp;
                          forked once per engine (two workers)

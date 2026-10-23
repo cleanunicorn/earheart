@@ -75,3 +75,21 @@ test("a custom model the registry drops leaves a trace in the log, not just the 
   }
   assert.ok(warnings.some((w) => /invalid path segment: \.\.\/escape/.test(w)), JSON.stringify(warnings));
 });
+
+test("a save that leaves the custom models alone doesn't re-register them", (t) => {
+  t.after(() => registry.setCustomModels([]));
+  const settings = fakeSettings({ customModels: [custom("custom-acme-e")], overlay: { x: 1 } });
+  const unbind = bindCustomModels(settings);
+  t.after(unbind);
+  const original = registry.setCustomModels;
+  let calls = 0;
+  registry.setCustomModels = (...args) => { calls++; return original(...args); };
+  try {
+    settings.save({ ...settings.get(), overlay: { x: 2 } }); // an overlay drag
+    assert.strictEqual(calls, 0);
+    settings.save({ ...settings.get(), customModels: [] });
+    assert.strictEqual(calls, 1);
+  } finally {
+    registry.setCustomModels = original;
+  }
+});

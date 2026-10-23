@@ -167,7 +167,7 @@ function configWith(cleanupModel) {
 }
 
 test("removing the selected custom cleanup model falls back to Granite 4.0 Micro", async (t) => {
-  t.after(() => registry.setCustomModels([])); // init() registers the custom model
+  t.after(() => registry.setCustomModels([])); // the catalog binding registers the custom model
   const { handlers, saved } = loadIpcHandlers(configWith(customCleanup.id));
 
   const result = await handlers["models:remove-custom"]({}, { modelId: customCleanup.id });

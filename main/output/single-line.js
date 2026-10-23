@@ -19,4 +19,12 @@ function joinLines(text) {
     .trim();
 }
 
-module.exports = { joinLines };
+// The text Earheart hands over — pasted or copied — under the user's output
+// settings. Only an explicit `true` turns it on, as the Settings switch shows.
+// (U+0085, \v and \f are left alone: STT doesn't emit them and terminals
+// don't submit on them.)
+function deliverText(text, output) {
+  return output?.singleLine === true ? joinLines(text) : text;
+}
+
+module.exports = { joinLines, deliverText };

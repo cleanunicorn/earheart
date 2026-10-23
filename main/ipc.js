@@ -7,6 +7,7 @@ const settings = require("./settings");
 const { mergeVocabulary, rememberVocabulary } = require("../renderer/vocabulary");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
+const { deliverText } = require("./output/single-line");
 const history = require("./history");
 const windows = require("./windows");
 const route = require("./services/route");
@@ -652,7 +653,9 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
       throw new Error("The corrected prompt must contain text and be at most 1 million characters.");
     }
     // Settle any pending paste restoration so it cannot undo this explicit copy.
-    await deliver.deliver(text, { mode: "clipboard" });
+    // As one line if the user asked (#68): a copy is how a prompt reaches an
+    // agent too.
+    await deliver.deliver(deliverText(text, settings.get().output), { mode: "clipboard" });
     windows.setCorrectionDirty(event.sender, false);
     return { ok: true };
   }));

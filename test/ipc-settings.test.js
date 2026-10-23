@@ -328,6 +328,15 @@ test("remember failure preserves existing dictionary and reports failure", async
 });
 
 
+// #68: with "Deliver as one line" on, a copy is one line too — it is how a
+// corrected prompt reaches a terminal agent.
+test("transcript copies follow Deliver as one line", async (t) => {
+  const { handlers, settings, calls } = loadIpc(t);
+  settings.save({ ...settings.get(), output: { ...settings.get().output, singleLine: true } });
+  await handlers["transcript:copy"]({}, "first part\n\nsecond part");
+  assert.deepStrictEqual(calls.deliveries.at(-1), { text: "first part second part", cfg: { mode: "clipboard" } });
+});
+
 test("explicit transcript copies use clipboard-only delivery and reject invalid payloads", async (t) => {
   const { handlers, calls } = loadIpc(t);
   assert.deepStrictEqual(await handlers["transcript:copy"]({}, "corrected prompt"), { ok: true });

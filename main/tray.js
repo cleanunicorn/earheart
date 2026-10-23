@@ -7,6 +7,7 @@ const settings = require("./settings");
 const updates = require("./updates");
 const history = require("./history");
 const { deliver } = require("./output/deliver");
+const { deliverText } = require("./output/single-line");
 const logger = require("./util/logger");
 
 let tray = null;
@@ -67,7 +68,7 @@ function buildMenu(app) {
         if (pipeline.getState() === "processing") return;
         const entry = history.list()[0];
         if (!entry) return;
-        try { await deliver(entry.text, { mode: "clipboard" }); }
+        try { await deliver(deliverText(entry.text, settings.get().output), { mode: "clipboard" }); }
         catch (err) {
           logger.warn(`could not copy transcript: ${err.message}`);
           try {

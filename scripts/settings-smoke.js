@@ -989,7 +989,7 @@ app.whenReady().then(async () => {
       JSON.stringify(shownLimits)
     );
 
-    // 13b. "Deliver as one line" (#68): the switch is what Save sends — read
+    // "Deliver as one line" (#68): the switch is what Save sends — read
     // through the page's own collect(), so the window stays open for the
     // checks after this one.
     const singleLineSent = JSON.parse(await js(`(() => {

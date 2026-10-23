@@ -1,7 +1,7 @@
 // Delivering a transcript as one line, for agents in a terminal (#68).
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { joinLines } = require("../main/output/single-line");
+const { joinLines, deliverText } = require("../main/output/single-line");
 const { DEFAULTS } = require("../main/settings");
 
 const words = (s) => s.split(/\s+/).filter(Boolean);
@@ -30,4 +30,12 @@ test("breaks at the start or end leave no stray space", () => {
 
 test("the setting is off by default, so an email keeps its paragraphs", () => {
   assert.strictEqual(DEFAULTS.output.singleLine, false);
+});
+
+test("deliverText joins only when the setting is explicitly on", () => {
+  const text = "a\nb";
+  assert.strictEqual(deliverText(text, { singleLine: true }), "a b");
+  for (const output of [{ singleLine: false }, { singleLine: "yes" }, {}, undefined]) {
+    assert.strictEqual(deliverText(text, output), text, JSON.stringify(output));
+  }
 });

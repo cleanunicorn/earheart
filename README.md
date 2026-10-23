@@ -147,8 +147,9 @@ label, and opinions are welcome.
   (with clipboard restore), paste *and* keep the transcript on the clipboard,
   or clipboard-only if you prefer to paste yourself. Turn on **Deliver as one
   line** (Settings → General) when you dictate into an agent in a terminal,
-  where a pasted line break can send the prompt before you're done; History
-  keeps the transcript as it was.
+  where a pasted line break can send the prompt before you're done. It applies
+  to everything Earheart pastes or copies (code blocks lose their line
+  structure too); History keeps the transcript as it was.
 - **Local history** — recent transcriptions stay in a local JSON file, so a
   mis-aimed paste never loses a dictation. History can be disabled.
 - **Start on login (optional)** — have Earheart launch into the tray

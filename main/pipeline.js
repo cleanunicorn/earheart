@@ -19,7 +19,7 @@ const settings = require("./settings");
 const route = require("./services/route");
 const engines = require("./engines");
 const { deliver } = require("./output/deliver");
-const { joinLines } = require("./output/single-line");
+const { deliverText } = require("./output/single-line");
 const history = require("./history");
 const { createLivePreview } = require("./live-preview");
 const { createPersistedRtfEstimator } = require("./util/rtf");
@@ -656,7 +656,7 @@ async function process(sid, wavArrayBuffer) {
     overlayStatus("delivering");
     // One line for a terminal agent, if the user asked (#68). History above
     // already holds the transcript as it was.
-    const outgoing = cfg.output.singleLine ? joinLines(text) : text;
+    const outgoing = deliverText(text, cfg.output);
     const result = await deliver(outgoing, cfg.output, signal);
     delivered = true;
     if (stale()) return;

@@ -36,6 +36,8 @@ if (!gotLock) {
       pipeline.pauseToggle();
     } else if (argv.includes("--discard")) {
       pipeline.discard();
+    } else if (argv.includes("--retry")) {
+      pipeline.retryFailedTake();
     } else if (argv.includes("--correct-last")) {
       openLastCorrection();
     } else {

@@ -33,6 +33,7 @@ function buildMenu(app) {
   // Check the radio for what delivery does, legacy encoding included.
   const shownMode = settings.effectiveOutputMode(cfg.output);
   const state = pipeline.getState();
+  const failedTake = pipeline.getFailedTake();
   const lastEntry = history.list()[0];
   return Menu.buildFromTemplate([
     {
@@ -49,6 +50,19 @@ function buildMenu(app) {
       label: "Cancel",
       visible: state !== "idle",
       click: () => pipeline.cancel(),
+    },
+    // A failed transcription's recording, held for a retry (#293).
+    {
+      label: "Retry failed transcription",
+      visible: !!failedTake,
+      enabled: state === "idle",
+      click: () => pipeline.retryFailedTake(),
+    },
+    {
+      label: "Discard failed recording",
+      visible: !!failedTake,
+      enabled: state === "idle",
+      click: () => pipeline.discardFailedTake(),
     },
     { type: "separator" },
     ...OUTPUT_MODES.map(({ label, mode }) => ({
@@ -168,6 +182,7 @@ function init(app, pipelineModule) {
     tray.on("click", () => pipeline.toggle());
   }
   pipeline.onStateChange(() => refresh(app));
+  pipeline.onFailedTakeChange(() => refresh(app));
   refresh(app);
   return tray;
 }

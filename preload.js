@@ -33,6 +33,8 @@ const ROLES = {
       "record:cancelled",
       "record:error",
       "pipeline:cancel",
+      "pipeline:retry",
+      "pipeline:discard-take",
       "overlay:drag-start",
       "overlay:drag",
       "overlay:drag-end",

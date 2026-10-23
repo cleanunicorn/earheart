@@ -83,6 +83,15 @@ function cardStatus(win) {
 }
 
 // Poll until the card shows `want`; resolves with the time it was observed.
+// Poll `read` until it is truthy, failing by name after `timeoutMs`.
+async function waitFor(read, message, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await read())) {
+    if (Date.now() > deadline) throw new Error(message);
+    await sleep(10);
+  }
+}
+
 async function waitForStatus(win, want, timeoutMs = 15000) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -824,6 +833,50 @@ app.whenReady().then(async () => {
       errUi.detailTitle === longMsg,
       `title length=${errUi.detailTitle.length}, expected ${longMsg.length}`
     );
+
+    // ---- A failed transcription's recording, offered back (#293) ----------
+    // The row says the take is kept, fits in the card, and its pills reach
+    // the pipeline; an error with nothing held, or the next status, hides it.
+    const takeSends = [];
+    const onTakeRetry = () => takeSends.push("retry");
+    const onTakeDiscard = () => takeSends.push("discard");
+    ipcMain.on("pipeline:retry", onTakeRetry);
+    ipcMain.on("pipeline:discard-take", onTakeDiscard);
+    const takeUi = () =>
+      win.webContents.executeJavaScript(`(() => {
+        const row = document.getElementById("take-actions");
+        const r = row.getBoundingClientRect();
+        return { visible: !row.hidden, note: document.getElementById("take-note").textContent,
+                 bottom: r.bottom, inner: window.innerHeight };
+      })()`);
+    win.webContents.send("pipeline:status", {
+      status: "error",
+      detail: { message: "STT request timed out", failedTake: { expiresInSec: 600 } },
+    });
+    await waitForStatus(win, "error");
+    await waitFor(() => takeUi().then((t) => t.visible && t.bottom <= t.inner), "the take row never fit in the card");
+    const shownTake = await takeUi();
+    check(
+      "a failed take's row says the recording is kept, inside the card",
+      shownTake.note === "Recording kept for 10 min" && shownTake.bottom <= shownTake.inner,
+      JSON.stringify(shownTake)
+    );
+    await win.webContents.executeJavaScript('document.getElementById("take-retry").click(); true');
+    await waitFor(() => takeSends.length === 1, "Retry never reached main");
+    check("Retry sends pipeline:retry and hides the row", takeSends[0] === "retry" && !(await takeUi()).visible);
+    win.webContents.send("pipeline:status", {
+      status: "error",
+      detail: { message: "STT request timed out", failedTake: { expiresInSec: 300 } },
+    });
+    await waitFor(() => takeUi().then((t) => t.visible), "the take row didn't come back");
+    await win.webContents.executeJavaScript('document.getElementById("take-discard").click(); true');
+    await waitFor(() => takeSends.length === 2, "Discard never reached main");
+    check("Discard sends pipeline:discard-take", takeSends[1] === "discard");
+    win.webContents.send("pipeline:status", { status: "error", detail: { message: "paste tool missing" } });
+    await waitForStatus(win, "error");
+    check("an error with nothing held offers no retry", !(await takeUi()).visible);
+    ipcMain.removeListener("pipeline:retry", onTakeRetry);
+    ipcMain.removeListener("pipeline:discard-take", onTakeDiscard);
 
     // ---- Detail line geometry inside the 32px wave strip -------------------
     // The detail line shares #wave with the absolutely positioned canvas and

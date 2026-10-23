@@ -259,6 +259,7 @@ function dictationRig({
     logs: [],
     statuses: [],
     retries: [],
+    failedTakeCards: [],
     settingsEvents: [],
     overlaySent: [],
     hidden: 0,
@@ -341,6 +342,7 @@ function dictationRig({
           if (channel === "pipeline:status") {
             log.statuses.push(payload.status);
             if (payload.detail?.retry) log.retries.push({ status: payload.status, ...payload.detail.retry });
+            if (payload.detail?.failedTake) log.failedTakeCards.push(payload.detail.failedTake);
             if (payload.status === "done") log.done = payload.detail;
           }
         },
@@ -401,6 +403,8 @@ function dictationRig({
     cfg,
     handlers,
     liveTranscribe: (...a) => liveDeps.runTranscribe(...a),
+    // What the live preview would hand the next final pass.
+    setSnapshot: (snap) => (snapshot = snap),
     liveCleanupError: (...a) => liveDeps.onCleanupError(...a),
   };
 }
@@ -983,8 +987,8 @@ function assertClickOpensSettings(rig, entry) {
 }
 
 test("pipeline: a failed transcription notifies, and the click opens Settings", async () => {
-  // The one path where the dictation is lost: the overlay line is gone in
-  // five seconds, so a notification has to carry it.
+  // The overlay card goes away, so a notification has to carry the failure —
+  // and, since #293, that the recording is kept and how to retry it.
   const rig = dictationRig({
     engine: "remote",
     transcribe: async () => {
@@ -996,8 +1000,11 @@ test("pipeline: a failed transcription notifies, and the click opens Settings", 
   assert.deepStrictEqual(rig.log.delivered, []);
   assert.strictEqual(rig.log.notifications.length, 1);
   const [note] = rig.log.notifications;
-  assert.strictEqual(note.title, "Earheart: dictation failed, nothing was delivered");
-  assert.strictEqual(note.body, "Couldn't reach api.example.test");
+  assert.strictEqual(note.title, "Earheart: transcription failed, recording kept");
+  assert.strictEqual(
+    note.body,
+    "Retry it from the tray menu or the overlay, or run earheart --retry, within 10 minutes. Couldn't reach api.example.test"
+  );
   assertClickOpensSettings(rig, note);
 });
 
@@ -1157,7 +1164,10 @@ test("pipeline: a long error is clipped to the notification limit", async () => 
     },
   });
   await rig.dictate(speechWav(1));
-  assert.strictEqual(rig.log.notifications[0].body, "x".repeat(BODY_MAX));
+  const { body } = rig.log.notifications[0];
+  assert.strictEqual(body.length, BODY_MAX);
+  // The retry route leads, so clipping a long error never cuts it off.
+  assert.ok(body.startsWith("Retry it from the tray menu"), body);
 });
 
 /* ---------------- never lose the words: cancel, stale and empty paths (#196) ---------------- */
@@ -1457,4 +1467,196 @@ test("pipeline: completion during transcription rechecks disk before final clean
   await rig.dictate(speechWav(1));
   assert.deepStrictEqual(rig.log.delivered, ["cleaned(raw)"]);
   assert.equal(rig.log.done.rawReason, null);
+});
+
+/* ---------------- retry a failed transcription (#293) ---------------- */
+
+// A remote STT that fails while `down` is set, as a service that times out
+// and then comes back.
+function flakyStt() {
+  const stt = { down: true, seen: [] };
+  stt.transcribe = async (n, wav) => {
+    stt.seen.push(wav);
+    if (stt.down) throw new Error("STT request timed out");
+    return "the whole explanation";
+  };
+  return stt;
+}
+
+// Run the held take through the pipeline again and wait for it to settle.
+async function retried(rig) {
+  const idle = new Promise((resolve) => rig.pipeline.onStateChange((s) => s === "idle" && resolve()));
+  const started = rig.pipeline.retryFailedTake();
+  if (started) await idle;
+  return started;
+}
+
+test("pipeline: a failed transcription keeps the take, and a retry delivers it once", async () => {
+  const stt = flakyStt();
+  const rig = dictationRig({ engine: "remote", transcribe: stt.transcribe });
+  const take = speechWav(30);
+  await rig.dictate(take);
+  assert.deepStrictEqual(rig.log.delivered, []);
+  const held = rig.pipeline.getFailedTake();
+  assert.ok(held, "the recording is held");
+  assert.strictEqual(held.bytes, take.length);
+  assert.ok(rig.log.statuses.includes("error"));
+
+  stt.down = false; // the service is back
+  assert.strictEqual(await retried(rig), true);
+  assert.deepStrictEqual(rig.log.delivered, ["the whole explanation"]);
+  assert.strictEqual(rig.log.history.length, 1, "one history entry");
+  assert.ok(Buffer.from(stt.seen.at(-1)).equals(Buffer.from(take)), "the same audio, not a re-recording");
+  assert.strictEqual(rig.pipeline.getFailedTake(), null, "released once delivered");
+  assert.strictEqual(await retried(rig), false, "nothing left to deliver twice");
+  assert.deepStrictEqual(rig.log.delivered, ["the whole explanation"]);
+});
+
+test("pipeline: a retry that fails again keeps the take for the next one", async () => {
+  const stt = flakyStt();
+  const rig = dictationRig({ engine: "remote", transcribe: stt.transcribe });
+  await rig.dictate(speechWav(5));
+  await retried(rig);
+  assert.ok(rig.pipeline.getFailedTake(), "still held after a second failure");
+  assert.deepStrictEqual(rig.log.delivered, []);
+  stt.down = false;
+  await retried(rig);
+  assert.deepStrictEqual(rig.log.delivered, ["the whole explanation"]);
+  assert.strictEqual(rig.log.history.length, 1);
+});
+
+test("pipeline: a retry uses the engine chosen since the failure", async () => {
+  const stt = flakyStt();
+  const rig = dictationRig({ engine: "remote", transcribe: stt.transcribe });
+  await rig.dictate(speechWav(5));
+  rig.cfg.stt.engine = "builtin"; // switched in Settings
+  stt.down = false;
+  await retried(rig);
+  assert.strictEqual(rig.log.transcribe.at(-1).engine, "builtin");
+  assert.deepStrictEqual(rig.log.delivered, ["the whole explanation"]);
+});
+
+test("pipeline: the failure card offers the held take, and the notice says how to retry", async () => {
+  const stt = flakyStt();
+  const rig = dictationRig({ engine: "remote", transcribe: stt.transcribe });
+  await rig.dictate(speechWav(5));
+  assert.deepStrictEqual(rig.log.failedTakeCards, [{ expiresInSec: 600 }]);
+  const [note] = rig.log.notifications;
+  assert.match(note.title, /recording kept/);
+  assert.match(note.body, /earheart --retry/);
+  // A failure with nothing held (a paste failure) offers no retry.
+  const pasteFails = dictationRig({
+    engine: "remote",
+    transcribe: async () => "words",
+    deliver: async () => { throw new Error("paste tool missing"); },
+  });
+  await pasteFails.dictate(speechWav(5));
+  assert.deepStrictEqual(pasteFails.log.failedTakeCards, []);
+});
+
+test("pipeline: a cancelled dictation is never held for retry", async () => {
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "unused" });
+  rig.pipeline.toggle();
+  rig.pipeline.cancel();
+  assert.strictEqual(rig.pipeline.getFailedTake(), null);
+});
+
+test("pipeline: cancelling a retry mid-transcription releases the take", async () => {
+  let release;
+  const stt = flakyStt();
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async (n, wav) => {
+      if (n === 0) return stt.transcribe(n, wav);
+      await new Promise((resolve) => { release = resolve; });
+      return "late words";
+    },
+  });
+  await rig.dictate(speechWav(5));
+  assert.ok(rig.pipeline.getFailedTake());
+  rig.pipeline.retryFailedTake();
+  await flush();
+  rig.pipeline.cancel();
+  release();
+  await flush();
+  assert.strictEqual(rig.pipeline.getFailedTake(), null, "an intentional cancel isn't kept");
+  assert.deepStrictEqual(rig.log.delivered, [], "the stale reply can't deliver");
+  assert.deepStrictEqual(rig.log.history, []);
+});
+
+test("pipeline: starting a new dictation lets the failed take go", async () => {
+  const stt = flakyStt();
+  const rig = dictationRig({ engine: "remote", transcribe: stt.transcribe });
+  await rig.dictate(speechWav(5));
+  assert.ok(rig.pipeline.getFailedTake());
+  rig.pipeline.toggle();
+  assert.strictEqual(rig.pipeline.getFailedTake(), null);
+  assert.strictEqual(rig.pipeline.retryFailedTake(), false, "no retry while recording either");
+});
+
+test("pipeline: discard releases the held take, from the overlay or earheart --discard", async () => {
+  const stt = flakyStt();
+  const rig = dictationRig({ engine: "remote", transcribe: stt.transcribe });
+  await rig.dictate(speechWav(5));
+  const hiddenBefore = rig.log.hidden;
+  rig.handlers["pipeline:discard-take"]();
+  assert.strictEqual(rig.pipeline.getFailedTake(), null);
+  assert.strictEqual(rig.log.hidden, hiddenBefore + 1, "the failure card goes with it");
+
+  await rig.dictate(speechWav(5));
+  rig.pipeline.discard(); // idle: `earheart --discard`
+  assert.strictEqual(rig.pipeline.getFailedTake(), null);
+});
+
+test("pipeline: the overlay's Retry runs the held take", async () => {
+  const stt = flakyStt();
+  const rig = dictationRig({ engine: "remote", transcribe: stt.transcribe });
+  await rig.dictate(speechWav(5));
+  stt.down = false;
+  const idle = new Promise((resolve) => rig.pipeline.onStateChange((s) => s === "idle" && resolve()));
+  rig.handlers["pipeline:retry"]();
+  await idle;
+  assert.deepStrictEqual(rig.log.delivered, ["the whole explanation"]);
+});
+
+test("pipeline: only a transcription failure holds the take; cleanup and paste failures already keep the words", async () => {
+  const cleanupFails = dictationRig({
+    engine: "remote",
+    cleanup: true,
+    transcribe: async () => "raw words",
+    clean: async () => { throw new Error("cleanup model crashed"); },
+  });
+  await cleanupFails.dictate(speechWav(5));
+  assert.deepStrictEqual(cleanupFails.log.delivered, ["raw words"], "raw-text fallback still delivers");
+  assert.strictEqual(cleanupFails.pipeline.getFailedTake(), null);
+
+  const pasteFails = dictationRig({
+    engine: "remote",
+    transcribe: async () => "words",
+    deliver: async () => { throw new Error("paste tool missing"); },
+  });
+  await pasteFails.dictate(speechWav(5));
+  assert.strictEqual(pasteFails.log.history.length, 1, "History has the words");
+  assert.strictEqual(pasteFails.pipeline.getFailedTake(), null);
+});
+
+test("pipeline: partial-transcript salvage still delivers, and holds nothing", async () => {
+  const rig = dictationRig({ transcribe: async () => { throw exited(); } });
+  await rig.dictate(speechWav(40), { committedRaw: "words said so far", decodedSamples: 30 * SR, broken: false });
+  assert.deepStrictEqual(rig.log.delivered, ["words said so far"]);
+  assert.strictEqual(rig.pipeline.getFailedTake(), null);
+});
+
+test("pipeline: a retry of a built-in take decodes the whole recording, not a stale live preview", async () => {
+  const stt = flakyStt();
+  const rig = dictationRig({ transcribe: stt.transcribe });
+  await rig.dictate(speechWav(5), { committedRaw: "", decodedSamples: 0, broken: false });
+  assert.ok(rig.pipeline.getFailedTake());
+  // Whatever the live preview holds now belongs to no take; used as the
+  // retry's prefix it would splice someone else's words in.
+  rig.setSnapshot({ committedRaw: "stale words", decodedSamples: 2 * SR, broken: false });
+  stt.down = false;
+  await retried(rig);
+  assert.deepStrictEqual(rig.log.delivered, ["the whole explanation"]);
+  assert.strictEqual(Math.round(rig.log.transcribe.at(-1).sec), 5, "the whole take was decoded");
 });

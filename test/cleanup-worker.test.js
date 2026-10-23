@@ -310,16 +310,37 @@ test("cleanup worker: the context follows dictionary changes after the model is 
   assert.deepEqual(w.events.filter((event) => event.startsWith("load:")), ["load:A"]);
 });
 
-test("cleanup worker: a context that can't grow keeps the raw transcript and recovers", async () => {
+test("cleanup worker: a context that can't grow refuses only a turn that doesn't fit, and isn't retried", async () => {
   const w = worker({ contextFailsAbove: 4096 });
   const big = await w.send("clean", { model: budgeted("A"), transcript: "hello", systemPrompt: words(6900) });
   assert.equal(big.ok, false);
-  assert.match(big.error, /Could not size the cleanup context.*out of memory/);
+  assert.match(big.error, /instructions and dictionary/);
   assert.equal(w.events.some((event) => event.startsWith("prompt:")), false, "nothing was generated");
+  // The failed size isn't asked for again on the next dictation.
+  assert.equal((await w.send("clean", { model: budgeted("A"), transcript: "hello", systemPrompt: words(6900) })).ok, false);
   // Main's size is restored, so the next ordinary turn runs without a reload.
   const small = await w.send("clean", { model: budgeted("A"), transcript: "hello", systemPrompt: "rules" });
   assert.equal(small.ok, true, small.error);
   assert.deepEqual(w.contextEvents, ["context:A:4096", "context:A:8192", "context:A:4096"]);
+  assert.deepEqual(w.events.filter((event) => event.startsWith("load:")), ["load:A"]);
+});
+
+test("cleanup worker: a failed grow still cleans a turn that fits main's size", async () => {
+  // The grow covers the longest dictation allowed; this one is short. Before
+  // #297 it cleaned in main's 8192, and a busy GPU must not change that.
+  const w = worker({ contextFailsAbove: 8192 });
+  const model = { modelPath: "A", contextSize: 8192, transcriptTokens: 2025, cpuOnly: true };
+  const reply = await w.send("clean", { model, transcript: "hello", systemPrompt: words(5000) });
+  assert.equal(reply.ok, true, reply.error);
+  assert.deepEqual(w.contextEvents, ["context:A:8192", "context:A:16384", "context:A:8192"]);
+});
+
+test("cleanup worker: a new floor for the same model rebuilds the context, not the model", async () => {
+  const w = worker();
+  assert.equal((await w.send("clean", { model: budgeted("A"), transcript: "hello", systemPrompt: "rules" })).ok, true);
+  const raised = { ...budgeted("A"), contextSize: 8192, transcriptTokens: 2025 };
+  assert.equal((await w.send("clean", { model: raised, transcript: "hello", systemPrompt: "rules" })).ok, true);
+  assert.deepEqual(w.contextEvents, ["context:A:4096", "context:A:8192"]);
   assert.deepEqual(w.events.filter((event) => event.startsWith("load:")), ["load:A"]);
 });
 

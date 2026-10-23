@@ -66,7 +66,10 @@ function cleanMaxTokens(transcriptTokens) {
  * @returns {string}
  */
 function cleanBudgetMessage(needed, available, instructionTokens = 0) {
-  if (instructionTokens > CLEAN_PROMPT_TOKENS) {
+  // Blame the instructions only when they are why it overflowed: with them at
+  // the allowance, the turn would have fit.
+  const overAllowance = instructionTokens - CLEAN_PROMPT_TOKENS;
+  if (overAllowance > 0 && needed - overAllowance <= available) {
     return (
       `Cleanup instructions and dictionary too long to clean up this transcript ` +
       `(needs ~${needed} tokens of context, have ${available}; the instructions and dictionary ` +

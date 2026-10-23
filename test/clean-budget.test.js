@@ -177,6 +177,9 @@ test("clean budget: a refusal caused by the instructions says what to shorten", 
   const message = cleanBudgetMessage(17000, 16384, 16500);
   assert.match(message, /instructions and dictionary use ~16500/);
   assert.match(message, /Remove dictionary words or shorten the custom prompt/);
+  // Instructions over the allowance, but the transcript overflowed anyway:
+  // shortening the dictionary wouldn't have helped, so don't say it would.
+  assert.match(cleanBudgetMessage(20000, 16384, 800), /^Transcript too long/);
   // An ordinary prompt keeps the transcript-length message.
   assert.match(cleanBudgetMessage(17000, 16384, CLEAN_PROMPT_TOKENS), /^Transcript too long/);
   assert.match(cleanBudgetMessage(17000, 16384), /^Transcript too long/);

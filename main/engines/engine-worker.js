@@ -44,9 +44,13 @@ let llamaModel = null;
 let llamaContext = null;
 let llamaSession = null;
 let cleanupModelPath = null;
-let cleanupContextSize = 0; // context the loaded model was given, 0 = none loaded
-// The size main asked for (the floor); llamaContext.contextSize may be larger
-// once fitCleanupContext has measured the instructions.
+// The context size main asked for (the floor), 0 = none loaded. The context
+// itself (llamaContext.contextSize) can be larger once fitCleanupContext has
+// measured the instructions.
+let cleanupContextSize = 0;
+// A grown size this model already failed to allocate, so a busy GPU isn't
+// asked for it again on every dictation; 0 = none failed.
+let cleanupGrowFailedAt = 0;
 
 function reply(id, promise) {
   Promise.resolve(promise)
@@ -158,12 +162,32 @@ async function transcribe({ wav }) {
 
 /* ---------------- cleanup (node-llama-cpp / GGUF) ---------------- */
 
+// Replace the cleanup context with one of `contextSize` tokens, keeping the
+// model. The session is bound to the old context's sequence, so it goes too.
+async function rebuildCleanupContext(contextSize) {
+  if (llamaSession && llamaSession.dispose) llamaSession.dispose();
+  llamaSession = null;
+  const old = llamaContext;
+  llamaContext = null;
+  if (old && old.dispose) await old.dispose();
+  llamaContext = await llamaModel.createContext({ contextSize });
+}
+
 async function loadCleanup({ modelPath, contextSize, cpuOnly }) {
   const wanted = contextSize || CLEAN_CONTEXT_MIN;
-  // Same model AND same context: the context is allocated at load time, so a
-  // caller asking for a bigger one has to get a reload, not the old context.
-  if (llamaModel && cleanupModelPath === modelPath && cleanupContextSize === wanted) {
-    return { ready: true };
+  if (llamaModel && cleanupModelPath === modelPath) {
+    if (cleanupContextSize === wanted) return { ready: true };
+    // Same model, new floor (Max dictation length changed): the context is
+    // allocated with the model's runtime, so rebuild just the context when it
+    // is now too small. A failure falls through to a full reload below.
+    try {
+      if (!llamaContext || llamaContext.contextSize < wanted) await rebuildCleanupContext(wanted);
+      cleanupContextSize = wanted;
+      cleanupGrowFailedAt = 0;
+      return { ready: true };
+    } catch (err) {
+      console.error(`[engine-worker] cleanup context resize failed (${err.message}); reloading`);
+    }
   }
   // node-llama-cpp v3 is ESM-only; reach it via dynamic import from CommonJS.
   let mod;
@@ -282,33 +306,32 @@ function instructionTokens(systemPrompt) {
 // outgrow that, and then even a short dictation is refused. Grow to fit —
 // never past CLEAN_CONTEXT_MAX, the memory ceiling — and come back down to
 // main's size once they shrink. Only the context is rebuilt, not the model.
-// A failed rebuild restores main's size and throws, so the caller keeps the
-// raw transcript; the turn that didn't fit is never run in a context it
-// overflows.
+//
+// The size covers the longest dictation allowed, not this one, so prime and
+// clean agree on it and the primed prefix survives. When a grow can't be
+// allocated (a busy GPU, a tight machine), main's size is restored and the
+// turn goes on: assertCleanBudget then judges the turn actually being run, so
+// a short dictation that fits main's size still cleans, as it did before.
+// Only losing the context altogether throws.
 async function fitCleanupContext(model, systemPrompt) {
   if (!llamaModel || !llamaContext || !Number.isFinite(model?.transcriptTokens)) return;
   const instructions = instructionTokens(systemPrompt);
   if (instructions === null) return;
-  const wanted = Math.max(cleanupContextSize, cleanContextSize(instructions, model.transcriptTokens));
-  if (wanted === llamaContext.contextSize) return;
   const floor = cleanupContextSize;
-  const rebuild = async (contextSize) => {
-    if (llamaSession && llamaSession.dispose) llamaSession.dispose();
-    llamaSession = null;
-    const old = llamaContext;
-    llamaContext = null;
-    if (old && old.dispose) await old.dispose();
-    llamaContext = await llamaModel.createContext({ contextSize });
-  };
+  let wanted = Math.max(floor, cleanContextSize(instructions, model.transcriptTokens));
+  while (cleanupGrowFailedAt && wanted >= cleanupGrowFailedAt && wanted > floor) wanted /= 2;
+  if (wanted === llamaContext.contextSize) return;
   try {
-    await rebuild(wanted);
+    await rebuildCleanupContext(wanted);
   } catch (err) {
+    if (wanted > floor) cleanupGrowFailedAt = wanted;
+    console.error(`[engine-worker] cleanup context of ${wanted} tokens failed (${err.message}); keeping ${floor}`);
     try {
-      await rebuild(floor);
-    } catch {
+      await rebuildCleanupContext(floor);
+    } catch (floorErr) {
       await disposeCleanup();
+      throw new Error(`Could not rebuild the cleanup context (${floorErr.message})`);
     }
-    throw new Error(`Could not size the cleanup context for the dictionary (${err.message})`);
   }
 }
 
@@ -414,6 +437,7 @@ async function disposeCleanup() {
   llamaModel = null;
   cleanupModelPath = null;
   cleanupContextSize = 0;
+  cleanupGrowFailedAt = 0;
 }
 
 // Drop the recognizer ahead of loading a different STT model. This does NOT

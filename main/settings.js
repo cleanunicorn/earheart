@@ -143,7 +143,8 @@ const DEFAULTS = {
   audio: {
     deviceId: "", // empty = system default microphone
     // Ten minutes. The built-in cleanup context is sized from this (see
-    // cleanContextFor in util/clean-budget.js), so raising it costs memory.
+    // cleanContextFor in util/clean-budget.js), so raising it costs memory; a
+    // large dictionary or custom prompt grows it too, up to CLEAN_CONTEXT_MAX.
     maxRecordingSeconds: 600,
   },
   engines: {

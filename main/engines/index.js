@@ -213,9 +213,9 @@ function runningEmulated() {
 // the whole turn — rules, transcript and generated output — has to fit in it at
 // once (main/util/clean-budget.js). Someone who raises Max dictation length
 // gets a context that can still hold what they say; everyone else keeps the
-// smaller KV cache. A changed size reloads the model: the context is allocated
-// at load time, so the worker can't grow one in place. `transcriptTokens` lets
-// the worker grow the context past this size when the real instructions
+// smaller KV cache. A changed size is a different load (the worker rebuilds
+// the context, keeping the model). This size is a floor: `transcriptTokens`
+// lets the worker grow the context past it when the real instructions
 // (dictionary, custom prompt) outgrow their allowance (#297).
 function cleanupModel(modelId) {
   const model = resolve("cleanup", modelId);

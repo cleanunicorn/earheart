@@ -2513,7 +2513,8 @@ test("the cleanup descriptor carries the transcript budget the worker sizes from
   const primes = holdLoads(cleanup, "prime-cleanup");
   const cfg = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules" };
   const primed = facade.primeCleanup(cfg, "so far");
-  assert.strictEqual(typeof primes[0].payload.systemPrompt, "string");
+  const { resolveCleanup } = require("../main/cleanup-styles");
+  assert.strictEqual(primes[0].payload.systemPrompt, resolveCleanup(cfg).systemPrompt);
   assert.ok(primes[0].payload.text.startsWith(primes[0].payload.systemPrompt));
   assert.ok(primes[0].payload.text.endsWith("so far"));
   primes[0].resolve({ primed: true });

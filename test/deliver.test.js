@@ -547,3 +547,53 @@ test("an unchanged clipboard still pastes", async (t) => {
   assert.strictEqual((await deliver("hi", { mode: "paste", restoreClipboard: true, pasteDelayMs: 5 })).method, "paste");
   assert.deepStrictEqual(state.execs, ["xdotool"]);
 });
+
+test("a clipboard handing back CRLF for a multi-line transcript is still ours", async (t) => {
+  onLinuxX11(t);
+  const { deliver, state } = loadDeliver({ trusted: true, tools: ["xdotool"] });
+  const pending = deliver("first line\nsecond line", { mode: "paste-copy", pasteDelayMs: 30 });
+  setTimeout(() => { state.clip = { text: "first line\r\nsecond line" }; }, 5);
+  assert.strictEqual((await pending).method, "paste-copy");
+  assert.deepStrictEqual(state.execs, ["xdotool"]);
+});
+
+test("an empty read with only text formats is an unreadable clipboard, not a takeover", async (t) => {
+  // Windows answers "" while another app holds the clipboard open, yet still
+  // lists text/plain; refusing to paste then would be a false alarm.
+  onLinuxX11(t);
+  const { deliver, state, electron } = loadDeliver({ trusted: true, tools: ["xdotool"] });
+  const pending = deliver("Dictated agent prompt", { mode: "paste-copy", pasteDelayMs: 30 });
+  setTimeout(() => {
+    electron.clipboard.readText = () => "";
+  }, 5);
+  assert.strictEqual((await pending).method, "paste-copy");
+  assert.deepStrictEqual(state.execs, ["xdotool"]);
+});
+
+test("on Wayland the takeover check stands aside: an unfocused read can be stale", async (t) => {
+  onPlatform(t, "linux");
+  const saved = { WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY, PATH: process.env.PATH };
+  process.env.WAYLAND_DISPLAY = "wayland-0";
+  process.env.PATH = "/earheart-test-bin";
+  t.after(() => {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+  const { deliver, state } = loadDeliver({ trusted: true, tools: ["wtype"] });
+  const pending = deliver("Dictated agent prompt", { mode: "paste-copy", pasteDelayMs: 30 });
+  setTimeout(() => { state.clip = { text: "what a stale read might show" }; }, 5);
+  assert.notStrictEqual((await pending).method, "clipboard-changed");
+});
+
+test("plain paste still restores a clipboard read back with CRLF", async (t) => {
+  onLinuxX11(t);
+  const { deliver, state } = loadDeliver({ trusted: true, tools: ["xdotool"] });
+  const controller = new AbortController();
+  const pending = deliver("one\ntwo", { mode: "paste", restoreClipboard: true, pasteDelayMs: 20 }, controller.signal);
+  state.clip = { text: "one\r\ntwo" };
+  controller.abort();
+  assert.deepStrictEqual(await pending, { method: "cancelled" });
+  assert.strictEqual(state.clip.text, "old", "the previous clipboard came back");
+});

@@ -109,6 +109,7 @@ function main() {
     pipeline.onStateChange((state) => hotkeys.armDiscard(state !== "idle"));
     ipc.init({
       onCleanupDownloaded: pipeline.onCleanupDownloaded,
+      onHistoryCleared: pipeline.clearUndelivered,
       applyHotkeys,
       canCorrect: () => pipeline.getState() === "idle",
       canCopy: () => pipeline.getState() !== "processing",

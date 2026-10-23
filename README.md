@@ -446,9 +446,11 @@ If another app changes the clipboard in the moment between Earheart copying
 your transcript and pasting it (another copy, or a clipboard manager), Earheart
 pastes nothing rather than paste someone else's text, and leaves that newer
 copy alone. **Copy last transcription** in the tray menu has your transcript,
-even with History turned off. The check runs just before the keystroke; the
-operating system's own paste can't be made atomic, so a change in the last
-instant can still win.
+even with History turned off (clearing History clears it too). The check runs
+just before the keystroke; the operating system's own paste can't be made
+atomic, so a change in the last instant can still win. On Wayland the check is
+skipped: there an app without focus can't reliably read the clipboard, and a
+false alarm would stop every paste.
 
 Settings → Advanced → Performance holds two limits. **Max dictation length**
 takes 10–3600 seconds (default 600, ten minutes); a dictation that reaches it

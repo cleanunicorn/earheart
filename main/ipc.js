@@ -257,7 +257,7 @@ function wrap(fn, describe = (err) => err.message) {
   };
 }
 
-function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {} }) {
+function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {} }) {
   onCleanupDownloaded = completed;
   // Register any models the user added from a custom Hugging Face URL so they
   // resolve for download and for loading into the cleanup worker after a
@@ -662,6 +662,8 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   ipcMain.handle("history:list", () => history.list());
   ipcMain.handle("history:clear", () => {
     history.clear();
+    // A transcript held back from a paste (#291) is history too.
+    onHistoryCleared();
     // "Copy last transcription" must go disabled with nothing left to copy.
     tray.refresh();
     return [];

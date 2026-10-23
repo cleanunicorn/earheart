@@ -28,15 +28,23 @@ function icon(name) {
   return img.isEmpty() ? nativeImage.createEmpty() : img;
 }
 
+// The most recent transcript: History's newest entry, or a delivery held back
+// because the clipboard changed (#291) if that came later — with History off,
+// the held-back one is the only copy there is.
+function lastTranscript() {
+  const held = pipeline.getUndelivered();
+  const entry = history.list()[0];
+  if (held && (!entry || !(entry.at > held.at))) return held.text;
+  return entry?.text;
+}
+
 function buildMenu(app) {
   const cfg = settings.get();
   // Check the radio for what delivery does, legacy encoding included.
   const shownMode = settings.effectiveOutputMode(cfg.output);
   const state = pipeline.getState();
   const lastEntry = history.list()[0];
-  // A delivery held back because the clipboard changed (#291) is the last
-  // transcript too, and with History off the only copy of it.
-  const lastText = pipeline.getUndelivered() ?? lastEntry?.text;
+  const lastText = lastTranscript();
   return Menu.buildFromTemplate([
     {
       label:
@@ -68,7 +76,7 @@ function buildMenu(app) {
       // was built a moment before the dictation landed.
       click: async () => {
         if (pipeline.getState() === "processing") return;
-        const text = pipeline.getUndelivered() ?? history.list()[0]?.text;
+        const text = lastTranscript();
         if (!text) return;
         try { await deliver(text, { mode: "clipboard" }); }
         catch (err) {

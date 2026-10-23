@@ -213,11 +213,16 @@ function getState() {
 // The last transcript delivery held back because another app took over the
 // clipboard first (#291): not pasted, not on the clipboard, and with History
 // off, nowhere else. Kept in memory (never on disk) for the tray's "Copy last
-// transcription" until the next delivery lands.
+// transcription" — `{ text, at }`, so a newer History entry wins — until a
+// later delivery lands or History is cleared.
 let undelivered = null;
 
 function getUndelivered() {
   return undelivered;
+}
+
+function clearUndelivered() {
+  undelivered = null;
 }
 
 function overlayStatus(status, detail) {
@@ -665,7 +670,9 @@ async function process(sid, wavArrayBuffer) {
     overlayStatus("delivering");
     const result = await deliver(text, cfg.output, signal);
     delivered = true;
-    undelivered = result.method === "clipboard-changed" ? text : null;
+    // A cancelled delivery landed nothing, so it supersedes nothing either.
+    if (result.method === "clipboard-changed") undelivered = { text, at: new Date().toISOString() };
+    else if (result.method !== "cancelled") undelivered = null;
     if (stale()) return;
 
     if (result.method === "clipboard-changed") {
@@ -773,6 +780,7 @@ module.exports = {
   onOverlayRendererGone,
   getState,
   getUndelivered,
+  clearUndelivered,
   onStateChange,
   onSettingsChanged,
   onCleanupDownloaded,

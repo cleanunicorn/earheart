@@ -261,7 +261,7 @@ for (const platform of ["win32", "darwin", "linux"]) {
 // "Copy last transcription" — with History off it is the only copy there is.
 test("Copy last transcription copies a delivery the clipboard change held back", async (t) => {
   const { tray, pipeline, menus, copies } = loadTray(t, { historyEntries: [{ text: "older entry" }] });
-  pipeline.undelivered = "held back transcript";
+  pipeline.undelivered = { text: "held back transcript", at: "2999-01-01T00:00:00.000Z" };
   tray.refresh();
   const copy = item(menus.at(-1), "Copy last transcription");
   assert.strictEqual(copy.enabled, true);
@@ -271,7 +271,19 @@ test("Copy last transcription copies a delivery the clipboard change held back",
 
 test("Copy last transcription works with History off when a delivery was held back", (t) => {
   const { tray, pipeline, menus } = loadTray(t, { historyEntries: [] });
-  pipeline.undelivered = "held back transcript";
+  pipeline.undelivered = { text: "held back transcript", at: "2026-01-01T00:00:00.000Z" };
   tray.refresh();
   assert.strictEqual(item(menus.at(-1), "Copy last transcription").enabled, true);
+});
+
+test("Copy last transcription prefers a History entry newer than the held-back delivery", async (t) => {
+  // A later dictation reached History and then failed to deliver: it, not the
+  // older held-back one, is the last transcript.
+  const { tray, pipeline, menus, copies } = loadTray(t, {
+    historyEntries: [{ text: "newer entry", at: "2026-02-01T00:00:00.000Z" }],
+  });
+  pipeline.undelivered = { text: "held back transcript", at: "2026-01-01T00:00:00.000Z" };
+  tray.refresh();
+  await item(menus.at(-1), "Copy last transcription").click();
+  assert.deepStrictEqual(copies, ["newer entry"]);
 });

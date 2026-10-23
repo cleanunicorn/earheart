@@ -234,24 +234,38 @@ function restoreSnapshot(snap) {
 // in the timer it would only reach the process-level handler).
 function restoreIfUnchanged(snap, transcript) {
   try {
-    if (clipboard.readText() === transcript) restoreSnapshot(snap);
+    if (sameText(clipboard.readText(), transcript)) restoreSnapshot(snap);
   } catch (err) {
     logger.error("clipboard restore failed:", err);
   }
 }
 
+// Line endings are compared loosely, defensively: should a platform hand back
+// CRLF for the LF it was given, a multi-line transcript must neither read as
+// taken over nor miss its restore.
+const sameText = (a, b) => a.replace(/\r\n?/g, "\n") === b.replace(/\r\n?/g, "\n");
+
 // True when another app has put something else on the clipboard since we wrote
 // `text`, during the paste delay (another copy, a clipboard manager). Pasting
 // then would type THEIR content into the target — an unrelated command or
-// private text reaching an agent's input (#291). A clipboard that can't be
-// read is no evidence of that (some sessions can't read it from an unfocused
-// window): only text other than ours, or anything else on it — an image, a
-// file copy — counts. What's left is the OS's own race between this check and
-// the keystroke landing; it narrows the window, it can't close it.
+// private text reaching an agent's input (#291).
+//
+// Only unambiguous evidence counts, because a false "taken over" silently
+// stops auto-paste: readable text that isn't ours, or no text at all while an
+// image or a file copy is on offer. An empty read with only text formats is
+// a clipboard we couldn't read (Windows answers "" while another app holds it
+// open), not proof. On Wayland the check is skipped: an unfocused client —
+// the overlay never takes focus — can read a stale selection, so the evidence
+// isn't trustworthy there. What remains everywhere is the OS's own race
+// between this check and the keystroke landing; it narrows the window, it
+// can't close it.
 function clipboardTakenOver(text) {
+  if (process.platform === "linux" && isWayland()) return false;
   try {
-    if (clipboard.readText() === text) return false;
-    return clipboard.availableFormats().length > 0;
+    const current = clipboard.readText();
+    if (sameText(current, text)) return false;
+    if (current) return true;
+    return clipboard.availableFormats().some((f) => f.startsWith("image/") || f === "text/uri-list");
   } catch {
     return false;
   }

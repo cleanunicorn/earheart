@@ -249,6 +249,32 @@ test("markdownRow renders a saved run's FLUENT numbers", async () => {
   assert.match(row, /2\.00 GB \| X \|$/);
 });
 
+test("markdownRow: one cell per header column, delivered fidelity included", async () => {
+  const { markdownRow, TABLE_HEAD } = await load();
+  const cells = (line) => line.split("|").length;
+  const dir = tmpdir();
+  writeRun(dir, { id: "m", bytes: 2_000_000_000, s: COPY, wall: 1000 });
+  const run = JSON.parse(fs.readFileSync(path.join(dir, "m", "summary.json"), "utf8"));
+  const [head, rule] = TABLE_HEAD.split("\n");
+  assert.strictEqual(cells(markdownRow(run)), cells(head));
+  assert.strictEqual(cells(rule), cells(head));
+  // Header order: ... | fidelity fails | delivered fidelity fails | ratio ...
+  const at = head.split("|").map((c) => c.trim()).indexOf("delivered fidelity fails clean/polished");
+  assert.ok(at > 0);
+  assert.strictEqual(markdownRow(run).split("|")[at].trim(), `${run.summary["fluent/clean"].deliveredFidelityFails}/${run.summary["fluent/polished"].deliveredFidelityFails}`);
+});
+
+test("markdownRow: a run scored before delivered fidelity existed says so, not 0", async () => {
+  const { markdownRow, TABLE_HEAD } = await load();
+  const dir = tmpdir();
+  const old = { ...COPY };
+  delete old.deliveredFidelityOk;
+  writeRun(dir, { id: "m", bytes: 2_000_000_000, s: old, wall: 1000 });
+  const run = JSON.parse(fs.readFileSync(path.join(dir, "m", "summary.json"), "utf8"));
+  const at = TABLE_HEAD.split("\n")[0].split("|").map((c) => c.trim()).indexOf("delivered fidelity fails clean/polished");
+  assert.strictEqual(markdownRow(run).split("|")[at].trim(), "–/–");
+});
+
 test("rescore re-scores saved runs from their raw outputs and keeps the timings", async () => {
   const { rescore } = await load();
   const dir = tmpdir();

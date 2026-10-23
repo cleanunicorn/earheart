@@ -517,6 +517,20 @@ again.
   preamble or code fence; no refusal; not empty; and no runaway (a `maxTokens`
   stop, which the app answers by delivering the raw transcript). Novel content
   words are reported alongside.
+- **Exact literals and delivered fidelity** (added after these runs, #292):
+  paths, flags and code identifiers must survive *case-sensitively*
+  (`src/Foo.ts` ≠ `src/foo.ts`, `getUserById` ≠ `getuserbyid`), as part of
+  fidelity; and a second verdict, **delivered fidelity**, holds the text after
+  the `stripStumbles` backstop to the critical and literal checks too, so a
+  correct reply that the backstop then corrupts (`src/um/parser.js` →
+  `src/ /parser.js`) fails it. Every saved run on this page was re-scored with
+  both from its raw output (`--rescore`, 64 corpus/style groups across `bench`,
+  `bench-locked`, `bench-locked2`, `bench-locked3` and `bench-rerun`): **no
+  fidelity verdict moved, and delivered fidelity equals fidelity in every
+  group.** That is because these corpora are prose: they hold no paths or
+  identifiers, so they never tested literal preservation at all. A technical
+  corpus (with `literals` annotated where recognition is ambiguous —
+  `scoreOutput` accepts them) is what would.
 - **Speed, on the CPU**: `getLlama({ gpu: false })` with no thread override —
   the app's own CPU path — which resolved to **12 threads** on this machine
   (`cpuMathCores` 12). Per clean: wall-clock from the prompt call to its result

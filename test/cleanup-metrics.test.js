@@ -31,6 +31,7 @@ const {
   nearestComparator,
   meetsBar,
   summarizeProbe,
+  literalTokens,
 } = require("../scripts/cleanup-metrics");
 const { FLUENT, SHORT, REPORTED } = require("../scripts/dictation-corpus");
 const { stripStumbles } = require("../main/util/stumble-strip");
@@ -393,4 +394,66 @@ test("speedEstimates prefers the locked pass, then the quietest, and takes the m
   ]);
   assert.strictEqual(e.from, "new");
   assert.strictEqual(e.min, 90);
+});
+
+/* ---- delivered fidelity and exact literals (#292) ---- */
+
+test("scoreOutput: a correct output the backstop corrupts fails delivered fidelity", () => {
+  const input = "Open src/um/parser.js.";
+  const s = scoreOutput({ input, output: input, corpus: "fluent" });
+  assert.strictEqual(s.fidelityOk, true, "the model returned it intact");
+  assert.strictEqual(s.delivered, "Open src/ /parser.js.");
+  assert.strictEqual(s.deliveredFidelityOk, false, "the user receives a broken path");
+  assert.ok(s.deliveredLiteralLost > 0 && s.deliveredCriticalLost > 0);
+});
+
+test("scoreOutput: a case change to a path or identifier fails fidelity", () => {
+  const s = scoreOutput({
+    input: "Update src/Foo.ts and call getUserById.",
+    output: "Update src/foo.ts and call getuserbyid.",
+    corpus: "fluent",
+  });
+  assert.strictEqual(s.criticalLost, 0, "the lowercased check can't see it");
+  assert.strictEqual(s.literalLost, 2);
+  assert.strictEqual(s.fidelityOk, false);
+  assert.strictEqual(s.deliveredFidelityOk, false);
+});
+
+test("scoreOutput: ordinary casing fixes and spoken code made literal still pass", () => {
+  const prose = scoreOutput({ input: "so the readme says hello world.", output: "So the README says hello world.", corpus: "fluent" });
+  assert.strictEqual(prose.literalLost, 0);
+  assert.strictEqual(prose.fidelityOk, true);
+  // The base prompt turns spoken code into code: a literal appears, none is lost.
+  const spoken = scoreOutput({ input: "call get user by id on the client.", output: "Call getUserById on the client.", corpus: "other" });
+  assert.strictEqual(spoken.literalLost, 0);
+  assert.strictEqual(spoken.deliveredLiteralLost, 0);
+});
+
+test("scoreOutput: annotated literals replace the heuristic", () => {
+  // "make" is ambiguous as a literal; a technical corpus item says it is one.
+  const input = "Run make test then deploy.";
+  const kept = scoreOutput({ input, output: "Run make test, then deploy.", corpus: "fluent", literals: ["make"] });
+  assert.strictEqual(kept.literalLost, 0);
+  const lost = scoreOutput({ input, output: "Run Make test, then deploy.", corpus: "fluent", literals: ["make"] });
+  assert.strictEqual(lost.literalLost, 1);
+  assert.strictEqual(lost.fidelityOk, false);
+});
+
+test("literalTokens: paths, flags and identifiers, never plain prose", () => {
+  assert.deepStrictEqual(
+    literalTokens("Run `npm test -- --watch` in ./src and ~/notes, see README.md, set max_tokens on MyClass and call fooBar()."),
+    ["--watch", "./src", "~/notes", "README.md", "max_tokens", "MyClass", "fooBar"]
+  );
+  assert.deepStrictEqual(literalTokens("Hello there, World. It's fine — not a / or a/ path."), []);
+});
+
+test("summarizeRuns: counts delivered fidelity failures, and says unknown for older saved runs", () => {
+  const ok = scoreOutput({ input: "Open src/um/parser.js.", output: "Open src/um/parser.js.", corpus: "fluent" });
+  const run = (score) => ({ corpus: "fluent", style: "clean", wallMs: 1, score });
+  const s = summarizeRuns([run(ok), run(ok)])["fluent/clean"];
+  assert.strictEqual(s.fidelityFails, 0);
+  assert.strictEqual(s.deliveredFidelityFails, 2);
+  const old = { ...ok };
+  delete old.deliveredFidelityOk;
+  assert.strictEqual(summarizeRuns([run(old)])["fluent/clean"].deliveredFidelityFails, null);
 });

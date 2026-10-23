@@ -1629,6 +1629,35 @@ app.whenReady().then(async () => {
         );
       }
 
+      // A plain Save whose own settings:changed rewrites the dictionary and
+      // output controls mid-save is still "Saved": blank lines, duplicates,
+      // padding and a removed word come back from the merge unchanged.
+      {
+        const beforeEdit = settings.get();
+        const { saveWin, run } = await openSaveWindow();
+        await run(`(() => {
+          const field = document.getElementById("cleanup-dictionary");
+          const kept = field.value.split("\\n").filter((line) => line.trim()).slice(1);
+          field.value = ["", "  Padded  ", "dupe", "dupe", ...kept, ""].join("\\n");
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+          document.querySelector('input[name="output-mode"]:not(:checked)').click();
+          document.getElementById("save").click();
+        })()`);
+        await savedThenClose(saveWin, "a dictionary and output edit never reported Saved");
+        check(
+          "a Save that rewrites the dictionary and output mode still says Saved",
+          savedJson().cleanup.dictionary.includes("Padded") && savedJson().cleanup.dictionary.includes("dupe"),
+          JSON.stringify(savedJson().cleanup.dictionary)
+        );
+        // Later checks read the output mode and dictionary; put them back.
+        const after = settings.get();
+        settings.save({
+          ...after,
+          output: beforeEdit.output,
+          cleanup: { ...after.cleanup, dictionary: beforeEdit.cleanup.dictionary },
+        });
+      }
+
       // An edit made while the save is in flight is not in what was saved:
       // Save must say so instead of "Saved", and disk keeps the sent value.
       {

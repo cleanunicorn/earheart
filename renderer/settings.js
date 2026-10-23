@@ -1063,8 +1063,10 @@ async function saveSettings() {
     // an edit made meanwhile is never vouched for by "Saved".
     const sent = formSnapshot();
     result = await earheart.invoke("settings:save", { settings: current, baseline });
+    // The Hugging Face add-model fields aren't settings: a Find versions
+    // lookup landing meanwhile changes nothing Save stores.
     const editedWhileSaving = [...formSnapshot()].some(
-      ([el, value]) => JSON.stringify(value) !== JSON.stringify(sent.get(el))
+      ([el, value]) => !/-hf-/.test(el.id) && JSON.stringify(value) !== JSON.stringify(sent.get(el))
     );
     current = result.settings;
     baseline = sharedBaseline(current);

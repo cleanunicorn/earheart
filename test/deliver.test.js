@@ -572,8 +572,9 @@ test("an empty read with only text formats is an unreadable clipboard, not a tak
 
 test("on Wayland the takeover check stands aside: an unfocused read can be stale", async (t) => {
   onPlatform(t, "linux");
-  const saved = { WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY, PATH: process.env.PATH };
+  const saved = { WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY, XDG_SESSION_TYPE: process.env.XDG_SESSION_TYPE, PATH: process.env.PATH };
   process.env.WAYLAND_DISPLAY = "wayland-0";
+  process.env.XDG_SESSION_TYPE = "wayland";
   process.env.PATH = "/earheart-test-bin";
   t.after(() => {
     for (const [k, v] of Object.entries(saved)) {
@@ -584,7 +585,8 @@ test("on Wayland the takeover check stands aside: an unfocused read can be stale
   const { deliver, state } = loadDeliver({ trusted: true, tools: ["wtype"] });
   const pending = deliver("Dictated agent prompt", { mode: "paste-copy", pasteDelayMs: 30 });
   setTimeout(() => { state.clip = { text: "what a stale read might show" }; }, 5);
-  assert.notStrictEqual((await pending).method, "clipboard-changed");
+  assert.strictEqual((await pending).method, "paste-copy");
+  assert.deepStrictEqual(state.execs, ["wtype"], "the paste went ahead, through wtype");
 });
 
 test("plain paste still restores a clipboard read back with CRLF", async (t) => {

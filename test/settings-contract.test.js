@@ -725,6 +725,11 @@ test("Save never closes Settings; the footer's Close button does", () => {
   assert.match(footer, /<button id="close">Close<\/button>\s*<button id="save" class="primary">Save<\/button>/);
   assert.match(js, /\$\("close"\)\.addEventListener\("click", \(\) => earheart\.invoke\("settings:close"\)\)/);
   assert.equal(js.match(/settings:close/g).length, 1, "only the Close button closes Settings");
+  // With the window staying open, a failed Save's clear-timer must not wipe
+  // the next Save's "Saved".
+  assert.match(save, /^async function saveSettings\(\) \{\n  const save = \$\("save-status"\);\n  clearTimeout\(saveStatusTimer\);/);
+  assert.match(save, /saveStatusTimer = setTimeout\(/);
+  assert.doesNotMatch(save.replace(/saveStatusTimer = setTimeout\(/g, ""), /\bsetTimeout\(/);
 });
 
 // The Performance limits: the HTML min/max are the ranges, but nothing binds

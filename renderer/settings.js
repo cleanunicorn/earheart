@@ -1029,8 +1029,13 @@ for (const event of ["input", "change", "click", "keydown", "keyup"]) {
 
 $("close").addEventListener("click", () => earheart.invoke("settings:close"));
 
+// The timer that clears a hotkey failure's message. Each Save cancels it, so
+// a failure's timer can't wipe the next Save's result.
+let saveStatusTimer;
+
 async function saveSettings() {
   const save = $("save-status");
+  clearTimeout(saveStatusTimer);
   let result;
   let pauseResult;
   let discardResult;
@@ -1095,7 +1100,7 @@ async function saveSettings() {
   save.textContent = hotkeySaveMessage(result.hotkey, pauseResult, discardResult, correctResult);
   save.className = "status err";
   renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult });
-  setTimeout(() => {
+  saveStatusTimer = setTimeout(() => {
     save.textContent = "";
   }, 4000);
 }

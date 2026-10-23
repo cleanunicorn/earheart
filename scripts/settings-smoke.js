@@ -112,9 +112,17 @@ app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
 app.on("window-all-closed", () => {});
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Each read is bounded too: an executeJavaScript whose window is destroyed
+// mid-call never settles, and would otherwise hang the run past every check.
 async function waitFor(read, message) {
   for (let attempt = 0; attempt < 100; attempt++) {
-    const value = await read();
+    let timer;
+    const value = await Promise.race([
+      read(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${message} (a read never settled)`)), 10000);
+      }),
+    ]).finally(() => clearTimeout(timer));
     if (value) return value;
     await sleep(10);
   }
@@ -129,7 +137,17 @@ async function savedThenClose(win, message) {
     () => !win.isDestroyed() && run(`document.getElementById("save-status").className === "status ok"`),
     message
   );
-  await run(`document.getElementById("close").click(); true`);
+  await clickClose(win);
+}
+
+// Click the footer's Close on a later task. Clicked inline, settings:close can
+// reach main ahead of executeJavaScript's own reply, destroy the window, and
+// leave that reply — and the smoke — waiting forever.
+async function clickClose(win) {
+  await win.webContents.executeJavaScript(
+    `setTimeout(() => document.getElementById("close").click()); true`,
+    true
+  );
   await waitFor(() => win.isDestroyed(), "Close did not close Settings");
 }
 
@@ -1549,9 +1567,12 @@ app.whenReady().then(async () => {
         await sleep(100);
         const kept = await run(`document.getElementById("save-status").textContent`);
         check("a click or key that edits nothing keeps Saved", kept === "Saved", JSON.stringify(kept));
+        // Step away from whichever end of the range the value sits at, so
+        // collect()'s clamp can't undo the edit.
         await run(`(() => {
           const field = document.getElementById("max-seconds");
-          field.value = String(Number(field.value) + 1);
+          window.__maxStep = Number(field.value) < Number(field.max) ? 1 : -1;
+          field.value = String(Number(field.value) + window.__maxStep);
           field.dispatchEvent(new Event("input", { bubbles: true }));
         })()`);
         const edited = await waitFor(
@@ -1563,7 +1584,7 @@ app.whenReady().then(async () => {
         // it must clear "Saved" too.
         await run(`(() => {
           const field = document.getElementById("max-seconds");
-          field.value = String(Number(field.value) - 1);
+          field.value = String(Number(field.value) - window.__maxStep);
           document.getElementById("save").click();
         })()`);
         await waitFor(
@@ -1584,8 +1605,7 @@ app.whenReady().then(async () => {
           "a captured hotkey did not clear Saved"
         );
         check("capturing a hotkey after a Save clears Saved", /Alt\+Shift\+F9$/.test(captured), JSON.stringify(captured));
-        await run(`document.getElementById("close").click(); true`);
-        await waitFor(() => saveWin.isDestroyed(), "Close did not close Settings");
+        await clickClose(saveWin);
         check(
           "Close closes Settings without saving the edit",
           saveWin.isDestroyed() && saveCount === savesBefore + 2 &&

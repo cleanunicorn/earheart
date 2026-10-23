@@ -715,6 +715,18 @@ test("Save writes the hotkey rows through the shared status renderer", () => {
   assert.doesNotMatch(save, /hotkeyStatus\.textContent|pauseHotkeyStatus\.textContent/);
 });
 
+// #298: a window that closed itself after Save read as a crash. Save must keep
+// Settings open; only the footer's Close button invokes settings:close.
+test("Save never closes Settings; the footer's Close button does", () => {
+  const save = js.slice(js.indexOf("async function saveSettings()"), js.indexOf("/* ---------- connection tests"));
+  assert.ok(save.length > 0, "saveSettings must exist");
+  assert.doesNotMatch(save, /settings:close/, "Save must not close the window");
+  const footer = html.match(/<footer>[\s\S]*?<\/footer>/)?.[0] ?? "";
+  assert.match(footer, /<button id="close">Close<\/button>\s*<button id="save" class="primary">Save<\/button>/);
+  assert.match(js, /\$\("close"\)\.addEventListener\("click", \(\) => earheart\.invoke\("settings:close"\)\)/);
+  assert.equal(js.match(/settings:close/g).length, 1, "only the Close button closes Settings");
+});
+
 // The Performance limits: the HTML min/max are the ranges, but nothing binds
 // collect() to them (there is no <form>/checkValidity), so collect() must clamp
 // itself. Runs the real collect() against stub elements carrying the markup's

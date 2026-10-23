@@ -929,9 +929,8 @@ function hotkeySaveMessage(hotkeyResult, pauseResult, discardResult, correctResu
 }
 
 // What Save stored differently from what was typed in the Performance limits
-// (collect() and main both clamp to the fields' ranges), one phrase each. A
-// clean save closes the window, so without this a typed 9999 would quietly
-// become 240.
+// (collect() and main both clamp to the fields' ranges), one phrase each.
+// Without this a typed 9999 would quietly become 240.
 function limitAdjustments(saved) {
   const fields = [
     { id: "max-seconds", label: "Max dictation length", unit: "s", value: saved.audio?.maxRecordingSeconds },
@@ -1001,6 +1000,17 @@ saveButton.addEventListener("click", async () => {
   }
 });
 
+// A "Saved" result describes the form as it was saved; once the user edits it,
+// drop the message so it never vouches for unsaved changes.
+for (const event of ["input", "change"]) {
+  panelHost.addEventListener(event, () => {
+    const save = $("save-status");
+    if (save.className === "status ok") save.textContent = "";
+  });
+}
+
+$("close").addEventListener("click", () => earheart.invoke("settings:close"));
+
 async function saveSettings() {
   const save = $("save-status");
   let result;
@@ -1042,20 +1052,14 @@ async function saveSettings() {
     correctResult = result.correctHotkey ?? { ok: true };
     const hotkeysOk = result.hotkey.ok && pauseResult.ok && discardResult.ok && correctResult.ok;
     const hotkeyStatus = { hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult };
-    if (hotkeysOk && adjusted.length) {
-      // Saved, but not as typed: stay open long enough to say so.
-      save.textContent = `Saved — ${adjusted.join("; ")}`;
+    if (hotkeysOk) {
+      // Save never closes the window (#298): a window that vanished on its own
+      // read as a crash. "Saved" stays until the form is edited again; Close
+      // dismisses the window.
+      save.textContent = adjusted.length ? `Saved — ${adjusted.join("; ")}` : "Saved";
       save.className = "status ok";
       renderHotkeyStatus(hotkeyStatus);
       saveButton.disabled = false;
-      return;
-    }
-    if (hotkeysOk) {
-      // Clean save — close the window so the user doesn't have to dismiss it.
-      save.textContent = "Saved";
-      save.className = "status ok";
-      renderHotkeyStatus(hotkeyStatus);
-      earheart.invoke("settings:close");
       return;
     }
   } catch (err) {

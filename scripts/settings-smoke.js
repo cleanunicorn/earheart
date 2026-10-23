@@ -48,7 +48,7 @@
 //      repo) shows discovery's explanation as an error and offers no version
 //      to add.
 //  13. Save clamps the Performance limits (max dictation length, idle unload)
-//      to the fields' own ranges, and says so instead of closing.
+//      to the fields' own ranges, and says so.
 //  14. A microphone chosen while permission or device enumeration is pending
 //      survives completion (options and labels still refresh), and Save
 //      writes that choice to disk; an untouched saved microphone stays put.
@@ -56,7 +56,9 @@
 //      (with the row's progress), saves only once it is installed, never saves
 //      or says "Saved" when the download fails or is cancelled, starts no
 //      second transfer for repeated clicks or a Download already running, and
-//      downloads nothing when the selection is already installed.
+//      downloads nothing when the selection is already installed. Every
+//      Save keeps the window open and says "Saved"; editing the form clears
+//      that, and only the footer's Close closes the window (#298).
 //  15. Each API key field says how the key is stored, matching what real
 //      safeStorage reports after `ready`, and a saved key reaches disk as
 //      ciphertext that decrypts back to it (secure storage) or, without it
@@ -117,6 +119,18 @@ async function waitFor(read, message) {
     await sleep(10);
   }
   throw new Error(message);
+}
+
+// Save keeps Settings open (#298): wait for its "Saved", then dismiss the
+// window through the footer's Close button, as a user would.
+async function savedThenClose(win, message) {
+  const run = (code) => win.webContents.executeJavaScript(code, true);
+  await waitFor(
+    () => !win.isDestroyed() && run(`document.getElementById("save-status").className === "status ok"`),
+    message
+  );
+  await run(`document.getElementById("close").click(); true`);
+  await waitFor(() => win.isDestroyed(), "Close did not close Settings");
 }
 
 const checks = [];
@@ -951,8 +965,8 @@ app.whenReady().then(async () => {
     }
 
     // 13. The Performance limits clamp on the real Save: out-of-range entries
-    // reach disk as the field's own min/max, not as typed (#210), and the
-    // window stays open to say so. Last, since it saves the whole form.
+    // reach disk as the field's own min/max, not as typed (#210), and Save
+    // says so. Last, since it saves the whole form.
     await js(`(() => {
       document.getElementById("max-seconds").value = "-5";
       document.getElementById("idle-unload").value = "9999";
@@ -1161,7 +1175,7 @@ app.whenReady().then(async () => {
     // survives completion and is what Save writes to disk. Each case reopens
     // Settings on a saved device, holds the real loadMicrophones() at one
     // await, makes the choice through the real <select>, then releases.
-    // Runs last: a clean Save closes the window, and the cases rewrite the
+    // Runs last: each case opens its own window, and the cases rewrite the
     // profile's microphone.
     windows.closeSettings();
     await waitFor(() => win.isDestroyed(), "settings window did not close");
@@ -1250,7 +1264,7 @@ app.whenReady().then(async () => {
         })()`));
         if (save) {
           await run(`document.getElementById("save").click()`);
-          await waitFor(() => raceWin.isDestroyed(), "a clean Save did not close Settings");
+          await savedThenClose(raceWin, "Save never reported Saved");
           state.persisted = JSON.parse(
             fs.readFileSync(path.join(userData, "settings.json"), "utf8")
           ).audio.deviceId;
@@ -1312,8 +1326,9 @@ app.whenReady().then(async () => {
     );
 
     // 16. Save downloads a selected built-in model that isn't installed, and
-    // persists only after it is. Each case opens a fresh window (a clean Save
-    // closes it) and holds the fake engine's transfer open.
+    // persists only after it is. Each case opens a fresh window (and closes it
+    // with Close once Save says "Saved") and holds the fake engine's transfer
+    // open.
     const savedJson = () => JSON.parse(fs.readFileSync(path.join(userData, "settings.json"), "utf8"));
     const notInstalled = (kind) => registry.listModels(kind)
       .map((m) => m.id)
@@ -1378,7 +1393,7 @@ app.whenReady().then(async () => {
           JSON.stringify(during)
         );
         downloads.get(`stt:${saveSttModel}`).resolve();
-        await waitFor(() => saveWin.isDestroyed(), "Save did not close Settings after the download");
+        await savedThenClose(saveWin, "Save did not report Saved after the download");
         check(
           "Save persists the model once it is downloaded, once, after repeated clicks",
           savedJson().stt.builtin.model === saveSttModel &&
@@ -1439,7 +1454,7 @@ app.whenReady().then(async () => {
         await sleep(150);
         const joined = { calls: downloadCalls.slice(callsBefore), saves: saveCount - savesBefore, open: !saveWin.isDestroyed() };
         downloads.get(`cleanup:${saveCleanupModel}`).resolve();
-        await waitFor(() => saveWin.isDestroyed(), "Save did not close Settings after the running download finished");
+        await savedThenClose(saveWin, "Save did not report Saved after the running download finished");
         check(
           "Save during a running Download waits for it instead of starting another",
           joined.calls.length === 1 && joined.saves === 0 && joined.open &&
@@ -1492,7 +1507,7 @@ app.whenReady().then(async () => {
         await run(`document.getElementById("save").click(); true`);
         await waitFor(() => downloadCalls.length > callsBefore, "the retried Save did not start cleanup");
         downloads.get(`cleanup:${cleanupSwitched}`).resolve();
-        await waitFor(() => saveWin.isDestroyed(), "the retried Save did not close Settings");
+        await savedThenClose(saveWin, "the retried Save did not report Saved");
         check(
           "the next Save downloads only what is still missing and saves both once",
           downloadCalls.slice(callsBefore).join() === `cleanup:${cleanupSwitched}` &&
@@ -1502,17 +1517,42 @@ app.whenReady().then(async () => {
         );
       }
 
-      // Installed selection: Save behaves as before.
+      // Installed selection: Save downloads nothing, keeps the window open
+      // and says "Saved" (#298); an edit clears that; Close closes the window.
       {
-        const { saveWin, run } = await openSaveWindow();
+        const { saveWin, run, state } = await openSaveWindow();
         const callsBefore = downloadCalls.length;
         const savesBefore = saveCount;
         await run(`document.getElementById("save").click(); true`);
-        await waitFor(() => saveWin.isDestroyed(), "a clean Save with installed models did not close Settings");
+        const saved = await waitFor(
+          () => state("stt").then((s) => s.saveClass === "status ok" && s),
+          "a clean Save with installed models never reported Saved"
+        );
+        await sleep(300);
+        const open = !saveWin.isDestroyed();
         check(
           "Save with downloaded models downloads nothing and saves once",
           downloadCalls.length === callsBefore && saveCount === savesBefore + 1,
           JSON.stringify({ calls: downloadCalls.slice(callsBefore), saves: saveCount - savesBefore })
+        );
+        check(
+          "a clean Save keeps Settings open and says Saved",
+          open && saved.save === "Saved" && !saved.saveDisabled,
+          JSON.stringify({ open, saved })
+        );
+        const edited = await run(`(() => {
+          const field = document.getElementById("max-seconds");
+          field.value = String(Number(field.value) + 1);
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+          return document.getElementById("save-status").textContent;
+        })()`);
+        check("editing the form after a Save clears Saved", edited === "", JSON.stringify(edited));
+        await run(`document.getElementById("close").click(); true`);
+        await waitFor(() => saveWin.isDestroyed(), "Close did not close Settings");
+        check(
+          "Close closes Settings without saving the edit",
+          saveWin.isDestroyed() && saveCount === savesBefore + 1,
+          JSON.stringify({ saves: saveCount - savesBefore })
         );
       }
     } finally {

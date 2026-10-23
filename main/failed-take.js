@@ -8,8 +8,8 @@
 // releases it, and nothing is sent anywhere: a retry runs through whatever
 // engine the user has configured at that moment.
 //
-// Only one take is held. A newer failure replaces it, and so does starting a
-// new dictation (the user chose to speak again). Retry takes it out before
+// Only one take is held. A newer failure replaces it, and so does the audio
+// of a new dictation (the user chose to speak again). Retry takes it out before
 // running, so two retries can't run on the same audio; a retry that fails at
 // transcription keeps it again, with a fresh lifetime. The memory bound is one
 // recording: at most the max dictation length of 16 kHz 16-bit mono WAV

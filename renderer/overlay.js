@@ -1060,6 +1060,8 @@ earheart.on("pipeline:status", ({ status, detail }) => {
         const minutes = Math.max(1, Math.round(detail.failedTake.expiresInSec / 60));
         takeNote.textContent = `Recording kept for ${minutes} min`;
         takeActions.hidden = false;
+        // ✕ only dismisses the card; next to a Discard pill, say what stays.
+        cancelBtn.title = "Dismiss — the recording stays in the tray menu";
         syncOverlayHeight();
       }
       break;
@@ -1075,6 +1077,13 @@ takeRetry.addEventListener("click", () => {
 takeDiscard.addEventListener("click", () => {
   takeActions.hidden = true;
   earheart.send("pipeline:discard-take");
+});
+// Released elsewhere (tray, CLI, expiry, a new dictation): stop offering it.
+earheart.on("pipeline:take-released", () => {
+  if (takeActions.hidden) return;
+  takeActions.hidden = true;
+  cancelBtn.title = "Dismiss";
+  syncOverlayHeight();
 });
 
 // The update prompt. The main process decides WHEN it appears (never over a

@@ -82,7 +82,6 @@ function cardStatus(win) {
   );
 }
 
-// Poll until the card shows `want`; resolves with the time it was observed.
 // Poll `read` until it is truthy, failing by name after `timeoutMs`.
 async function waitFor(read, message, timeoutMs = 5000) {
   const deadline = Date.now() + timeoutMs;
@@ -92,6 +91,7 @@ async function waitFor(read, message, timeoutMs = 5000) {
   }
 }
 
+// Poll until the card shows `want`; resolves with the time it was observed.
 async function waitForStatus(win, want, timeoutMs = 15000) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -872,8 +872,26 @@ app.whenReady().then(async () => {
     await win.webContents.executeJavaScript('document.getElementById("take-discard").click(); true');
     await waitFor(() => takeSends.length === 2, "Discard never reached main");
     check("Discard sends pipeline:discard-take", takeSends[1] === "discard");
+    // Released elsewhere (tray, expiry): a card still showing the row drops it.
+    win.webContents.send("pipeline:status", {
+      status: "error",
+      detail: { message: "STT request timed out", failedTake: { expiresInSec: 600 } },
+    });
+    await waitFor(() => takeUi().then((t) => t.visible), "the take row didn't come back");
+    win.webContents.send("pipeline:take-released");
+    await waitFor(() => takeUi().then((t) => !t.visible), "a released take was still offered");
+    check("a take released elsewhere stops being offered", true);
+    // An error with nothing held, after the row was showing, offers no retry.
+    win.webContents.send("pipeline:status", {
+      status: "error",
+      detail: { message: "STT request timed out", failedTake: { expiresInSec: 600 } },
+    });
+    await waitFor(() => takeUi().then((t) => t.visible), "the take row didn't come back");
     win.webContents.send("pipeline:status", { status: "error", detail: { message: "paste tool missing" } });
-    await waitForStatus(win, "error");
+    await waitFor(
+      () => win.webContents.executeJavaScript('document.getElementById("detail-text").textContent === "paste tool missing"'),
+      "the plain error never showed"
+    );
     check("an error with nothing held offers no retry", !(await takeUi()).visible);
     ipcMain.removeListener("pipeline:retry", onTakeRetry);
     ipcMain.removeListener("pipeline:discard-take", onTakeDiscard);

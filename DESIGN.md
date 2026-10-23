@@ -507,7 +507,11 @@ corners anywhere.
   never leave the row; the row never reflows and no key ever jumps under the
   cursor.
 
-### Pills — overlay (update-prompt text actions)
+### Pills — overlay (update-prompt and failed-take text actions)
+The failed-take row (a failed transcription's recording, kept for a retry)
+sits above the control row like the raw-reason line: a Dim Text 12px note
+("Recording kept for 10 min") pushed left, then a primary **Retry
+transcription** and a quiet **Discard**.
 - **Shape:** fully rounded, 26px tall, 0 11px padding, 12px text.
 - **Primary:** filled Primary Text with a Bar Ink label; pure white on hover.
 - **Quiet:** transparent with a Dim Text label (weight 500); hover wash +

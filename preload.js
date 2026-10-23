@@ -23,6 +23,7 @@ const ROLES = {
       "pipeline:status",
       "pipeline:partial",
       "pipeline:progress",
+      "pipeline:take-released",
       "overlay:show",
       "overlay:hide",
       "updates:prompt",

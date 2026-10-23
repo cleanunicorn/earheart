@@ -268,6 +268,9 @@ function dictationRig({
   };
   let snapshot = null;
   let lastStart = null;
+  // Set by overlayLoading(): the next overlay is still loading, and this gets
+  // its did-finish-load listener.
+  let onLoad = null;
   const handlers = {};
   const cfg = {
     stt: { engine, builtin: { model: "stt-model" }, language: "", livePreview: { enabled: display } },
@@ -323,7 +326,13 @@ function dictationRig({
       "./windows": {
         createOverlay: () => {
           log.overlaysCreated += 1;
-          return { webContents: { isLoading: () => false } };
+          const loading = onLoad;
+          return {
+            webContents: {
+              isLoading: () => !!loading,
+              once: (event, fn) => event === "did-finish-load" && loading(fn),
+            },
+          };
         },
         openSettings: () => {
           log.settingsOpened += 1;
@@ -405,6 +414,7 @@ function dictationRig({
     liveTranscribe: (...a) => liveDeps.runTranscribe(...a),
     // What the live preview would hand the next final pass.
     setSnapshot: (snap) => (snapshot = snap),
+    overlayLoading: (fn) => (onLoad = fn),
     liveCleanupError: (...a) => liveDeps.onCleanupError(...a),
   };
 }
@@ -1554,13 +1564,6 @@ test("pipeline: the failure card offers the held take, and the notice says how t
   assert.deepStrictEqual(pasteFails.log.failedTakeCards, []);
 });
 
-test("pipeline: a cancelled dictation is never held for retry", async () => {
-  const rig = dictationRig({ engine: "remote", transcribe: async () => "unused" });
-  rig.pipeline.toggle();
-  rig.pipeline.cancel();
-  assert.strictEqual(rig.pipeline.getFailedTake(), null);
-});
-
 test("pipeline: cancelling a retry mid-transcription releases the take", async () => {
   let release;
   const stt = flakyStt();
@@ -1584,14 +1587,38 @@ test("pipeline: cancelling a retry mid-transcription releases the take", async (
   assert.deepStrictEqual(rig.log.history, []);
 });
 
-test("pipeline: starting a new dictation lets the failed take go", async () => {
+test("pipeline: a new dictation's audio lets the failed take go, but pressing the hotkey alone doesn't", async () => {
   const stt = flakyStt();
   const rig = dictationRig({ engine: "remote", transcribe: stt.transcribe });
   await rig.dictate(speechWav(5));
-  assert.ok(rig.pipeline.getFailedTake());
-  rig.pipeline.toggle();
+  rig.pipeline.toggle(); // a mic check, or a mis-press...
+  assert.strictEqual(rig.pipeline.retryFailedTake(), false, "no retry while recording");
+  rig.pipeline.cancel(); // ...thrown away
+  assert.ok(rig.pipeline.getFailedTake(), "kept: nothing new was said");
+  stt.down = false;
+  await rig.dictate(speechWav(3)); // speaking again
   assert.strictEqual(rig.pipeline.getFailedTake(), null);
-  assert.strictEqual(rig.pipeline.retryFailedTake(), false, "no retry while recording either");
+  assert.deepStrictEqual(rig.log.delivered, ["the whole explanation"]);
+});
+
+test("pipeline: a retry waiting on a reloading overlay keeps the take until it runs", async () => {
+  const stt = flakyStt();
+  const rig = dictationRig({ engine: "remote", transcribe: stt.transcribe });
+  await rig.dictate(speechWav(5));
+  let finishLoad;
+  rig.overlayLoading((fn) => { finishLoad = fn; });
+  assert.strictEqual(rig.pipeline.retryFailedTake(), true);
+  assert.ok(rig.pipeline.getFailedTake(), "still held while the overlay loads");
+  assert.strictEqual(rig.pipeline.retryFailedTake(), false, "one retry at a time");
+  // Superseded: the user starts dictating before the overlay is back.
+  rig.overlayLoading(null);
+  rig.pipeline.toggle();
+  finishLoad();
+  assert.ok(rig.pipeline.getFailedTake(), "a superseded retry didn't eat the recording");
+  rig.pipeline.cancel();
+  stt.down = false;
+  assert.strictEqual(await retried(rig), true);
+  assert.deepStrictEqual(rig.log.delivered, ["the whole explanation"]);
 });
 
 test("pipeline: discard releases the held take, from the overlay or earheart --discard", async () => {

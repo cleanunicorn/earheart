@@ -48,6 +48,9 @@ const stateListeners = new Set();
 const failedTakeListeners = new Set();
 const failedTake = createFailedTake({
   onChange: (info) => {
+    // A card still offering Retry (an update prompt can pin it past the
+    // expiry) must stop offering what's gone.
+    if (!info) windows.sendToOverlay("pipeline:take-released");
     for (const listener of failedTakeListeners) listener(info);
   },
 });
@@ -494,14 +497,21 @@ function discard() {
 // the user may have restored the service or switched engines meanwhile. A
 // fresh session: whatever the failed one left behind can't touch this run, and
 // starting a new dictation while it waits for the overlay supersedes it.
+//
+// The take stays held (and offered in the tray) until the run really starts:
+// waiting for a reloading overlay, or being superseded by a new dictation
+// meanwhile, must not cost the recording.
+let retryPending = null; // session id of a retry waiting for the overlay
 function retryFailedTake() {
-  if (state !== "idle") return false;
-  const wav = failedTake.take();
-  if (!wav) return false;
+  if (state !== "idle" || !failedTake.info() || retryPending === session) return false;
   const sid = ++session;
+  retryPending = sid;
   const win = windows.createOverlay();
   const begin = () => {
-    if (session !== sid) return;
+    if (retryPending === sid) retryPending = null;
+    if (session !== sid || state !== "idle") return;
+    const wav = failedTake.take();
+    if (!wav) return;
     windows.showOverlay();
     process(sid, wav, { retry: true });
   };
@@ -538,8 +548,6 @@ function startRecording() {
     setupNotifier.show(sttNotReadyNotice(readiness), { critical: true });
     return;
   }
-  // Speaking again supersedes a failed take held for retry.
-  failedTake.discard();
   const sid = ++session;
   setState("recording");
   const liveOn = cfg.stt.engine === "builtin" && cfg.stt.livePreview?.enabled;
@@ -774,6 +782,10 @@ function init({ isDownloading = () => false } = {}) {
   isModelDownloading = isDownloading;
   ipcMain.on("audio:captured", (event, { sid, wav } = {}) => {
     if (sid !== session || state !== "recording") return;
+    // Speaking again supersedes a failed take held for retry — once there is
+    // new audio, not when the hotkey is pressed: a mic check, a mis-press or a
+    // cancelled take must not cost the recording.
+    failedTake.discard();
     process(sid, wav);
   });
 

@@ -429,6 +429,27 @@ test("scoreOutput: ordinary casing fixes and spoken code made literal still pass
   assert.strictEqual(spoken.deliveredLiteralLost, 0);
 });
 
+test("scoreOutput: a dotfile is a literal, case and all", () => {
+  const s = scoreOutput({ input: "Open .env and check the settings.", output: "Open .ENV and check the settings.", corpus: "fluent" });
+  assert.strictEqual(s.literalLost, 1);
+  assert.strictEqual(s.fidelityOk, false);
+});
+
+test("scoreOutput: annotated literals match exactly, spaces and punctuation included", () => {
+  const score = (input, output, literals) => scoreOutput({ input, output, corpus: "fluent", literals }).literalLost;
+  const same = "Run npm run build, then foo() with C++ and @types/node.";
+  assert.strictEqual(score(same, same, ["npm run build", "foo()", "C++", "@types/node"]), 0);
+  assert.strictEqual(score(same, "Run npm build, then foo() with C++ and @types/node.", ["npm run build"]), 1);
+  // Not inside a longer word, and as often as listed.
+  assert.strictEqual(score("Run make twice: make, make.", "Run remake twice: make.", ["make", "make"]), 1);
+});
+
+test("literalTokens: prose that only looks like a path stays prose", () => {
+  assert.deepStrictEqual(literalTokens("See e.g. the u.s. office at 10 a.m. and/or yes/no, version 1.2.3 and v2.0."), []);
+  const s = scoreOutput({ input: "See e.g. the u.s. office.", output: "See E.g. the U.S. office.", corpus: "fluent" });
+  assert.strictEqual(s.literalLost, 0, "a casing fix to an abbreviation isn't a lost literal");
+});
+
 test("scoreOutput: annotated literals replace the heuristic", () => {
   // "make" is ambiguous as a literal; a technical corpus item says it is one.
   const input = "Run make test then deploy.";
@@ -455,5 +476,8 @@ test("summarizeRuns: counts delivered fidelity failures, and says unknown for ol
   assert.strictEqual(s.deliveredFidelityFails, 2);
   const old = { ...ok };
   delete old.deliveredFidelityOk;
-  assert.strictEqual(summarizeRuns([run(old)])["fluent/clean"].deliveredFidelityFails, null);
+  delete old.literalLost;
+  const mixed = summarizeRuns([run(old), run(ok)])["fluent/clean"];
+  assert.strictEqual(mixed.deliveredFidelityFails, null);
+  assert.strictEqual(mixed.literalLost, null, "unknown for a group holding older rows, not 0");
 });

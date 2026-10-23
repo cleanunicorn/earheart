@@ -529,8 +529,9 @@ again.
   fidelity verdict moved, and delivered fidelity equals fidelity in every
   group.** That is because these corpora are prose: they hold no paths or
   identifiers, so they never tested literal preservation at all. A technical
-  corpus (with `literals` annotated where recognition is ambiguous —
-  `scoreOutput` accepts them) is what would.
+  corpus is what would: a corpus item can be `{ text, literals }` to list its
+  literals where recognition is ambiguous (`npm run build`, `foo()`), and the
+  benchmark scores those exactly.
 - **Speed, on the CPU**: `getLlama({ gpu: false })` with no thread override —
   the app's own CPU path — which resolved to **12 threads** on this machine
   (`cpuMathCores` 12). Per clean: wall-clock from the prompt call to its result

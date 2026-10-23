@@ -133,6 +133,18 @@ test("plan: FLUENT under clean + polished, REPORTED under clean, every seed", as
   assert.strictEqual(plan({ corpora: ["fluent", "short"], seeds: [1], gpu: false }).length, 2 + 12);
 });
 
+test("plan: a corpus item can list its literals, and they reach the scorer", async (t) => {
+  const { plan } = await load();
+  const { SHORT } = require("../scripts/dictation-corpus");
+  SHORT.push({ text: "Run make test then deploy.", literals: ["make test"] });
+  t.after(() => SHORT.pop());
+  const last = plan({ corpora: ["short"], seeds: [1], gpu: false }).at(-1);
+  assert.strictEqual(last.input, "Run make test then deploy.");
+  assert.deepStrictEqual(last.literals, ["make test"]);
+  // A plain string item has none, so the heuristic decides.
+  assert.strictEqual(plan({ corpora: ["short"], seeds: [1], gpu: false })[0].literals, undefined);
+});
+
 test("plan: the GPU pass is FLUENT/clean only", async () => {
   const { plan } = await load();
   const turns = plan({ corpora: ["fluent", "reported", "short"], seeds: [1, 2, 3], gpu: true });

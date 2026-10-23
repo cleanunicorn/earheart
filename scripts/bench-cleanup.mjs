@@ -192,8 +192,9 @@ function plan(opts) {
     if (opts.gpu && corpus !== "fluent") continue;
     for (const style of styles) {
       const { systemPrompt, sampling } = resolveCleanup({ ...DEFAULTS.cleanup, style });
-      CORPORA[corpus].forEach((input, index) => {
-        for (const seed of opts.seeds) turns.push({ corpus, style, index, seed, input, systemPrompt, sampling });
+      CORPORA[corpus].forEach((item, index) => {
+        const { text: input, literals } = metrics.corpusItem(item);
+        for (const seed of opts.seeds) turns.push({ corpus, style, index, seed, input, literals, systemPrompt, sampling });
       });
     }
   }
@@ -298,6 +299,7 @@ async function benchModel(modelPath, opts, mod, now = () => performance.now()) {
     const r = await clean(t);
     const score = metrics.scoreOutput({
       input: t.input,
+      literals: t.literals,
       output: r.output,
       stopReason: r.stopReason,
       systemPrompt: t.systemPrompt,
@@ -393,7 +395,7 @@ function rescore(dir) {
       const raw = path.join(d, "raw", `${row.corpus}-${row.style}-${row.index}-s${row.seed}.txt`);
       const { systemPrompt } = resolveCleanup({ ...DEFAULTS.cleanup, style: row.style });
       const score = metrics.scoreOutput({
-        input: CORPORA[row.corpus][row.index],
+        ...(({ text, literals }) => ({ input: text, literals }))(metrics.corpusItem(CORPORA[row.corpus][row.index])),
         output: fs.readFileSync(raw, "utf8"),
         stopReason: row.stopReason,
         systemPrompt,

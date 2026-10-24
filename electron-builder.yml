@@ -6,10 +6,11 @@ directories:
   output: dist
   buildResources: build
 
-# Where `electron-builder --publish` uploads installers. release.yml pre-creates
-# a draft release for the tag; electron-builder uploads into that draft, and
-# release.yml's publish-release job makes it live once every platform has
-# uploaded. releaseType only applies if no release exists for the tag.
+# The update feed the app reads. release.yml builds with --publish never, which
+# still writes latest*.yml and the bundled app-update.yml from this block; it
+# then verifies the packaged app and uploads the installers into the tag's
+# draft release itself, and publish-release makes it live once every platform
+# has uploaded. releaseType only applies if electron-builder creates a release.
 publish:
   provider: github
   releaseType: release

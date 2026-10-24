@@ -152,6 +152,79 @@ function criticalRetention(input, output) {
   return { expected: expected.length, lost: Math.round((1 - r) * expected.length) };
 }
 
+// Literals the base prompt says to reproduce exactly — paths and file names,
+// flags, and code identifiers — compared CASE-SENSITIVELY: src/Foo.ts and
+// src/foo.ts are different files, getUserById and getuserbyid different
+// names (#292). criticalTokens lowercases everything, so it can't see that.
+// Plain prose is never a literal, so ordinary casing fixes don't count, and
+// spoken code turned into a literal ("get user by id" -> getUserById) only
+// adds one, which recall doesn't penalize.
+// Every whitespace token, shed of quotes, backticks and sentence punctuation
+// around it, but keeping a leading dash (a flag) and the characters inside a
+// path.
+function bareTokens(text) {
+  return text
+    .replace(/’/g, "'")
+    .split(/\s+/)
+    .map((raw) => raw.replace(/^[^\p{L}\p{N}.\-/_~]+|[^\p{L}\p{N}_/]+$/gu, ""))
+    .filter(Boolean);
+}
+
+// Prose that looks like a path: dotted abbreviations (the trailing dot is
+// already shed) and slash pairs ("and/or"). Two single letters are named, not
+// matched by shape: x.c and a.h are C files, and must keep their case.
+const ABBREVIATION = /^(?:(?:\p{L}\.){2,}\p{L}|e\.g|i\.e|a\.m|p\.m|u\.s|u\.k|e\.u|n\.b|p\.s|q\.v|c\.f|v\.s)$/iu;
+const PROSE_SLASH = /^(?:and\/or|either\/or|yes\/no|he\/she|his\/her|him\/her|s\/he|w\/o|n\/a)$/i;
+
+function literalTokens(text) {
+  const out = [];
+  for (const t of bareTokens(text)) {
+    if (ABBREVIATION.test(t) || PROSE_SLASH.test(t)) continue;
+    // A directory path, a file name with an extension that starts with a
+    // letter (not a version like 1.2.3), or a dotfile like .env.
+    const path =
+      /[\p{L}\p{N}_][/\\][\p{L}\p{N}_]/u.test(t) ||
+      /^(?:\.{1,2}|~)?\/[\p{L}\p{N}_]/u.test(t) ||
+      /[\p{L}\p{N}_-]\.[A-Za-z][A-Za-z0-9]*$/u.test(t) ||
+      /^\.[\p{L}_][\p{L}\p{N}_.-]*$/u.test(t);
+    const flag = /^--?[A-Za-z]/.test(t);
+    const camel = /\p{Ll}\p{Lu}/u.test(t) || /^\p{Lu}\p{Ll}+\p{Lu}/u.test(t);
+    const snake = /[\p{L}\p{N}]_[\p{L}\p{N}]/u.test(t);
+    if (path || flag || camel || snake) out.push(t);
+  }
+  return out;
+}
+
+// Occurrences of `literal` in `text`, exactly, not inside a longer word or
+// hyphenated name (make in make-test, --force in ---force) — literals may hold
+// spaces or end in punctuation ("npm run build", foo(), C++).
+function countLiteral(text, literal) {
+  const escaped = literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(?<![\\p{L}\\p{N}_-])${escaped}(?![\\p{L}\\p{N}_-])`, "gu");
+  return (text.match(re) || []).length;
+}
+
+// `annotated` overrides the heuristic: a corpus item that knows its literals
+// (a technical corpus where recognition is ambiguous) lists them, and each
+// must appear in the output exactly, as often as listed.
+function literalRetention(input, output, annotated) {
+  if (annotated) {
+    const want = multiset(annotated);
+    let lost = 0;
+    for (const [literal, n] of want) lost += Math.max(0, n - countLiteral(output, literal));
+    return { expected: annotated.length, lost };
+  }
+  const expected = literalTokens(input);
+  const r = recall(expected, literalTokens(output));
+  return { expected: expected.length, lost: Math.round((1 - r) * expected.length) };
+}
+
+// A corpus item is a dictation, or { text, literals } when it lists the
+// literals it holds (scoreOutput's `literals`).
+function corpusItem(item) {
+  return typeof item === "string" ? { text: item } : item;
+}
+
 // Echo: the model repeated the frame or its instructions, or reasoned out loud,
 // instead of returning only the cleaned text.
 const ECHO_LABEL = /(^|\n)\s*(cleaned transcript:|transcript:|editing style:)/i;
@@ -195,21 +268,33 @@ const FIDELITY = {
   maxNovel: 0.1,
 };
 
-function scoreOutput({ input, output, stopReason, systemPrompt = "", corpus = "fluent" }) {
+// Fidelity is judged twice. `fidelityOk` is the model's own output against the
+// guards above; `deliveredFidelityOk` additionally holds the text the user
+// actually receives — after the stripStumbles backstop — to the critical and
+// literal checks, so a correct model output that the backstop then corrupts
+// (src/um/parser.js -> src/ /parser.js) fails it (#292). Not to the ratio and
+// retention guards: the backstop is meant to shorten the text, and judging it
+// for that would fail it for doing its job. `literals` optionally lists the
+// input's literals instead of recognizing them.
+function scoreOutput({ input, output, stopReason, systemPrompt = "", corpus = "fluent", literals }) {
   const text = (output || "").trim();
   const runaway = stopReason === "maxTokens";
   const delivered = runaway ? input : stripStumbles(text);
   const ratio = lengthRatio(input, text);
   const retention = contentRetention(input, text);
   const critical = criticalRetention(input, text);
+  const literal = literalRetention(input, text, literals);
+  const deliveredCritical = criticalRetention(input, delivered);
+  const deliveredLiteral = literalRetention(input, delivered, literals);
   const empty = text === "";
   const echo = detectEcho(text, systemPrompt);
   const refusal = detectRefusal(text);
   const novel = novelContentRatio(input, text);
   const [lo, hi] = corpus === "fluent" ? FIDELITY.ratio.fluent : FIDELITY.ratio.other;
   const fidelityOk =
-    !runaway && !empty && !echo && !refusal && critical.lost === 0 &&
+    !runaway && !empty && !echo && !refusal && critical.lost === 0 && literal.lost === 0 &&
     ratio >= lo && ratio <= hi && retention >= FIDELITY.minRetention && novel <= FIDELITY.maxNovel;
+  const deliveredFidelityOk = fidelityOk && deliveredCritical.lost === 0 && deliveredLiteral.lost === 0;
   return {
     fillers: countFillers(text),
     repeats: countRepeats(text),
@@ -223,11 +308,15 @@ function scoreOutput({ input, output, stopReason, systemPrompt = "", corpus = "f
     retention,
     novel,
     criticalLost: critical.lost,
+    literalLost: literal.lost,
+    deliveredCriticalLost: deliveredCritical.lost,
+    deliveredLiteralLost: deliveredLiteral.lost,
     echo,
     refusal,
     empty,
     runaway,
     fidelityOk,
+    deliveredFidelityOk,
   };
 }
 
@@ -279,11 +368,16 @@ function summarizeRuns(runs) {
       deliveredRepeats: sum((r) => r.score.deliveredRepeats),
       deliveredMarkers: sum((r) => r.score.deliveredMarkers ?? 0),
       fidelityFails: count((r) => !r.score.fidelityOk),
+      // Saved runs scored before #292 have no delivered verdict: unknown, not 0.
+      deliveredFidelityFails: rs.every((r) => "deliveredFidelityOk" in r.score)
+        ? count((r) => !r.score.deliveredFidelityOk)
+        : null,
       echo: count((r) => r.score.echo),
       refusal: count((r) => r.score.refusal),
       runaway: count((r) => r.score.runaway),
       empty: count((r) => r.score.empty),
       criticalLost: sum((r) => r.score.criticalLost),
+      literalLost: rs.every((r) => "literalLost" in r.score) ? sum((r) => r.score.literalLost) : null,
       medianRatio: median(rs.map((r) => r.score.ratio)),
       medianRetention: median(rs.map((r) => r.score.retention)),
       minRetention: minMax(rs.map((r) => r.score.retention))[0],
@@ -396,6 +490,9 @@ module.exports = {
   contentRetention,
   novelContentRatio,
   criticalRetention,
+  literalTokens,
+  literalRetention,
+  corpusItem,
   detectEcho,
   detectRefusal,
   FIDELITY,

@@ -875,3 +875,10 @@ test("the overlay's last-minute warning has a style and is cleared", () => {
   // Cleared both when a new take starts and when a warned take ends.
   assert.strictEqual(overlayJs.match(/removeAttribute\("data-cap-warning"\)/g)?.length, 2);
 });
+
+// #68: the switch is read into output.singleLine on Save and shown from it.
+test("'Deliver as one line' is saved from and shown in its switch", () => {
+  assert.match(html, /<input type="checkbox" id="output-single-line" class="switch" role="switch" \/>/);
+  assert.match(js, /singleLine: \$\("output-single-line"\)\.checked/);
+  assert.match(js, /\$\("output-single-line"\)\.checked = current\.output\.singleLine === true/);
+});

@@ -283,6 +283,7 @@ function populate() {
   $("start-on-boot").checked = !!current.startOnBoot;
 
   $("history-enabled").checked = current.history.enabled;
+  $("output-single-line").checked = current.output.singleLine === true;
   $("updates-autocheck").checked = current.updates?.autoCheck !== false;
   $("updates-remind").checked = current.updates?.remind !== false;
   $("max-seconds").value = current.audio.maxRecordingSeconds;
@@ -311,6 +312,7 @@ function collect() {
     output: {
       ...current.output,
       mode: document.querySelector('input[name="output-mode"]:checked').value,
+      singleLine: $("output-single-line").checked,
       // Legacy files could hold restoreClipboard: false from the era when
       // that was the only way to keep the transcript on the clipboard; the
       // explicit paste-copy mode replaces it, so plain paste always restores.

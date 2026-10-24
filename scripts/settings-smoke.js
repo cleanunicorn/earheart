@@ -1076,6 +1076,23 @@ app.whenReady().then(async () => {
       JSON.stringify(shownLimits)
     );
 
+    // "Deliver as one line" (#68): the switch is what Save sends — read
+    // through the page's own collect(), so the window stays open for the
+    // checks after this one.
+    const singleLineSent = JSON.parse(await js(`(() => {
+      const box = document.getElementById("output-single-line");
+      const before = box.checked;
+      box.checked = !before;
+      const sent = collect().output.singleLine;
+      box.checked = before;
+      return JSON.stringify({ before, sent });
+    })()`));
+    check(
+      "Deliver as one line is sent from its switch",
+      singleLineSent.sent === !singleLineSent.before,
+      JSON.stringify(singleLineSent)
+    );
+
     // 13. Custom-model removal. Saved settings select a custom model of each
     // kind, so the reload below starts the renderer from them, as a user who
     // picked those models would.

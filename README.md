@@ -296,7 +296,8 @@ a model that isn't downloaded yet downloads first, with its progress and
 **Cancel** in the model row, and Settings saves once it is installed. If the
 download fails or you cancel it, nothing is saved and Settings says why, so
 your previous model stays in use. Cleanup model choices are also available
-under Customize in the wizard.
+under Customize in the wizard. **Save** keeps Settings open and shows the
+result; **Close** dismisses the window without saving further edits.
 
 Every launch after that goes straight to the tray — no window to dismiss — and
 posts a short "ready, press *your hotkey*" notification. Click it to open
@@ -397,9 +398,11 @@ memory for 10 minutes. You can fix the service or switch engines in Settings,
 then choose **Retry transcription** on the overlay or **Retry failed
 transcription** from the tray, or run `earheart --retry`. You don't have to say
 it all again. **Discard** (or `earheart --discard`) lets it go. The recording is
-never written to disk. It's gone when you quit, when it expires, or once a new
-dictation transcribes. If a new dictation fails too, Earheart keeps the longer
-of the two recordings.
+never written to disk. Quit, Discard, or expiry releases it. A new complete,
+nonempty dictation supersedes it after the delivery step; an empty or incomplete
+take does not. If retrying fails at transcription again, the recording
+is kept for another ten minutes. If a separate new dictation fails too, Earheart
+keeps the longer recording.
 
 To fix a technical name, choose **Correct…** on a history entry or **Correct last
 transcription…** from the tray. You can also configure **Correct last transcript
@@ -460,9 +463,9 @@ If another app changes the clipboard in the moment between Earheart copying
 your transcript and pasting it (another copy, or a clipboard manager), Earheart
 pastes nothing rather than paste someone else's text, and leaves that newer
 copy alone. **Copy last transcription** in the tray menu has your transcript,
-even with History turned off (clearing History clears it too). The check runs
-just before the keystroke; the operating system's own paste can't be made
-atomic, so a change in the last instant can still win. On Wayland the check is
+even with History turned off (successfully clearing History clears it too).
+The check runs just before the keystroke; the operating system's own paste can't
+be made atomic, so a change in the last instant can still win. On Wayland the check is
 skipped: there an app without focus can't reliably read the clipboard, and a
 false alarm would stop every paste.
 

@@ -92,8 +92,10 @@ Always run the tests and smoke checks before opening a PR.
    the app, so it must be a valid Conventional Commits string (see
    [PR titles](#pr-titles)).
 8. **Never lose the user's words.** If cleanup fails, deliver the raw
-   transcript; if paste fails, fall back to the clipboard; history keeps the
-   text either way. Preserve these fallbacks whenever you touch the pipeline.
+   transcript; if paste fails, fall back to the clipboard, but leave another
+   app's newer copy alone and keep the transcript for **Copy last transcription**.
+   Failed transcription keeps the recording for retry; History keeps text when
+   enabled. Preserve these fallbacks whenever you touch the pipeline.
 9. **Few runtime npm dependencies.** Stay close to Electron built-ins and
    platform tools (PowerShell, AppleScript, xdotool/wtype). The only runtime
    deps are the two native engines, `sherpa-onnx-node` and `node-llama-cpp`.

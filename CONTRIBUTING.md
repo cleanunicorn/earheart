@@ -141,8 +141,10 @@ conventional-commit prefix of the PR title
 
 The workflow bumps `package.json`, writes the PR title into `CHANGELOG.md`,
 commits both as `release: vX.Y.Z` to main, tags it, and dispatches the release
-builds. Those builds create the GitHub release as a draft, each platform
-uploads its installers into it, and the release is flipped live only after all
+builds. Each platform builds locally and boots its packaged app with native-engine
+checks before uploading installers to the draft release. Linux and Windows also
+check that files referenced by the updater feed exist. Installer uploads refuse
+an already-published release; use a fresh tag. The draft goes live only after all
 three platforms succeed — so a half-built release is never published.
 
 Release jobs are serialized. Because GitHub retains only one pending job in a
@@ -343,10 +345,13 @@ Design constraints worth keeping:
   final transcript's prefix, so stop decodes only the tail (`main/live-preview.js`;
   see [docs/live-transcription-plan.md](docs/live-transcription-plan.md)).
 - **Never lose the user's words.** If cleanup fails, deliver the raw
-  transcript; if paste fails, fall back to the clipboard; history keeps the
-  text either way. History is written as soon as the final text exists,
-  before delivery, so a paste cancelled mid-keystroke or a paste tool that
-  throws still leaves the row; and the clipboard restore after an auto-paste
+  transcript; paste-tool failure leaves text on the clipboard. If another app
+  replaced the clipboard, leave its copy alone and retain the transcript for
+  **Copy last transcription**, even with History off. Clear that held transcript
+  only after History clears successfully. When enabled, History is written as
+  soon as the final text exists, before delivery, so a paste cancelled
+  mid-keystroke or a paste tool that throws still leaves the row; and the
+  clipboard restore after an auto-paste
   puts back every format it captured (image, HTML, RTF, a file copy), never
   plain text alone, and restores nothing rather than `""` when it could
   capture nothing (`main/output/deliver.js`). Built-in speech is decoded one
@@ -358,11 +363,11 @@ Design constraints worth keeping:
   dies part-way, the words already decoded are still delivered, with a
   notification, and marked `incomplete` — on the overlay's done card and in
   the History entry, not only in the stored record. See
-  [docs/long-recordings.md](docs/long-recordings.md). Only when nothing could be
-  delivered (the transcription itself failed) does the user get a "dictation
-  failed, nothing was delivered" notification. Every pipeline notification
-  opens Settings when clicked, and stays referenced until it is clicked or
-  closed (`createNotifier` in `main/setup-notices.js`).
+  [docs/long-recordings.md](docs/long-recordings.md). If transcription fails before
+  producing text, retain one failed recording for retry and announce how to
+  recover it; see the [README's retry instructions](README.md#using-earheart).
+  Every pipeline notification opens Settings when clicked, and stays referenced
+  until it is clicked or closed (`createNotifier` in `main/setup-notices.js`).
 - **Failure copy never echoes a service's reply.** Remote STT, cleanup and the
   model list report `<service> error <status>` (with an API-key hint for
   401/403) and never read the body; transport failures read "Couldn't reach
@@ -412,8 +417,9 @@ make screenshots       # runs scripts/screenshots.js under xvfb
 The capture runs in a throwaway demo profile (`scripts/demo-profile.js`) with
 fixed settings, never your own: your hotkeys, microphone and setup don't reach
 the images, and your settings file is neither read nor migrated. The profile
-lives in the OS temp dir and is deleted once the run exits, however it exits.
-The overlay smoke runs in one the same way.
+lives in the OS temp dir. A detached helper monitors for up to ten minutes and
+attempts deletion after exit; a longer-running capture or cleanup failure can
+leave the directory behind. Overlay smoke uses the same isolation.
 
 ## Tray artwork
 

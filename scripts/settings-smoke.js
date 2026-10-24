@@ -1717,10 +1717,14 @@ app.whenReady().then(async () => {
 
       // An edit made while the save is in flight is not in what was saved:
       // Save must say so instead of "Saved", and disk keeps the sent value.
-      {
+      // Cover a plain field and a limit that the response used to overwrite.
+      for (const { id, readSaved, nextValue } of [
+        { id: "stt-language", readSaved: () => savedJson().stt.language, nextValue: (value) => value === "fr" ? "de" : "fr" },
+        { id: "max-seconds", readSaved: () => savedJson().audio.maxRecordingSeconds, nextValue: (value) => value === 300 ? 600 : 300 },
+      ]) {
         const { saveWin, run } = await openSaveWindow();
-        const before = savedJson().stt.language;
-        const typed = before === "fr" ? "de" : "fr";
+        const before = readSaved();
+        const typed = nextValue(before);
         const realSave = invokeHandlers.get("settings:save");
         let release;
         const held = new Promise((resolve) => { release = resolve; });
@@ -1736,7 +1740,7 @@ app.whenReady().then(async () => {
           await run(`document.getElementById("save").click(); true`);
           await waitFor(() => reached, "the held Save never reached main");
           await run(`(() => {
-            const field = document.getElementById("stt-language");
+            const field = document.getElementById(${JSON.stringify(id)});
             field.value = ${JSON.stringify(typed)};
             field.dispatchEvent(new Event("input", { bubbles: true }));
           })()`);
@@ -1747,7 +1751,7 @@ app.whenReady().then(async () => {
               return status.textContent.startsWith("Saved") && JSON.stringify({
                 text: status.textContent,
                 className: status.className,
-                field: document.getElementById("stt-language").value,
+                field: document.getElementById(${JSON.stringify(id)}).value,
               });
             })()`),
             "the held Save never finished"
@@ -1755,17 +1759,23 @@ app.whenReady().then(async () => {
           await sleep(100);
           const later = await run(`document.getElementById("save-status").textContent`);
           check(
-            "an edit made while saving is not vouched for by Saved",
+            `${id}: an edit made while saving survives and is not vouched for by Saved`,
             during.className === "status" && /aren't saved yet/.test(during.text) &&
-              later === during.text && during.field === typed && savedJson().stt.language === before,
-            JSON.stringify({ during, later, saved: savedJson().stt.language })
+              later === during.text && during.field === String(typed) && readSaved() === before,
+            JSON.stringify({ during, later, saved: readSaved() })
           );
         } finally {
           release();
           ipcMain.removeHandler("settings:save");
           registerHandler("settings:save", realSave);
         }
-        await clickClose(saveWin);
+        await run(`document.getElementById("save").click(); true`);
+        await savedThenClose(saveWin, `${id}: the second Save never reported Saved`);
+        check(
+          `${id}: a second Save persists the edit made during the first`,
+          readSaved() === typed,
+          JSON.stringify({ typed, saved: readSaved() })
+        );
       }
     } finally {
       settings.save = countedSave;

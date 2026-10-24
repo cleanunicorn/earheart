@@ -792,11 +792,13 @@ test("idle unload is clamped to the field's range, and blank still means never",
 });
 
 test("Save names each limit it stored differently from what was typed", () => {
-  const adjustments = (maxSeconds, idle, saved) => {
+  const adjustments = (maxSeconds, idle, saved, edited = {}) => {
     const elements = {
       "max-seconds": { value: maxSeconds, ...inputRange("max-seconds") },
       "idle-unload": { value: idle, ...inputRange("idle-unload") },
     };
+    const sent = new Map(Object.values(elements).map((el) => [el, { value: el.value }]));
+    for (const [id, value] of Object.entries(edited)) elements[id].value = value;
     const context = { $: (id) => elements[id] };
     require("node:vm").runInNewContext(
       `${extractFunction(js, "limitAdjustments")}; this.limitAdjustments = limitAdjustments;`,
@@ -805,7 +807,7 @@ test("Save names each limit it stored differently from what was typed", () => {
     return [...context.limitAdjustments({
       audio: { maxRecordingSeconds: saved[0] },
       engines: { idleUnloadMinutes: saved[1] },
-    })];
+    }, sent)];
   };
   assert.deepStrictEqual(adjustments("-5", "9999", [10, 240]), [
     "Max dictation length set to 10 s (allowed 10–3600)",
@@ -815,6 +817,8 @@ test("Save names each limit it stored differently from what was typed", () => {
   // Stored as typed, or left blank on purpose: nothing to report.
   assert.deepStrictEqual(adjustments("300", "0", [300, 0]), []);
   assert.deepStrictEqual(adjustments("", "", [300, 0]), []);
+  // Later edits aren't normalization of the values that Save actually sent.
+  assert.deepStrictEqual(adjustments("600", "2", [600, 2], { "max-seconds": "300", "idle-unload": "10" }), []);
 });
 
 test("the overlay's recording cap accepts exactly the max-seconds field's range", () => {

@@ -943,14 +943,14 @@ function hotkeySaveMessage(hotkeyResult, pauseResult, discardResult, correctResu
 // What Save stored differently from what was typed in the Performance limits
 // (collect() and main both clamp to the fields' ranges), one phrase each.
 // Without this a typed 9999 would quietly become 240.
-function limitAdjustments(saved) {
+function limitAdjustments(saved, sent) {
   const fields = [
     { id: "max-seconds", label: "Max dictation length", unit: "s", value: saved.audio?.maxRecordingSeconds },
     { id: "idle-unload", label: "Idle unload", unit: "min", value: saved.engines?.idleUnloadMinutes },
   ];
   return fields
     .filter(({ id, value }) => {
-      const typed = $(id).value.trim();
+      const typed = sent.get($(id)).value.trim();
       return typed !== "" && Number(typed) !== value;
     })
     .map(({ id, label, unit, value }) => `${label} set to ${value} ${unit} (allowed ${$(id).min}–${$(id).max})`);
@@ -1067,18 +1067,23 @@ async function saveSettings() {
     result = await earheart.invoke("settings:save", { settings: current, baseline });
     // The Hugging Face add-model fields aren't settings: a Find versions
     // lookup landing meanwhile changes nothing Save stores.
-    const editedWhileSaving = [...formSnapshot()].some(
-      ([el, value]) => !/-hf-/.test(el.id) && JSON.stringify(value) !== JSON.stringify(sent.get(el))
+    const returned = formSnapshot();
+    const unchanged = (el) => JSON.stringify(returned.get(el)) === JSON.stringify(sent.get(el));
+    const editedWhileSaving = [...returned.keys()].some(
+      (el) => !/-hf-/.test(el.id) && !unchanged(el)
     );
     current = result.settings;
     baseline = sharedBaseline(current);
     // Main may have kept its own value for a shared field (a tray change this
-    // form hadn't seen yet), so show what was actually saved.
-    showOutputMode(current.output);
-    $("updates-remind").checked = current.updates.remind !== false;
-    const adjusted = limitAdjustments(current);
-    $("max-seconds").value = current.audio.maxRecordingSeconds;
-    $("idle-unload").value = current.engines.idleUnloadMinutes;
+    // form hadn't seen yet), so show what was actually saved unless the user
+    // edited that control while waiting. Treat the output radios as one field.
+    if ([...document.querySelectorAll('input[name="output-mode"]')].every(unchanged)) {
+      showOutputMode(current.output);
+    }
+    if (unchanged($("updates-remind"))) $("updates-remind").checked = current.updates.remind !== false;
+    const adjusted = limitAdjustments(current, sent);
+    if (unchanged($("max-seconds"))) $("max-seconds").value = current.audio.maxRecordingSeconds;
+    if (unchanged($("idle-unload"))) $("idle-unload").value = current.engines.idleUnloadMinutes;
     // Older mains don't report a pause result; treat that as fine.
     pauseResult = result.pauseHotkey ?? { ok: true };
     discardResult = result.discardHotkey ?? { ok: true };

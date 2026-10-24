@@ -381,3 +381,25 @@ test("copying is allowed while recording even though correction cannot open", as
   assert.strictEqual((await handlers["transcript:copy"]({}, "previous prompt")).ok, true);
   assert.strictEqual(calls.deliveries.length, 1);
 });
+
+test("cleanup:prompt-offer saves the answer at once and is not offered again", async (t) => {
+  const { handlers, settings, readFile } = loadIpc(t);
+  const own = "My own rules.";
+  settings.save({ ...settings.get(), cleanup: { ...settings.get().cleanup, systemPrompt: own } });
+  const offer = settings.cleanupPromptOffer(settings.get());
+  assert.strictEqual(offer.kind, "custom");
+
+  const kept = await handlers["cleanup:prompt-offer"]({}, { decision: "keep" });
+  assert.deepStrictEqual(kept, { ok: true, systemPrompt: own, promptOfferDecided: offer.id });
+  assert.strictEqual(readFile().cleanup.systemPrompt, own);
+  assert.strictEqual(settings.cleanupPromptOffer(settings.get()), null);
+
+  // "use" switches to the new default.
+  settings.save({ ...settings.get(), cleanup: { ...settings.get().cleanup, promptOfferDecided: "" } });
+  const used = await handlers["cleanup:prompt-offer"]({}, { decision: "use" });
+  assert.strictEqual(used.systemPrompt, settings.DEFAULTS.cleanup.systemPrompt);
+  assert.strictEqual(readFile().cleanup.systemPrompt, settings.DEFAULTS.cleanup.systemPrompt);
+
+  const bad = await handlers["cleanup:prompt-offer"]({}, { decision: "maybe" });
+  assert.strictEqual(bad.ok, false);
+});

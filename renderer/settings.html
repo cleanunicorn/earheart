@@ -533,6 +533,18 @@
 
           <div class="card">
             <div class="card-title">System prompt</div>
+            <div id="prompt-offer" class="prompt-offer" role="region" aria-labelledby="prompt-offer-title" hidden>
+              <p>
+                <strong id="prompt-offer-title">A new default prompt is available.</strong>
+                <span id="prompt-offer-text"></span>
+              </p>
+              <pre id="prompt-offer-diff" class="prompt-diff" tabindex="0" aria-label="Changes from your prompt to the new default" hidden></pre>
+              <div class="row">
+                <button id="prompt-offer-use" class="ghost">Use the new prompt</button>
+                <button id="prompt-offer-keep" class="ghost">Keep mine</button>
+              </div>
+              <p id="prompt-offer-status" class="hint" role="status"></p>
+            </div>
             <div class="field">
               <textarea id="cleanup-prompt" rows="8" spellcheck="false" aria-label="System prompt"></textarea>
               <p class="hint">
@@ -677,6 +689,7 @@
 
     <script src="hotkey-capture.js"></script>
     <script src="vocabulary.js"></script>
+    <script src="prompt-diff.js"></script>
     <script src="settings-sync.js"></script>
     <script src="permission-status.js"></script>
     <script src="model-progress.js"></script>

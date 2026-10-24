@@ -28,6 +28,7 @@ function loadIpcHandlers({ previous, hotkeyResults, saveError = null, getHotkeyS
     DEFAULTS: {},
     get: () => current,
     keyStorage: () => ({ secure: true, backend: null, unreadable: [] }),
+    cleanupPromptOffer: () => null,
     onChanged: () => () => {},
     save: (next) => {
       calls.saved.push(next);

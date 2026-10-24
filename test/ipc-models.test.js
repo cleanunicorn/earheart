@@ -48,6 +48,7 @@ function loadIpcHandlers(cfg, {
   let stored = cfg;
   const changeListeners = new Set();
   const settings = {
+    cleanupPromptOffer: () => null,
     DEFAULTS: {},
     keyStorage: () => ({ secure: true, backend: null, unreadable: [] }),
     get: () => stored,

@@ -112,7 +112,7 @@ async function loadMain(
         },
       },
     },
-    "./settings": { isFirstRun: () => firstRun, get: () => cfg, onChanged: () => () => {} },
+    "./settings": { isFirstRun: () => firstRun, get: () => cfg, onChanged: () => () => {}, cleanupPromptOffer: () => null },
     "./windows": {
       init: () => events.push("windows.init"),
       createOverlay: () => events.push("createOverlay"),

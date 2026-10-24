@@ -42,6 +42,20 @@ function sttNotReadyNotice(readiness) {
   };
 }
 
+/**
+ * The notice for a new default cleanup prompt (settings.cleanupPromptOffer).
+ * Its click opens Settings → Cleanup, where the offer is answered.
+ */
+function promptOfferNotice(offer) {
+  return {
+    title: "Earheart: a new cleanup prompt",
+    body:
+      offer.kind === "custom"
+        ? "The default prompt is now tuned for code dictation. Yours is edited, so it wasn't changed. Click to compare."
+        : "The default prompt is now tuned for code dictation. Click to switch to it in Settings → Cleanup.",
+  };
+}
+
 /** The notice for a record hotkey that failed to register at launch. */
 function hotkeyFailureNotice(result) {
   const suffix = " Click to open Settings.";
@@ -149,12 +163,27 @@ function announceStartup({
   if (!hidden) notify(readyNotice(cfg.hotkey));
 }
 
+/**
+ * Announce a new default cleanup prompt once: the first launch that finds one
+ * the user hasn't decided on, while cleanup is on. `record(id)` remembers the
+ * announcement, so later launches stay quiet; Settings keeps offering it.
+ * Returns whether it announced.
+ */
+function announcePromptOffer({ cfg, offer, notify, record }) {
+  if (!offer || !cfg.cleanup?.enabled || cfg.cleanup.promptOfferNotified === offer.id) return false;
+  notify(promptOfferNotice(offer));
+  record(offer.id);
+  return true;
+}
+
 module.exports = {
   readyNotice,
   sttNotReadyNotice,
   hotkeyFailureNotice,
+  promptOfferNotice,
   createNotifier,
   BODY_MAX,
   HELD_MAX,
   announceStartup,
+  announcePromptOffer,
 };

@@ -69,6 +69,7 @@ const ROLES = {
       "permissions:accessibility-fix",
       "stt:test",
       "cleanup:test",
+      "cleanup:prompt-offer",
       "models:list-remote",
       "models:hf-variants",
       "models:browse-hf",

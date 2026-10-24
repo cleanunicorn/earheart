@@ -57,12 +57,25 @@ function cleanMaxTokens(transcriptTokens) {
 /**
  * The message for a turn that doesn't fit. It reaches the user verbatim (the
  * pipeline shows a cleanup-failed notification with the error text), so it says
- * what happened in whole words and carries the two numbers that explain it.
+ * what happened in whole words and carries the numbers that explain it. When
+ * the instructions (rules, style, dictionary) outgrow the allowance an ordinary
+ * prompt gets, they are the part the user can change, so it names them (#297).
  * @param {number} needed
  * @param {number} available
+ * @param {number} [instructionTokens] tokens in the instructions alone
  * @returns {string}
  */
-function cleanBudgetMessage(needed, available) {
+function cleanBudgetMessage(needed, available, instructionTokens = 0) {
+  // Blame the instructions only when they are why it overflowed: with them at
+  // the allowance, the turn would have fit.
+  const overAllowance = instructionTokens - CLEAN_PROMPT_TOKENS;
+  if (overAllowance > 0 && needed - overAllowance <= available) {
+    return (
+      `Cleanup instructions and dictionary too long to clean up this transcript ` +
+      `(needs ~${needed} tokens of context, have ${available}; the instructions and dictionary ` +
+      `use ~${instructionTokens}). Remove dictionary words or shorten the custom prompt.`
+    );
+  }
   return `Transcript too long to clean up in one pass (needs ~${needed} tokens of context, have ${available})`;
 }
 
@@ -83,23 +96,48 @@ const CLEAN_CONTEXT_MAX = 16384;
 // user their cleanup, over-sizing costs some memory.
 const WORDS_PER_SECOND = 2.5;
 const TOKENS_PER_WORD = 1.35;
-// The rules prompt, with headroom for the style directive and a dictionary.
+// The allowance for the instructions — rules prompt, style directive and a
+// dictionary — when their real size isn't known yet (main has no tokenizer).
+// The worker measures the real ones and grows the context past this when a
+// dictionary or custom prompt needs it (cleanContextSize, #297).
 const CLEAN_PROMPT_TOKENS = 700;
 
 /**
- * Context size for a user who may dictate for `maxRecordingSeconds`. Doubling
- * steps rather than an exact fit: llama.cpp allocates the KV cache from this,
- * and a handful of sizes keeps that allocation predictable.
+ * The longest transcript, in tokens, a user who may dictate for
+ * `maxRecordingSeconds` can produce.
+ * @param {number} maxRecordingSeconds `audio.maxRecordingSeconds`
+ * @returns {number}
+ */
+function cleanTranscriptBudget(maxRecordingSeconds) {
+  const seconds = Number.isFinite(maxRecordingSeconds) ? Math.max(0, maxRecordingSeconds) : 0;
+  return Math.ceil(seconds * WORDS_PER_SECOND * TOKENS_PER_WORD);
+}
+
+/**
+ * Context size for instructions of `instructionTokens` and a transcript of up
+ * to `transcriptTokens`. Doubling steps rather than an exact fit: llama.cpp
+ * allocates the KV cache from this, and a handful of sizes keeps that
+ * allocation predictable.
+ * @param {number} instructionTokens tokens in the instructions alone
+ * @param {number} transcriptTokens the transcript budget
+ * @returns {number} tokens, within [CLEAN_CONTEXT_MIN, CLEAN_CONTEXT_MAX]
+ */
+function cleanContextSize(instructionTokens, transcriptTokens) {
+  const needed = cleanContextNeed(instructionTokens + transcriptTokens, transcriptTokens);
+  let size = CLEAN_CONTEXT_MIN;
+  while (size < needed && size < CLEAN_CONTEXT_MAX) size *= 2;
+  return size;
+}
+
+/**
+ * Context size for a user who may dictate for `maxRecordingSeconds`, with the
+ * instructions at their allowance. Main sizes the context from this before
+ * the instructions are measured; the worker never goes below it.
  * @param {number} maxRecordingSeconds `audio.maxRecordingSeconds`
  * @returns {number} tokens, within [CLEAN_CONTEXT_MIN, CLEAN_CONTEXT_MAX]
  */
 function cleanContextFor(maxRecordingSeconds) {
-  const seconds = Number.isFinite(maxRecordingSeconds) ? Math.max(0, maxRecordingSeconds) : 0;
-  const transcriptTokens = Math.ceil(seconds * WORDS_PER_SECOND * TOKENS_PER_WORD);
-  const needed = cleanContextNeed(CLEAN_PROMPT_TOKENS + transcriptTokens, transcriptTokens);
-  let size = CLEAN_CONTEXT_MIN;
-  while (size < needed && size < CLEAN_CONTEXT_MAX) size *= 2;
-  return size;
+  return cleanContextSize(CLEAN_PROMPT_TOKENS, cleanTranscriptBudget(maxRecordingSeconds));
 }
 
 module.exports = {
@@ -107,8 +145,11 @@ module.exports = {
   CLEAN_CONTEXT_MIN,
   CLEAN_CONTEXT_MAX,
   CLEAN_RUNAWAY_MESSAGE,
+  CLEAN_PROMPT_TOKENS,
   cleanContextNeed,
+  cleanContextSize,
   cleanContextFor,
+  cleanTranscriptBudget,
   cleanMaxTokens,
   cleanBudgetMessage,
 };

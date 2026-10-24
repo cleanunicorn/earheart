@@ -2497,6 +2497,30 @@ test("a changed cleanup context size is a different load, not a joined one", (t)
   return Promise.all([small, large]);
 });
 
+test("the cleanup descriptor carries the transcript budget the worker sizes from", () => {
+  // #297: main can't tokenize the dictionary; the worker can, given how much
+  // transcript the context must also hold.
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const cleanup = hostsBySvc["earheart-cleanup"];
+  const held = holdLoads(cleanup, "load-cleanup");
+  const pending = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
+  const { cleanTranscriptBudget } = require("../main/util/clean-budget");
+  const seconds = require("../main/settings").get().audio.maxRecordingSeconds;
+  assert.strictEqual(held[0].payload.transcriptTokens, cleanTranscriptBudget(seconds));
+  held[0].resolve({ ready: true });
+  // A prime carries the instructions on their own, so the worker sizes its
+  // context as the clean will (the text adds the transcript prefix).
+  const primes = holdLoads(cleanup, "prime-cleanup");
+  const cfg = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules" };
+  const primed = facade.primeCleanup(cfg, "so far");
+  const { resolveCleanup } = require("../main/cleanup-styles");
+  assert.strictEqual(primes[0].payload.systemPrompt, resolveCleanup(cfg).systemPrompt);
+  assert.ok(primes[0].payload.text.startsWith(primes[0].payload.systemPrompt));
+  assert.ok(primes[0].payload.text.endsWith("so far"));
+  primes[0].resolve({ primed: true });
+  return Promise.all([pending, primed]);
+});
+
 test("worker exit drops the in-flight cleanup load memo", async () => {
   const { facade, hostsBySvc } = loadTwoHostFacade();
   const cleanup = hostsBySvc["earheart-cleanup"];

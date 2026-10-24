@@ -63,6 +63,8 @@ test("the counters count exactly what the production backstop removes", () => {
     "the UM team and the UH office, um, agreed",
     "Umm, so uh, the the the parser, erm, is is broken.",
     "it is very very fast and we had had enough",
+    // #290: literals the backstop keeps are not counted against the model.
+    'Run `echo echo` in src/um/parser.js, set it to "um", and um, the the rest.',
   ];
   for (const text of samples) {
     const out = stripStumbles(text);

@@ -522,8 +522,9 @@ again.
   (`src/Foo.ts` ≠ `src/foo.ts`, `getUserById` ≠ `getuserbyid`), as part of
   fidelity; and a second verdict, **delivered fidelity**, holds the text after
   the `stripStumbles` backstop to the critical and literal checks too, so a
-  correct reply that the backstop then corrupts (`src/um/parser.js` →
-  `src/ /parser.js`) fails it. Every saved run on this page was re-scored with
+  correct reply that the backstop then corrupts fails it. The backstop masks
+  paths, flags and identifiers (#322), so the case left is an annotated
+  literal it can't recognize (`Um Jammer` → `Jammer`). Every saved run on this page was re-scored with
   both from its raw output (`--rescore`, 64 corpus/style groups across `bench`,
   `bench-locked`, `bench-locked2`, `bench-locked3` and `bench-rerun`): **no
   fidelity verdict moved, and delivered fidelity equals fidelity in every

@@ -281,7 +281,7 @@ const FIDELITY = {
 // guards above; `deliveredFidelityOk` additionally holds the text the user
 // actually receives — after the stripStumbles backstop — to the critical and
 // literal checks, so a correct model output that the backstop then corrupts
-// (src/um/parser.js -> src/ /parser.js) fails it (#292). Not to the ratio and
+// (an annotated "Um Jammer" -> "Jammer") fails it (#292). Not to the ratio and
 // retention guards: the backstop is meant to shorten the text, and judging it
 // for that would fail it for doing its job. `literals` optionally lists the
 // input's literals instead of recognizing them.

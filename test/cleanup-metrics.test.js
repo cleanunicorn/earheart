@@ -401,12 +401,14 @@ test("speedEstimates prefers the locked pass, then the quietest, and takes the m
 /* ---- delivered fidelity and exact literals (#292) ---- */
 
 test("scoreOutput: a correct output the backstop corrupts fails delivered fidelity", () => {
-  const input = "Open src/um/parser.js.";
-  const s = scoreOutput({ input, output: input, corpus: "fluent" });
+  // Paths and identifiers are masked from the backstop (#322); an annotated
+  // literal it can't recognize, a name starting with a filler, is not.
+  const input = "Name the band Um Jammer.";
+  const s = scoreOutput({ input, output: input, corpus: "fluent", literals: ["Um Jammer"] });
   assert.strictEqual(s.fidelityOk, true, "the model returned it intact");
-  assert.strictEqual(s.delivered, "Open src/ /parser.js.");
-  assert.strictEqual(s.deliveredFidelityOk, false, "the user receives a broken path");
-  assert.ok(s.deliveredLiteralLost > 0 && s.deliveredCriticalLost > 0);
+  assert.strictEqual(s.delivered, "Name the band Jammer.");
+  assert.strictEqual(s.deliveredFidelityOk, false, "the user receives a broken name");
+  assert.ok(s.deliveredLiteralLost > 0);
 });
 
 test("scoreOutput: a case change to a path or identifier fails fidelity", () => {
@@ -476,7 +478,8 @@ test("literalTokens: paths, flags and identifiers, never plain prose", () => {
 });
 
 test("summarizeRuns: counts delivered fidelity failures, and says unknown for older saved runs", () => {
-  const ok = scoreOutput({ input: "Open src/um/parser.js.", output: "Open src/um/parser.js.", corpus: "fluent" });
+  const input = "Name the band Um Jammer.";
+  const ok = scoreOutput({ input, output: input, corpus: "fluent", literals: ["Um Jammer"] });
   const run = (score) => ({ corpus: "fluent", style: "clean", wallMs: 1, score });
   const s = summarizeRuns([run(ok), run(ok)])["fluent/clean"];
   assert.strictEqual(s.fidelityFails, 0);

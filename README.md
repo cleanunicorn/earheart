@@ -387,6 +387,16 @@ the wizard:
 A mis-aimed paste never loses your words: the History section in Settings
 keeps recent transcriptions in a local file (you can turn this off).
 
+A failed transcription doesn't lose the recording either. When the speech
+service times out or the model won't load, Earheart keeps that one recording in
+memory for 10 minutes. You can fix the service or switch engines in Settings,
+then choose **Retry transcription** on the overlay or **Retry failed
+transcription** from the tray, or run `earheart --retry`. You don't have to say
+it all again. **Discard** (or `earheart --discard`) lets it go. The recording is
+never written to disk. It's gone when you quit, when it expires, or once a new
+dictation transcribes. If a new dictation fails too, Earheart keeps the longer
+of the two recordings.
+
 To fix a technical name, choose **Correct…** on a history entry or **Correct last
 transcription…** from the tray. You can also configure **Correct last transcript
 hotkey** in Settings → General (unbound by default), or bind
@@ -524,8 +534,9 @@ checksum-verified. Only add models from repos you trust.
   invocation just toggles dictation in it. Use the full path to the binary if
   `earheart` isn't on your `PATH`, e.g.
   `~/Applications/Earheart-<version>.AppImage --toggle`. The same works for
-  pause/resume with `earheart --pause`, and for discarding the dictation in
-  progress with `earheart --discard`.
+  pause/resume with `earheart --pause`, for discarding the dictation in
+  progress with `earheart --discard`, and for retrying a failed transcription
+  with `earheart --retry`.
 
 ### macOS
 

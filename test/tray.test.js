@@ -93,7 +93,18 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
       else delete require.cache[p];
     }
   }
-  const pipeline = { getState: () => "idle", onStateChange() {}, toggle() {}, cancel() {} };
+  const pipeline = {
+    getState: () => "idle",
+    onStateChange() {},
+    toggle() {},
+    cancel() {},
+    failedTake: null,
+    calls: [],
+    getFailedTake() { return this.failedTake; },
+    onFailedTakeChange(listener) { this.failedTakeChanged = listener; },
+    retryFailedTake() { this.calls.push("retry"); },
+    discardFailedTake() { this.calls.push("discard"); },
+  };
   tray.init({ quit() {} }, pipeline);
   const file = path.join(userData, "settings.json");
   return { tray, pipeline, images, settings, menus, warnings, notifications, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
@@ -243,3 +254,24 @@ for (const platform of ["win32", "darwin", "linux"]) {
     }
   });
 }
+
+// #293: a failed transcription's recording is offered back from the tray.
+test("the tray offers a held failed take's Retry and Discard, and only while idle", (t) => {
+  const { tray, pipeline, menus } = loadTray(t);
+  for (const label of ["Retry failed transcription", "Discard failed recording"]) {
+    assert.strictEqual(item(menus.at(-1), label).visible, false, `${label} hidden with nothing held`);
+  }
+  pipeline.failedTake = { seconds: 42, expiresInSec: 600 };
+  pipeline.failedTakeChanged(pipeline.failedTake);
+  const menu = menus.at(-1);
+  item(menu, "Retry failed transcription").click();
+  item(menu, "Discard failed recording").click();
+  assert.deepStrictEqual(pipeline.calls, ["retry", "discard"]);
+  for (const label of ["Retry failed transcription", "Discard failed recording"]) {
+    assert.strictEqual(item(menu, label).visible, true, label);
+    assert.strictEqual(item(menu, label).enabled, true, label);
+  }
+  pipeline.getState = () => "recording";
+  tray.refresh();
+  assert.strictEqual(item(menus.at(-1), "Retry failed transcription").enabled, false, "never mid-dictation");
+});

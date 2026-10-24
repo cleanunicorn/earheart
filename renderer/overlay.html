@@ -73,6 +73,13 @@
       <!-- Control row: status word, live waveform, timer, and the three keys
            everyone already knows — pause, done, discard. -->
       <div id="raw-reason" hidden aria-live="polite"></div>
+      <!-- A failed transcription keeps its recording for a while (#293): say
+           so, and offer to transcribe it again or let it go. -->
+      <div id="take-actions" hidden>
+        <span id="take-note" aria-live="polite"></span>
+        <button id="take-retry" class="pill primary">Retry transcription</button>
+        <button id="take-discard" class="pill quiet">Discard</button>
+      </div>
       <div id="controls">
         <!-- The state, said in one word next to its dot: Listening / Paused /
              Transcribing… / Pasted. Announced politely so assistive tech hears

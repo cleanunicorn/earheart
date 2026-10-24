@@ -322,6 +322,9 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
       return result && !result.ok && !result.empty;
     });
     const persistedCandidate = withFields(candidate, previous, rejectedFields);
+    // A discard hotkey that had to yield its key to a pair slot is cleared
+    // (#286); saving the old key back would put the clash on disk.
+    if (hotkeyResults.discardHotkey?.cleared) persistedCandidate.discardHotkey = "";
 
     let saved;
     try {

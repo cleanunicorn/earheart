@@ -347,8 +347,9 @@ Design constraints worth keeping:
 - **Never lose the user's words.** If cleanup fails, deliver the raw
   transcript; paste-tool failure leaves text on the clipboard. If another app
   replaced the clipboard, leave its copy alone and retain the transcript for
-  **Copy last transcription**, even with History off. Clear that held transcript
-  only after History clears successfully. When enabled, History is written as
+  **Copy last transcription**, even with History off. A later non-cancelled
+  delivery supersedes it; Clear History drops it only if the delete succeeds.
+  When enabled, History is written as
   soon as the final text exists, before delivery, so a paste cancelled
   mid-keystroke or a paste tool that throws still leaves the row; and the
   clipboard restore after an auto-paste

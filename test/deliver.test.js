@@ -599,3 +599,22 @@ test("plain paste still restores a clipboard read back with CRLF", async (t) => 
   assert.deepStrictEqual(await pending, { method: "cancelled" });
   assert.strictEqual(state.clip.text, "old", "the previous clipboard came back");
 });
+
+for (const mode of ["paste", "paste-copy"]) {
+  test(`untrusted ${mode}: clipboard takeover still offers transcript recovery`, async (t) => {
+    onMac(t);
+    const { deliver, state } = loadDeliver({ trusted: false });
+    const pending = deliver("Dictated prompt", { mode, restoreClipboard: true, pasteDelayMs: 0 });
+    // The write is synchronous; replace it while delivery awaits its delay.
+    state.clip = { text: "Newer copy" };
+    const result = await pending;
+    assert.deepStrictEqual(result, {
+      method: "clipboard-changed",
+      note: "Copy it from the tray menu",
+      hint: "Another app changed the clipboard before Earheart could paste, so nothing was pasted and that copy was left as it was. " +
+        "Copy the transcript from the tray menu (Copy last transcription).",
+    });
+    assert.deepStrictEqual(state.clip, { text: "Newer copy" });
+    assert.deepStrictEqual(state.execs, [], "no keystroke");
+  });
+}

@@ -342,9 +342,11 @@ async function deliver(text, cfg, signal) {
     logger.error("auto-paste skipped:", ACCESSIBILITY_OFF.hint);
     // Once per launch, clear a stale grant this build hasn't repaired yet and
     // raise the prompt skipped along with the keystroke. Not awaited: the
-    // transcript is already on the
-    // clipboard and the fallback must not wait on tccutil.
+    // fallback must not wait on tccutil.
     repairPastePermissionsOnce();
+    // A newer copy can arrive during the delay even when paste permission is
+    // off. Report it so the pipeline keeps the transcript available to copy.
+    if (clipboardTakenOver(text)) return { method: "clipboard-changed", ...CLIPBOARD_CHANGED };
     return { method: "clipboard", ...ACCESSIBILITY_OFF };
   }
   // Last moment before the keystroke: is what we'd paste still ours? If not,

@@ -753,7 +753,7 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
     // Not sooner — a mis-press, a mic check, a take that hears nothing, fails,
     // is cut short by a dying engine, or is cancelled before delivery must not
     // cost the recording (a retry already took it out).
-    if (!retry && !partial) failedTake.discard();
+    if (!retry && !partial && result.method !== "cancelled") failedTake.discard();
     // A cancelled delivery landed nothing, so it supersedes nothing either.
     if (result.method === "clipboard-changed") undelivered = { text, at: new Date().toISOString() };
     else if (result.method !== "cancelled") undelivered = null;
@@ -804,12 +804,13 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
     });
     if (kept) {
       // Never "0 minutes", never more time than is left.
-      const minutes = Math.max(1, Math.floor(kept.expiresInSec / 60));
+      const minutes = Math.floor(kept.expiresInSec / 60);
+      const remaining = minutes < 1 ? "less than a minute" : `${minutes} minute${minutes === 1 ? "" : "s"}`;
       notify({
         title: earlier
           ? "Earheart: transcription failed, earlier recording still kept"
           : "Earheart: transcription failed, recording kept",
-        body: `Retry it from the tray menu or the overlay, or run earheart --retry, within ${minutes} minute${minutes === 1 ? "" : "s"}. ${err.message}`,
+        body: `Retry it from the tray menu or the overlay, or run earheart --retry, within ${remaining}. ${err.message}`,
       });
     } else {
       notify({ title: "Earheart: dictation failed, nothing was delivered", body: err.message });

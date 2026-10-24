@@ -353,3 +353,20 @@ test("a failed take's Retry and Discard have a keyboard route to the same pipeli
     );
   }
 });
+
+// Execute the error-card branch with just its view dependencies: the wording
+// must describe the remaining lifetime, not round a few seconds up to a minute.
+test("the failed-take card does not promise a minute when less remains", () => {
+  const branch = js.match(/case "error":([\s\S]*?)\n\s*break;/);
+  assert.ok(branch, "the error-card branch exists");
+  const render = new Function("detail", "setStatus", "takeNote", "takeActions", "cancelBtn", "syncOverlayHeight", branch[1]);
+  for (const [seconds, duration] of [[5, "less than a minute"], [59, "less than a minute"], [60, "1 min"], [120, "2 min"]]) {
+    for (const earlier of [false, true]) {
+      const note = {};
+      const actions = { hidden: true };
+      render({ failedTake: { expiresInSec: seconds, earlier } }, () => {}, note, actions, {}, () => {});
+      assert.strictEqual(note.textContent, `${earlier ? "Earlier recording" : "Recording"} kept for ${duration}`);
+      assert.strictEqual(actions.hidden, false);
+    }
+  }
+});

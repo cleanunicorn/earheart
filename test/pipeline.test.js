@@ -1823,3 +1823,67 @@ test("pipeline: without the setting a multi-line transcript is delivered as it i
   await rig.dictate(speechWav(2));
   assert.deepStrictEqual(rig.log.delivered, ["First part.\n\nSecond part."]);
 });
+
+// Cancelling a replacement take must not discard the earlier failed audio.
+test("pipeline: cancelling delivery keeps the earlier failed take retryable", async () => {
+  const stt = flakyStt();
+  let finishDelivery;
+  let deliveryStarted;
+  const started = new Promise((resolve) => { deliveryStarted = resolve; });
+  let holdDelivery = true;
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: stt.transcribe,
+    deliver: async () => {
+      if (!holdDelivery) return { method: "paste" };
+      deliveryStarted();
+      return new Promise((resolve) => { finishDelivery = resolve; });
+    },
+  });
+  const original = speechWav(30);
+  await rig.dictate(original);
+  stt.down = false;
+  rig.pipeline.toggle();
+  rig.handlers["audio:captured"]({}, { sid: rig.log.lastStart.sid, wav: speechWav(3) });
+  await started;
+  rig.pipeline.cancel();
+  finishDelivery({ method: "cancelled" });
+  await flush();
+  assert.strictEqual(rig.pipeline.getFailedTake().bytes, original.length);
+  holdDelivery = false;
+  assert.strictEqual(await retried(rig), true);
+  assert.ok(Buffer.from(stt.seen.at(-1)).equals(Buffer.from(original)), "retry receives the original WAV");
+  assert.strictEqual(rig.pipeline.getFailedTake(), null);
+});
+
+for (const [seconds, duration] of [[5, "less than a minute"], [59, "less than a minute"], [60, "1 minute"], [120, "2 minutes"]]) {
+  test(`pipeline: an earlier take with ${seconds}s left has an honest retry notice`, async (t) => {
+    let now = Date.now();
+    t.mock.method(Date, "now", () => now);
+    const stt = flakyStt();
+    const rig = dictationRig({ engine: "remote", transcribe: stt.transcribe });
+    await rig.dictate(speechWav(30));
+    const expiresAt = rig.pipeline.getFailedTake().expiresAt;
+    now = expiresAt - seconds * 1000;
+    await rig.dictate(speechWav(1));
+    assert.deepStrictEqual(rig.log.failedTakeCards.at(-1), { expiresInSec: seconds, earlier: true });
+    assert.strictEqual(rig.log.notifications.at(-1).body,
+      `Retry it from the tray menu or the overlay, or run earheart --retry, within ${duration}. STT request timed out`);
+    assert.strictEqual(rig.pipeline.getFailedTake().expiresAt, expiresAt, "the copy must not renew retention");
+    rig.pipeline.discardFailedTake();
+  });
+}
+
+test("pipeline: clipboard takeover keeps the transcript with History disabled", async () => {
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => "first part\nsecond part",
+    deliver: async () => ({ method: "clipboard-changed", hint: "Nothing was pasted." }),
+  });
+  rig.cfg.history.enabled = false;
+  rig.cfg.output.singleLine = true;
+  await rig.dictate(speechWav(2));
+  assert.deepStrictEqual(rig.log.history, []);
+  assert.strictEqual(rig.pipeline.getUndelivered().text, "first part\nsecond part");
+  assert.strictEqual(rig.log.done.method, "clipboard-changed");
+});

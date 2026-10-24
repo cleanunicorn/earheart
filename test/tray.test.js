@@ -314,3 +314,32 @@ test("Copy last transcription prefers a History entry newer than the held-back d
   await item(menus.at(-1), "Copy last transcription").click();
   assert.deepStrictEqual(copies, ["newer entry"]);
 });
+
+for (const singleLine of [true, false]) {
+  test(`Copy last transcription formats held text with singleLine=${singleLine}`, async (t) => {
+    const text = "First part.\n\nSecond part.";
+    const { tray, pipeline, menus, copies } = loadTray(t, {
+      stored: { output: { singleLine }, history: { enabled: false } },
+    });
+    pipeline.undelivered = { text, at: "2026-01-01T00:00:00.000Z" };
+    tray.refresh();
+    const copy = item(menus.at(-1), "Copy last transcription");
+    assert.strictEqual(copy.enabled, true);
+    await copy.click();
+    assert.deepStrictEqual(copies, [singleLine ? "First part. Second part." : text]);
+    assert.strictEqual(pipeline.undelivered.text, text, "the retained original keeps its formatting");
+  });
+}
+
+test("Copy last transcription flattens a newer History entry instead of older held text", async (t) => {
+  const entry = { text: "Newer first.\nNewer second.", at: "2026-02-01T00:00:00.000Z" };
+  const { tray, pipeline, menus, copies } = loadTray(t, {
+    stored: { output: { singleLine: true } },
+    historyEntries: [entry],
+  });
+  pipeline.undelivered = { text: "Older first.\nOlder second.", at: "2026-01-01T00:00:00.000Z" };
+  tray.refresh();
+  await item(menus.at(-1), "Copy last transcription").click();
+  assert.deepStrictEqual(copies, ["Newer first. Newer second."]);
+  assert.strictEqual(entry.text, "Newer first.\nNewer second.");
+});

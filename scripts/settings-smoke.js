@@ -48,7 +48,7 @@
 //      repo) shows discovery's explanation as an error and offers no version
 //      to add.
 //  13. Save clamps the Performance limits (max dictation length, idle unload)
-//      to the fields' own ranges, and says so instead of closing.
+//      to the fields' own ranges, and says so.
 //  14. A microphone chosen while permission or device enumeration is pending
 //      survives completion (options and labels still refresh), and Save
 //      writes that choice to disk; an untouched saved microphone stays put.
@@ -56,7 +56,9 @@
 //      (with the row's progress), saves only once it is installed, never saves
 //      or says "Saved" when the download fails or is cancelled, starts no
 //      second transfer for repeated clicks or a Download already running, and
-//      downloads nothing when the selection is already installed.
+//      downloads nothing when the selection is already installed. Every
+//      Save keeps the window open and says "Saved"; editing the form clears
+//      that, and only the footer's Close closes the window (#298).
 //  15. Each API key field says how the key is stored, matching what real
 //      safeStorage reports after `ready`, and a saved key reaches disk as
 //      ciphertext that decrypts back to it (secure storage) or, without it
@@ -95,6 +97,15 @@ const { checkWindowLock } = require("./window-lock-smoke");
 const { installPermissionHandler } = require("../main/window-guard");
 const history = require("../main/history");
 const ipc = require("../main/ipc");
+// Keep each invoke handler ipc.init registers, so a check can wrap one (hold
+// settings:save's reply open) and put the real one back.
+const { ipcMain } = require("electron");
+const invokeHandlers = new Map();
+const registerHandler = ipcMain.handle.bind(ipcMain);
+ipcMain.handle = (channel, handler) => {
+  invokeHandlers.set(channel, handler);
+  return registerHandler(channel, handler);
+};
 const engines = require("../main/engines");
 const { registry } = engines;
 
@@ -110,13 +121,49 @@ app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
 app.on("window-all-closed", () => {});
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-async function waitFor(read, message) {
-  for (let attempt = 0; attempt < 100; attempt++) {
-    const value = await read();
+// Each read is bounded too: an executeJavaScript whose window is destroyed
+// mid-call never settles, and would otherwise hang the run past every check.
+async function waitFor(read, message, attempts = 100) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    let timer;
+    const value = await Promise.race([
+      read(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${message} (a read never settled)`)), 10000);
+      }),
+    ]).finally(() => clearTimeout(timer));
     if (value) return value;
     await sleep(10);
   }
   throw new Error(message);
+}
+
+// Save keeps Settings open (#298): wait for its "Saved", then dismiss the
+// window through the footer's Close button, as a user would. A Save is
+// several round-trips (models:status, settings:save, hotkey registration), so
+// it gets a longer budget than one poll loop on a loaded machine.
+async function savedThenClose(win, message) {
+  const run = (code) => win.webContents.executeJavaScript(code, true);
+  await waitFor(
+    () => !win.isDestroyed() && run(`document.getElementById("save-status").className === "status ok"`),
+    message,
+    500
+  ).catch(async (err) => {
+    const shown = win.isDestroyed() ? "(window closed)" : await run(`document.getElementById("save-status").textContent`);
+    throw new Error(`${err.message}; status: ${JSON.stringify(shown)}`);
+  });
+  await clickClose(win);
+}
+
+// Click the footer's Close on a later task. Clicked inline, settings:close can
+// reach main ahead of executeJavaScript's own reply, destroy the window, and
+// leave that reply — and the smoke — waiting forever.
+async function clickClose(win) {
+  await win.webContents.executeJavaScript(
+    `setTimeout(() => document.getElementById("close").click()); true`,
+    true
+  );
+  await waitFor(() => win.isDestroyed(), "Close did not close Settings");
 }
 
 const checks = [];
@@ -951,8 +998,8 @@ app.whenReady().then(async () => {
     }
 
     // 13. The Performance limits clamp on the real Save: out-of-range entries
-    // reach disk as the field's own min/max, not as typed (#210), and the
-    // window stays open to say so. Last, since it saves the whole form.
+    // reach disk as the field's own min/max, not as typed (#210), and Save
+    // says so. Last, since it saves the whole form.
     await js(`(() => {
       document.getElementById("max-seconds").value = "-5";
       document.getElementById("idle-unload").value = "9999";
@@ -1133,8 +1180,8 @@ app.whenReady().then(async () => {
       JSON.stringify({ afterRemove, removed })
     );
 
-    // Save goes through the real settings:save handler (and then closes the
-    // window), so count saves to know when the renderer's own one has landed.
+    // Save goes through the real settings:save handler, so count saves to
+    // know when the renderer's own one has landed.
     let rendererSaves = 0;
     const saveSettings = settings.save;
     settings.save = (next) => {
@@ -1161,7 +1208,7 @@ app.whenReady().then(async () => {
     // survives completion and is what Save writes to disk. Each case reopens
     // Settings on a saved device, holds the real loadMicrophones() at one
     // await, makes the choice through the real <select>, then releases.
-    // Runs last: a clean Save closes the window, and the cases rewrite the
+    // Runs last: each case opens its own window, and the cases rewrite the
     // profile's microphone.
     windows.closeSettings();
     await waitFor(() => win.isDestroyed(), "settings window did not close");
@@ -1250,7 +1297,7 @@ app.whenReady().then(async () => {
         })()`));
         if (save) {
           await run(`document.getElementById("save").click()`);
-          await waitFor(() => raceWin.isDestroyed(), "a clean Save did not close Settings");
+          await savedThenClose(raceWin, "Save never reported Saved");
           state.persisted = JSON.parse(
             fs.readFileSync(path.join(userData, "settings.json"), "utf8")
           ).audio.deviceId;
@@ -1312,8 +1359,9 @@ app.whenReady().then(async () => {
     );
 
     // 16. Save downloads a selected built-in model that isn't installed, and
-    // persists only after it is. Each case opens a fresh window (a clean Save
-    // closes it) and holds the fake engine's transfer open.
+    // persists only after it is. Each case opens a fresh window (and closes it
+    // with Close once Save says "Saved") and holds the fake engine's transfer
+    // open.
     const savedJson = () => JSON.parse(fs.readFileSync(path.join(userData, "settings.json"), "utf8"));
     const notInstalled = (kind) => registry.listModels(kind)
       .map((m) => m.id)
@@ -1378,7 +1426,7 @@ app.whenReady().then(async () => {
           JSON.stringify(during)
         );
         downloads.get(`stt:${saveSttModel}`).resolve();
-        await waitFor(() => saveWin.isDestroyed(), "Save did not close Settings after the download");
+        await savedThenClose(saveWin, "Save did not report Saved after the download");
         check(
           "Save persists the model once it is downloaded, once, after repeated clicks",
           savedJson().stt.builtin.model === saveSttModel &&
@@ -1439,7 +1487,7 @@ app.whenReady().then(async () => {
         await sleep(150);
         const joined = { calls: downloadCalls.slice(callsBefore), saves: saveCount - savesBefore, open: !saveWin.isDestroyed() };
         downloads.get(`cleanup:${saveCleanupModel}`).resolve();
-        await waitFor(() => saveWin.isDestroyed(), "Save did not close Settings after the running download finished");
+        await savedThenClose(saveWin, "Save did not report Saved after the running download finished");
         check(
           "Save during a running Download waits for it instead of starting another",
           joined.calls.length === 1 && joined.saves === 0 && joined.open &&
@@ -1492,7 +1540,7 @@ app.whenReady().then(async () => {
         await run(`document.getElementById("save").click(); true`);
         await waitFor(() => downloadCalls.length > callsBefore, "the retried Save did not start cleanup");
         downloads.get(`cleanup:${cleanupSwitched}`).resolve();
-        await waitFor(() => saveWin.isDestroyed(), "the retried Save did not close Settings");
+        await savedThenClose(saveWin, "the retried Save did not report Saved");
         check(
           "the next Save downloads only what is still missing and saves both once",
           downloadCalls.slice(callsBefore).join() === `cleanup:${cleanupSwitched}` &&
@@ -1502,18 +1550,165 @@ app.whenReady().then(async () => {
         );
       }
 
-      // Installed selection: Save behaves as before.
+      // Installed selection: Save downloads nothing, keeps the window open
+      // and says "Saved" (#298); an edit clears that; Close closes the window.
       {
-        const { saveWin, run } = await openSaveWindow();
+        const { saveWin, run, state } = await openSaveWindow();
         const callsBefore = downloadCalls.length;
         const savesBefore = saveCount;
         await run(`document.getElementById("save").click(); true`);
-        await waitFor(() => saveWin.isDestroyed(), "a clean Save with installed models did not close Settings");
+        const saved = await waitFor(
+          () => state("stt").then((s) => s.saveClass === "status ok" && s),
+          "a clean Save with installed models never reported Saved"
+        );
+        await sleep(300);
+        const open = !saveWin.isDestroyed();
         check(
           "Save with downloaded models downloads nothing and saves once",
           downloadCalls.length === callsBefore && saveCount === savesBefore + 1,
           JSON.stringify({ calls: downloadCalls.slice(callsBefore), saves: saveCount - savesBefore })
         );
+        check(
+          "a clean Save keeps Settings open and says Saved",
+          open && saved.save === "Saved" && !saved.saveDisabled,
+          JSON.stringify({ open, saved })
+        );
+        // An interaction that changes nothing keeps "Saved": the snapshot
+        // must match the form right after Save, not just differ after edits.
+        await run(`(() => {
+          document.querySelector(".tab").click();
+          document.body.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift", bubbles: true }));
+        })()`);
+        await sleep(100);
+        const kept = await run(`document.getElementById("save-status").textContent`);
+        check("a click or key that edits nothing keeps Saved", kept === "Saved", JSON.stringify(kept));
+        // Step away from whichever end of the range the value sits at, so
+        // collect()'s clamp can't undo the edit.
+        await run(`(() => {
+          const field = document.getElementById("max-seconds");
+          window.__maxStep = Number(field.value) < Number(field.max) ? 1 : -1;
+          field.value = String(Number(field.value) + window.__maxStep);
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+        })()`);
+        const edited = await waitFor(
+          () => run(`document.getElementById("save-status").textContent === ""`),
+          "editing the form did not clear Saved"
+        );
+        check("editing the form after a Save clears Saved", edited);
+        // A hotkey capture sets the value directly and fires no input event;
+        // it must clear "Saved" too.
+        await run(`(() => {
+          const field = document.getElementById("max-seconds");
+          field.value = String(Number(field.value) - window.__maxStep);
+          document.getElementById("save").click();
+        })()`);
+        await waitFor(
+          () => state("stt").then((s) => s.save === "Saved"),
+          "a second clean Save never reported Saved"
+        );
+        await run(`(() => {
+          const field = document.getElementById("pause-hotkey");
+          field.click();
+          field.dispatchEvent(new KeyboardEvent("keydown", {
+            key: "F9", code: "F9", ctrlKey: true, altKey: true, shiftKey: true, bubbles: true, cancelable: true,
+          }));
+          field.blur();
+        })()`);
+        const captured = await waitFor(
+          () => run(`document.getElementById("save-status").textContent === "" &&
+            document.getElementById("pause-hotkey").value`),
+          "a captured hotkey did not clear Saved"
+        );
+        check("capturing a hotkey after a Save clears Saved", /Alt\+Shift\+F9$/.test(captured), JSON.stringify(captured));
+        await clickClose(saveWin);
+        check(
+          "Close closes Settings without saving the edit",
+          saveWin.isDestroyed() && saveCount === savesBefore + 2 &&
+            !/F9$/.test(savedJson().pauseHotkey || ""),
+          JSON.stringify({ saves: saveCount - savesBefore })
+        );
+      }
+
+      // A plain Save whose own settings:changed rewrites the dictionary and
+      // output controls mid-save is still "Saved": blank lines, duplicates,
+      // padding and a removed word come back from the merge unchanged.
+      {
+        const beforeEdit = settings.get();
+        const { saveWin, run } = await openSaveWindow();
+        await run(`(() => {
+          const field = document.getElementById("cleanup-dictionary");
+          const kept = field.value.split("\\n").filter((line) => line.trim()).slice(1);
+          field.value = ["", "  Padded  ", "dupe", "dupe", ...kept, ""].join("\\n");
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+          document.querySelector('input[name="output-mode"]:not(:checked)').click();
+          document.getElementById("save").click();
+        })()`);
+        await savedThenClose(saveWin, "a dictionary and output edit never reported Saved");
+        check(
+          "a Save that rewrites the dictionary and output mode still says Saved",
+          savedJson().cleanup.dictionary.includes("Padded") && savedJson().cleanup.dictionary.includes("dupe"),
+          JSON.stringify(savedJson().cleanup.dictionary)
+        );
+        // Later checks read the output mode and dictionary; put them back.
+        const after = settings.get();
+        settings.save({
+          ...after,
+          output: beforeEdit.output,
+          cleanup: { ...after.cleanup, dictionary: beforeEdit.cleanup.dictionary },
+        });
+      }
+
+      // An edit made while the save is in flight is not in what was saved:
+      // Save must say so instead of "Saved", and disk keeps the sent value.
+      {
+        const { saveWin, run } = await openSaveWindow();
+        const before = savedJson().stt.language;
+        const typed = before === "fr" ? "de" : "fr";
+        const realSave = invokeHandlers.get("settings:save");
+        let release;
+        const held = new Promise((resolve) => { release = resolve; });
+        let reached = false;
+        ipcMain.removeHandler("settings:save");
+        registerHandler("settings:save", async (...args) => {
+          const reply = await realSave(...args);
+          reached = true;
+          await held;
+          return reply;
+        });
+        try {
+          await run(`document.getElementById("save").click(); true`);
+          await waitFor(() => reached, "the held Save never reached main");
+          await run(`(() => {
+            const field = document.getElementById("stt-language");
+            field.value = ${JSON.stringify(typed)};
+            field.dispatchEvent(new Event("input", { bubbles: true }));
+          })()`);
+          release();
+          const during = await waitFor(
+            () => run(`(() => {
+              const status = document.getElementById("save-status");
+              return status.textContent.startsWith("Saved") && JSON.stringify({
+                text: status.textContent,
+                className: status.className,
+                field: document.getElementById("stt-language").value,
+              });
+            })()`),
+            "the held Save never finished"
+          ).then(JSON.parse);
+          await sleep(100);
+          const later = await run(`document.getElementById("save-status").textContent`);
+          check(
+            "an edit made while saving is not vouched for by Saved",
+            during.className === "status" && /aren't saved yet/.test(during.text) &&
+              later === during.text && during.field === typed && savedJson().stt.language === before,
+            JSON.stringify({ during, later, saved: savedJson().stt.language })
+          );
+        } finally {
+          release();
+          ipcMain.removeHandler("settings:save");
+          registerHandler("settings:save", realSave);
+        }
+        await clickClose(saveWin);
       }
     } finally {
       settings.save = countedSave;
@@ -1528,7 +1723,7 @@ app.whenReady().then(async () => {
     }
 
     await require("./wizard-smoke").checkWizard({ waitFor, check });
-    await require("./correction-smoke").checkCorrection({ waitFor, check });
+    await require("./correction-smoke").checkCorrection({ waitFor, check, savedThenClose });
 
     const failed = checks.filter((c) => !c.ok);
     console.log(

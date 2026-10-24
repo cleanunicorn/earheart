@@ -177,16 +177,30 @@ const MODELS = {
       },
     },
   },
+  // Labels say what a model is for, not what it is: a size (Small / Medium /
+  // Large, the download and RAM it costs) and a use — "code and speech" for
+  // the models that handle dictated commands, paths and symbols, "everyday
+  // speech" for the ones measured to get spoken code wrong
+  // (docs/cleanup-models.md, technical corpus). The model's own name ends
+  // the note, for anyone who wants it.
+  //
+  // `stumbleBackstop: false` turns off the deterministic filler/repeat pass
+  // (main/util/stumble-strip.js) for a model measured not to need it: on the
+  // prose and technical corpora (docs/cleanup-models.md) it never removed a
+  // filler from these models' output, and on technical dictation every edit it
+  // made was a broken symbol. Absent means on — the Gemma 3 models that leave
+  // fillers in, user-added models and remote servers nobody has measured.
   cleanup: {
     "gemma-3-1b": {
       id: "gemma-3-1b",
-      label: "Gemma 3 1B (fast, small)",
+      label: "Small · everyday speech",
       kind: "cleanup",
-      // Honest about where it falls down. Measured on a 150-word dictation:
-      // 1B leaves most "um"/"uh" in place and misses the spoken-code rule
-      // ("src slash main dot pie"), where 4B gets both right. Someone picking a
-      // cleanup model should see that before they pick the small one.
-      note: "Runs on this computer · ~0.8 GB · fastest, but leaves some fillers in",
+      // Honest about where it falls down. On the technical corpus
+      // (docs/cleanup-models.md) it copies the transcript nearly word for
+      // word, spoken symbols included, and leaves "um"/"uh" in a long
+      // dictation. Someone picking a cleanup model should see that before
+      // they pick the small one.
+      note: "Runs on this computer · ~0.8 GB · fastest · for everyday speech, not code: misses spoken symbols and paths, leaves some fillers in · Gemma 3 1B",
       files: [
         { name: "gemma-3-1b-it-Q4_K_M.gguf", bytes: 806_058_240,
           sha256: "8ccc5cd1f1b3602548715ae25a66ed73fd5dc68a210412eea643eb20eb75a135",
@@ -196,7 +210,8 @@ const MODELS = {
     },
     "granite-4.0-micro": {
       id: "granite-4.0-micro",
-      label: "Granite 4.0 Micro (recommended)",
+      stumbleBackstop: false,
+      label: "Medium · code and speech (recommended)",
       kind: "cleanup",
       default: true,
       // The default, per the cleanup benchmark (#167, Ryzen 9 3900X CPU): no
@@ -208,7 +223,7 @@ const MODELS = {
       // RAM is stated on the same scale as Gemma 3 4B's "~6 GB": measured the
       // same way (CPU, default 4096 context, peak RSS), Granite used 3,987 MiB
       // against Gemma 3 4B's 4,289 MiB, 0.93x of it.
-      note: "Runs on this computer · ~2.1 GB, 2.6× the 1B · needs ~6 GB RAM · recommended: removes fillers reliably, faster than Qwen",
+      note: "Runs on this computer · ~2.1 GB · needs ~6 GB RAM · code dictation, the fastest of the code models · Granite 4.0 Micro",
       files: [
         { name: "granite-4.0-micro-Q4_K_M.gguf", bytes: 2_099_502_528,
           sha256: "97c417dcc0534b0737c74016fb2af083cb17c3b51eaac621192d23961b7024eb",
@@ -218,9 +233,9 @@ const MODELS = {
     },
     "gemma-3-4b": {
       id: "gemma-3-4b",
-      label: "Gemma 3 4B (balanced)",
+      label: "Medium · everyday speech",
       kind: "cleanup",
-      note: "Runs on this computer · ~2.6 GB · needs ~6 GB RAM · removes fillers reliably",
+      note: "Runs on this computer · ~2.6 GB · needs ~6 GB RAM · for everyday speech; often gets spoken code wrong · Gemma 3 4B",
       files: [
         { name: "gemma-3-4b-it-Q4_K_M.gguf", bytes: 2_489_757_856,
           sha256: "882e8d2db44dc554fb0ea5077cb7e4bc49e7342a1f0da57901c0802ea21a0863",
@@ -230,14 +245,15 @@ const MODELS = {
     },
     "qwen3-4b-2507": {
       id: "qwen3-4b-2507",
-      label: "Qwen3 4B Instruct 2507 (cleanest polish)",
+      stumbleBackstop: false,
+      label: "Medium · code and speech, polished writing",
       kind: "cleanup",
       // The default before Granite 4.0 Micro. Same benchmark: also no fillers
       // left, and cleaner than Granite on the polished style (0 "kind of like"
       // left vs 2), but a little slower than Granite
       // (21.1 s vs 18.6 s median) and a little lower retention (0.94 vs 0.95).
       // RAM on the Gemma 3 4B scale: 4,817 MiB peak vs 4,289 MiB, 1.12x of it.
-      note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · removes fillers reliably, cleanest on the polished style",
+      note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · code dictation, writes the most spoken code as code, cleanest on the Polished style · Qwen3 4B Instruct 2507",
       files: [
         { name: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf", bytes: 2_497_281_120,
           sha256: "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
@@ -249,9 +265,10 @@ const MODELS = {
     // though the underlying model is Gemma 3 12B.
     "gemma-4-12b": {
       id: "gemma-4-12b",
-      label: "Gemma 3 12B (best quality)",
+      stumbleBackstop: false,
+      label: "Large · code and speech, best quality",
       kind: "cleanup",
-      note: "Runs on this computer · ~7 GB · needs ~10 GB RAM, strong machine",
+      note: "Runs on this computer · ~7 GB · needs ~10 GB RAM, strong machine · Gemma 3 12B",
       files: [
         { name: "gemma-3-12b-it-Q4_K_M.gguf", bytes: 7_300_574_976,
           sha256: "7bb69bff3f48a7b642355d64a90e481182a7794707b3133890646b1efa778ff5",

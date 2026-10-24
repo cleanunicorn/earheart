@@ -11,8 +11,11 @@
 //   - fillers: the "um" / "uh" / "erm" families only, never words that can
 //     be meaningful ("like", "you know", "so", "right");
 //   - repeats: an immediately re-spoken word only, and never one whose
-//     doubling can be deliberate ("had had", "very very", "two two").
-// Everything subtler stays the model's job.
+//     doubling can be deliberate ("had had", "very very", "two two",
+//     "dot dot slash").
+// Everything subtler stays the model's job. Which models still need this net
+// is a catalog fact (`stumbleBackstop` in main/engines/registry.js), applied
+// in main/services/route.js.
 
 // Interjections as STT writes them: um, umm, uh, uhh, uhm, erm. The lookarounds
 // (rather than \b) also keep "uh-huh" and "uh-oh" intact.
@@ -133,9 +136,22 @@ const NUMBER_WORD = new Set([
 const REPEAT =
   /(?<![\p{L}\p{N}'’-])([\p{L}\p{N}][\p{L}\p{N}'’-]*)((?:[^\S\n]+\1)+)(?![\p{L}\p{N}'’-])/giu;
 
+// Spoken symbols: code dictation doubles them on purpose ("dot dot slash" is
+// ../, "equals equals" is ==, "dash dash force" is --force). When the model
+// leaves them as words, collapsing one changes the code; it is never a
+// stutter worth the risk. Measured on the technical corpus
+// (docs/cleanup-models.md): every symbol this backstop broke was one of these,
+// and exempting them kept every filler it removed.
+const SYMBOL_WORD = new Set([
+  "dot", "dash", "hyphen", "slash", "backslash", "equals", "underscore",
+  "star", "asterisk", "pipe", "ampersand", "plus", "minus", "colon",
+  "semicolon", "hash", "pound", "bang", "tilde", "caret", "percent", "dollar",
+  "backtick",
+]);
+
 function collapsible(word) {
   const key = word.toLowerCase();
-  if (KEEP_DOUBLED.has(key) || NUMBER_WORD.has(key)) return false;
+  if (KEEP_DOUBLED.has(key) || NUMBER_WORD.has(key) || SYMBOL_WORD.has(key)) return false;
   if (/[\p{N}]/u.test(word)) return false;
   // Single letters are usually spelled out ("V V" in a serial number); "I" and
   // "a" are the two that stutter instead.

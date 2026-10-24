@@ -299,6 +299,9 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
       // Drives the cleanup style slider (id/label/hint per stop) and the
       // "Start from preset" seed values, so the UI copy and numbers stay in
       // lockstep with the presets the engines actually use.
+      // A new default system prompt this user hasn't decided on yet, if any
+      // (settings.cleanupPromptOffer): Settings → Cleanup offers it.
+      promptOffer: settings.cleanupPromptOffer(cfg),
       cleanupStyles: CLEANUP_STYLES.map(({ id, label, hint, sampling }) => ({
         id,
         label,
@@ -559,6 +562,22 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     const sample = "um so this is uh a test of the cleanup service";
     const result = await route.clean(sample, cfg);
     return { ok: true, sample: result.slice(0, 200) };
+  }));
+
+  // The user's answer to the new-default-prompt offer: "use" switches to the
+  // new default, "keep" leaves their prompt. Either way this default is
+  // decided and not offered again. Saved at once, not with the form, so the
+  // answer holds even if they close Settings without saving.
+  ipcMain.handle("cleanup:prompt-offer", wrap(async (event, { decision } = {}) => {
+    if (decision !== "use" && decision !== "keep") throw new Error(`unknown decision: ${decision}`);
+    const cfg = settings.get();
+    const offer = settings.cleanupPromptOffer(cfg);
+    const answer = (c) => ({ ok: true, systemPrompt: c.systemPrompt, promptOfferDecided: c.promptOfferDecided });
+    if (!offer) return answer(cfg.cleanup);
+    const cleanupCfg = { ...cfg.cleanup, promptOfferDecided: offer.id };
+    if (decision === "use") cleanupCfg.systemPrompt = settings.DEFAULTS.cleanup.systemPrompt;
+    const saved = settings.save({ ...cfg, cleanup: cleanupCfg });
+    return answer(saved.cleanup);
   }));
 
   // ---- in-process model management (wizard download step + Settings) ----

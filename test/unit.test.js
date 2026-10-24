@@ -12,14 +12,15 @@ const path = require("node:path");
 const { encodeWav, encodeSilenceWav, wavToFloat32, wavDurationSec } = require("../main/util/wav");
 const { stripThinking, clean: remoteClean } = require("../main/services/cleanup");
 const { CLEAN_RUNAWAY_MESSAGE } = require("../main/util/clean-budget");
-const { deepMerge, migrateLegacy, DEFAULTS } = require("../main/settings");
+const { deepMerge, migrateLegacy, DEFAULTS, cleanupPromptOffer, promptFingerprint, PREVIOUS_DEFAULT_PROMPTS } = require("../main/settings");
+const { diffLines, foldUnchanged } = require("../renderer/prompt-diff");
 const { resolveCleanup } = require("../main/cleanup-styles");
 const {
   stripFillers,
   collapseRepeats,
   stripStumbles,
 } = require("../main/util/stumble-strip");
-const { FLUENT } = require("../scripts/dictation-corpus");
+const { FLUENT, TECHNICAL, TECHNICAL_HELDOUT } = require("../scripts/dictation-corpus");
 const autostart = require("../main/autostart");
 const { listRemoteModels } = require("../main/services/models-remote");
 const { reconcileTranscript } = require("../renderer/transcript");
@@ -436,6 +437,87 @@ test("migrateLegacy re-flows an untouched hard-wrapped prompt", () => {
   assert.strictEqual(edited.cleanup.systemPrompt, "My own rules.");
 });
 
+/* ---------------- new default prompt offer ---------------- */
+
+// Changing the default prompt breaks this pin on purpose: append the outgoing
+// default's fingerprint to PREVIOUS_DEFAULT_PROMPTS (main/settings.js) so its
+// users are offered the new one as a plain switch, then update the pin.
+test("the default prompt's fingerprint is pinned, and only the outgoing ones are 'previous'", () => {
+  assert.strictEqual(
+    promptFingerprint(DEFAULTS.cleanup.systemPrompt),
+    "86ffc59b306bbb6cfdfde09f4caf5c16bb670c594cff9c4c0c8778f531239013"
+  );
+  for (const h of PREVIOUS_DEFAULT_PROMPTS) assert.match(h, /^[0-9a-f]{64}$/);
+  assert.ok(!PREVIOUS_DEFAULT_PROMPTS.has(promptFingerprint(DEFAULTS.cleanup.systemPrompt)));
+});
+
+test("cleanupPromptOffer stays quiet for the current default and a decided offer", () => {
+  const cfg = (cleanup) => ({ cleanup: { ...DEFAULTS.cleanup, ...cleanup } });
+  assert.strictEqual(cleanupPromptOffer(cfg({})), null);
+  // Trailing whitespace or a hard wrap is not an edit.
+  assert.strictEqual(cleanupPromptOffer(cfg({ systemPrompt: `${DEFAULTS.cleanup.systemPrompt}\n` })), null);
+
+  const custom = cleanupPromptOffer(cfg({ systemPrompt: "My own rules." }));
+  assert.strictEqual(custom.kind, "custom");
+  assert.match(custom.id, /^[0-9a-f]{16}$/);
+  assert.strictEqual(cleanupPromptOffer(cfg({ systemPrompt: "My own rules.", promptOfferDecided: custom.id })), null);
+  // A decision on an older default doesn't answer this one.
+  assert.strictEqual(cleanupPromptOffer(cfg({ systemPrompt: "My own rules.", promptOfferDecided: "0123456789abcdef" })).kind, "custom");
+  assert.strictEqual(cleanupPromptOffer({}), null);
+});
+
+test("cleanupPromptOffer offers the v0.43 default as a plain switch", () => {
+  // The default up to v0.43, before the doubled-symbol sentence.
+  const previous = DEFAULTS.cleanup.systemPrompt.replace(
+    ' A symbol word said twice is two symbols, not a stutter ("dot dot slash" -> ../).',
+    ""
+  );
+  assert.notStrictEqual(previous, DEFAULTS.cleanup.systemPrompt);
+  assert.strictEqual(cleanupPromptOffer({ cleanup: { ...DEFAULTS.cleanup, systemPrompt: previous } }).kind, "previous-default");
+});
+
+test("cleanupPromptOffer recognises an untouched earlier default", () => {
+  // A stand-in for an earlier default: any text whose fingerprint is listed.
+  const first = [
+    "You clean up raw speech-to-text transcriptions.",
+    "",
+    "Rules:",
+  ].join("\n");
+  PREVIOUS_DEFAULT_PROMPTS.add(promptFingerprint(first));
+  try {
+    const offer = cleanupPromptOffer({ cleanup: { ...DEFAULTS.cleanup, systemPrompt: first } });
+    assert.strictEqual(offer.kind, "previous-default");
+  } finally {
+    PREVIOUS_DEFAULT_PROMPTS.delete(promptFingerprint(first));
+  }
+});
+
+test("foldUnchanged keeps one line of context around each change and folds the rest", () => {
+  const diff = diffLines("a\nb\nc\nd\ne\nf", "a\nb\nc\nD\ne\nf");
+  assert.deepStrictEqual(foldUnchanged(diff), [
+    { op: "skip", count: 2 },
+    { op: "same", line: "c" },
+    { op: "del", line: "d" },
+    { op: "add", line: "D" },
+    { op: "same", line: "e" },
+    { op: "skip", count: 1 },
+  ]);
+  // Nothing changed: everything folds.
+  assert.deepStrictEqual(foldUnchanged(diffLines("x\ny", "x\ny")), [{ op: "skip", count: 2 }]);
+});
+
+test("diffLines marks what the new default removes and adds, in order", () => {
+  assert.deepStrictEqual(diffLines("a\nb\nc", "a\nB\nc\nd"), [
+    { op: "same", line: "a" },
+    { op: "del", line: "b" },
+    { op: "add", line: "B" },
+    { op: "same", line: "c" },
+    { op: "add", line: "d" },
+  ]);
+  assert.deepStrictEqual(diffLines("x", "x"), [{ op: "same", line: "x" }]);
+  assert.deepStrictEqual(diffLines("", "y"), [{ op: "del", line: "" }, { op: "add", line: "y" }]);
+});
+
 test("new installs default to in-process engines", () => {
   assert.strictEqual(DEFAULTS.stt.engine, "builtin");
   assert.strictEqual(DEFAULTS.cleanup.engine, "builtin");
@@ -689,6 +771,60 @@ test("route.clean rescues the reported fluent dictation on every tidied style", 
       assert.deepStrictEqual(out.match(/(?<![\w-])(?:u[mh]+|erm+)(?![\w-])/gi), null);
     }
   }
+});
+
+// The technical corpus (docs/cleanup-models.md): a model that leaves spoken
+// symbols as words must not have them collapsed as stutters.
+test("stripStumbles keeps doubled symbol words and still removes the stumbles around them", () => {
+  const kept = [
+    "cd into dot dot slash config",
+    "run the tests with dash dash watch",
+    "if user equals equals null",
+    "the underscore underscore init underscore underscore method",
+    "add star star slash star dot test dot js",
+    "is admin ampersand ampersand has access, not pipe pipe",
+    "it should be i plus plus",
+    "string colon colon from",
+    "the heading should be hash hash installation",
+  ];
+  for (const text of kept) assert.strictEqual(stripStumbles(text), text);
+  assert.strictEqual(
+    stripStumbles("um open the the file at dot dot slash utils, uh, then run it"),
+    "Open the file at dot dot slash utils, then run it"
+  );
+});
+
+// The worst case: a model that hands the transcript back word for word, so
+// every spoken symbol reaches the backstop as words. Before the exemption it
+// broke 16 of them across these transcripts.
+test("stripStumbles keeps every spoken symbol of the technical corpus and still drops its fillers", () => {
+  for (const item of [...TECHNICAL, ...TECHNICAL_HELDOUT]) {
+    const out = stripStumbles(item.text);
+    for (const k of item.keep) {
+      if (k.any.some((re) => re.test(item.text))) {
+        assert.ok(k.any.some((re) => re.test(out)), `${k.name} lost from ${JSON.stringify(out)}`);
+      }
+    }
+    assert.doesNotMatch(out, /(?<![\w-])(?:um|uh)(?![\w-])/i, out);
+  }
+});
+
+test("route.clean skips the backstop for catalog models measured not to need it", async () => {
+  const left = "Run it with dash dash watch and the the tests.";
+  const tidied = "Run it with dash dash watch and the tests.";
+  const route = loadRouteWith(left);
+  for (const model of ["granite-4.0-micro", "qwen3-4b-2507", "gemma-4-12b"]) {
+    assert.strictEqual(await route.clean("raw", { engine: "builtin", style: "clean", builtin: { model } }), left, model);
+  }
+  // The models that leave fillers in, a model the catalog doesn't know (a
+  // user-added one), and a remote server all keep the net.
+  for (const model of ["gemma-3-1b", "gemma-3-4b", "my-custom-model"]) {
+    assert.strictEqual(await route.clean("raw", { engine: "builtin", style: "clean", builtin: { model } }), tidied, model);
+  }
+  assert.strictEqual(
+    await route.clean("raw", { engine: "remote", style: "clean", builtin: { model: "granite-4.0-micro" } }),
+    tidied
+  );
 });
 
 /* ---------------- cleanup dictionary ---------------- */

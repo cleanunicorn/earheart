@@ -4,6 +4,7 @@
 // grouped by concern so modules can take just the slice they need.
 
 const { app, safeStorage } = require("electron");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const registry = require("./engines/registry");
@@ -37,8 +38,9 @@ const DEFAULT_CLEANUP_PROMPT = [
   '- When the words clearly indicate code, write them as code: "main dot pie" -> ' +
     'main.py, "src slash utils" -> src/utils, "dash dash verbose" -> --verbose, ' +
     '"camel case get user by id" -> getUserById, "port three thousand" -> port ' +
-    '3000, "python three point twelve" -> Python 3.12. In ordinary prose, leave ' +
-    "the words as spoken.",
+    '3000, "python three point twelve" -> Python 3.12. A symbol word said twice ' +
+    'is two symbols, not a stutter ("dot dot slash" -> ../). In ordinary prose, ' +
+    "leave the words as spoken.",
   '- Leave pronouns and references ("it", "that file") exactly as spoken. Never ' +
     "resolve them to a specific name.",
   "- When the speaker reads out an error message or existing code, reproduce it " +
@@ -144,6 +146,12 @@ const DEFAULTS = {
     // main/cleanup-styles.js. Array of strings; deepMerge replaces arrays
     // wholesale, so a saved list survives the merge intact.
     dictionary: [],
+    // The new-default-prompt offer (cleanupPromptOffer): the default's id the
+    // user decided on (took it or kept theirs), and the one a launch notice
+    // already announced, so each new default is announced once and offered
+    // until decided.
+    promptOfferDecided: "",
+    promptOfferNotified: "",
   },
   audio: {
     deviceId: "", // empty = system default microphone
@@ -244,6 +252,39 @@ function deepMerge(base, override) {
       : clone(override[key]);
   }
   return out;
+}
+
+// SHA-256 (of unwrapPrompt(text)) of every default prompt an earlier release
+// shipped, oldest first. A stored prompt matching one was never edited — the
+// user just kept what came with the app — so a new default is offered as a
+// plain switch, without a diff to merge. When the default changes, append the
+// outgoing one's fingerprint here: the pinned fingerprint in test/unit.test.js
+// fails on any edit to the default, as the reminder.
+const PREVIOUS_DEFAULT_PROMPTS = new Set([
+  "82ef740504d359014a08827effc9d7c3c80b0668b153638bab42c7f41e0d1f0b", // v0.1, 2026-06-12
+  "ddbf84e11ef84fb1a01a0e0b5fc71b37848c3795c1f86040fff5eefde5486ab0", // 2026-06-16
+  "f3685f8482b02622202c5a9dc121b7a6fbf2957eef2a1b748c22f61561d65717", // 2026-06-20
+  "a416795e71adeb9cd25d43e13c061fea6299f8feb915cd0caf8bc06a89a21ca6", // 2026-07-10
+  "1a439fcf98ed8f88fa25fa8d48751ff6a1206e716072d0e832dd7a239208fa69", // 2026-08-04 (coding agent) to v0.43
+]);
+
+function promptFingerprint(text) {
+  return crypto.createHash("sha256").update(unwrapPrompt(String(text).trim())).digest("hex");
+}
+
+// Whether to offer the current default prompt to someone whose stored prompt
+// differs from it: null when they have it or already decided on this default;
+// otherwise { id, kind } — "previous-default" (an untouched earlier default:
+// ask to switch) or "custom" (their own edits: show what changed). `id` names
+// the current default, so the next default change offers again by itself.
+function cleanupPromptOffer(cfg) {
+  const stored = cfg?.cleanup?.systemPrompt;
+  if (typeof stored !== "string") return null;
+  const current = promptFingerprint(DEFAULT_CLEANUP_PROMPT);
+  const id = current.slice(0, 16);
+  const mine = promptFingerprint(stored);
+  if (mine === current || cfg.cleanup.promptOfferDecided === id) return null;
+  return { id, kind: PREVIOUS_DEFAULT_PROMPTS.has(mine) ? "previous-default" : "custom" };
 }
 
 // Undo source-level hard wrapping in a stored prompt: within a paragraph, a line
@@ -565,4 +606,7 @@ module.exports = {
   migrateLegacy,
   DEFAULTS,
   deepMerge,
+  cleanupPromptOffer,
+  promptFingerprint,
+  PREVIOUS_DEFAULT_PROMPTS,
 };

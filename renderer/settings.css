@@ -984,6 +984,59 @@ ul.notes li::before {
   line-height: 1.5;
 }
 
+/* ---------- new default prompt offer ---------- */
+
+/* The banner's quiet white-wash note, inside the System prompt card. */
+.prompt-offer {
+  margin: 0 0 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  padding: 11px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.prompt-offer .row {
+  margin-top: 10px;
+}
+
+/* The change itself: a "−"/"+" gutter carries the meaning (not color alone),
+   removed lines dimmed and struck through, added lines on a faint wash. */
+.prompt-diff {
+  margin-top: 10px;
+  max-height: 260px;
+  overflow: auto;
+  background: var(--field);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  padding: 8px 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.prompt-diff span {
+  display: block;
+  padding: 0 10px 0 26px;
+  text-indent: -16px;
+}
+
+.prompt-diff .del {
+  color: var(--text-dim);
+  text-decoration: line-through;
+}
+
+.prompt-diff .add {
+  background: var(--wash);
+}
+
+.prompt-diff .skip {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
 /* ---------- disabled cleanup blocks ---------- */
 
 #cleanup-fields.disabled {

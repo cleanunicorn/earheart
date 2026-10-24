@@ -28,6 +28,10 @@ const updateOuts = document.getElementById("update-outs");
 const updateSkip = document.getElementById("update-skip");
 const updateNever = document.getElementById("update-never");
 const updateClose = document.getElementById("update-close");
+const takeActions = document.getElementById("take-actions");
+const takeNote = document.getElementById("take-note");
+const takeRetry = document.getElementById("take-retry");
+const takeDiscard = document.getElementById("take-discard");
 
 let recording = null; // { sid, stream, source, recorder, chunks, startedAt, timerId, maxTimerId, partialTimerId }
 let generation = 0; // bumped on every start/teardown to invalidate stale awaits
@@ -193,11 +197,14 @@ const DONE_TITLE = {
   clipboard: "Copied to clipboard",
   "paste-copy": "Pasted & copied",
   paste: "Pasted",
+  // Another app took the clipboard over first: nothing pasted, nothing copied.
+  "clipboard-changed": "Not pasted — the clipboard changed",
 };
 
 function setStatus(status, title, detail) {
   card.dataset.status = status;
   document.getElementById("raw-reason").hidden = true;
+  takeActions.hidden = true;
   // The stop key only works while there's a take to stop (a paused take still
   // counts). Disable it for keyboard and assistive tech too, not just
   // visually — the unlit-key style and pointer-events guard live in
@@ -1027,9 +1034,11 @@ earheart.on("pipeline:status", ({ status, detail }) => {
       // A note means auto-paste was attempted and failed: say so in the
       // title, and put the reason or what to do where the preview would go —
       // the text is on the clipboard either way.
-      const delivered = detail?.note
-        ? "Copied — auto-paste failed"
-        : DONE_TITLE[detail?.method] ?? "Pasted";
+      const delivered = detail?.method === "clipboard-changed"
+        ? DONE_TITLE["clipboard-changed"]
+        : detail?.note
+          ? "Copied — auto-paste failed"
+          : DONE_TITLE[detail?.method] ?? "Pasted";
       // Some of the speech never made it into the transcript (the engine
       // stopped part-way). The OS notification that said so is gone in
       // seconds; the card is what the user is still looking at, so the title
@@ -1050,8 +1059,36 @@ earheart.on("pipeline:status", ({ status, detail }) => {
       break;
     case "error":
       setStatus("error", "Failed", detail?.message);
+      // The recording survived the failure: offer it back (#293).
+      if (detail?.failedTake) {
+        const minutes = Math.floor(detail.failedTake.expiresInSec / 60);
+        const remaining = minutes < 1 ? "less than a minute" : `${minutes} min`;
+        takeNote.textContent = `${detail.failedTake.earlier ? "Earlier recording" : "Recording"} kept for ${remaining}`;
+        takeActions.hidden = false;
+        // ✕ only dismisses the card; next to a Discard pill, say what stays.
+        cancelBtn.title = "Dismiss — the recording stays in the tray menu";
+        syncOverlayHeight();
+      }
       break;
   }
+});
+
+// Main ignores a retry with nothing held or a dictation running, so a double
+// click can't transcribe the take twice; hiding the row just says it landed.
+takeRetry.addEventListener("click", () => {
+  takeActions.hidden = true;
+  earheart.send("pipeline:retry");
+});
+takeDiscard.addEventListener("click", () => {
+  takeActions.hidden = true;
+  earheart.send("pipeline:discard-take");
+});
+// Released elsewhere (tray, CLI, expiry, a new dictation): stop offering it.
+earheart.on("pipeline:take-released", () => {
+  if (takeActions.hidden) return;
+  takeActions.hidden = true;
+  cancelBtn.title = "Dismiss";
+  syncOverlayHeight();
 });
 
 // The update prompt. The main process decides WHEN it appears (never over a

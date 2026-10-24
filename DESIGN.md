@@ -425,10 +425,12 @@ hidden-tab shuffle. Header (icon + 16px title + tagline, seam below), then a
 deck: a 180px sticky index rail on the left (outside the scroll area, seam on
 its right) beside one scrolling column of sections capped at 620px
 (`.panel { max-width: 620px }`), then a fixed footer commit row (seam above,
-right-aligned, white Save pill). The index is a scroll spy with roving
-tabindex: the entry currently in view takes the wash; clicking glides the
-page (`scroll-behavior: smooth`) and moves focus to the section legend. Below
-600px the index docks horizontally above the page.
+right-aligned: status, a plain Close button, then the white Save pill). Save
+never closes the window — it says "Saved" and stays — so a window never
+vanishes on its own. The index is a scroll spy with roving tabindex: the
+entry currently in view takes the wash; clicking glides the page
+(`scroll-behavior: smooth`) and moves focus to the section legend. Below 600px
+the index docks horizontally above the page.
 
 **The setup wizard** (620×680, 560×560 minimum). Layers on `settings.css`:
 same header and materials. Steps (max-width 640px) center vertically in the
@@ -507,7 +509,11 @@ corners anywhere.
   never leave the row; the row never reflows and no key ever jumps under the
   cursor.
 
-### Pills — overlay (update-prompt text actions)
+### Pills — overlay (update-prompt and failed-take text actions)
+The failed-take row (a failed transcription's recording, kept for a retry)
+sits above the control row like the raw-reason line: a Dim Text 12px note
+("Recording kept for 10 min") pushed left, then a primary **Retry
+transcription** and a quiet **Discard**.
 - **Shape:** fully rounded, 26px tall, 0 11px padding, 12px text.
 - **Primary:** filled Primary Text with a Bar Ink label; pure white on hover.
 - **Quiet:** transparent with a Dim Text label (weight 500); hover wash +

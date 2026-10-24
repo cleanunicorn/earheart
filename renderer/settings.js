@@ -283,6 +283,7 @@ function populate() {
   $("start-on-boot").checked = !!current.startOnBoot;
 
   $("history-enabled").checked = current.history.enabled;
+  $("output-single-line").checked = current.output.singleLine === true;
   $("updates-autocheck").checked = current.updates?.autoCheck !== false;
   $("updates-remind").checked = current.updates?.remind !== false;
   $("max-seconds").value = current.audio.maxRecordingSeconds;
@@ -311,6 +312,7 @@ function collect() {
     output: {
       ...current.output,
       mode: document.querySelector('input[name="output-mode"]:checked').value,
+      singleLine: $("output-single-line").checked,
       // Legacy files could hold restoreClipboard: false from the era when
       // that was the only way to keep the transcript on the clipboard; the
       // explicit paste-copy mode replaces it, so plain paste always restores.
@@ -753,6 +755,9 @@ async function refreshModels(preferred = {}) {
   }
   renderManage("stt");
   renderManage("cleanup");
+  // A model added, downloaded or removed can move a select after the click
+  // that started it was already checked.
+  clearStaleSaved();
 }
 
 // "42% · 280 MB / 660 MB" — concrete progress so a slow download reads as
@@ -796,7 +801,16 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
 // models, or this window's own save). Take the values only main writes, and
 // show a shared field only when this save changed it — never repopulate the
 // whole form, which would throw away edits the user hasn't saved yet.
+let pendingSaveSnapshot = null;
+function unchangedSinceSave(el) {
+  if (!pendingSaveSnapshot) return true;
+  return JSON.stringify({ value: el.value, checked: el.checked }) === JSON.stringify(pendingSaveSnapshot.get(el));
+}
+
 function applySettingsChange({ previous, current: saved }) {
+  // Main already saved this change (the tray, the correction window, an
+  // overlay drag), so a form that matched the last Save still matches disk.
+  const matchedSave = savedForm !== null && JSON.stringify(collect()) === savedForm;
   const flipped = [];
   if (Array.isArray(saved.dictionary) && JSON.stringify(previous.dictionary) !== JSON.stringify(saved.dictionary)) {
     const field = $("cleanup-dictionary");
@@ -823,24 +837,30 @@ function applySettingsChange({ previous, current: saved }) {
   ) {
     const shownBefore = document.querySelector('input[name="output-mode"]:checked')?.value;
     current.output = { ...current.output, mode: saved.output.mode, restoreClipboard: saved.output.restoreClipboard };
-    showOutputMode(saved.output);
+    const preserveEdit = ![...document.querySelectorAll('input[name="output-mode"]')].every(unchangedSinceSave);
+    if (!preserveEdit) showOutputMode(saved.output);
     baseline.outputMode = sharedBaseline(saved).outputMode;
     // Only main's tray radios change the mode while this window is open.
-    if (shownBefore !== displayedOutputMode(saved.output)) {
+    if (!preserveEdit && shownBefore !== displayedOutputMode(saved.output)) {
       flipped.push("Output mode changed from the tray menu.");
     }
   }
   const remind = saved.updates.remind !== false;
   if ((previous.updates.remind !== false) !== remind) {
     current.updates.remind = saved.updates.remind;
-    if ($("updates-remind").checked !== remind) {
+    const preserveEdit = !unchangedSinceSave($("updates-remind"));
+    if (!preserveEdit && $("updates-remind").checked !== remind) {
       flipped.push(
         remind ? "Update reminders turned on elsewhere." : "Update reminders turned off from the update prompt."
       );
     }
-    $("updates-remind").checked = remind;
+    if (!preserveEdit) $("updates-remind").checked = remind;
     baseline.remind = remind;
   }
+  // Re-take the snapshot so the next click doesn't clear "Saved"; a form that
+  // already held unsaved edits drops it.
+  if (matchedSave) savedForm = JSON.stringify(collect());
+  clearStaleSaved();
   announceSettingsChange(flipped.join(" "));
 }
 
@@ -929,17 +949,16 @@ function hotkeySaveMessage(hotkeyResult, pauseResult, discardResult, correctResu
 }
 
 // What Save stored differently from what was typed in the Performance limits
-// (collect() and main both clamp to the fields' ranges), one phrase each. A
-// clean save closes the window, so without this a typed 9999 would quietly
-// become 240.
-function limitAdjustments(saved) {
+// (collect() and main both clamp to the fields' ranges), one phrase each.
+// Without this a typed 9999 would quietly become 240.
+function limitAdjustments(saved, sent) {
   const fields = [
     { id: "max-seconds", label: "Max dictation length", unit: "s", value: saved.audio?.maxRecordingSeconds },
     { id: "idle-unload", label: "Idle unload", unit: "min", value: saved.engines?.idleUnloadMinutes },
   ];
   return fields
     .filter(({ id, value }) => {
-      const typed = $(id).value.trim();
+      const typed = sent.get($(id)).value.trim();
       return typed !== "" && Number(typed) !== value;
     })
     .map(({ id, label, unit, value }) => `${label} set to ${value} ${unit} (allowed ${$(id).min}–${$(id).max})`);
@@ -1001,8 +1020,32 @@ saveButton.addEventListener("click", async () => {
   }
 });
 
+// The form as the last successful Save left it. "Saved" stays only while the
+// form still matches, so it never vouches for unsaved changes. Many edits
+// (hotkey capture, Reset, "Start from preset") set values directly and fire
+// no input event, so after any interaction compare the form itself.
+let savedForm = null;
+function clearStaleSaved() {
+  const save = $("save-status");
+  if (savedForm === null || save.className !== "status ok") return;
+  if (JSON.stringify(collect()) === savedForm) return;
+  savedForm = null;
+  save.textContent = "";
+}
+for (const event of ["input", "change", "click", "keydown", "keyup"]) {
+  // Capture phase plus a task: runs after the control's own handler.
+  document.addEventListener(event, () => setTimeout(clearStaleSaved), true);
+}
+
+$("close").addEventListener("click", () => earheart.invoke("settings:close"));
+
+// The timer that clears a hotkey failure's message. Each Save cancels it, so
+// a failure's timer can't wipe the next Save's result.
+let saveStatusTimer;
+
 async function saveSettings() {
   const save = $("save-status");
+  clearTimeout(saveStatusTimer);
   let result;
   let pauseResult;
   let discardResult;
@@ -1026,36 +1069,56 @@ async function saveSettings() {
   save.className = "status";
   try {
     current = next;
+    // The controls stay live during the round-trip: remember what was sent, so
+    // an edit made meanwhile is never vouched for by "Saved".
+    const sent = formSnapshot();
+    // The same save broadcasts before replying. Protect later edits in both
+    // paths while still letting broadcasts advance the saved baseline.
+    pendingSaveSnapshot = sent;
     result = await earheart.invoke("settings:save", { settings: current, baseline });
+    // The Hugging Face add-model fields aren't settings: a Find versions
+    // lookup landing meanwhile changes nothing Save stores.
+    const returned = formSnapshot();
+    const unchanged = (el) => JSON.stringify(returned.get(el)) === JSON.stringify(sent.get(el));
+    const editedWhileSaving = [...returned.keys()].some(
+      (el) => !/-hf-/.test(el.id) && !unchanged(el)
+    );
     current = result.settings;
     baseline = sharedBaseline(current);
     // Main may have kept its own value for a shared field (a tray change this
-    // form hadn't seen yet), so show what was actually saved.
-    showOutputMode(current.output);
-    $("updates-remind").checked = current.updates.remind !== false;
-    const adjusted = limitAdjustments(current);
-    $("max-seconds").value = current.audio.maxRecordingSeconds;
-    $("idle-unload").value = current.engines.idleUnloadMinutes;
+    // form hadn't seen yet), so show what was actually saved unless the user
+    // edited that control while waiting. Treat the output radios as one field.
+    if ([...document.querySelectorAll('input[name="output-mode"]')].every(unchanged)) {
+      showOutputMode(current.output);
+    }
+    if (unchanged($("updates-remind"))) $("updates-remind").checked = current.updates.remind !== false;
+    const adjusted = limitAdjustments(current, sent);
+    if (unchanged($("max-seconds"))) $("max-seconds").value = current.audio.maxRecordingSeconds;
+    if (unchanged($("idle-unload"))) $("idle-unload").value = current.engines.idleUnloadMinutes;
     // Older mains don't report a pause result; treat that as fine.
     pauseResult = result.pauseHotkey ?? { ok: true };
     discardResult = result.discardHotkey ?? { ok: true };
     correctResult = result.correctHotkey ?? { ok: true };
     const hotkeysOk = result.hotkey.ok && pauseResult.ok && discardResult.ok && correctResult.ok;
     const hotkeyStatus = { hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult };
-    if (hotkeysOk && adjusted.length) {
-      // Saved, but not as typed: stay open long enough to say so.
-      save.textContent = `Saved — ${adjusted.join("; ")}`;
-      save.className = "status ok";
+    if (hotkeysOk) {
+      // Save never closes the window (#298): a window that vanished on its own
+      // read as a crash. "Saved" stays until the form is edited again; Close
+      // dismisses the window.
+      const saved = adjusted.length ? `Saved — ${adjusted.join("; ")}` : "Saved";
+      if (editedWhileSaving) {
+        // What was sent is saved; the edits since are not. Say so, and take no
+        // snapshot that would vouch for them.
+        save.textContent = `${saved}. Changes made while saving aren't saved yet.`;
+        save.className = "status";
+        savedForm = null;
+      } else {
+        save.textContent = saved;
+        save.className = "status ok";
+        savedForm = JSON.stringify(collect());
+      }
       renderHotkeyStatus(hotkeyStatus);
       saveButton.disabled = false;
-      return;
-    }
-    if (hotkeysOk) {
-      // Clean save — close the window so the user doesn't have to dismiss it.
-      save.textContent = "Saved";
-      save.className = "status ok";
-      renderHotkeyStatus(hotkeyStatus);
-      earheart.invoke("settings:close");
       return;
     }
   } catch (err) {
@@ -1065,6 +1128,8 @@ async function saveSettings() {
     save.className = "status err";
     saveButton.disabled = false;
     return;
+  } finally {
+    pendingSaveSnapshot = null;
   }
   // A hotkey couldn't be registered: keep the window open so the error is
   // visible and the user can pick a combination that works.
@@ -1072,7 +1137,7 @@ async function saveSettings() {
   save.textContent = hotkeySaveMessage(result.hotkey, pauseResult, discardResult, correctResult);
   save.className = "status err";
   renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult });
-  setTimeout(() => {
+  saveStatusTimer = setTimeout(() => {
     save.textContent = "";
   }, 4000);
 }
@@ -1371,11 +1436,29 @@ $("history-older").addEventListener("click", () => {
   renderHistory();
 });
 
+// What a failed Clear history tells the user to do, by the reason the delete
+// failed: a file held open (Windows, an antivirus scan, a backup) clears once
+// it's let go; a refused delete (permissions, a locked file attribute) won't
+// until that's fixed.
+function historyClearError(code) {
+  const what = `Couldn't delete the saved transcriptions, so they're still on this computer (${code}). `;
+  return code === "EBUSY"
+    ? `${what}Close anything that might be using the history file, such as a backup or antivirus scan, and try again.`
+    : `${what}Check that you can change files in Earheart's settings folder, then try again.`;
+}
+
 $("history-clear").addEventListener("click", async () => {
   // Unlike a removed model, cleared history is gone for good — gate it the
   // same way model removal already is.
   if (!confirm("Clear all saved transcriptions? This can't be undone.")) return;
-  await earheart.invoke("history:clear");
+  const res = await earheart.invoke("history:clear");
+  // A failed delete left the transcripts on disk: say so, and keep showing
+  // them so the user can try again (#287).
+  const status = $("history-clear-status");
+  // Emptied first, so a second failure in a row is announced again.
+  status.textContent = "";
+  status.hidden = res?.ok !== false;
+  if (!status.hidden) status.textContent = historyClearError(res.error);
   renderHistory();
 });
 

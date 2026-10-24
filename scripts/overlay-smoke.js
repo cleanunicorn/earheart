@@ -22,7 +22,14 @@
 //   npx electron scripts/overlay-smoke.js                            # macOS/Win
 
 const { app, ipcMain, session } = require("electron");
+// A throwaway profile, set before main/ loads: the overlay reads settings
+// (its saved position among them), and a contributor's own profile must
+// neither steer the run nor be written by it (#295).
+const { isolateProfile, assertIsolated } = require("./demo-profile");
+const profile = isolateProfile(app, { prefix: "earheart-overlay-smoke-" });
 const windows = require("../main/windows");
+// The overlay's drag and resize handlers, as main.js registers them.
+windows.init();
 const { waitForLoad } = require("./wait-for-load");
 const { checkWindowLock } = require("./window-lock-smoke");
 const { installPermissionHandler } = require("../main/window-guard");
@@ -82,6 +89,15 @@ function cardStatus(win) {
   );
 }
 
+// Poll `read` until it is truthy, failing by name after `timeoutMs`.
+async function waitFor(read, message, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await read())) {
+    if (Date.now() > deadline) throw new Error(message);
+    await sleep(10);
+  }
+}
+
 // Poll until the card shows `want`; resolves with the time it was observed.
 async function waitForStatus(win, want, timeoutMs = 15000) {
   const deadline = Date.now() + timeoutMs;
@@ -122,6 +138,7 @@ const start = (win, sid, deviceId = null) =>
 
 app.whenReady().then(async () => {
   try {
+    assertIsolated(app, profile);
     // The shipped permission policy, so the microphone grant below is proven
     // through the same handler the app installs (main/window-guard.js).
     installPermissionHandler(session.defaultSession);
@@ -772,6 +789,21 @@ app.whenReady().then(async () => {
       await win.webContents.executeJavaScript("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))");
       require("node:fs").writeFileSync(require("node:path").join(process.env.EARHEART_WIZARD_SCREENSHOTS, "overlay-raw-cleanup.png"), (await win.webContents.capturePage()).toPNG());
     }
+    // A paste held back because another app took the clipboard over (#291):
+    // nothing was pasted OR copied, so the card must say neither.
+    win.webContents.send("pipeline:status", {
+      status: "done",
+      detail: { preview: "the agent prompt", method: "clipboard-changed", note: "Copy it from the tray menu" },
+    });
+    await waitForStatus(win, "done");
+    await waitFor(
+      () => win.webContents.executeJavaScript('document.getElementById("status-text").textContent.startsWith("Not pasted")'),
+      "the held-back paste never showed its title"
+    );
+    const heldBack = await win.webContents.executeJavaScript('({ title: document.getElementById("status-text").textContent, detail: document.getElementById("detail-text").textContent })');
+    check("a paste held back by a clipboard change says it wasn't pasted or copied",
+      heldBack.title === "Not pasted — the clipboard changed" && heldBack.detail === "Copy it from the tray menu",
+      JSON.stringify(heldBack));
     // An interrupted dictation says so where the delivery title goes: the
     // notification is gone seconds later, this is what stays on screen.
     win.webContents.send("pipeline:status", {
@@ -824,6 +856,68 @@ app.whenReady().then(async () => {
       errUi.detailTitle === longMsg,
       `title length=${errUi.detailTitle.length}, expected ${longMsg.length}`
     );
+
+    // ---- A failed transcription's recording, offered back (#293) ----------
+    // The row says the take is kept, fits in the card, and its pills reach
+    // the pipeline; an error with nothing held, or the next status, hides it.
+    const takeSends = [];
+    const onTakeRetry = () => takeSends.push("retry");
+    const onTakeDiscard = () => takeSends.push("discard");
+    ipcMain.on("pipeline:retry", onTakeRetry);
+    ipcMain.on("pipeline:discard-take", onTakeDiscard);
+    const takeUi = () =>
+      win.webContents.executeJavaScript(`(() => {
+        const row = document.getElementById("take-actions");
+        const r = row.getBoundingClientRect();
+        return { visible: !row.hidden, note: document.getElementById("take-note").textContent,
+                 bottom: r.bottom, inner: window.innerHeight };
+      })()`);
+    win.webContents.send("pipeline:status", {
+      status: "error",
+      detail: { message: "STT request timed out", failedTake: { expiresInSec: 600 } },
+    });
+    await waitForStatus(win, "error");
+    await waitFor(() => takeUi().then((t) => t.visible && t.bottom <= t.inner), "the take row never fit in the card");
+    const shownTake = await takeUi();
+    check(
+      "a failed take's row says the recording is kept, inside the card",
+      shownTake.note === "Recording kept for 10 min" && shownTake.bottom <= shownTake.inner,
+      JSON.stringify(shownTake)
+    );
+    await win.webContents.executeJavaScript('document.getElementById("take-retry").click(); true');
+    await waitFor(() => takeSends.length === 1, "Retry never reached main");
+    check("Retry sends pipeline:retry and hides the row", takeSends[0] === "retry" && !(await takeUi()).visible);
+    win.webContents.send("pipeline:status", {
+      status: "error",
+      detail: { message: "STT request timed out", failedTake: { expiresInSec: 300 } },
+    });
+    await waitFor(() => takeUi().then((t) => t.visible), "the take row didn't come back");
+    await win.webContents.executeJavaScript('document.getElementById("take-discard").click(); true');
+    await waitFor(() => takeSends.length === 2, "Discard never reached main");
+    check("Discard sends pipeline:discard-take", takeSends[1] === "discard");
+    // Released elsewhere (tray, expiry): a card still showing the row drops it.
+    win.webContents.send("pipeline:status", {
+      status: "error",
+      detail: { message: "STT request timed out", failedTake: { expiresInSec: 600 } },
+    });
+    await waitFor(() => takeUi().then((t) => t.visible), "the take row didn't come back");
+    win.webContents.send("pipeline:take-released");
+    await waitFor(() => takeUi().then((t) => !t.visible), "a released take was still offered");
+    check("a take released elsewhere stops being offered", true);
+    // An error with nothing held, after the row was showing, offers no retry.
+    win.webContents.send("pipeline:status", {
+      status: "error",
+      detail: { message: "STT request timed out", failedTake: { expiresInSec: 600 } },
+    });
+    await waitFor(() => takeUi().then((t) => t.visible), "the take row didn't come back");
+    win.webContents.send("pipeline:status", { status: "error", detail: { message: "paste tool missing" } });
+    await waitFor(
+      () => win.webContents.executeJavaScript('document.getElementById("detail-text").textContent === "paste tool missing"'),
+      "the plain error never showed"
+    );
+    check("an error with nothing held offers no retry", !(await takeUi()).visible);
+    ipcMain.removeListener("pipeline:retry", onTakeRetry);
+    ipcMain.removeListener("pipeline:discard-take", onTakeDiscard);
 
     // ---- Detail line geometry inside the 32px wave strip -------------------
     // The detail line shares #wave with the absolutely positioned canvas and

@@ -145,7 +145,11 @@ label, and opinions are welcome.
   optional [`earheart-stt`](stt-server/) server.
 - **Auto-paste, clipboard, or both** — paste straight into the focused app
   (with clipboard restore), paste *and* keep the transcript on the clipboard,
-  or clipboard-only if you prefer to paste yourself.
+  or clipboard-only if you prefer to paste yourself. Turn on **Deliver as one
+  line** (Settings → General) when you dictate into an agent in a terminal,
+  where a pasted line break can send the prompt before you're done. It applies
+  to everything Earheart pastes or copies (code blocks lose their line
+  structure too); History keeps the transcript as it was.
 - **Local history** — recent transcriptions stay in a local JSON file, so a
   mis-aimed paste never loses a dictation. History can be disabled.
 - **Start on login (optional)** — have Earheart launch into the tray
@@ -292,7 +296,8 @@ a model that isn't downloaded yet downloads first, with its progress and
 **Cancel** in the model row, and Settings saves once it is installed. If the
 download fails or you cancel it, nothing is saved and Settings says why, so
 your previous model stays in use. Cleanup model choices are also available
-under Customize in the wizard.
+under Customize in the wizard. **Save** keeps Settings open and shows the
+result; **Close** dismisses the window without saving further edits.
 
 Every launch after that goes straight to the tray — no window to dismiss — and
 posts a short "ready, press *your hotkey*" notification. Click it to open
@@ -387,6 +392,18 @@ the wizard:
 A mis-aimed paste never loses your words: the History section in Settings
 keeps recent transcriptions in a local file (you can turn this off).
 
+A failed transcription doesn't lose the recording either. When the speech
+service times out or the model won't load, Earheart keeps that one recording in
+memory for 10 minutes. You can fix the service or switch engines in Settings,
+then choose **Retry transcription** on the overlay or **Retry failed
+transcription** from the tray, or run `earheart --retry`. You don't have to say
+it all again. **Discard** (or `earheart --discard`) lets it go. The recording is
+never written to disk. Quit, Discard, or expiry releases it. A new complete,
+nonempty dictation supersedes it after the delivery step; an empty or incomplete
+take does not. If retrying fails at transcription again, the recording
+is kept for another ten minutes. If a separate new dictation fails too, Earheart
+keeps the longer recording.
+
 To fix a technical name, choose **Correct…** on a history entry or **Correct last
 transcription…** from the tray. You can also configure **Correct last transcript
 hotkey** in Settings → General (unbound by default), or bind
@@ -441,6 +458,16 @@ When something goes wrong (a service can't be reached, cleanup fails and the
 raw transcript is used, auto-paste fails and the text waits on the clipboard)
 a notification says so; clicking it opens Settings, where the service, its key
 and the paste options live.
+
+If another app changes the clipboard in the moment between Earheart copying
+your transcript and pasting it (another copy, or a clipboard manager), Earheart
+pastes nothing rather than paste someone else's text, and leaves that newer
+copy alone. **Copy last transcription** in the tray menu has your transcript,
+even with History turned off (successfully clearing History clears it too).
+The check runs just before the keystroke; the operating system's own paste can't
+be made atomic, so a change in the last instant can still win. On Wayland the check is
+skipped: there an app without focus can't reliably read the clipboard, and a
+false alarm would stop every paste.
 
 Settings → Advanced → Performance holds two limits. **Max dictation length**
 takes 10–3600 seconds (default 600, ten minutes); a dictation that reaches it
@@ -524,8 +551,9 @@ checksum-verified. Only add models from repos you trust.
   invocation just toggles dictation in it. Use the full path to the binary if
   `earheart` isn't on your `PATH`, e.g.
   `~/Applications/Earheart-<version>.AppImage --toggle`. The same works for
-  pause/resume with `earheart --pause`, and for discarding the dictation in
-  progress with `earheart --discard`.
+  pause/resume with `earheart --pause`, for discarding the dictation in
+  progress with `earheart --discard`, and for retrying a failed transcription
+  with `earheart --retry`.
 
 ### macOS
 

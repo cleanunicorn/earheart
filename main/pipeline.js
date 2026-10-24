@@ -19,6 +19,7 @@ const settings = require("./settings");
 const route = require("./services/route");
 const engines = require("./engines");
 const { deliver } = require("./output/deliver");
+const { deliverText } = require("./output/single-line");
 const history = require("./history");
 const { createLivePreview } = require("./live-preview");
 const { createPersistedRtfEstimator } = require("./util/rtf");
@@ -28,6 +29,7 @@ const { withRetry } = require("./util/retry");
 const logger = require("./util/logger");
 const { prettyHotkey } = require("./util/hotkey-label");
 const { createNotifier, sttNotReadyNotice, BODY_MAX } = require("./setup-notices");
+const { createFailedTake } = require("./failed-take");
 
 let state = "idle"; // idle | recording | processing
 // Shows the "model not downloaded" notice; its click opens Settings.
@@ -39,6 +41,23 @@ const setupNotifier = createNotifier({
 let session = 0; // current dictation session id
 let abortController = null;
 const stateListeners = new Set();
+
+// The last take whose transcription failed, held in memory so it can be
+// transcribed again without dictating it again (#293; see failed-take.js).
+// Its own listeners, not stateListeners: holding a take doesn't change the
+// dictation state, and the update prompt waits on that state.
+const failedTakeListeners = new Set();
+const failedTake = createFailedTake({
+  onChange: (info) => {
+    // A card still offering Retry (an update prompt can pin it past the
+    // expiry) must stop offering what's gone.
+    if (!info) windows.sendToOverlay("pipeline:take-released");
+    for (const listener of failedTakeListeners) listener(info);
+  },
+});
+// How long the failure card stays up when it offers Retry: long enough to
+// reach for it, then the tray and `earheart --retry` carry on.
+const FAILED_TAKE_CARD_MS = 20000;
 
 // Notices about a dictation that went wrong; the fix lives in Settings (the
 // service, its key, the paste tool), so clicking one opens it. Without a
@@ -208,6 +227,21 @@ function onStateChange(listener) {
 
 function getState() {
   return state;
+}
+
+// The last transcript delivery held back because another app took over the
+// clipboard first (#291): not pasted, not on the clipboard, and with History
+// off, nowhere else. Kept in memory (never on disk) for the tray's "Copy last
+// transcription" — `{ text, at }`, so a newer History entry wins — until a
+// later delivery lands or History is cleared.
+let undelivered = null;
+
+function getUndelivered() {
+  return undelivered;
+}
+
+function clearUndelivered() {
+  undelivered = null;
 }
 
 function overlayStatus(status, detail) {
@@ -467,9 +501,61 @@ function pauseToggle() {
 // overlay already knows what ✕ means in each phase (discard the take while
 // recording, cancel while processing, only dismiss once the paste is in
 // flight), so the keyboard route runs that same handler instead of a second
-// copy of those rules here. Idle, there is nothing to discard.
+// copy of those rules here. Idle, it releases a failed take held for retry.
+// (The discard hotkey itself is only registered while a dictation is live, so
+// idle this is `earheart --discard` — a held take doesn't grab a global key.)
 function discard() {
   if (state !== "idle") windows.sendToOverlay("record:discard");
+  else discardFailedTake();
+}
+
+// Transcribe the held failed take again, with the settings as they are now —
+// the user may have restored the service or switched engines meanwhile. A
+// fresh session: whatever the failed one left behind can't touch this run, and
+// starting a new dictation while it waits for the overlay supersedes it.
+//
+// The take stays held (and offered in the tray) until the run really starts:
+// waiting for a reloading overlay, or being superseded by a new dictation
+// meanwhile, must not cost the recording.
+let retryPending = null; // session id of a retry waiting for the overlay
+function retryFailedTake() {
+  if (state !== "idle" || !failedTake.info() || retryPending === session) return false;
+  const sid = ++session;
+  retryPending = sid;
+  const win = windows.createOverlay();
+  const begin = () => {
+    if (retryPending === sid) retryPending = null;
+    if (session !== sid || state !== "idle") return;
+    const wav = failedTake.take();
+    if (!wav) return;
+    windows.showOverlay();
+    process(sid, wav, { retry: true });
+  };
+  if (win.webContents.isLoading()) {
+    win.webContents.once("did-finish-load", begin);
+    // A load that fails never finishes: don't let it block every later retry.
+    win.webContents.once("did-fail-load", () => {
+      if (retryPending === sid) retryPending = null;
+    });
+  } else {
+    begin();
+  }
+  return true;
+}
+
+// Release the held failed take (overlay Discard, tray, `earheart --discard`).
+function discardFailedTake() {
+  const had = failedTake.discard();
+  if (had && state === "idle") windows.hideOverlay();
+  return had;
+}
+
+function getFailedTake() {
+  return failedTake.info();
+}
+
+function onFailedTakeChange(listener) {
+  failedTakeListeners.add(listener);
 }
 
 function startRecording() {
@@ -567,13 +653,14 @@ function cancel() {
   windows.hideOverlay();
 }
 
-async function process(sid, wavArrayBuffer) {
+async function process(sid, wavArrayBuffer, { retry = false } = {}) {
   const cfg = settings.get();
   // Snapshot the committed chunk decodes BEFORE cancelling the live preview
   // (cancel resets them): they are the final transcript's prefix, so the
-  // final pass only decodes the audio tail.
+  // final pass only decodes the audio tail. A retry has no live preview of its
+  // own (whatever is there belongs to no take), so it decodes the whole take.
   const assembly =
-    cfg.stt.engine === "builtin" ? livePreview.snapshotFinal() : null;
+    cfg.stt.engine === "builtin" && !retry ? livePreview.snapshotFinal() : null;
   // The final pass is authoritative; stop any partial work so it doesn't
   // contend with the real transcribe/clean on the engine workers.
   livePreview.cancel();
@@ -586,6 +673,9 @@ async function process(sid, wavArrayBuffer) {
   // Once deliver() returns, the words are on the clipboard or pasted; a later
   // failure (the done card) must not tell the user they were lost.
   let delivered = false;
+  // Past transcription, a failure has words to fall back on (raw text when
+  // cleanup fails, History when delivery does); before it, only the audio.
+  let transcribed = false;
   const stale = () => session !== sid || signal.aborted;
 
   const builtinCleanup = cfg.cleanup.enabled && cfg.cleanup.engine === "builtin" && cleanupAvailability(cfg.cleanup).ok;
@@ -611,6 +701,7 @@ async function process(sid, wavArrayBuffer) {
       stale,
       assembly
     );
+    transcribed = true;
     if (stale()) return;
 
     if (!raw) {
@@ -653,11 +744,25 @@ async function process(sid, wavArrayBuffer) {
     }
 
     overlayStatus("delivering");
-    const result = await deliver(text, cfg.output, signal);
+    // One line for a terminal agent, if the user asked (#68). History above
+    // already holds the transcript as it was.
+    const outgoing = deliverText(text, cfg.output);
+    const result = await deliver(outgoing, cfg.output, signal);
     delivered = true;
+    // New words have landed: a failed take held from before is superseded.
+    // Not sooner — a mis-press, a mic check, a take that hears nothing, fails,
+    // is cut short by a dying engine, or is cancelled before delivery must not
+    // cost the recording (a retry already took it out).
+    if (!retry && !partial && result.method !== "cancelled") failedTake.discard();
+    // A cancelled delivery landed nothing, so it supersedes nothing either.
+    if (result.method === "clipboard-changed") undelivered = { text, at: new Date().toISOString() };
+    else if (result.method !== "cancelled") undelivered = null;
     if (stale()) return;
 
-    if (result.hint) {
+    if (result.method === "clipboard-changed") {
+      // Nothing was pasted or copied: the newer clipboard is the user's.
+      notify({ title: "Earheart: not pasted, the clipboard changed", body: result.hint });
+    } else if (result.hint) {
       // The overlay's detail row clips after a couple of dozen characters and
       // hides itself seconds later; the full instruction needs somewhere to
       // stay, same as a cleanup failure does.
@@ -667,7 +772,7 @@ async function process(sid, wavArrayBuffer) {
       });
     }
     overlayStatus("done", {
-      preview: text.length > 120 ? `${text.slice(0, 120)}…` : text,
+      preview: outgoing.length > 120 ? `${outgoing.slice(0, 120)}…` : outgoing,
       method: result.method,
       note: result.note,
       // Same state the history entry records: the card outlives the
@@ -683,13 +788,34 @@ async function process(sid, wavArrayBuffer) {
       hideOverlaySoon(sid, 1600);
       return;
     }
-    overlayStatus("error", { message: String(err.message).slice(0, 200) });
-    // Nothing reached the target app. A transcription failure loses the
-    // dictation outright; a deliver() failure leaves the words in History
-    // (written above, before delivery). Either way the overlay line is gone in
-    // five seconds, so the notice has to say it.
-    notify({ title: "Earheart: dictation failed, nothing was delivered", body: err.message });
-    hideOverlaySoon(sid, 5000);
+    // Nothing reached the target app. A deliver() failure leaves the words in
+    // History (written above, before delivery). A transcription failure has
+    // only the audio, so the take is held for a retry instead of lost (#293).
+    // Either way the overlay line goes, so the notice has to say it.
+    // Only one take is held. When one already is (the service is still down
+    // and the user tried again), keep the longer: a quick "testing?" must not
+    // replace the five minutes it was testing for.
+    const held = transcribed ? null : failedTake.info();
+    const earlier = !!held && held.bytes > wav.length;
+    const kept = transcribed ? null : earlier ? held : failedTake.keep(wav);
+    overlayStatus("error", {
+      message: String(err.message).slice(0, 200),
+      ...(kept ? { failedTake: { expiresInSec: kept.expiresInSec, ...(earlier ? { earlier: true } : {}) } } : {}),
+    });
+    if (kept) {
+      // Never "0 minutes", never more time than is left.
+      const minutes = Math.floor(kept.expiresInSec / 60);
+      const remaining = minutes < 1 ? "less than a minute" : `${minutes} minute${minutes === 1 ? "" : "s"}`;
+      notify({
+        title: earlier
+          ? "Earheart: transcription failed, earlier recording still kept"
+          : "Earheart: transcription failed, recording kept",
+        body: `Retry it from the tray menu or the overlay, or run earheart --retry, within ${remaining}. ${err.message}`,
+      });
+    } else {
+      notify({ title: "Earheart: dictation failed, nothing was delivered", body: err.message });
+    }
+    hideOverlaySoon(sid, kept ? FAILED_TAKE_CARD_MS : 5000);
   } finally {
     if (abortController === controller) {
       abortController = null;
@@ -730,6 +856,10 @@ function init({ isDownloading = () => false } = {}) {
     hideOverlaySoon(sid, 5000);
   });
 
+  // The failure card's Retry / Discard pills.
+  ipcMain.on("pipeline:retry", () => retryFailedTake());
+  ipcMain.on("pipeline:discard-take", () => discardFailedTake());
+
   ipcMain.on("pipeline:cancel", (event, { dismiss } = {}) => {
     if (dismiss) windows.hideOverlay();
     else cancel();
@@ -755,9 +885,15 @@ module.exports = {
   toggle,
   pauseToggle,
   discard,
+  retryFailedTake,
+  discardFailedTake,
+  getFailedTake,
+  onFailedTakeChange,
   cancel,
   onOverlayRendererGone,
   getState,
+  getUndelivered,
+  clearUndelivered,
   onStateChange,
   onSettingsChanged,
   onCleanupDownloaded,

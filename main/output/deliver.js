@@ -234,11 +234,51 @@ function restoreSnapshot(snap) {
 // in the timer it would only reach the process-level handler).
 function restoreIfUnchanged(snap, transcript) {
   try {
-    if (clipboard.readText() === transcript) restoreSnapshot(snap);
+    if (sameText(clipboard.readText(), transcript)) restoreSnapshot(snap);
   } catch (err) {
     logger.error("clipboard restore failed:", err);
   }
 }
+
+// Line endings are compared loosely, defensively: should a platform hand back
+// CRLF for the LF it was given, a multi-line transcript must neither read as
+// taken over nor miss its restore.
+const sameText = (a, b) => a.replace(/\r\n?/g, "\n") === b.replace(/\r\n?/g, "\n");
+
+// True when another app has put something else on the clipboard since we wrote
+// `text`, during the paste delay (another copy, a clipboard manager). Pasting
+// then would type THEIR content into the target — an unrelated command or
+// private text reaching an agent's input (#291).
+//
+// Only unambiguous evidence counts, because a false "taken over" silently
+// stops auto-paste: readable text that isn't ours, or no text at all while an
+// image or a file copy is on offer. An empty read with only text formats is
+// a clipboard we couldn't read (Windows answers "" while another app holds it
+// open), not proof. On Wayland the check is skipped: an unfocused client —
+// the overlay never takes focus — can read a stale selection, so the evidence
+// isn't trustworthy there. What remains everywhere is the OS's own race
+// between this check and the keystroke landing; it narrows the window, it
+// can't close it.
+function clipboardTakenOver(text) {
+  if (process.platform === "linux" && isWayland()) return false;
+  try {
+    const current = clipboard.readText();
+    if (sameText(current, text)) return false;
+    if (current) return true;
+    return clipboard.availableFormats().some((f) => f.startsWith("image/") || f === "text/uri-list");
+  } catch {
+    return false;
+  }
+}
+
+// What the user is told when the paste was held back: the newer copy is
+// theirs, and the transcript is a click away instead.
+const CLIPBOARD_CHANGED = {
+  note: "Copy it from the tray menu",
+  hint:
+    "Another app changed the clipboard before Earheart could paste, so nothing was pasted and that copy was left as it was. " +
+    "Copy the transcript from the tray menu (Copy last transcription).",
+};
 
 // The restore armed by the last paste: `{ timer, text, snap }`, where `text` is
 // the transcript it put on the clipboard and `snap` what it promised to put
@@ -250,7 +290,9 @@ let pendingRestore = null;
  * @param {string} text
  * @param {object} cfg - settings.output slice
  * @param {AbortSignal} [signal]
- * @returns {Promise<{method: "paste"|"paste-copy"|"clipboard"|"cancelled", note?: string, hint?: string}>}
+ * @returns {Promise<{method: "paste"|"paste-copy"|"clipboard"|"clipboard-changed"|"cancelled", note?: string, hint?: string}>}
+ *   "clipboard-changed": another app took the clipboard over before the paste,
+ *   so nothing was pasted and the transcript is NOT on the clipboard.
  *   `note` is a one-line reason auto-paste fell back to the clipboard (short
  *   enough for the overlay); `hint` is the full instruction for a notification.
  */
@@ -300,10 +342,19 @@ async function deliver(text, cfg, signal) {
     logger.error("auto-paste skipped:", ACCESSIBILITY_OFF.hint);
     // Once per launch, clear a stale grant this build hasn't repaired yet and
     // raise the prompt skipped along with the keystroke. Not awaited: the
-    // transcript is already on the
-    // clipboard and the fallback must not wait on tccutil.
+    // fallback must not wait on tccutil.
     repairPastePermissionsOnce();
+    // A newer copy can arrive during the delay even when paste permission is
+    // off. Report it so the pipeline keeps the transcript available to copy.
+    if (clipboardTakenOver(text)) return { method: "clipboard-changed", ...CLIPBOARD_CHANGED };
     return { method: "clipboard", ...ACCESSIBILITY_OFF };
+  }
+  // Last moment before the keystroke: is what we'd paste still ours? If not,
+  // paste nothing and leave the newer copy alone — no restore either, the
+  // clipboard is no longer ours to put back.
+  if (clipboardTakenOver(text)) {
+    logger.warn("auto-paste skipped: the clipboard changed during the paste delay");
+    return { method: "clipboard-changed", ...CLIPBOARD_CHANGED };
   }
   try {
     await simulatePaste(signal);

@@ -16,7 +16,7 @@ const ipcPath = require.resolve("../main/ipc");
 const settingsPath = require.resolve("../main/settings");
 const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(ipcPath)] });
 
-function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy = canCorrect } = {}) {
+function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy = canCorrect, clearResult = { ok: true } } = {}) {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-ipc-"));
   t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
   const handlers = {};
@@ -56,6 +56,7 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
       list: () => [],
       clear: () => {
         calls.historyCleared += 1;
+        return clearResult;
       },
     },
     [resolveFrom("./services/route")]: {},
@@ -84,6 +85,7 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
       onSettingsChanged() {},
       canCorrect,
       canCopy,
+      onHistoryCleared: () => { calls.undeliveredCleared = (calls.undeliveredCleared || 0) + 1; },
     });
   } finally {
     delete require.cache[ipcPath];
@@ -275,9 +277,18 @@ test("history:clear refreshes the tray", (t) => {
   const { handlers, calls } = loadIpc(t);
   calls.trayRefresh = 0;
 
-  assert.deepStrictEqual(handlers["history:clear"](), []);
+  assert.deepStrictEqual(handlers["history:clear"](), { ok: true });
   assert.strictEqual(calls.historyCleared, 1);
   assert.strictEqual(calls.trayRefresh, 1);
+  // #291: a transcript held back from a paste is history too.
+  assert.strictEqual(calls.undeliveredCleared, 1);
+});
+
+// #287: a failed delete reached Settings as success.
+test("history:clear hands a failed delete back to Settings", (t) => {
+  const failed = { ok: false, error: "EPERM" };
+  const { handlers } = loadIpc(t, { clearResult: failed });
+  assert.deepStrictEqual(handlers["history:clear"](), failed);
 });
 
 // Same stale-snapshot shape across an await: removal read the settings before
@@ -327,6 +338,15 @@ test("remember failure preserves existing dictionary and reports failure", async
   assert.deepStrictEqual(settings.get().cleanup.dictionary, before);
 });
 
+
+// #68: with "Deliver as one line" on, a copy is one line too — it is how a
+// corrected prompt reaches a terminal agent.
+test("transcript copies follow Deliver as one line", async (t) => {
+  const { handlers, settings, calls } = loadIpc(t);
+  settings.save({ ...settings.get(), output: { ...settings.get().output, singleLine: true } });
+  await handlers["transcript:copy"]({}, "first part\n\nsecond part");
+  assert.deepStrictEqual(calls.deliveries.at(-1), { text: "first part second part", cfg: { mode: "clipboard" } });
+});
 
 test("explicit transcript copies use clipboard-only delivery and reject invalid payloads", async (t) => {
   const { handlers, calls } = loadIpc(t);

@@ -236,6 +236,15 @@ const KEYBOARD_ROUTES = {
   },
 };
 
+// A failed take's recovery row (#293). Not dictation keys, so no hotkey of
+// their own (a global key held for minutes after a failure would steal it from
+// every other app); each reaches the same pipeline entry through IPC and a CLI
+// flag a desktop shortcut can bind, and through the tray.
+const PANEL_ROUTES = {
+  "take-retry": { channel: "pipeline:retry", entry: "retryFailedTake", flag: "--retry", tray: "Retry failed transcription" },
+  "take-discard": { channel: "pipeline:discard-take", entry: "discardFailedTake", flag: "--discard", tray: "Discard failed recording" },
+};
+
 function functionBody(source, name) {
   const declaration = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(source);
   assert.ok(declaration, `${name} function must exist`);
@@ -255,9 +264,11 @@ test("every overlay dictation key has a keyboard route to the same handler", () 
   const settingsHtml = read("renderer", "settings.html");
   const { DEFAULTS } = require("../main/settings");
 
+  // Panel actions (the update card, a failed take's recovery row) aren't
+  // dictation keys; their own keyboard routes are pinned in PANEL_ROUTES.
   const keys = [...html.matchAll(/<button id="([a-z-]+)"/g)]
     .map((m) => m[1])
-    .filter((id) => !id.startsWith("update-"));
+    .filter((id) => !id.startsWith("update-") && !id.startsWith("take-"));
   assert.deepStrictEqual(
     keys.sort(),
     Object.keys(KEYBOARD_ROUTES).sort(),
@@ -309,5 +320,53 @@ test("every overlay dictation key has a keyboard route to the same handler", () 
       `earheart ${route.flag} must call pipeline.${route.entry}`
     );
     assert.match(settingsHtml, new RegExp(`<input id="${route.field}"`), `Settings must edit ${route.setting}`);
+  }
+});
+
+test("a failed take's Retry and Discard have a keyboard route to the same pipeline entry", () => {
+  const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), "utf8");
+  const pipelineJs = read("main", "pipeline.js");
+  const mainJs = read("main", "main.js");
+  const trayJs = read("main", "tray.js");
+  const ids = [...html.matchAll(/<button id="(take-[a-z-]+)"/g)].map((m) => m[1]);
+  assert.deepStrictEqual(ids.sort(), Object.keys(PANEL_ROUTES).sort(), "a new take- button needs a route in PANEL_ROUTES");
+  for (const [id, route] of Object.entries(PANEL_ROUTES)) {
+    const binding = js.match(new RegExp(`const (\\w+) = document\\.getElementById\\("${id}"\\)`));
+    assert.ok(binding, `overlay.js must bind #${id}`);
+    const click = js.slice(js.indexOf(`${binding[1]}.addEventListener("click"`));
+    assert.match(click.slice(0, 200), new RegExp(`earheart\\.send\\("${route.channel}"\\)`), `#${id} must send ${route.channel}`);
+    assert.match(
+      pipelineJs,
+      new RegExp(`ipcMain\\.on\\("${route.channel}", \\(\\) => ${route.entry}\\(\\)\\)`),
+      `${route.channel} must run pipeline.${route.entry}`
+    );
+    assert.match(pipelineJs, new RegExp(`module\\.exports = \\{[^}]*\\b${route.entry},`), `pipeline must export ${route.entry}`);
+    const flagCall = mainJs.match(new RegExp(`argv\\.includes\\("${route.flag}"\\)\\) \\{\\s*pipeline\\.(\\w+)\\(\\)`));
+    assert.ok(flagCall, `earheart ${route.flag} must call the pipeline`);
+    if (flagCall[1] !== route.entry) {
+      assert.match(functionBody(pipelineJs, flagCall[1]), new RegExp(`\\b${route.entry}\\(\\)`), `earheart ${route.flag} must reach ${route.entry}`);
+    }
+    assert.match(
+      trayJs,
+      new RegExp(`label: "${route.tray}",[\\s\\S]{0,200}?click: \\(\\) => pipeline\\.${route.entry}\\(\\)`),
+      `the tray must offer ${route.tray}`
+    );
+  }
+});
+
+// Execute the error-card branch with just its view dependencies: the wording
+// must describe the remaining lifetime, not round a few seconds up to a minute.
+test("the failed-take card does not promise a minute when less remains", () => {
+  const branch = js.match(/case "error":([\s\S]*?)\n\s*break;/);
+  assert.ok(branch, "the error-card branch exists");
+  const render = new Function("detail", "setStatus", "takeNote", "takeActions", "cancelBtn", "syncOverlayHeight", branch[1]);
+  for (const [seconds, duration] of [[5, "less than a minute"], [59, "less than a minute"], [60, "1 min"], [120, "2 min"]]) {
+    for (const earlier of [false, true]) {
+      const note = {};
+      const actions = { hidden: true };
+      render({ failedTake: { expiresInSec: seconds, earlier } }, () => {}, note, actions, {}, () => {});
+      assert.strictEqual(note.textContent, `${earlier ? "Earlier recording" : "Recording"} kept for ${duration}`);
+      assert.strictEqual(actions.hidden, false);
+    }
   }
 });

@@ -7,6 +7,7 @@ const settings = require("./settings");
 const { mergeVocabulary, rememberVocabulary } = require("../renderer/vocabulary");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
+const { deliverText } = require("./output/single-line");
 const history = require("./history");
 const windows = require("./windows");
 const route = require("./services/route");
@@ -257,12 +258,11 @@ function wrap(fn, describe = (err) => err.message) {
   };
 }
 
-function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {} }) {
+function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {} }) {
   onCleanupDownloaded = completed;
-  // Register any models the user added from a custom Hugging Face URL so they
-  // resolve for download and for loading into the cleanup worker after a
-  // restart, exactly like the built-ins.
-  engines.registry.setCustomModels(settings.get().customModels || []);
+  // Custom models reach the registry through the settings themselves
+  // (engines/catalog.js, bound in main.js), not through this layer: the saves
+  // below are what register or drop them.
 
   // Every successful save, from any writer, reaches the open forms (so they
   // show a tray or updater change) and rebuilds the tray menu (so its radios
@@ -322,6 +322,9 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
       return result && !result.ok && !result.empty;
     });
     const persistedCandidate = withFields(candidate, previous, rejectedFields);
+    // A discard hotkey that had to yield its key to a pair slot is cleared
+    // (#286); saving the old key back would put the clash on disk.
+    if (hotkeyResults.discardHotkey?.cleared) persistedCandidate.discardHotkey = "";
 
     let saved;
     try {
@@ -397,10 +400,8 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     return response;
   });
 
-  // Close the settings window. The renderer calls this only after a clean save
-  // (settings saved *and* the hotkey registered) so the user doesn't have to
-  // dismiss it manually; on a hotkey-registration failure the renderer keeps the
-  // window open instead, so the error stays visible.
+  // Close the settings window: the footer's Close button. Save never closes it
+  // (#298), so the saved result stays readable.
   ipcMain.handle("settings:close", () => {
     windows.closeSettings();
   });
@@ -515,7 +516,6 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
       // Dedupe by id so re-adding the same repo+quant just refreshes the entry.
       const next = [...(cfg.customModels || []).filter((m) => m.id !== model.id), model];
       settings.save({ ...cfg, customModels: next });
-      engines.registry.setCustomModels(next);
       return next;
     });
     return { ok: true, modelId: model.id, customModels };
@@ -549,7 +549,6 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
           ? { ...cfg[kind], builtin: { ...cfg[kind].builtin, model: defaults[kind] } }
           : cfg[kind];
       settings.save({ ...cfg, [kind]: kindCfg, customModels });
-      engines.registry.setCustomModels(customModels);
       // The renderer adopts `model`: its select still holds the removed id,
       // which would otherwise read back as "" on the next Save.
       return { ok: true, customModels, kind, model: kindCfg.builtin.model };
@@ -652,7 +651,9 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
       throw new Error("The corrected prompt must contain text and be at most 1 million characters.");
     }
     // Settle any pending paste restoration so it cannot undo this explicit copy.
-    await deliver.deliver(text, { mode: "clipboard" });
+    // As one line if the user asked (#68): a copy is how a prompt reaches an
+    // agent too.
+    await deliver.deliver(deliverText(text, settings.get().output), { mode: "clipboard" });
     windows.setCorrectionDirty(event.sender, false);
     return { ok: true };
   }));
@@ -660,11 +661,15 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   ipcMain.handle("correction:close", () => windows.closeCorrection());
 
   ipcMain.handle("history:list", () => history.list());
+  // { ok: true } or { ok: false, error }: a failed delete leaves the
+  // transcripts on disk, and Settings must say so instead of showing none.
   ipcMain.handle("history:clear", () => {
-    history.clear();
+    const result = history.clear();
+    // A transcript held back from a paste (#291) is history too.
+    if (result.ok) onHistoryCleared();
     // "Copy last transcription" must go disabled with nothing left to copy.
     tray.refresh();
-    return [];
+    return result;
   });
 
   ipcMain.handle("updates:get", () => updates.getState());

@@ -638,6 +638,23 @@ button:focus-visible {
   }
 }
 
+/* A failed take's recovery row: the same pill grammar as the update card's
+   actions — Retry is the key action, Discard the quiet way out. */
+#take-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px 10px;
+}
+
+#take-note {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+  margin-right: auto;
+}
+
 /* Optional model availability is secondary; delivery warnings keep their slot. */
 #raw-reason {
   color: var(--text-dim);

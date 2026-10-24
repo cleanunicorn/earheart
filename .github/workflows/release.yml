@@ -8,8 +8,8 @@ on:
 # auto-release.yml dispatches this workflow with a tag ref (`--ref v<version>`),
 # so the normal path always runs on a tag: create the release, build, publish.
 # A manual workflow_dispatch against a branch is a dry-run — it builds and
-# uploads CI artifacts but creates/publishes nothing (create-release is skipped
-# and the build job's publish arg resolves to `never`).
+# uploads CI artifacts but creates/publishes nothing (create-release is skipped,
+# and the build job's upload steps run only on a tag).
 
 permissions:
   contents: write
@@ -25,16 +25,20 @@ jobs:
   # upload into one existing release instead of each racing to create it. When
   # they raced, concurrent release creation clobbered asset uploads — v0.6.0
   # lost its macOS dmg/zip/latest-mac.yml that way. The release is created as a
-  # draft: electron-builder matches an existing draft by tag and uploads into
-  # it, so the in-progress release stays hidden from users until publish-release
-  # flips it live after every platform has uploaded. Only runs on a tag push.
+  # draft: each platform verifies its packaged app, then uploads into it by tag
+  # (gh release upload), so the in-progress release stays hidden from users
+  # until publish-release flips it live after every platform has uploaded. Only
+  # runs on a tag push.
   create-release:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       # Checked out for CHANGELOG.md — the release-notes asset below is built
-      # from the tagged tree. `gh` itself works over the API with GH_TOKEN.
+      # from the tagged tree. `gh` itself works over the API with GH_TOKEN, so
+      # the checkout keeps no token in .git/config.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Create the draft release if it does not exist
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -51,10 +55,10 @@ jobs:
             echo "Refusing to create a release for non-version tag: $tag"
             exit 1
           fi
-          # Reuse an existing release so a re-run is idempotent. Note: if a prior
-          # run already published this tag (non-draft), electron-builder won't
-          # re-upload into a release older than 2h — re-run from a fresh tag
-          # rather than re-running a long-published one.
+          # Reuse an existing release so a re-run is idempotent. A tag whose
+          # release is already published (non-draft) gets no new uploads: the
+          # upload steps refuse it rather than replace live installers — re-run
+          # from a fresh tag instead.
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag already exists, reusing it."
           else
@@ -87,17 +91,68 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      # No token left in .git/config while `npm ci` runs install scripts: this
+      # job never uses git credentials (uploads go through GH_TOKEN).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
       - run: npm ci
-      # On a tag, publish installers to the GitHub release; a plain
-      # workflow_dispatch on a branch only uploads CI artifacts.
-      - if: runner.os != 'macOS'
-        run: npx electron-builder --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
+      # Every platform builds locally, boots the PACKAGED app and loads its
+      # native engines, and only then uploads (#174): an asarUnpack or missing
+      # per-OS addon regression fails here instead of reaching the release.
+      # ci.yml only smoke-tests the unpackaged tree.
+      - name: Build Linux and Windows installers
+        if: runner.os != 'macOS'
+        run: npx electron-builder --publish never
+      - name: Verify packaged Linux app and engines
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: |
+          # --engine-check loads the native addons from inside the package, so
+          # a missing app.asar.unpacked addon fails here. (engine-smoke.js with
+          # EARHEART_ENGINE_ROOT would add nothing: run from the checkout, it
+          # resolves modules from the repo's node_modules, not the package's.)
+          xvfb-run -a dist/linux-unpacked/earheart --smoke-test --engine-check --no-sandbox
+      - name: Verify packaged Windows app and engines
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          dist/win-unpacked/Earheart.exe --smoke-test --engine-check
+      # electron-builder's own publisher uploads Windows artifacts under dashed
+      # names ("Earheart-Setup-1.2.3.exe"), the names latest.yml points at; a
+      # local file can carry spaces. Match them, then refuse to upload a feed
+      # whose files aren't all here — a mismatch would break auto-update.
+      - name: Upload verified Linux and Windows installers and feed
+        if: runner.os != 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Never replace the installers of a release users already have.
+          if [[ "$(gh release view "$GITHUB_REF_NAME" --json isDraft -q .isDraft)" != true ]]; then
+            echo "::error::release $GITHUB_REF_NAME is already published; re-run from a fresh tag"
+            exit 1
+          fi
+          shopt -s nullglob
+          for f in dist/*.exe dist/*.exe.blockmap; do
+            dashed="${f// /-}"
+            if [[ "$f" != "$dashed" ]]; then mv "$f" "$dashed"; fi
+          done
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            feed=dist/latest-linux.yml
+            files=(dist/*.AppImage dist/*.deb "$feed")
+          else
+            feed=dist/latest.yml
+            files=(dist/*.exe dist/*.exe.blockmap "$feed")
+          fi
+          node scripts/check-release-feed.js "$feed"
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
       # Build locally first: publish macOS only after the packaged app and
       # its bundled native engines pass on the matching hardware.
       # Sign with Earheart's self-signed certificate. A stable certificate gives
@@ -178,7 +233,9 @@ jobs:
             codesign --verify --deep --strict "$staging/Earheart.app"
           fi
           # --engine-check loads the native addons inside the packaged app, so
-          # the signed bundle's library validation is what gets tested.
+          # the signed bundle's library validation is what gets tested. (The
+          # engine-smoke run after it resolves modules from the checkout's
+          # node_modules; it checks the worker plumbing, not the package.)
           "$bundle/Contents/MacOS/Earheart" --smoke-test --engine-check --no-sandbox
           EARHEART_ENGINE_ROOT="$PWD/$bundle/Contents/Resources/app.asar" \
             npx electron scripts/engine-smoke.js --no-sandbox
@@ -192,7 +249,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload "$GITHUB_REF_NAME" dist/*.dmg dist/*.zip dist/*.blockmap dist/latest-mac*.yml --clobber
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Never replace the installers of a release users already have.
+          if [[ "$(gh release view "$GITHUB_REF_NAME" --json isDraft -q .isDraft)" != true ]]; then
+            echo "::error::release $GITHUB_REF_NAME is already published; re-run from a fresh tag"
+            exit 1
+          fi
+          gh release upload "$GITHUB_REF_NAME" dist/*.dmg dist/*.zip dist/*.blockmap dist/latest-mac*.yml --clobber
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: earheart-${{ matrix.os }}

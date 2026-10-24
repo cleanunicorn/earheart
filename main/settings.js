@@ -80,6 +80,11 @@ const DEFAULTS = {
     mode: "paste",
     restoreClipboard: true, // after pasting in "paste" mode, restore clipboard
     pasteDelayMs: 150, // wait before simulating the paste keystroke
+    // Deliver a multi-line transcript as one line (#68). A terminal agent
+    // (Claude Code, Codex CLI) can read a pasted newline as "submit" and send
+    // the first paragraph alone. Off by default: an email keeps its
+    // paragraphs. History keeps the transcript as it was.
+    singleLine: false,
   },
   stt: {
     // "builtin" = run Parakeet in-process (no setup, default for new users),
@@ -143,7 +148,8 @@ const DEFAULTS = {
   audio: {
     deviceId: "", // empty = system default microphone
     // Ten minutes. The built-in cleanup context is sized from this (see
-    // cleanContextFor in util/clean-budget.js), so raising it costs memory.
+    // cleanContextFor in util/clean-budget.js), so raising it costs memory; a
+    // large dictionary or custom prompt grows it too, up to CLEAN_CONTEXT_MAX.
     maxRecordingSeconds: 600,
   },
   engines: {

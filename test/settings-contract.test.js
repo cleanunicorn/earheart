@@ -715,6 +715,24 @@ test("Save writes the hotkey rows through the shared status renderer", () => {
   assert.doesNotMatch(save, /hotkeyStatus\.textContent|pauseHotkeyStatus\.textContent/);
 });
 
+// #298: a window that closed itself after Save read as a crash. Save must keep
+// Settings open; only the footer's Close button invokes settings:close.
+test("Save never closes Settings; the footer's Close button does", () => {
+  const save = js.slice(js.indexOf("async function saveSettings()"), js.indexOf("/* ---------- connection tests"));
+  assert.ok(save.length > 0, "saveSettings must exist");
+  assert.doesNotMatch(save, /settings:close/, "Save must not close the window");
+  const footer = html.match(/<footer>[\s\S]*?<\/footer>/)?.[0] ?? "";
+  assert.match(footer, /<button id="close">Close<\/button>\s*<button id="save" class="primary">Save<\/button>/);
+  assert.match(js, /\$\("close"\)\.addEventListener\("click", \(\) => earheart\.invoke\("settings:close"\)\)/);
+  assert.equal(js.match(/settings:close/g).length, 1, "only the Close button closes Settings");
+  // With the window staying open, a failed Save's clear-timer must not wipe
+  // the next Save's "Saved".
+  // \r?\n: Windows checkouts carry CRLF.
+  assert.match(save, /^async function saveSettings\(\) \{\r?\n  const save = \$\("save-status"\);\r?\n  clearTimeout\(saveStatusTimer\);/);
+  assert.match(save, /saveStatusTimer = setTimeout\(/);
+  assert.doesNotMatch(save.replace(/saveStatusTimer = setTimeout\(/g, ""), /\bsetTimeout\(/);
+});
+
 // The Performance limits: the HTML min/max are the ranges, but nothing binds
 // collect() to them (there is no <form>/checkValidity), so collect() must clamp
 // itself. Runs the real collect() against stub elements carrying the markup's
@@ -774,11 +792,13 @@ test("idle unload is clamped to the field's range, and blank still means never",
 });
 
 test("Save names each limit it stored differently from what was typed", () => {
-  const adjustments = (maxSeconds, idle, saved) => {
+  const adjustments = (maxSeconds, idle, saved, edited = {}) => {
     const elements = {
       "max-seconds": { value: maxSeconds, ...inputRange("max-seconds") },
       "idle-unload": { value: idle, ...inputRange("idle-unload") },
     };
+    const sent = new Map(Object.values(elements).map((el) => [el, { value: el.value }]));
+    for (const [id, value] of Object.entries(edited)) elements[id].value = value;
     const context = { $: (id) => elements[id] };
     require("node:vm").runInNewContext(
       `${extractFunction(js, "limitAdjustments")}; this.limitAdjustments = limitAdjustments;`,
@@ -787,7 +807,7 @@ test("Save names each limit it stored differently from what was typed", () => {
     return [...context.limitAdjustments({
       audio: { maxRecordingSeconds: saved[0] },
       engines: { idleUnloadMinutes: saved[1] },
-    })];
+    }, sent)];
   };
   assert.deepStrictEqual(adjustments("-5", "9999", [10, 240]), [
     "Max dictation length set to 10 s (allowed 10–3600)",
@@ -797,6 +817,8 @@ test("Save names each limit it stored differently from what was typed", () => {
   // Stored as typed, or left blank on purpose: nothing to report.
   assert.deepStrictEqual(adjustments("300", "0", [300, 0]), []);
   assert.deepStrictEqual(adjustments("", "", [300, 0]), []);
+  // Later edits aren't normalization of the values that Save actually sent.
+  assert.deepStrictEqual(adjustments("600", "2", [600, 2], { "max-seconds": "300", "idle-unload": "10" }), []);
 });
 
 test("the overlay's recording cap accepts exactly the max-seconds field's range", () => {
@@ -856,4 +878,11 @@ test("the overlay's last-minute warning has a style and is cleared", () => {
   assert.match(overlayJs, /toggleAttribute\("data-cap-warning", true\)/);
   // Cleared both when a new take starts and when a warned take ends.
   assert.strictEqual(overlayJs.match(/removeAttribute\("data-cap-warning"\)/g)?.length, 2);
+});
+
+// #68: the switch is read into output.singleLine on Save and shown from it.
+test("'Deliver as one line' is saved from and shown in its switch", () => {
+  assert.match(html, /<input type="checkbox" id="output-single-line" class="switch" role="switch" \/>/);
+  assert.match(js, /singleLine: \$\("output-single-line"\)\.checked/);
+  assert.match(js, /\$\("output-single-line"\)\.checked = current\.output\.singleLine === true/);
 });

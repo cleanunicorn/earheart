@@ -576,6 +576,59 @@ test("cleanup styles that promise a tidy result actually deliver it", () => {
   assert.match(verbatim.systemPrompt, /or repetition/i);
 });
 
+// #290: the backstop runs after the model was told to reproduce commands,
+// paths and strings exactly, so it must never edit them itself.
+test("stripStumbles leaves code, paths and quoted strings exactly as they are", () => {
+  const kept = [
+    "Run `echo echo`.",
+    "Open src/um/parser.js.",
+    'Set the string to "um".',
+    "Set the string to “um”.",
+    "Set it to 'um' now.",
+    "Set it to ‘um’ now.",
+    "```\nfor x in x x; do echo um; done\n```",
+    "Pass --um to the uh_handler and read ./um/notes.",
+    "Call fooBar fooBar on the parser.",
+  ];
+  for (const text of kept) {
+    const out = stripStumbles(text);
+    for (const literal of text.match(/`[^`]+`|```[\s\S]+```|"[^"]*"|“[^”]*”|'um'|‘um’|src\/um\/parser\.js|--um|uh_handler|\.\/um\/notes|fooBar fooBar/g) || []) {
+      assert.ok(out.includes(literal), `${JSON.stringify(literal)} survives in ${JSON.stringify(out)}`);
+    }
+  }
+});
+
+test("stripStumbles still tidies the prose around a literal", () => {
+  // (The comma that only fenced the filler goes with it, as it does without a literal.)
+  assert.strictEqual(stripStumbles("So um, open src/um/parser.js and the the tests."), "So open src/um/parser.js and the tests.");
+  assert.strictEqual(stripStumbles("Run `echo echo` um, then the the build."), "Run `echo echo` then the build.");
+  // A path ending a sentence still ends it: the next filler-led one is capitalized.
+  assert.strictEqual(stripStumbles("Open src/um/parser.js. Um, then run it."), "Open src/um/parser.js. Then run it.");
+  // Apostrophes are not quotes.
+  assert.strictEqual(stripStumbles("It's um fine, don't worry."), "It's fine, don't worry.");
+  // An unmarked repeat can't be told from a stutter: marking it keeps it.
+  assert.strictEqual(stripStumbles("run echo echo"), "run echo");
+  // An elision opens no quote, so the prose up to a later possessive is tidied.
+  assert.strictEqual(
+    stripStumbles("I left 'cause um the the dogs' toys were um gone."),
+    "I left 'cause the dogs' toys were gone."
+  );
+  // A quoted sentence still ends its sentence: the next one takes the capital.
+  assert.strictEqual(stripStumbles('She said "stop." Um, then we left.'), 'She said "stop." Then we left.');
+  assert.strictEqual(stripStumbles("She said “stop.” Um, then we left."), "She said “stop.” Then we left.");
+});
+
+test("stripStumbles leaves a text with more literals than placeholders unchanged", () => {
+  const text = Array.from({ length: 6500 }, (_, i) => `f${i}.js um`).join(" ");
+  assert.strictEqual(stripStumbles(text), text);
+});
+
+test("stripStumbles leaves text holding private-use characters alone", () => {
+  // Placeholders live in that range; a text already using it can't be masked safely.
+  const text = "um the the \uE000 thing";
+  assert.strictEqual(stripStumbles(text), text);
+});
+
 // Load main/services/route.js with the two cleanup backends replaced by a stub
 // that echoes a fixed cleaned text, so the routing + filler backstop can be
 // exercised without Electron or a model.
@@ -1581,4 +1634,18 @@ test("onboarding hotkey prose names the platform key and preserves edited shortc
     assert.strictEqual(displayHotkey("CmdOrCtrl+Shift+Space"), "Cmd+Shift+Space");
     assert.strictEqual(displayHotkey("F8"), "F8");
   } finally { global.platform = previous; }
+});
+
+test("route.clean keeps literals intact on both tidied styles and both engines (#290)", async () => {
+  const left = 'So um, run `echo echo` in src/um/ and set it to "um".';
+  for (const engine of ["builtin", "remote"]) {
+    for (const style of ["clean", "polished"]) {
+      const route = loadRouteWith(left);
+      assert.strictEqual(
+        await route.clean("raw", { engine, style }),
+        'So run `echo echo` in src/um/ and set it to "um".',
+        `${engine}/${style}`
+      );
+    }
+  }
 });

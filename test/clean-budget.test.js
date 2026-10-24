@@ -15,8 +15,11 @@ const {
   CLEAN_CONTEXT_MIN,
   CLEAN_CONTEXT_MAX,
   CLEAN_RUNAWAY_MESSAGE,
+  CLEAN_PROMPT_TOKENS,
   cleanContextNeed,
+  cleanContextSize,
   cleanContextFor,
+  cleanTranscriptBudget,
   cleanMaxTokens,
   cleanBudgetMessage,
 } = require("../main/util/clean-budget");
@@ -142,4 +145,42 @@ test("clean context: stays within the ceiling for any cap", () => {
   assert.strictEqual(cleanContextFor(100000), CLEAN_CONTEXT_MAX);
   assert.strictEqual(cleanContextFor(undefined), CLEAN_CONTEXT_MIN);
   assert.strictEqual(cleanContextFor(-5), CLEAN_CONTEXT_MIN);
+});
+
+// #297: measured on Qwen3 4B Instruct 2507 Q4_K_M with the shipped default
+// prompt and a valid 256-term identifier dictionary (7,679 characters): the
+// user turn for "Run the test suite." (5 tokens) is 6,921 tokens. The fixed
+// allowance sized a 60 s cap's context at 4,096; the turn needs 6,990.
+test("clean context: sized from the real instructions, a token-dense dictionary fits", () => {
+  const turnTokens = 6921;
+  const transcriptTokens = 5;
+  const needed = cleanContextNeed(turnTokens, transcriptTokens);
+  assert.strictEqual(needed, 6990);
+  assert.ok(needed > cleanContextFor(60), "the fixed allowance was the bug");
+  const size = cleanContextSize(turnTokens - transcriptTokens, cleanTranscriptBudget(60));
+  assert.ok(needed <= size, `needs ${needed}, sized ${size}`);
+  assert.strictEqual(size, 8192);
+});
+
+test("clean context: the allowance-based size is the measured size at the allowance", () => {
+  for (const seconds of [0, 60, 300, 600, 1800, 3600]) {
+    assert.strictEqual(cleanContextFor(seconds), cleanContextSize(CLEAN_PROMPT_TOKENS, cleanTranscriptBudget(seconds)));
+  }
+});
+
+test("clean context: real instructions still stop at the memory ceiling", () => {
+  assert.strictEqual(cleanContextSize(100000, cleanTranscriptBudget(60)), CLEAN_CONTEXT_MAX);
+  assert.strictEqual(cleanContextSize(0, 0), CLEAN_CONTEXT_MIN);
+});
+
+test("clean budget: a refusal caused by the instructions says what to shorten", () => {
+  const message = cleanBudgetMessage(17000, 16384, 16500);
+  assert.match(message, /instructions and dictionary use ~16500/);
+  assert.match(message, /Remove dictionary words or shorten the custom prompt/);
+  // Instructions over the allowance, but the transcript overflowed anyway:
+  // shortening the dictionary wouldn't have helped, so don't say it would.
+  assert.match(cleanBudgetMessage(20000, 16384, 800), /^Transcript too long/);
+  // An ordinary prompt keeps the transcript-length message.
+  assert.match(cleanBudgetMessage(17000, 16384, CLEAN_PROMPT_TOKENS), /^Transcript too long/);
+  assert.match(cleanBudgetMessage(17000, 16384), /^Transcript too long/);
 });

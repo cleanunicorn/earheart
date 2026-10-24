@@ -7,6 +7,7 @@ const settings = require("./settings");
 const updates = require("./updates");
 const history = require("./history");
 const { deliver } = require("./output/deliver");
+const { deliverText } = require("./output/single-line");
 const logger = require("./util/logger");
 
 let tray = null;
@@ -28,12 +29,24 @@ function icon(name) {
   return img.isEmpty() ? nativeImage.createEmpty() : img;
 }
 
+// The most recent transcript: History's newest entry, or a delivery held back
+// because the clipboard changed (#291) if that came later — with History off,
+// the held-back one is the only copy there is.
+function lastTranscript() {
+  const held = pipeline.getUndelivered();
+  const entry = history.list()[0];
+  if (held && (!entry || !(entry.at > held.at))) return held.text;
+  return entry?.text;
+}
+
 function buildMenu(app) {
   const cfg = settings.get();
   // Check the radio for what delivery does, legacy encoding included.
   const shownMode = settings.effectiveOutputMode(cfg.output);
   const state = pipeline.getState();
+  const failedTake = pipeline.getFailedTake();
   const lastEntry = history.list()[0];
+  const lastText = lastTranscript();
   return Menu.buildFromTemplate([
     {
       label:
@@ -50,6 +63,19 @@ function buildMenu(app) {
       visible: state !== "idle",
       click: () => pipeline.cancel(),
     },
+    // A failed transcription's recording, held for a retry (#293).
+    {
+      label: "Retry failed transcription",
+      visible: !!failedTake,
+      enabled: state === "idle",
+      click: () => pipeline.retryFailedTake(),
+    },
+    {
+      label: "Discard failed recording",
+      visible: !!failedTake,
+      enabled: state === "idle",
+      click: () => pipeline.discardFailedTake(),
+    },
     { type: "separator" },
     ...OUTPUT_MODES.map(({ label, mode }) => ({
       label,
@@ -60,14 +86,14 @@ function buildMenu(app) {
     { type: "separator" },
     {
       label: "Copy last transcription",
-      enabled: !!lastEntry && state !== "processing",
+      enabled: !!lastText && state !== "processing",
       // Re-read at click time so we copy the freshest entry even if the menu
       // was built a moment before the dictation landed.
       click: async () => {
         if (pipeline.getState() === "processing") return;
-        const entry = history.list()[0];
-        if (!entry) return;
-        try { await deliver(entry.text, { mode: "clipboard" }); }
+        const text = lastTranscript();
+        if (!text) return;
+        try { await deliver(deliverText(text, settings.get().output), { mode: "clipboard" }); }
         catch (err) {
           logger.warn(`could not copy transcript: ${err.message}`);
           try {
@@ -168,6 +194,7 @@ function init(app, pipelineModule) {
     tray.on("click", () => pipeline.toggle());
   }
   pipeline.onStateChange(() => refresh(app));
+  pipeline.onFailedTakeChange(() => refresh(app));
   refresh(app);
   return tray;
 }

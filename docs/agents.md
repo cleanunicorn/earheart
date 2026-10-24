@@ -45,7 +45,7 @@ wrong or a prompt gets reworded, these three fields in Settings → Cleanup help
    ```text
    This is a spoken instruction to a coding agent. Keep file paths, CLI flags,
    commands and identifiers exactly as spoken. Never soften or rephrase a
-   constraint. Output one paragraph with no line breaks.
+   constraint.
    ```
 
    (The default prompt already forbids acting on the transcript — your
@@ -61,10 +61,10 @@ wrong or a prompt gets reworded, these three fields in Settings → Cleanup help
 
 **Watch the line breaks.** Depending on the terminal, a newline inside pasted
 text can be read as "submit", so a three-paragraph prompt gets sent as its
-first sentence while the rest lands in the next turn. Two ways to avoid it:
-don't dictate "new line" or "new paragraph" in a terminal, and add the
-"one paragraph, no line breaks" line from the system prompt above. Fixing this
-properly is [#68](https://github.com/cleanunicorn/earheart/issues/68).
+first sentence while the rest lands in the next turn. Enable **Deliver as one
+line** in Settings → General to join line breaks in everything Earheart pastes
+or copies, including code blocks. Stored History keeps the original formatting.
+The setting is off by default and works even when cleanup is off or fails.
 
 **Linux: auto-paste needs a keystroke tool.** `xdotool` on X11,
 `wtype`/`ydotool` on Wayland. Without one Earheart falls back to clipboard-only

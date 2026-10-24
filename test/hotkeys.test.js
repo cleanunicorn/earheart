@@ -1130,3 +1130,115 @@ test("combined transfers and one-shot OS failures match reported slots and callb
   }
   assert.strictEqual(checked, 4380);
 });
+
+// #286: a pair slot moving onto the old discard key in the same save that
+// moves discard off it — when discard's new key fails, discard never left.
+for (const slot of ["record", "pause"]) {
+  test(`${slot} taking the old discard key rolls back when the new discard key fails`, () => {
+    const { hotkeys, bindings } = loadHotkeys({ occupied: [E] });
+    hotkeys.applyAll(all(A, B, D));
+    const attempt = slot === "record" ? all(D, B, E) : all(A, D, E);
+
+    const result = hotkeys.applyAll(attempt);
+
+    assert.strictEqual(result.discard.ok, false);
+    assert.strictEqual(result[slot].ok, false, `${slot} is reported not changed`);
+    assert.match(result[slot].error, /still the discard hotkey/);
+    // Distinct again: the pair slot is back on its old key, discard keeps D.
+    assert.strictEqual(bindings.has(slot === "record" ? A : B), true);
+    assert.strictEqual(bindings.has(D), false, "D is discard's, not held while idle");
+    hotkeys.armDiscard(true);
+    assert.strictEqual(bindings.has(D), true, "the next dictation's discard arms");
+  });
+}
+
+test("if the rolled-back key is gone too, discard yields and is reported unbound", () => {
+  const occupied = [E];
+  const { hotkeys, bindings } = loadHotkeys({ occupied });
+  hotkeys.applyAll(all(A, B, D));
+  // Another app grabs A the moment record lets go of it.
+  occupied.push(A);
+  const result = hotkeys.applyAll(all(D, B, E));
+
+  assert.strictEqual(result.record.ok, true, "record keeps D");
+  assert.strictEqual(result.discard.ok, false);
+  assert.strictEqual(result.discard.cleared, true);
+  assert.match(result.discard.error, /now unbound/);
+  hotkeys.armDiscard(true);
+  assert.strictEqual(bindings.get(D) !== undefined, true, "D belongs to record alone");
+});
+
+test("a pair slot taking discard's key while discard's move is rejected as a clash rolls back", () => {
+  // pause -> D (discard's key) and discard -> A (record's unchanged key, a clash).
+  const { hotkeys, bindings } = loadHotkeys();
+  hotkeys.applyAll(all(A, B, D));
+  const result = hotkeys.applyAll(all(A, D, A));
+  assert.strictEqual(result.discard.ok, false);
+  assert.strictEqual(result.pause.ok, false, "pause didn't move onto the key discard kept");
+  assert.strictEqual(bindings.has(B), true);
+  hotkeys.armDiscard(true);
+  assert.strictEqual(bindings.has(D), true, "discard still arms on D");
+});
+
+test("when both pair slots moved, a failed discard move rolls both back instead of dropping discard", () => {
+  // record A -> D, pause B -> A, discard D -> E (occupied).
+  const { hotkeys, bindings } = loadHotkeys({ occupied: [E] });
+  hotkeys.applyAll(all(A, B, D));
+  const result = hotkeys.applyAll(all(D, A, E));
+  assert.strictEqual(result.record.ok, false);
+  assert.strictEqual(result.pause.ok, false);
+  assert.ok(!result.discard.cleared, "discard kept its key");
+  assert.strictEqual(bindings.has(A) && bindings.has(B), true);
+  hotkeys.armDiscard(true);
+  assert.strictEqual(bindings.has(D), true);
+});
+
+test("a hand-edited clash at launch still makes discard yield", () => {
+  const { hotkeys } = loadHotkeys();
+  const result = hotkeys.applyAll(all(A, D, D));
+  assert.strictEqual(result.pause.ok, true);
+  assert.strictEqual(result.discard.ok, false);
+});
+
+test("a correction rotation's rollback never moves record off its restored key", () => {
+  // record A, pause B, discard D, correction C; another app holds D while
+  // idle. One save: record -> C, discard -> A, correction -> D.
+  const C = "CommandOrControl+Alt+C";
+  const occupied = [];
+  const { hotkeys, bindings } = loadHotkeys({ occupied });
+  const f = () => {};
+  hotkeys.applyAll({ record: A, pause: B, discard: D, correct: C, onRecord: f, onPause: f, onDiscard: f, onCorrect: f });
+  occupied.push(D);
+  const result = hotkeys.applyAll({ record: C, pause: B, discard: A, correct: D, onRecord: f, onPause: f, onDiscard: f, onCorrect: f });
+  assert.ok(!result.record.unbound, `record stays bound: ${JSON.stringify(result.record)}`);
+  assert.strictEqual(bindings.has(A), true, "record is back on A");
+});
+
+test("a pair undo that loses a binding reports it instead of the change it replaced", () => {
+  // record A -> D, pause B -> A, discard D -> E (occupied). Pause takes A on
+  // the way forward; then another app is quicker to A once the undo lets go
+  // of it, so the undo — and its own rollback — can't hold it again.
+  const { hotkeys, bindings } = loadHotkeys({
+    occupied: [E],
+    registerImpl: (accelerator, attempt) => !(accelerator === A && attempt > 2),
+  });
+  hotkeys.applyAll(all(A, B, D)); // A's first registration
+  const result = hotkeys.applyAll(all(D, A, E)); // pause takes A: the second
+  for (const [name, key] of [["record", D], ["pause", A]]) {
+    if (result[name].ok) assert.strictEqual(bindings.has(key), true, `${name} reports ok, so it must hold ${key}`);
+  }
+  assert.ok(["record", "pause"].some((name) => result[name].unbound), JSON.stringify(result));
+});
+
+test("a four-way rotation through correction never leaves record unbound", () => {
+  const K = (n) => `CommandOrControl+${n}`;
+  const occupied = [];
+  const { hotkeys } = loadHotkeys({ occupied });
+  const f = () => {};
+  const cfg = (record, pause, discardKey, correct) => ({ record, pause, discard: discardKey, correct, onRecord: f, onPause: f, onDiscard: f, onCorrect: f });
+  hotkeys.applyAll(cfg(K(1), K(2), K(4), K(3)));
+  occupied.push(K(5)); // nothing; then another app takes record's old key once free
+  occupied.push(K(1));
+  const result = hotkeys.applyAll(cfg(K(3), K(4), K(1), K(2)));
+  assert.ok(!result.record.unbound, JSON.stringify(result.record));
+});

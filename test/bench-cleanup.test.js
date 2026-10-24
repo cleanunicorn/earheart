@@ -133,6 +133,18 @@ test("plan: FLUENT under clean + polished, REPORTED under clean, every seed", as
   assert.strictEqual(plan({ corpora: ["fluent", "short"], seeds: [1], gpu: false }).length, 2 + 12);
 });
 
+test("plan: a corpus item can list its literals, and they reach the scorer", async (t) => {
+  const { plan } = await load();
+  const { SHORT } = require("../scripts/dictation-corpus");
+  SHORT.push({ text: "Run make test then deploy.", literals: ["make test"] });
+  t.after(() => SHORT.pop());
+  const last = plan({ corpora: ["short"], seeds: [1], gpu: false }).at(-1);
+  assert.strictEqual(last.input, "Run make test then deploy.");
+  assert.deepStrictEqual(last.literals, ["make test"]);
+  // A plain string item has none, so the heuristic decides.
+  assert.strictEqual(plan({ corpora: ["short"], seeds: [1], gpu: false })[0].literals, undefined);
+});
+
 test("plan: the GPU pass is FLUENT/clean only", async () => {
   const { plan } = await load();
   const turns = plan({ corpora: ["fluent", "reported", "short"], seeds: [1, 2, 3], gpu: true });
@@ -247,6 +259,32 @@ test("markdownRow renders a saved run's FLUENT numbers", async () => {
   assert.match(row, /\| 0\/0\/3 \|/); // delivered: backstop took the fillers, "kind of like" stays
   assert.match(row, /1002 \[1001–1003\]/);
   assert.match(row, /2\.00 GB \| X \|$/);
+});
+
+test("markdownRow: one cell per header column, delivered fidelity included", async () => {
+  const { markdownRow, TABLE_HEAD } = await load();
+  const cells = (line) => line.split("|").length;
+  const dir = tmpdir();
+  writeRun(dir, { id: "m", bytes: 2_000_000_000, s: COPY, wall: 1000 });
+  const run = JSON.parse(fs.readFileSync(path.join(dir, "m", "summary.json"), "utf8"));
+  const [head, rule] = TABLE_HEAD.split("\n");
+  assert.strictEqual(cells(markdownRow(run)), cells(head));
+  assert.strictEqual(cells(rule), cells(head));
+  // Header order: ... | fidelity fails | delivered fidelity fails | ratio ...
+  const at = head.split("|").map((c) => c.trim()).indexOf("delivered fidelity fails clean/polished");
+  assert.ok(at > 0);
+  assert.strictEqual(markdownRow(run).split("|")[at].trim(), `${run.summary["fluent/clean"].deliveredFidelityFails}/${run.summary["fluent/polished"].deliveredFidelityFails}`);
+});
+
+test("markdownRow: a run scored before delivered fidelity existed says so, not 0", async () => {
+  const { markdownRow, TABLE_HEAD } = await load();
+  const dir = tmpdir();
+  const old = { ...COPY };
+  delete old.deliveredFidelityOk;
+  writeRun(dir, { id: "m", bytes: 2_000_000_000, s: old, wall: 1000 });
+  const run = JSON.parse(fs.readFileSync(path.join(dir, "m", "summary.json"), "utf8"));
+  const at = TABLE_HEAD.split("\n")[0].split("|").map((c) => c.trim()).indexOf("delivered fidelity fails clean/polished");
+  assert.strictEqual(markdownRow(run).split("|")[at].trim(), "–/–");
 });
 
 test("rescore re-scores saved runs from their raw outputs and keeps the timings", async () => {

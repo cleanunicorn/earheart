@@ -8,6 +8,14 @@
 const { app, session } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
+const { isolateProfile, assertIsolated } = require("./demo-profile");
+
+// A throwaway demo profile, set before anything below can read userData or
+// logs (settings, history, models and the logger all resolve them from the
+// app), so the shots never show — or migrate — the contributor's own profile
+// (#295). Removed after the process exits, whichever way it exits: Chromium
+// writes into it while shutting down.
+const profile = isolateProfile(app);
 
 const ROOT = path.join(__dirname, "..");
 const OUT = path.join(ROOT, "docs", "screenshots");
@@ -25,10 +33,20 @@ async function shot(win, name) {
 }
 
 async function main() {
+  assertIsolated(app, profile);
   fs.mkdirSync(OUT, { recursive: true });
   // The shipped permission policy, so the microphone grant below is proven
   // through the same handler the app installs (main/window-guard.js).
   installPermissionHandler(session.defaultSession);
+  // Start on boot reads and writes the OS login item, not the profile: show
+  // the demo's value, and never touch the real entry.
+  const autostart = require(path.join(ROOT, "main", "autostart.js"));
+  autostart.isEnabled = () => false;
+  autostart.apply = () => {};
+  // As main.js wires them: the overlay's resize (the update card grows the
+  // window) and custom models from the settings.
+  windows.init();
+  require(path.join(ROOT, "main", "engines", "catalog.js")).bindCustomModels(require(path.join(ROOT, "main", "settings.js")));
   ipc.init({
     applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
     onSettingsChanged: () => {},

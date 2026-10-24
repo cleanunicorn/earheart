@@ -658,11 +658,13 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   ipcMain.handle("correction:close", () => windows.closeCorrection());
 
   ipcMain.handle("history:list", () => history.list());
+  // { ok: true } or { ok: false, error }: a failed delete leaves the
+  // transcripts on disk, and Settings must say so instead of showing none.
   ipcMain.handle("history:clear", () => {
-    history.clear();
+    const result = history.clear();
     // "Copy last transcription" must go disabled with nothing left to copy.
     tray.refresh();
-    return [];
+    return result;
   });
 
   ipcMain.handle("updates:get", () => updates.getState());

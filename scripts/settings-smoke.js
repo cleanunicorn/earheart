@@ -411,6 +411,40 @@ app.whenReady().then(async () => {
       `meta=${JSON.stringify(wholeRow?.meta)}`
     );
 
+    // 9 (cont.). A Clear history whose delete fails (#287) says so and keeps the
+    // rows, through the real handler and history module: only the unlink is
+    // made to fail, as a file locked by an antivirus scan would.
+    const realUnlink = fs.unlinkSync;
+    fs.unlinkSync = (file, ...rest) => {
+      if (String(file).endsWith("history.json")) {
+        throw Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" });
+      }
+      return realUnlink(file, ...rest);
+    };
+    let failedClear;
+    try {
+      await js(`window.confirm = () => true; document.getElementById("history-clear").click(); true`);
+      failedClear = await waitFor(
+        () => js(`(() => {
+          const status = document.getElementById("history-clear-status");
+          return !status.hidden && JSON.stringify({
+            status: status.textContent,
+            rows: document.querySelectorAll("#history-list li").length,
+          });
+        })()`),
+        "a failed Clear history never said so"
+      ).then(JSON.parse);
+    } finally {
+      fs.unlinkSync = realUnlink;
+    }
+    check(
+      "a Clear history that can't delete the file says so and keeps the transcripts",
+      /still on this computer/.test(failedClear.status) && /\(EPERM\)/.test(failedClear.status) &&
+        /settings folder/.test(failedClear.status) && !/history\.json/.test(failedClear.status) &&
+        failedClear.rows === historyRows.length && history.list().length === historyRows.length,
+      JSON.stringify(failedClear)
+    );
+
     // 4. Roving tabindex seated before any interaction.
     const tabStops = JSON.parse(
       await js(`

@@ -228,6 +228,21 @@ function getState() {
   return state;
 }
 
+// The last transcript delivery held back because another app took over the
+// clipboard first (#291): not pasted, not on the clipboard, and with History
+// off, nowhere else. Kept in memory (never on disk) for the tray's "Copy last
+// transcription" — `{ text, at }`, so a newer History entry wins — until a
+// later delivery lands or History is cleared.
+let undelivered = null;
+
+function getUndelivered() {
+  return undelivered;
+}
+
+function clearUndelivered() {
+  undelivered = null;
+}
+
 function overlayStatus(status, detail) {
   windows.sendToOverlay("pipeline:status", { status, detail });
 }
@@ -735,9 +750,15 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
     // is cut short by a dying engine, or is cancelled before delivery must not
     // cost the recording (a retry already took it out).
     if (!retry && !partial) failedTake.discard();
+    // A cancelled delivery landed nothing, so it supersedes nothing either.
+    if (result.method === "clipboard-changed") undelivered = { text, at: new Date().toISOString() };
+    else if (result.method !== "cancelled") undelivered = null;
     if (stale()) return;
 
-    if (result.hint) {
+    if (result.method === "clipboard-changed") {
+      // Nothing was pasted or copied: the newer clipboard is the user's.
+      notify({ title: "Earheart: not pasted, the clipboard changed", body: result.hint });
+    } else if (result.hint) {
       // The overlay's detail row clips after a couple of dozen characters and
       // hides itself seconds later; the full instruction needs somewhere to
       // stay, same as a cleanup failure does.
@@ -866,6 +887,8 @@ module.exports = {
   cancel,
   onOverlayRendererGone,
   getState,
+  getUndelivered,
+  clearUndelivered,
   onStateChange,
   onSettingsChanged,
   onCleanupDownloaded,

@@ -85,6 +85,7 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
       onSettingsChanged() {},
       canCorrect,
       canCopy,
+      onHistoryCleared: () => { calls.undeliveredCleared = (calls.undeliveredCleared || 0) + 1; },
     });
   } finally {
     delete require.cache[ipcPath];
@@ -279,6 +280,8 @@ test("history:clear refreshes the tray", (t) => {
   assert.deepStrictEqual(handlers["history:clear"](), { ok: true });
   assert.strictEqual(calls.historyCleared, 1);
   assert.strictEqual(calls.trayRefresh, 1);
+  // #291: a transcript held back from a paste is history too.
+  assert.strictEqual(calls.undeliveredCleared, 1);
 });
 
 // #287: a failed delete reached Settings as success.

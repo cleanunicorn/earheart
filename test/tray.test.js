@@ -26,6 +26,7 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
   const images = [];
   const warnings = [];
   const notifications = [];
+  const copies = [];
   const entries = historyEntries;
   class FakeTray {
     constructor(image) { images.push(image); }
@@ -53,7 +54,7 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
         createFromPath: () => ({ isEmpty: () => false }),
         createEmpty: () => ({}),
       },
-      clipboard: { writeText() {} },
+      clipboard: { writeText: (text) => copies.push(text) },
     },
     [resolveFrom("./windows")]: { openSettings() {} },
     [resolveFrom("./updates")]: { getState: () => ({ status: "idle" }) },
@@ -78,8 +79,12 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
     m.exports = exports;
     require.cache[p] = m;
   }
+  // deliver.js too: it binds the electron stub (the clipboard the copy tests
+  // read) when first loaded, so a cached copy would write to an earlier test's.
+  const deliverPath = resolveFrom("./output/deliver");
   delete require.cache[trayPath];
   delete require.cache[settingsPath];
+  delete require.cache[deliverPath];
   let tray;
   let settings;
   try {
@@ -88,6 +93,7 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
   } finally {
     delete require.cache[trayPath];
     delete require.cache[settingsPath];
+    delete require.cache[deliverPath];
     for (const [p, old] of previous) {
       if (old) require.cache[p] = old;
       else delete require.cache[p];
@@ -104,10 +110,12 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
     onFailedTakeChange(listener) { this.failedTakeChanged = listener; },
     retryFailedTake() { this.calls.push("retry"); },
     discardFailedTake() { this.calls.push("discard"); },
+    undelivered: null,
+    getUndelivered() { return this.undelivered; },
   };
   tray.init({ quit() {} }, pipeline);
   const file = path.join(userData, "settings.json");
-  return { tray, pipeline, images, settings, menus, warnings, notifications, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
+  return { tray, pipeline, images, settings, menus, warnings, notifications, copies, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
 }
 
 const item = (menu, label) => menu.find((entry) => entry.label === label);
@@ -274,4 +282,35 @@ test("the tray offers a held failed take's Retry and Discard, and only while idl
   pipeline.getState = () => "recording";
   tray.refresh();
   assert.strictEqual(item(menus.at(-1), "Retry failed transcription").enabled, false, "never mid-dictation");
+});
+
+// #291: a delivery held back because the clipboard changed is offered by
+// "Copy last transcription" — with History off it is the only copy there is.
+test("Copy last transcription copies a delivery the clipboard change held back", async (t) => {
+  const { tray, pipeline, menus, copies } = loadTray(t, { historyEntries: [{ text: "older entry" }] });
+  pipeline.undelivered = { text: "held back transcript", at: "2999-01-01T00:00:00.000Z" };
+  tray.refresh();
+  const copy = item(menus.at(-1), "Copy last transcription");
+  assert.strictEqual(copy.enabled, true);
+  await copy.click();
+  assert.deepStrictEqual(copies, ["held back transcript"]);
+});
+
+test("Copy last transcription works with History off when a delivery was held back", (t) => {
+  const { tray, pipeline, menus } = loadTray(t, { historyEntries: [] });
+  pipeline.undelivered = { text: "held back transcript", at: "2026-01-01T00:00:00.000Z" };
+  tray.refresh();
+  assert.strictEqual(item(menus.at(-1), "Copy last transcription").enabled, true);
+});
+
+test("Copy last transcription prefers a History entry newer than the held-back delivery", async (t) => {
+  // A later dictation reached History and then failed to deliver: it, not the
+  // older held-back one, is the last transcript.
+  const { tray, pipeline, menus, copies } = loadTray(t, {
+    historyEntries: [{ text: "newer entry", at: "2026-02-01T00:00:00.000Z" }],
+  });
+  pipeline.undelivered = { text: "held back transcript", at: "2026-01-01T00:00:00.000Z" };
+  tray.refresh();
+  await item(menus.at(-1), "Copy last transcription").click();
+  assert.deepStrictEqual(copies, ["newer entry"]);
 });

@@ -787,6 +787,21 @@ app.whenReady().then(async () => {
       await win.webContents.executeJavaScript("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))");
       require("node:fs").writeFileSync(require("node:path").join(process.env.EARHEART_WIZARD_SCREENSHOTS, "overlay-raw-cleanup.png"), (await win.webContents.capturePage()).toPNG());
     }
+    // A paste held back because another app took the clipboard over (#291):
+    // nothing was pasted OR copied, so the card must say neither.
+    win.webContents.send("pipeline:status", {
+      status: "done",
+      detail: { preview: "the agent prompt", method: "clipboard-changed", note: "Copy it from the tray menu" },
+    });
+    await waitForStatus(win, "done");
+    await waitFor(
+      () => win.webContents.executeJavaScript('document.getElementById("status-text").textContent.startsWith("Not pasted")'),
+      "the held-back paste never showed its title"
+    );
+    const heldBack = await win.webContents.executeJavaScript('({ title: document.getElementById("status-text").textContent, detail: document.getElementById("detail-text").textContent })');
+    check("a paste held back by a clipboard change says it wasn't pasted or copied",
+      heldBack.title === "Not pasted — the clipboard changed" && heldBack.detail === "Copy it from the tray menu",
+      JSON.stringify(heldBack));
     // An interrupted dictation says so where the delivery title goes: the
     // notification is gone seconds later, this is what stays on screen.
     win.webContents.send("pipeline:status", {

@@ -499,3 +499,103 @@ test("an explicit copy survives a pending restore even when its text is unchange
   assert.deepStrictEqual(state.clip, { text: "corrected prompt" });
   assert.strictEqual(state.execs.length, keystrokes, "explicit copy never simulates a paste");
 });
+
+// #291: another app replaces the clipboard during the paste delay (another
+// copy, a clipboard manager). Pasting then would type ITS content into the
+// target; nothing may be pasted, and the newer copy must be left alone.
+for (const mode of ["paste", "paste-copy"]) {
+  test(`${mode}: a clipboard taken over before the keystroke pastes nothing and keeps the newer copy`, async (t) => {
+    onLinuxX11(t);
+    const { deliver, state } = loadDeliver({ trusted: true, tools: ["xdotool"] });
+    const pending = deliver("Dictated agent prompt", { mode, restoreClipboard: true, pasteDelayMs: 30 });
+    setTimeout(() => { state.clip = { text: "Unrelated text copied during paste delay" }; }, 5);
+    const result = await pending;
+    assert.strictEqual(result.method, "clipboard-changed");
+    assert.match(result.hint, /nothing was pasted/);
+    assert.deepStrictEqual(state.execs, [], "no keystroke");
+    assert.strictEqual(state.clip.text, "Unrelated text copied during paste delay");
+    // Nor does a later restore put anything over it.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await deliver("next", { mode: "clipboard" });
+    assert.strictEqual(state.clip.text, "next");
+  });
+}
+
+test("a clipboard taken over by an image (no text) is not pasted either", async (t) => {
+  onLinuxX11(t);
+  const { deliver, state } = loadDeliver({ trusted: true, tools: ["xdotool"] });
+  const pending = deliver("Dictated agent prompt", { mode: "paste", restoreClipboard: true, pasteDelayMs: 30 });
+  setTimeout(() => { state.clip = { image: { isEmpty: () => false, toPNG: () => Buffer.from("png") } }; }, 5);
+  assert.strictEqual((await pending).method, "clipboard-changed");
+  assert.deepStrictEqual(state.execs, []);
+});
+
+test("a clipboard that reads as empty is no evidence: the paste goes ahead", async (t) => {
+  // Some sessions can't read the clipboard from an unfocused window; refusing
+  // every paste there would break auto-paste outright.
+  onLinuxX11(t);
+  const { deliver, state } = loadDeliver({ trusted: true, tools: ["xdotool"] });
+  const pending = deliver("Dictated agent prompt", { mode: "paste-copy", pasteDelayMs: 30 });
+  setTimeout(() => { state.clip = {}; }, 5);
+  assert.strictEqual((await pending).method, "paste-copy");
+  assert.deepStrictEqual(state.execs, ["xdotool"]);
+});
+
+test("an unchanged clipboard still pastes", async (t) => {
+  onLinuxX11(t);
+  const { deliver, state } = loadDeliver({ trusted: true, tools: ["xdotool"] });
+  assert.strictEqual((await deliver("hi", { mode: "paste", restoreClipboard: true, pasteDelayMs: 5 })).method, "paste");
+  assert.deepStrictEqual(state.execs, ["xdotool"]);
+});
+
+test("a clipboard handing back CRLF for a multi-line transcript is still ours", async (t) => {
+  onLinuxX11(t);
+  const { deliver, state } = loadDeliver({ trusted: true, tools: ["xdotool"] });
+  const pending = deliver("first line\nsecond line", { mode: "paste-copy", pasteDelayMs: 30 });
+  setTimeout(() => { state.clip = { text: "first line\r\nsecond line" }; }, 5);
+  assert.strictEqual((await pending).method, "paste-copy");
+  assert.deepStrictEqual(state.execs, ["xdotool"]);
+});
+
+test("an empty read with only text formats is an unreadable clipboard, not a takeover", async (t) => {
+  // Windows answers "" while another app holds the clipboard open, yet still
+  // lists text/plain; refusing to paste then would be a false alarm.
+  onLinuxX11(t);
+  const { deliver, state, electron } = loadDeliver({ trusted: true, tools: ["xdotool"] });
+  const pending = deliver("Dictated agent prompt", { mode: "paste-copy", pasteDelayMs: 30 });
+  setTimeout(() => {
+    electron.clipboard.readText = () => "";
+  }, 5);
+  assert.strictEqual((await pending).method, "paste-copy");
+  assert.deepStrictEqual(state.execs, ["xdotool"]);
+});
+
+test("on Wayland the takeover check stands aside: an unfocused read can be stale", async (t) => {
+  onPlatform(t, "linux");
+  const saved = { WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY, XDG_SESSION_TYPE: process.env.XDG_SESSION_TYPE, PATH: process.env.PATH };
+  process.env.WAYLAND_DISPLAY = "wayland-0";
+  process.env.XDG_SESSION_TYPE = "wayland";
+  process.env.PATH = "/earheart-test-bin";
+  t.after(() => {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+  const { deliver, state } = loadDeliver({ trusted: true, tools: ["wtype"] });
+  const pending = deliver("Dictated agent prompt", { mode: "paste-copy", pasteDelayMs: 30 });
+  setTimeout(() => { state.clip = { text: "what a stale read might show" }; }, 5);
+  assert.strictEqual((await pending).method, "paste-copy");
+  assert.deepStrictEqual(state.execs, ["wtype"], "the paste went ahead, through wtype");
+});
+
+test("plain paste still restores a clipboard read back with CRLF", async (t) => {
+  onLinuxX11(t);
+  const { deliver, state } = loadDeliver({ trusted: true, tools: ["xdotool"] });
+  const controller = new AbortController();
+  const pending = deliver("one\ntwo", { mode: "paste", restoreClipboard: true, pasteDelayMs: 20 }, controller.signal);
+  state.clip = { text: "one\r\ntwo" };
+  controller.abort();
+  assert.deepStrictEqual(await pending, { method: "cancelled" });
+  assert.strictEqual(state.clip.text, "old", "the previous clipboard came back");
+});

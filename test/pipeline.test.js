@@ -1773,3 +1773,36 @@ test("pipeline: a partial salvage doesn't supersede the held recording", async (
   assert.deepStrictEqual(rig.log.delivered, ["words said so far"]);
   assert.strictEqual(rig.pipeline.getFailedTake().bytes, take.length, "the engine that cut it short failed the held one too");
 });
+
+/* ---------------- a paste held back because the clipboard changed (#291) ---------------- */
+
+test("pipeline: a delivery the clipboard change held back says so and stays copyable", async () => {
+  let result = { method: "clipboard-changed", note: "Copy it from the tray menu", hint: "Another app changed the clipboard before Earheart could paste, so nothing was pasted." };
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => "the agent prompt",
+    deliver: async (text) => {
+      rig.log.delivered.push(text);
+      return result;
+    },
+  });
+  await rig.dictate(speechWav(2));
+  const [note] = rig.log.notifications;
+  assert.strictEqual(note.title, "Earheart: not pasted, the clipboard changed");
+  assert.match(note.body, /nothing was pasted/);
+  assert.strictEqual(rig.log.done.method, "clipboard-changed");
+  assert.strictEqual(rig.pipeline.getUndelivered().text, "the agent prompt");
+  // A cancelled delivery landed nothing, so the held-back one stays.
+  result = { method: "cancelled" };
+  await rig.dictate(speechWav(2));
+  assert.strictEqual(rig.pipeline.getUndelivered().text, "the agent prompt");
+  // Clearing History clears it too.
+  rig.pipeline.clearUndelivered();
+  assert.strictEqual(rig.pipeline.getUndelivered(), null);
+  // And the next delivery that lands supersedes a held-back one.
+  result = { method: "clipboard-changed", note: "Copy it from the tray menu", hint: "nothing was pasted" };
+  await rig.dictate(speechWav(2));
+  result = { method: "paste" };
+  await rig.dictate(speechWav(2));
+  assert.strictEqual(rig.pipeline.getUndelivered(), null);
+});

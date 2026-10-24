@@ -1777,6 +1777,66 @@ app.whenReady().then(async () => {
           JSON.stringify({ typed, saved: readSaved() })
         );
       }
+      // Hold before the real handler: its settings:changed broadcast must not
+      // erase edits made after Save, even before the response can reconcile.
+      for (const field of ["output", "remind"]) {
+        const cfg = settings.get();
+        settings.save({ ...cfg, output: { ...cfg.output, mode: "paste", restoreClipboard: true }, updates: { ...cfg.updates, remind: true } });
+        const { saveWin, run } = await openSaveWindow();
+        const readSaved = () => field === "output" ? savedJson().output.mode : savedJson().updates.remind;
+        const sent = field === "output" ? "clipboard" : false;
+        const edited = field === "output" ? "paste-copy" : true;
+        const setField = (value) => run(field === "output"
+          ? `document.querySelector('input[name="output-mode"][value="${value}"]').click(); true`
+          : `(() => { const el = document.getElementById("updates-remind"); el.checked = ${value}; el.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+        const readField = () => run(field === "output"
+          ? `document.querySelector('input[name="output-mode"]:checked').value`
+          : `document.getElementById("updates-remind").checked`);
+        const realSave = invokeHandlers.get("settings:save");
+        let releaseSave;
+        let releaseReply;
+        const heldSave = new Promise((resolve) => { releaseSave = resolve; });
+        const heldReply = new Promise((resolve) => { releaseReply = resolve; });
+        let reached = false;
+        ipcMain.removeHandler("settings:save");
+        registerHandler("settings:save", async (...args) => {
+          reached = true;
+          await heldSave;
+          const reply = await realSave(...args);
+          await heldReply;
+          return reply;
+        });
+        try {
+          await setField(sent);
+          await run(`document.getElementById("save").click(); true`);
+          await waitFor(() => reached, "Save did not reach the held handler");
+          await setField(edited);
+          releaseSave();
+          // Baseline advancement proves the renderer received the broadcast,
+          // independently of the response, which is still held here.
+          await waitFor(() => run(`baseline.${field === "output" ? "outputMode" : "remind"} === ${JSON.stringify(sent)}`), "save broadcast did not advance the baseline");
+          const broadcastValue = await readField();
+          check(`${field}: save broadcast preserves a later edit and advances baseline`,
+            broadcastValue === edited && readSaved() === sent,
+            JSON.stringify({ shown: broadcastValue, saved: readSaved(), edited, sent }));
+          releaseReply();
+          await waitFor(() => run(`!document.getElementById("save").disabled`), "held response did not finish");
+          const responseValue = await readField();
+          const status = await run(`document.getElementById("save-status").textContent`);
+          check(`${field}: save response preserves the edit and warns it is unsaved`,
+            responseValue === edited && /aren't saved yet/.test(status) && readSaved() === sent,
+            JSON.stringify({ shown: responseValue, saved: readSaved(), status }));
+        } finally {
+          releaseSave();
+          releaseReply();
+          ipcMain.removeHandler("settings:save");
+          registerHandler("settings:save", realSave);
+        }
+        await run(`document.getElementById("save").click(); true`);
+        await savedThenClose(saveWin, `${field}: second Save did not report Saved`);
+        check(`${field}: second Save persists the edit protected from the broadcast`,
+          readSaved() === edited, JSON.stringify({ saved: readSaved(), edited }));
+      }
     } finally {
       settings.save = countedSave;
       // A failed case leaves its window open; close it so the next block starts clean.

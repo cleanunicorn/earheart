@@ -801,6 +801,12 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
 // models, or this window's own save). Take the values only main writes, and
 // show a shared field only when this save changed it — never repopulate the
 // whole form, which would throw away edits the user hasn't saved yet.
+let pendingSaveSnapshot = null;
+function unchangedSinceSave(el) {
+  if (!pendingSaveSnapshot) return true;
+  return JSON.stringify({ value: el.value, checked: el.checked }) === JSON.stringify(pendingSaveSnapshot.get(el));
+}
+
 function applySettingsChange({ previous, current: saved }) {
   // Main already saved this change (the tray, the correction window, an
   // overlay drag), so a form that matched the last Save still matches disk.
@@ -831,22 +837,24 @@ function applySettingsChange({ previous, current: saved }) {
   ) {
     const shownBefore = document.querySelector('input[name="output-mode"]:checked')?.value;
     current.output = { ...current.output, mode: saved.output.mode, restoreClipboard: saved.output.restoreClipboard };
-    showOutputMode(saved.output);
+    const preserveEdit = ![...document.querySelectorAll('input[name="output-mode"]')].every(unchangedSinceSave);
+    if (!preserveEdit) showOutputMode(saved.output);
     baseline.outputMode = sharedBaseline(saved).outputMode;
     // Only main's tray radios change the mode while this window is open.
-    if (shownBefore !== displayedOutputMode(saved.output)) {
+    if (!preserveEdit && shownBefore !== displayedOutputMode(saved.output)) {
       flipped.push("Output mode changed from the tray menu.");
     }
   }
   const remind = saved.updates.remind !== false;
   if ((previous.updates.remind !== false) !== remind) {
     current.updates.remind = saved.updates.remind;
-    if ($("updates-remind").checked !== remind) {
+    const preserveEdit = !unchangedSinceSave($("updates-remind"));
+    if (!preserveEdit && $("updates-remind").checked !== remind) {
       flipped.push(
         remind ? "Update reminders turned on elsewhere." : "Update reminders turned off from the update prompt."
       );
     }
-    $("updates-remind").checked = remind;
+    if (!preserveEdit) $("updates-remind").checked = remind;
     baseline.remind = remind;
   }
   // Re-take the snapshot so the next click doesn't clear "Saved"; a form that
@@ -1064,6 +1072,9 @@ async function saveSettings() {
     // The controls stay live during the round-trip: remember what was sent, so
     // an edit made meanwhile is never vouched for by "Saved".
     const sent = formSnapshot();
+    // The same save broadcasts before replying. Protect later edits in both
+    // paths while still letting broadcasts advance the saved baseline.
+    pendingSaveSnapshot = sent;
     result = await earheart.invoke("settings:save", { settings: current, baseline });
     // The Hugging Face add-model fields aren't settings: a Find versions
     // lookup landing meanwhile changes nothing Save stores.
@@ -1117,6 +1128,8 @@ async function saveSettings() {
     save.className = "status err";
     saveButton.disabled = false;
     return;
+  } finally {
+    pendingSaveSnapshot = null;
   }
   // A hotkey couldn't be registered: keep the window open so the error is
   // visible and the user can pick a combination that works.

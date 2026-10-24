@@ -197,7 +197,7 @@ function literalTokens(text) {
       /[\p{L}\p{N}_-]\.[A-Za-z][A-Za-z0-9]*$/u.test(t) ||
       /^\.[\p{L}_][\p{L}\p{N}_.-]*$/u.test(t);
     const flag = /^--?[A-Za-z]/.test(t);
-    const camel = /\p{Ll}\p{Lu}/u.test(t) || /^\p{Lu}\p{Ll}+\p{Lu}/u.test(t);
+    const camel = /\p{Ll}\p{Lu}/u.test(t);
     const snake = /[\p{L}\p{N}]_[\p{L}\p{N}]/u.test(t);
     if (path || flag || camel || snake) out.push(t);
   }

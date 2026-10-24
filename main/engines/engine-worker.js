@@ -181,7 +181,7 @@ async function loadCleanup({ modelPath, contextSize, cpuOnly }) {
     // allocated with the model's runtime, so rebuild just the context when it
     // is now too small. A failure falls through to a full reload below.
     try {
-      if (!llamaContext || llamaContext.contextSize < wanted) await rebuildCleanupContext(wanted);
+      if (llamaContext.contextSize < wanted) await rebuildCleanupContext(wanted);
       cleanupContextSize = wanted;
       cleanupGrowFailedAt = 0;
       return { ready: true };

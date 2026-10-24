@@ -43,6 +43,10 @@ async function main() {
   const autostart = require(path.join(ROOT, "main", "autostart.js"));
   autostart.isEnabled = () => false;
   autostart.apply = () => {};
+  // As main.js wires them: the overlay's resize (the update card grows the
+  // window) and custom models from the settings.
+  windows.init();
+  require(path.join(ROOT, "main", "engines", "catalog.js")).bindCustomModels(require(path.join(ROOT, "main", "settings.js")));
   ipc.init({
     applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
     onSettingsChanged: () => {},

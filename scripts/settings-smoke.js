@@ -198,6 +198,10 @@ app.whenReady().then(async () => {
     const launchHotkeyError = "Could not register the record hotkey (smoke)";
     const launchPauseError = "Could not register the pause hotkey (smoke)";
     const launchDiscardError = "Could not register the discard hotkey (smoke)";
+    // As main.js wires them (#204): the overlay's handlers, and custom models
+    // following the settings.
+    windows.init();
+    require("../main/engines/catalog").bindCustomModels(settings);
     ipc.init({
       applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
       onSettingsChanged: () => {},
@@ -1115,7 +1119,7 @@ app.whenReady().then(async () => {
       },
       customModels: [customStt, customCleanup, customListed],
     });
-    registry.setCustomModels(settings.get().customModels);
+    // The save registers them (engines/catalog.js, bound above).
     win.webContents.reload();
     await waitForLoad(win.webContents);
     await sleep(1200);

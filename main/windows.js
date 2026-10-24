@@ -126,66 +126,74 @@ function overlayPosition() {
   };
 }
 
-// Click-and-drag for the overlay card. The renderer streams absolute screen
-// coordinates; positioning from a recorded origin (instead of incremental
-// deltas) keeps the card glued to the cursor even if events are dropped.
-ipcMain.on("overlay:drag-start", (event, { x, y } = {}) => {
-  const win = getOverlay();
-  if (!win || typeof x !== "number" || typeof y !== "number") return;
-  const [winX, winY] = win.getPosition();
-  overlayDragOrigin = { winX, winY, pointerX: x, pointerY: y };
-});
+// The overlay's own IPC: drag and resize. Registered by init() from the
+// composition root (main/main.js), like every other module's handlers, not
+// as a side effect of requiring this file (#204). Idempotent.
+let initialized = false;
+function init() {
+  if (initialized) return;
+  initialized = true;
+  // Click-and-drag for the overlay card. The renderer streams absolute screen
+  // coordinates; positioning from a recorded origin (instead of incremental
+  // deltas) keeps the card glued to the cursor even if events are dropped.
+  ipcMain.on("overlay:drag-start", (event, { x, y } = {}) => {
+    const win = getOverlay();
+    if (!win || typeof x !== "number" || typeof y !== "number") return;
+    const [winX, winY] = win.getPosition();
+    overlayDragOrigin = { winX, winY, pointerX: x, pointerY: y };
+  });
 
-ipcMain.on("overlay:drag", (event, { x, y } = {}) => {
-  const win = getOverlay();
-  if (!win || !overlayDragOrigin) return;
-  if (typeof x !== "number" || typeof y !== "number") return;
-  const [, h] = win.getSize();
-  const next = clampToWorkArea(
-    Math.round(overlayDragOrigin.winX + x - overlayDragOrigin.pointerX),
-    Math.round(overlayDragOrigin.winY + y - overlayDragOrigin.pointerY),
-    h // a transcript-grown overlay is taller than the base card height
-  );
-  win.setPosition(next.x, next.y);
-  // Store the card's *bottom-anchored* top-left (where a base-height window would
-  // sit), so the next show — which resets to base height — places it correctly
-  // instead of inheriting the grown top.
-  overlayCustomPosition = { x: next.x, y: next.y + h - OVERLAY_HEIGHT };
-});
+  ipcMain.on("overlay:drag", (event, { x, y } = {}) => {
+    const win = getOverlay();
+    if (!win || !overlayDragOrigin) return;
+    if (typeof x !== "number" || typeof y !== "number") return;
+    const [, h] = win.getSize();
+    const next = clampToWorkArea(
+      Math.round(overlayDragOrigin.winX + x - overlayDragOrigin.pointerX),
+      Math.round(overlayDragOrigin.winY + y - overlayDragOrigin.pointerY),
+      h // a transcript-grown overlay is taller than the base card height
+    );
+    win.setPosition(next.x, next.y);
+    // Store the card's *bottom-anchored* top-left (where a base-height window would
+    // sit), so the next show — which resets to base height — places it correctly
+    // instead of inheriting the grown top.
+    overlayCustomPosition = { x: next.x, y: next.y + h - OVERLAY_HEIGHT };
+  });
 
-// Persist the dragged position once, when the drag ends (saving from the
-// per-frame drag stream would rewrite the settings file on every mousemove),
-// so the card comes back to the same spot after a restart.
-ipcMain.on("overlay:drag-end", () => {
-  overlayDragOrigin = null;
-  if (!overlayCustomPosition) return;
-  settings.save({ ...settings.get(), overlay: { ...overlayCustomPosition } });
-});
+  // Persist the dragged position once, when the drag ends (saving from the
+  // per-frame drag stream would rewrite the settings file on every mousemove),
+  // so the card comes back to the same spot after a restart.
+  ipcMain.on("overlay:drag-end", () => {
+    overlayDragOrigin = null;
+    if (!overlayCustomPosition) return;
+    settings.save({ ...settings.get(), overlay: { ...overlayCustomPosition } });
+  });
 
-// The live transcript grows the overlay's content upward (the card stays pinned
-// to the bottom edge so it doesn't jump). The renderer reports the height its
-// content needs; we resize the window and shift its top up by the delta, then
-// re-clamp so a tall transcript near the top of the screen isn't pushed off.
-// We deliberately do NOT touch overlayCustomPosition here — it tracks the card's
-// resting (base-height) spot, which the grow-upward must not overwrite.
-ipcMain.on("overlay:resize", (event, { height } = {}) => {
-  const win = getOverlay();
-  if (!win || typeof height !== "number") return;
-  const [w, h] = win.getSize();
-  const [winX, winY] = win.getPosition();
-  const { workArea } = screen.getDisplayNearestPoint({ x: winX, y: winY });
-  // Grow freely, but never taller than the work area leaves room for (with a
-  // small bottom gap) — a runaway transcript shouldn't fill the whole screen.
-  const cap = Math.max(OVERLAY_HEIGHT, workArea.height - 48);
-  const target = Math.max(OVERLAY_HEIGHT, Math.min(Math.round(height), cap));
-  if (target === h) return;
-  // Keep the bottom edge fixed: the top moves up as the window grows. If that
-  // pushes the top above the work area (a tall transcript near the top of the
-  // screen), floor it at the work-area top so the transcript isn't clipped.
-  const bottom = winY + h;
-  const nextY = Math.max(workArea.y, bottom - target);
-  win.setBounds({ x: winX, y: nextY, width: w, height: target });
-});
+  // The live transcript grows the overlay's content upward (the card stays pinned
+  // to the bottom edge so it doesn't jump). The renderer reports the height its
+  // content needs; we resize the window and shift its top up by the delta, then
+  // re-clamp so a tall transcript near the top of the screen isn't pushed off.
+  // We deliberately do NOT touch overlayCustomPosition here — it tracks the card's
+  // resting (base-height) spot, which the grow-upward must not overwrite.
+  ipcMain.on("overlay:resize", (event, { height } = {}) => {
+    const win = getOverlay();
+    if (!win || typeof height !== "number") return;
+    const [w, h] = win.getSize();
+    const [winX, winY] = win.getPosition();
+    const { workArea } = screen.getDisplayNearestPoint({ x: winX, y: winY });
+    // Grow freely, but never taller than the work area leaves room for (with a
+    // small bottom gap) — a runaway transcript shouldn't fill the whole screen.
+    const cap = Math.max(OVERLAY_HEIGHT, workArea.height - 48);
+    const target = Math.max(OVERLAY_HEIGHT, Math.min(Math.round(height), cap));
+    if (target === h) return;
+    // Keep the bottom edge fixed: the top moves up as the window grows. If that
+    // pushes the top above the work area (a tall transcript near the top of the
+    // screen), floor it at the work-area top so the transcript isn't clipped.
+    const bottom = winY + h;
+    const nextY = Math.max(workArea.y, bottom - target);
+    win.setBounds({ x: winX, y: nextY, width: w, height: target });
+  });
+}
 
 function createOverlay({ onOverlayRendererGone } = {}) {
   if (alive(overlayWindow)) return overlayWindow;
@@ -537,6 +545,7 @@ function broadcast(channel, payload) {
 }
 
 module.exports = {
+  init,
   createOverlay,
   destroyOverlay,
   showOverlay,

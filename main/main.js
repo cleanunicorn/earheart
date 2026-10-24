@@ -15,6 +15,7 @@ const updates = require("./updates");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { createHost, LOADCHECK_TIMEOUT_MS } = require("./engines/host");
+const { bindCustomModels } = require("./engines/catalog");
 const { createNotifier, announceStartup } = require("./setup-notices");
 const { installPermissionHandler } = require("./window-guard");
 
@@ -92,6 +93,9 @@ function main() {
     // this is a fresh install and the user gets the setup wizard.
     const firstRun = settings.isFirstRun();
     const cfg = settings.get();
+    // Custom models resolve from here on, for every caller, and follow every
+    // later save (engines/catalog.js).
+    bindCustomModels(settings);
 
     // Reconcile the OS login item with the saved setting on every launch, so a
     // moved AppImage or an externally-cleared registration self-heals.
@@ -105,6 +109,7 @@ function main() {
     // the app's own pages and nothing else (main/window-guard.js).
     installPermissionHandler(session.defaultSession);
 
+    windows.init();
     pipeline.init({ isDownloading: ipc.isDownloading });
     // The discard hotkey is held only while there is a dictation to discard
     // (recording or processing); idle, the combination is the user's again.

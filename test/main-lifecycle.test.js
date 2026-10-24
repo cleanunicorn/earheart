@@ -112,8 +112,9 @@ async function loadMain(
         },
       },
     },
-    "./settings": { isFirstRun: () => firstRun, get: () => cfg },
+    "./settings": { isFirstRun: () => firstRun, get: () => cfg, onChanged: () => () => {} },
     "./windows": {
+      init: () => events.push("windows.init"),
       createOverlay: () => events.push("createOverlay"),
       destroyOverlay: () => events.push("destroyOverlay"),
       openSettings: () => events.push("openSettings"),
@@ -239,6 +240,8 @@ test("a healthy launch registers both hotkeys and announces ready", async () => 
 
   assert.strictEqual(events[1], "logger.init", "logging starts before anything can fail");
   before(events, "pipeline.init", "ipc.init");
+  // The overlay's IPC is registered before the overlay exists (#204).
+  before(events, "windows.init", "createOverlay");
   before(events, "createOverlay", "tray.init");
   before(events, `register:${RECORD}`, "notify:Earheart is ready");
   assert.ok(events.includes(`register:${PAUSE}`));

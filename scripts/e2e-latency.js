@@ -85,6 +85,8 @@ function main() {
   // measurement sweeps.
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-e2e-"));
   app.setPath("userData", userData);
+  // Logs too: on macOS they default outside userData, to the real ~/Library/Logs.
+  app.setPath("logs", path.join(userData, "logs"));
 
   // Install the models into userData/models by symlinking the provided dir.
   // "junction" needs no privilege on Windows and is ignored elsewhere.

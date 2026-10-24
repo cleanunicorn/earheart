@@ -90,6 +90,8 @@ const userData = path.join(
 fs.rmSync(userData, { recursive: true, force: true });
 fs.mkdirSync(userData, { recursive: true });
 app.setPath("userData", userData);
+// Logs too: on macOS they default outside userData, to the real ~/Library/Logs.
+app.setPath("logs", path.join(userData, "logs"));
 
 const windows = require("../main/windows");
 const { waitForLoad } = require("./wait-for-load");

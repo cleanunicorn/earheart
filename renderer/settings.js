@@ -1771,14 +1771,6 @@ earheart.on("updates:state", renderUpdateState);
   // The Accessibility permission only exists on macOS.
   if (platform === "darwin") $("accessibility-field").hidden = false;
   $("version").textContent = `v${data.version}`;
-  if (platform === "darwin") {
-    // Releases are signed but not notarized, so a fresh download needs one
-    // approval; in-app updates de-quarantine new versions automatically.
-    $("update-hint").textContent +=
-      " A freshly downloaded Earheart needs approving once under System" +
-      " Settings ▸ Privacy & Security ▸ Open Anyway — updates installed from" +
-      " here handle that automatically afterwards.";
-  }
   renderUpdateState(await earheart.invoke("updates:get"));
   modelStatus = await earheart.invoke("models:status");
   for (const kind of ["stt", "cleanup"]) for (const info of modelStatus[kind]) {

@@ -3,9 +3,9 @@
 //
 //   Windows (NSIS install)  run the new setup silently and relaunch
 //   macOS (.app bundle)     swap the bundle via a detached script, strip the
-//                           com.apple.quarantine attribute (the app is not
-//                           notarized, so this is what keeps Gatekeeper from
-//                           blocking the new version), relaunch
+//                           com.apple.quarantine attribute (releases are
+//                           notarized, so this only spares a first-open
+//                           dialog), relaunch
 //   Linux (AppImage)        replace the AppImage in place and relaunch
 //
 // Portable/deb/translocated installs can't be updated in place; those get a
@@ -16,9 +16,11 @@
 // against the feed's sha512 right before install — another local user must
 // not be able to swap in their own binary (#186).
 //
-// electron-updater is deliberately not used: its macOS half requires a signed
-// app. The feed it would read (latest*.yml, published by CI with every
-// release) is consumed directly instead — see services/update-feed.js.
+// electron-updater is deliberately not used: it would be a third runtime
+// dependency, and its macOS half could not update the self-signed releases
+// that came before Developer ID signing. The feed it would read (latest*.yml,
+// published by CI with every release) is consumed directly instead — see
+// services/update-feed.js.
 //
 // Set EARHEART_UPDATE_FEED to a directory URL (http(s):// or file://) that
 // contains latest*.yml + assets to test the whole flow against a local build;
@@ -709,9 +711,9 @@ function installWindows(setupExe) {
 
 // Replace the running .app bundle. The swap itself happens in a detached
 // shell script after this process exits; the script also strips the
-// quarantine attribute so the updated (not notarized) app opens without a
-// Gatekeeper dialog. A manual download needs an Open Anyway approval or
-// `xattr -dr com.apple.quarantine` on the downloaded app (see README).
+// quarantine attribute so the updated app opens without Gatekeeper's
+// "downloaded from the internet" dialog. Releases are Developer ID signed and
+// notarized, so a manual download opens after that one confirmation too.
 const MAC_SWAP_SCRIPT = `#!/bin/sh
 # earheart update swap: $1=pid $2=old-bundle $3=new-bundle
 PID="$1"; OLD="$2"; NEW="$3"

@@ -155,33 +155,43 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
       # Build locally first: publish macOS only after the packaged app and
       # its bundled native engines pass on the matching hardware.
-      # Sign with Earheart's self-signed certificate. A stable certificate gives
-      # every build the same designated requirement, which is what macOS files
-      # Accessibility/Automation grants under — so they survive updates. A tag
-      # build without the secrets fails rather than publishing an unsigned app;
-      # a branch dry-run without them builds unsigned. The certificate goes into
-      # a throwaway keychain; build/mac-sign.js signs with it by hash, since
-      # macOS won't let CI mark a self-signed certificate as trusted.
-      - name: Import the macOS signing certificate
+      # Sign with Earheart's Apple Developer ID certificate and notarize with an
+      # App Store Connect API key, so Gatekeeper opens the app on first launch
+      # and macOS keeps Accessibility/Automation grants across updates (the
+      # designated requirement names the Team ID, not a per-build hash). A tag
+      # build without every secret fails rather than publishing an unsigned or
+      # un-notarized app; a branch dry-run without them builds unsigned and
+      # skips notarization. The certificate goes into a throwaway keychain,
+      # where electron-builder finds the trusted identity itself.
+      - name: Import the macOS signing certificate and notarization key
         if: runner.os == 'macOS'
         shell: bash
         env:
           MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          MAC_SIGNING_CERT_SHA1: ${{ vars.MAC_SIGNING_CERT_SHA1 }}
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
           IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
           set -euo pipefail
-          if [[ -z "$MAC_CSC_LINK" || -z "$MAC_CSC_KEY_PASSWORD" ]]; then
+          missing=()
+          for name in MAC_CSC_LINK MAC_CSC_KEY_PASSWORD APPLE_API_KEY_P8_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER_ID; do
+            if [[ -z "${!name}" ]]; then missing+=("$name"); fi
+          done
+          if (( ${#missing[@]} )); then
             if [[ "$IS_TAG" == true ]]; then
-              echo "::error::MAC_CSC_LINK / MAC_CSC_KEY_PASSWORD are not set; refusing to publish an unsigned macOS build"
+              echo "::error::${missing[*]} not set; refusing to publish an unsigned or un-notarized macOS build"
               exit 1
             fi
-            echo "No signing secrets on this dry run; building unsigned."
+            echo "Signing secrets incomplete on this dry run (${missing[*]}); building unsigned."
+            # Don't let electron-builder pick up any identity the runner has.
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
             exit 0
           fi
           keychain="$RUNNER_TEMP/earheart-signing.keychain-db"
           p12="$RUNNER_TEMP/earheart-signing.p12"
+          p8="$RUNNER_TEMP/earheart-notary.p8"
           kc_pass="$(openssl rand -base64 24)"
           echo "::add-mask::$kc_pass"
           printf %s "$MAC_CSC_LINK" | base64 --decode > "$p12"
@@ -192,39 +202,75 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_pass" "$keychain" > /dev/null
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
           rm -f "$p12"
-          # The imported certificate must be the one the verify step expects.
-          security find-identity -p codesigning "$keychain" | grep -qi "$MAC_SIGNING_CERT_SHA1" || {
-            echo "::error::the signing secret does not contain the certificate in MAC_SIGNING_CERT_SHA1"
+          # The imported certificate must be Earheart's Developer ID, and the
+          # system must trust it (-v), or electron-builder won't sign with it.
+          security find-identity -v -p codesigning "$keychain" | grep -q 'Developer ID Application: .*(XTZB5CXLUQ)' || {
+            echo "::error::MAC_CSC_LINK holds no valid 'Developer ID Application' identity for team XTZB5CXLUQ"
             exit 1
           }
+          (umask 077 && printf %s "$APPLE_API_KEY_P8_BASE64" | base64 --decode > "$p8")
           {
-            echo "EARHEART_MAC_SIGN_IDENTITY=$MAC_SIGNING_CERT_SHA1"
-            echo "EARHEART_MAC_SIGN_KEYCHAIN=$keychain"
+            # electron-builder signs from this keychain and notarizes with this
+            # key; the dmg notarization step reuses both.
+            echo "CSC_KEYCHAIN=$keychain"
+            echo "APPLE_API_KEY=$p8"
+            echo "APPLE_API_KEY_ID=$APPLE_API_KEY_ID"
+            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER_ID"
           } >> "$GITHUB_ENV"
       - name: Build macOS installers
         if: runner.os == 'macOS'
         run: npx electron-builder --mac --publish never
+      # electron-builder notarized and stapled the .app (inside both the zip
+      # and the dmg); the dmg itself is signed but needs its own ticket so
+      # Gatekeeper accepts it offline on first open.
+      - name: Notarize and staple the macOS dmg
+        if: runner.os == 'macOS' && env.APPLE_API_KEY != ''
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg=$(ls dist/Earheart-*-arm64.dmg)
+          xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY" \
+            --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait
+          xcrun stapler staple "$dmg"
       - name: Verify packaged macOS app and engines
         timeout-minutes: 5
         if: runner.os == 'macOS'
         shell: bash
-        env:
-          MAC_SIGNING_CERT_SHA1: ${{ vars.MAC_SIGNING_CERT_SHA1 }}
         run: |
           set -euo pipefail
           expected=arm64
           bundle=dist/mac-arm64/Earheart.app
+          dmg=$(ls dist/Earheart-*-arm64.dmg)
           zip=$(ls dist/Earheart-*-arm64-mac.zip)
           test "$(node -p process.arch)" = "$expected"
-          if [[ -n "${EARHEART_MAC_SIGN_IDENTITY:-}" ]]; then
-            # Same certificate on every build: the requirement macOS stores
-            # permission grants under must name it, not a per-build hash.
+          if [[ -n "${APPLE_API_KEY:-}" ]]; then
             codesign --verify --deep --strict "$bundle"
+            details=$(codesign -dv "$bundle" 2>&1)
+            echo "$details"
+            grep -q "flags=.*runtime" <<< "$details"
+            grep -q "^Authority=Developer ID Application: .*(XTZB5CXLUQ)$" <<< "$details"
+            # macOS files permission grants under the designated requirement.
+            # Developer ID's names the bundle id and team, not a certificate
+            # hash, so grants survive updates and certificate renewals.
             requirement=$(codesign -dr - "$bundle" 2>&1)
             echo "$requirement"
             grep -q 'identifier "dev.cleanunicorn.earheart"' <<< "$requirement"
-            grep -qi "certificate leaf = H\"$MAC_SIGNING_CERT_SHA1\"" <<< "$requirement"
-            codesign -dv "$bundle" 2>&1 | grep -q "flags=.*runtime"
+            grep -q 'certificate leaf\[subject.OU\] = XTZB5CXLUQ' <<< "$requirement"
+            # Notarization tickets are stapled, so Gatekeeper accepts both
+            # without a network lookup.
+            xcrun stapler validate "$bundle"
+            xcrun stapler validate "$dmg"
+            # spctl prints its verdict on stderr; capture it and fail on
+            # anything but a notarized Developer ID acceptance.
+            app_verdict=$(spctl -a -vvv -t exec "$bundle" 2>&1)
+            echo "$app_verdict"
+            grep -q ": accepted$" <<< "$app_verdict"
+            grep -q "^source=Notarized Developer ID$" <<< "$app_verdict"
+            dmg_verdict=$(spctl -a -vvv -t open --context context:primary-signature "$dmg" 2>&1)
+            echo "$dmg_verdict"
+            grep -q ": accepted$" <<< "$dmg_verdict"
+            grep -q "^source=Notarized Developer ID$" <<< "$dmg_verdict"
             # The in-app updater installs from the zip and re-signs ad-hoc
             # anything that doesn't verify, which would void users' grants.
             staging="$RUNNER_TEMP/zip-check"
@@ -239,11 +285,12 @@ jobs:
           "$bundle/Contents/MacOS/Earheart" --smoke-test --engine-check --no-sandbox
           EARHEART_ENGINE_ROOT="$PWD/$bundle/Contents/Resources/app.asar" \
             npx electron scripts/engine-smoke.js --no-sandbox
-      - name: Remove the signing keychain
+      - name: Remove the signing keychain and notarization key
         if: always() && runner.os == 'macOS'
         shell: bash
         run: |
-          if [[ -n "${EARHEART_MAC_SIGN_KEYCHAIN:-}" ]]; then security delete-keychain "$EARHEART_MAC_SIGN_KEYCHAIN" || true; fi
+          if [[ -n "${CSC_KEYCHAIN:-}" ]]; then security delete-keychain "$CSC_KEYCHAIN" || true; fi
+          if [[ -n "${APPLE_API_KEY:-}" ]]; then rm -f "$APPLE_API_KEY"; fi
       - name: Upload verified macOS installers and feed
         if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
         env:

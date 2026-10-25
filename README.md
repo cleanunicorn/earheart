@@ -176,19 +176,17 @@ and choose an asset (`<version>` is the version number, such as `0.8.0`):
 | --- | --- |
 | `Earheart-Setup-<version>.exe` | Double-click and follow the installer. |
 | `Earheart-<version>.exe` (portable) | Just double-click to run — no install. |
-| `Earheart-<version>-arm64.dmg` | Open it, then drag **Earheart** into **Applications**. (See the macOS note below — the first launch needs one extra step.) |
+| `Earheart-<version>-arm64.dmg` | Open it, then drag **Earheart** into **Applications**. |
 | `Earheart-<version>.AppImage` | In a terminal: `chmod +x Earheart-*.AppImage`, then double-click or run it. |
 | `earheart_<version>_amd64.deb` | `sudo apt install ./earheart_<version>_amd64.deb` |
 
-> **⚠️ macOS first launch: "Apple could not verify Earheart is free of malware"**
->
-> Releases are signed, but not notarized by Apple, so the first launch needs
-> one approval. Open Earheart, dismiss that dialog, then go to **System
-> Settings → Privacy & Security**, scroll to the bottom, and click **Open
-> Anyway** next to the Earheart message. The app opens from then on.
->
-> You only ever do this once. Updates installed from inside the app relaunch
-> without asking again.
+> **macOS:** releases are signed with Earheart's Apple Developer ID and
+> notarized by Apple, so the app opens on first launch like any other
+> download. **Updating from a release before Developer ID signing?** macOS
+> sees the newly signed app as a different app, so it asks once more for
+> **Accessibility** and **Automation** (auto-paste). Earheart re-asks by
+> itself on that first launch; see [macOS](#macos) if auto-paste still
+> doesn't work.
 
 That's it — the built-in engines need nothing else installed. The first-run
 wizard downloads the speech and cleanup models for you.
@@ -557,13 +555,14 @@ checksum-verified. Only add models from repos you trust.
 
 ### macOS
 
-- **"Apple could not verify Earheart is free of malware"** on first launch is
-  Gatekeeper: releases are signed with Earheart's own certificate but not
-  notarized by Apple. Drag the app to Applications, launch it, dismiss the
-  dialog, then approve it once under **System Settings → Privacy & Security →
-  Open Anyway** (bottom of the pane). On macOS 15 right-click → **Open** no
-  longer offers a bypass; Open Anyway is the way. If you would rather do it in
-  a terminal:
+- Releases are signed with Earheart's Apple Developer ID and notarized by
+  Apple, so Gatekeeper opens a fresh download without an **Open Anyway** step.
+- **Updating from an older self-signed release:** the signature changed, so
+  macOS asks for Accessibility and Automation once more (see below), and
+  Earheart re-asks by itself on that first launch. If an old copy you
+  downloaded by hand still says *"Apple could not verify Earheart is free of
+  malware"*, replace it with the current release, or clear the quarantine flag
+  in a terminal:
 
   ```bash
   xattr -dr com.apple.quarantine /Applications/Earheart.app
@@ -575,12 +574,13 @@ checksum-verified. Only add models from repos you trust.
   Accessibility → enable Earheart) and **Automation** (allow Earheart to
   control System Events when macOS asks on the first paste; later under
   Privacy & Security → Automation → Earheart → System Events). Releases are
-  signed with the same certificate every time, so both permissions carry over
-  across updates. Updating from an older unsigned release (v0.31.5 or
-  earlier) asks once more, and Earheart re-asks by itself on that first
-  launch. If auto-paste stops working, use Settings → General → **Fix
-  auto-paste permission**: it clears a stale entry, re-asks, and opens the pane
-  for whichever permission is off. If Earheart is still listed as on under
+  signed with the same Developer ID every time, so both permissions carry over
+  across updates. Updating from an older unsigned (v0.31.5 or earlier) or
+  self-signed (v0.32.0 until the switch to Developer ID) release asks once
+  more, and Earheart re-asks by itself on that first launch. If auto-paste
+  stops working, use Settings → General → **Fix auto-paste permission**: it
+  clears a stale entry, re-asks, and opens the pane for whichever permission
+  is off. If Earheart is still listed as on under
   Accessibility, remove it with **−** and add it again.
   When a paste fails, the text stays on the clipboard. The overlay and a
   notification name the permission that blocked it, or say to paste with ⌘V

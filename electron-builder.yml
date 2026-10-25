@@ -59,17 +59,15 @@ mac:
   category: public.app-category.productivity
   icon: assets/icon.png
   hardenedRuntime: true
-  # Release builds are signed with a stable self-signed certificate (see
-  # release.yml), so macOS keeps Accessibility/Automation grants across
-  # updates. Apple's timestamp server only stamps Apple-issued certificates,
-  # and a timestamp matters only for notarization, which we don't do.
-  timestamp: none
-  # Signs by certificate hash, so the self-signed certificate needs no trust
-  # settings on the CI runner. Leaves local builds unsigned. electron-builder
-  # only calls a sign hook once it has an identity; "-" gives it one without a
-  # keychain lookup, and the hook swaps in the real certificate.
-  identity: "-"
-  sign: ./build/mac-sign.js
+  # Release builds are signed with Earheart's Apple Developer ID certificate
+  # (Team XTZB5CXLUQ) and notarized. release.yml supplies the certificate
+  # (CSC_LINK / CSC_KEY_PASSWORD) and the App Store Connect API key
+  # (APPLE_API_KEY / APPLE_API_KEY_ID / APPLE_API_ISSUER); electron-builder
+  # finds the trusted identity itself, signs every Mach-O in the bundle with a
+  # secure timestamp, notarizes and staples. Without them — local
+  # `npm run dist:mac`, PR CI, a branch dry run with no secrets — the build is
+  # unsigned and notarization is skipped. See docs/macos-signing.md.
+  notarize: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
@@ -80,6 +78,15 @@ mac:
     NSAppleEventsUsageDescription: >-
       Earheart presses Cmd+V in the app you are working in to paste what you
       dictated.
+
+# electron-builder notarizes and staples the .app only. Sign the dmg too, so
+# release.yml can notarize and staple it after the build. Stapling rewrites
+# the dmg, so it stays out of latest-mac.yml (and gets no blockmap): a hash
+# written before stapling would be stale. The in-app updater installs from
+# the zip, which is all the feed needs.
+dmg:
+  sign: true
+  writeUpdateInfo: false
 
 win:
   target:

@@ -2,23 +2,32 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
   <dict>
+    <!-- Recording dictation. Under the hardened runtime the microphone is
+         blocked unless the app holds this entitlement, whatever the user
+         grants in Privacy & Security. -->
     <key>com.apple.security.device.audio-input</key>
     <true/>
+    <!-- V8 (Electron's JavaScript engine) generates machine code at runtime
+         in MAP_JIT memory, which the hardened runtime refuses without this. -->
     <key>com.apple.security.cs.allow-jit</key>
-    <true/>
-    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-    <true/>
-    <!-- Releases are signed with a self-signed certificate, which has no
-         Apple Team ID. Under the hardened runtime, library validation only
-         admits code from the app's own Team ID or Apple, so without this the
-         app refuses to load Electron Framework and the engines' native .node
-         addons. -->
-    <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
     <!-- Auto-paste drives Cmd+V through System Events via osascript. The
          hardened runtime requires the app (as the responsible process) to be
          entitled to send Apple Events, or macOS refuses with -1743. -->
     <key>com.apple.security.automation.apple-events</key>
     <true/>
+    <!-- Deliberately absent:
+         - cs.disable-library-validation: every Mach-O in the bundle (Electron
+           Framework, the sherpa-onnx and node-llama-cpp .node addons and their
+           .dylibs in app.asar.unpacked) is signed with Earheart's Developer ID,
+           so library validation admits them as the app's own Team ID. Nothing
+           native is loaded from outside the bundle (models are data files).
+           The packaged-app engine check in release.yml loads both addons
+           and Metal inside the signed app, so a regression here fails the
+           release build.
+         - cs.allow-unsigned-executable-memory: Electron's V8 uses MAP_JIT
+           (allow-jit above) since Electron 12, and neither onnxruntime nor
+           llama.cpp generates CPU code at runtime; Metal shaders run on the
+           GPU. -->
   </dict>
 </plist>

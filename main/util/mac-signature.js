@@ -6,9 +6,10 @@
 // to nothing: "the update installed but the app won't open." Verify the
 // extracted bundle and, only when the seal is missing or broken, repair it with
 // an ad-hoc signature (`-`). A bundle that already verifies — every release,
-// now that they are signed with Earheart's certificate — is left untouched:
-// re-signing it ad-hoc would change its designated requirement and void the
-// user's Accessibility and Automation grants. Throws when the repair fails, so
+// now that they are Developer ID signed and notarized — is left untouched:
+// re-signing it ad-hoc would change its designated requirement, void the
+// user's Accessibility and Automation grants, and break the notarization
+// seal. Throws when the repair fails, so
 // the caller can abort before swapping in a bundle that can't start.
 
 const { spawnSync } = require("node:child_process");

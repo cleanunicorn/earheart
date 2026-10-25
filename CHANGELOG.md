@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.45.0 — 2026-10-25
+
+- Notarize macOS releases with Apple Developer ID (re-grant Accessibility and Automation once after updating) (#332)
+
 ## v0.44.0 — 2026-10-25
 
 - Tune cleanup for code dictation and offer the new default prompt (#331)

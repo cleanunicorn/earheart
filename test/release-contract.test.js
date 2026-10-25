@@ -225,3 +225,40 @@ test("macOS builds and releases are Apple Silicon only", () => {
   assert.match(releaseWorkflow, /^\s+expected=arm64\n\s+bundle=dist\/mac-arm64\/Earheart\.app$/m);
   assert.match(releaseWorkflow, /gh release upload .* dist\/latest-mac\*\.yml --clobber/);
 });
+
+// macOS releases are Developer ID signed and notarized by electron-builder
+// itself; the old self-signed path (custom sign hook, identity "-", no
+// timestamp, pinned SHA-1) must not creep back, and a tag build must refuse to
+// ship without the notarization key.
+test("macOS releases are Developer ID signed, notarized and stapled", () => {
+  const builder = readText("electron-builder.yml");
+  const mac = builder.slice(builder.indexOf("\nmac:\n"), builder.indexOf("\ndmg:\n"));
+  assert.match(mac, /^\s+hardenedRuntime: true$/m);
+  assert.match(mac, /^\s+notarize: true$/m);
+  assert.doesNotMatch(mac, /^\s+(sign|identity|timestamp):/m);
+  assert.ok(!fs.existsSync(path.join(ROOT, "build", "mac-sign.js")), "build/mac-sign.js should be gone");
+  // Stapling rewrites the dmg after electron-builder hashed it, so it must
+  // stay out of the update feed (the updater installs from the zip).
+  assert.match(builder, /^dmg:\n\s+sign: true\n\s+writeUpdateInfo: false$/m);
+
+  const entitlements = readText("build", "entitlements.mac.plist").replace(/<!--[\s\S]*?-->/g, "");
+  const keys = [...entitlements.matchAll(/<key>([^<]+)<\/key>/g)].map((m) => m[1]).sort();
+  assert.deepStrictEqual(keys, [
+    "com.apple.security.automation.apple-events",
+    "com.apple.security.cs.allow-jit",
+    "com.apple.security.device.audio-input",
+  ]);
+
+  for (const secret of ["MAC_CSC_LINK", "MAC_CSC_KEY_PASSWORD", "APPLE_API_KEY_P8_BASE64", "APPLE_API_KEY_ID", "APPLE_API_ISSUER_ID"]) {
+    assert.match(releaseWorkflow, new RegExp(`\\$\\{\\{ secrets\\.${secret} \\}\\}`), `release.yml should read ${secret}`);
+  }
+  assert.match(releaseWorkflow, /refusing to publish an unsigned or un-notarized macOS build/);
+  assert.doesNotMatch(releaseWorkflow, /MAC_SIGNING_CERT_SHA1|EARHEART_MAC_SIGN_|certificate leaf = H/);
+  assert.match(releaseWorkflow, /xcrun stapler validate "\$bundle"/);
+  assert.match(releaseWorkflow, /xcrun stapler validate "\$dmg"/);
+  assert.match(releaseWorkflow, /Authority=Developer ID Application: \.\*\(XTZB5CXLUQ\)/);
+  assert.match(releaseWorkflow, /spctl -a -vvv -t exec "\$bundle"/);
+  assert.match(releaseWorkflow, /spctl -a -vvv -t open --context context:primary-signature "\$dmg"/);
+  // The key file is removed even when the build fails.
+  assert.match(releaseWorkflow, /if: always\(\) && runner\.os == 'macOS'\n[\s\S]*?rm -f "\$APPLE_API_KEY"/);
+});

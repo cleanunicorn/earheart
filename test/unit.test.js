@@ -1739,9 +1739,10 @@ test("startup repairs only on a returning user's visible launch in a paste mode"
   }
 });
 
-// A signed release must survive the self-update untouched: re-signing it
-// ad-hoc would change its designated requirement and void the user's macOS
-// permission grants. Only a bundle that fails verification gets re-signed.
+// A Developer ID release must survive the self-update untouched: re-signing
+// it ad-hoc would change its designated requirement, void the user's macOS
+// permission grants and break its notarization. Only a bundle that fails
+// verification gets re-signed.
 test("ensureMacSignature leaves a valid signature alone and repairs a broken one", () => {
   const { ensureMacSignature } = require("../main/util/mac-signature");
   const calls = [];

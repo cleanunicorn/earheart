@@ -170,8 +170,8 @@ test("exactly one cleanup model is marked default, and it is Granite 4.0 Micro",
 test("registry pins the benchmarked Granite and Qwen GGUFs", () => {
   const expected = {
     "granite-4.0-micro": {
-      label: "Granite 4.0 Micro (recommended)",
-      note: "Runs on this computer · ~2.1 GB, 2.6× the 1B · needs ~6 GB RAM · recommended: removes fillers reliably, faster than Qwen",
+      label: "Medium · code and speech (recommended)",
+      note: "Runs on this computer · ~2.1 GB · needs ~6 GB RAM · code dictation, the fastest of the code models · Granite 4.0 Micro",
       file: {
         name: "granite-4.0-micro-Q4_K_M.gguf",
         bytes: 2_099_502_528,
@@ -180,8 +180,8 @@ test("registry pins the benchmarked Granite and Qwen GGUFs", () => {
       },
     },
     "qwen3-4b-2507": {
-      label: "Qwen3 4B Instruct 2507 (cleanest polish)",
-      note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · removes fillers reliably, cleanest on the polished style",
+      label: "Medium · code and speech, polished writing",
+      note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · code dictation, writes the most spoken code as code, cleanest on the Polished style · Qwen3 4B Instruct 2507",
       file: {
         name: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
         bytes: 2_497_281_120,

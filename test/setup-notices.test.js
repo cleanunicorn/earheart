@@ -12,6 +12,8 @@ const {
   hotkeyFailureNotice,
   createNotifier,
   announceStartup,
+  announcePromptOffer,
+  promptOfferNotice,
   HELD_MAX,
 } = require("../main/setup-notices");
 
@@ -291,4 +293,34 @@ test("first run opens the wizard; the smoke test shows nothing", () => {
   const smoke = rig();
   startup(smoke, { smokeTest: true, hotkeyStatus: failedRecord, sttReadiness: missing });
   assert.strictEqual(smoke.shown.length + smoke.calls.settings + smoke.calls.wizard, 0);
+});
+
+test("a new default prompt is announced once, only while cleanup is on", () => {
+  const offer = { id: "abc", kind: "custom" };
+  const run = (cleanup, o = offer) => {
+    const notes = [];
+    const recorded = [];
+    const announced = announcePromptOffer({
+      cfg: { cleanup },
+      offer: o,
+      notify: (n) => notes.push(n),
+      record: (id) => recorded.push(id),
+    });
+    return { announced, notes, recorded };
+  };
+  const first = run({ enabled: true, promptOfferNotified: "" });
+  assert.strictEqual(first.announced, true);
+  assert.deepStrictEqual(first.recorded, ["abc"]);
+  assert.deepStrictEqual(first.notes, [promptOfferNotice(offer)]);
+  assert.strictEqual(run({ enabled: true, promptOfferNotified: "abc" }).announced, false);
+  assert.strictEqual(run({ enabled: false }).announced, false);
+  assert.strictEqual(run({ enabled: true }, null).announced, false);
+});
+
+test("the prompt notice says whether the user's own prompt was left alone", () => {
+  assert.match(promptOfferNotice({ kind: "custom" }).body, /edited, so it wasn't changed/);
+  assert.match(promptOfferNotice({ kind: "previous-default" }).body, /switch/);
+  for (const kind of ["custom", "previous-default"]) {
+    assert.ok(promptOfferNotice({ kind }).body.length <= 180);
+  }
 });

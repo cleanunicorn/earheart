@@ -53,6 +53,12 @@ The Makefile wraps most tasks; `make help` lists them all.
   Hugging Face without downloading it, and `--report <dir>` rebuilds the
   comparison tables from saved runs. Method and recorded numbers:
   [docs/cleanup-models.md](docs/cleanup-models.md)
+- **Technical dictation eval** (optional; needs a downloaded GGUF, not part
+  of the gate): `node scripts/eval-technical.mjs [--gpu] --out=<dir outside
+  the repo> [--prompt=<base prompt file>] <model.gguf>`, then `--report
+  <dir>`. Scores spoken-code conversion and what the stumble backstop rescues
+  or breaks; judge prompt changes on its held-out set. Numbers:
+  [docs/cleanup-models.md](docs/cleanup-models.md#technical-dictation-2026-10-24)
 - **Long-recording STT measurement** (optional; needs Electron and the
   `scripts/eval-stt.js` corpus/model cache, not part of the gate):
   `xvfb-run -a npx electron scripts/eval-long-decode.js --no-sandbox

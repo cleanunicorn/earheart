@@ -10,6 +10,7 @@ const stt = require("./stt");
 const cleanup = require("./cleanup");
 const engines = require("../engines");
 const { stripStumbles } = require("../util/stumble-strip");
+const registry = require("../engines/registry");
 
 // Styles whose directive promises no fillers and no repeated words. The
 // directive alone does not deliver that: measured against the real Gemma 3 4B
@@ -24,6 +25,18 @@ const { stripStumbles } = require("../util/stumble-strip");
 // user's own prompt, so neither is second-guessed.
 const TIDIED_STYLES = new Set(["clean", "polished"]);
 
+// Not every model needs it, and on technical dictation it costs more than it
+// saves: a catalog model measured clean on its own carries
+// `stumbleBackstop: false` (main/engines/registry.js) and is delivered as it
+// answered. A remote server or a user-added model runs a model nobody has
+// measured, so it keeps the net.
+function needsBackstop(cfg) {
+  if (!TIDIED_STYLES.has(cfg.style)) return false;
+  if (cfg.engine !== "builtin") return true;
+  const model = registry.getModel("cleanup", cfg.builtin && cfg.builtin.model);
+  return !model || model.stumbleBackstop !== false;
+}
+
 // `opts.onDecodeMs` only has an effect on the builtin engine (the worker
 // reports its decode timing); the HTTP client ignores it.
 function transcribe(wav, cfg, signal, opts) {
@@ -36,7 +49,7 @@ function transcribe(wav, cfg, signal, opts) {
 async function clean(raw, cfg, signal, opts) {
   const impl = cfg.engine === "builtin" ? engines.clean : cleanup.clean;
   const cleaned = await impl(raw, cfg, signal, opts);
-  return TIDIED_STYLES.has(cfg.style) ? stripStumbles(cleaned) : cleaned;
+  return needsBackstop(cfg) ? stripStumbles(cleaned) : cleaned;
 }
 
-module.exports = { transcribe, clean };
+module.exports = { transcribe, clean, needsBackstop };

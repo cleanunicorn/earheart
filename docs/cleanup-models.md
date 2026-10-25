@@ -293,6 +293,97 @@ RTX 3080 10 GB (CUDA), FLUENT/`clean`, five seeds. Never part of the bar.
 Hardware: AMD Ryzen 9 3900X 12-Core Processor (24 logical CPUs), 61 GB RAM, Linux 6.17.0-40-generic; CPU backend, node-llama-cpp threads ideal/current 12/12; seeds 17,29,43,61,79. Headline speed passes were taken holding the cross-run CPU lock.
 
 
+## Technical dictation (2026-10-24)
+
+Most of what Earheart is dictated is technical: commands, paths, flags, bugs,
+servers. The corpora above are prose, so this pass adds a technical one
+(`TECHNICAL`, 10 transcripts, and `TECHNICAL_HELDOUT`, 8 more whose symbols
+and phrasings no prompt example names, in
+[`scripts/dictation-corpus.js`](../scripts/dictation-corpus.js)) and the
+harness [`scripts/eval-technical.mjs`](../scripts/eval-technical.mjs). Each
+transcript plants fillers and stutters, and most say a symbol twice ("dot dot
+slash", "dash dash watch", "equals equals"). Every clean is prompted exactly as
+the app prompts. Same machine as above; the shipped five cleanup models, three
+seeds, Clean and Polished.
+
+### The backstop on technical text
+
+Measured first on CPU with the v0.43 prompt (390 cleans: the technical set,
+plus FLUENT and REPORTED), scoring each run the `stripStumbles` backstop
+changed:
+
+| model | runs it rescued (a real filler or stutter) | runs it **broke** (a spoken symbol) | symbol phrases the model itself got wrong |
+|---|---|---|---|
+| granite-4.0-micro | 0 | 1 | 29/60 |
+| qwen3-4b-2507 | 0 | 16 | 15/60 |
+| gemma-3-12b | 0 | 9 | 15/60 |
+| gemma-3-4b | 11 | 3 | 43/60 |
+| gemma-3-1b | 33 (all also broke one) | 42 | 12/60 |
+
+Every break was a doubled symbol word collapsed as a stutter ("equals equals"
+→ "equals", "dot dot slash" → "dot slash"). Two changes follow:
+
+- **Symbol words are never collapsed** (`SYMBOL_WORD` in
+  `main/util/stumble-strip.js`). Re-scored on the same 390 outputs: symbols
+  broken 77 → 0, fillers removed 32 → 32. On the raw transcripts (a model
+  that copies the input verbatim): 16 → 0. On the GPU passes below, 0 breaks
+  across 2,500+ cleans.
+- **The backstop is off where it never rescued anything**:
+  `stumbleBackstop: false` for Granite 4.0 Micro, Qwen3 4B and Gemma 3 12B
+  (`main/engines/registry.js`), which left no filler on any corpus. It stays
+  on for Gemma 3 4B and 1B (Gemma 3 4B left 18 fillers in three FLUENT/Clean
+  runs, every pass), for user-added models and for remote servers, none of
+  which are measured.
+
+### The prompt
+
+The models get spoken code wrong on their own, mostly by reading a doubled
+symbol word as the stutter the Clean directive says to collapse: Granite wrote
+`./config` for "dot dot slash config" and `===` for "equals equals". The
+prompt passes ran on the RTX 3080 (`--gpu`), both arms on the same backend,
+since a GPU can pick different tokens than the CPU for the same seed.
+
+"Converted" counts only a run that wrote the code (`../`, `==`, `__init__`),
+not one that kept the spoken words; Clean and Polished together, held-out and
+technical sets (102 symbol phrases per model and prompt):
+
+| model | v0.43 prompt | new prompt | held-out only |
+|---|---|---|---|
+| qwen3-4b-2507 | 55% | **73%** | 67% → 71% |
+| gemma-3-12b | 51% | **68%** | 71% → 79% |
+| granite-4.0-micro | 51% | **62%** | 57% → 57% |
+| gemma-3-4b | 25% | 40% | 36% → 55% |
+| gemma-3-1b | 0% | 0% | 0% → 0% |
+
+The new prompt adds one sentence to the code rule: *A symbol word said twice
+is two symbols, not a stutter ("dot dot slash" -> ../).* Prose is unchanged:
+fillers left on FLUENT/REPORTED stay 0 for Granite, Qwen and Gemma 3 12B, go
+18 → 15 for Gemma 3 4B and 12 → 0 for Gemma 3 1B, and no output is empty.
+One side effect: Qwen on Polished joins "cd … and open …" as `cd ../config
+&& open settings.json` (3 of 63 runs), where the v0.43 prompt already dropped
+"can you" and wrote `..config`.
+
+Tried and rejected, same harness:
+
+| candidate | what it added | why not |
+|---|---|---|
+| A / C | symbol-per-word examples for every doubled symbol, "convert only the words that name code" | held-out flat for Granite and Qwen (gains were its own examples); Granite left 15 fillers on FLUENT/Clean, and dropped a clause ("…, and it breaks when the folder moves") |
+| B | A plus "plain text, write && never &amp;&amp;" | rewrote requests as shell commands (`cd ../config && open settings.json`) and returned one empty output |
+| D | the new sentence plus "plain text (no Markdown, no HTML entities)" | Granite left 5 fillers on FLUENT/Clean |
+| E | the plain-text line alone | no change for Granite or Qwen; the escapes it targets are rare (Gemma 3 4B `&amp; &amp;` in 5 of 126 runs, Gemma 3 12B `\_\_init\_\_` in 3) |
+
+The model labels follow the "converted" column: Granite, Qwen and Gemma 3 12B
+are "code and speech", Gemma 3 4B and 1B "everyday speech".
+
+Reproduce (models from the catalog URLs in `main/engines/registry.js`; the
+candidate prompt is a text file of the base prompt):
+
+```sh
+node scripts/eval-technical.mjs --gpu --out=<dir>/shipped --id=granite <granite-4.0-micro-Q4_K_M.gguf>
+node scripts/eval-technical.mjs --gpu --out=<dir>/candidate --id=granite --prompt=<base-prompt.txt> <granite-4.0-micro-Q4_K_M.gguf>
+node scripts/eval-technical.mjs --report <dir>/shipped
+```
+
 ## What a candidate has to be
 
 The built-in engine is `node-llama-cpp` 3.22.1, which bundles llama.cpp

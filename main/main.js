@@ -16,7 +16,7 @@ const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { createHost, LOADCHECK_TIMEOUT_MS } = require("./engines/host");
 const { bindCustomModels } = require("./engines/catalog");
-const { createNotifier, announceStartup } = require("./setup-notices");
+const { createNotifier, announceStartup, announcePromptOffer } = require("./setup-notices");
 const { installPermissionHandler } = require("./window-guard");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
@@ -81,6 +81,16 @@ const notifier = createNotifier({
   Notification,
   openSettings: () => windows.openSettings(),
   logger,
+});
+
+// The new-default-prompt notice opens Settings at the offer. Not news worth a
+// Settings window on its own when notifications are unavailable: the offer
+// waits in Settings → Cleanup either way.
+const promptNotifier = createNotifier({
+  Notification,
+  openSettings: () => windows.openSettings({ section: "cleanup" }),
+  logger,
+  settingsWhenUnsupported: false,
 });
 
 function main() {
@@ -197,6 +207,22 @@ function main() {
       openSettings: () => windows.openSettings(),
       notify: notifier.show,
     });
+    // A new default cleanup prompt is announced once (setup-notices.js).
+    if (!isSmokeTest && !firstRun) {
+      announcePromptOffer({
+        cfg,
+        offer: settings.cleanupPromptOffer(cfg),
+        notify: promptNotifier.show,
+        record: (id) => {
+          try {
+            const now = settings.get();
+            settings.save({ ...now, cleanup: { ...now.cleanup, promptOfferNotified: id } });
+          } catch (err) {
+            logger.warn(`could not record the prompt notice: ${err.message}`);
+          }
+        },
+      });
+    }
 
     if (isSmokeTest) {
       // CI/dev sanity check: boot everything, then exit cleanly.

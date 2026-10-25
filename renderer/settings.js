@@ -795,6 +795,58 @@ $("cleanup-prompt-reset").addEventListener("click", () => {
   $("cleanup-prompt").value = defaults.cleanup.systemPrompt;
 });
 
+/* ---------- new default prompt offer ---------- */
+
+// settings:get says when a new default prompt ships that this user hasn't
+// decided on (settings.cleanupPromptOffer). An untouched earlier default only
+// needs a yes or no; an edited prompt shows what the new default changes
+// against theirs, so they can see what they would gain or lose.
+let promptOffer = null;
+function renderPromptOffer() {
+  const box = $("prompt-offer");
+  box.hidden = !promptOffer;
+  if (!promptOffer) return;
+  const custom = promptOffer.kind === "custom";
+  $("prompt-offer-text").textContent = custom
+    ? "It is tuned for code dictation. You've edited yours, so it wasn't changed — here is what the new default changes:"
+    : "It is tuned for code dictation: a spoken symbol said twice, like “dot dot slash”, becomes code (../) instead of being dropped as a stutter. Yours is the previous default.";
+  $("prompt-offer-keep").textContent = custom ? "Keep mine" : "Keep the previous one";
+  const diff = $("prompt-offer-diff");
+  diff.hidden = !custom;
+  diff.replaceChildren();
+  if (custom) {
+    const marks = { same: "  ", del: "− ", add: "+ " };
+    for (const d of foldUnchanged(diffLines($("cleanup-prompt").value, defaults.cleanup.systemPrompt))) {
+      const row = document.createElement("span");
+      row.className = d.op;
+      row.textContent = d.op === "skip"
+        ? `  … ${d.count} unchanged line${d.count === 1 ? "" : "s"}`
+        : marks[d.op] + d.line;
+      diff.append(row);
+    }
+  }
+}
+
+async function answerPromptOffer(decision) {
+  $("prompt-offer-status").textContent = "";
+  const result = await earheart.invoke("cleanup:prompt-offer", { decision });
+  if (!result?.ok) {
+    $("prompt-offer-status").textContent = `Couldn't save that: ${result?.error || "unknown error"}`;
+    return;
+  }
+  // Saved by main already, so the field and its unsaved-changes baseline both
+  // take the stored prompt (the answer doesn't leave the form looking edited),
+  // and `current` takes the decision, which the next form save spreads back.
+  const field = $("cleanup-prompt");
+  field.value = result.systemPrompt;
+  formBaseline.set(field, { value: field.value, checked: field.checked });
+  current.cleanup = { ...current.cleanup, systemPrompt: result.systemPrompt, promptOfferDecided: result.promptOfferDecided };
+  promptOffer = null;
+  renderPromptOffer();
+}
+$("prompt-offer-use").addEventListener("click", () => answerPromptOffer("use"));
+$("prompt-offer-keep").addEventListener("click", () => answerPromptOffer("keep"));
+
 /* ---------- changes saved elsewhere ---------- */
 
 // Main saved the settings (tray radio, update prompt, overlay drag, custom
@@ -1574,6 +1626,7 @@ async function navigateSettings(destination) {
     baseline = sharedBaseline(current);
     await refreshModels();
     populate();
+  renderPromptOffer();
     formBaseline = formSnapshot();
     for (const [el, value] of dirty) {
       el.value = value.value;
@@ -1710,6 +1763,7 @@ earheart.on("updates:state", renderUpdateState);
   defaults = data.defaults;
   platform = data.platform;
   cleanupStyles = data.cleanupStyles || [];
+  promptOffer = data.promptOffer || null;
   keyStorage = data.keyStorage || null;
   // A hotkey that failed at launch shows now, not after a Save — and before
   // the update and model round-trips below.
@@ -1737,6 +1791,7 @@ earheart.on("updates:state", renderUpdateState);
   populateModelSelect("stt");
   populateModelSelect("cleanup");
   populate();
+  renderPromptOffer();
   formBaseline = formSnapshot();
   savedSetup = current;
   formReady = true;

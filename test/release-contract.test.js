@@ -257,6 +257,9 @@ test("macOS releases are Developer ID signed, notarized and stapled", () => {
   assert.match(releaseWorkflow, /xcrun stapler validate "\$bundle"/);
   assert.match(releaseWorkflow, /xcrun stapler validate "\$dmg"/);
   assert.match(releaseWorkflow, /Authority=Developer ID Application: \.\*\(XTZB5CXLUQ\)/);
+  // Plain -dv prints no Authority= lines, so that grep could never match
+  // (the v0.45.0 macOS build failed on it).
+  assert.match(releaseWorkflow, /details=\$\(codesign -dvv "\$bundle" 2>&1\)/);
   assert.match(releaseWorkflow, /spctl -a -vvv -t exec "\$bundle"/);
   assert.match(releaseWorkflow, /spctl -a -vvv -t open --context context:primary-signature "\$dmg"/);
   // The key file is removed even when the build fails.

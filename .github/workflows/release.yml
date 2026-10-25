@@ -246,7 +246,8 @@ jobs:
           test "$(node -p process.arch)" = "$expected"
           if [[ -n "${APPLE_API_KEY:-}" ]]; then
             codesign --verify --deep --strict "$bundle"
-            details=$(codesign -dv "$bundle" 2>&1)
+            # -dvv: codesign lists the Authority= chain only at verbosity 2.
+            details=$(codesign -dvv "$bundle" 2>&1)
             echo "$details"
             grep -q "flags=.*runtime" <<< "$details"
             grep -q "^Authority=Developer ID Application: .*(XTZB5CXLUQ)$" <<< "$details"

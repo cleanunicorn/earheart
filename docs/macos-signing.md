@@ -93,7 +93,7 @@ app=/tmp/earheart-dmg/Earheart.app
 
 # Signature intact, hardened runtime on, signed by Earheart's Developer ID.
 codesign --verify --deep --strict --verbose=2 "$app"
-codesign -dv "$app" 2>&1 | grep -E '^(Authority|TeamIdentifier|flags)'
+codesign -dvv "$app" 2>&1 | grep -E '^(Authority|TeamIdentifier|flags)'
 #   flags=0x10000(runtime)
 #   Authority=Developer ID Application: … (XTZB5CXLUQ)
 codesign -dr - "$app"      # identifier "dev.cleanunicorn.earheart" … subject.OU] = XTZB5CXLUQ

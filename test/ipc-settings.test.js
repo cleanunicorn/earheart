@@ -368,6 +368,16 @@ test("an alias remembered while Settings is open survives its stale save with in
   ]);
 });
 
+test("a stale Settings save that conflicts with a remembered alias fails and keeps it", async (t) => {
+  const { settings, handlers, readFile } = loadIpc(t);
+  const snapshot = settings.get();
+  const baseline = require("../renderer/settings-sync").sharedBaseline(snapshot);
+  assert.strictEqual((await handlers["correction:remember"]({}, { spelling: "Other", heard: "Earheart" })).ok, true);
+  snapshot.cleanup.aliases = [{ term: "Earheart", heard: ["air heart"] }];
+  await assert.rejects(async () => handlers["settings:save"]({}, { settings: snapshot, baseline }), /Always replace was not saved/);
+  assert.deepStrictEqual(readFile().cleanup.aliases, [{ term: "Other", heard: ["Earheart"] }]);
+});
+
 test("remember failure preserves existing dictionary and reports failure", async (t) => {
   const { settings, handlers } = loadIpc(t);
   const before = settings.get().cleanup.dictionary;

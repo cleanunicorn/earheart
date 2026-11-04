@@ -104,7 +104,7 @@ test("rememberAlias adds, dedupes and refuses a second owner", () => {
   assert.deepEqual(rememberAlias(one, " AIR  heart ", "Earheart"), one, "same rule again is a no-op");
   assert.deepEqual(rememberAlias(one, "ear heart", "Earheart"), EARHEART);
   assert.throws(() => rememberAlias(one, "Air Heart", "Airheart"), /already becomes “Earheart”/);
-  assert.throws(() => rememberAlias(one, "earheart", "Other"), /is the spelling of “Earheart”/);
+  assert.throws(() => rememberAlias(one, "earheart", "Other"), /can't become “Other”: other words already become “Earheart”/);
   assert.throws(() => rememberAlias(one, "x", "air heart"), /is already replaced with “Earheart”/);
   assert.deepEqual(rememberAlias(one, "earheart", "Earheart")[0].heard, ["air heart", "earheart"],
     "a case fix of the term itself is allowed");
@@ -188,4 +188,14 @@ test("mergeAliases keeps another window's additions and the form's own edits", (
 
 test("aliasTerms lists each canonical term once", () => {
   assert.deepEqual(aliasTerms([...EARHEART, { term: "Earheart", heard: ["earhart"] }, { term: "K8s", heard: ["kates"] }]), ["Earheart", "K8s"]);
+});
+
+test("mergeAliases refuses a conflicting or overflowing merge instead of dropping a saved alias", () => {
+  // Settings (stale) adds air heart -> Earheart while Correct… saved Earheart -> Other.
+  assert.throws(
+    () => mergeAliases([], [{ term: "Earheart", heard: ["air heart"] }], [{ term: "Other", heard: ["Earheart"] }]),
+    /Always replace was not saved: .*Earheart/
+  );
+  const full = [{ term: "T", heard: Array.from({ length: ALIAS_HEARD_MAX }, (_, i) => `h${i}`) }];
+  assert.throws(() => mergeAliases([], [{ term: "T", heard: ["new heard"] }], full), /Always replace was not saved/);
 });

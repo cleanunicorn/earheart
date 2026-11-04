@@ -59,7 +59,7 @@ function checkAlias(records, heard, term) {
       throw new Error(`“${cleanPhrase(heard)}” already becomes “${record.term}”. Remove it there first.`);
     }
     if (aliasKey(record.term) === key) {
-      throw new Error(`“${cleanPhrase(heard)}” is the spelling of “${record.term}”, so it can't be replaced.`);
+      throw new Error(`“${cleanPhrase(heard)}” can't become “${canonical}”: other words already become “${record.term}”.`);
     }
     // The other direction: a spelling that is itself replaced would undo
     // the user's own correction the next time they say it right.
@@ -127,13 +127,19 @@ function aliasPairs(records) {
   return pairs;
 }
 
+// Group pairs back into records. A pair that wouldn't survive normalization
+// (a second owner, a spelling that is itself replaced, past the limit) throws
+// instead of being dropped: this builds what a user is saving, never repairs
+// a stored file.
 function recordsFromPairs(pairs) {
   const byTerm = new Map();
   for (const { heard, term } of pairs) {
     if (!byTerm.has(term)) byTerm.set(term, { term, heard: [] });
     byTerm.get(term).heard.push(heard);
   }
-  return normalizeAliases([...byTerm.values()]);
+  return normalizeAliases([...byTerm.values()], (reason) => {
+    throw new Error(`Always replace was not saved: ${/[.!?]$/.test(reason) ? reason : `${reason}.`}`);
+  });
 }
 
 // Merge a form's edits into what main has saved since, by intent and per heard
@@ -158,7 +164,8 @@ function mergeAliases(baseline, edited, live) {
     result.set(key, pair);
   }
   // A term the form added a heard form for can clash with a term that became
-  // a heard form elsewhere; normalizeAliases settles that deterministically.
+  // a heard form elsewhere, or the two can overflow the limit together:
+  // recordsFromPairs throws then, so the save fails and live is kept intact.
   return recordsFromPairs(result.values());
 }
 

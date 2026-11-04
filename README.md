@@ -151,7 +151,8 @@ label, and opinions are welcome.
   to everything Earheart pastes or copies (code blocks lose their line
   structure too); History keeps the transcript as it was.
 - **Local history** — recent transcriptions stay in a local JSON file, so a
-  mis-aimed paste never loses a dictation. History can be disabled.
+  mis-aimed paste never loses a dictation. Search it, delete single entries,
+  or turn it off.
 - **Start on login (optional)** — have Earheart launch into the tray
   automatically when you sign in, so the hotkey is always ready. Off by
   default; toggle it under Settings → General. Works on Windows, macOS and
@@ -389,6 +390,14 @@ the wizard:
 
 A mis-aimed paste never loses your words: the History section in Settings
 keeps recent transcriptions in a local file (you can turn this off).
+
+Type in **Search transcriptions** to find an old prompt: every word you type
+must appear in the entry (or in its transcript before cleanup), in any order,
+ignoring case — `ÉCOLE` finds `école`, but accents still count, so `cafe` does
+not find `café`. **Delete** on an entry removes just that one, for good; if the
+file can't be changed (a backup or antivirus scan holding it), the entry stays
+and the card says why. Deleting the entry also drops it from **Copy last
+transcription** if it was the transcript held back there.
 
 A failed transcription doesn't lose the recording either. When the speech
 service times out or the model won't load, Earheart keeps that one recording in

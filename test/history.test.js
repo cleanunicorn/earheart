@@ -394,3 +394,45 @@ test("a failed delete keeps the pending write, so queued entries still reach dis
   await flush();
   assert.deepStrictEqual(loadHistory(dir).list().map((e) => e.text), ["pending", "first"]);
 });
+
+// Retranscription results (#343) sit beside the original, never over it.
+test("setRetry keeps the original transcript and the entry count", async (t) => {
+  const dir = historyDir(t);
+  const history = loadHistory(dir);
+  const cfg = { enabled: true, limit: 100 };
+  const id = history.add({ raw: "orig raw", text: "Orig text.", cleaned: true }, cfg);
+  history.add({ raw: "other", text: "other", cleaned: false }, cfg);
+  const before = history.list().find((e) => e.id === id);
+  const retry = { seq: 1, at: "2026-11-04T10:00:00.000Z", status: "done", raw: "new raw", text: "New text.", cleaned: true };
+  assert.deepStrictEqual(history.setRetry(id, retry), { ok: true, stored: true });
+  const after = history.list().find((e) => e.id === id);
+  assert.strictEqual(history.list().length, 2, "a retry is not a new dictation");
+  for (const field of ["raw", "text", "cleaned", "at", "id"]) assert.strictEqual(after[field], before[field], field);
+  assert.deepStrictEqual(after.retry, retry);
+  // Durable across a restart.
+  assert.deepStrictEqual(loadHistory(dir).list().find((e) => e.id === id).retry, retry);
+});
+
+test("an older retry finishing late can't overwrite a newer result", (t) => {
+  const history = loadHistory(historyDir(t));
+  const id = history.add({ raw: "a", text: "a", cleaned: false }, { enabled: true, limit: 100 });
+  assert.strictEqual(history.setRetry(id, { seq: 5, status: "done", text: "newer" }).stored, true);
+  assert.deepStrictEqual(history.setRetry(id, { seq: 4, status: "done", text: "older" }), { ok: true, stored: false });
+  assert.strictEqual(history.list()[0].retry.text, "newer");
+  assert.strictEqual(history.setRetry(id, { seq: 6, status: "failed", error: "x" }).stored, true);
+});
+
+test("a retry for a deleted entry is dropped; a failed write changes nothing", (t) => {
+  const dir = historyDir(t);
+  const history = loadHistory(dir);
+  const id = history.add({ raw: "a", text: "a", cleaned: false }, { enabled: true, limit: 100 });
+  assert.deepStrictEqual(history.setRetry("4a1b2c3d-0000-4000-8000-000000000000", { seq: 1, status: "done" }), { ok: true, stored: false });
+  const realRename = fs.renameSync;
+  fs.renameSync = () => { throw Object.assign(new Error("EPERM"), { code: "EPERM" }); };
+  t.after(() => { fs.renameSync = realRename; });
+  assert.deepStrictEqual(history.setRetry(id, { seq: 1, status: "done", text: "x" }), { ok: false, error: "EPERM" });
+  fs.renameSync = realRename;
+  assert.strictEqual(history.list()[0].retry, undefined);
+  history.remove(id);
+  assert.deepStrictEqual(history.setRetry(id, { seq: 2, status: "done" }), { ok: true, stored: false });
+});

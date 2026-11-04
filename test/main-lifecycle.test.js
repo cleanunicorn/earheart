@@ -49,12 +49,14 @@ async function loadMain(
     notificationsSupported = true,
     pipelineState = "idle",
     canCloseCorrection = true,
+    pruned = () => [], // ids a kept-recordings prune (#343) removes
   } = {}
 ) {
   const events = [];
   const appHandlers = {};
   const shortcuts = new Map();
   const ipcInit = {};
+  const recordingsHooks = {};
   const notices = [];
   let permissionHandler = null;
   let stateListener = null;
@@ -122,6 +124,17 @@ async function loadMain(
       closeCorrection: () => events.push("closeCorrection"),
       openWizard: () => events.push("openWizard"),
       openCorrection: (entry) => events.push(`correct:${entry.text}`),
+      sendToSettings: (channel, payload) => events.push(`settings:${channel}:${JSON.stringify(payload ?? null)}`),
+    },
+    "./recordings": {
+      startPruning: (getCfg, onPruned) => {
+        events.push("recordings.startPruning");
+        recordingsHooks.onPruned = onPruned;
+      },
+      prune: () => {
+        events.push("recordings.prune");
+        return pruned();
+      },
     },
     "./history": { list: () => [{ text: "last transcript" }] },
     "./pipeline": {
@@ -202,6 +215,7 @@ async function loadMain(
     appHandlers,
     shortcuts,
     ipcInit,
+    recordingsHooks,
     notices,
     permissionHandler: () => permissionHandler,
     changeState: (state) => stateListener(state),
@@ -394,4 +408,27 @@ test("an update install asks about an uncopied correction first, then closes the
     assert.strictEqual(callbacks.confirmInstall(), canCloseCorrection);
     assert.deepStrictEqual(events, canCloseCorrection ? ["closeCorrection"] : [], "a kept draft keeps its editor");
   }
+});
+
+// Kept recordings (#343): a settings save applies the new limits at once, and
+// when that removes recordings History redraws — keeping its page — so one
+// that was playing stops instead of playing on with stale buttons (review b-4).
+test("a settings save that prunes kept recordings tells History, as an update", async () => {
+  let removed = [];
+  const { events, ipcInit, recordingsHooks } = await loadMain({ pruned: () => removed });
+  assert.ok(events.includes("recordings.startPruning"));
+  const sent = () => events.filter((e) => e.startsWith("settings:history:changed"));
+
+  ipcInit.onSettingsChanged();
+  assert.ok(events.includes("recordings.prune"), "new limits apply on save");
+  assert.deepStrictEqual(sent(), [], "nothing removed, nothing to redraw");
+
+  removed = ["2b0e0a46-2c3f-4b5e-9f00-0123456789ab"];
+  ipcInit.onSettingsChanged();
+  assert.deepStrictEqual(sent(), ['settings:history:changed:{"updated":true}']);
+
+  // The startup/hourly prune's redraw is an update too.
+  const before = sent().length;
+  recordingsHooks.onPruned();
+  assert.deepStrictEqual(sent().slice(before), ['settings:history:changed:{"updated":true}'], "exactly one new event");
 });

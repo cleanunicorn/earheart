@@ -217,6 +217,37 @@ function search({ query = "", offset = 0, limit = DEFAULT_PAGE } = {}) {
   return { entries: matches.slice(start, start + size), total, offset: start, limit: size, all: items.length };
 }
 
+/* ---- Retranscription result ---- */
+
+// Record a retranscription of entry `id`'s kept audio (#343) beside it, never
+// over it: `raw`, `text`, `cleaned` and `at` stay what was dictated, and the
+// result lives in `entry.retry` = { seq, at, status, raw?, text?, cleaned?,
+// error? } until a newer retry replaces it. `seq` orders retries: one that
+// started earlier (a lower seq) than the stored result never overwrites it,
+// so a slow retry can't replace a newer one. The entry count never changes —
+// a retry is not a new dictation. Written through like remove(), so only a
+// write that worked changes the list. Returns { ok: true, stored } — stored
+// false when the entry is gone or a newer result is already there — or
+// { ok: false, error: <code> } when the write failed.
+function setRetry(id, retry) {
+  const items = load();
+  const index = isValidId(id) ? items.findIndex((entry) => entry.id === id) : -1;
+  if (index === -1) return { ok: true, stored: false };
+  const current = items[index].retry;
+  if (current && Number.isFinite(current.seq) && current.seq > retry.seq) return { ok: true, stored: false };
+  const next = items.slice();
+  next[index] = { ...items[index], retry: { ...retry } };
+  try {
+    writeAtomic(next);
+  } catch (err) {
+    logger.warn("history retry write failed:", err.message);
+    return { ok: false, error: err.code || "unknown error" };
+  }
+  cached = next;
+  flushScheduled = false;
+  return { ok: true, stored: true };
+}
+
 /* ---- Delete one entry ---- */
 
 // Delete the entry with this id. The file is rewritten before the list
@@ -265,4 +296,4 @@ function clear() {
   return { ok: true };
 }
 
-module.exports = { add, list, search, remove, clear, validEntries, isValidId, MAX_QUERY, MAX_PAGE };
+module.exports = { add, list, search, setRetry, remove, clear, validEntries, isValidId, MAX_QUERY, MAX_PAGE };

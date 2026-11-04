@@ -153,6 +153,9 @@ label, and opinions are welcome.
 - **Local history** — recent transcriptions stay in a local JSON file, so a
   mis-aimed paste never loses a dictation. Search it, delete single entries,
   or turn it off.
+- **Kept recordings (optional)** — opt in to keep each dictation's audio,
+  encrypted with your OS keychain, then play, seek, export or retranscribe it
+  from History. Off by default; 30 days and 1 GB unless you change them.
 - **Start on login (optional)** — have Earheart launch into the tray
   automatically when you sign in, so the hotkey is always ready. Off by
   default; toggle it under Settings → General. Works on Windows, macOS and
@@ -398,6 +401,18 @@ not find `café`. **Delete** on an entry removes just that one, for good; if the
 file can't be changed (a backup or antivirus scan holding it), the entry stays
 and the card says why. Deleting the entry also drops it from **Copy last
 transcription** if it was the transcript held back there.
+
+**Keep recordings** (off by default) also saves each dictation's audio with
+its History entry, so you can **Play** it (with seeking), **Export…** it as a
+WAV, or **Retranscribe** it with your current settings. A retranscription
+never pastes anything and never replaces the original: it shows under it with
+its own Copy button. Recordings are encrypted with a key held by your OS
+keychain; where there is none (Linux without GNOME Keyring or KWallet) the
+switch stays off and says why. They are deleted after 30 days, or oldest first
+past 1 GB (both adjustable), and with their History entry or Clear history.
+Turning it off keeps no new recordings; to remove the ones already kept, use
+**Delete all recordings**. See [docs/retained-audio.md](docs/retained-audio.md) for the storage format,
+encryption and recovery.
 
 A failed transcription doesn't lose the recording either. When the speech
 service times out or the model won't load, Earheart keeps that one recording in

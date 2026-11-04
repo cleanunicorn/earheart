@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:"
+      content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; media-src blob:"
     />
     <title>Earheart</title>
     <link rel="stylesheet" href="tokens.css" />
@@ -572,6 +572,31 @@
             </span>
             <input type="checkbox" id="history-enabled" class="switch" role="switch" />
           </label>
+        </div>
+        <div class="card" id="recordings-card">
+          <label class="toggle">
+            <span class="toggle-text">
+              <span class="t">Keep recordings</span>
+              <span class="d">Saves each dictation's audio, encrypted on this computer, so you can play, export or retranscribe it from History. Needs History on.</span>
+            </span>
+            <input type="checkbox" id="recordings-keep" class="switch" role="switch" />
+          </label>
+          <p id="recordings-reason" class="hint" hidden></p>
+          <div class="grid-2">
+            <div class="field">
+              <label for="recordings-days">Delete recordings after (days)</label>
+              <input id="recordings-days" type="number" min="1" max="365" step="1" />
+            </div>
+            <div class="field">
+              <label for="recordings-mb">Keep at most (MB)</label>
+              <input id="recordings-mb" type="number" min="50" max="10240" step="50" />
+            </div>
+          </div>
+          <div class="row space-between recordings-foot">
+            <span id="recordings-usage" class="muted"></span>
+            <button id="recordings-clear" class="ghost danger" type="button">Delete all recordings</button>
+          </div>
+          <p id="recordings-status" class="status err" role="status" hidden></p>
         </div>
         <div class="row space-between history-head">
           <span class="muted">Recent transcriptions</span>

@@ -29,6 +29,11 @@
 //      and a delete that can't write the file says so on the card and keeps it.
 //      The pager pages through the matches only, and deleting the last match
 //      on a page lands on the page before it.
+//      Kept recordings (17, #343): the Keep recordings switch is off by default
+//      and can't be turned on without secure storage, saying why; an entry
+//      with a kept recording plays it from a blob with seekable controls,
+//      exports the original WAV, and deleting it mid-playback stops the
+//      player, revokes its URL and deletes the file.
 //  10. A model download keeps progress through redraws, exposes a focused
 //      cancel action, handles a download owned by another window, and
 //      announces terminal results in the persistent region.
@@ -624,6 +629,331 @@ app.whenReady().then(async () => {
       oneLeft.range === "6–6 of 6 matching" && !backOne.shown && history.list().filter((e) => /^pager item/.test(e.text)).length === 5,
       JSON.stringify({ oneLeft, backOne })
     );
+    await searchFor("");
+
+    // 17. Kept recordings (#343). First the honest status, on this machine's
+    // real secure storage: without it (headless Linux: no keyring) the switch
+    // can't be turned on and says why; with it, it can.
+    const realStatus = await invokeHandlers.get("recordings:status")();
+    const card = await waitFor(
+      () => js(`(() => {
+        const usage = document.getElementById("recordings-usage").textContent;
+        return usage && JSON.stringify({
+          disabled: document.getElementById("recordings-keep").disabled,
+          checked: document.getElementById("recordings-keep").checked,
+          reason: document.getElementById("recordings-reason").hidden ? "" : document.getElementById("recordings-reason").textContent,
+          usage,
+        });
+      })()`),
+      "the Keep recordings card never showed its status"
+    ).then(JSON.parse);
+    check(
+      "Keep recordings is off by default, and can be turned on only with secure storage",
+      !card.checked && card.disabled === !realStatus.secure &&
+        (realStatus.secure ? card.reason === "" : /can't be encrypted/.test(card.reason)) &&
+        card.usage === "No recordings kept",
+      JSON.stringify({ card, secure: realStatus.secure })
+    );
+
+    // Then the player, against a store with a stand-in keyring (CI's Linux
+    // has none), through the real handlers and History module.
+    const recordings = require("../main/recordings");
+    const { createAudioStore } = require("../main/audio-store");
+    const { encodeWav } = require("../main/util/wav");
+    const keyring = {
+      isEncryptionAvailable: () => true,
+      getSelectedStorageBackend: () => "gnome_libsecret",
+      encryptString: (text) => Buffer.from(`k:${text}`),
+      decryptString: (buf) => buf.toString().slice(2),
+    };
+    const smokeStore = createAudioStore({ dir: () => path.join(app.getPath("userData"), "audio"), safeStorage: () => keyring });
+    const realGetStore = recordings.getStore;
+    recordings.getStore = () => smokeStore;
+    const { dialog } = require("electron");
+    const realSaveDialog = dialog.showSaveDialog;
+    const exportPath = path.join(app.getPath("userData"), "exported.wav");
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: exportPath });
+    try {
+      const keptEntry = history.list().find((e) => e.text === "whole dictation");
+      const tone = encodeWav(Float32Array.from({ length: 16000 * 3 }, (_, i) => 0.2 * Math.sin(i / 8)));
+      smokeStore.save(keptEntry.id, tone, { limits: { maxAgeDays: 30, maxMegabytes: 1024 } });
+      // Both entries on one page: the pager items above fill the newest one.
+      await searchFor("o");
+      const rowWith = (text) => `[...document.querySelectorAll("#history-list li")].find((row) => row.querySelector(".text")?.textContent === ${JSON.stringify(text)})`;
+      const buttons = await waitFor(
+        () => js(`(() => {
+          const li = ${rowWith("whole dictation")};
+          const other = ${rowWith("recovered words")};
+          return li?.querySelector("button.play") && JSON.stringify({
+            kept: [...li.querySelectorAll(".actions button")].map((b) => b.textContent),
+            other: [...other.querySelectorAll(".actions button")].map((b) => b.textContent),
+          });
+        })()`),
+        "an entry with a kept recording never offered Play"
+      ).then(JSON.parse);
+      check(
+        "an entry with a kept recording offers Play, Export and Retranscribe; one without doesn't",
+        ["Play", "Export…", "Retranscribe"].every((b) => buttons.kept.includes(b)) && !buttons.other.includes("Play"),
+        JSON.stringify(buttons)
+      );
+
+      await js(`(() => {
+        window.__revoked = 0;
+        const revoke = URL.revokeObjectURL.bind(URL);
+        URL.revokeObjectURL = (url) => { window.__revoked += 1; revoke(url); };
+        ${rowWith("whole dictation")}.querySelector("button.play").click();
+        return true;
+      })()`);
+      const loaded = await waitFor(
+        () => js(`(() => {
+          const a = document.querySelector("#history-list audio.player");
+          return a && a.readyState >= 1 && Number.isFinite(a.duration) && JSON.stringify({ duration: a.duration, src: a.src.slice(0, 5), controls: a.controls });
+        })()`),
+        "the kept recording never loaded in the player"
+      ).then(JSON.parse);
+      const seeked = await js(`new Promise((resolve) => {
+        const a = document.querySelector("#history-list audio.player");
+        a.pause();
+        a.addEventListener("seeked", () => resolve(a.currentTime), { once: true });
+        a.currentTime = 2;
+        setTimeout(() => resolve(a.currentTime), 3000);
+      })`);
+      check(
+        "Play loads the recording from a blob with seekable controls",
+        Math.abs(loaded.duration - 3) < 0.1 && loaded.src === "blob:" && loaded.controls && Math.abs(seeked - 2) < 0.1,
+        JSON.stringify({ loaded, seeked })
+      );
+
+      await js(`${rowWith("whole dictation")}.querySelector("button.export").click(); true`);
+      await waitFor(() => fs.existsSync(exportPath), "Export never wrote the file");
+      await sleep(50);
+      check("Export saves the original WAV where the user chose", fs.readFileSync(exportPath).equals(tone));
+
+      // Expired while it plays (a tighter limit saved in Settings): the
+      // player stops and lets go of its audio, the recording buttons go, and
+      // the transcript stays — the same redraw main sends after a prune.
+      await js(`document.querySelector("#history-list audio.player").play().catch(() => {}); true`);
+      const keptFile = path.join(app.getPath("userData"), "audio", `${keptEntry.id}.wav.enc`);
+      const longAgo = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+      fs.utimesSync(keptFile, longAgo, longAgo);
+      const expired = smokeStore.prune({ maxAgeDays: 30, maxMegabytes: 1024 });
+      win.webContents.send("history:changed", { updated: true });
+      const afterExpiry = await waitFor(
+        () => js(`(() => {
+          const li = ${rowWith("whole dictation")};
+          return li && !li.querySelector("button.play") && JSON.stringify({
+            players: document.querySelectorAll("audio").length,
+            revoked: window.__revoked,
+            buttons: [...li.querySelectorAll(".actions button")].map((b) => b.textContent),
+          });
+        })()`),
+        "an expired recording kept its Play button"
+      ).then(JSON.parse);
+      check(
+        "a recording that expires while playing stops the player and releases it; the transcript stays",
+        expired.includes(keptEntry.id) && afterExpiry.players === 0 && afterExpiry.revoked === 1 &&
+          !afterExpiry.buttons.includes("Export…") && afterExpiry.buttons.includes("Copy") && !fs.existsSync(keptFile),
+        JSON.stringify({ expired, afterExpiry })
+      );
+      // Kept again, and playing, for the delete check below.
+      smokeStore.save(keptEntry.id, tone, { limits: { maxAgeDays: 30, maxMegabytes: 1024 } });
+      win.webContents.send("history:changed", { updated: true });
+      await waitFor(() => js(`!!${rowWith("whole dictation")}?.querySelector("button.play")`), "the kept-again recording never offered Play");
+      await js(`${rowWith("whole dictation")}.querySelector("button.play").click(); true`);
+      await waitFor(() => js(`(document.querySelector("#history-list audio.player")?.readyState ?? 0) >= 1`), "the kept-again recording never loaded");
+
+      // Deleted while it plays: the player stops and lets go of its audio,
+      // and the recording is gone from disk with its entry.
+      await js(`(() => {
+        const a = document.querySelector("#history-list audio.player");
+        a.play().catch(() => {});
+        window.confirm = () => true;
+        ${rowWith("whole dictation")}.querySelector("button.delete").click();
+        return true;
+      })()`);
+      const released = await waitFor(
+        () => js(`(() => {
+          const gone = !${rowWith("whole dictation")};
+          return gone && JSON.stringify({
+            players: document.querySelectorAll("audio").length,
+            revoked: window.__revoked,
+            errors: [...document.querySelectorAll("#history-list .status.err")].map((el) => el.textContent).filter(Boolean),
+          });
+        })()`),
+        "deleting the playing entry never removed it"
+      ).then(JSON.parse);
+      check(
+        "deleting the entry being played stops the player, releases its audio, and deletes the recording",
+        released.players === 0 && released.revoked === 2 && released.errors.length === 0 &&
+          !fs.existsSync(path.join(app.getPath("userData"), "audio", `${keptEntry.id}.wav.enc`)),
+        JSON.stringify(released)
+      );
+
+      // Retranscribe, through the real button, on the second page: the
+      // result shows under the original — which stays — with its own Copy,
+      // and the page stays put. The pipeline is stood in for (it would need
+      // an engine): it answers the way pipeline.retranscribe does.
+      const olderEntry = history.list().find((e) => e.text === "recovered words");
+      smokeStore.save(olderEntry.id, tone, { limits: { maxAgeDays: 30, maxMegabytes: 1024 } });
+      await searchFor("");
+      await waitFor(() => js(`!document.getElementById("history-older").disabled`), "History never offered an older page");
+      await js(`document.getElementById("history-older").click(); true`);
+      await waitFor(() => js(`!!${rowWith("recovered words")}?.querySelector("button.retranscribe")`), "the older page never offered Retranscribe");
+      const realRetranscribe = invokeHandlers.get("history:retranscribe");
+      let finishRetry;
+      const retryHeld = new Promise((resolve) => (finishRetry = resolve));
+      let answer = "store";
+      ipcMain.removeHandler("history:retranscribe");
+      registerHandler("history:retranscribe", async (event, id) => {
+        if (answer === "busy") return { ok: false, error: "busy" };
+        await retryHeld;
+        const retry = { seq: Date.now(), at: new Date().toISOString(), status: "done", raw: "retried words", text: "Retried words.", cleaned: true };
+        history.setRetry(id, retry);
+        win.webContents.send("history:changed", { updated: true });
+        return { ok: true, stored: true, retry };
+      });
+      try {
+        const pageBefore = await js(`document.getElementById("history-range").textContent`);
+        await js(`${rowWith("recovered words")}.querySelector("button.retranscribe").click(); true`);
+        const running = await waitFor(
+          () => js(`(() => {
+            const b = ${rowWith("recovered words")}.querySelector("button.retranscribe");
+            return b.disabled && b.textContent;
+          })()`),
+          "Retranscribe never showed it was running"
+        );
+        finishRetry();
+        const shown = await waitFor(
+          () => js(`(() => {
+            const li = ${rowWith("recovered words")};
+            return li?.querySelector(".retry-text") && JSON.stringify({
+              original: li.querySelector(".text").textContent,
+              retry: li.querySelector(".retry-text").textContent,
+              head: li.querySelector(".retry-head").textContent,
+              copy: !!li.querySelector("button.retry-copy"),
+              range: document.getElementById("history-range").textContent,
+            });
+          })()`),
+          "the retranscription never showed under its entry"
+        ).then(JSON.parse);
+        check(
+          "Retranscribe shows its result under the original, with its own Copy, and keeps the page",
+          running === "Retranscribing…" && shown.original === "recovered words" && shown.retry === "Retried words." &&
+            /^Retranscribed .* · cleaned$/.test(shown.head) && shown.copy && shown.range === pageBefore && /^6–/.test(pageBefore),
+          JSON.stringify({ running, shown, pageBefore })
+        );
+        answer = "busy";
+        await js(`${rowWith("recovered words")}.querySelector("button.retranscribe").click(); true`);
+        const refused = await waitFor(
+          () => js(`(() => {
+            const li = ${rowWith("recovered words")};
+            const msg = li.querySelector(".status.err").textContent;
+            const b = li.querySelector("button.retranscribe");
+            return msg && JSON.stringify({ msg, enabled: !b.disabled, label: b.textContent });
+          })()`),
+          "a refused retranscription never said why"
+        ).then(JSON.parse);
+        check(
+          "a refused retranscription says why and gives the button back",
+          /Another retranscription is still running/.test(refused.msg) && refused.enabled && refused.label === "Retranscribe",
+          JSON.stringify(refused)
+        );
+      } finally {
+        finishRetry();
+        ipcMain.removeHandler("history:retranscribe");
+        registerHandler("history:retranscribe", realRetranscribe);
+      }
+
+      // Copy retranscription copies the retranscription, not the original.
+      const realCopy = invokeHandlers.get("transcript:copy");
+      const copied = [];
+      ipcMain.removeHandler("transcript:copy");
+      registerHandler("transcript:copy", async (event, text) => {
+        copied.push(text);
+        return { ok: true };
+      });
+      try {
+        await js(`${rowWith("recovered words")}.querySelector("button.retry-copy").click(); true`);
+        await waitFor(() => copied.length > 0, "Copy retranscription never copied");
+      } finally {
+        ipcMain.removeHandler("transcript:copy");
+        registerHandler("transcript:copy", realCopy);
+      }
+      check(
+        "Copy retranscription copies the retranscribed text, not the original",
+        JSON.stringify(copied) === JSON.stringify(["Retried words."]),
+        JSON.stringify(copied)
+      );
+
+      // A failed and a cancelled retranscription each say what happened, and
+      // offer no text to copy.
+      const outcome = async (retry, message) => {
+        history.setRetry(olderEntry.id, { seq: Date.now() + Math.random(), at: new Date().toISOString(), ...retry });
+        win.webContents.send("history:changed", { updated: true });
+        return waitFor(
+          () => js(`(() => {
+            const li = ${rowWith("recovered words")};
+            const head = li?.querySelector(".retry-head")?.textContent || "";
+            return head.includes(${JSON.stringify(retry.status === "failed" ? "failed" : "cancelled")}) && JSON.stringify({
+              head, text: !!li.querySelector(".retry-text"), copy: !!li.querySelector("button.retry-copy"),
+              original: li.querySelector(".text").textContent,
+            });
+          })()`),
+          message
+        ).then(JSON.parse);
+      };
+      const failedView = await outcome({ status: "failed", error: "service down" }, "a failed retranscription never said so");
+      const cancelledView = await outcome({ status: "cancelled" }, "a cancelled retranscription never said so");
+      check(
+        "failed and cancelled retranscriptions say what happened, keep the original, and offer nothing to copy",
+        /failed: service down$/.test(failedView.head) && /cancelled by a new dictation/.test(cancelledView.head) &&
+          !failedView.text && !failedView.copy && !cancelledView.text && !cancelledView.copy &&
+          failedView.original === "recovered words" && cancelledView.original === "recovered words",
+        JSON.stringify({ failedView, cancelledView })
+      );
+
+      // Two Plays in a row, the first one's recording arriving last: only
+      // the second plays, and the late one never becomes a stray player.
+      const ecoleEntry = history.list().find((e) => e.text === "École ΟΔΟΣ notes");
+      smokeStore.save(ecoleEntry.id, tone, { limits: { maxAgeDays: 30, maxMegabytes: 1024 } });
+      win.webContents.send("history:changed", { updated: true });
+      await waitFor(() => js(`!!${rowWith("École ΟΔΟΣ notes")}?.querySelector("button.play")`), "the second kept recording never offered Play");
+      const realAudioGet = invokeHandlers.get("history:audio-get");
+      let releaseFirst;
+      const firstHeld = new Promise((resolve) => (releaseFirst = resolve));
+      ipcMain.removeHandler("history:audio-get");
+      registerHandler("history:audio-get", async (event, id) => {
+        const answer = await realAudioGet(event, id);
+        if (id === olderEntry.id) await firstHeld;
+        return answer;
+      });
+      let overlap;
+      try {
+        await js(`${rowWith("recovered words")}.querySelector("button.play").click(); true`);
+        await sleep(100);
+        await js(`${rowWith("École ΟΔΟΣ notes")}.querySelector("button.play").click(); true`);
+        await waitFor(() => js(`!!${rowWith("École ΟΔΟΣ notes")}.querySelector("audio.player")`), "the second Play never loaded");
+        releaseFirst();
+        await sleep(300);
+        overlap = await js(`JSON.stringify({
+          players: document.querySelectorAll("audio").length,
+          inSecond: !!${rowWith("École ΟΔΟΣ notes")}.querySelector("audio.player"),
+          inFirst: !!${rowWith("recovered words")}.querySelector("audio.player"),
+        })`).then(JSON.parse);
+      } finally {
+        releaseFirst();
+        ipcMain.removeHandler("history:audio-get");
+        registerHandler("history:audio-get", realAudioGet);
+      }
+      check(
+        "a Play answered after a newer Play is dropped: one player, in the newer entry",
+        overlap.players === 1 && overlap.inSecond && !overlap.inFirst,
+        JSON.stringify(overlap)
+      );
+    } finally {
+      recordings.getStore = realGetStore;
+      dialog.showSaveDialog = realSaveDialog;
+    }
     await searchFor("");
 
     // 4. Roving tabindex seated before any interaction.

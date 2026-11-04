@@ -158,11 +158,20 @@ test("the always-visible History section stays live (no active-tab guard)", () =
   // for the whole session. Pins the call sites, not renderHistory itself.
   const normalized = js.replace(/\s+/g, " ");
   // The reset-to-newest is part of the pinned contract: a fresh dictation
-  // must always land on the visible page, wherever the pager was left.
+  // must always land on the visible page, wherever the pager was left. A
+  // change to entries already listed ({ updated: true }: a retranscription,
+  // a recording kept or pruned, #343) keeps the page instead.
   assert.match(
     normalized,
-    /earheart\.on\("history:changed", \(\) => \{ historyPage = 0; renderHistory\(\)/,
-    "history:changed must reset to the newest page and rerender unconditionally"
+    /earheart\.on\("history:changed", \(change\) => \{ if \(!change\?\.updated\) historyPage = 0; renderHistory\(\);/,
+    "history:changed must rerender unconditionally, resetting to the newest page unless the change is an update"
+  );
+  // And the one sender that announces a new entry doesn't mark it an update.
+  const pipelineJs = fs.readFileSync(path.join(__dirname, "..", "main", "pipeline.js"), "utf8");
+  assert.match(
+    pipelineJs,
+    /history\.add\([^\n]*\n\s*windows\.sendToSettings\("history:changed"\);/,
+    "a new dictation's history:changed must carry no { updated } so Settings shows the newest page"
   );
   const init = js.slice(js.lastIndexOf("(async () =>"));
   assert.ok(
@@ -814,10 +823,12 @@ test("idle unload is clamped to the field's range, and blank still means never",
 });
 
 test("Save names each limit it stored differently from what was typed", () => {
-  const adjustments = (maxSeconds, idle, saved, edited = {}) => {
+  const adjustments = (maxSeconds, idle, saved, edited = {}, rec = ["", "", 30, 1024]) => {
     const elements = {
       "max-seconds": { value: maxSeconds, ...inputRange("max-seconds") },
       "idle-unload": { value: idle, ...inputRange("idle-unload") },
+      "recordings-days": { value: rec[0], ...inputRange("recordings-days") },
+      "recordings-mb": { value: rec[1], ...inputRange("recordings-mb") },
     };
     const sent = new Map(Object.values(elements).map((el) => [el, { value: el.value }]));
     for (const [id, value] of Object.entries(edited)) elements[id].value = value;
@@ -829,6 +840,7 @@ test("Save names each limit it stored differently from what was typed", () => {
     return [...context.limitAdjustments({
       audio: { maxRecordingSeconds: saved[0] },
       engines: { idleUnloadMinutes: saved[1] },
+      recordings: { maxAgeDays: rec[2], maxMegabytes: rec[3] },
     }, sent)];
   };
   assert.deepStrictEqual(adjustments("-5", "9999", [10, 240]), [
@@ -841,6 +853,21 @@ test("Save names each limit it stored differently from what was typed", () => {
   assert.deepStrictEqual(adjustments("", "", [300, 0]), []);
   // Later edits aren't normalization of the values that Save actually sent.
   assert.deepStrictEqual(adjustments("600", "2", [600, 2], { "max-seconds": "300", "idle-unload": "10" }), []);
+  // The recording limits (#343) report the same way.
+  assert.deepStrictEqual(adjustments("300", "0", [300, 0], {}, ["0", "99999", 1, 10240]), [
+    "Delete recordings after set to 1 days (allowed 1–365)",
+    "Keep at most set to 10240 MB (allowed 50–10240)",
+  ]);
+});
+
+test("the recording limit fields offer exactly the range main clamps to", () => {
+  const settingsJs = fs.readFileSync(path.join(__dirname, "..", "main", "settings.js"), "utf8");
+  for (const [id, key] of [["recordings-days", "maxAgeDays"], ["recordings-mb", "maxMegabytes"]]) {
+    const match = settingsJs.match(new RegExp(`section: "recordings", key: "${key}", min: (\\d+), max: (\\d+)`));
+    assert.ok(match, key);
+    const range = inputRange(id);
+    assert.deepStrictEqual([String(range.min), String(range.max)], [match[1], match[2]], id);
+  }
 });
 
 test("the overlay's recording cap accepts exactly the max-seconds field's range", () => {

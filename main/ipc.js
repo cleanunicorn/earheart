@@ -1,6 +1,6 @@
 // IPC handlers backing Settings, the setup wizard and transcript corrections.
 
-const { ipcMain, app, shell } = require("electron");
+const { ipcMain, app, shell, dialog, BrowserWindow } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const settings = require("./settings");
@@ -9,6 +9,7 @@ const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { deliverText } = require("./output/single-line");
 const history = require("./history");
+const recordings = require("./recordings");
 const windows = require("./windows");
 const route = require("./services/route");
 const engines = require("./engines");
@@ -258,7 +259,7 @@ function wrap(fn, describe = (err) => err.message) {
   };
 }
 
-function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {}, onHistoryEntryDeleted = () => {} }) {
+function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {}, onHistoryEntryDeleted = () => {}, retranscribe = async () => ({ ok: false, error: "unavailable" }) }) {
   onCleanupDownloaded = completed;
   // Custom models reach the registry through the settings themselves
   // (engines/catalog.js, bound in main.js), not through this layer: the saves
@@ -685,7 +686,19 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     if (request !== undefined && (request === null || typeof request !== "object")) {
       throw new TypeError("The History search request is malformed.");
     }
-    return { ok: true, ...history.search(request) };
+    const page = history.search(request);
+    // Which entries have a kept recording (#343): "kept", "unreadable", or
+    // none — from the file header and the key, without decrypting.
+    // A store that can't answer marks nothing: search itself never fails
+    // over audio.
+    let audio = {};
+    try {
+      audio = recordings.getStore().availability(page.entries.map((entry) => entry.id));
+    } catch (err) {
+      logger.warn("could not check kept recordings:", err.message);
+    }
+    const entries = page.entries.map((entry) => (audio[entry.id] ? { ...entry, audio: audio[entry.id] } : entry));
+    return { ok: true, ...page, entries };
   }));
   // Delete one entry by id: { ok: true, removed } or { ok: false, error } —
   // a failed write keeps the entry (#287's rule, per entry), and Settings
@@ -699,6 +712,11 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
       // "Copy last transcription" must not offer the deleted words.
       tray.refresh();
     }
+    // Its kept recording goes with it (#343) — also when the entry was
+    // already gone. A recording that can't be deleted now (held open) is an
+    // orphan the next prune deletes; Settings says so instead of implying
+    // it is gone.
+    if (result.ok && !recordings.getStore().remove(id)) return { ...result, audioError: "EBUSY" };
     return result;
   });
   // { ok: true } or { ok: false, error }: a failed delete leaves the
@@ -709,6 +727,53 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     if (result.ok) onHistoryCleared();
     // "Copy last transcription" must go disabled with nothing left to copy.
     tray.refresh();
+    // And so is every kept recording (#343), the key last (audio-store.js).
+    if (result.ok) {
+      const audio = recordings.getStore().clear();
+      if (!audio.ok) return { ...result, audioError: audio.error };
+    }
+    return result;
+  });
+
+  /* ---- Kept recordings (#343) ---- */
+
+  // The decrypted WAV of entry `id`, for the History player: { ok: true,
+  // wav } or { ok: false, error } — "missing", "unreadable", "insecure" or a
+  // file-system code. Only for an entry still in History.
+  ipcMain.handle("history:audio-get", (event, id) => {
+    if (!history.isValidId(id) || !history.list().some((entry) => entry.id === id)) return { ok: false, error: "missing" };
+    return recordings.getStore().read(id);
+  });
+  // Save entry `id`'s recording as a WAV where the user picks: { ok: true },
+  // { ok: false, cancelled: true }, or { ok: false, error }. The dialog asks
+  // first, so a recording that can't be read fails before it.
+  ipcMain.handle("history:audio-export", async (event, id) => {
+    if (!history.isValidId(id)) return { ok: false, error: "missing" };
+    const entry = history.list().find((item) => item.id === id);
+    if (!entry) return { ok: false, error: "missing" };
+    const audio = recordings.getStore().read(id);
+    if (!audio.ok) return audio;
+    const stamp = String(entry.at || new Date().toISOString()).slice(0, 19).replace(/[:T]/g, "-");
+    const choice = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
+      title: "Export recording",
+      defaultPath: path.join(app.getPath("downloads"), `earheart-${stamp}.wav`),
+      filters: [{ name: "WAV audio", extensions: ["wav"] }],
+    });
+    if (choice.canceled || !choice.filePath) return { ok: false, cancelled: true };
+    return recordings.exportWav(audio.wav, choice.filePath);
+  });
+  // Transcribe entry `id`'s recording again (pipeline.retranscribe): never
+  // pastes; the result is stored beside the original as entry.retry.
+  ipcMain.handle("history:retranscribe", async (event, id) => {
+    if (!history.isValidId(id)) return { ok: false, error: "missing" };
+    return retranscribe(id);
+  });
+  // { secure, reason, key, count, bytes, lastError } for Settings.
+  ipcMain.handle("recordings:status", () => recordings.getStore().status());
+  // Delete every kept recording and the key; History's text stays.
+  ipcMain.handle("recordings:clear", () => {
+    const result = recordings.getStore().clear();
+    windows.sendToSettings("history:changed", { updated: true });
     return result;
   });
 

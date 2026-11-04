@@ -446,7 +446,8 @@ select {
    whose own gap should be the only spacing; grid margins aren't absorbed by
    gap, so the non-last field would push its row taller than its neighbour. */
 #cleanup-custom-fields > .field,
-#tab-advanced .grid-2 > .field {
+#tab-advanced .grid-2 > .field,
+#recordings-card .grid-2 > .field {
   margin-bottom: 0;
 }
 
@@ -1177,12 +1178,17 @@ input[type="range"]:focus-visible {
 
 #history-list .actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
 }
 
 #history-list .copy,
 #history-list .more,
-#history-list .delete {
+#history-list .delete,
+#history-list .play,
+#history-list .export,
+#history-list .retranscribe {
   padding: 3px 11px;
   font-size: 12px;
   font-family:
@@ -1191,6 +1197,46 @@ input[type="range"]:focus-visible {
     "Segoe UI",
     sans-serif;
   letter-spacing: normal;
+}
+
+/* A kept recording's player (#343): the platform's own controls — play,
+   pause, seek — across the card, between the words and the meta row. */
+#history-list .player {
+  display: block;
+  width: 100%;
+  height: 32px;
+  margin-top: 9px;
+}
+
+/* The latest retranscription sits under the original, set apart by a seam
+   so it never reads as a replacement for it. */
+#history-list .retry {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--seam);
+}
+
+#history-list .retry-head {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+}
+
+#history-list .retry-text {
+  margin-top: 5px;
+  line-height: 1.5;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#history-list .retry-copy {
+  margin-top: 7px;
+}
+
+.recordings-foot {
+  margin-top: 10px;
 }
 
 /* Sits under the cards, so it shares their measure. */

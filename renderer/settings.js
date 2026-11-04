@@ -272,6 +272,7 @@ function populate() {
   $("cleanup-model").value = current.cleanup.model;
   populateCleanupStyle();
   $("cleanup-dictionary").value = (current.cleanup.dictionary || []).join("\n");
+  $("cleanup-aliases").value = formatAliases(current.cleanup.aliases);
   $("cleanup-prompt").value = current.cleanup.systemPrompt;
   selectEngine("cleanup", current.cleanup.engine);
   renderKeyStorage();
@@ -297,6 +298,19 @@ function populate() {
     $("wayland-note").style.display = "none";
     $("pause-wayland-note").style.display = "none";
     $("discard-wayland-note").style.display = "none";
+  }
+}
+
+// The Always replace textarea as records. Never throws, since every form
+// comparison calls collect(): text that doesn't parse is carried as it is,
+// so it still counts as an unsaved edit, and saveSettings refuses it with
+// parseAliases' message before anything is sent.
+function collectAliases() {
+  const text = $("cleanup-aliases").value;
+  try {
+    return parseAliases(text);
+  } catch {
+    return { unparsed: text };
   }
 }
 
@@ -352,6 +366,7 @@ function collect() {
         .value.split("\n")
         .map((t) => t.trim())
         .filter(Boolean),
+      aliases: collectAliases(),
       systemPrompt: $("cleanup-prompt").value,
     },
     audio: {
@@ -887,6 +902,32 @@ function applySettingsChange({ previous, current: saved }) {
     baseline.dictionary = [...saved.dictionary];
     flipped.push("Dictionary updated with saved spellings.");
   }
+  if (Array.isArray(saved.aliases) && JSON.stringify(previous.aliases) !== JSON.stringify(saved.aliases)) {
+    // Another window (the correction window) added aliases. Append the ones
+    // the field doesn't have yet as new lines and never rewrite what the user
+    // typed, even when it doesn't parse yet; the save merges by heard form.
+    const field = $("cleanup-aliases");
+    const caret = [field.selectionStart, field.selectionEnd, field.selectionDirection];
+    const focused = document.activeElement === field;
+    const shown = new Set();
+    for (const line of field.value.split("\n")) {
+      const heardPart = line.split(/->|→/)[0];
+      for (const heard of heardPart.split(",")) if (heard.trim()) shown.add(aliasKey(heard));
+    }
+    const before = new Set((baseline.aliases || []).flatMap((r) => r.heard.map(aliasKey)));
+    const added = saved.aliases
+      .map((r) => ({ term: r.term, heard: r.heard.filter((h) => !before.has(aliasKey(h)) && !shown.has(aliasKey(h))) }))
+      .filter((r) => r.heard.length);
+    if (added.length) {
+      const text = formatAliases(added);
+      field.value = field.value.trim() ? `${field.value.replace(/\n+$/, "")}\n${text}` : text;
+      if (focused) field.setSelectionRange(...caret);
+      flipped.push("Always replace updated with saved aliases.");
+    }
+    const parsed = collectAliases();
+    current.cleanup.aliases = Array.isArray(parsed) ? mergeAliases(baseline.aliases, parsed, saved.aliases) : saved.aliases;
+    baseline.aliases = saved.aliases.map((r) => ({ term: r.term, heard: [...r.heard] }));
+  }
   current.overlay = saved.overlay;
   current.customModels = saved.customModels;
   current.updates = {
@@ -1120,6 +1161,14 @@ async function saveSettings() {
   saveButton.disabled = true;
   save.textContent = "Saving…";
   save.className = "status";
+  try {
+    parseAliases($("cleanup-aliases").value);
+  } catch (err) {
+    save.textContent = `Not saved — ${err.message}`;
+    save.className = "status err";
+    saveButton.disabled = false;
+    return;
+  }
   let next;
   try {
     next = await downloadSelectedModels(save);

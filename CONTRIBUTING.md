@@ -264,6 +264,8 @@ renderer/                overlay (mic capture → 16 kHz WAV, live transcript
   settings-sync.js       forms follow settings saved while open (settings + wizard)
   correction.js          selected-range spelling edits and explicit corrected copy
   vocabulary.js          bounded remember operation + concurrent dictionary merge
+  aliases.js             Always replace: alias records, deterministic replacement,
+                         remember/merge/parse (shared with main and the pipeline)
   permission-status.js   status copy after "Fix auto-paste permission"
 stt-server/              Python: FastAPI + onnx-asr Parakeet server (optional)
 ```

@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const settings = require("./settings");
 const { mergeVocabulary, rememberVocabulary } = require("../renderer/vocabulary");
+const { mergeAliases, rememberAlias, normalizeAliases } = require("../renderer/aliases");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { deliverText } = require("./output/single-line");
@@ -150,6 +151,20 @@ const SHARED_FIELDS = [
     }),
   },
   {
+    // Explicit aliases (#335), merged per heard form like the dictionary is
+    // per term: the correction window adds them while Settings may be open.
+    name: "aliases",
+    type: "array",
+    read: (cfg) => cfg.cleanup?.aliases || [],
+    write: (cfg, live, seen) => ({
+      ...cfg,
+      cleanup: {
+        ...cfg.cleanup,
+        aliases: mergeAliases(seen, cfg.cleanup?.aliases, live.cleanup?.aliases),
+      },
+    }),
+  },
+  {
     name: "outputMode",
     type: "string",
     // Compared as the mode delivery performs, so retiring the legacy
@@ -202,6 +217,7 @@ function formSyncFields(cfg) {
   return {
     ...Object.fromEntries(FORM_SYNC_KEYS.map((key) => [key, cfg[key]])),
     dictionary: cfg.cleanup?.dictionary || [],
+    aliases: cfg.cleanup?.aliases || [],
   };
 }
 
@@ -658,12 +674,21 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   ipcMain.handle("correction:get", () => ({
     text: windows.getCorrectionText(), cleanupEnabled: settings.get().cleanup.enabled,
   }));
-  ipcMain.handle("correction:remember", wrap((event, spelling) => {
+  // { spelling, heard? }: the spelling joins the dictionary; with `heard`
+  // (the selected words, "Always replace" checked) it also becomes that
+  // phrase's alias (#335). Both are checked before either is saved, so a
+  // conflicting alias saves nothing. A bare string is the spelling alone.
+  ipcMain.handle("correction:remember", wrap((event, request) => {
+    const { spelling, heard } = typeof request === "string" ? { spelling: request } : (isPlainObject(request) ? request : {});
+    if (heard !== undefined && typeof heard !== "string") throw new Error("Select the words to replace.");
     const cfg = settings.get();
     const dictionary = rememberVocabulary(cfg.cleanup.dictionary, spelling);
-    settings.save({ ...cfg, cleanup: { ...cfg.cleanup, dictionary } });
+    const aliases = heard === undefined
+      ? normalizeAliases(cfg.cleanup.aliases)
+      : rememberAlias(cfg.cleanup.aliases, heard, spelling);
+    settings.save({ ...cfg, cleanup: { ...cfg.cleanup, dictionary, aliases } });
     onSettingsChanged?.();
-    return { ok: true, cleanupEnabled: cfg.cleanup.enabled };
+    return { ok: true, cleanupEnabled: cfg.cleanup.enabled, alias: heard !== undefined };
   }));
   ipcMain.handle("transcript:copy", wrap(async (event, text) => {
     if (!canCopy()) throw new Error("Wait for the current dictation to finish processing before copying a transcript.");

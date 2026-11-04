@@ -271,3 +271,38 @@ test("a hand-edited settings file can't load an out-of-range limit", (t) => {
   assert.strictEqual(fs.readFileSync(file, "utf8"), raw);
   assert.deepStrictEqual(limits(settings.DEFAULTS), { maxSeconds: 600, idle: 2 });
 });
+
+// #335: aliases are a new key beside the flat dictionary. A file from before
+// them loads with every dictionary term as it was; a hand-edited alias list
+// is made valid, deterministically, and the result is stable on reload.
+test("a legacy dictionary loads unchanged and stored aliases are normalized idempotently", (t) => {
+  const dir = makeSettingsDir(t);
+  const dictionary = ["Earheart", "sherpa-onnx", "Kubernetes"];
+  fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ cleanup: { dictionary } }));
+  const legacy = loadSettings(dir);
+  assert.deepStrictEqual(legacy.get().cleanup.dictionary, dictionary);
+  assert.deepStrictEqual(legacy.get().cleanup.aliases, []);
+
+  warnings.length = 0;
+  fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({
+    cleanup: {
+      dictionary,
+      aliases: [
+        { term: "Earheart", heard: ["air heart"] },
+        { term: "Airheart", heard: ["Air Heart", "airhart"] },
+        { term: "", heard: ["junk"] },
+      ],
+    },
+  }));
+  const settings = loadSettings(dir);
+  const expected = [
+    { term: "Earheart", heard: ["air heart"] },
+    { term: "Airheart", heard: ["airhart"] },
+  ];
+  assert.deepStrictEqual(settings.get().cleanup.aliases, expected);
+  assert.deepStrictEqual(settings.get().cleanup.dictionary, dictionary);
+  assert.ok(warnings.some((w) => /dropped a saved dictionary alias: .*already becomes “Earheart”/.test(w)), warnings.join("\n"));
+  settings.save(settings.get());
+  assert.deepStrictEqual(readFile(dir).cleanup.aliases, expected);
+  assert.deepStrictEqual(loadSettings(dir).get().cleanup.aliases, expected);
+});

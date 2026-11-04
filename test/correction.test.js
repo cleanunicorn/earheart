@@ -72,7 +72,8 @@ test("replacement preserves leading/trailing selected spaces, newlines and Unico
   e.type(" kubectl ");
   await e.click("remember");
   assert.equal(e.transcript.value, "🚀 Run \t\nkubectl \n next.");
-  assert.equal(e.calls.find((c) => c.channel === "correction:remember").payload, "kubectl");
+  // JSON: the payload is built in the script's own vm realm.
+  assert.equal(JSON.stringify(e.calls.find((c) => c.channel === "correction:remember").payload), JSON.stringify({ spelling: "kubectl" }));
 });
 
 test("an unchanged prefilled spelling does not remove a trailing word boundary", async () => {
@@ -296,4 +297,30 @@ test("clearing a spelling cancels the pending replacement and allows copying", a
   assert.equal(e.nodes.get("remember").disabled, true);
   await e.click("copy");
   assert.equal(e.calls.find((c) => c.channel === "transcript:copy").payload, "Run cube cuddle next.");
+});
+
+test("Always replace remembers the selected words as an alias of the spelling", async () => {
+  const e = await editor({ cleanupEnabled: false });
+  e.select(4, 15);
+  e.type("kubectl");
+  e.nodes.get("always-replace").checked = true;
+  await e.click("remember");
+  assert.equal(e.transcript.value, "Run kubectl next.");
+  const call = e.calls.find((c) => c.channel === "correction:remember");
+  assert.equal(JSON.stringify(call.payload), JSON.stringify({ spelling: "kubectl", heard: "cube cuddle" }));
+  assert.match(e.nodes.get("dictionary-note").textContent, /“cube cuddle” will become “kubectl”/);
+  assert.equal(e.nodes.get("always-replace").checked, false, "the next correction starts unticked");
+});
+
+test("a refused alias keeps the draft and replaces nothing", async () => {
+  const e = await editor({
+    invoke: (channel) => channel === "correction:remember"
+      ? { ok: false, error: "“cube cuddle” already becomes “kubectl”. Remove it there first." } : undefined,
+  });
+  e.select(4, 15);
+  e.type("kube");
+  e.nodes.get("always-replace").checked = true;
+  await e.click("remember");
+  assert.equal(e.transcript.value, "Run cube cuddle next.");
+  assert.match(e.nodes.get("status").textContent, /already becomes “kubectl”.*Replace only/);
 });

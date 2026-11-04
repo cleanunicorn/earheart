@@ -876,6 +876,18 @@ test("resolveCleanup leaves the prompt unchanged for an empty or blank dictionar
   );
 });
 
+test("resolveCleanup adds alias terms to the vocabulary once, beside the dictionary", () => {
+  const base = { systemPrompt: "Base prompt.", style: "custom", custom: {} };
+  const prompt = resolveCleanup({
+    ...base,
+    dictionary: ["Earheart"],
+    aliases: [{ term: "Earheart", heard: ["air heart"] }, { term: "kubectl", heard: ["cube cuddle"] }],
+  }).systemPrompt;
+  assert.strictEqual(prompt.match(/^- Earheart$/gm).length, 1);
+  assert.match(prompt, /^- kubectl$/m);
+  assert.strictEqual(DEFAULTS.cleanup.aliases.length, 0);
+});
+
 /* ---------------- start on boot (autostart) ---------------- */
 
 test("start-on-boot defaults to off and survives the merge both ways", () => {

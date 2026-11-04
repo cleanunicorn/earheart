@@ -13,6 +13,7 @@ function sharedBaseline(cfg) {
     outputMode: displayedOutputMode(cfg.output),
     remind: cfg.updates?.remind !== false,
     dictionary: [...(cfg.cleanup?.dictionary || [])],
+    aliases: (cfg.cleanup?.aliases || []).map((r) => ({ term: r.term, heard: [...r.heard] })),
   };
 }
 

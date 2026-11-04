@@ -80,6 +80,7 @@ async function main() {
     document.getElementById("transcript").dispatchEvent(new Event("select"));
     document.getElementById("spelling").value = "kubectl";
     document.getElementById("spelling").dispatchEvent(new Event("input"));
+    document.getElementById("always-replace").checked = true;
     document.getElementById("spelling").focus();
     "";
   `);

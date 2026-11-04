@@ -31,6 +31,7 @@ function updateActions() {
   $("undo").disabled = busy || !replacements.length;
   transcript.readOnly = busy || !ready;
   spelling.disabled = busy || !ready;
+  $("always-replace").disabled = busy || !ready;
   $("cancel").disabled = busy;
   if (ready) {
     const dirty = transcript.value !== original || Boolean(pendingSpelling());
@@ -76,16 +77,21 @@ async function replace(remember) {
   updateActions();
   try {
     if (remember) {
-      const result = await earheart.invoke("correction:remember", replacement);
+      const always = $("always-replace").checked;
+      const heard = chosen.text.slice(chosen.start, chosen.end).trim();
+      const result = await earheart.invoke("correction:remember", always ? { spelling: replacement, heard } : { spelling: replacement });
       if (!result.ok) throw new Error(result.error);
-      $("dictionary-note").textContent = result.cleanupEnabled
-        ? "Remembered spellings guide future cleanup. Manage them in Settings → Dictionary."
-        : "Cleanup is off. This spelling is saved, but will only guide future dictations when cleanup is enabled.";
+      $("dictionary-note").textContent = always
+        ? `“${heard}” will become “${replacement}” in future dictations. Manage aliases in Settings → Cleanup → Always replace.`
+        : result.cleanupEnabled
+          ? "Remembered spellings guide future cleanup. Manage them in Settings → Dictionary."
+          : "Cleanup is off. This spelling is saved, but will only guide future dictations when cleanup is enabled.";
     }
     transcript.value = chosen.text.slice(0, chosen.start) + replacement + chosen.text.slice(chosen.end);
     if (transcript.value !== chosen.text) replacements.push({ before: chosen.text, after: transcript.value, start: chosen.start, end: chosen.end });
     selection = null;
     spelling.value = "";
+    $("always-replace").checked = false;
     $("status").textContent = remember ? `Replaced and remembered “${replacement}”.` : "Replaced this occurrence.";
     transcript.focus();
     transcript.setSelectionRange(chosen.start + replacement.length, chosen.start + replacement.length);
@@ -170,8 +176,8 @@ updateActions();
     original = transcript.value;
     ready = true;
     $("dictionary-note").textContent = data.cleanupEnabled
-      ? "Remember spellings to guide future cleanup. No automatic replacements or model retraining."
-      : "Cleanup is off. Remembered spellings take effect when cleanup is enabled.";
+      ? "Remember spellings to guide future cleanup, or tick Always replace for an exact rule. No model retraining."
+      : "Cleanup is off. Remembered spellings take effect when cleanup is enabled; Always replace works either way.";
     if (!data.text) $("status").textContent = "No saved transcript yet. Enable History and finish a dictation first.";
     updateActions();
     transcript.focus();

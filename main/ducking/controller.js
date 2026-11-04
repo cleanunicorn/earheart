@@ -236,6 +236,8 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
       // finds the device "elsewhere" and leaves it to be recovered when back.
       held = { device: cur.device, prior: cur.raw, target: targetRaw };
       status.state = "lowered";
+      status.detail = "";
+      status.lastError = "";
       return;
     }
     if (!b.matches(after.raw, targetRaw)) {

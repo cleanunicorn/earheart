@@ -4,6 +4,7 @@
 const { app, session, Notification } = require("electron");
 const settings = require("./settings");
 const history = require("./history");
+const recordings = require("./recordings");
 const windows = require("./windows");
 const pipeline = require("./pipeline");
 const hotkeys = require("./hotkeys");
@@ -128,6 +129,7 @@ function main() {
       onCleanupDownloaded: pipeline.onCleanupDownloaded,
       onHistoryCleared: () => pipeline.clearUndelivered(),
       onHistoryEntryDeleted: (id) => pipeline.clearUndelivered(id),
+      retranscribe: (id) => pipeline.retranscribe(id),
       applyHotkeys,
       canCorrect: () => pipeline.getState() === "idle",
       canCopy: () => pipeline.getState() !== "processing",
@@ -141,8 +143,13 @@ function main() {
       onSettingsChanged: () => {
         pipeline.onSettingsChanged();
         updates.onSettingsChanged();
+        // New limits apply at once (#343).
+        recordings.prune(settings.get());
       },
     });
+    // Kept recordings (#343) past their limits, or whose History entry is
+    // gone, are deleted now and hourly — whether or not keeping is still on.
+    recordings.startPruning(settings.get, () => windows.sendToSettings("history:changed"));
     windows.createOverlay({ onOverlayRendererGone: pipeline.onOverlayRendererGone });
     tray.init(app, pipeline);
     // macOS: an update leaves auto-paste's permission grants stale; repair

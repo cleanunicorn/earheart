@@ -27,7 +27,7 @@ function getStore() {
   store = createAudioStore({
     dir: () => path.join(app.getPath("userData"), "audio"),
     // safeStorage answers only after `ready`; before it, nothing is secure.
-    safeStorage: () => (app.isReady() ? electron.safeStorage : null),
+    safeStorage: () => (typeof app?.isReady === "function" && app.isReady() ? electron.safeStorage ?? null : null),
     log: logger,
   });
   return store;

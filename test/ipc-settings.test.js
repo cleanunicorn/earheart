@@ -14,20 +14,24 @@ const Module = require("node:module");
 
 const ipcPath = require.resolve("../main/ipc");
 const settingsPath = require.resolve("../main/settings");
+const recordingsPath = require.resolve("../main/recordings");
 const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(ipcPath)] });
 
 // `realHistory` loads the real main/history.js against this test's userData
 // instead of the stub, for the handlers that search and delete entries.
-function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy = canCorrect, clearResult = { ok: true }, realHistory = false } = {}) {
+function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy = canCorrect, clearResult = { ok: true }, realHistory = false, safeStorage = null, saveDialog = async () => ({ canceled: true }), retranscribe } = {}) {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-ipc-"));
   t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
   const handlers = {};
   const calls = { broadcasts: [], trayRefresh: 0, historyCleared: 0, deliveries: [], entriesDeleted: [], corrections: [] };
   const stubs = {
     [resolveFrom("electron")]: {
-      app: { getPath: () => userData, getVersion: () => "0.35.1" },
+      app: { getPath: () => userData, getVersion: () => "0.35.1", isReady: () => true },
       ipcMain: { handle: (channel, fn) => { handlers[channel] = fn; }, on() {} },
       shell: {},
+      safeStorage,
+      dialog: { showSaveDialog: (win, opts) => saveDialog(opts) },
+      BrowserWindow: { fromWebContents: () => null },
     },
     [resolveFrom("./engines")]: {
       registry: {
@@ -49,6 +53,7 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
       openCorrection: (entry) => calls.corrections.push(entry),
       setCorrectionDirty() {},
       closeWizard() {},
+      sendToSettings: (channel) => calls.broadcasts.push({ channel }),
     },
     [resolveFrom("./tray")]: {
       refresh: () => {
@@ -84,8 +89,10 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
   }
   delete require.cache[ipcPath];
   delete require.cache[settingsPath];
+  delete require.cache[recordingsPath];
   let settings;
   let history;
+  let recordings;
   try {
     if (realHistory) delete require.cache[historyPath];
     settings = require(settingsPath);
@@ -96,11 +103,14 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
       canCopy,
       onHistoryCleared: () => { calls.undeliveredCleared = (calls.undeliveredCleared || 0) + 1; },
       onHistoryEntryDeleted: (entry) => calls.entriesDeleted.push(entry),
+      ...(retranscribe ? { retranscribe } : {}),
     });
     if (realHistory) history = require.cache[historyPath].exports;
+    recordings = require.cache[recordingsPath].exports;
   } finally {
     delete require.cache[ipcPath];
     delete require.cache[settingsPath];
+    delete require.cache[recordingsPath];
     if (realHistory) {
       if (savedHistory) require.cache[historyPath] = savedHistory;
       else delete require.cache[historyPath];
@@ -111,7 +121,7 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
     }
   }
   const file = path.join(userData, "settings.json");
-  return { handlers, settings, calls, history, userData, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
+  return { handlers, settings, calls, history, recordings, userData, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
 }
 
 // What a form holds when it opens: the settings it spreads on save, and the
@@ -505,4 +515,119 @@ test("cleanup:prompt-offer saves the answer at once and is not offered again", a
 
   const bad = await handlers["cleanup:prompt-offer"]({}, { decision: "maybe" });
   assert.strictEqual(bad.ok, false);
+});
+
+/* ---- Kept recordings (#343) ---- */
+
+function keyring() {
+  return {
+    isEncryptionAvailable: () => true,
+    getSelectedStorageBackend: () => "gnome_libsecret",
+    encryptString: (text) => Buffer.from(`k:${text}`),
+    decryptString: (buf) => buf.toString().slice(2),
+  };
+}
+
+const LIMITS = { maxAgeDays: 30, maxMegabytes: 1024 };
+const WAV = Buffer.from("RIFF\x24\x00\x00\x00WAVEfmt fake audio");
+
+function withRecording(t, opts = {}) {
+  const rig = loadIpc(t, { realHistory: true, safeStorage: keyring(), ...opts });
+  const id = rig.history.add({ text: "kept words" }, HISTORY_CFG);
+  const other = rig.history.add({ text: "no audio" }, HISTORY_CFG);
+  assert.deepStrictEqual(rig.recordings.getStore().save(id, WAV, { limits: LIMITS }), { ok: true });
+  return { ...rig, id, other, file: path.join(rig.userData, "audio", `${id}.wav.enc`) };
+}
+
+test("history:search marks which entries have a kept recording", async (t) => {
+  const { handlers, id, other, file } = withRecording(t);
+  let result = await handlers["history:search"]({}, {});
+  assert.strictEqual(result.entries.find((e) => e.id === id).audio, "kept");
+  assert.strictEqual("audio" in result.entries.find((e) => e.id === other), false);
+  // A file in a format this build can't read is marked unreadable up front.
+  const bytes = fs.readFileSync(file);
+  bytes[4] = 9;
+  fs.writeFileSync(file, bytes);
+  result = await handlers["history:search"]({}, {});
+  assert.strictEqual(result.entries.find((e) => e.id === id).audio, "unreadable");
+});
+
+test("history:audio-get returns the original WAV, and only for an entry in History", async (t) => {
+  const { handlers, id, other } = withRecording(t);
+  const got = await handlers["history:audio-get"]({}, id);
+  assert.strictEqual(got.ok, true);
+  assert.ok(Buffer.from(got.wav).equals(WAV));
+  assert.deepStrictEqual(await handlers["history:audio-get"]({}, other), { ok: false, error: "missing" });
+  assert.deepStrictEqual(await handlers["history:audio-get"]({}, "../../etc"), { ok: false, error: "missing" });
+  assert.deepStrictEqual(await handlers["history:audio-get"]({}, "4a1b2c3d-0000-4000-8000-000000000000"), { ok: false, error: "missing" });
+});
+
+test("history:audio-get reports damaged audio as unreadable", async (t) => {
+  const { handlers, id, file } = withRecording(t);
+  const bytes = fs.readFileSync(file);
+  bytes[bytes.length - 1] ^= 1;
+  fs.writeFileSync(file, bytes);
+  assert.deepStrictEqual(await handlers["history:audio-get"]({}, id), { ok: false, error: "unreadable" });
+});
+
+test("history:audio-export saves the original WAV where the user picks; cancel writes nothing", async (t) => {
+  let answer = { canceled: true };
+  const asked = [];
+  const { handlers, id, other, userData } = withRecording(t, { saveDialog: async (opts) => { asked.push(opts); return answer; } });
+  assert.deepStrictEqual(await handlers["history:audio-export"]({ sender: {} }, id), { ok: false, cancelled: true });
+  assert.match(asked[0].defaultPath, /earheart-.*\.wav$/);
+  const dest = path.join(userData, "export.wav");
+  assert.strictEqual(fs.existsSync(dest), false);
+  answer = { canceled: false, filePath: dest };
+  assert.deepStrictEqual(await handlers["history:audio-export"]({ sender: {} }, id), { ok: true });
+  assert.ok(fs.readFileSync(dest).equals(WAV));
+  // Nothing to export: answered before any dialog.
+  asked.length = 0;
+  assert.deepStrictEqual(await handlers["history:audio-export"]({ sender: {} }, other), { ok: false, error: "missing" });
+  assert.strictEqual(asked.length, 0);
+  // A destination that can't be written says so.
+  answer = { canceled: false, filePath: path.join(userData, "no-such-dir", "x.wav") };
+  assert.deepStrictEqual(await handlers["history:audio-export"]({ sender: {} }, id), { ok: false, error: "ENOENT" });
+});
+
+test("history:delete removes the entry's kept recording too", async (t) => {
+  const { handlers, id, file, recordings } = withRecording(t);
+  assert.ok(fs.existsSync(file));
+  assert.deepStrictEqual(handlers["history:delete"]({}, id), { ok: true, removed: true });
+  assert.strictEqual(fs.existsSync(file), false);
+  assert.strictEqual(recordings.getStore().status().count, 0);
+});
+
+test("history:clear removes every kept recording and the key", async (t) => {
+  const { handlers, userData } = withRecording(t);
+  assert.deepStrictEqual(handlers["history:clear"](), { ok: true });
+  assert.deepStrictEqual(fs.readdirSync(path.join(userData, "audio")), []);
+});
+
+test("recordings:status and recordings:clear: History text stays", async (t) => {
+  const { handlers, history, calls } = withRecording(t);
+  const status = await handlers["recordings:status"]();
+  assert.strictEqual(status.secure, true);
+  assert.strictEqual(status.count, 1);
+  assert.strictEqual(status.key, "ok");
+  assert.deepStrictEqual(await handlers["recordings:clear"](), { ok: true });
+  assert.strictEqual((await handlers["recordings:status"]()).count, 0);
+  assert.strictEqual(history.list().length, 2);
+  assert.ok(calls.broadcasts.some((b) => b.channel === "history:changed"));
+});
+
+test("recordings:status says why without secure storage", async (t) => {
+  const { handlers } = loadIpc(t, { realHistory: true, safeStorage: { ...keyring(), getSelectedStorageBackend: () => "basic_text", isEncryptionAvailable: () => false } });
+  const status = await handlers["recordings:status"]();
+  assert.strictEqual(status.secure, false);
+  assert.match(status.reason, /can't be encrypted/);
+});
+
+test("history:retranscribe hands a valid id to the pipeline and refuses anything else", async (t) => {
+  const seen = [];
+  const { handlers } = loadIpc(t, { realHistory: true, retranscribe: async (id) => { seen.push(id); return { ok: true, stored: true }; } });
+  const id = "4a1b2c3d-0000-4000-8000-000000000000";
+  assert.deepStrictEqual(await handlers["history:retranscribe"]({}, id), { ok: true, stored: true });
+  assert.deepStrictEqual(await handlers["history:retranscribe"]({}, "../x"), { ok: false, error: "missing" });
+  assert.deepStrictEqual(seen, [id]);
 });

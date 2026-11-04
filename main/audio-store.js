@@ -163,9 +163,12 @@ function createAudioStore({ dir, safeStorage, platform = process.platform, now =
   // The data key, unwrapping or (with `create`) making it. Returns
   // { key } or { error: "insecure" | "locked" | "lost" | "no-key" }.
   function loadKey({ create = false } = {}) {
-    if (dataKey) return { key: dataKey };
+    // Asked every time, cached key or not: fail closed means no reads or
+    // writes while the OS secure storage is unavailable, even after a key
+    // was unwrapped earlier in this session.
     const { ss, status } = storage();
     if (!status.secure || !ss) return { error: "insecure" };
+    if (dataKey) return { key: dataKey };
     if (keyProblem) return { error: keyProblem };
     const keyPath = path.join(dir(), KEY_FILE);
     let stored = null;

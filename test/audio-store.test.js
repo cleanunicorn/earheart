@@ -390,3 +390,18 @@ test("a full budget whose oldest recording can't be deleted keeps the new one ou
   assert.deepEqual(h.s.save(ID_B, audio, { limits }), { ok: true }, "once it can be deleted, room is made");
   assert.deepEqual(h.s.availability([ID_A, ID_B]), { [ID_A]: null, [ID_B]: "kept" });
 });
+
+test("secure storage that goes away mid-session stops reads and saves, despite a cached key", (t) => {
+  const h = store(t);
+  assert.deepEqual(h.s.save(ID_A, wav(), { limits: LIMITS }), { ok: true });
+  assert.equal(h.s.read(ID_A).ok, true, "key now cached");
+  h.setSafeStorage(fakeSafeStorage({ backend: "basic_text" }));
+  assert.deepEqual(h.s.read(ID_A), { ok: false, error: "insecure" });
+  assert.deepEqual(h.s.save(ID_B, wav(), { limits: LIMITS }), { ok: false, error: "insecure" });
+  assert.equal(fs.existsSync(path.join(h.dir, ID_B + SUFFIX)), false);
+  assert.deepEqual(h.s.availability([ID_A]), { [ID_A]: "unreadable" });
+  assert.equal(h.s.status().secure, false);
+  // Back again: the same key still works.
+  h.setSafeStorage(fakeSafeStorage());
+  assert.equal(h.s.read(ID_A).ok, true);
+});

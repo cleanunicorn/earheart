@@ -83,7 +83,9 @@ Pruning deletes three kinds of recording, in this order:
 3. the oldest recordings, until the total, including the one about to be
    written, fits the size limit.
 
-A single recording bigger than the whole size limit isn't kept. Pruning runs
+A single recording bigger than the whole size limit isn't kept, and neither
+is a new one when older recordings that would have to go to make room can't
+be deleted (held open): the size limit is never exceeded. Pruning runs
 at startup, every hour, after each save, and whenever settings change. It
 runs whether or not Keep recordings is on, so turning it off never strands
 recordings past their limits.

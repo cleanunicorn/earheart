@@ -1735,7 +1735,9 @@ async function renderRecordingsStatus() {
   if (status.lastError && !["insecure", "locked", "lost"].includes(status.lastError.code)) {
     problems.push(status.lastError.code === "too-large"
       ? "The last recording was bigger than the size limit, so it wasn't kept. Its transcription is in History."
-      : `The last recording couldn't be kept (${status.lastError.code}). Check free disk space; its transcription is in History.`);
+      : status.lastError.code === "over-limit"
+        ? "The last recording wasn't kept: older recordings over the size limit couldn't be deleted (something may be holding them open). Its transcription is in History."
+        : `The last recording couldn't be kept (${status.lastError.code}). Check free disk space; its transcription is in History.`);
   }
   const line = $("recordings-status");
   line.textContent = problems.join(" ");

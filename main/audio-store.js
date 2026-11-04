@@ -253,14 +253,21 @@ function createAudioStore({ dir, safeStorage, platform = process.platform, now =
    * oldest until the total plus `reserve` bytes fits the size limit.
    * Returns the ids removed.
    */
-  function prune({ maxAgeDays, maxMegabytes, keepIds = null, reserve = 0 }) {
+  function prune(limits) {
+    return pruneTo(limits).removed;
+  }
+
+  // prune(), also reporting whether `reserve` more bytes now fit the size
+  // limit: false when a recording that had to go couldn't be deleted (held
+  // open) or the directory couldn't be listed.
+  function pruneTo({ maxAgeDays, maxMegabytes, keepIds = null, reserve = 0 }) {
     const removed = [];
     let list;
     try {
       list = entries();
     } catch (err) {
       log.warn("could not list kept recordings:", err.code || err.message);
-      return removed;
+      return { removed, fits: false };
     }
     const cutoff = now() - maxAgeDays * DAY_MS;
     const live = [];
@@ -278,7 +285,7 @@ function createAudioStore({ dir, safeStorage, platform = process.platform, now =
         total -= item.bytes;
       }
     }
-    return removed;
+    return { removed, fits: total + reserve <= budget };
   }
 
   return {
@@ -286,7 +293,8 @@ function createAudioStore({ dir, safeStorage, platform = process.platform, now =
      * Keep `wav` for History entry `id`. `limits` = { maxAgeDays,
      * maxMegabytes }, `keepIds` = the ids still in History. Never throws:
      * resolves to { ok: true } or { ok: false, error }, where error is
-     * "insecure", "locked", "lost", "too-large", "invalid-id", "deleted" (the
+     * "insecure", "locked", "lost", "too-large", "over-limit" (older
+     * recordings that had to go couldn't be deleted), "invalid-id", "deleted" (the
      * entry left History first; not an error) or a file-system code
      * (ENOSPC, EACCES, …), which status().lastError also reports.
      */
@@ -304,8 +312,10 @@ function createAudioStore({ dir, safeStorage, platform = process.platform, now =
         if (!key) return fail(error);
         const sealed = seal(wav, key, id);
         if (sealed.length > limits.maxMegabytes * MB) return fail("too-large");
-        // Make room first, so the new recording fits the budget it is judged by.
-        prune({ ...limits, keepIds, reserve: sealed.length });
+        // Make room first, so the new recording fits the budget it is judged
+        // by. Room that couldn't be made (an old recording held open) means
+        // this one isn't kept: the limit is the user's, not a suggestion.
+        if (!pruneTo({ ...limits, keepIds, reserve: sealed.length }).fits) return fail("over-limit");
         writeAtomic(fileFor(id), sealed);
         lastError = null;
         return { ok: true };

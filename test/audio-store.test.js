@@ -365,3 +365,28 @@ test("a single remove that fails reports it, and a later prune of the orphan fin
   assert.deepEqual(h.s.prune({ ...LIMITS, keepIds: new Set() }), [ID_A]);
   assert.equal(h.s.status().count, 0);
 });
+
+test("a full budget whose oldest recording can't be deleted keeps the new one out, not over the limit", (t) => {
+  const real = fs;
+  let held = null;
+  const flaky = {
+    ...real,
+    unlinkSync(file) {
+      if (held && String(file).endsWith(held + SUFFIX)) throw Object.assign(new Error("EBUSY"), { code: "EBUSY" });
+      return real.unlinkSync(file);
+    },
+  };
+  const h = store(t, { fs: flaky, now: Date.now() });
+  const audio = wav(5);
+  const size = seal(audio, crypto.randomBytes(32), ID_A).length;
+  const limits = { maxAgeDays: 30, maxMegabytes: (1.5 * size) / (1024 * 1024) }; // room for one
+  assert.deepEqual(h.s.save(ID_A, audio, { limits }), { ok: true });
+  held = ID_A;
+  assert.deepEqual(h.s.save(ID_B, audio, { limits }), { ok: false, error: "over-limit" });
+  assert.equal(h.s.status().count, 1);
+  assert.ok(h.s.status().bytes <= limits.maxMegabytes * 1024 * 1024);
+  assert.equal(h.s.status().lastError.code, "over-limit");
+  held = null;
+  assert.deepEqual(h.s.save(ID_B, audio, { limits }), { ok: true }, "once it can be deleted, room is made");
+  assert.deepEqual(h.s.availability([ID_A, ID_B]), { [ID_A]: null, [ID_B]: "kept" });
+});

@@ -197,19 +197,25 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
       after = await b.write(cur.device, targetRaw);
     } catch (err) {
       fail("could not lower the output volume", err);
-      // The write may have landed (a timeout) or not: look. Unchanged → nothing
-      // is held. Changed → hold what reads back, so the restore's ownership
-      // check matches it. Unreadable → hold the computed target.
+      // The write may have landed (a timeout) or not: look. Still the prior
+      // level → nothing is held. What was asked for → hold that readback.
+      // Unreadable → hold the asked-for level (the restore's exact check
+      // writes only if that is what reads back). Anything else is someone
+      // else's change: leave it, and hold nothing.
       let seen = null;
       try {
         seen = await b.read(cur.device);
       } catch {}
-      if (seen && seen.device === cur.device && b.same(seen.raw, cur.raw)) {
+      const mine = seen && seen.device === cur.device;
+      if (mine && b.same(seen.raw, cur.raw)) {
         clearMarker();
-        skip("could not lower the output volume");
-        return;
+        return skip("could not lower the output volume");
       }
-      held = { device: cur.device, prior: cur.raw, target: seen && seen.device === cur.device ? seen.raw : targetRaw };
+      if (seen && !(mine && b.matches(seen.raw, targetRaw))) {
+        clearMarker();
+        return skip("the volume changed while it was being lowered");
+      }
+      held = { device: cur.device, prior: cur.raw, target: mine ? seen.raw : targetRaw };
       saveMarker(held);
       status.state = "lowered";
       return;
@@ -227,6 +233,12 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
       held = { device: cur.device, prior: cur.raw, target: targetRaw };
       status.state = "lowered";
       return;
+    }
+    if (!b.matches(after.raw, targetRaw)) {
+      // Someone else moved the volume between the set and the readback: it
+      // is theirs now, so nothing is held and the restore will not touch it.
+      clearMarker();
+      return skip("the volume changed while it was being lowered");
     }
     held = { device: cur.device, prior: cur.raw, target: after.raw };
     saveMarker(held);

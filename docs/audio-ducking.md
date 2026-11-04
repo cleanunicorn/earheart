@@ -31,7 +31,9 @@ permission prompt, a dead device), nothing is lowered.
   volume only if the device still reads exactly the lowered level in the
   tool's own units (pactl's per-channel integers, wpctl's printed value,
   macOS's 0–100 integer, Windows' scalar). One step up or down counts as
-  your change.
+  your change. A change you make in the instant between Earheart's set and
+  its readback is yours too: the readback must match what was asked for
+  (within the tool's own rounding, ~3 points on macOS), or nothing is held.
 - **Another output device.** The restore addresses the device that was
   lowered, never whichever one is the default now. A device that has gone
   away is dropped without writing anywhere.

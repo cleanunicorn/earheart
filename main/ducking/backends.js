@@ -26,6 +26,9 @@
 //   same(a, b)           whether two raw readings are the same volume, in the
 //                        tool's own resolution (no tolerance: one step is a
 //                        user's change)
+//   matches(read, asked) whether a readback right after write(asked) is that
+//                        write landing, within the tool's own rounding — and
+//                        not someone else's change in between
 //   write(device, raw)   sets it and resolves to read(device) afterwards, or
 //                        null when the device is gone
 //   addressable          false when read(device)/write(device) can only reach
@@ -86,6 +89,8 @@ function createPactlBackend(run) {
     name: "pactl",
     addressable: true,
     same: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]),
+    // pactl stores what it is given; one unit covers its integer rounding.
+    matches: (got, asked) => got.length === asked.length && got.every((v, i) => Math.abs(v - asked[i]) <= 1),
     probe: () => run("pactl", ["get-default-sink"], C_LOCALE),
     read,
     scale: (raw, fraction) => raw.map((v) => Math.max(0, Math.round(v * fraction))),
@@ -152,6 +157,8 @@ function createWpctlBackend(run) {
     addressable: true,
     // get-volume prints two decimals; the stored target is that readback.
     same: (a, b) => a === b,
+    // set-volume takes four decimals, get-volume prints two.
+    matches: (got, asked) => Math.abs(got - asked) <= 0.005 + 1e-9,
     probe: () => run(...wpctl.inspect(DEFAULT_SINK)),
     read,
     scale: (raw, fraction) => Math.max(0, raw * fraction),
@@ -241,11 +248,18 @@ function createMacBackend(run) {
     read,
     scale: (raw, fraction) => Math.max(0, Math.min(100, Math.round(raw * fraction))),
     same: (a, b) => a === b,
+    // Many outputs snap to 1/16 steps (6.25 points): up to ~3 points of
+    // rounding; a volume-key press moves a whole step and is not mistaken.
+    matches: (got, asked) => Math.abs(got - asked) <= 3,
     async write(device, raw) {
       const now = await read();
       if (now.device !== device) return null;
       await run(...osa.set(raw));
-      return read();
+      // Volume first, right after the set: the slower device lookup must not
+      // widen the window in which a user's change could pass for ours.
+      const { raw: got, volume, muted } = parseOsaVolume(await run(...osa.get()));
+      const after = parseMacDefaultOutput(await run(...osa.devices()));
+      return { device: after, volume, muted, raw: got };
     },
   };
 }
@@ -379,6 +393,8 @@ function createWindowsBackend(run) {
     name: "powershell",
     addressable: true,
     same: (a, b) => Math.abs(a - b) < 1e-6,
+    // The level goes in with four decimals and comes back as a float32.
+    matches: (got, asked) => Math.abs(got - asked) <= 1e-4,
     probe: () => call("read"),
     async read(device) {
       const state = await call("read", device);

@@ -35,6 +35,7 @@ function fakeBackend({ devices = { A: { raw: 80, muted: false } }, def = "A", ad
     },
     scale: (raw, f) => Math.round(raw * f),
     same: (x, y) => x === y,
+    matches: (x, y) => x === y,
     afterWrite: null, // runs between the set and the readback
     async write(device, raw) {
       const id = addressable ? device : def;
@@ -123,6 +124,49 @@ test("ducking: a user volume change during the take is kept — one step either 
     assert.deepStrictEqual(backend.writes, [["A", 16]]);
     assert.strictEqual(store.peek(), null);
   }
+});
+
+test("ducking: a user change between the set and its readback is theirs — never adopted, never overwritten", async () => {
+  const { ducker, backend, store } = setup();
+  backend.afterWrite = () => { backend.devices.A.raw = 30; };
+  await ducker.setCapturing("dictation", true);
+  const status = await ducker.getStatus();
+  assert.strictEqual(status.state, "skipped");
+  assert.strictEqual(status.detail, "the volume changed while it was being lowered");
+  assert.strictEqual(store.peek(), null);
+  await ducker.setCapturing("dictation", false);
+  assert.strictEqual(vol(backend), 30, "the user's 30 stays");
+  assert.deepStrictEqual(backend.writes, [["A", 16]]);
+});
+
+test("ducking: a timed-out write whose readback shows a user change is left alone", async () => {
+  const { ducker, backend, store } = setup();
+  const realWrite = backend.write;
+  backend.write = async (device, raw) => {
+    await realWrite(device, raw);
+    backend.devices.A.raw = 45; // the user, before the timeout fired
+    throw new Error("timed out");
+  };
+  await ducker.setCapturing("dictation", true);
+  backend.write = realWrite;
+  await ducker.setCapturing("dictation", false);
+  assert.strictEqual(vol(backend), 45);
+  assert.strictEqual(store.peek(), null);
+});
+
+test("backends: matches() accepts each tool's own rounding and rejects a user's step", () => {
+  const run = async () => "";
+  const [pactlB, wpctlB] = b.candidates("linux", run);
+  assert.ok(pactlB.matches([13107, 13108], [13107, 13107]));
+  assert.ok(!pactlB.matches([13200, 13107], [13107, 13107]));
+  assert.ok(wpctlB.matches(0.08, 0.0800) && wpctlB.matches(0.16, 0.1640));
+  assert.ok(!wpctlB.matches(0.17, 0.1600));
+  const mac = b.candidates("darwin", run)[0];
+  assert.ok(mac.matches(19, 16), "a 1/16-step snap");
+  assert.ok(!mac.matches(22, 16), "a volume-key press");
+  const win = b.candidates("win32", run)[0];
+  assert.ok(win.matches(0.16000001, 0.16));
+  assert.ok(!win.matches(0.17, 0.16));
 });
 
 test("ducking: muting during the take is left muted; only the level comes back", async () => {

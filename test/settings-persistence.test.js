@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { withStubs } = require("./helpers/stub-modules");
+const { deepMerge, migrateLegacy, DEFAULTS } = require("../main/settings");
 
 // Warnings settings.js logs (e.g. a throwing change listener), captured instead
 // of written to a real log file.
@@ -244,4 +245,178 @@ test("a hand-edited settings file can't load an out-of-range limit", (t) => {
   // Validation, not a migration: loading never rewrites the user's file.
   assert.strictEqual(fs.readFileSync(file, "utf8"), raw);
   assert.deepStrictEqual(limits(settings.DEFAULTS), { maxSeconds: 600, idle: 2 });
+});
+
+test("deepMerge keeps defaults for missing keys and overrides present ones", () => {
+  const base = { a: 1, nested: { x: "default", y: 2 }, arr: [1, 2] };
+  const override = { nested: { x: "custom" }, arr: [3] };
+  const merged = deepMerge(base, override);
+  assert.deepStrictEqual(merged, {
+    a: 1,
+    nested: { x: "custom", y: 2 },
+    arr: [3],
+  });
+});
+
+test("deepMerge ignores null/undefined overrides", () => {
+  assert.deepStrictEqual(deepMerge({ a: 1 }, undefined), { a: 1 });
+});
+
+test("deepMerge keeps the default shape when stored settings have wrong types", () => {
+  const base = {
+    enabled: true,
+    retries: 2,
+    endpoint: "http://localhost",
+    nested: { value: "default" },
+    items: ["default"],
+  };
+  assert.deepStrictEqual(
+    deepMerge(base, {
+      enabled: "yes",
+      retries: null,
+      endpoint: {},
+      nested: "broken",
+      items: { 0: "broken" },
+    }),
+    base
+  );
+});
+
+test("deepMerge ignores prototype-mutating keys from stored JSON", () => {
+  const stored = JSON.parse(
+    '{"nested":{"value":"custom","__proto__":{"polluted":true}},"constructor":{"polluted":true}}'
+  );
+  const merged = deepMerge({ nested: { value: "default" } }, stored);
+  assert.deepStrictEqual(merged, { nested: { value: "custom" } });
+  assert.strictEqual({}.polluted, undefined);
+});
+
+test("deepMerge preserves unknown keys that share names with inherited properties", () => {
+  const merged = deepMerge({}, { toString: "stored value" });
+  assert.strictEqual(Object.hasOwn(merged, "toString"), true);
+  assert.strictEqual(merged.toString, "stored value");
+});
+
+test("migrateLegacy maps pre-engine settings onto external engines", () => {
+  // The old local autostart server has been removed; a config that used it
+  // folds into "remote" and the stale sttServer key is dropped.
+  const autostart = migrateLegacy({
+    stt: { baseUrl: "http://x" },
+    cleanup: { enabled: true },
+    sttServer: { autoStart: true },
+  });
+  assert.strictEqual(autostart.stt.engine, "remote");
+  assert.strictEqual(autostart.cleanup.engine, "remote");
+  assert.ok(!("sttServer" in autostart));
+
+  // No engine field -> "remote".
+  const remote = migrateLegacy({ stt: {}, cleanup: {}, sttServer: {} });
+  assert.strictEqual(remote.stt.engine, "remote");
+  assert.ok(!("sttServer" in remote));
+
+  // A config already carrying the removed "server" engine is rewritten too.
+  const legacyServer = migrateLegacy({ stt: { engine: "server" }, cleanup: {} });
+  assert.strictEqual(legacyServer.stt.engine, "remote");
+});
+
+test("migrateLegacy leaves fresh and already-migrated configs untouched", () => {
+  assert.deepStrictEqual(migrateLegacy({}), {}); // fresh install
+  const modern = { stt: { engine: "builtin" }, cleanup: { engine: "builtin" } };
+  assert.deepStrictEqual(migrateLegacy(modern), modern);
+});
+
+test("migrateLegacy lifts the old 60 s remote cleanup timeout with the cap", () => {
+  // 60 s was the default (never in the settings UI) while dictations capped
+  // at 300 s; a 600 s dictation's cleanup needs the new 120 s.
+  assert.strictEqual(migrateLegacy({ cleanup: { timeoutMs: 60000 } }).cleanup.timeoutMs, 120000);
+  assert.strictEqual(DEFAULTS.cleanup.timeoutMs, 120000);
+  // A hand-edited value is the user's own and is kept.
+  assert.strictEqual(migrateLegacy({ cleanup: { timeoutMs: 300000 } }).cleanup.timeoutMs, 300000);
+});
+
+test("migrateLegacy lifts the old default live-preview chunk of 5 s to 10 s", () => {
+  // 5 s was the old default and never in the settings UI, so a stored 5 is a
+  // persisted default, not a choice.
+  const old = migrateLegacy({ stt: { engine: "builtin", livePreview: { chunkSeconds: 5 } } });
+  assert.strictEqual(old.stt.livePreview.chunkSeconds, 10);
+  // Any other stored value is the user's own and is kept.
+  const own = migrateLegacy({ stt: { engine: "builtin", livePreview: { chunkSeconds: 7 } } });
+  assert.strictEqual(own.stt.livePreview.chunkSeconds, 7);
+});
+
+test("migrateLegacy folds a bare cleanup temperature onto the custom style", () => {
+  // Configs from before the style slider carried only `temperature`; keeping
+  // it and pinning every other sampler to neutral reproduces what the model
+  // received before, when temperature was the only knob sent.
+  const migrated = migrateLegacy({ cleanup: { engine: "builtin", temperature: 0.7 } });
+  assert.strictEqual(migrated.cleanup.style, "custom");
+  assert.deepStrictEqual(migrated.cleanup.custom, { temperature: 0.7, topP: 1, topK: 0, minP: 0 });
+  assert.ok(!("temperature" in migrated.cleanup), "the bare temperature key is dropped");
+
+  // A config that already chose a style keeps it, temperature and all.
+  const styled = migrateLegacy({ cleanup: { engine: "builtin", style: "balanced", temperature: 0.7 } });
+  assert.strictEqual(styled.cleanup.style, "balanced");
+  assert.strictEqual(styled.cleanup.temperature, 0.7);
+  assert.ok(!("custom" in styled.cleanup));
+});
+
+test("the default cleanup prompt carries no source hard wrapping", () => {
+  // It is shown verbatim in a soft-wrapping textarea, so every line must be a
+  // whole rule: no continuation lines, no leading indentation.
+  for (const line of DEFAULTS.cleanup.systemPrompt.split("\n")) {
+    assert.ok(!/^\s/.test(line), `indented prompt line: ${JSON.stringify(line)}`);
+  }
+  const rules = DEFAULTS.cleanup.systemPrompt.split("\n").filter((l) => l.trim());
+  assert.ok(rules.slice(2).every((l) => l.startsWith("- ")));
+});
+
+test("migrateLegacy re-flows an untouched hard-wrapped prompt", () => {
+  // How the default was stored before it was unwrapped: hard-wrapped at ~70
+  // columns, continuation lines indented by two spaces.
+  const wrapped = DEFAULTS.cleanup.systemPrompt
+    .split("\n")
+    .map((line) => {
+      const wrappedLine = line.split(" ").reduce((out, word) => {
+        const last = out[out.length - 1];
+        if (last !== undefined && `${last} ${word}`.length <= 70) out[out.length - 1] = `${last} ${word}`;
+        else out.push(word);
+        return out;
+      }, []);
+      return wrappedLine.map((l, i) => (i === 0 ? l : `  ${l}`)).join("\n");
+    })
+    .join("\n");
+  assert.notStrictEqual(wrapped, DEFAULTS.cleanup.systemPrompt); // wrapping happened
+  const migrated = migrateLegacy({ cleanup: { systemPrompt: wrapped } });
+  assert.strictEqual(migrated.cleanup.systemPrompt, DEFAULTS.cleanup.systemPrompt);
+
+  // An edited prompt is never rewritten, wrapped or not.
+  const edited = migrateLegacy({ cleanup: { systemPrompt: "My own rules." } });
+  assert.strictEqual(edited.cleanup.systemPrompt, "My own rules.");
+});
+
+test("new installs default to in-process engines", () => {
+  assert.strictEqual(DEFAULTS.stt.engine, "builtin");
+  assert.strictEqual(DEFAULTS.cleanup.engine, "builtin");
+  assert.strictEqual(DEFAULTS.cleanup.enabled, true);
+  assert.strictEqual(DEFAULTS.stt.builtin.model, "parakeet-tdt-0.6b-v3");
+  assert.strictEqual(DEFAULTS.cleanup.builtin.model, "granite-4.0-micro");
+});
+
+test("customModels defaults to empty and a stored list survives the merge", () => {
+  assert.deepStrictEqual(DEFAULTS.customModels, []);
+  const stored = [{ id: "custom-x", kind: "cleanup", files: [] }];
+  // deepMerge replaces arrays wholesale, so a saved custom-models list is kept
+  // intact (not element-merged against the empty default) when settings load.
+  assert.deepStrictEqual(deepMerge(DEFAULTS, { customModels: stored }).customModels, stored);
+});
+
+test("idle model unload defaults to a finite window and is overridable", () => {
+  // Sensible default: unload after a couple of idle minutes.
+  assert.strictEqual(DEFAULTS.engines.idleUnloadMinutes, 2);
+  // A stored 0 (never unload) must survive the merge, not be reset to default.
+  const never = deepMerge(DEFAULTS, { engines: { idleUnloadMinutes: 0 } });
+  assert.strictEqual(never.engines.idleUnloadMinutes, 0);
+  // A stored custom window survives too.
+  const custom = deepMerge(DEFAULTS, { engines: { idleUnloadMinutes: 10 } });
+  assert.strictEqual(custom.engines.idleUnloadMinutes, 10);
 });

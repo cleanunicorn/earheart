@@ -358,7 +358,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#architecture) for the full architecture.
   `ci.yml` job has `timeout-minutes`. In a test HTTP server, never assert
   inside the handler — a throwing handler leaves the request unanswered and
   the file alive after the failure. Record what the handler saw (see
-  `serveJson` in `test/unit.test.js`) and assert in the test body. In smoke
+  `serveJson` in `test/remote-services.test.js`) and assert in the test body. In smoke
   and screenshot scripts, wait for a page with `waitForLoad` from
   `scripts/wait-for-load.js`, never a bare `once("did-finish-load")`.
 - **Leave nothing behind.** A test that calls `mkdtemp` registers

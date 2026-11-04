@@ -560,7 +560,10 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
 
   ipcMain.handle("cleanup:test", wrap(async (event, cfg) => {
     const sample = "um so this is uh a test of the cleanup service";
-    const result = await route.clean(sample, cfg);
+    // The saved Max dictation length sizes a builtin context, as for a dictation.
+    const result = await route.clean(sample, cfg, undefined, {
+      maxRecordingSeconds: settings.get().audio?.maxRecordingSeconds,
+    });
     return { ok: true, sample: result.slice(0, 200) };
   }));
 

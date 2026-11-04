@@ -2475,18 +2475,15 @@ test("a caller retrying straight from a failed load's rejection gets a fresh loa
   assert.strictEqual(await sttRetried, "transcribed");
 });
 
-test("a changed cleanup context size is a different load, not a joined one", (t) => {
+test("a changed cleanup context size is a different load, not a joined one", () => {
   // The context is allocated at load time, so a caller wanting a bigger one
   // (Max dictation length raised) must not join a load of the smaller one.
-  const settings = require("../main/settings");
-  const base = settings.get();
   const { facade, hostsBySvc } = loadTwoHostFacade();
   const cleanup = hostsBySvc["earheart-cleanup"];
   const held = holdLoads(cleanup, "load-cleanup");
 
-  const small = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
-  t.mock.method(settings, "get", () => ({ ...base, audio: { ...base.audio, maxRecordingSeconds: 3600 } }));
-  const large = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
+  const small = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL, { maxRecordingSeconds: 600 });
+  const large = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL, { maxRecordingSeconds: 3600 });
   assert.strictEqual(count(cleanup, "load-cleanup"), 2);
   assert.ok(
     held[1].payload.contextSize > held[0].payload.contextSize,
@@ -2503,9 +2500,9 @@ test("the cleanup descriptor carries the transcript budget the worker sizes from
   const { facade, hostsBySvc } = loadTwoHostFacade();
   const cleanup = hostsBySvc["earheart-cleanup"];
   const held = holdLoads(cleanup, "load-cleanup");
-  const pending = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL);
+  const seconds = 600;
+  const pending = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL, { maxRecordingSeconds: seconds });
   const { cleanTranscriptBudget } = require("../main/util/clean-budget");
-  const seconds = require("../main/settings").get().audio.maxRecordingSeconds;
   assert.strictEqual(held[0].payload.transcriptTokens, cleanTranscriptBudget(seconds));
   held[0].resolve({ ready: true });
   // A prime carries the instructions on their own, so the worker sizes its
@@ -2519,6 +2516,69 @@ test("the cleanup descriptor carries the transcript budget the worker sizes from
   assert.ok(primes[0].payload.text.endsWith("so far"));
   primes[0].resolve({ primed: true });
   return Promise.all([pending, primed]);
+});
+
+// #204: the facade reads no settings; Max dictation length reaches it as an
+// option on every cleanup entry point, so clean(cfg) depends on its arguments
+// alone. A settings read here throws.
+test("the cleanup facade sizes its context from the caller's option, never from settings", async (t) => {
+  const settings = require("../main/settings");
+  t.mock.method(settings, "get", () => { throw new Error("the engines facade read settings"); });
+  const { cleanContextFor, cleanTranscriptBudget } = require("../main/util/clean-budget");
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const cleanup = hostsBySvc["earheart-cleanup"];
+  const loads = holdLoads(cleanup, "load-cleanup");
+  const primes = holdLoads(cleanup, "prime-cleanup");
+  const cleans = holdLoads(cleanup, "clean");
+  const cfg = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules" };
+  const sizedFor = (seconds) => ({
+    contextSize: cleanContextFor(seconds),
+    transcriptTokens: cleanTranscriptBudget(seconds),
+  });
+  const sized = (model) => ({ contextSize: model.contextSize, transcriptTokens: model.transcriptTokens });
+
+  const loaded = facade.ensureCleanup(registry.DEFAULT_CLEANUP_MODEL, { maxRecordingSeconds: 3600 });
+  assert.deepStrictEqual(sized(loads[0].payload), sizedFor(3600));
+  const primed = facade.primeCleanup(cfg, "so far", { maxRecordingSeconds: 1200 });
+  assert.deepStrictEqual(sized(primes[0].payload.model), sizedFor(1200));
+  const cleaned = facade.clean("hello", cfg, undefined, { maxRecordingSeconds: 600 });
+  await new Promise(setImmediate);
+  assert.deepStrictEqual(sized(cleans[0].payload.model), sizedFor(600));
+  // Omitted, the context takes the size for an unset limit, as before.
+  const bare = facade.clean("hello", cfg);
+  await new Promise(setImmediate);
+  assert.deepStrictEqual(sized(cleans[1].payload.model), sizedFor(undefined));
+  assert.notDeepStrictEqual(sizedFor(undefined), sizedFor(600), "the option must change the size");
+
+  loads[0].resolve({ ready: true });
+  primes[0].resolve({ primed: true });
+  cleans[0].resolve("Hello.");
+  cleans[1].resolve("Hello.");
+  await Promise.all([loaded, primed, cleaned, bare]);
+});
+
+// #204, the gap: nothing proved a custom model resolves through the engines
+// facade without the IPC layer. Bound at the composition root alone (as
+// main/main.js does), a custom model reaches the model manager; unbound, the
+// facade doesn't know it.
+test("a custom model resolves through the engines facade without ipc.init", (t) => {
+  t.after(() => registry.setCustomModels([]));
+  const { bindCustomModels } = require("../main/engines/catalog");
+  const id = "custom-acme-bootstrap";
+  const model = {
+    id, kind: "cleanup", label: id, engine: "llama-gguf", custom: true,
+    files: [{ name: `${id}.gguf`, url: `https://huggingface.co/acme/x/resolve/c/${id}.gguf` }],
+    gguf: { file: `${id}.gguf` },
+  };
+  const seen = [];
+  const managerStub = { isInstalled: (dir, m) => { seen.push(m); return true; } };
+  const facade = loadFacadeWith({ host: { createHost: () => ({ request: async () => {}, stop() {}, onExit() {} }) }, manager: managerStub });
+
+  assert.throws(() => facade.isInstalled("cleanup", id), /Unknown cleanup model/);
+  const unbind = bindCustomModels({ get: () => ({ customModels: [model] }), onChanged: () => () => {} });
+  t.after(unbind);
+  assert.strictEqual(facade.isInstalled("cleanup", id), true);
+  assert.strictEqual(seen.at(-1)?.id, id);
 });
 
 test("worker exit drops the in-flight cleanup load memo", async () => {

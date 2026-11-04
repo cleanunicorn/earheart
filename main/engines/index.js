@@ -8,7 +8,6 @@ const { app } = require("electron");
 const registry = require("./registry");
 const manager = require("./model-manager");
 const hostModule = require("./host");
-const settings = require("../settings");
 const { resolveCleanup } = require("../cleanup-styles");
 const { cleanContextFor, cleanTranscriptBudget } = require("../util/clean-budget");
 const { cleanupTurnPrefix } = require("../util/cleanup-turn");
@@ -217,15 +216,19 @@ function runningEmulated() {
 // the context, keeping the model). This size is a floor: `transcriptTokens`
 // lets the worker grow the context past it when the real instructions
 // (dictionary, custom prompt) outgrow their allowance (#297).
-function cleanupModel(modelId) {
+//
+// `maxRecordingSeconds` (`audio.maxRecordingSeconds`) arrives from the caller,
+// which reads it at call time: the facade reads no settings of its own (#204).
+// Omitted, the context gets the smallest size, as for an unset limit.
+function cleanupModel(modelId, { maxRecordingSeconds } = {}) {
   const model = resolve("cleanup", modelId);
   if (!manager.isInstalled(modelsDir(), model)) {
     throw new Error(`Cleanup model "${modelId}" is not downloaded yet`);
   }
   return {
     modelPath: path.join(manager.modelDir(modelsDir(), model), model.gguf.file),
-    contextSize: cleanContextFor(settings.get().audio?.maxRecordingSeconds),
-    transcriptTokens: cleanTranscriptBudget(settings.get().audio?.maxRecordingSeconds),
+    contextSize: cleanContextFor(maxRecordingSeconds),
+    transcriptTokens: cleanTranscriptBudget(maxRecordingSeconds),
     // Avoid the native GPU probe under Windows-on-ARM / Rosetta emulation.
     cpuOnly: runningEmulated(),
   };
@@ -243,9 +246,9 @@ const cleanupLoad = { inflight: null };
 // Load the cleanup model ahead of use. The pipeline doesn't call this: it warms
 // with primeCleanup() and every clean() carries its model to the worker, which
 // loads it on demand. The key includes the context size: a changed size is a
-// different load.
-async function ensureCleanup(modelId) {
-  const model = cleanupModel(modelId);
+// different load. `opts.maxRecordingSeconds` sizes the context (cleanupModel).
+async function ensureCleanup(modelId, opts) {
+  const model = cleanupModel(modelId, opts);
   return sharedLoad(cleanupLoad, `${modelId}:${model.contextSize}`, () =>
     cleanupRequest("load-cleanup", model)
   );
@@ -257,9 +260,10 @@ async function ensureCleanup(modelId) {
 // the next clean() only prefills what follows before generating. The prompt
 // is a strict string prefix of clean()'s user turn (main/util/cleanup-turn.js
 // builds both), which is what lets the KV reuse hit. Best effort: callers
-// fire-and-forget it.
-async function primeCleanup(cfg, transcriptPrefix = "") {
-  const model = cleanupModel(cfg.builtin.model);
+// fire-and-forget it. `opts.maxRecordingSeconds` sizes the context
+// (cleanupModel); a prime and the clean it serves must pass the same value.
+async function primeCleanup(cfg, transcriptPrefix = "", opts) {
+  const model = cleanupModel(cfg.builtin.model, opts);
   const { systemPrompt } = resolveCleanup(cfg);
   return cleanupRequest("prime-cleanup", {
     model,
@@ -279,9 +283,10 @@ function cancelClean() {
 // Accepts a `signal` for parity with the HTTP cleanup client (see transcribe).
 // `onProgress` (0..1) relays the worker's token-streaming progress, so the
 // pipeline can drive a determinate bar while the model generates.
-async function clean(transcript, cfg, signal, { onProgress } = {}) {
+// `maxRecordingSeconds` sizes the context (cleanupModel).
+async function clean(transcript, cfg, signal, { onProgress, maxRecordingSeconds } = {}) {
   if (signal?.aborted) throw new Error("aborted");
-  const model = cleanupModel(cfg.builtin.model);
+  const model = cleanupModel(cfg.builtin.model, { maxRecordingSeconds });
   const { systemPrompt, sampling } = resolveCleanup(cfg);
   const operationId = ++cleanupOperationId;
   // A caller's signal cancels its own turn. Pipeline cancelClean() still

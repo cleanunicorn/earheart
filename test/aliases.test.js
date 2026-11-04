@@ -211,3 +211,20 @@ test("every spelling an alias can be saved with round-trips through the Settings
   assert.deepEqual(parseAliases(formatAliases(odd)), odd);
   assert.deepEqual(normalizeAliases([{ term: "x -> y", heard: ["air heart"] }]), [], "a stored one is dropped on load");
 });
+
+test("matching and ownership share one Unicode case folding", () => {
+  const records = [
+    { term: "Σίσυφος", heard: ["σισυφοσ"] },
+    { term: "long", heard: ["long s"] },
+    { term: "micrometre", heard: ["µm"] },
+  ];
+  assert.equal(applyAliases("ΣΙΣΥΦΟΣ and σισυφος", records), "Σίσυφος and Σίσυφος", "final sigma");
+  assert.equal(applyAliases("lonɡ ſ", records), "lonɡ ſ", "a different letter stays");
+  assert.equal(applyAliases("long ſ", records), "long", "long s folds to s");
+  assert.equal(applyAliases("5 μm", records), "5 micrometre", "Greek mu matches the micro sign");
+  assert.equal(aliasKey("ς"), aliasKey("σ"));
+  assert.equal(aliasKey("ẞ"), aliasKey("ß"));
+  const one = rememberAlias([], "σ", "Sigma");
+  assert.throws(() => rememberAlias(one, "ς", "Final"), /already becomes “Sigma”/);
+  assert.throws(() => rememberAlias(rememberAlias([], "µm", "a"), "μm", "b"), /already becomes “a”/);
+});

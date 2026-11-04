@@ -22,8 +22,11 @@ const ALIAS_TEXT_MAX = 120;
 const ALIAS_HEARD_MAX = 256;
 
 // A heard form's identity: what two spellings must share to be the same alias.
+// Lower, upper, lower again folds every pair the matcher's /iu flag treats
+// as equal (σ/ς, s/ſ, µ/μ, ß/ẞ, K/K) to one key, and a few more besides
+// (ß and ss): ownership is never looser than matching.
 function aliasKey(text) {
-  return String(text).normalize("NFC").trim().replace(/\s+/gu, " ").toLowerCase();
+  return String(text).normalize("NFC").trim().replace(/\s+/gu, " ").toLowerCase().toUpperCase().toLowerCase();
 }
 
 function cleanPhrase(text) {
@@ -251,25 +254,28 @@ function applyAliases(text, records) {
   const pairs = [...aliasPairs(records).values()];
   if (pairs.length === 0) return text;
   const source = text.normalize("NFC");
-  const byKey = new Map(pairs.map((p) => [aliasKey(p.heard), p.term]));
-  const alternatives = pairs
-    .map((p) => p.heard)
-    .sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0))
-    .map((heard) => heard.split(" ").map(escapeRegExp).join("\\s+"));
+  // One capture group per heard form, longest first: the group that matched
+  // names the term, so lookup can't disagree with the matcher's own folding.
+  const ordered = [...pairs].sort((a, b) => b.heard.length - a.heard.length || (a.heard < b.heard ? -1 : a.heard > b.heard ? 1 : 0));
+  const alternatives = ordered.map((p) => `(${p.heard.split(" ").map(escapeRegExp).join("\\s+")})`);
   const pattern = new RegExp(`(?<!${WORD})(?:${alternatives.join("|")})(?!${WORD})`, "giu");
   const guarded = [];
   for (const m of source.matchAll(PROTECTED)) {
     if (m[0]) guarded.push([m.index, m.index + m[0].length]);
   }
   let replaced = false;
-  const out = source.replace(pattern, (match, offset) => {
-    const end = offset + match.length;
-    if (guarded.some(([a, b]) => offset < b && end > a)) return match;
-    const term = byKey.get(aliasKey(match));
-    if (term === undefined) return match;
-    if (term !== match) replaced = true;
-    return term;
-  });
+  let out = "";
+  let last = 0;
+  for (const m of source.matchAll(pattern)) {
+    const start = m.index;
+    const end = start + m[0].length;
+    if (guarded.some(([a, b]) => start < b && end > a)) continue;
+    const term = ordered[m.findIndex((group, i) => i > 0 && group !== undefined) - 1].term;
+    if (term !== m[0]) replaced = true;
+    out += source.slice(last, start) + term;
+    last = end;
+  }
+  out += source.slice(last);
   return replaced ? out : text;
 }
 

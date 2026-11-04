@@ -348,7 +348,7 @@ test("remember refuses an alias another term owns and saves nothing", async (t) 
   assert.match(result.error, /already becomes “Earheart”/);
   assert.deepStrictEqual(readFile().cleanup.dictionary, before.dictionary, "the spelling is not saved either");
   assert.deepStrictEqual(readFile().cleanup.aliases, before.aliases);
-  for (const bad of [{ spelling: "x", heard: 5 }, { spelling: "x", heard: "a\nb" }, { spelling: "x", heard: "" }]) {
+  for (const bad of [{ spelling: "x -> y", heard: "air" }, { spelling: "x", heard: 5 }, { spelling: "x", heard: "a\nb" }, { spelling: "x", heard: "" }]) {
     assert.strictEqual((await handlers["correction:remember"]({}, bad)).ok, false, JSON.stringify(bad));
   }
   assert.deepStrictEqual(readFile().cleanup.aliases, before.aliases);

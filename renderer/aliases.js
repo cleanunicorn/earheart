@@ -53,6 +53,11 @@ function checkAlias(records, heard, term) {
   if (heard.includes("->") || heard.includes("→") || heard.includes(",")) {
     throw new Error("Heard words can't contain commas or arrows.");
   }
+  // The arrow separates the two halves of a Settings line, so a spelling
+  // holding one could be saved here but never parsed back from Settings.
+  if (canonical.includes("->") || canonical.includes("→")) {
+    throw new Error("A spelling for Always replace can't contain an arrow.");
+  }
   for (const record of records) {
     if (record.term === canonical) continue;
     if (record.heard.some((h) => aliasKey(h) === key)) {

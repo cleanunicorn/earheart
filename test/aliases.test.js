@@ -199,3 +199,12 @@ test("mergeAliases refuses a conflicting or overflowing merge instead of droppin
   const full = [{ term: "T", heard: Array.from({ length: ALIAS_HEARD_MAX }, (_, i) => `h${i}`) }];
   assert.throws(() => mergeAliases([], [{ term: "T", heard: ["new heard"] }], full), /Always replace was not saved/);
 });
+
+test("every spelling an alias can be saved with round-trips through the Settings text", () => {
+  for (const term of ["x -> y", "x → y"]) {
+    assert.throws(() => rememberAlias([], "air heart", term), /can't contain an arrow/);
+  }
+  const odd = rememberAlias([], "air heart", "Earheart, Inc. `v2`");
+  assert.deepEqual(parseAliases(formatAliases(odd)), odd);
+  assert.deepEqual(normalizeAliases([{ term: "x -> y", heard: ["air heart"] }]), [], "a stored one is dropped on load");
+});

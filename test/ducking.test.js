@@ -157,10 +157,13 @@ test("ducking: a timed-out write whose readback shows a user change is left alon
 test("backends: matches() accepts each tool's own rounding and rejects a user's step", () => {
   const run = async () => "";
   const [pactlB, wpctlB] = b.candidates("linux", run);
-  assert.ok(pactlB.matches([13107, 13108], [13107, 13107]));
-  assert.ok(!pactlB.matches([13200, 13107], [13107, 13107]));
-  assert.ok(wpctlB.matches(0.08, 0.0800) && wpctlB.matches(0.16, 0.1640));
-  assert.ok(!wpctlB.matches(0.17, 0.1600));
+  // pactl and wpctl read back exactly what was set: one raw step is not ours.
+  assert.ok(pactlB.matches([13107, 13107], [13107, 13107]));
+  assert.ok(!pactlB.matches([13108, 13107], [13107, 13107]), "one raw unit on one channel");
+  assert.strictEqual(wpctlB.scale(0.82, 0.2), 0.16, "wpctl targets are two-decimal");
+  assert.strictEqual(wpctlB.scale(0.33, 0.2), 0.07);
+  assert.ok(wpctlB.matches(0.16, 0.16));
+  assert.ok(!wpctlB.matches(0.17, 0.16) && !wpctlB.matches(0.15, 0.16));
   const mac = b.candidates("darwin", run)[0];
   assert.ok(mac.matches(19, 16), "a 1/16-step snap");
   assert.ok(!mac.matches(22, 16), "a volume-key press");
@@ -634,6 +637,29 @@ test("pactl backend: keeps channel balance, compares exactly, reports a gone sin
   assert.strictEqual(await backend.read("gone"), null);
   await assert.rejects(backend.read(undefined).then(() => { sinks.s1 = undefined; return backend.read(); }));
   assert.ok(calls.every(([cmd]) => cmd === "pactl"));
+});
+
+test("pactl backend + controller: a one-unit change between the set and its readback is the user's", async () => {
+  const sink = { ch: [65536, 65536] };
+  let nudge = false;
+  const run = async (cmd, [op, , ...vals]) => {
+    if (op === "get-default-sink") return "s1\n";
+    if (op === "get-sink-volume") {
+      if (nudge) { nudge = false; sink.ch = [sink.ch[0] + 1, sink.ch[1]]; } // another tool, just after our set
+      return `Volume: ${sink.ch.map((v, i) => `c${i}: ${v} / 1% / 0 dB`).join(",   ")}\n`;
+    }
+    if (op === "get-sink-mute") return "Mute: no\n";
+    if (op === "set-sink-volume") { sink.ch = vals.map(Number); nudge = sink.ch[0] < 65536; return ""; }
+    throw new Error(op);
+  };
+  const store = memoryStore();
+  const ducker = createDucker({ backends: [b.createPactlBackend(run)], store, getConfig: () => ({ enabled: true, levelPercent: 20 }), logger: {} });
+  await ducker.setCapturing("dictation", true);
+  assert.deepStrictEqual(sink.ch, [13108, 13107]);
+  assert.strictEqual((await ducker.getStatus()).detail, "the volume changed while it was being lowered");
+  await ducker.setCapturing("dictation", false);
+  assert.deepStrictEqual(sink.ch, [13108, 13107], "never overwritten with the prior 100%");
+  assert.strictEqual(store.peek(), null);
 });
 
 test("wpctl: builders and parsers", () => {

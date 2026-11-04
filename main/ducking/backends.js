@@ -89,8 +89,9 @@ function createPactlBackend(run) {
     name: "pactl",
     addressable: true,
     same: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]),
-    // pactl stores what it is given; one unit covers its integer rounding.
-    matches: (got, asked) => got.length === asked.length && got.every((v, i) => Math.abs(v - asked[i]) <= 1),
+    // pactl stores the integers it is given and reads them back unchanged, so
+    // only an exact readback is our own set.
+    matches: (got, asked) => got.length === asked.length && got.every((v, i) => v === asked[i]),
     probe: () => run("pactl", ["get-default-sink"], C_LOCALE),
     read,
     scale: (raw, fraction) => raw.map((v) => Math.max(0, Math.round(v * fraction))),
@@ -157,11 +158,13 @@ function createWpctlBackend(run) {
     addressable: true,
     // get-volume prints two decimals; the stored target is that readback.
     same: (a, b) => a === b,
-    // set-volume takes four decimals, get-volume prints two.
-    matches: (got, asked) => Math.abs(got - asked) <= 0.005 + 1e-9,
+    // scale() asks for two decimals and get-volume prints two: exact.
+    matches: (got, asked) => got === asked,
     probe: () => run(...wpctl.inspect(DEFAULT_SINK)),
     read,
-    scale: (raw, fraction) => Math.max(0, raw * fraction),
+    // Two decimals: exactly what get-volume prints back, so the readback of
+    // our own set is an exact match and any other value is someone else's.
+    scale: (raw, fraction) => Math.max(0, Math.round(raw * fraction * 100) / 100),
     async write(device, raw) {
       await run(...wpctl.setVolume(device.split(":")[0], raw));
       return read(device);

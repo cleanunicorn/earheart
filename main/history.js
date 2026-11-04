@@ -27,11 +27,15 @@ function validEntries(value) {
 // history entry) build on:
 //   - Every entry has an `id`: 1–64 characters of [A-Za-z0-9_-]. New ones are
 //     UUID v4 (crypto.randomUUID()), stamped by add() before delivery runs.
-//   - An id never changes and is never reused: corrections, search and other
-//     deletes leave it alone, and a deleted entry's id is gone for good.
+//   - An id never changes: corrections, search and other deletes leave it
+//     alone. History never hands out the same id twice — each is a fresh
+//     UUID — and never holds two entries with one id.
 //   - A caller that needs the id before the entry exists (a dictation session
-//     naming its audio file) may pass a valid, unused `entry.id` to add(),
-//     which keeps it; anything else is replaced by a fresh UUID. add()
+//     naming its audio file) may pass its own `entry.id` to add(): a UUID v4
+//     it generated for that session (crypto.randomUUID()), never one used
+//     before — History can't remember the ids of entries already deleted, so
+//     that freshness is the caller's. add() keeps it unless a saved entry
+//     already has it; anything else is replaced by a fresh UUID. add()
 //     returns the id it stored.
 //   - Rows saved before ids existed (or with a missing, malformed or duplicate
 //     id) get a fresh UUID when the file is loaded, and that is written back
@@ -39,6 +43,7 @@ function validEntries(value) {
 //     fails, the next launch assigns new ones; nothing else about the row
 //     changes either way.
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function isValidId(id) {
   return typeof id === "string" && ID_PATTERN.test(id);
@@ -142,7 +147,8 @@ function scheduleFlush() {
 function add(entry, cfg) {
   if (!cfg.enabled) return null;
   const items = load();
-  const id = isValidId(entry.id) && !items.some((item) => item.id === entry.id) ? entry.id : crypto.randomUUID();
+  const supplied = typeof entry.id === "string" && UUID_V4.test(entry.id) && !items.some((item) => item.id === entry.id);
+  const id = supplied ? entry.id : crypto.randomUUID();
   items.unshift({ ...entry, id, at: new Date().toISOString() });
   items.length = Math.min(items.length, cfg.limit || 100);
   cached = items;

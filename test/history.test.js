@@ -168,13 +168,21 @@ test("add stamps each entry with a UUID and returns it", async (t) => {
   assert.deepStrictEqual(loadHistory(dir).list().map((e) => e.id), [second, first], "the ids survive a restart");
 });
 
-test("add keeps a caller's valid unused id and replaces any other", (t) => {
+test("add keeps a caller's own UUID and replaces any other id", (t) => {
   const history = loadHistory(historyDir(t));
-  assert.strictEqual(history.add({ id: "session-1", text: "one" }, CFG), "session-1");
-  assert.match(history.add({ id: "session-1", text: "reused" }, CFG), UUID, "an id already in History is never reused");
-  for (const id of ["", "has space", "../escape", "x".repeat(65), 42, null]) {
-    assert.match(history.add({ id, text: "bad id" }, CFG), UUID, JSON.stringify(id));
+  const session = "0f8fad5b-d9cb-469f-a165-70867728950e";
+  assert.strictEqual(history.add({ id: session, text: "one" }, CFG), session);
+  const again = history.add({ id: session, text: "reused" }, CFG);
+  assert.match(again, UUID);
+  assert.notStrictEqual(again, session, "no two entries ever share an id");
+  // Only a UUID v4: a short or guessable id from a caller is not one it
+  // generated fresh for this session.
+  for (const id of ["session-1", "", "has space", "../escape", "x".repeat(65), session.toUpperCase(), "0f8fad5b-d9cb-169f-a165-70867728950e", 42, null]) {
+    const stored = history.add({ id, text: "bad id" }, CFG);
+    assert.match(stored, UUID, JSON.stringify(id));
+    assert.notStrictEqual(stored, id);
   }
+  assert.strictEqual(new Set(history.list().map((e) => e.id)).size, history.list().length);
 });
 
 test("add returns null and stores nothing with History off", (t) => {

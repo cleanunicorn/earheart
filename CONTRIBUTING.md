@@ -406,9 +406,13 @@ Design constraints worth keeping:
 - **History entries have stable ids** (`main/history.js`). Every entry in
   `history.json` carries an `id`: 1–64 characters of `[A-Za-z0-9_-]`, a UUID v4
   for new entries, stamped by `history.add()` before delivery and returned by
-  it. An id never changes and is never reused; a caller that needs it before
-  the entry exists (e.g. a dictation session naming a file it keeps, #343) may
-  pass a valid, unused `entry.id` to `add()`. Rows saved before ids existed
+  it. An id never changes, History never generates one twice, and no two
+  entries share one. A caller that needs it before the entry exists (e.g. a
+  dictation session naming a file it keeps, #343) may pass its own
+  `entry.id` to `add()`: a UUID v4 it generated for that session and never
+  used before — History can't remember deleted entries' ids, so that is the
+  caller's to guarantee; anything else, or an id a saved entry already has, is
+  replaced. Rows saved before ids existed
   (or with a missing, malformed or duplicate id) get a UUID on load, written
   back once. Settings reads History only through `history:search`
   (`{ query, offset, limit }` → `{ ok, entries, total, offset, limit, all }`;

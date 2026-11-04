@@ -158,11 +158,20 @@ test("the always-visible History section stays live (no active-tab guard)", () =
   // for the whole session. Pins the call sites, not renderHistory itself.
   const normalized = js.replace(/\s+/g, " ");
   // The reset-to-newest is part of the pinned contract: a fresh dictation
-  // must always land on the visible page, wherever the pager was left.
+  // must always land on the visible page, wherever the pager was left. A
+  // change to entries already listed ({ updated: true }: a retranscription,
+  // a recording kept or pruned, #343) keeps the page instead.
   assert.match(
     normalized,
-    /earheart\.on\("history:changed", \(\) => \{ historyPage = 0; renderHistory\(\)/,
-    "history:changed must reset to the newest page and rerender unconditionally"
+    /earheart\.on\("history:changed", \(change\) => \{ if \(!change\?\.updated\) historyPage = 0; renderHistory\(\);/,
+    "history:changed must rerender unconditionally, resetting to the newest page unless the change is an update"
+  );
+  // And the one sender that announces a new entry doesn't mark it an update.
+  const pipelineJs = fs.readFileSync(path.join(__dirname, "..", "main", "pipeline.js"), "utf8");
+  assert.match(
+    pipelineJs,
+    /history\.add\([^\n]*\n\s*windows\.sendToSettings\("history:changed"\);/,
+    "a new dictation's history:changed must carry no { updated } so Settings shows the newest page"
   );
   const init = js.slice(js.lastIndexOf("(async () =>"));
   assert.ok(

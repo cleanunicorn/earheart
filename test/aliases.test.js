@@ -227,4 +227,18 @@ test("matching and ownership share one Unicode case folding", () => {
   const one = rememberAlias([], "σ", "Sigma");
   assert.throws(() => rememberAlias(one, "ς", "Final"), /already becomes “Sigma”/);
   assert.throws(() => rememberAlias(rememberAlias([], "µm", "a"), "μm", "b"), /already becomes “a”/);
+  assert.equal(aliasKey("Air Heart"), aliasKey("aIR hEART"));
+});
+
+test("forms the matcher keeps apart stay separate aliases", () => {
+  // /iu does not equate ß with ss, or dotless ı with i.
+  let street = rememberAlias([], "straße", "Street");
+  street = rememberAlias(street, "strasse", "Street");
+  assert.deepEqual(street, [{ term: "Street", heard: ["straße", "strasse"] }]);
+  assert.equal(applyAliases("straße strasse STRASSE", street), "Street Street Street");
+  assert.deepEqual(parseAliases(formatAliases(street)), street);
+  assert.deepEqual(normalizeAliases(street), street);
+  const letters = rememberAlias(rememberAlias([], "ı", "Dotless"), "i", "Dotted");
+  assert.equal(applyAliases("ı i I", letters), "Dotless Dotted Dotted");
+  assert.notEqual(aliasKey("ß"), aliasKey("ss"));
 });

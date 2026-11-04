@@ -22,11 +22,27 @@ const ALIAS_TEXT_MAX = 120;
 const ALIAS_HEARD_MAX = 256;
 
 // A heard form's identity: what two spellings must share to be the same alias.
-// Lower, upper, lower again folds every pair the matcher's /iu flag treats
-// as equal (σ/ς, s/ſ, µ/μ, ß/ẞ, K/K) to one key, and a few more besides
-// (ß and ss): ownership is never looser than matching.
+// A heard form's identity: what two spellings must share to be the same alias.
+// It must agree exactly with the matcher's /iu flag (Unicode simple case
+// folding): σ/ς/Σ, s/ſ, µ/μ and ß/ẞ are one alias, while ß/ss and ı/i, which
+// /iu keeps apart, stay two. Each code point maps to the lowercase of its
+// uppercase (µ → Μ → μ, ſ → S → s), or failing that its lowercase, but only
+// when that is one code point /iu itself calls equal, so the key can't drift
+// from the matcher.
+const FOLDED = new Map();
+function foldChar(ch) {
+  let folded = FOLDED.get(ch);
+  if (folded !== undefined) return folded;
+  const same = new RegExp(`^${escapeRegExp(ch)}$`, "iu");
+  folded = [ch.toUpperCase().toLowerCase(), ch.toLowerCase()]
+    .find((candidate) => [...candidate].length === 1 && same.test(candidate)) ?? ch;
+  FOLDED.set(ch, folded);
+  return folded;
+}
+
 function aliasKey(text) {
-  return String(text).normalize("NFC").trim().replace(/\s+/gu, " ").toLowerCase().toUpperCase().toLowerCase();
+  const phrase = String(text).normalize("NFC").trim().replace(/\s+/gu, " ");
+  return Array.from(phrase, foldChar).join("");
 }
 
 function cleanPhrase(text) {

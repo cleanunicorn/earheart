@@ -2075,3 +2075,56 @@ test("pipeline: a new dictation cancels a running retranscription, which can the
   assert.strictEqual(rig.savedHistory()[0].text, "take 0", "the original stays");
   assert.deepStrictEqual(await rig.pipeline.retranscribe(id), { ok: false, error: "dictating" });
 });
+
+test("pipeline: retranscribing with the built-in engine decodes the kept take whole, never delivering", async (t) => {
+  const userData = audioDir(t);
+  const seen = [];
+  const rig = dictationRig({
+    engine: "builtin", display: false, userData, safeStorage: keyringStub(),
+    transcribe: async (n, wav) => { seen.push(wavDurationSec(wav)); return n === 0 ? "first take" : "built-in again"; },
+  });
+  rig.cfg.recordings = { keep: true, maxAgeDays: 30, maxMegabytes: 1024 };
+  await rig.dictate(encodeSilenceWav(2));
+  await settle();
+  const id = rig.savedHistory()[0].id;
+  const warmups = rig.log.warmups.length;
+  const delivered = rig.log.delivered.length;
+  const res = await rig.pipeline.retranscribe(id);
+  assert.strictEqual(res.ok, true, JSON.stringify(res));
+  assert.ok(rig.log.warmups.length > warmups, "the built-in model is loaded for it");
+  assert.ok(Math.abs(seen.slice(1).reduce((a, b) => a + b, 0) - 2) < 0.05, `the whole 2 s take is decoded: ${seen}`);
+  assert.strictEqual(rig.log.delivered.length, delivered, "nothing is pasted");
+  assert.strictEqual(rig.savedHistory().length, 1);
+  assert.strictEqual(rig.savedHistory()[0].text, "first take");
+  assert.deepStrictEqual(
+    { status: res.retry.status, text: res.retry.text, cleaned: res.retry.cleaned },
+    { status: "done", text: "built-in again", cleaned: false }
+  );
+});
+
+test("pipeline: a retranscription whose cleanup fails keeps the raw text, marked not cleaned", async (t) => {
+  const userData = audioDir(t);
+  let cleans = 0;
+  const rig = dictationRig({
+    engine: "remote", cleanup: true, userData, safeStorage: keyringStub(),
+    transcribe: async (n) => (n === 0 ? "first take" : "raw again"),
+    clean: async (raw) => {
+      cleans += 1;
+      if (cleans > 1) throw new Error("cleanup worker crashed");
+      return `cleaned(${raw})`;
+    },
+  });
+  rig.cfg.recordings = { keep: true, maxAgeDays: 30, maxMegabytes: 1024 };
+  await rig.dictate(encodeSilenceWav(1));
+  await settle();
+  const id = rig.savedHistory()[0].id;
+  const notes = rig.log.notifications.length;
+  const res = await rig.pipeline.retranscribe(id);
+  assert.strictEqual(res.ok, true, JSON.stringify(res));
+  assert.deepStrictEqual(
+    { status: res.retry.status, raw: res.retry.raw, text: res.retry.text, cleaned: res.retry.cleaned },
+    { status: "done", raw: "raw again", text: "raw again", cleaned: false }
+  );
+  assert.strictEqual(rig.savedHistory()[0].text, "cleaned(first take)", "the original stays");
+  assert.strictEqual(rig.log.notifications.length, notes, "a retranscription is quiet: History shows the result");
+});

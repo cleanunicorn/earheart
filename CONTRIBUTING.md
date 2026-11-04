@@ -222,6 +222,8 @@ main/                    Electron main process
   settings.js            JSON settings with deep-merged defaults, atomic 0600 writes
   secret-store.js        remote API keys at rest: safeStorage encryption + status
   history.js             local transcription history: stable entry ids, search, single delete
+  audio-store.js         kept recordings (#343): AES-GCM files under a safeStorage-wrapped key, limits
+  recordings.js          when a recording is kept, pruning, export, retranscription (no delivery)
   tray.js                tray icon + menu
   windows.js             overlay + settings + wizard + correction windows (one factory)
   window-guard.js        navigation lock + permission policy for app windows
@@ -403,6 +405,18 @@ Design constraints worth keeping:
   `settings.get()` and the renderer only ever see plaintext keys, never
   ciphertext. `safeStorage` answers only after app `ready`, so settings load
   before then isn't cached and `save()` refuses. See `main/secret-store.js`.
+- **Kept recordings are opt-in and fail closed** (`main/audio-store.js`,
+  `main/recordings.js`, #343). With `recordings.keep` off (the default)
+  nothing is written. When on, with History on and real `safeStorage`, each
+  dictation's WAV is sealed with AES-256-GCM under a random data key whose
+  only stored form is `safeStorage`-wrapped (`audio/key.json`), named by its
+  History entry id, written a turn after `history.add` so it never delays the
+  paste. Never plaintext; no secure storage means `settings.save()` refuses
+  `keep`; a key that won't unwrap, or a missing key with recordings left, is
+  reported, never replaced on its own. Limits prune by age, orphaned id, then
+  oldest-first by size. A retranscription stores `entry.retry` beside the
+  original (`history.setRetry`, ordered by `seq`) and never delivers. Format,
+  limits and the failure table: [docs/retained-audio.md](docs/retained-audio.md).
 - **History entries have stable ids** (`main/history.js`). Every entry in
   `history.json` carries an `id`: 1–64 characters of `[A-Za-z0-9_-]`, a UUID v4
   for new entries, stamped by `history.add()` before delivery and returned by

@@ -344,6 +344,21 @@
           </label>
         </div>
 
+        <div class="card">
+          <div class="card-title">Always replace</div>
+          <div class="field">
+            <label for="cleanup-aliases">Heard words → spelling <span class="muted">(one term per line)</span></label>
+            <textarea id="cleanup-aliases" rows="4" spellcheck="false" aria-describedby="cleanup-aliases-hint"
+              placeholder="air heart, ear heart -> Earheart&#10;cooper netties -> Kubernetes"></textarea>
+            <p id="cleanup-aliases-hint" class="hint">
+              Exact replacements for words the speech engine keeps mishearing,
+              applied to every dictation even with cleanup off. Whole words
+              only, any capitalization; code in backticks, paths and URLs are
+              left alone. History keeps the original transcript.
+            </p>
+          </div>
+        </div>
+
         <div id="cleanup-fields">
           <div class="card">
             <div class="card-title">Cleanup engine</div>
@@ -689,6 +704,7 @@
 
     <script src="hotkey-capture.js"></script>
     <script src="vocabulary.js"></script>
+    <script src="aliases.js"></script>
     <script src="prompt-diff.js"></script>
     <script src="settings-sync.js"></script>
     <script src="permission-status.js"></script>

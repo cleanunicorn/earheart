@@ -440,6 +440,10 @@ function applySettingsChange({ previous, current: saved }) {
     current.cleanup.dictionary = [...saved.dictionary];
     baseline.dictionary = [...saved.dictionary];
   }
+  if (Array.isArray(saved.aliases)) {
+    current.cleanup.aliases = saved.aliases.map((r) => ({ term: r.term, heard: [...r.heard] }));
+    baseline.aliases = saved.aliases.map((r) => ({ term: r.term, heard: [...r.heard] }));
+  }
   current.overlay = saved.overlay;
   current.customModels = saved.customModels;
   current.updates = { ...saved.updates };

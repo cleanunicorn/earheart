@@ -17,6 +17,11 @@
     <p id="selection-hint" class="hint">Select text, then press Tab to correct it. You can also edit the transcript directly.</p>
     <label for="spelling">Correct spelling</label>
     <input id="spelling" type="text" autocomplete="off" spellcheck="false" maxlength="120" />
+    <label class="check" for="always-replace">
+      <input id="always-replace" type="checkbox" aria-describedby="always-replace-hint" />
+      Always replace the selected words with this spelling
+    </label>
+    <p id="always-replace-hint" class="hint">With Replace &amp; remember, future dictations get this spelling wherever these exact words appear, even with cleanup off.</p>
     <div class="actions">
       <button id="remember" class="primary" disabled>Replace &amp; remember</button>
       <button id="replace" disabled>Replace only</button>

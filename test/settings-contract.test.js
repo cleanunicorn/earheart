@@ -255,6 +255,10 @@ function settingsCollectSource() {
     extractFunction(js, "styleMode"),
     extractFunction(js, "collectCleanupStyle"),
     extractFunction(js, "engineValue"),
+    // collectAliases parses with renderer/aliases.js, a classic script the
+    // page loads before settings.js.
+    fs.readFileSync(path.join(RENDERER, "aliases.js"), "utf8"),
+    extractFunction(js, "collectAliases"),
     extractFunction(js, "collect"),
     "this.collect = collect;",
   ].join("\n");

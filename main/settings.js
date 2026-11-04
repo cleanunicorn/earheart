@@ -11,6 +11,7 @@ const registry = require("./engines/registry");
 const logger = require("./util/logger");
 const secretStore = require("./secret-store");
 const { DEFAULT_STYLE, styleById, NEUTRAL_SAMPLING } = require("./cleanup-styles");
+const { normalizeAliases } = require("../renderer/aliases");
 
 // The invariant core of the cleanup instructions, inlined into the model's user
 // turn (not used as a chat system prompt) — see main/engines/engine-worker.js
@@ -146,6 +147,11 @@ const DEFAULTS = {
     // main/cleanup-styles.js. Array of strings; deepMerge replaces arrays
     // wholesale, so a saved list survives the merge intact.
     dictionary: [],
+    // Explicit aliases (#335): [{ term, heard: [...] }]. Every heard form is
+    // replaced with its term in each delivered transcript, cleanup or not —
+    // see applyAliases in renderer/aliases.js. A separate key, so the flat
+    // dictionary above stays as older versions wrote and read it.
+    aliases: [],
     // The new-default-prompt offer (cleanupPromptOffer): the default's id the
     // user decided on (took it or kept theirs), and the one a launch notice
     // already announced, so each new default is announced once and offered
@@ -396,6 +402,16 @@ function clampLimits(merged) {
   return out;
 }
 
+// Make cleanup.aliases valid whatever the file held (hand edits, another
+// version): invalid entries dropped, each heard form kept with the first term
+// that claims it. Idempotent, and like clampLimits nothing is rewritten on
+// disk until the next save. Copies the section for the same reason.
+function normalizeStoredAliases(merged) {
+  const aliases = normalizeAliases(merged.cleanup.aliases, (reason) =>
+    logger.warn(`dropped a saved dictionary alias: ${reason}`));
+  return { ...merged, cleanup: { ...merged.cleanup, aliases } };
+}
+
 // safeStorage answers only after app `ready` (before it, Linux reports no
 // encryption at all). A stub without isReady (unit tests) counts as ready.
 function appReady() {
@@ -458,7 +474,7 @@ function load() {
     ? secretStore.storageStatus(safeStorage, process.platform)
     : { secure: false, backend: null };
   const decoded = secretStore.decodeSecrets(stored, ready ? safeStorage : null);
-  const merged = clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored)));
+  const merged = normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored))));
   // Before `ready` encrypted keys read as "", so the result is not cached:
   // the first load after `ready` decrypts them. Nothing saves before then
   // (save() refuses).
@@ -528,7 +544,7 @@ function writeFile(merged) {
 function save(next) {
   if (!appReady()) throw new Error("settings cannot be saved before the app is ready");
   const previous = load();
-  const merged = clampLimits(deepMerge(DEFAULTS, next));
+  const merged = normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, next)));
   writeFile(merged);
   // Only now does the in-memory copy change: a failed save must leave get()
   // agreeing with the file, not handing out values that were never persisted.

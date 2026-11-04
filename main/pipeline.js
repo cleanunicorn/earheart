@@ -30,6 +30,7 @@ const logger = require("./util/logger");
 const { prettyHotkey } = require("./util/hotkey-label");
 const { createNotifier, sttNotReadyNotice, BODY_MAX } = require("./setup-notices");
 const { createFailedTake } = require("./failed-take");
+const { applyAliases } = require("../renderer/aliases");
 
 let state = "idle"; // idle | recording | processing
 // Shows the "model not downloaded" notice; its click opens Settings.
@@ -410,6 +411,17 @@ async function transcribeWithEstimate(wav, sttCfg, signal, stale, assembly) {
   }
 }
 
+// Apply the user's aliases to `text`. Never throws: a failure is logged and
+// the text goes out as it was (golden rule 8).
+function withAliases(text, aliases) {
+  try {
+    return applyAliases(text, aliases);
+  } catch (err) {
+    logger.warn("dictionary aliases failed; delivering the text without them:", err);
+    return text;
+  }
+}
+
 // Sibling of transcribeWithEstimate: run cleanup with its streamed progress.
 // The builtin worker reports real token progress (generated vs transcript
 // length, capped below 1 — only the reply says done), so on success this sends
@@ -729,6 +741,10 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
       ({ text, cleaned } = await cleanWithFallback(raw, cfg.cleanup, signal, stale));
       if (stale()) return;
     }
+    // Explicit aliases (#335) run on what is delivered — the cleaned text or
+    // the raw fallback — so they hold with cleanup off or failing. `raw`
+    // stays as transcribed for History.
+    text = withAliases(text, cfg.cleanup.aliases);
 
     // History first: the final text is the user's as soon as it exists,
     // whatever delivery does next (a cancel mid-keystroke, a paste tool that

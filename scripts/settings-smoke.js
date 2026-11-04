@@ -1715,6 +1715,53 @@ app.whenReady().then(async () => {
         });
       }
 
+      // #335: Always replace stays editable with cleanup off, follows an
+      // alias the correction window saved meanwhile without touching what
+      // the user typed, saves both, and refuses a heard form with two owners.
+      {
+        const beforeEdit = settings.get();
+        const { saveWin, run } = await openSaveWindow();
+        const usable = await run(`(() => {
+          const toggle = document.getElementById("cleanup-enabled");
+          toggle.checked = false;
+          toggle.dispatchEvent(new Event("change", { bubbles: true }));
+          const field = document.getElementById("cleanup-aliases");
+          field.value = "air heart, ear heart -> Earheart";
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+          return !field.closest("[inert]") && !field.disabled;
+        })()`);
+        check("Always replace is editable with cleanup off", usable === true);
+        const live = settings.get();
+        settings.save({ ...live, cleanup: { ...live.cleanup, aliases: [{ term: "kubectl", heard: ["cube cuddle"] }] } });
+        const shown = await waitFor(
+          () => run(`(() => { const v = document.getElementById("cleanup-aliases").value; return v.includes("cube cuddle") && v; })()`),
+          "an alias saved elsewhere never reached the open form"
+        );
+        check("an alias saved elsewhere is appended to the typed rules",
+          shown === "air heart, ear heart -> Earheart\ncube cuddle -> kubectl", JSON.stringify(shown));
+        await run(`document.getElementById("save").click()`);
+        await waitFor(() => run(`document.getElementById("save-status").className === "status ok"`), "the alias Save never reported Saved", 500);
+        check("Save stores the typed and the concurrently saved aliases",
+          JSON.stringify(savedJson().cleanup.aliases) === JSON.stringify([
+            { term: "Earheart", heard: ["air heart", "ear heart"] },
+            { term: "kubectl", heard: ["cube cuddle"] },
+          ]), JSON.stringify(savedJson().cleanup.aliases));
+        const refused = await run(`(() => {
+          const field = document.getElementById("cleanup-aliases");
+          field.value += "\\nAir Heart -> Airheart";
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+          document.getElementById("save").click();
+          return document.getElementById("save-status").textContent;
+        })()`);
+        check("Save refuses a heard form owned by another term, naming the line",
+          /^Not saved — Always replace, line 3: “Air Heart” already becomes “Earheart”/.test(refused) &&
+            savedJson().cleanup.aliases.length === 2,
+          JSON.stringify(refused));
+        await clickClose(saveWin);
+        const after = settings.get();
+        settings.save({ ...after, cleanup: { ...after.cleanup, enabled: beforeEdit.cleanup.enabled, aliases: beforeEdit.cleanup.aliases } });
+      }
+
       // An edit made while the save is in flight is not in what was saved:
       // Save must say so instead of "Saved", and disk keeps the sent value.
       // Cover a plain field and a limit that the response used to overwrite.

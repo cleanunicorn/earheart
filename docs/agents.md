@@ -38,7 +38,9 @@ wrong or a prompt gets reworded, these three fields in Settings → Cleanup help
 2. **Dictionary.** Add the words you say fifty times a day: your repo and
    service names, `pnpm`, `kubectl`, `useEffect`, teammates' names.
    Speech-to-text has never heard of your project; the cleanup model corrects
-   near-misses to these exact spellings (so cleanup must be on).
+   near-misses to these exact spellings (so cleanup must be on). For a word
+   it keeps mishearing the same way, add an **Always replace** rule
+   (`cube cuddle -> kubectl`): an exact swap that works with cleanup off.
 3. **System prompt.** Editable. Append a line like this to make cleanup safe
    for instructions:
 

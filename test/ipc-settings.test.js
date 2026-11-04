@@ -251,7 +251,7 @@ test("every successful save broadcasts settings:changed and refreshes the tray",
   for (const side of ["previous", "current"]) {
     assert.deepStrictEqual(
       Object.keys(changed[0].payload[side]).sort(),
-      ["customModels", "dictionary", "output", "overlay", "updates"],
+      ["aliases", "customModels", "dictionary", "output", "overlay", "updates"],
       side
     );
   }
@@ -325,6 +325,47 @@ test("remembered spellings survive a stale Settings save with independent dictio
   snapshot.cleanup.dictionary = ["keep", "typed"];
   await handlers["settings:save"]({}, { settings: snapshot, baseline });
   assert.deepStrictEqual(readFile().cleanup.dictionary, ["keep", "kubectl", "typed"]);
+});
+
+test("remember with heard words saves the spelling and its alias together", async (t) => {
+  const { handlers, readFile } = loadIpc(t);
+  const result = await handlers["correction:remember"]({}, { spelling: "Earheart", heard: "air heart" });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.alias, true);
+  assert.deepStrictEqual(readFile().cleanup.dictionary, ["Earheart"]);
+  assert.deepStrictEqual(readFile().cleanup.aliases, [{ term: "Earheart", heard: ["air heart"] }]);
+  const plain = await handlers["correction:remember"]({}, { spelling: "kubectl" });
+  assert.strictEqual(plain.alias, false);
+  assert.deepStrictEqual(readFile().cleanup.aliases, [{ term: "Earheart", heard: ["air heart"] }]);
+});
+
+test("remember refuses an alias another term owns and saves nothing", async (t) => {
+  const { handlers, readFile } = loadIpc(t);
+  await handlers["correction:remember"]({}, { spelling: "Earheart", heard: "air heart" });
+  const before = readFile().cleanup;
+  const result = await handlers["correction:remember"]({}, { spelling: "Airheart", heard: "Air Heart" });
+  assert.strictEqual(result.ok, false);
+  assert.match(result.error, /already becomes “Earheart”/);
+  assert.deepStrictEqual(readFile().cleanup.dictionary, before.dictionary, "the spelling is not saved either");
+  assert.deepStrictEqual(readFile().cleanup.aliases, before.aliases);
+  for (const bad of [{ spelling: "x", heard: 5 }, { spelling: "x", heard: "a\nb" }, { spelling: "x", heard: "" }]) {
+    assert.strictEqual((await handlers["correction:remember"]({}, bad)).ok, false, JSON.stringify(bad));
+  }
+  assert.deepStrictEqual(readFile().cleanup.aliases, before.aliases);
+});
+
+test("an alias remembered while Settings is open survives its stale save with independent edits", async (t) => {
+  const { settings, handlers, readFile } = loadIpc(t);
+  settings.save({ ...settings.get(), cleanup: { ...settings.get().cleanup, aliases: [{ term: "Earheart", heard: ["air heart", "old"] }] } });
+  const snapshot = settings.get();
+  const baseline = require("../renderer/settings-sync").sharedBaseline(snapshot);
+  assert.strictEqual((await handlers["correction:remember"]({}, { spelling: "kubectl", heard: "cube cuddle" })).ok, true);
+  snapshot.cleanup.aliases = [{ term: "Earheart", heard: ["air heart", "ear heart"] }];
+  await handlers["settings:save"]({}, { settings: snapshot, baseline });
+  assert.deepStrictEqual(readFile().cleanup.aliases, [
+    { term: "Earheart", heard: ["air heart", "ear heart"] },
+    { term: "kubectl", heard: ["cube cuddle"] },
+  ]);
 });
 
 test("remember failure preserves existing dictionary and reports failure", async (t) => {

@@ -41,8 +41,14 @@ async function checkCorrection({ waitFor, check, savedThenClose }) {
   clipboard.writeText("untouched clipboard");
   await run('document.getElementById("copy").click()');
   check("copy refuses an unapplied spelling without changing the clipboard", !win.isDestroyed() && clipboard.readText() === "untouched clipboard" && await run('document.getElementById("status").textContent.includes("Apply your spelling")'));
+  // Always replace (#335): the selected words become an alias of the spelling.
+  await run('document.getElementById("always-replace").click()');
   await run('document.getElementById("remember").click()');
   await waitFor(() => run('document.getElementById("status").textContent.includes("remembered")'), "remember did not finish");
+  check("Always replace saves the selected words as an alias",
+    JSON.stringify(settings.get().cleanup.aliases) === JSON.stringify([{ term: "kubectl", heard: ["cube cuddle"] }]),
+    JSON.stringify(settings.get().cleanup.aliases));
+  check("Always replace is cleared for the next correction", await run('document.getElementById("always-replace").checked') === false);
   const corrected = original.replace("cube cuddle", "kubectl");
   check("keyboard selection replaces exactly one occurrence and preserves Unicode", await run('document.getElementById("transcript").value') === corrected);
   check("remember saves the exact spelling", settings.get().cleanup.dictionary.includes("kubectl"));
@@ -59,6 +65,7 @@ async function checkCorrection({ waitFor, check, savedThenClose }) {
 
   await waitFor(() => formRun('document.getElementById("cleanup-dictionary").value.includes("kubectl")'), "Settings did not receive remembered word");
   check("remember preserves unsaved dictionary edits in Settings", await formRun('document.getElementById("cleanup-dictionary").value.includes("localDraft")'));
+  await waitFor(() => formRun('document.getElementById("cleanup-aliases").value.includes("cube cuddle -> kubectl")'), "Settings did not receive the remembered alias");
   check("dictionary updates preserve blank lines and the caret", await formRun('document.getElementById("cleanup-dictionary").value.startsWith("localDraft\\n\\n") && document.getElementById("cleanup-dictionary").selectionStart === 5'));
   windows.openCorrection({ text: "a newer dictation" });
   check("reopening does not replace an active correction draft", await run('document.getElementById("transcript").value') === corrected);

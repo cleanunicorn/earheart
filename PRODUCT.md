@@ -65,7 +65,8 @@ Supporting truths (real, but not the lead):
   OpenAI-compatible HTTP endpoint you can repoint (local server, Ollama,
   hosted APIs). Switching is just a base URL in Settings.
 - **Tuned for technical speech** — verbatim/clean/polished cleanup styles and a
-  user dictionary so identifiers, tool names and jargon survive transcription.
+  user dictionary, plus exact "always replace" aliases for recurring
+  mishearings, so identifiers, tool names and jargon survive transcription.
 - **Never loses your words** — raw-transcript fallback when cleanup fails,
   local history against mis-aimed pastes, clipboard restore.
 - **Cross-platform equal citizen** — first-class Linux support (X11 and

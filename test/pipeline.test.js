@@ -1887,3 +1887,45 @@ test("pipeline: clipboard takeover keeps the transcript with History disabled", 
   assert.strictEqual(rig.pipeline.getUndelivered().text, "first part\nsecond part");
   assert.strictEqual(rig.log.done.method, "clipboard-changed");
 });
+
+// #335: explicit aliases are applied to what is delivered whether cleanup is
+// off, succeeds or fails, and History's raw transcript stays as transcribed.
+const ALIASES = [{ term: "Earheart", heard: ["air heart"] }];
+
+test("pipeline: aliases apply with cleanup off, and History keeps the raw words", async () => {
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "Open air heart, not fair heart." });
+  rig.cfg.cleanup.aliases = ALIASES;
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(rig.log.delivered, ["Open Earheart, not fair heart."]);
+  assert.strictEqual(rig.log.history[0].raw, "Open air heart, not fair heart.");
+  assert.strictEqual(rig.log.history[0].text, "Open Earheart, not fair heart.");
+  assert.strictEqual(rig.log.history[0].cleaned, false);
+});
+
+test("pipeline: aliases apply to cleaned text and to the raw fallback when cleanup fails", async () => {
+  const cleaned = dictationRig({ cleanup: true, transcribe: async () => "air heart" });
+  cleaned.cfg.cleanup.aliases = ALIASES;
+  await cleaned.dictate(speechWav(1));
+  assert.deepStrictEqual(cleaned.log.delivered, ["cleaned(Earheart)"]);
+  assert.strictEqual(cleaned.log.history[0].raw, "air heart");
+
+  const failed = dictationRig({
+    cleanup: true,
+    transcribe: async () => "Ship air heart.",
+    clean: async () => { throw new Error("Cleanup returned no usable text"); },
+  });
+  failed.cfg.cleanup.aliases = ALIASES;
+  await failed.dictate(speechWav(1));
+  assert.deepStrictEqual(failed.log.delivered, ["Ship Earheart."]);
+  assert.strictEqual(failed.log.history[0].raw, "Ship air heart.");
+  assert.strictEqual(failed.log.history[0].cleaned, false);
+});
+
+test("pipeline: a broken alias list still delivers the words", async () => {
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "Keep air heart." });
+  // Not what settings.js would ever hand out; applyAliases must cope.
+  rig.cfg.cleanup.aliases = [{ term: "Earheart", get heard() { throw new Error("boom"); } }];
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(rig.log.delivered, ["Keep air heart."]);
+  assert.ok(rig.log.logs.some(([level, label]) => level === "warn" && /dictionary aliases failed/.test(label)));
+});

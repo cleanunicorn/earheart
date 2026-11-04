@@ -249,6 +249,30 @@ test("ducking: macOS default switching between the set and its readback keeps th
   assert.strictEqual(store.peek(), null);
 });
 
+test("ducking: macOS default switching during a timed-out set keeps the marker too", async () => {
+  const backend = fakeBackend({
+    addressable: false,
+    devices: { A: { raw: 80, muted: false }, B: { raw: 60, muted: false } },
+  });
+  const realWrite = backend.write;
+  backend.write = async (device, raw) => {
+    backend.write = realWrite;
+    await realWrite(device, raw);
+    backend.setDefault("B");
+    throw new Error("timed out");
+  };
+  const { ducker, store } = setup({ backend });
+  await ducker.setCapturing("dictation", true);
+  assert.strictEqual(vol(backend, "A"), 16);
+  await ducker.setCapturing("dictation", false);
+  assert.strictEqual(vol(backend, "B"), 60, "B untouched");
+  assert.ok(store.peek(), "A's marker survives");
+  backend.setDefault("A");
+  await ducker.recover();
+  assert.strictEqual(vol(backend, "A"), 80);
+  assert.strictEqual(store.peek(), null);
+});
+
 test("ducking: nested owners lower once and restore only when the last lets go", async () => {
   const { ducker, backend } = setup();
   await ducker.setCapturing("one", true);

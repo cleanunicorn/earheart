@@ -199,9 +199,11 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
       fail("could not lower the output volume", err);
       // The write may have landed (a timeout) or not: look. Still the prior
       // level → nothing is held. What was asked for → hold that readback.
-      // Unreadable → hold the asked-for level (the restore's exact check
-      // writes only if that is what reads back). Anything else is someone
-      // else's change: leave it, and hold nothing.
+      // Unreadable, or (macOS) another device is the default now → hold the
+      // asked-for level and keep the marker (the restore's exact check writes
+      // only if that is what reads back; a switched device is recovered when
+      // it is back). Anything else on this device is someone else's change:
+      // leave it, and hold nothing.
       let seen = null;
       try {
         seen = await b.read(cur.device);
@@ -211,7 +213,7 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
         clearMarker();
         return skip("could not lower the output volume");
       }
-      if (seen && !(mine && b.matches(seen.raw, targetRaw))) {
+      if (mine && !b.matches(seen.raw, targetRaw)) {
         clearMarker();
         return skip("the volume changed while it was being lowered");
       }

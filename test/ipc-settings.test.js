@@ -10,7 +10,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 
 const ipcPath = require.resolve("../main/ipc");
 const settingsPath = require.resolve("../main/settings");
@@ -66,19 +66,8 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
     [resolveFrom("./util/logger")]: { info() {}, warn() {}, error() {} },
   };
 
-  const previous = new Map();
-  for (const [p, exports] of Object.entries(stubs)) {
-    previous.set(p, require.cache[p]);
-    const m = new Module(p, null);
-    m.filename = p;
-    m.loaded = true;
-    m.exports = exports;
-    require.cache[p] = m;
-  }
-  delete require.cache[ipcPath];
-  delete require.cache[settingsPath];
   let settings;
-  try {
+  withStubs(stubs, [ipcPath, settingsPath], () => {
     settings = require(settingsPath);
     require(ipcPath).init({
       applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
@@ -87,14 +76,7 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
       canCopy,
       onHistoryCleared: () => { calls.undeliveredCleared = (calls.undeliveredCleared || 0) + 1; },
     });
-  } finally {
-    delete require.cache[ipcPath];
-    delete require.cache[settingsPath];
-    for (const [p, old] of previous) {
-      if (old) require.cache[p] = old;
-      else delete require.cache[p];
-    }
-  }
+  });
   const file = path.join(userData, "settings.json");
   return { handlers, settings, calls, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
 }

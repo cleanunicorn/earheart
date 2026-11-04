@@ -3,27 +3,25 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 
 const { rotateIfLarge } = require("../main/util/logger");
 
 function loadLogger(logsDir) {
   const loggerPath = require.resolve("../main/util/logger");
   const electronPath = require.resolve("electron");
-  const savedElectron = require.cache[electronPath];
   const savedLogger = require.cache[loggerPath];
-  const electron = new Module(electronPath, null);
-  electron.filename = electronPath;
-  electron.loaded = true;
-  electron.exports = { app: { getPath: () => logsDir } };
-  require.cache[electronPath] = electron;
-  delete require.cache[loggerPath];
-  const logger = require(loggerPath);
-  logger.init();
-  delete require.cache[loggerPath];
+  const logger = withStubs(
+    { [electronPath]: { app: { getPath: () => logsDir } } },
+    [loggerPath],
+    () => {
+      const fresh = require(loggerPath);
+      fresh.init();
+      return fresh;
+    }
+  );
+  // Put back the logger this file required at the top, not just an empty slot.
   if (savedLogger) require.cache[loggerPath] = savedLogger;
-  if (savedElectron) require.cache[electronPath] = savedElectron;
-  else delete require.cache[electronPath];
   return logger;
 }
 

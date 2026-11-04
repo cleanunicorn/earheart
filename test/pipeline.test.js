@@ -18,7 +18,7 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 const path = require("node:path");
 const os = require("node:os");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 
 const pipelinePath = require.resolve("../main/pipeline");
 const dir = path.dirname(pipelinePath);
@@ -53,25 +53,7 @@ function loadPipelineWith({ engines, settings, overrides = {} }) {
   };
   for (const [spec, stub] of Object.entries(overrides)) stubs[resolveFrom(spec)] = stub;
 
-  const saved = {};
-  for (const p of Object.keys(stubs)) {
-    saved[p] = require.cache[p];
-    const m = new Module(p, null);
-    m.filename = p;
-    m.loaded = true;
-    m.exports = stubs[p];
-    require.cache[p] = m;
-  }
-  delete require.cache[pipelinePath];
-  try {
-    return require(pipelinePath);
-  } finally {
-    delete require.cache[pipelinePath];
-    for (const p of Object.keys(stubs)) {
-      if (saved[p]) require.cache[p] = saved[p];
-      else delete require.cache[p];
-    }
-  }
+  return withStubs(stubs, [pipelinePath], () => require(pipelinePath));
 }
 
 const MINUTES = 2;

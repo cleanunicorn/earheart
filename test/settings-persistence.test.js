@@ -3,7 +3,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 
 // Warnings settings.js logs (e.g. a throwing change listener), captured instead
 // of written to a real log file.
@@ -14,41 +14,15 @@ function loadSettings(userData) {
   const electronPath = require.resolve("electron");
   const registryPath = require.resolve("../main/engines/registry");
   const loggerPath = require.resolve("../main/util/logger");
-  const savedElectron = require.cache[electronPath];
-  const savedRegistry = require.cache[registryPath];
-  const savedLogger = require.cache[loggerPath];
-
-  const logger = new Module(loggerPath, null);
-  logger.filename = loggerPath;
-  logger.loaded = true;
-  logger.exports = { info() {}, warn: (...args) => warnings.push(args.join(" ")), error() {} };
-  require.cache[loggerPath] = logger;
-
-  const electron = new Module(electronPath, null);
-  electron.filename = electronPath;
-  electron.loaded = true;
-  electron.exports = { app: { getPath: () => userData } };
-  require.cache[electronPath] = electron;
-
-  const registry = new Module(registryPath, null);
-  registry.filename = registryPath;
-  registry.loaded = true;
-  registry.exports = {
-    DEFAULT_STT_MODEL: "stt-default",
-    DEFAULT_CLEANUP_MODEL: "cleanup-default",
+  const stubs = {
+    [loggerPath]: { info() {}, warn: (...args) => warnings.push(args.join(" ")), error() {} },
+    [electronPath]: { app: { getPath: () => userData } },
+    [registryPath]: {
+      DEFAULT_STT_MODEL: "stt-default",
+      DEFAULT_CLEANUP_MODEL: "cleanup-default",
+    },
   };
-  require.cache[registryPath] = registry;
-
-  delete require.cache[settingsPath];
-  const settings = require(settingsPath);
-  delete require.cache[settingsPath];
-  if (savedElectron) require.cache[electronPath] = savedElectron;
-  else delete require.cache[electronPath];
-  if (savedRegistry) require.cache[registryPath] = savedRegistry;
-  else delete require.cache[registryPath];
-  if (savedLogger) require.cache[loggerPath] = savedLogger;
-  else delete require.cache[loggerPath];
-  return settings;
+  return withStubs(stubs, [settingsPath], () => require(settingsPath));
 }
 
 // A temp userData directory that is removed when the test ends.

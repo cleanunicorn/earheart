@@ -12,7 +12,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 
 const ipcPath = require.resolve("../main/ipc");
 const registry = require("../main/engines/registry");
@@ -107,27 +107,11 @@ function loadIpcHandlers(cfg, {
     },
   };
 
-  const previous = {};
-  for (const p of Object.keys(stubs)) {
-    previous[p] = require.cache[p];
-    const m = new Module(p, null);
-    m.filename = p;
-    m.loaded = true;
-    m.exports = stubs[p];
-    require.cache[p] = m;
-  }
-  delete require.cache[ipcPath];
-  // As main.js wires it: custom models follow the settings (engines/catalog.js).
-  require("../main/engines/catalog").bindCustomModels(settings);
-  try {
+  withStubs(stubs, [ipcPath], () => {
+    // As main.js wires it: custom models follow the settings (engines/catalog.js).
+    require("../main/engines/catalog").bindCustomModels(settings);
     require(ipcPath).init({ applyHotkeys: () => ({}), onSettingsChanged() {}, ...init });
-  } finally {
-    delete require.cache[ipcPath];
-    for (const p of Object.keys(stubs)) {
-      if (previous[p]) require.cache[p] = previous[p];
-      else delete require.cache[p];
-    }
-  }
+  });
   return { handlers, saved, broadcasts, warnings, windowCalls };
 }
 

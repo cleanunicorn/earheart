@@ -1,6 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 const { prettyHotkey, registrationHint } = require("../main/util/hotkey-label");
 
 const A = "CommandOrControl+Shift+Space";
@@ -11,15 +11,10 @@ function loadHotkeys({ registerImpl = () => true, occupied = [] } = {}) {
   const hotkeysPath = require.resolve("../main/hotkeys");
   const loggerPath = require.resolve("../main/util/logger");
   const electronPath = require.resolve("electron");
-  const savedLogger = require.cache[loggerPath];
-  const savedElectron = require.cache[electronPath];
   const calls = { registered: [], unregistered: [], events: [], warnings: [] };
   const bindings = new Map();
   const attempts = new Map();
-  const electron = new Module(electronPath, null);
-  electron.filename = electronPath;
-  electron.loaded = true;
-  electron.exports = {
+  const electron = {
     globalShortcut: {
       register(accelerator, callback) {
         calls.registered.push({ accelerator, callback });
@@ -42,19 +37,12 @@ function loadHotkeys({ registerImpl = () => true, occupied = [] } = {}) {
       },
     },
   };
-  const logger = new Module(loggerPath, null);
-  logger.filename = loggerPath;
-  logger.loaded = true;
-  logger.exports = { warn: (message) => calls.warnings.push(message) };
-  require.cache[loggerPath] = logger;
-  require.cache[electronPath] = electron;
-  delete require.cache[hotkeysPath];
-  const hotkeys = require(hotkeysPath);
-  delete require.cache[hotkeysPath];
-  if (savedElectron) require.cache[electronPath] = savedElectron;
-  else delete require.cache[electronPath];
-  if (savedLogger) require.cache[loggerPath] = savedLogger;
-  else delete require.cache[loggerPath];
+  const logger = { warn: (message) => calls.warnings.push(message) };
+  const hotkeys = withStubs(
+    { [loggerPath]: logger, [electronPath]: electron },
+    [hotkeysPath],
+    () => require(hotkeysPath)
+  );
   return { hotkeys, calls, bindings };
 }
 

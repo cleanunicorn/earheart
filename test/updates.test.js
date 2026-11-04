@@ -17,7 +17,7 @@ const fsp = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 const childProcess = require("node:child_process");
 
 const updatesPath = require.resolve("../main/updates");
@@ -123,15 +123,6 @@ function loadUpdates(t, { stored, isPackaged = false, dictation = "recording", f
     },
   };
 
-  const previous = new Map();
-  for (const [p, exports] of Object.entries(stubs)) {
-    previous.set(p, require.cache[p]);
-    const m = new Module(p, null);
-    m.filename = p;
-    m.loaded = true;
-    m.exports = exports;
-    require.cache[p] = m;
-  }
   // updates.js destructures spawn/spawnSync at load, so the fakes stick.
   const { spawn, spawnSync } = childProcess;
   childProcess.spawn = (...args) => {
@@ -142,21 +133,15 @@ function loadUpdates(t, { stored, isPackaged = false, dictation = "recording", f
     calls.spawnSync.push(args);
     return spawnSyncImpl ? spawnSyncImpl(...args) : { status: 0 };
   };
-  delete require.cache[updatesPath];
-  delete require.cache[settingsPath];
   let updates;
   try {
-    require(settingsPath);
-    updates = require(updatesPath);
+    updates = withStubs(stubs, [updatesPath, settingsPath], () => {
+      require(settingsPath);
+      return require(updatesPath);
+    });
   } finally {
     childProcess.spawn = spawn;
     childProcess.spawnSync = spawnSync;
-    delete require.cache[updatesPath];
-    delete require.cache[settingsPath];
-    for (const [p, old] of previous) {
-      if (old) require.cache[p] = old;
-      else delete require.cache[p];
-    }
   }
   preserveEnv(t, "EARHEART_UPDATE_FEED");
   process.env.EARHEART_UPDATE_FEED = pathToFileURL(feedDir).href;

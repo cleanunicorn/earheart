@@ -13,7 +13,7 @@ const crypto = require("node:crypto");
 const registry = require("../main/engines/registry");
 const manager = require("../main/engines/model-manager");
 
-const Module = require("node:module");
+const { stubModules, withStubs } = require("./helpers/stub-modules");
 
 // Load main/engines/index.js with `electron`, `./host`, and `./model-manager`
 // replaced by the supplied fakes, so the facade can be exercised without the
@@ -30,25 +30,7 @@ function loadFacadeWith({ host, manager: managerStub, app: appExtra }) {
     [hostPath]: host,
     [managerPath]: managerStub,
   };
-  const saved = {};
-  for (const p of Object.keys(stubs)) {
-    saved[p] = require.cache[p];
-    const m = new Module(p, null);
-    m.filename = p;
-    m.loaded = true;
-    m.exports = stubs[p];
-    require.cache[p] = m;
-  }
-  delete require.cache[indexPath];
-  try {
-    return require(indexPath);
-  } finally {
-    delete require.cache[indexPath];
-    for (const p of Object.keys(stubs)) {
-      if (saved[p]) require.cache[p] = saved[p];
-      else delete require.cache[p];
-    }
-  }
+  return withStubs(stubs, [indexPath], () => require(indexPath));
 }
 
 /* ---------------- registry ---------------- */
@@ -2112,13 +2094,8 @@ test("a saved Canary entry is refused with a way out before the worker is asked 
 function loadWorkerWith(sherpaStub) {
   const workerPath = require.resolve("../main/engines/engine-worker");
   const sherpaPath = require.resolve("sherpa-onnx-node", { paths: [path.dirname(workerPath)] });
-  const savedSherpa = require.cache[sherpaPath];
   const savedPort = process.parentPort;
-  const stub = new Module(sherpaPath, null);
-  stub.filename = sherpaPath;
-  stub.loaded = true;
-  stub.exports = sherpaStub;
-  require.cache[sherpaPath] = stub;
+  const restoreSherpa = stubModules({ [sherpaPath]: sherpaStub });
   let onMessage = null;
   const replies = [];
   process.parentPort = {
@@ -2138,8 +2115,7 @@ function loadWorkerWith(sherpaStub) {
     });
   const restore = () => {
     delete require.cache[workerPath];
-    if (savedSherpa) require.cache[sherpaPath] = savedSherpa;
-    else delete require.cache[sherpaPath];
+    restoreSherpa();
     process.parentPort = savedPort;
   };
   return { send, restore };

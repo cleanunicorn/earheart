@@ -6,7 +6,7 @@ const assert = require("node:assert");
 
 const fs = require("node:fs");
 const http = require("node:http");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 const path = require("node:path");
 
 const { encodeWav, encodeSilenceWav, wavToFloat32, wavDurationSec } = require("../main/util/wav");
@@ -721,25 +721,7 @@ function loadRouteWith(cleanedText) {
     [require.resolve("../main/services/cleanup")]: { clean: async () => cleanedText },
     [require.resolve("../main/services/stt")]: {},
   };
-  const saved = {};
-  for (const p of Object.keys(stubs)) {
-    saved[p] = require.cache[p];
-    const m = new Module(p, null);
-    m.filename = p;
-    m.loaded = true;
-    m.exports = stubs[p];
-    require.cache[p] = m;
-  }
-  delete require.cache[routePath];
-  try {
-    return require(routePath);
-  } finally {
-    delete require.cache[routePath];
-    for (const p of Object.keys(stubs)) {
-      if (saved[p]) require.cache[p] = saved[p];
-      else delete require.cache[p];
-    }
-  }
+  return withStubs(stubs, [routePath], () => require(routePath));
 }
 
 test("route.clean strips leftover stumbles for the styles that promise none", async () => {

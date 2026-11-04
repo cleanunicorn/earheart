@@ -214,9 +214,18 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
       status.state = "lowered";
       return;
     }
-    if (!after || after.device !== cur.device) {
+    if (!after) {
+      // Nothing was written: the device is gone, or (macOS) another device
+      // became the default before the set.
       clearMarker();
-      skip("the output device changed");
+      return skip("the output device changed");
+    }
+    if (after.device !== cur.device) {
+      // The set landed, then the default moved on before the readback
+      // (macOS). Hold what was asked for and keep the marker: the restore
+      // finds the device "elsewhere" and leaves it to be recovered when back.
+      held = { device: cur.device, prior: cur.raw, target: targetRaw };
+      status.state = "lowered";
       return;
     }
     held = { device: cur.device, prior: cur.raw, target: after.raw };

@@ -35,12 +35,14 @@ function fakeBackend({ devices = { A: { raw: 80, muted: false } }, def = "A", ad
     },
     scale: (raw, f) => Math.round(raw * f),
     same: (x, y) => x === y,
+    afterWrite: null, // runs between the set and the readback
     async write(device, raw) {
       const id = addressable ? device : def;
       if (id !== device || !devices[id]) return null;
       if (backend.failWrite) throw backend.failWrite;
       writes.push([id, raw]);
       devices[id].raw = raw;
+      backend.afterWrite?.();
       return backend.read(device);
     },
   };
@@ -178,6 +180,25 @@ test("ducking: default-device-only backend (macOS) never writes the switched-to 
   assert.strictEqual(vol(backend, "A"), 80);
   assert.strictEqual(store.peek(), null);
   assert.deepStrictEqual(backend.writes, [["A", 16], ["A", 80]]);
+});
+
+test("ducking: macOS default switching between the set and its readback keeps the marker and restores the original later", async () => {
+  const backend = fakeBackend({
+    addressable: false,
+    devices: { A: { raw: 80, muted: false }, B: { raw: 60, muted: false } },
+  });
+  backend.afterWrite = () => { backend.afterWrite = null; backend.setDefault("B"); };
+  const { ducker, store } = setup({ backend });
+  await ducker.setCapturing("dictation", true);
+  assert.strictEqual(vol(backend, "A"), 16);
+  assert.deepStrictEqual(store.peek() && [store.peek().device, store.peek().prior, store.peek().target], ["A", 80, 16]);
+  await ducker.setCapturing("dictation", false);
+  assert.strictEqual(vol(backend, "B"), 60, "B untouched");
+  assert.ok(store.peek(), "A's marker survives");
+  backend.setDefault("A");
+  await ducker.recover();
+  assert.strictEqual(vol(backend, "A"), 80);
+  assert.strictEqual(store.peek(), null);
 });
 
 test("ducking: nested owners lower once and restore only when the last lets go", async () => {

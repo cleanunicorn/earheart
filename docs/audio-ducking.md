@@ -33,7 +33,13 @@ permission prompt, a dead device), nothing is lowered.
   macOS's 0–100 integer, Windows' scalar). One step up or down counts as
   your change. A change you make in the instant between Earheart's set and
   its readback is yours too: the readback must match what was asked for
-  (within the tool's own rounding, ~3 points on macOS), or nothing is held.
+  exactly on Linux, within 0.0001 on Windows, within 3 points on macOS — or
+  nothing is held.
+  **Known limit (macOS):** macOS may snap the level to a device's hardware
+  steps, so Earheart accepts a readback up to 3 points from what it set. A
+  change of 1–3 points made by hand in the ~0.1 s between Earheart's set and
+  its readback is taken as Earheart's own, and the restore overwrites it.
+  Volume keys move 6.25 points and are never mistaken.
 - **Another output device.** The restore addresses the device that was
   lowered, never whichever one is the default now. A device that has gone
   away is dropped without writing anywhere.

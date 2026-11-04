@@ -236,7 +236,9 @@ function aliasTerms(records) {
 const WORD = "[\\p{L}\\p{M}\\p{N}_]";
 // Spans no alias may touch: fenced and inline code, URLs, and tokens that
 // look like paths (anything with a slash or backslash, or starting with ~).
-const PROTECTED = /```[\s\S]*?(?:```|$)|`[^`\n]*`|\b[a-z][a-z0-9+.-]*:\/\/\S+|\bwww\.\S+|[^\s`]*[\\/][^\s`]*|~[^\s`]*/giu;
+// Inline code follows CommonMark: a run of N backticks closes only at the
+// next run of exactly N, so ``a `b` c`` is one span.
+const PROTECTED = /```[\s\S]*?(?:```|$)|(?<!`)(`{1,2})(?!`)[^\n]*?(?<!`)\1(?!`)|\b[a-z][a-z0-9+.-]*:\/\/\S+|\bwww\.\S+|[^\s`]*[\\/][^\s`]*|~[^\s`]*/giu;
 
 function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

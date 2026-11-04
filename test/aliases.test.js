@@ -90,6 +90,9 @@ test("applyAliases protects code, paths and URLs", () => {
   ];
   for (const text of cases) assert.equal(applyAliases(text, EARHEART), text, text);
   assert.equal(applyAliases("`x` air heart `y`", EARHEART), "`x` Earheart `y`");
+  assert.equal(applyAliases("``air heart``", EARHEART), "``air heart``", "double-backtick code");
+  assert.equal(applyAliases("``a `air heart` b`` and air heart", EARHEART), "``a `air heart` b`` and Earheart");
+  assert.equal(applyAliases("`` x `` air heart", EARHEART), "`` x `` Earheart");
   assert.equal(applyAliases("```js\ncode\n``` then air heart", EARHEART), "```js\ncode\n``` then Earheart");
 });
 

@@ -50,6 +50,7 @@ async function loadMain(
     pipelineState = "idle",
     canCloseCorrection = true,
     pruned = () => [], // ids a kept-recordings prune (#343) removes
+    ducking = {},
   } = {}
 ) {
   const events = [];
@@ -60,6 +61,7 @@ async function loadMain(
   const notices = [];
   let permissionHandler = null;
   let stateListener = null;
+  let captureListener = null;
 
   class FakeNotification {
     static isSupported() {
@@ -144,6 +146,7 @@ async function loadMain(
       pauseToggle: () => events.push("pipeline.pauseToggle"),
       discard: () => events.push("pipeline.discard"),
       onStateChange: (listener) => { stateListener = listener; },
+      onCaptureChange: (listener) => { captureListener = listener; },
       onSettingsChanged: () => {},
       onOverlayRendererGone: () => {},
     },
@@ -159,6 +162,14 @@ async function loadMain(
       stop: () => events.push("engines.stop"),
     },
     "./autostart": { apply: () => events.push("autostart.apply") },
+    "./ducking": {
+      init: () => events.push("ducking.init"),
+      setCapturing: (owner, live) => events.push(`ducking.capture:${owner}:${live}`),
+      refresh: () => events.push("ducking.refresh"),
+      holding: () => false,
+      shutdown: async () => events.push("ducking.shutdown"),
+      ...ducking,
+    },
     "./updates": {
       init: (...args) => {
         events.push("updates.init");
@@ -219,6 +230,7 @@ async function loadMain(
     notices,
     permissionHandler: () => permissionHandler,
     changeState: (state) => stateListener(state),
+    changeCapture: (live) => captureListener(live),
   };
 }
 
@@ -376,6 +388,44 @@ test("quitting destroys the overlay, then releases hotkeys, engines and updates"
   assert.deepStrictEqual(events, ["destroyOverlay", "unregisterAll", "engines.stop", "updates.dispose"]);
 });
 
+
+test("the pipeline's capture signal drives ducking, and saving settings refreshes it", async () => {
+  const { events, changeCapture, ipcInit } = await loadMain();
+  assert.ok(events.includes("ducking.init"));
+  events.length = 0;
+  changeCapture(true);
+  changeCapture(false);
+  ipcInit.onSettingsChanged();
+  // A save also applies kept-recording limits (#343) before ducking refreshes.
+  assert.deepStrictEqual(events, ["ducking.capture:dictation:true", "ducking.capture:dictation:false", "recordings.prune", "ducking.refresh"]);
+});
+
+test("quitting while other audio is lowered waits for the restore, then quits again", async () => {
+  let holding = true;
+  let finish;
+  const { events, appHandlers } = await loadMain({
+    ducking: {
+      holding: () => holding,
+      shutdown: (ms) => {
+        events.push(`ducking.shutdown:${ms}`);
+        return new Promise((resolve) => { finish = resolve; });
+      },
+    },
+  });
+  events.length = 0;
+  let prevented = false;
+  appHandlers["before-quit"]({ preventDefault: () => { prevented = true; } });
+  assert.strictEqual(prevented, true, "the first quit waits for the restore");
+  assert.deepStrictEqual(events, ["destroyOverlay", "ducking.shutdown:2000"]);
+  holding = false;
+  finish();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepStrictEqual(events.slice(-1), ["app.quit"]);
+  // The second pass finds nothing held and lets the quit through.
+  prevented = false;
+  appHandlers["before-quit"]({ preventDefault: () => { prevented = true; } });
+  assert.strictEqual(prevented, false);
+});
 
 test("correction hotkey and desktop command open the latest saved transcript only when idle", async () => {
   const key = "CommandOrControl+Alt+C";

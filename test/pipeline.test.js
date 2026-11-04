@@ -2225,3 +2225,68 @@ test("pipeline: a broken alias list still delivers the words", async () => {
   assert.deepStrictEqual(rig.log.delivered, ["Keep air heart."]);
   assert.ok(rig.log.logs.some(([level, label]) => level === "warn" && /dictionary aliases failed/.test(label)));
 });
+
+// Audio ducking follows this signal (main/ducking/): on from the overlay's
+// first samples, off while paused, and off whichever way the recording state
+// is left — stop, cancel, capture error, a dead renderer — without the
+// overlay having to say so.
+test("pipeline: the capture signal follows first samples, pause/resume and every way out of recording", async () => {
+  const rig = dictationRig({ transcribe: async () => "hello" });
+  const seen = [];
+  rig.pipeline.onCaptureChange((live) => seen.push(live));
+  const capture = (live, sid = rig.log.lastStart.sid) => rig.handlers["record:capture"]({}, { sid, live });
+
+  // stop → processing
+  rig.pipeline.toggle();
+  capture(true);
+  capture(true); // repeated: no duplicate edge
+  capture(false); // pause
+  capture(true); // resume
+  const idle = new Promise((resolve) => rig.pipeline.onStateChange((s) => s === "idle" && resolve()));
+  rig.handlers["audio:captured"]({}, { sid: rig.log.lastStart.sid, wav: speechWav(1) });
+  assert.deepStrictEqual(seen, [true, false, true, false], "stopping ends capture before processing");
+  await idle;
+
+  // cancel
+  seen.length = 0;
+  rig.pipeline.toggle();
+  capture(true);
+  rig.pipeline.cancel();
+  assert.deepStrictEqual(seen, [true, false]);
+
+  // capture error
+  seen.length = 0;
+  rig.pipeline.toggle();
+  capture(true);
+  rig.handlers["record:error"]({}, { sid: rig.log.lastStart.sid, message: "mic gone" });
+  assert.deepStrictEqual(seen, [true, false]);
+
+  // the overlay renderer died
+  seen.length = 0;
+  rig.pipeline.toggle();
+  capture(true);
+  rig.pipeline.onOverlayRendererGone();
+  assert.deepStrictEqual(seen, [true, false]);
+});
+
+test("pipeline: capture events from a stale session or outside recording are ignored, and a throwing listener can't stall it", () => {
+  const rig = dictationRig({ transcribe: async () => "unused" });
+  const seen = [];
+  rig.pipeline.onCaptureChange(() => { throw new Error("listener bug"); });
+  rig.pipeline.onCaptureChange((live) => seen.push(live));
+  rig.handlers["record:capture"]({}, { sid: 1, live: true }); // idle
+  rig.pipeline.toggle();
+  const sid = rig.log.lastStart.sid;
+  rig.handlers["record:capture"]({}, { sid: sid - 1, live: true }); // stale
+  rig.handlers["record:capture"]({}, { sid, live: "yes" }); // malformed: ignored
+  assert.deepStrictEqual(seen, []);
+  rig.handlers["record:capture"]({}, { sid, live: true });
+  // Malformed while capturing: still ignored, not taken as a stop.
+  for (const live of ["no", 0, 1, undefined, null]) rig.handlers["record:capture"]({}, { sid, live });
+  rig.handlers["record:capture"]({}, { sid });
+  assert.deepStrictEqual(seen, [true]);
+  rig.pipeline.cancel();
+  assert.deepStrictEqual(seen, [true, false]);
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+  assert.ok(rig.log.logs.some(([level, msg]) => level === "warn" && /capture listener failed/.test(msg)));
+});

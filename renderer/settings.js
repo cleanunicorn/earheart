@@ -188,6 +188,31 @@ $("correct-hotkey-clear").addEventListener("click", () => {
 
 /* ---------- microphone list ---------- */
 
+// What "Lower other audio" can do here, said plainly: unavailable (and why),
+// the last failure, or what it did this take. Dictation never depends on it.
+function duckStatusText(status) {
+  if (!status) return "";
+  const asUsual = "Dictation works as usual.";
+  if (status.available === false) return `Not available on this system (${status.reason}). ${asUsual}`;
+  if (status.lastError) return `Last attempt failed: ${status.lastError}. ${asUsual}`;
+  if (status.state === "lowered") return "Other audio is lowered right now.";
+  if (status.state === "skipped" && status.detail) return `Not lowered this take: ${status.detail}.`;
+  if (status.state === "pending" && status.detail) return `Not restored yet: ${status.detail}.`;
+  return status.mechanism ? `Uses ${status.mechanism} to change the output volume.` : "";
+}
+
+const DUCK_STATUS_REFRESH_MS = 2000;
+
+async function refreshDuckStatus() {
+  let status = null;
+  try {
+    status = await earheart.invoke("ducking:status");
+  } catch {
+    // An older main without the handler: say nothing rather than guess.
+  }
+  $("duck-status").textContent = duckStatusText(status);
+}
+
 async function loadMicrophones() {
   const select = $("mic-device");
   const status = $("mic-device-status");
@@ -292,6 +317,8 @@ function populate() {
   $("updates-autocheck").checked = current.updates?.autoCheck !== false;
   $("updates-remind").checked = current.updates?.remind !== false;
   $("max-seconds").value = current.audio.maxRecordingSeconds;
+  $("duck-other-audio").checked = current.audio.duckOtherAudio === true;
+  $("duck-level").value = current.audio.duckLevelPercent ?? defaults.audio.duckLevelPercent;
   $("idle-unload").value = current.engines?.idleUnloadMinutes ?? defaults.engines.idleUnloadMinutes;
 
   if (platform !== "linux") {
@@ -378,6 +405,13 @@ function collect() {
         numInRange(
           "max-seconds",
           current.audio?.maxRecordingSeconds ?? defaults.audio.maxRecordingSeconds
+        )
+      ),
+      duckOtherAudio: $("duck-other-audio").checked,
+      duckLevelPercent: Math.round(
+        numInRange(
+          "duck-level",
+          current.audio?.duckLevelPercent ?? defaults.audio.duckLevelPercent
         )
       ),
     },
@@ -1208,6 +1242,9 @@ async function saveSettings() {
     if (unchanged($("updates-remind"))) $("updates-remind").checked = current.updates.remind !== false;
     const adjusted = limitAdjustments(current, sent);
     if (unchanged($("max-seconds"))) $("max-seconds").value = current.audio.maxRecordingSeconds;
+    if (unchanged($("duck-other-audio"))) $("duck-other-audio").checked = current.audio.duckOtherAudio === true;
+    if (unchanged($("duck-level"))) $("duck-level").value = current.audio.duckLevelPercent;
+    refreshDuckStatus();
     if (unchanged($("idle-unload"))) $("idle-unload").value = current.engines.idleUnloadMinutes;
     if (unchanged($("recordings-days"))) $("recordings-days").value = current.recordings.maxAgeDays;
     if (unchanged($("recordings-mb"))) $("recordings-mb").value = current.recordings.maxMegabytes;
@@ -2199,4 +2236,10 @@ earheart.on("updates:state", renderUpdateState);
   settingsChangesReady();
   renderHistory();
   loadMicrophones();
+  refreshDuckStatus();
+  // The line says what is happening now (lowered, skipped, failed), which
+  // changes with every take: keep it current while the window is shown.
+  setInterval(() => {
+    if (!document.hidden) refreshDuckStatus();
+  }, DUCK_STATUS_REFRESH_MS);
 })();

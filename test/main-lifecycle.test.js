@@ -428,6 +428,7 @@ test("a settings save that prunes kept recordings tells History, as an update", 
   assert.deepStrictEqual(sent(), ['settings:history:changed:{"updated":true}']);
 
   // The startup/hourly prune's redraw is an update too.
+  const before = sent().length;
   recordingsHooks.onPruned();
-  assert.deepStrictEqual(sent().slice(-1), ['settings:history:changed:{"updated":true}']);
+  assert.deepStrictEqual(sent().slice(before), ['settings:history:changed:{"updated":true}'], "exactly one new event");
 });

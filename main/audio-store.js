@@ -196,15 +196,16 @@ function createAudioStore({ dir, safeStorage, platform = process.platform, now =
         return { error: keyProblem };
       }
     }
-    if (!create) return { error: "no-key" };
     // No key file, but recordings: the key was deleted or lost. A new key
     // would make Settings look healthy while those stay unreadable for good,
-    // so nothing new is kept until the user deletes all recordings.
+    // so nothing new is kept until the user deletes all recordings. Checked
+    // before `create`, so status() says so right after a restart too.
     if (entries().length > 0) {
       keyProblem = "lost";
       log.warn("audio key file missing while recordings remain");
       return { error: keyProblem };
     }
+    if (!create) return { error: "no-key" };
     const key = crypto.randomBytes(32);
     ensureDir();
     const wrapped = ss.encryptString(key.toString("base64")).toString("base64");

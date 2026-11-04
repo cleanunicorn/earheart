@@ -301,6 +301,7 @@ test("a deleted key file with recordings left is a lost key: no silent new key u
   first.s.save(ID_A, wav(), { limits: LIMITS });
   fs.unlinkSync(path.join(first.dir, "key.json"));
   const next = store(t, { dirPath: first.dir });
+  assert.equal(next.s.status().key, "lost", "reported at once after the restart, before any save");
   assert.deepEqual(next.s.read(ID_A), { ok: false, error: "unreadable" });
   assert.deepEqual(next.s.availability([ID_A]), { [ID_A]: "unreadable" });
   assert.deepEqual(next.s.save(ID_B, wav(), { limits: LIMITS }), { ok: false, error: "lost" });

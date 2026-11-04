@@ -185,6 +185,28 @@ test("history exposes the preserved original when cleanup changed it", () => {
   );
 });
 
+// #342: transcripts and the search query are the user's words, and may look
+// like markup. The History section builds every node with textContent.
+test("the History section never parses text as HTML", () => {
+  const start = js.indexOf("/* ---------- history ---------- */");
+  const end = js.indexOf("/* ---------- ", start + 1);
+  assert.ok(start !== -1 && end > start, "the History section markers moved");
+  const section = js.slice(start, end);
+  for (const sink of ["innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "DOMParser", "createContextualFragment"]) {
+    assert.ok(!section.includes(sink), `History must not use ${sink}`);
+  }
+  assert.match(section, /text\.textContent = item\.text/, "the transcript is set as text");
+});
+
+test("the History search field is labelled and bounded like the main-side search", () => {
+  const field = html.match(/<input[^>]*id="history-search"[^>]*>/)?.[0];
+  assert.ok(field, "the search field is missing");
+  assert.match(field, /type="search"/);
+  assert.match(html, /<label for="history-search"[^>]*>[^<]+<\/label>/, "the search field needs a label");
+  const max = Number(field.match(/maxlength="(\d+)"/)?.[1]);
+  assert.strictEqual(max, require("../main/history").MAX_QUERY, "maxlength matches history.MAX_QUERY");
+});
+
 test("every radio/checkbox group name settings.js uses exists in settings.html", () => {
   const referenced = new Set([...js.matchAll(/name="([a-z-]+)"/g)].map((m) => m[1]));
   assert.ok(referenced.size >= 3, "expected the output-mode/stt-engine/cleanup-engine groups");

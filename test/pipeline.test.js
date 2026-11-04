@@ -247,6 +247,7 @@ function dictationRig({
   isDownloading = () => false,
   notificationsSupported = true,
 } = {}) {
+  const saved = []; // the History list, newest first, with the ids add() returned
   const log = {
     warmups: [],
     overlaysCreated: 0,
@@ -378,8 +379,12 @@ function dictationRig({
       "./history": {
         add: (entry) => {
           log.history.push(entry);
+          const id = `entry-${log.history.length}`;
+          saved.unshift({ ...entry, id });
           onHistory?.(entry);
+          return id;
         },
+        list: () => saved,
       },
       "./live-preview": {
         createLivePreview: (deps) => {
@@ -414,6 +419,9 @@ function dictationRig({
     pipeline,
     cfg,
     handlers,
+    // Delete one saved History entry, as Settings → History does.
+    deleteHistory: (id) => saved.splice(saved.findIndex((entry) => entry.id === id), 1),
+    savedHistory: () => saved,
     liveTranscribe: (...a) => liveDeps.runTranscribe(...a),
     // What the live preview would hand the next final pass.
     setSnapshot: (snap) => (snapshot = snap),
@@ -1804,6 +1812,60 @@ test("pipeline: a delivery the clipboard change held back says so and stays copy
   await rig.dictate(speechWav(2));
   result = { method: "paste" };
   await rig.dictate(speechWav(2));
+  assert.strictEqual(rig.pipeline.getUndelivered(), null);
+});
+
+// #342: deleting one History entry drops only the held-back copy saved as
+// that entry — matched by id, never by words.
+test("pipeline: deleting a History entry drops only the held-back copy saved as it", async () => {
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => "same words",
+    deliver: async () => ({ method: "clipboard-changed", hint: "nothing was pasted" }),
+  });
+  await rig.dictate(speechWav(2)); // entry-1, held back
+  await rig.dictate(speechWav(2)); // entry-2, same words, now the held-back one
+  assert.strictEqual(rig.pipeline.getUndelivered().historyId, "entry-2");
+  rig.deleteHistory("entry-1");
+  rig.pipeline.clearUndelivered("entry-1");
+  assert.strictEqual(rig.pipeline.getUndelivered().text, "same words", "an older entry with the same words is not this take");
+  rig.pipeline.clearUndelivered(null);
+  assert.ok(rig.pipeline.getUndelivered(), "no id names no entry");
+  rig.deleteHistory("entry-2");
+  rig.pipeline.clearUndelivered("entry-2");
+  assert.strictEqual(rig.pipeline.getUndelivered(), null);
+});
+
+test("pipeline: with History off, deleting an entry never drops the only copy of a held-back take", async () => {
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => "same words",
+    deliver: async () => ({ method: "clipboard-changed", hint: "nothing was pasted" }),
+  });
+  await rig.dictate(speechWav(2)); // saved as entry-1
+  rig.cfg.history.enabled = false;
+  await rig.dictate(speechWav(2)); // never saved: the held-back copy is all there is
+  assert.strictEqual(rig.pipeline.getUndelivered().historyId, null);
+  rig.deleteHistory("entry-1");
+  rig.pipeline.clearUndelivered("entry-1");
+  assert.strictEqual(rig.pipeline.getUndelivered().text, "same words");
+  rig.pipeline.clearUndelivered(); // Clear history still clears it
+  assert.strictEqual(rig.pipeline.getUndelivered(), null);
+});
+
+test("pipeline: an entry deleted while its paste runs is not held back afterwards", async () => {
+  let rig;
+  rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => "private words",
+    deliver: async () => {
+      // History was written before delivery; the user deletes it meanwhile.
+      rig.deleteHistory(rig.savedHistory()[0].id);
+      return { method: "clipboard-changed", hint: "nothing was pasted" };
+    },
+  });
+  await rig.dictate(speechWav(2));
+  assert.strictEqual(rig.log.history.length, 1, "history was still written before delivery");
   assert.strictEqual(rig.pipeline.getUndelivered(), null);
 });
 

@@ -266,10 +266,102 @@ test("ducking: a burst of start/pause/resume/stop events settles on the last one
   await ducker.setCapturing("dictation", false);
   assert.strictEqual(vol(backend), 80);
   assert.strictEqual(ducker.holding(), false);
-  // Starting and stopping synchronously, then a new take while the restore runs.
+  // Two starts in a row settle on one lowering (in-flight overlaps are below).
   ducker.setCapturing("dictation", true);
   await ducker.setCapturing("dictation", true);
   assert.strictEqual(vol(backend), 16);
+});
+
+// Holds the fake's next read or write until released, so lifecycle events
+// can land while the OS tool is still working. `reached` resolves once the
+// held call has started.
+function holdNext(backend, op) {
+  const real = backend[op];
+  let release;
+  let reachedResolve;
+  const reached = new Promise((r) => { reachedResolve = r; });
+  const gate = new Promise((r) => { release = r; });
+  backend[op] = async (...args) => {
+    backend[op] = real;
+    reachedResolve();
+    await gate;
+    return real(...args);
+  };
+  return { reached, release };
+}
+
+test("ducking: stop while the lowering's read is in flight ends with nothing changed", async () => {
+  const { ducker, backend, store } = setup();
+  const held = holdNext(backend, "read");
+  const work = ducker.setCapturing("dictation", true);
+  await held.reached;
+  ducker.setCapturing("dictation", false); // stop / cancel
+  held.release();
+  await work;
+  await ducker.setCapturing("dictation", false);
+  assert.strictEqual(vol(backend), 80);
+  assert.strictEqual(store.peek(), null);
+  assert.strictEqual(ducker.holding(), false);
+  assert.deepStrictEqual(ducker._state().owners, []);
+});
+
+test("ducking: stop while the lowering's write is in flight restores right after it lands", async () => {
+  const { ducker, backend, store } = setup();
+  const held = holdNext(backend, "write");
+  const work = ducker.setCapturing("dictation", true);
+  await held.reached;
+  ducker.setCapturing("dictation", false);
+  held.release();
+  await work;
+  await ducker.setCapturing("dictation", false);
+  assert.strictEqual(vol(backend), 80);
+  assert.deepStrictEqual(backend.writes, [["A", 16], ["A", 80]]);
+  assert.strictEqual(store.peek(), null);
+});
+
+test("ducking: a new take arriving during the restore lowers again once the restore lands", async () => {
+  const { ducker, backend } = setup();
+  await ducker.setCapturing("dictation", true);
+  const held = holdNext(backend, "write");
+  const stopping = ducker.setCapturing("dictation", false);
+  await held.reached;
+  ducker.setCapturing("dictation", true); // resume, or the next take
+  held.release();
+  await stopping;
+  await ducker.setCapturing("dictation", true);
+  assert.strictEqual(vol(backend), 16);
+  assert.deepStrictEqual(backend.writes, [["A", 16], ["A", 80], ["A", 16]], "restored, then lowered again from the restored 80");
+  await ducker.setCapturing("dictation", false);
+  assert.strictEqual(vol(backend), 80);
+});
+
+test("ducking: a nested owner joining while the first lowering is in flight neither doubles it nor restores early", async () => {
+  const { ducker, backend } = setup();
+  const held = holdNext(backend, "write");
+  const work = ducker.setCapturing("one", true);
+  await held.reached;
+  ducker.setCapturing("two", true);
+  ducker.setCapturing("one", false);
+  held.release();
+  await work;
+  await ducker.setCapturing("two", true);
+  assert.strictEqual(vol(backend), 16);
+  assert.deepStrictEqual(backend.writes, [["A", 16]]);
+  await ducker.setCapturing("two", false);
+  assert.strictEqual(vol(backend), 80);
+});
+
+test("ducking: quit during an in-flight lowering waits for it and restores", async () => {
+  const { ducker, backend, store } = setup();
+  const held = holdNext(backend, "write");
+  ducker.setCapturing("dictation", true);
+  await held.reached;
+  const quitting = ducker.shutdown(1000);
+  held.release();
+  await quitting;
+  assert.strictEqual(vol(backend), 80);
+  assert.strictEqual(store.peek(), null);
+  assert.strictEqual(ducker.holding(), false);
 });
 
 test("ducking: setCapturing returns at once — the caller never waits for the OS tool", async () => {

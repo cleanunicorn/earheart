@@ -143,49 +143,44 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
     }
   }
 
+  // Not lowering for the rest of this capture span, and why (Settings shows it).
+  function skip(detail) {
+    skipped = true;
+    status.state = "skipped";
+    status.detail = detail;
+  }
+
   async function lower() {
     const b = await pick();
     if (!b) {
-      skipped = true;
-      status.state = "skipped";
-      status.detail = status.reason;
+      skip(status.reason);
       return;
     }
     // A marker still pending (macOS device switch, failed restore) comes first,
     // so its prior level is never mistaken for the user's.
     if (loadMarker()) await recoverMarker();
     if (loadMarker()) {
-      skipped = true;
-      status.state = "skipped";
-      status.detail = "an earlier lowering is still waiting to be restored";
+      skip("an earlier lowering is still waiting to be restored");
       return;
     }
     let cur;
     try {
       cur = await b.read();
     } catch (err) {
-      skipped = true;
-      status.state = "skipped";
-      status.detail = "could not read the output volume";
+      skip("could not read the output volume");
       return fail("could not read the output volume", err);
     }
     if (cur.volume === null) {
-      skipped = true;
-      status.state = "skipped";
-      status.detail = "the output device has no volume control";
+      skip("the output device has no volume control");
       return;
     }
     if (cur.muted || cur.volume <= 0) {
-      skipped = true;
-      status.state = "skipped";
-      status.detail = "output is muted, left as is";
+      skip("output is muted, left as is");
       return;
     }
     const targetRaw = b.scale(cur.raw, config().fraction);
     if (b.same(targetRaw, cur.raw)) {
-      skipped = true;
-      status.state = "skipped";
-      status.detail = "output already at or below the lowered level";
+      skip("output already at or below the lowered level");
       return;
     }
     // The marker lands before the volume moves: a crash in between restores
@@ -205,9 +200,7 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
       } catch {}
       if (seen && seen.device === cur.device && b.same(seen.raw, cur.raw)) {
         clearMarker();
-        skipped = true;
-        status.state = "skipped";
-        status.detail = "could not lower the output volume";
+        skip("could not lower the output volume");
         return;
       }
       held = { device: cur.device, prior: cur.raw, target: seen && seen.device === cur.device ? seen.raw : targetRaw };
@@ -217,9 +210,7 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
     }
     if (!after || after.device !== cur.device) {
       clearMarker();
-      skipped = true;
-      status.state = "skipped";
-      status.detail = "the output device changed";
+      skip("the output device changed");
       return;
     }
     held = { device: cur.device, prior: cur.raw, target: after.raw };

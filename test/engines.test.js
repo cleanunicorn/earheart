@@ -33,6 +33,19 @@ function loadFacadeWith({ host, manager: managerStub, app: appExtra }) {
   return withStubs(stubs, [indexPath], () => require(indexPath));
 }
 
+// The host module loadFacadeWith takes: every worker host answers `request`.
+function fakeHost(request) {
+  return { createHost: () => ({ request, stop() {}, onExit() {} }) };
+}
+
+// A model manager stub that reports every model installed.
+function installedManager() {
+  return {
+    isInstalled: () => true,
+    modelDir: (base, model) => path.join(base, model.kind, model.id),
+  };
+}
+
 /* ---------------- registry ---------------- */
 
 test("registry exposes default models that resolve", () => {
@@ -388,7 +401,7 @@ test(
 // A tiny static file server backing a fake model, so the download manager runs
 // end to end (stream -> .part -> rename -> marker) without the network.
 function serveFiles(fileMap) {
-  const server = http.createServer((req, res) => {
+  return listen((req, res) => {
     const body = fileMap[req.url];
     if (!body) {
       res.statusCode = 404;
@@ -398,12 +411,31 @@ function serveFiles(fileMap) {
     res.setHeader("content-length", body.length);
     res.end(body);
   });
+}
+
+// An HTTP server on a free loopback port, answering with `handler`. Resolves
+// to { server, base }; the caller closes the server.
+function listen(handler) {
+  const server = http.createServer(handler);
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => {
       const { port } = server.address();
       resolve({ server, base: `http://127.0.0.1:${port}` });
     });
   });
+}
+
+// Seed an interrupted download of `dest`: the bytes received so far in
+// <dest>.part, and the resume metadata in <dest>.part.json (written as is
+// when it is a string, as JSON otherwise).
+async function seedPartial(dest, part, meta) {
+  await fsp.writeFile(`${dest}.part`, part);
+  await fsp.writeFile(`${dest}.part.json`, typeof meta === "string" ? meta : JSON.stringify(meta));
+}
+
+// The resume metadata the download manager keeps beside a .part file.
+function resumeMeta(url, bytes, etag, lastModified = null) {
+  return { url, expectedBytes: bytes, etag, lastModified, totalBytes: bytes };
 }
 
 async function withTmp(fn) {
@@ -495,7 +527,7 @@ test("multi-file resume credits complete and partial files together", async () =
   const resumedSha = crypto.createHash("sha256").update(resumed).digest("hex");
   const cut = 180;
   const requests = [];
-  const server = http.createServer((req, res) => {
+  const { server, base } = await listen((req, res) => {
     requests.push({ url: req.url, range: req.headers.range });
     res.statusCode = 206;
     res.setHeader("etag", '"stable"');
@@ -503,8 +535,6 @@ test("multi-file resume credits complete and partial files together", async () =
     res.setHeader("content-length", resumed.length - cut);
     res.end(resumed.subarray(cut));
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   try {
     await withTmp(async (dir) => {
       const model = {
@@ -520,14 +550,7 @@ test("multi-file resume credits complete and partial files together", async () =
       const partialDest = manager.filePath(dir, model, model.files[1]);
       await fsp.mkdir(path.dirname(completeDest), { recursive: true });
       await fsp.writeFile(completeDest, complete);
-      await fsp.writeFile(`${partialDest}.part`, resumed.subarray(0, cut));
-      await fsp.writeFile(`${partialDest}.part.json`, JSON.stringify({
-        url: model.files[1].url,
-        expectedBytes: resumed.length,
-        etag: '"stable"',
-        lastModified: null,
-        totalBytes: resumed.length,
-      }));
+      await seedPartial(partialDest, resumed.subarray(0, cut), resumeMeta(model.files[1].url, resumed.length, '"stable"'));
 
       const progress = [];
       await manager.download(dir, model, { onProgress: (p) => progress.push(p.received) });
@@ -601,12 +624,10 @@ test("a custom model without a sha256 is rejected when it arrives one byte short
 test("download skips files already on disk and remove frees them", async () => {
   const a = Buffer.from("already here");
   let hits = 0;
-  const server = http.createServer((req, res) => {
+  const { server, base } = await listen((req, res) => {
     hits++;
     res.end(a);
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   try {
     await withTmp(async (dir) => {
       const model = {
@@ -635,13 +656,11 @@ test("download replaces an existing file that fails checksum validation", async 
   assert.strictEqual(bad.length, good.length);
   const sha = crypto.createHash("sha256").update(good).digest("hex");
   let hits = 0;
-  const server = http.createServer((_req, res) => {
+  const { server, base } = await listen((_req, res) => {
     hits++;
     res.setHeader("content-length", good.length);
     res.end(good);
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   try {
     await withTmp(async (dir) => {
       const model = {
@@ -844,7 +863,7 @@ test("a transient failure retains bytes and retries with Range and If-Range", as
   let attempt = 0;
   let part = null;
   const requests = [];
-  const server = http.createServer((req, res) => {
+  const { server, base } = await listen((req, res) => {
     attempt++;
     requests.push({ range: req.headers.range, ifRange: req.headers["if-range"] });
     res.setHeader("etag", '"version-1"');
@@ -861,8 +880,6 @@ test("a transient failure retains bytes and retries with Range and If-Range", as
     res.setHeader("content-length", full.length - offset);
     res.end(full.subarray(offset));
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   try {
     await withTmp(async (dir) => {
       const model = {
@@ -901,7 +918,7 @@ test("a temporary HTTP error preserves partial state for a later resume", async 
   const cut = 160;
   let attempt = 0;
   const requests = [];
-  const server = http.createServer((req, res) => {
+  const { server, base } = await listen((req, res) => {
     attempt++;
     requests.push({ range: req.headers.range, ifRange: req.headers["if-range"] });
     if (attempt === 1) {
@@ -915,8 +932,6 @@ test("a temporary HTTP error preserves partial state for a later resume", async 
     res.setHeader("content-length", full.length - cut);
     res.end(full.subarray(cut));
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   try {
     await withTmp(async (dir) => {
       const model = {
@@ -932,8 +947,7 @@ test("a temporary HTTP error preserves partial state for a later resume", async 
         totalBytes: full.length,
       });
       await fsp.mkdir(path.dirname(dest), { recursive: true });
-      await fsp.writeFile(`${dest}.part`, full.subarray(0, cut));
-      await fsp.writeFile(`${dest}.part.json`, metadata);
+      await seedPartial(dest, full.subarray(0, cut), metadata);
 
       await assert.rejects(() => manager.download(dir, model), /HTTP 503/);
       assert.deepStrictEqual(fs.readFileSync(`${dest}.part`), full.subarray(0, cut));
@@ -960,7 +974,7 @@ test("a server that ignores Range safely overwrites rather than appends", async 
   let attempt = 0;
   let part = null;
   const ranges = [];
-  const server = http.createServer((req, res) => {
+  const { server, base } = await listen((req, res) => {
     attempt++;
     ranges.push(req.headers.range);
     res.setHeader("etag", '"same"');
@@ -972,8 +986,6 @@ test("a server that ignores Range safely overwrites rather than appends", async 
     }
     res.end(full); // deliberately return 200 to the Range request
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   try {
     await withTmp(async (dir) => {
       const model = {
@@ -1006,7 +1018,7 @@ test("a changed validator invalidates the partial and fetches a full representat
   let attempt = 0;
   let part = null;
   const requests = [];
-  const server = http.createServer((req, res) => {
+  const { server, base } = await listen((req, res) => {
     attempt++;
     requests.push({ range: req.headers.range, ifRange: req.headers["if-range"] });
     if (attempt === 1) {
@@ -1030,8 +1042,6 @@ test("a changed validator invalidates the partial and fetches a full representat
     res.setHeader("content-length", newBody.length);
     res.end(newBody);
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   try {
     await withTmp(async (dir) => {
       const model = {
@@ -1065,7 +1075,7 @@ test("weak ETags use Last-Modified to validate resumed content", async () => {
   const cut = 128;
   const requests = [];
   let changedAttempts = 0;
-  const server = http.createServer((req, res) => {
+  const { server, base } = await listen((req, res) => {
     requests.push({ url: req.url, range: req.headers.range, ifRange: req.headers["if-range"] });
     res.setHeader("etag", 'W/"shared"');
     if (req.url === "/stable.bin") {
@@ -1088,20 +1098,11 @@ test("weak ETags use Last-Modified to validate resumed content", async () => {
     res.setHeader("content-length", newBody.length);
     res.end(newBody);
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
 
   async function seed(dir, model, body) {
     const dest = manager.filePath(dir, model, model.files[0]);
     await fsp.mkdir(path.dirname(dest), { recursive: true });
-    await fsp.writeFile(`${dest}.part`, body.subarray(0, cut));
-    await fsp.writeFile(`${dest}.part.json`, JSON.stringify({
-      url: model.files[0].url,
-      expectedBytes: body.length,
-      etag: 'W/"shared"',
-      lastModified: oldDate,
-      totalBytes: body.length,
-    }));
+    await seedPartial(dest, body.subarray(0, cut), resumeMeta(model.files[0].url, body.length, 'W/"shared"', oldDate));
     return dest;
   }
 
@@ -1141,14 +1142,12 @@ test("a checksum-less partial without a strong validator restarts from zero", as
   assert.strictEqual(oldBody.length, newBody.length);
   const cut = 128;
   const ranges = [];
-  const server = http.createServer((req, res) => {
+  const { server, base } = await listen((req, res) => {
     ranges.push(req.headers.range);
     res.setHeader("etag", 'W/"shared"');
     res.setHeader("content-length", newBody.length);
     res.end(newBody);
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   try {
     await withTmp(async (dir) => {
       const model = {
@@ -1157,14 +1156,7 @@ test("a checksum-less partial without a strong validator restarts from zero", as
       };
       const dest = manager.filePath(dir, model, model.files[0]);
       await fsp.mkdir(path.dirname(dest), { recursive: true });
-      await fsp.writeFile(`${dest}.part`, oldBody.subarray(0, cut));
-      await fsp.writeFile(`${dest}.part.json`, JSON.stringify({
-        url: model.files[0].url,
-        expectedBytes: oldBody.length,
-        etag: 'W/"shared"',
-        lastModified: null,
-        totalBytes: oldBody.length,
-      }));
+      await seedPartial(dest, oldBody.subarray(0, cut), resumeMeta(model.files[0].url, oldBody.length, 'W/"shared"'));
 
       await manager.download(dir, model);
       assert.deepStrictEqual(ranges, [undefined]);
@@ -1180,7 +1172,7 @@ test("a checksum-less partial resumes with a matching strong ETag", async () => 
   const full = Buffer.from("custom-model-with-strong-etag-".repeat(32));
   const cut = 192;
   const requests = [];
-  const server = http.createServer((req, res) => {
+  const { server, base } = await listen((req, res) => {
     requests.push({ range: req.headers.range, ifRange: req.headers["if-range"] });
     res.statusCode = 206;
     res.setHeader("etag", '"strong-v1"');
@@ -1188,8 +1180,6 @@ test("a checksum-less partial resumes with a matching strong ETag", async () => 
     res.setHeader("content-length", full.length - cut);
     res.end(full.subarray(cut));
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   try {
     await withTmp(async (dir) => {
       const model = {
@@ -1198,14 +1188,7 @@ test("a checksum-less partial resumes with a matching strong ETag", async () => 
       };
       const dest = manager.filePath(dir, model, model.files[0]);
       await fsp.mkdir(path.dirname(dest), { recursive: true });
-      await fsp.writeFile(`${dest}.part`, full.subarray(0, cut));
-      await fsp.writeFile(`${dest}.part.json`, JSON.stringify({
-        url: model.files[0].url,
-        expectedBytes: full.length,
-        etag: '"strong-v1"',
-        lastModified: null,
-        totalBytes: full.length,
-      }));
+      await seedPartial(dest, full.subarray(0, cut), resumeMeta(model.files[0].url, full.length, '"strong-v1"'));
 
       await manager.download(dir, model);
       assert.deepStrictEqual(requests, [
@@ -1224,7 +1207,7 @@ test("an unsatisfiable range discards the partial and retries from zero", async 
   const sha = crypto.createHash("sha256").update(full).digest("hex");
   const cut = 144;
   const requests = [];
-  const server = http.createServer((req, res) => {
+  const { server, base } = await listen((req, res) => {
     requests.push(req.headers.range);
     if (requests.length === 1) {
       res.statusCode = 416;
@@ -1236,8 +1219,6 @@ test("an unsatisfiable range discards the partial and retries from zero", async 
     res.setHeader("content-length", full.length);
     res.end(full);
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   try {
     await withTmp(async (dir) => {
       const model = {
@@ -1246,14 +1227,7 @@ test("an unsatisfiable range discards the partial and retries from zero", async 
       };
       const dest = manager.filePath(dir, model, model.files[0]);
       await fsp.mkdir(path.dirname(dest), { recursive: true });
-      await fsp.writeFile(`${dest}.part`, full.subarray(0, cut));
-      await fsp.writeFile(`${dest}.part.json`, JSON.stringify({
-        url: model.files[0].url,
-        expectedBytes: full.length,
-        etag: '"old"',
-        lastModified: null,
-        totalBytes: full.length,
-      }));
+      await seedPartial(dest, full.subarray(0, cut), resumeMeta(model.files[0].url, full.length, '"old"'));
 
       await manager.download(dir, model);
       assert.deepStrictEqual(requests, [`bytes=${cut}-`, undefined]);
@@ -1272,7 +1246,7 @@ test("cancellation preserves a resumable partial", async () => {
   const sha = crypto.createHash("sha256").update(full).digest("hex");
   let attempt = 0;
   let firstResponse;
-  const server = http.createServer((req, res) => {
+  const { server, base } = await listen((req, res) => {
     attempt++;
     res.setHeader("etag", '"cancel-v1"');
     if (attempt === 1) {
@@ -1288,8 +1262,6 @@ test("cancellation preserves a resumable partial", async () => {
     res.setHeader("content-length", full.length - offset);
     res.end(full.subarray(offset));
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   try {
     await withTmp(async (dir) => {
       const model = {
@@ -1341,12 +1313,10 @@ test("cancellation while hashing preserves the complete partial", async () => {
   const full = Buffer.alloc(32 * 1024 * 1024, 0x5a);
   const sha = crypto.createHash("sha256").update(full).digest("hex");
   let hits = 0;
-  const server = http.createServer((_req, res) => {
+  const { server, base } = await listen((_req, res) => {
     hits++;
     res.end(full);
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   try {
     await withTmp(async (dir) => {
       const model = {
@@ -1355,14 +1325,7 @@ test("cancellation while hashing preserves the complete partial", async () => {
       };
       const dest = manager.filePath(dir, model, model.files[0]);
       await fsp.mkdir(path.dirname(dest), { recursive: true });
-      await fsp.writeFile(`${dest}.part`, full);
-      await fsp.writeFile(`${dest}.part.json`, JSON.stringify({
-        url: model.files[0].url,
-        expectedBytes: full.length,
-        etag: '"stable"',
-        lastModified: null,
-        totalBytes: full.length,
-      }));
+      await seedPartial(dest, full, resumeMeta(model.files[0].url, full.length, '"stable"'));
 
       // Abort from inside the hash loop, not before it: a timer would fire
       // during the awaits that precede hashing (readPartial, mkdir, stat), so
@@ -1411,12 +1374,10 @@ test("an exact-size verified partial completes without a network request", async
   const full = Buffer.from("complete-before-rename-".repeat(32));
   const sha = crypto.createHash("sha256").update(full).digest("hex");
   let hits = 0;
-  const server = http.createServer((_req, res) => {
+  const { server, base } = await listen((_req, res) => {
     hits++;
     res.end(full);
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   try {
     await withTmp(async (dir) => {
       const model = {
@@ -1425,14 +1386,7 @@ test("an exact-size verified partial completes without a network request", async
       };
       const dest = manager.filePath(dir, model, model.files[0]);
       await fsp.mkdir(path.dirname(dest), { recursive: true });
-      await fsp.writeFile(`${dest}.part`, full);
-      await fsp.writeFile(`${dest}.part.json`, JSON.stringify({
-        url: model.files[0].url,
-        expectedBytes: full.length,
-        etag: '"stable"',
-        lastModified: null,
-        totalBytes: full.length,
-      }));
+      await seedPartial(dest, full, resumeMeta(model.files[0].url, full.length, '"stable"'));
 
       await manager.download(dir, model);
       assert.strictEqual(hits, 0);
@@ -1452,13 +1406,11 @@ test("an exact-size corrupted partial is replaced by a verified download", async
   assert.strictEqual(bad.length, good.length);
   const sha = crypto.createHash("sha256").update(good).digest("hex");
   const ranges = [];
-  const server = http.createServer((req, res) => {
+  const { server, base } = await listen((req, res) => {
     ranges.push(req.headers.range);
     res.setHeader("content-length", good.length);
     res.end(good);
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   try {
     await withTmp(async (dir) => {
       const model = {
@@ -1467,14 +1419,7 @@ test("an exact-size corrupted partial is replaced by a verified download", async
       };
       const dest = manager.filePath(dir, model, model.files[0]);
       await fsp.mkdir(path.dirname(dest), { recursive: true });
-      await fsp.writeFile(`${dest}.part`, bad);
-      await fsp.writeFile(`${dest}.part.json`, JSON.stringify({
-        url: model.files[0].url,
-        expectedBytes: good.length,
-        etag: '"stale"',
-        lastModified: null,
-        totalBytes: good.length,
-      }));
+      await seedPartial(dest, bad, resumeMeta(model.files[0].url, good.length, '"stale"'));
 
       await manager.download(dir, model);
       assert.deepStrictEqual(ranges, [undefined]);
@@ -1493,7 +1438,7 @@ test("corrupted resumed bytes fail the full checksum and are discarded", async (
   const sha = crypto.createHash("sha256").update(full).digest("hex");
   const cut = 120;
   const requests = [];
-  const server = http.createServer((req, res) => {
+  const { server, base } = await listen((req, res) => {
     requests.push({ range: req.headers.range });
     res.statusCode = 206;
     res.setHeader("etag", '"stable"');
@@ -1501,8 +1446,6 @@ test("corrupted resumed bytes fail the full checksum and are discarded", async (
     res.setHeader("content-length", full.length - cut);
     res.end(full.subarray(cut));
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   try {
     await withTmp(async (dir) => {
       const model = {
@@ -1513,14 +1456,7 @@ test("corrupted resumed bytes fail the full checksum and are discarded", async (
       await fsp.mkdir(path.dirname(dest), { recursive: true });
       const corrupt = Buffer.from(full.subarray(0, cut));
       corrupt[0] ^= 0xff;
-      await fsp.writeFile(`${dest}.part`, corrupt);
-      await fsp.writeFile(`${dest}.part.json`, JSON.stringify({
-        url: model.files[0].url,
-        expectedBytes: full.length,
-        etag: '"stable"',
-        lastModified: null,
-        totalBytes: full.length,
-      }));
+      await seedPartial(dest, corrupt, resumeMeta(model.files[0].url, full.length, '"stable"'));
 
       await assert.rejects(() => manager.download(dir, model), /Checksum mismatch/);
       assert.deepStrictEqual(requests, [{ range: `bytes=${cut}-` }]);
@@ -1537,13 +1473,11 @@ test("invalid partial metadata is discarded before a full download", async () =>
   const full = Buffer.from("fresh-representation-".repeat(32));
   const sha = crypto.createHash("sha256").update(full).digest("hex");
   const ranges = [];
-  const server = http.createServer((req, res) => {
+  const { server, base } = await listen((req, res) => {
     ranges.push(req.headers.range);
     res.setHeader("content-length", full.length);
     res.end(full);
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   const cases = [
     { name: "missing-metadata", metadata: null },
     { name: "malformed-metadata", metadata: "{" },
@@ -1605,8 +1539,7 @@ test("remove deletes partial files and their resume metadata", async () => {
     };
     const dest = manager.filePath(dir, model, model.files[0]);
     await fsp.mkdir(path.dirname(dest), { recursive: true });
-    await fsp.writeFile(`${dest}.part`, "partial");
-    await fsp.writeFile(`${dest}.part.json`, "{}");
+    await seedPartial(dest, "partial", "{}");
     await manager.remove(dir, model);
     assert.ok(!fs.existsSync(manager.modelDir(dir, model)));
   });
@@ -1618,22 +1551,13 @@ test("engines.clean rejects empty cleanup so the pipeline records raw fallback",
   const calls = [];
   // createHost factory shape (the real host module); this test only drives the
   // cleanup path, so both services share one fake.
-  const hostModule = {
-    createHost: () => ({
-      request: async (type, args) => {
-        calls.push(type);
-        if (type === "load-cleanup") return { ready: true };
-        if (type === "clean") return cleanReply;
-        throw new Error(`unexpected request: ${type}`);
-      },
-      stop() {},
-      onExit() {},
-    }),
-  };
-  const managerStub = {
-    isInstalled: () => true,
-    modelDir: (base, model) => path.join(base, model.kind, model.id),
-  };
+  const hostModule = fakeHost(async (type, args) => {
+    calls.push(type);
+    if (type === "load-cleanup") return { ready: true };
+    if (type === "clean") return cleanReply;
+    throw new Error(`unexpected request: ${type}`);
+  });
+  const managerStub = installedManager();
   const facade = loadFacadeWith({ host: hostModule, manager: managerStub });
 
   const cfg = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules" };
@@ -1657,25 +1581,16 @@ test("engines.clean forwards onProgress to the worker host request", async () =>
   // onProgress callback to the host so the worker's interim { id, progress }
   // messages reach the caller.
   const requests = [];
-  const hostModule = {
-    createHost: () => ({
-      request: async (type, args, opts) => {
-        requests.push({ type, opts });
-        if (type === "load-cleanup") return { ready: true };
-        if (type === "clean") {
-          opts?.onProgress?.(0.5);
-          return "cleaned";
-        }
-        throw new Error(`unexpected request: ${type}`);
-      },
-      stop() {},
-      onExit() {},
-    }),
-  };
-  const managerStub = {
-    isInstalled: () => true,
-    modelDir: (base, model) => path.join(base, model.kind, model.id),
-  };
+  const hostModule = fakeHost(async (type, args, opts) => {
+    requests.push({ type, opts });
+    if (type === "load-cleanup") return { ready: true };
+    if (type === "clean") {
+      opts?.onProgress?.(0.5);
+      return "cleaned";
+    }
+    throw new Error(`unexpected request: ${type}`);
+  });
+  const managerStub = installedManager();
   const facade = loadFacadeWith({ host: hostModule, manager: managerStub });
 
   const seen = [];
@@ -1698,27 +1613,18 @@ test("engines cleanup load forces CPU-only under ARM64 emulation", async () => {
   // cleanup worker, so the facade must tell the worker to skip it. The signal
   // is Electron's app.runningUnderARM64Translation; assert it rides along on
   // clean request's model descriptor and is false on a native host.
-  const managerStub = {
-    isInstalled: () => true,
-    modelDir: (base, model) => path.join(base, model.kind, model.id),
-  };
+  const managerStub = installedManager();
   const cfg = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules" };
 
   function loadCleanupPayload(appExtra) {
     let payload = null;
-    const hostModule = {
-      createHost: () => ({
-        request: async (type, args) => {
-          if (type === "clean") {
-            payload = args.model;
-            return "ok";
-          }
-          throw new Error(`unexpected request: ${type}`);
-        },
-        stop() {},
-        onExit() {},
-      }),
-    };
+    const hostModule = fakeHost(async (type, args) => {
+      if (type === "clean") {
+        payload = args.model;
+        return "ok";
+      }
+      throw new Error(`unexpected request: ${type}`);
+    });
     const facade = loadFacadeWith({ host: hostModule, manager: managerStub, app: appExtra });
     return facade.clean("hi", cfg).then(() => payload);
   }
@@ -1735,21 +1641,12 @@ test("engines.transcribe unwraps the worker reply and reports decode timing", as
   // the RTF estimator gets the worker's own decode timing via onDecodeMs.
   // A bare-string reply (older worker / simple fakes) must still work.
   let reply = { text: "  hello there ", decodeMs: 250 };
-  const hostModule = {
-    createHost: () => ({
-      request: async (type) => {
-        if (type === "load-stt") return { ready: true };
-        if (type === "transcribe") return reply;
-        throw new Error(`unexpected request: ${type}`);
-      },
-      stop() {},
-      onExit() {},
-    }),
-  };
-  const managerStub = {
-    isInstalled: () => true,
-    modelDir: (base, model) => path.join(base, model.kind, model.id),
-  };
+  const hostModule = fakeHost(async (type) => {
+    if (type === "load-stt") return { ready: true };
+    if (type === "transcribe") return reply;
+    throw new Error(`unexpected request: ${type}`);
+  });
+  const managerStub = installedManager();
   const facade = loadFacadeWith({ host: hostModule, manager: managerStub });
   const cfg = { builtin: { model: registry.DEFAULT_STT_MODEL }, language: "" };
 
@@ -1847,10 +1744,7 @@ function loadTwoHostFacade() {
       return host;
     },
   };
-  const managerStub = {
-    isInstalled: () => true,
-    modelDir: (base, model) => path.join(base, model.kind, model.id),
-  };
+  const managerStub = installedManager();
   const facade = loadFacadeWith({ host: hostModule, manager: managerStub });
   return { facade, hostsBySvc };
 }
@@ -2208,15 +2102,12 @@ test("engines cleanup snapshots each selected model and cancellation reaches a c
   const requests = [];
   let finish;
   const facade = loadFacadeWith({
-    host: { createHost: () => ({
-      request(type, args) {
-        requests.push({ type, args });
-        if (type === "clean") return new Promise((resolve) => { finish = resolve; });
-        return Promise.resolve({ cancelled: 1 });
-      },
-      stop() {}, onExit() {},
-    }) },
-    manager: { isInstalled: () => true, modelDir: (base, model) => path.join(base, model.kind, model.id) },
+    host: fakeHost((type, args) => {
+      requests.push({ type, args });
+      if (type === "clean") return new Promise((resolve) => { finish = resolve; });
+      return Promise.resolve({ cancelled: 1 });
+    }),
+    manager: installedManager(),
   });
   const cfg = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, style: "clean" };
   const controller = new AbortController();
@@ -2288,9 +2179,7 @@ function readinessFacade({ installed = new Set(), isInstalled } = {}) {
       }),
     modelDir: (base, model) => path.join(base, model.kind, model.id),
   };
-  const hostModule = {
-    createHost: () => ({ request: async () => ({}), stop() {}, onExit() {} }),
-  };
+  const hostModule = fakeHost(async () => ({}));
   return { facade: loadFacadeWith({ host: hostModule, manager: managerStub }), checked };
 }
 

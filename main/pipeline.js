@@ -30,6 +30,7 @@ const logger = require("./util/logger");
 const { prettyHotkey } = require("./util/hotkey-label");
 const { createNotifier, sttNotReadyNotice, BODY_MAX } = require("./setup-notices");
 const { createFailedTake } = require("./failed-take");
+const recordings = require("./recordings");
 
 let state = "idle"; // idle | recording | processing
 // Shows the "model not downloaded" notice; its click opens Settings.
@@ -524,6 +525,7 @@ function discard() {
 let retryPending = null; // session id of a retry waiting for the overlay
 function retryFailedTake() {
   if (state !== "idle" || !failedTake.info() || retryPending === session) return false;
+  retranscriber.cancel();
   const sid = ++session;
   retryPending = sid;
   const win = windows.createOverlay();
@@ -575,6 +577,9 @@ function startRecording() {
     setupNotifier.show(sttNotReadyNotice(readiness), { critical: true });
     return;
   }
+  // The dictation wins the engines: a History retranscription still running
+  // (#343) stops and is marked cancelled, to be tried again later.
+  retranscriber.cancel();
   const sid = ++session;
   setState("recording");
   const liveOn = cfg.stt.engine === "builtin" && cfg.stt.livePreview?.enabled;
@@ -743,6 +748,9 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
       try {
         historyId = history.add({ raw, text, cleaned, ...(partial ? { incomplete: true } : {}) }, cfg.history) ?? null;
         windows.sendToSettings("history:changed");
+        // Opted in (#343): keep the recording as this entry's audio — a turn
+        // later, so the encrypted write never delays the paste below.
+        recordings.keepLater(historyId, wav, cfg, () => windows.sendToSettings("history:changed"));
       } catch (err) {
         logger.error("history add failed:", err);
       }
@@ -833,6 +841,66 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
   }
 }
 
+/* ---- Retranscribing a kept recording (#343) ---- */
+
+// STT for a History retranscription: the configured engine, whole take, no
+// overlay — this isn't a dictation, so it shows no card and no progress bar.
+async function transcribeKept(wav, sttCfg, signal) {
+  const stale = () => signal.aborted;
+  if (sttCfg.engine !== "builtin") {
+    const text = await withRetry(() => route.transcribe(wav, sttCfg, signal), { stale });
+    return { text, partial: false };
+  }
+  await withRetry(() => engines.ensureStt(sttCfg.builtin.model), { stale });
+  const result = await transcribeChunked(wav, {
+    runTranscribe: (piece, opts) => route.transcribe(piece, sttCfg, signal, opts),
+    restartStt: engines.restartStt,
+    stale,
+    log: logger,
+  });
+  if (result.stale) throw new Error("cancelled");
+  return { text: result.text, partial: result.partial };
+}
+
+// Cleanup for a retranscription: like a dictation's (the raw transcript when
+// cleanup is off, unavailable or fails), but quiet — the result is shown in
+// History, not announced.
+async function cleanKept(raw, cleanupCfg, signal) {
+  if (!cleanupCfg.enabled || !cleanupAvailability(cleanupCfg).ok) return { text: raw, cleaned: false };
+  try {
+    const text = await withRetry(() => route.clean(raw, cleanupCfg, signal), { stale: () => signal.aborted });
+    return { text, cleaned: true };
+  } catch (err) {
+    if (signal.aborted) throw err;
+    logger.warn("retranscription cleanup failed, kept the raw transcript:", err.message);
+    return { text: raw, cleaned: false };
+  }
+}
+
+const retranscriber = recordings.createRetranscriber({
+  read: (id) => recordings.getStore().read(id),
+  transcribe: (wav, signal) => transcribeKept(wav, settings.get().stt, signal),
+  clean: (raw, signal) => cleanKept(raw, settings.get().cleanup, signal),
+  setRetry: (id, retry) => history.setRetry(id, retry),
+  canStart: () => state === "idle",
+  // The engines just ran: restart their idle window from now.
+  onSettled: () => {
+    if (state === "idle") armIdleUnload();
+  },
+});
+
+/**
+ * Transcribe History entry `id`'s kept recording again with the settings as
+ * they are now. Never delivers. Resolves to { ok: true, stored, retry } or
+ * { ok: false, error } — "busy", "dictating", "missing", "unreadable",
+ * "insecure" or a file-system code.
+ */
+async function retranscribe(id) {
+  const result = await retranscriber.run(id);
+  if (result.ok || result.retry) windows.sendToSettings("history:changed");
+  return result;
+}
+
 function init({ isDownloading = () => false } = {}) {
   isModelDownloading = isDownloading;
   ipcMain.on("audio:captured", (event, { sid, wav } = {}) => {
@@ -895,6 +963,7 @@ module.exports = {
   pauseToggle,
   discard,
   retryFailedTake,
+  retranscribe,
   discardFailedTake,
   getFailedTake,
   onFailedTakeChange,

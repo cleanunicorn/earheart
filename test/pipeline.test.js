@@ -16,11 +16,13 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert");
+const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const Module = require("node:module");
 
 const pipelinePath = require.resolve("../main/pipeline");
+const recordingsPath = require.resolve("../main/recordings");
 const dir = path.dirname(pipelinePath);
 const resolveFrom = (spec) => require.resolve(spec, { paths: [dir] });
 
@@ -62,11 +64,15 @@ function loadPipelineWith({ engines, settings, overrides = {} }) {
     m.exports = stubs[p];
     require.cache[p] = m;
   }
+  // main/recordings.js holds the History and electron it was loaded with (and
+  // its store), so each pipeline gets its own copy, bound to these stubs.
   delete require.cache[pipelinePath];
+  delete require.cache[recordingsPath];
   try {
     return require(pipelinePath);
   } finally {
     delete require.cache[pipelinePath];
+    delete require.cache[recordingsPath];
     for (const p of Object.keys(stubs)) {
       if (saved[p]) require.cache[p] = saved[p];
       else delete require.cache[p];
@@ -204,7 +210,7 @@ test("pipeline: an idle window of 0 never arms at all", (t) => {
 
 /* ---------------- final transcription ---------------- */
 
-const { encodeWav, wavDurationSec, wavToFloat32 } = require("../main/util/wav");
+const { encodeWav, encodeSilenceWav, wavDurationSec, wavToFloat32 } = require("../main/util/wav");
 
 const SR = 16000;
 
@@ -246,6 +252,11 @@ function dictationRig({
   cleanupReadiness = () => ({ ok: true }),
   isDownloading = () => false,
   notificationsSupported = true,
+  // Retained audio (#343): the userData directory and safeStorage the real
+  // recording store sees. The default directory is never written, since
+  // `recordings` is absent (off) unless a test sets it.
+  userData = os.tmpdir(),
+  safeStorage = null,
 } = {}) {
   const saved = []; // the History list, newest first, with the ids add() returned
   const log = {
@@ -304,7 +315,8 @@ function dictationRig({
     settings: { get: () => cfg },
     overrides: {
       electron: {
-        app: { getPath: () => os.tmpdir() },
+        app: { getPath: () => userData, isReady: () => true },
+        safeStorage,
         ipcMain: { on: (channel, fn) => (handlers[channel] = fn) },
         Notification: class {
           static isSupported() {
@@ -385,6 +397,12 @@ function dictationRig({
           return id;
         },
         list: () => saved,
+        setRetry: (id, retry) => {
+          const entry = saved.find((item) => item.id === id);
+          if (!entry) return { ok: true, stored: false };
+          entry.retry = retry;
+          return { ok: true, stored: true };
+        },
       },
       "./live-preview": {
         createLivePreview: (deps) => {
@@ -1948,4 +1966,112 @@ test("pipeline: clipboard takeover keeps the transcript with History disabled", 
   assert.deepStrictEqual(rig.log.history, []);
   assert.strictEqual(rig.pipeline.getUndelivered().text, "first part\nsecond part");
   assert.strictEqual(rig.log.done.method, "clipboard-changed");
+});
+
+/* ---- Retained audio (#343) ---- */
+
+function keyringStub() {
+  return {
+    isEncryptionAvailable: () => true,
+    getSelectedStorageBackend: () => "gnome_libsecret",
+    encryptString: (text) => Buffer.from(`k:${text}`),
+    decryptString: (buf) => buf.toString().slice(2),
+  };
+}
+
+function audioDir(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-pipeline-audio-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+const settle = () => new Promise((resolve) => setImmediate(() => setImmediate(resolve)));
+
+test("pipeline: with recordings off (the default), a dictation keeps no audio on disk", async (t) => {
+  const userData = audioDir(t);
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "words", userData, safeStorage: keyringStub() });
+  rig.cfg.recordings = { keep: false, maxAgeDays: 30, maxMegabytes: 1024 };
+  await rig.dictate(encodeSilenceWav(1));
+  await settle();
+  assert.deepStrictEqual(rig.log.delivered, ["words"]);
+  assert.deepStrictEqual(fs.readdirSync(userData), [], "no audio directory, no key, no file");
+});
+
+test("pipeline: opted in, the recording is kept encrypted as its History entry's audio, after delivery", async (t) => {
+  const userData = audioDir(t);
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "words", userData, safeStorage: keyringStub() });
+  rig.cfg.recordings = { keep: true, maxAgeDays: 30, maxMegabytes: 1024 };
+  const wav = encodeSilenceWav(1);
+  await rig.dictate(wav);
+  // Not yet: the write waits a turn so it can't delay the paste.
+  assert.deepStrictEqual(rig.log.delivered, ["words"]);
+  await settle();
+  const id = rig.savedHistory()[0].id;
+  const files = fs.readdirSync(path.join(userData, "audio")).sort();
+  assert.deepStrictEqual(files, [`${id}.wav.enc`, "key.json"].sort());
+  assert.ok(rig.log.settingsEvents.filter((e) => e === "history:changed").length >= 2, "Settings redraws once the audio is there");
+  // Retranscribing it: no delivery, no new entry, original kept, result beside it.
+  rig.cfg.stt.engine = "remote";
+  const before = rig.log.delivered.length;
+  const res = await rig.pipeline.retranscribe(id);
+  assert.strictEqual(res.ok, true, JSON.stringify(res));
+  assert.strictEqual(rig.log.delivered.length, before, "a retranscription never pastes or copies");
+  assert.strictEqual(rig.savedHistory().length, 1, "and adds no History entry");
+  assert.strictEqual(rig.savedHistory()[0].text, "words");
+  assert.strictEqual(rig.savedHistory()[0].retry.status, "done");
+  assert.strictEqual(rig.savedHistory()[0].retry.text, "words");
+});
+
+test("pipeline: History off means no recording is kept even when opted in", async (t) => {
+  const userData = audioDir(t);
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "words", userData, safeStorage: keyringStub() });
+  rig.cfg.recordings = { keep: true, maxAgeDays: 30, maxMegabytes: 1024 };
+  rig.cfg.history.enabled = false;
+  await rig.dictate(encodeSilenceWav(1));
+  await settle();
+  assert.deepStrictEqual(fs.readdirSync(userData), []);
+});
+
+test("pipeline: opted in without secure storage keeps nothing, and the dictation still delivers", async (t) => {
+  const userData = audioDir(t);
+  const rig = dictationRig({
+    engine: "remote", transcribe: async () => "words", userData,
+    safeStorage: { ...keyringStub(), getSelectedStorageBackend: () => "basic_text", isEncryptionAvailable: () => process.platform === "linux" ? true : false },
+  });
+  rig.cfg.recordings = { keep: true, maxAgeDays: 30, maxMegabytes: 1024 };
+  await rig.dictate(encodeSilenceWav(1));
+  await settle();
+  assert.deepStrictEqual(rig.log.delivered, ["words"]);
+  assert.deepStrictEqual(fs.readdirSync(userData), []);
+});
+
+test("pipeline: a new dictation cancels a running retranscription, which can then run again", async (t) => {
+  const userData = audioDir(t);
+  let hold = null;
+  const rig = dictationRig({
+    engine: "remote",
+    userData,
+    safeStorage: keyringStub(),
+    transcribe: async (n) => {
+      if (n === 1) {
+        await new Promise((resolve) => { hold = resolve; });
+        return "late";
+      }
+      return `take ${n}`;
+    },
+  });
+  rig.cfg.recordings = { keep: true, maxAgeDays: 30, maxMegabytes: 1024 };
+  await rig.dictate(encodeSilenceWav(1));
+  await settle();
+  const id = rig.savedHistory()[0].id;
+  const pending = rig.pipeline.retranscribe(id);
+  await settle();
+  assert.deepStrictEqual(await rig.pipeline.retranscribe(id), { ok: false, error: "busy" }, "one at a time");
+  rig.pipeline.toggle(); // a new dictation starts
+  hold();
+  const res = await pending;
+  assert.strictEqual(res.retry.status, "cancelled");
+  assert.strictEqual(rig.savedHistory()[0].retry.status, "cancelled");
+  assert.strictEqual(rig.savedHistory()[0].text, "take 0", "the original stays");
+  assert.deepStrictEqual(await rig.pipeline.retranscribe(id), { ok: false, error: "dictating" });
 });

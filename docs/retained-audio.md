@@ -3,8 +3,12 @@
 Settings → History → **Keep recordings** saves each dictation's audio on this
 computer, encrypted, so it can be played, exported or retranscribed from its
 History entry later, after a restart too (#343). It is **off by default**.
-Turned off, Earheart keeps no recording on disk. The only audio it holds is
-the one failed take kept in memory for ten minutes so you can retry it (#293).
+If you never turn it on, Earheart keeps no recording on disk; the only audio
+it holds is the one failed take kept in memory for ten minutes so you can
+retry it (#293). Turning it **off** stops keeping new recordings, but doesn't
+delete the ones already kept: they stay playable until their age or size
+limit removes them, or until you choose **Delete all recordings** (or Clear
+history).
 
 ## When a recording is kept
 

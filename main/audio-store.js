@@ -3,8 +3,9 @@
 // (main/history.js, the id contract), so Settings → History can replay,
 // export and retranscribe it — after a restart too.
 //
-// Off by default. With retention off nothing here writes: no directory, no
-// key, no file. The in-memory failed-take retry (#293, main/failed-take.js)
+// Off by default. With retention never turned on nothing here writes: no
+// directory, no key, no file. Turned off later, no new recording is kept;
+// those already kept stay until their limits or a delete remove them. The in-memory failed-take retry (#293, main/failed-take.js)
 // is separate and unchanged.
 //
 // On disk, under <userData>/audio/ (directory 0700, files 0600):

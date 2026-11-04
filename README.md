@@ -410,7 +410,8 @@ its own Copy button. Recordings are encrypted with a key held by your OS
 keychain; where there is none (Linux without GNOME Keyring or KWallet) the
 switch stays off and says why. They are deleted after 30 days, or oldest first
 past 1 GB (both adjustable), and with their History entry or Clear history.
-See [docs/retained-audio.md](docs/retained-audio.md) for the storage format,
+Turning it off keeps no new recordings; to remove the ones already kept, use
+**Delete all recordings**. See [docs/retained-audio.md](docs/retained-audio.md) for the storage format,
 encryption and recovery.
 
 A failed transcription doesn't lose the recording either. When the speech

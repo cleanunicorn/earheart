@@ -407,7 +407,8 @@ Design constraints worth keeping:
   before then isn't cached and `save()` refuses. See `main/secret-store.js`.
 - **Kept recordings are opt-in and fail closed** (`main/audio-store.js`,
   `main/recordings.js`, #343). With `recordings.keep` off (the default)
-  nothing is written. When on, with History on and real `safeStorage`, each
+  no new recording is written; ones kept earlier stay until pruned or
+  deleted. When on, with History on and real `safeStorage`, each
   dictation's WAV is sealed with AES-256-GCM under a random data key whose
   only stored form is `safeStorage`-wrapped (`audio/key.json`), named by its
   History entry id, written a turn after `history.add` so it never delays the

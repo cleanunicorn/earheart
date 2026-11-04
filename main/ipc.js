@@ -773,7 +773,7 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   // Delete every kept recording and the key; History's text stays.
   ipcMain.handle("recordings:clear", () => {
     const result = recordings.getStore().clear();
-    windows.sendToSettings("history:changed");
+    windows.sendToSettings("history:changed", { updated: true });
     return result;
   });
 

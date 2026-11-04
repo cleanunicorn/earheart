@@ -750,7 +750,7 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
         windows.sendToSettings("history:changed");
         // Opted in (#343): keep the recording as this entry's audio — a turn
         // later, so the encrypted write never delays the paste below.
-        recordings.keepLater(historyId, wav, cfg, () => windows.sendToSettings("history:changed"));
+        recordings.keepLater(historyId, wav, cfg, () => windows.sendToSettings("history:changed", { updated: true }));
       } catch (err) {
         logger.error("history add failed:", err);
       }
@@ -897,7 +897,8 @@ const retranscriber = recordings.createRetranscriber({
  */
 async function retranscribe(id) {
   const result = await retranscriber.run(id);
-  if (result.ok || result.retry) windows.sendToSettings("history:changed");
+  // An update to an existing entry: Settings stays on the page showing it.
+  if (result.ok || result.retry) windows.sendToSettings("history:changed", { updated: true });
   return result;
 }
 

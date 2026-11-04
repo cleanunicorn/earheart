@@ -1859,7 +1859,13 @@ $("history-clear").addEventListener("click", async () => {
 
 // The History section is always on the panel now, so keep it live. A new
 // dictation snaps back to the newest page so it is immediately visible.
-earheart.on("history:changed", () => { historyPage = 0; renderHistory(); renderRecordingsStatus(); });
+// `{ updated: true }` marks a change to entries already listed (a
+// retranscription, a recording kept, pruned or deleted): stay on the page.
+earheart.on("history:changed", (change) => {
+  if (!change?.updated) historyPage = 0;
+  renderHistory();
+  renderRecordingsStatus();
+});
 
 /* ---------- setup wizard ---------- */
 

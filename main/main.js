@@ -143,13 +143,14 @@ function main() {
       onSettingsChanged: () => {
         pipeline.onSettingsChanged();
         updates.onSettingsChanged();
-        // New limits apply at once (#343).
-        recordings.prune(settings.get());
+        // New limits apply at once (#343), and History redraws so a
+        // recording they removed (even one playing) leaves the page.
+        if (recordings.prune(settings.get()).length) windows.sendToSettings("history:changed", { updated: true });
       },
     });
     // Kept recordings (#343) past their limits, or whose History entry is
     // gone, are deleted now and hourly — whether or not keeping is still on.
-    recordings.startPruning(settings.get, () => windows.sendToSettings("history:changed"));
+    recordings.startPruning(settings.get, () => windows.sendToSettings("history:changed", { updated: true }));
     windows.createOverlay({ onOverlayRendererGone: pipeline.onOverlayRendererGone });
     tray.init(app, pipeline);
     // macOS: an update leaves auto-paste's permission grants stale; repair

@@ -917,7 +917,7 @@ async function transcribeKept(wav, sttCfg, signal) {
 async function cleanKept(raw, cleanupCfg, signal) {
   if (!cleanupCfg.enabled || !cleanupAvailability(cleanupCfg).ok) return { text: raw, cleaned: false };
   try {
-    const text = await withRetry(() => route.clean(raw, cleanupCfg, signal), { stale: () => signal.aborted });
+    const text = await withRetry(() => route.clean(raw, cleanupCfg, signal, cleanupLimits()), { stale: () => signal.aborted });
     return { text, cleaned: true };
   } catch (err) {
     if (signal.aborted) throw err;

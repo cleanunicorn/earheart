@@ -200,6 +200,8 @@ function duckStatusText(status) {
   return status.mechanism ? `Uses ${status.mechanism} to change the output volume.` : "";
 }
 
+const DUCK_STATUS_REFRESH_MS = 2000;
+
 async function refreshDuckStatus() {
   let status = null;
   try {
@@ -1829,4 +1831,9 @@ earheart.on("updates:state", renderUpdateState);
   renderHistory();
   loadMicrophones();
   refreshDuckStatus();
+  // The line says what is happening now (lowered, skipped, failed), which
+  // changes with every take: keep it current while the window is shown.
+  setInterval(() => {
+    if (!document.hidden) refreshDuckStatus();
+  }, DUCK_STATUS_REFRESH_MS);
 })();

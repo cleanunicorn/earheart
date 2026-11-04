@@ -214,7 +214,7 @@ app.whenReady().then(async () => {
     // main/ducking/index.js answers this in the app; here a fixed "no tool"
     // status checks that Settings says so plainly (the controller's own
     // honesty is unit-tested in test/ducking.test.js).
-    ipcMain.handle("ducking:status", async () => ({
+    let duckingStatus = {
       available: false,
       mechanism: null,
       reason: "smoke: no volume tool",
@@ -222,7 +222,8 @@ app.whenReady().then(async () => {
       detail: "",
       lastError: "",
       enabled: false,
-    }));
+    };
+    ipcMain.handle("ducking:status", async () => duckingStatus);
     const downloads = new Map();
     // Every transfer the engine was asked for, in order (check 16 counts them).
     const downloadCalls = [];
@@ -415,6 +416,16 @@ app.whenReady().then(async () => {
         ducking.status.includes("Not available on this system (smoke: no volume tool)") &&
         ducking.status.includes("Dictation works as usual"),
       JSON.stringify(ducking));
+    // The line follows the controller while Settings stays open (a take
+    // starting or ending must not leave yesterday's "lowered" on screen).
+    duckingStatus = { ...duckingStatus, available: true, mechanism: "pactl", reason: "", state: "lowered" };
+    let liveDuck = "";
+    for (let i = 0; i < 40 && !liveDuck.includes("lowered right now"); i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      liveDuck = await js(`document.getElementById("duck-status").textContent`);
+    }
+    check("the lower-other-audio status line follows the controller while Settings is open",
+      liveDuck === "Other audio is lowered right now.", JSON.stringify(liveDuck));
 
     // 9. The incomplete marker, and only on the incomplete entry.
     const historyRows = JSON.parse(

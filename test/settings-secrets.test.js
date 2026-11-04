@@ -446,3 +446,31 @@ test("settings:get reports an undecryptable key as empty and unreadable", (t) =>
   assert.ok(!JSON.stringify(payload).includes(blob));
   assert.deepStrictEqual(payload.keyStorage.unreadable, ["cleanup"]);
 });
+
+// Retained audio (#343) is fail closed: "keep recordings" can only be saved
+// on where the same OS-backed storage that protects API keys is available.
+test("keeping recordings can't be turned on without secure storage", (t) => {
+  for (const safeStorage of [
+    fakeSafeStorage({ available: false }),
+    ...(process.platform === "linux" ? [fakeSafeStorage({ backend: "basic_text" })] : []),
+  ]) {
+    const dir = makeDir(t);
+    const { settings } = loadSettings(t, dir, { safeStorage });
+    assert.strictEqual(settings.get().recordings.keep, false, "off by default");
+    const cfg = settings.get();
+    settings.save({ ...cfg, recordings: { ...cfg.recordings, keep: true } });
+    assert.strictEqual(settings.get().recordings.keep, false);
+    assert.strictEqual(readFile(dir).recordings.keep, false);
+  }
+});
+
+test("keeping recordings turns on with secure storage, and its limits are clamped", (t) => {
+  const dir = makeDir(t);
+  const { settings } = loadSettings(t, dir);
+  const cfg = settings.get();
+  assert.deepStrictEqual(cfg.recordings, { keep: false, maxAgeDays: 30, maxMegabytes: 1024 });
+  settings.save({ ...cfg, recordings: { keep: true, maxAgeDays: 0, maxMegabytes: 1e9 } });
+  assert.deepStrictEqual(settings.get().recordings, { keep: true, maxAgeDays: 1, maxMegabytes: 10240 });
+  settings.save({ ...cfg, recordings: { keep: "yes", maxAgeDays: Number.NaN, maxMegabytes: 49 } });
+  assert.deepStrictEqual(settings.get().recordings, { keep: false, maxAgeDays: 30, maxMegabytes: 50 });
+});

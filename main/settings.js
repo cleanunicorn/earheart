@@ -170,6 +170,15 @@ const DEFAULTS = {
     enabled: true,
     limit: 100,
   },
+  // Retained dictation audio (#343, main/audio-store.js): off unless the user
+  // turns it on, and only where the OS offers real secure storage (save()
+  // refuses `keep` otherwise). Kept recordings go after maxAgeDays or, oldest
+  // first, once they pass maxMegabytes.
+  recordings: {
+    keep: false,
+    maxAgeDays: 30,
+    maxMegabytes: 1024,
+  },
   updates: {
     // Check GitHub releases on startup and twice a day. Manual "Check for
     // updates" in Settings works regardless of this toggle.
@@ -377,6 +386,9 @@ function migrateLegacy(stored) {
 const LIMITS = [
   { section: "audio", key: "maxRecordingSeconds", min: 10, max: 3600 },
   { section: "engines", key: "idleUnloadMinutes", min: 0, max: 240 },
+  // Settings → History's recording limits (#recordings-days, #recordings-mb).
+  { section: "recordings", key: "maxAgeDays", min: 1, max: 365 },
+  { section: "recordings", key: "maxMegabytes", min: 50, max: 10240 },
 ];
 
 // Clamp each limit into its range (rounded to whole units); a non-finite value
@@ -529,6 +541,13 @@ function save(next) {
   if (!appReady()) throw new Error("settings cannot be saved before the app is ready");
   const previous = load();
   const merged = clampLimits(deepMerge(DEFAULTS, next));
+  // Fail closed (#343): recordings are only ever kept encrypted, so keeping
+  // them can't be turned on without OS-backed secure storage.
+  if (merged.recordings.keep === true && !keyStorageStatus.secure) {
+    merged.recordings = { ...merged.recordings, keep: false };
+  } else if (typeof merged.recordings.keep !== "boolean") {
+    merged.recordings = { ...merged.recordings, keep: false };
+  }
   writeFile(merged);
   // Only now does the in-memory copy change: a failed save must leave get()
   // agreeing with the file, not handing out values that were never persisted.

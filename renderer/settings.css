@@ -641,7 +641,8 @@ select {
 
 /* Stacked toggle rows (the Updates card) separate by whitespace like fields
    do — without this the first row's description runs into the next label. */
-.toggle + .toggle {
+.toggle + .toggle,
+.toggle + .field {
   margin-top: 16px;
 }
 

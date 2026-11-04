@@ -134,6 +134,18 @@
             </p>
             <p id="mic-device-status" class="hint" aria-live="polite"></p>
           </div>
+          <label class="toggle">
+            <span class="toggle-text">
+              <span class="t">Lower other audio while recording</span>
+              <span class="d">Turns the system output down while the microphone is capturing, and back up when you stop, pause or cancel. A volume you change during the take is kept, and muted output stays muted.</span>
+            </span>
+            <input type="checkbox" id="duck-other-audio" class="switch" role="switch" />
+          </label>
+          <div class="field">
+            <label for="duck-level">Lowered volume (% of the volume before)</label>
+            <input id="duck-level" type="number" min="0" max="80" step="5" />
+            <p id="duck-status" class="hint" aria-live="polite"></p>
+          </div>
         </div>
 
         <div class="card">

@@ -133,6 +133,14 @@ label, and opinions are welcome.
   the maximum length. You can also bind a global pause hotkey in Settings →
   General, and a discard hotkey that throws a take away without reaching for
   the mouse.
+- **Lower other audio while recording (optional)** — turn it on in Settings →
+  General → Microphone and music or a video drops to 20% of its volume (your
+  choice, 0–80%) while the microphone is capturing, and comes back when you
+  stop, pause, or cancel. A volume you change during the take is kept, muted
+  output stays muted, and a switch to another output device leaves the new one
+  alone. Uses `pactl`/`wpctl` on Linux, `osascript` on macOS, and Core Audio
+  through PowerShell on Windows; when none is available Settings says so and
+  dictation works as usual. See [docs/audio-ducking.md](docs/audio-ducking.md).
 - **Private by default** — speech and cleanup run in-process, with no account,
   telemetry, cloud requirement, or network hop.
 - **Works anywhere without an integration** — the global hotkey (default

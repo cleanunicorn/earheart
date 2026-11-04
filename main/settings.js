@@ -159,6 +159,11 @@ const DEFAULTS = {
     // cleanContextFor in util/clean-budget.js), so raising it costs memory; a
     // large dictionary or custom prompt grows it too, up to CLEAN_CONTEXT_MAX.
     maxRecordingSeconds: 600,
+    // Lower other apps' playback while capturing (#340, main/ducking/). Off by
+    // default: it changes the system output volume for the take.
+    duckOtherAudio: false,
+    // The lowered level, as a percentage of the volume before the take.
+    duckLevelPercent: 20,
   },
   engines: {
     // Built-in STT/cleanup models stay resident for fast repeat dictations,
@@ -376,6 +381,7 @@ function migrateLegacy(stored) {
 // clamped value.
 const LIMITS = [
   { section: "audio", key: "maxRecordingSeconds", min: 10, max: 3600 },
+  { section: "audio", key: "duckLevelPercent", min: 0, max: 80 },
   { section: "engines", key: "idleUnloadMinutes", min: 0, max: 240 },
 ];
 

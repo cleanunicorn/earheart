@@ -12,6 +12,7 @@ const ipc = require("./ipc");
 const engines = require("./engines");
 const autostart = require("./autostart");
 const updates = require("./updates");
+const ducking = require("./ducking");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { createHost, LOADCHECK_TIMEOUT_MS } = require("./engines/host");
@@ -124,6 +125,10 @@ function main() {
     // The discard hotkey is held only while there is a dictation to discard
     // (recording or processing); idle, the combination is the user's again.
     pipeline.onStateChange((state) => hotkeys.armDiscard(state !== "idle"));
+    // Lower other apps' playback while the microphone is capturing (opt-in);
+    // settles a lowering a crash left behind first.
+    ducking.init();
+    pipeline.onCaptureChange((live) => ducking.setCapturing("dictation", live));
     ipc.init({
       onCleanupDownloaded: pipeline.onCleanupDownloaded,
       onHistoryCleared: pipeline.clearUndelivered,
@@ -140,6 +145,7 @@ function main() {
       onSettingsChanged: () => {
         pipeline.onSettingsChanged();
         updates.onSettingsChanged();
+        ducking.refresh();
       },
     });
     windows.createOverlay({ onOverlayRendererGone: pipeline.onOverlayRendererGone });
@@ -265,6 +271,12 @@ function main() {
       return;
     }
     windows.destroyOverlay();
+    // Put lowered output back before exiting (bounded, best effort; a marker
+    // covers the rest on the next launch), then quit again.
+    if (ducking.holding()) {
+      event.preventDefault();
+      ducking.shutdown(2000).finally(() => app.quit());
+    }
   });
 
   app.on("will-quit", () => {

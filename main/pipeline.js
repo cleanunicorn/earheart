@@ -213,12 +213,37 @@ function armIdleUnload(delayMs) {
 
 function setState(next) {
   state = next;
+  // Capture ends with the recording state, whichever way it leaves.
+  if (next !== "recording") setCapturing(false);
   // Models should stay resident while a dictation is active; only count idle
   // time once we're back to idle. Re-arming on each return to idle resets the
   // window after every dictation.
   if (next === "idle") { armIdleUnload(); reconcileCompletedCleanup(); }
   else cancelIdleUnload();
   for (const listener of stateListeners) listener(state);
+}
+
+// Whether the overlay's microphone is capturing right now: from its first
+// samples, off while paused, back on resume, off when the track ends or the
+// recording state is left (stop, cancel, error, renderer gone). Audio ducking
+// (main/ducking/) follows it. Listeners run synchronously and must not throw
+// into the state machine.
+let capturing = false;
+const captureListeners = new Set();
+function setCapturing(live) {
+  if (capturing === live) return;
+  capturing = live;
+  for (const listener of captureListeners) {
+    try {
+      listener(live);
+    } catch (err) {
+      logger.warn("capture listener failed:", err);
+    }
+  }
+}
+
+function onCaptureChange(listener) {
+  captureListeners.add(listener);
 }
 
 function onStateChange(listener) {
@@ -841,6 +866,11 @@ function init({ isDownloading = () => false } = {}) {
     livePreview.handleAudio(sid, { seq, final, fromSample, hasSpeech, wav });
   });
 
+  ipcMain.on("record:capture", (event, { sid, live } = {}) => {
+    if (sid !== session || state !== "recording") return;
+    setCapturing(live === true);
+  });
+
   ipcMain.on("record:cancelled", (event, { sid } = {}) => {
     if (sid !== session) return;
     livePreview.cancel();
@@ -895,6 +925,7 @@ module.exports = {
   getUndelivered,
   clearUndelivered,
   onStateChange,
+  onCaptureChange,
   onSettingsChanged,
   onCleanupDownloaded,
 };

@@ -211,6 +211,18 @@ app.whenReady().then(async () => {
         discardHotkey: { ok: false, error: launchDiscardError, accelerator: settings.get().discardHotkey },
       }),
     });
+    // main/ducking/index.js answers this in the app; here a fixed "no tool"
+    // status checks that Settings says so plainly (the controller's own
+    // honesty is unit-tested in test/ducking.test.js).
+    ipcMain.handle("ducking:status", async () => ({
+      available: false,
+      mechanism: null,
+      reason: "smoke: no volume tool",
+      state: "idle",
+      detail: "",
+      lastError: "",
+      enabled: false,
+    }));
     const downloads = new Map();
     // Every transfer the engine was asked for, in order (check 16 counts them).
     const downloadCalls = [];
@@ -392,6 +404,17 @@ app.whenReady().then(async () => {
         microphone.notice.includes("selection stays saved"),
       JSON.stringify(microphone));
     check("no section is display:none-swapped", layout.hidden === 0, `${layout.hidden} hidden`);
+    const ducking = JSON.parse(await js(`JSON.stringify({
+      checked: document.getElementById("duck-other-audio").checked,
+      level: document.getElementById("duck-level").value,
+      status: document.getElementById("duck-status").textContent,
+    })`));
+    check("lower-other-audio is off by default, at 20%, and says plainly when it is unavailable",
+      ducking.checked === false &&
+        ducking.level === "20" &&
+        ducking.status.includes("Not available on this system (smoke: no volume tool)") &&
+        ducking.status.includes("Dictation works as usual"),
+      JSON.stringify(ducking));
 
     // 9. The incomplete marker, and only on the incomplete entry.
     const historyRows = JSON.parse(

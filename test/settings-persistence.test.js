@@ -271,3 +271,17 @@ test("a hand-edited settings file can't load an out-of-range limit", (t) => {
   assert.strictEqual(fs.readFileSync(file, "utf8"), raw);
   assert.deepStrictEqual(limits(settings.DEFAULTS), { maxSeconds: 600, idle: 2 });
 });
+
+test("audio ducking is off by default and its level clamps to the #duck-level range", (t) => {
+  const dir = makeSettingsDir(t);
+  const settings = loadSettings(dir);
+  const range = fieldRange("duck-level");
+  assert.strictEqual(settings.DEFAULTS.audio.duckOtherAudio, false, "opt-in");
+  assert.strictEqual(settings.DEFAULTS.audio.duckLevelPercent, 20);
+  assert.deepStrictEqual(range, { min: 0, max: 80 });
+  for (const [input, expected] of [[-10, range.min], [95, range.max], [33.4, 33], [NaN, 20], [0, 0]]) {
+    const saved = settings.save({ audio: { duckOtherAudio: true, duckLevelPercent: input } });
+    assert.strictEqual(saved.audio.duckLevelPercent, expected, String(input));
+    assert.strictEqual(saved.audio.duckOtherAudio, true);
+  }
+});

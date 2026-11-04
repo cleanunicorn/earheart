@@ -245,6 +245,10 @@ main/                    Electron main process
     host.js              createHost() factory: one worker process per host
     index.js             facade routing STT → sttHost, cleanup → cleanupHost
   output/deliver.js      clipboard + per-OS paste keystroke injection
+  ducking/               lower other audio while capturing (opt-in, #340)
+    backends.js          per-OS volume read/write: pactl, wpctl, osascript, PowerShell
+    controller.js        owners, ownership-checked restore, crash marker (pure)
+    index.js             Electron wiring: userData marker, settings, ducking:status
   output/mac-permissions.js  macOS permission probes, repair state and settings panes
   util/                  small pure helpers: WAV, silence splitting, text
                          joins, cleanup turn + context budget, stumble strip,
@@ -347,6 +351,15 @@ Design constraints worth keeping:
   (re-cleaned on pauses, best-effort) and, with the built-in engine, become the
   final transcript's prefix, so stop decodes only the tail (`main/live-preview.js`;
   see [docs/live-transcription-plan.md](docs/live-transcription-plan.md)).
+- **Audio ducking follows capture, not the state machine.** The overlay
+  reports `record:capture` (first samples, pause, resume, a mic track that
+  ended); `main/pipeline.js` turns any exit from `recording` into "not
+  capturing" and hands the edge to `main/ducking/` through
+  `onCaptureChange`. The controller never blocks the pipeline: OS tools run
+  serialized in the background with timeouts, and a restore writes the prior
+  volume only to the device it lowered, and only while that device still
+  reads exactly the lowered level. See
+  [docs/audio-ducking.md](docs/audio-ducking.md).
 - **Never lose the user's words.** If cleanup fails, deliver the raw
   transcript; paste-tool failure leaves text on the clipboard. If another app
   replaced the clipboard, leave its copy alone and retain the transcript for

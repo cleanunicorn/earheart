@@ -1545,8 +1545,13 @@ async function renderHistory() {
 // Released — paused, detached, its blob URL revoked — whenever its entry
 // leaves the page, is deleted, or another recording starts.
 let activePlayer = null;
+// Bumped by every Play and every release: a recording that finishes loading
+// after a newer Play, a delete or a clear belongs to nobody and is dropped,
+// so at most one player (and one blob URL) ever exists.
+let playGeneration = 0;
 
 function releasePlayer() {
+  playGeneration += 1;
   if (!activePlayer) return;
   const { audio, url } = activePlayer;
   activePlayer = null;
@@ -1582,6 +1587,7 @@ function recordingButtons(item, li, report) {
       return;
     }
     releasePlayer();
+    const ticket = playGeneration;
     play.disabled = true;
     let res;
     try {
@@ -1590,9 +1596,10 @@ function recordingButtons(item, li, report) {
       res = { ok: false, error: err.message };
     }
     play.disabled = false;
+    // Another Play, a delete or a clear came first, or the card was redrawn
+    // away while this loaded: it isn't wanted any more.
+    if (ticket !== playGeneration || !li.isConnected) return;
     if (!res?.ok) return report(recordingError(res?.error || "unknown error"));
-    // Deleted or redrawn while it loaded: nothing to attach to.
-    if (!li.isConnected) return;
     const url = URL.createObjectURL(new Blob([res.wav], { type: "audio/wav" }));
     const audio = document.createElement("audio");
     audio.className = "player";

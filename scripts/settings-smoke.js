@@ -863,6 +863,45 @@ app.whenReady().then(async () => {
         ipcMain.removeHandler("history:retranscribe");
         registerHandler("history:retranscribe", realRetranscribe);
       }
+
+      // Two Plays in a row, the first one's recording arriving last: only
+      // the second plays, and the late one never becomes a stray player.
+      const ecoleEntry = history.list().find((e) => e.text === "École ΟΔΟΣ notes");
+      smokeStore.save(ecoleEntry.id, tone, { limits: { maxAgeDays: 30, maxMegabytes: 1024 } });
+      win.webContents.send("history:changed", { updated: true });
+      await waitFor(() => js(`!!${rowWith("École ΟΔΟΣ notes")}?.querySelector("button.play")`), "the second kept recording never offered Play");
+      const realAudioGet = invokeHandlers.get("history:audio-get");
+      let releaseFirst;
+      const firstHeld = new Promise((resolve) => (releaseFirst = resolve));
+      ipcMain.removeHandler("history:audio-get");
+      registerHandler("history:audio-get", async (event, id) => {
+        const answer = await realAudioGet(event, id);
+        if (id === olderEntry.id) await firstHeld;
+        return answer;
+      });
+      let overlap;
+      try {
+        await js(`${rowWith("recovered words")}.querySelector("button.play").click(); true`);
+        await sleep(100);
+        await js(`${rowWith("École ΟΔΟΣ notes")}.querySelector("button.play").click(); true`);
+        await waitFor(() => js(`!!${rowWith("École ΟΔΟΣ notes")}.querySelector("audio.player")`), "the second Play never loaded");
+        releaseFirst();
+        await sleep(300);
+        overlap = await js(`JSON.stringify({
+          players: document.querySelectorAll("audio").length,
+          inSecond: !!${rowWith("École ΟΔΟΣ notes")}.querySelector("audio.player"),
+          inFirst: !!${rowWith("recovered words")}.querySelector("audio.player"),
+        })`).then(JSON.parse);
+      } finally {
+        releaseFirst();
+        ipcMain.removeHandler("history:audio-get");
+        registerHandler("history:audio-get", realAudioGet);
+      }
+      check(
+        "a Play answered after a newer Play is dropped: one player, in the newer entry",
+        overlap.players === 1 && overlap.inSecond && !overlap.inFirst,
+        JSON.stringify(overlap)
+      );
     } finally {
       recordings.getStore = realGetStore;
       dialog.showSaveDialog = realSaveDialog;

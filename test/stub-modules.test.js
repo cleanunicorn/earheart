@@ -8,7 +8,8 @@ const { stubModules, withStubs } = require("./helpers/stub-modules");
 
 // A throwaway module pair: target.js requires dep.js and exposes what it got.
 function makeModules(t, targetSource = 'module.exports = { dep: require("./dep") };') {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-stub-modules-"));
+  // require.cache is keyed by real path; macOS's tmpdir sits behind a symlink.
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "earheart-stub-modules-")));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const dep = path.join(dir, "dep.js");
   const target = path.join(dir, "target.js");

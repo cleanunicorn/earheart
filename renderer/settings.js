@@ -197,6 +197,7 @@ function duckStatusText(status) {
   if (status.lastError) return `Last attempt failed: ${status.lastError}. ${asUsual}`;
   if (status.state === "lowered") return "Other audio is lowered right now.";
   if (status.state === "skipped" && status.detail) return `Not lowered this take: ${status.detail}.`;
+  if (status.state === "pending" && status.detail) return `Not restored yet: ${status.detail}.`;
   return status.mechanism ? `Uses ${status.mechanism} to change the output volume.` : "";
 }
 

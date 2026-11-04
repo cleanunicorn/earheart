@@ -46,7 +46,7 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
     available: null, // null until probed
     mechanism: null,
     reason: "",
-    state: "idle", // idle | lowered | skipped
+    state: "idle", // idle | lowered | skipped | pending (a restore waits for its device)
     detail: "",
     lastError: "",
   };
@@ -259,7 +259,10 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
       const result = await settle(h);
       if (result === "elsewhere") {
         logger.info?.("audio ducking: output device switched; the lowered device is restored when it is back");
-        return; // marker kept
+        // Marker kept; say so now rather than at the next take.
+        status.state = "pending";
+        status.detail = "the output that was lowered is restored once it is the default again";
+        return;
       }
       if (result !== "restored") logger.info?.(`audio ducking: left the volume as is (${result})`);
       clearMarker();
@@ -276,7 +279,12 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
         await lower();
       } else {
         skipped = false;
-        if (status.state === "skipped") status.state = "idle";
+        if (status.state === "skipped") {
+          // A restore still waiting for its device stays visible between takes.
+          const waiting = backend && !backend.addressable && loadMarker();
+          status.state = waiting ? "pending" : "idle";
+          if (waiting) status.detail = "the output that was lowered is restored once it is the default again";
+        }
         if (!held) return;
         await restore();
       }

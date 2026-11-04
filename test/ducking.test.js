@@ -213,11 +213,15 @@ test("ducking: default-device-only backend (macOS) never writes the switched-to 
   await ducker.setCapturing("dictation", false);
   assert.strictEqual(vol(backend, "B"), 16, "B gets no restore write");
   assert.ok(store.peek(), "the marker for A is kept");
+  const pending = await ducker.getStatus();
+  assert.strictEqual(pending.state, "pending", "Settings says a restore is outstanding");
+  assert.match(pending.detail, /restored once it is the default again/);
   // While B is the default, a new take does not lower (A's restore is pending).
   await ducker.setCapturing("dictation", true);
   assert.strictEqual(vol(backend, "B"), 16);
   assert.match((await ducker.getStatus()).detail, /waiting to be restored/);
   await ducker.setCapturing("dictation", false);
+  assert.strictEqual((await ducker.getStatus()).state, "pending", "still outstanding after that take");
   // A is back: the next launch (or take) restores it.
   backend.setDefault("A");
   await ducker.recover();

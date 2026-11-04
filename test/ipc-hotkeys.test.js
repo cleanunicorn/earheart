@@ -6,7 +6,7 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 
 const ipcPath = require.resolve("../main/ipc");
 const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(ipcPath)] });
@@ -86,17 +86,7 @@ function loadIpcHandlers({ previous, hotkeyResults, saveError = null, getHotkeyS
     },
   };
 
-  const priorCache = new Map();
-  for (const [modulePath, exports] of Object.entries(stubs)) {
-    priorCache.set(modulePath, require.cache[modulePath]);
-    const stub = new Module(modulePath, null);
-    stub.filename = modulePath;
-    stub.loaded = true;
-    stub.exports = exports;
-    require.cache[modulePath] = stub;
-  }
-  delete require.cache[ipcPath];
-  try {
+  withStubs(stubs, [ipcPath], () => {
     require(ipcPath).init({
       applyHotkeys(cfg) {
         calls.applied.push(cfg);
@@ -112,13 +102,7 @@ function loadIpcHandlers({ previous, hotkeyResults, saveError = null, getHotkeyS
       },
       getHotkeyStatus,
     });
-  } finally {
-    delete require.cache[ipcPath];
-    for (const [modulePath, oldModule] of priorCache) {
-      if (oldModule) require.cache[modulePath] = oldModule;
-      else delete require.cache[modulePath];
-    }
-  }
+  });
   return { handlers, calls };
 }
 

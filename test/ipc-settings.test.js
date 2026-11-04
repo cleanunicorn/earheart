@@ -10,7 +10,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 
 const ipcPath = require.resolve("../main/ipc");
 const settingsPath = require.resolve("../main/settings");
@@ -78,47 +78,27 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
   const historyPath = resolveFrom("./history");
   if (realHistory) delete stubs[historyPath];
   const savedHistory = require.cache[historyPath];
-  const previous = new Map();
-  for (const [p, exports] of Object.entries(stubs)) {
-    previous.set(p, require.cache[p]);
-    const m = new Module(p, null);
-    m.filename = p;
-    m.loaded = true;
-    m.exports = exports;
-    require.cache[p] = m;
-  }
-  delete require.cache[ipcPath];
-  delete require.cache[settingsPath];
-  delete require.cache[recordingsPath];
   let settings;
   let history;
   let recordings;
   try {
-    if (realHistory) delete require.cache[historyPath];
-    settings = require(settingsPath);
-    require(ipcPath).init({
-      applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
-      onSettingsChanged() {},
-      canCorrect,
-      canCopy,
-      onHistoryCleared: () => { calls.undeliveredCleared = (calls.undeliveredCleared || 0) + 1; },
-      onHistoryEntryDeleted: (entry) => calls.entriesDeleted.push(entry),
-      ...(retranscribe ? { retranscribe } : {}),
+    withStubs(stubs, [ipcPath, settingsPath, recordingsPath, ...(realHistory ? [historyPath] : [])], () => {
+      settings = require(settingsPath);
+      require(ipcPath).init({
+        applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
+        onSettingsChanged() {},
+        canCorrect,
+        canCopy,
+        onHistoryCleared: () => { calls.undeliveredCleared = (calls.undeliveredCleared || 0) + 1; },
+        onHistoryEntryDeleted: (entry) => calls.entriesDeleted.push(entry),
+        ...(retranscribe ? { retranscribe } : {}),
+      });
+      if (realHistory) history = require.cache[historyPath].exports;
+      recordings = require.cache[recordingsPath].exports;
     });
-    if (realHistory) history = require.cache[historyPath].exports;
-    recordings = require.cache[recordingsPath].exports;
   } finally {
-    delete require.cache[ipcPath];
-    delete require.cache[settingsPath];
-    delete require.cache[recordingsPath];
-    if (realHistory) {
-      if (savedHistory) require.cache[historyPath] = savedHistory;
-      else delete require.cache[historyPath];
-    }
-    for (const [p, old] of previous) {
-      if (old) require.cache[p] = old;
-      else delete require.cache[p];
-    }
+    // withStubs drops the fresh real history; put back whatever was cached before.
+    if (realHistory && savedHistory) require.cache[historyPath] = savedHistory;
   }
   const file = path.join(userData, "settings.json");
   return { handlers, settings, calls, history, recordings, userData, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };

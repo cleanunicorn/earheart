@@ -10,7 +10,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 
 const updatesPath = require.resolve("../main/updates");
 const settingsPath = require.resolve("../main/settings");
@@ -69,30 +69,12 @@ function loadUpdates(t, { stored, latest = "0.0.1" } = {}) {
     },
   };
 
-  const previous = new Map();
-  for (const [p, exports] of Object.entries(stubs)) {
-    previous.set(p, require.cache[p]);
-    const m = new Module(p, null);
-    m.filename = p;
-    m.loaded = true;
-    m.exports = exports;
-    require.cache[p] = m;
-  }
-  delete require.cache[updatesPath];
-  delete require.cache[settingsPath];
   let updates;
   let settings;
-  try {
+  withStubs(stubs, [updatesPath, settingsPath], () => {
     settings = require(settingsPath);
     updates = require(updatesPath);
-  } finally {
-    delete require.cache[updatesPath];
-    delete require.cache[settingsPath];
-    for (const [p, old] of previous) {
-      if (old) require.cache[p] = old;
-      else delete require.cache[p];
-    }
-  }
+  });
   const feed = process.env.EARHEART_UPDATE_FEED;
   delete process.env.EARHEART_UPDATE_FEED; // dev install: no network checks
   t.after(() => {

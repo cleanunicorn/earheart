@@ -10,8 +10,10 @@
 //
 // What this file can and cannot prove: it pins the JavaScript — call frequency,
 // exact options, ordering, and platform gating. It cannot execute a line of macOS
-// window behaviour, so the macOS Spaces fix that these assertions guard is verified
-// by a human on real hardware, not here. See the PR body.
+// window behaviour, so whether the overlay really shows on the active Space is a
+// manual check on a Mac: launch the app, switch to another Space (or a full-screen
+// app), start dictating, and the overlay must appear there — on every show, across
+// several launches. Background: #164.
 
 const { test } = require("node:test");
 const assert = require("node:assert");
@@ -256,10 +258,10 @@ test("overlay renderer loss replays the exact error status after reload", () => 
 });
 
 // --- The guarantees that predate the Spaces fix -----------------------------
-// These three run against behaviour that already existed, so they pass before
-// the fix as well as after. That is the point: they prove the harness produces
-// real assertions rather than vacuous ones, which is what makes the failing
-// case below meaningful.
+// These three pin behaviour the per-show re-assertion must leave alone: Linux
+// and Windows make no all-Spaces call on show (Windows keeping its topmost-band
+// sequence), and the macOS card never takes focus. They fail if the recording
+// fake stops seeing real calls, so the Spaces tests below cannot pass vacuously.
 
 test("linux: showOverlay() makes no all-Spaces call; creation still makes exactly one", (t) => {
   onPlatform(t, "linux");

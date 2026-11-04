@@ -10,7 +10,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 const path = require("node:path");
-const Module = require("node:module");
+const { stubModules } = require("./helpers/stub-modules");
 
 // A minimal utilityProcess child: records postMessage calls and lets the test
 // fire "message"/"exit" events at the host.
@@ -40,13 +40,8 @@ const hostPath = require.resolve("../main/engines/host");
 const electronPath = require.resolve("electron", {
   paths: [path.dirname(hostPath)],
 });
-{
-  const m = new Module(electronPath, null);
-  m.filename = electronPath;
-  m.loaded = true;
-  m.exports = { utilityProcess: { fork: () => currentChild } };
-  require.cache[electronPath] = m;
-}
+// Kept for the whole file: host.js requires electron lazily, when it spawns.
+stubModules({ [electronPath]: { utilityProcess: { fork: () => currentChild } } });
 const logger = require("../main/util/logger");
 const diagnostics = [];
 logger.warn = (...args) => diagnostics.push(args);

@@ -12,7 +12,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 const path = require("node:path");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 const { pathToFileURL } = require("node:url");
 
 const MAIN = require.resolve("../main/main");
@@ -194,30 +194,17 @@ async function loadMain(
     },
   };
 
-  const saved = new Map();
-  const install = (file, exports) => {
-    saved.set(file, require.cache[file]);
-    const mod = new Module(file, null);
-    mod.filename = file;
-    mod.loaded = true;
-    mod.exports = exports;
-    require.cache[file] = mod;
-  };
-  for (const [spec, exports] of Object.entries(stubs)) install(resolveFrom(spec), exports);
-  for (const file of FRESH) delete require.cache[file];
+  const resolved = Object.fromEntries(
+    Object.entries(stubs).map(([spec, exports]) => [resolveFrom(spec), exports])
+  );
 
   const originalArgv = process.argv;
   process.argv = [...originalArgv.slice(0, 2), ...argv];
   try {
-    require(MAIN);
+    withStubs(resolved, FRESH, () => require(MAIN));
   } finally {
     // isSmokeTest and startHidden are read at load time.
     process.argv = originalArgv;
-    for (const file of FRESH) delete require.cache[file];
-    for (const [file, previous] of saved) {
-      if (previous) require.cache[file] = previous;
-      else delete require.cache[file];
-    }
   }
   // Let the whenReady().then(...) startup body run.
   await new Promise((resolve) => setImmediate(resolve));

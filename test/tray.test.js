@@ -10,7 +10,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 
 const trayPath = require.resolve("../main/tray");
 const settingsPath = require.resolve("../main/settings");
@@ -70,35 +70,15 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
     },
   };
 
-  const previous = new Map();
-  for (const [p, exports] of Object.entries(stubs)) {
-    previous.set(p, require.cache[p]);
-    const m = new Module(p, null);
-    m.filename = p;
-    m.loaded = true;
-    m.exports = exports;
-    require.cache[p] = m;
-  }
   // deliver.js too: it binds the electron stub (the clipboard the copy tests
   // read) when first loaded, so a cached copy would write to an earlier test's.
   const deliverPath = resolveFrom("./output/deliver");
-  delete require.cache[trayPath];
-  delete require.cache[settingsPath];
-  delete require.cache[deliverPath];
   let tray;
   let settings;
-  try {
+  withStubs(stubs, [trayPath, settingsPath, deliverPath], () => {
     settings = require(settingsPath);
     tray = require(trayPath);
-  } finally {
-    delete require.cache[trayPath];
-    delete require.cache[settingsPath];
-    delete require.cache[deliverPath];
-    for (const [p, old] of previous) {
-      if (old) require.cache[p] = old;
-      else delete require.cache[p];
-    }
-  }
+  });
   const pipeline = {
     getState: () => "idle",
     onStateChange() {},

@@ -1,9 +1,12 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
+const http = require("node:http");
 
 const { serviceUrl, authHeaders, HTTP_TIMEOUT_MS } = require("../main/services/service-url");
 const { transcribe } = require("../main/services/stt");
-const { clean } = require("../main/services/cleanup");
+const { clean, stripThinking } = require("../main/services/cleanup");
+const { CLEAN_RUNAWAY_MESSAGE } = require("../main/util/clean-budget");
+const { listRemoteModels } = require("../main/services/models-remote");
 
 // A local server whose handler the test writes: a hang, a stalled or dropped
 // body, a canned reply.
@@ -330,4 +333,239 @@ test("remote clients report the default timeout in whole seconds", async () => {
     transportError(timeout, "http://h:1/v1", { service: "STT service", timeoutS: 120 }).message,
     "STT service didn't answer within 120 s"
   );
+});
+
+test("stripThinking removes reasoning blocks", () => {
+  assert.strictEqual(
+    stripThinking("<think>hmm, let me see</think>Hello world."),
+    "Hello world."
+  );
+  assert.strictEqual(stripThinking("No tags here."), "No tags here.");
+  assert.strictEqual(
+    stripThinking("<THINK>a</THINK>\n\n  Result  "),
+    "Result"
+  );
+  assert.strictEqual(stripThinking("<think>unfinished private reasoning"), "");
+  assert.strictEqual(
+    stripThinking("Answer so far.<think>unfinished private reasoning"),
+    "Answer so far."
+  );
+  // R1-style templates put the opener in the prompt, so the reply starts
+  // mid-reasoning and only the closer arrives.
+  assert.strictEqual(
+    stripThinking("Okay, the user wants me to clean this up.\n</think>\n\nSo this is a test."),
+    "So this is a test."
+  );
+  assert.strictEqual(stripThinking("reasoning only</think>"), "");
+  // Reasoning that closes more than once: everything up to the last closer goes,
+  // so no reasoning and no stray tag reach the answer.
+  assert.strictEqual(stripThinking("first thought</think>\nsecond thought\n</think>\n\nAnswer."), "Answer.");
+  // The closer is matched case-insensitively, like the paired rule.
+  assert.strictEqual(stripThinking("reasoning</THINK>Answer"), "Answer");
+  // A paired block before a lone closer: the order of the rules decides this.
+  assert.strictEqual(stripThinking("<think>a</think>more reasoning</think>Answer"), "Answer");
+});
+
+test("remote cleanup rejects an answer the server cut off at its token limit", async () => {
+  const reply = (finish_reason) =>
+    JSON.stringify({ choices: [{ finish_reason, message: { content: "Answer so far." } }] });
+  let finish = "length";
+  const server = http.createServer((req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.end(reply(finish));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const cfg = { baseUrl: `http://127.0.0.1:${server.address().port}/v1`, model: "m" };
+  try {
+    await assert.rejects(() => clean("um hello", cfg), { message: CLEAN_RUNAWAY_MESSAGE });
+    finish = "stop";
+    assert.strictEqual(await clean("um hello", cfg), "Answer so far.");
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+/* ---------------- remote model listing ---------------- */
+
+// A one-route JSON server for the remote-listing tests. Each request is
+// recorded in `requests` so tests assert on it in their body: an assert that
+// throws inside the handler would leave the request unanswered and the file
+// alive after the failure.
+function serveJson(handler) {
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    requests.push({ url: req.url, headers: req.headers });
+    const { status, body } = handler(req);
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(typeof body === "string" ? body : JSON.stringify(body));
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      resolve({ server, base: `http://127.0.0.1:${server.address().port}/v1`, requests });
+    });
+  });
+}
+
+test("listRemoteModels parses OpenAI shape, sorts and de-dupes", async () => {
+  const { server, base, requests } = await serveJson(() => ({
+    status: 200,
+    body: { data: [{ id: "gpt-z" }, { id: "gpt-a" }, { id: "gpt-a" }] },
+  }));
+  try {
+    const models = await listRemoteModels({ baseUrl: base, apiKey: "secret" });
+    assert.deepStrictEqual(models, ["gpt-a", "gpt-z"]);
+    assert.strictEqual(requests.length, 1);
+    assert.strictEqual(requests[0].url, "/v1/models");
+    assert.strictEqual(requests[0].headers.authorization, "Bearer secret");
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels accepts a bare array and omits the auth header without a key", async () => {
+  const { server, base, requests } = await serveJson(() => ({ status: 200, body: ["b", "a"] }));
+  try {
+    const models = await listRemoteModels({ baseUrl: base });
+    assert.deepStrictEqual(models, ["a", "b"]);
+    assert.strictEqual(requests.length, 1);
+    assert.strictEqual(requests[0].headers.authorization, undefined);
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels surfaces HTTP errors without the reply or the URL", async () => {
+  const { server, base } = await serveJson(() => ({
+    status: 401,
+    body: { error: { message: "Incorrect API key provided: sk-secret-value" } },
+  }));
+  try {
+    await assert.rejects(
+      () => listRemoteModels({ baseUrl: base, apiKey: "sk-client-secret" }),
+      (err) => {
+        assert.strictEqual(err.message, "Model list service error 401 — check the API key in Settings");
+        return true;
+      }
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels requires a base URL", async () => {
+  await assert.rejects(() => listRemoteModels({}), /Base URL is required/);
+});
+
+test("listRemoteModels rejects a non-http(s) base URL", async () => {
+  await assert.rejects(
+    () => listRemoteModels({ baseUrl: "file:///etc/passwd" }),
+    /must use http or https/
+  );
+});
+
+test("listRemoteModels returns an empty list when the service reports none", async () => {
+  const { server, base } = await serveJson(() => ({ status: 200, body: { data: [] } }));
+  try {
+    assert.deepStrictEqual(await listRemoteModels({ baseUrl: base }), []);
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels rejects a non-JSON body", async () => {
+  const { server, base } = await serveJson(() => ({ status: 200, body: "not json{" }));
+  try {
+    await assert.rejects(() => listRemoteModels({ baseUrl: base }), /^Error: Model list service returned a response that isn't JSON$/);
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels rejects an unexpected JSON shape", async () => {
+  const { server, base } = await serveJson(() => ({ status: 200, body: { notdata: 1 } }));
+  try {
+    await assert.rejects(
+      () => listRemoteModels({ baseUrl: base }),
+      /^Error: Model list service returned an unexpected \/models reply$/
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels strips a trailing slash before appending /models", async () => {
+  const { server, base, requests } = await serveJson(() => ({
+    status: 200,
+    body: { data: [{ id: "m" }] },
+  }));
+  try {
+    // base already ends in /v1; add another slash so serviceUrl has to strip it.
+    assert.deepStrictEqual(await listRemoteModels({ baseUrl: `${base}/` }), ["m"]);
+    assert.strictEqual(requests[0].url, "/v1/models"); // not /v1//models
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels trims whitespace around the base URL", async () => {
+  const { server, base, requests } = await serveJson(() => ({
+    status: 200,
+    body: { data: [{ id: "m" }] },
+  }));
+  try {
+    // A private joiner once encoded this as /v1%20/models.
+    assert.deepStrictEqual(await listRemoteModels({ baseUrl: ` ${base} ` }), ["m"]);
+    assert.strictEqual(requests[0].url, "/v1/models");
+  } finally {
+    server.close();
+  }
+});
+
+test("listRemoteModels treats a non-string base URL as missing", async () => {
+  // A private joiner once threw "b.replace is not a function" here.
+  await assert.rejects(() => listRemoteModels({ baseUrl: 123 }), /^Error: Base URL is required$/);
+});
+
+test("listRemoteModels names the host it couldn't reach, in plain words", async () => {
+  // Port 1 is not listenable, so the fetch rejects at the connection stage.
+  await assert.rejects(
+    () => listRemoteModels({ baseUrl: "http://127.0.0.1:1/v1" }),
+    /^Error: Couldn't reach 127\.0\.0\.1:1$/
+  );
+});
+
+test("listRemoteModels reports a stalled response body as a timeout", async () => {
+  const server = http.createServer((req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.write('{"data": [');
+    // Never end the response.
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}/v1`;
+  try {
+    await assert.rejects(
+      () => listRemoteModels({ baseUrl: base }, { timeoutMs: 50 }),
+      /^Error: Model list service didn't answer within 0\.05 s$/
+    );
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test("listRemoteModels times out when a service never responds", async () => {
+  const server = http.createServer(() => {});
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}/v1`;
+  try {
+    await assert.rejects(
+      () => listRemoteModels({ baseUrl: base }, { timeoutMs: 20 }),
+      /^Error: Model list service didn't answer within 0\.02 s$/
+    );
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
 });

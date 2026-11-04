@@ -9,7 +9,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
+const { stubModules } = require("./helpers/stub-modules");
 const secretStore = require("../main/secret-store");
 
 // A stand-in for Electron's safeStorage: reversible, and recognisably not the
@@ -41,24 +41,6 @@ function makeDir(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-secrets-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
-}
-
-function stubModules(stubs) {
-  const previous = new Map();
-  for (const [p, exports] of Object.entries(stubs)) {
-    previous.set(p, require.cache[p]);
-    const m = new Module(p, null);
-    m.filename = p;
-    m.loaded = true;
-    m.exports = exports;
-    require.cache[p] = m;
-  }
-  return () => {
-    for (const [p, old] of previous) {
-      if (old) require.cache[p] = old;
-      else delete require.cache[p];
-    }
-  };
 }
 
 const settingsPath = require.resolve("../main/settings");

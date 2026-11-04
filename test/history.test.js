@@ -3,23 +3,16 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 
 function loadHistory(userData = "/unused") {
   const historyPath = require.resolve("../main/history");
   const electronPath = require.resolve("electron");
-  const savedElectron = require.cache[electronPath];
-  const electron = new Module(electronPath, null);
-  electron.filename = electronPath;
-  electron.loaded = true;
-  electron.exports = { app: { getPath: () => userData } };
-  require.cache[electronPath] = electron;
-  delete require.cache[historyPath];
-  const history = require(historyPath);
-  delete require.cache[historyPath];
-  if (savedElectron) require.cache[electronPath] = savedElectron;
-  else delete require.cache[electronPath];
-  return history;
+  return withStubs(
+    { [electronPath]: { app: { getPath: () => userData } } },
+    [historyPath],
+    () => require(historyPath)
+  );
 }
 
 test("history keeps valid transcripts while ignoring malformed rows", () => {

@@ -864,6 +864,54 @@ app.whenReady().then(async () => {
         registerHandler("history:retranscribe", realRetranscribe);
       }
 
+      // Copy retranscription copies the retranscription, not the original.
+      const realCopy = invokeHandlers.get("transcript:copy");
+      const copied = [];
+      ipcMain.removeHandler("transcript:copy");
+      registerHandler("transcript:copy", async (event, text) => {
+        copied.push(text);
+        return { ok: true };
+      });
+      try {
+        await js(`${rowWith("recovered words")}.querySelector("button.retry-copy").click(); true`);
+        await waitFor(() => copied.length > 0, "Copy retranscription never copied");
+      } finally {
+        ipcMain.removeHandler("transcript:copy");
+        registerHandler("transcript:copy", realCopy);
+      }
+      check(
+        "Copy retranscription copies the retranscribed text, not the original",
+        JSON.stringify(copied) === JSON.stringify(["Retried words."]),
+        JSON.stringify(copied)
+      );
+
+      // A failed and a cancelled retranscription each say what happened, and
+      // offer no text to copy.
+      const outcome = async (retry, message) => {
+        history.setRetry(olderEntry.id, { seq: Date.now() + Math.random(), at: new Date().toISOString(), ...retry });
+        win.webContents.send("history:changed", { updated: true });
+        return waitFor(
+          () => js(`(() => {
+            const li = ${rowWith("recovered words")};
+            const head = li?.querySelector(".retry-head")?.textContent || "";
+            return head.includes(${JSON.stringify(retry.status === "failed" ? "failed" : "cancelled")}) && JSON.stringify({
+              head, text: !!li.querySelector(".retry-text"), copy: !!li.querySelector("button.retry-copy"),
+              original: li.querySelector(".text").textContent,
+            });
+          })()`),
+          message
+        ).then(JSON.parse);
+      };
+      const failedView = await outcome({ status: "failed", error: "service down" }, "a failed retranscription never said so");
+      const cancelledView = await outcome({ status: "cancelled" }, "a cancelled retranscription never said so");
+      check(
+        "failed and cancelled retranscriptions say what happened, keep the original, and offer nothing to copy",
+        /failed: service down$/.test(failedView.head) && /cancelled by a new dictation/.test(cancelledView.head) &&
+          !failedView.text && !failedView.copy && !cancelledView.text && !cancelledView.copy &&
+          failedView.original === "recovered words" && cancelledView.original === "recovered words",
+        JSON.stringify({ failedView, cancelledView })
+      );
+
       // Two Plays in a row, the first one's recording arriving last: only
       // the second plays, and the late one never becomes a stray player.
       const ecoleEntry = history.list().find((e) => e.text === "École ΟΔΟΣ notes");

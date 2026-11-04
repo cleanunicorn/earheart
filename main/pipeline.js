@@ -104,6 +104,13 @@ function missingCleanupNotice(readiness) {
     body: (readiness.label || readiness.modelId) + " is not downloaded — raw transcripts work. Click to download it in Settings → Cleanup.",
   });
 }
+// The builtin cleanup context is sized from Max dictation length, which the
+// engines facade doesn't read itself (#204). Every cleanup call passes this,
+// read at call time — the moment the facade used to read it.
+// test/cleanup-limits-contract.test.js checks that no call site drops it.
+function cleanupLimits() {
+  return { maxRecordingSeconds: settings.get().audio?.maxRecordingSeconds };
+}
 function reconcileCompletedCleanup() {
   const cfg = settings.get().cleanup;
   const id = cfg?.builtin?.model;
@@ -118,7 +125,7 @@ function reconcileCompletedCleanup() {
   primedCleanup.add(id);
   const prime = {};
   backgroundPrime = prime;
-  engines.primeCleanup(cfg).catch((err) => {
+  engines.primeCleanup(cfg, "", cleanupLimits()).catch((err) => {
     if (err?.name !== "AbortError" && err?.message !== "cleanup cancelled") logger.warn("cleanup warm-up failed:", { model: id }, err);
   }).finally(() => { if (backgroundPrime === prime) backgroundPrime = false; });
 }
@@ -159,7 +166,7 @@ async function transcribeLive(wav, sttCfg, signal) {
 
 const livePreview = createLivePreview({
   runTranscribe: transcribeLive,
-  runCleanup: route.clean,
+  runCleanup: (raw, cleanupCfg, signal) => route.clean(raw, cleanupCfg, signal, cleanupLimits()),
   canCleanup: (cfg) => cleanupAvailability(cfg).ok,
   sendToOverlay: windows.sendToOverlay,
   getSettings: settings.get,
@@ -460,6 +467,7 @@ function withAliases(text, aliases) {
 // in cleanWithFallback — that's dictation policy, not progress plumbing.
 async function cleanWithProgress(raw, cleanupCfg, signal, stale) {
   const text = await route.clean(raw, cleanupCfg, signal, {
+    ...cleanupLimits(),
     onProgress: (fraction) => {
       if (!stale()) sendProgress("cleaning", fraction);
     },
@@ -507,7 +515,7 @@ async function cleanWithFallback(raw, cleanupCfg, signal, stale) {
 // Priming is best-effort, but a failed model startup must leave a diagnostic.
 // Cancellation while stopping a recording is expected and stays quiet.
 function primeCleanupLogged(cfg, sid, prefix) {
-  engines.primeCleanup(cfg, prefix).catch((err) => {
+  engines.primeCleanup(cfg, prefix, cleanupLimits()).catch((err) => {
     if (session !== sid || state === "idle" || err?.name === "AbortError" ||
         err?.message === "cleanup cancelled") return;
     logger.warn("cleanup warm-up failed:", { model: cfg.builtin?.model }, err);

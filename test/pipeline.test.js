@@ -449,6 +449,7 @@ function dictationRig({
     setSnapshot: (snap) => (snapshot = snap),
     overlayLoading: (fn) => (onLoad = fn),
     liveCleanupError: (...a) => liveDeps.onCleanupError(...a),
+    liveCleanup: (...a) => liveDeps.runCleanup(...a),
   };
 }
 
@@ -1437,6 +1438,32 @@ test("pipeline: live cleanup errors reach the file logger", () => {
   rig.liveCleanupError(error);
   assert.ok(rig.log.logs.some(([level, label, err]) =>
     level === "warn" && /live preview cleanup failed/.test(label) && err === error));
+});
+
+// #204: the engines facade reads no settings, so the pipeline hands every
+// cleanup call the saved Max dictation length — read when the call is made,
+// the moment the facade used to read it. A missing one would size the context
+// for an unset limit instead.
+test("pipeline: every cleanup call carries the saved max dictation length, read at call time", async () => {
+  const seen = [];
+  const rig = dictationRig({
+    cleanup: true,
+    transcribe: async () => "dictated words",
+    primeCleanup: async (cfg, prefix, opts) => { seen.push(["prime", prefix ?? "", opts?.maxRecordingSeconds]); },
+    clean: async (raw, cfg, signal, opts) => {
+      seen.push(["clean", opts?.maxRecordingSeconds]);
+      return `cleaned(${raw})`;
+    },
+  });
+  await rig.dictate(speechWav(1), { committedRaw: "dictated", decodedSamples: 16000, broken: false });
+  assert.deepStrictEqual(seen, [
+    ["prime", "", 300], // warm-up when the dictation starts
+    ["prime", "dictated", 300], // prefill-ahead of the committed text
+    ["clean", 300], // the final pass
+  ]);
+  rig.cfg.audio.maxRecordingSeconds = 1200; // saved after the dictation started
+  await rig.liveCleanup("live words", rig.cfg.cleanup, new AbortController().signal);
+  assert.deepStrictEqual(seen.at(-1), ["clean", 1200], "the live preview's cleanup reads it per call");
 });
 
 test("pipeline: cleanup warm-up failures are logged without blocking recording", async () => {

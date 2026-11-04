@@ -27,6 +27,23 @@ const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(ipcPa
 // `windows`, `deliver`, `history`, `autostart`, `updates` and `logger` override
 // those modules' members, and `init` the options init() receives. Every window
 // broadcast lands in `broadcasts`, and every other windows call in `windowCalls`.
+// #204: the engines facade reads no settings, so the Settings "Test" button
+// passes the saved Max dictation length — as the facade read it before — and
+// a builtin test clean gets the context a dictation would.
+test("cleanup:test passes the saved max dictation length to the cleanup route", async () => {
+  const seen = [];
+  const { handlers } = loadIpcHandlers({ audio: { maxRecordingSeconds: 900 } }, {
+    route: {
+      clean: async (text, cfg, signal, opts) => {
+        seen.push(opts?.maxRecordingSeconds);
+        return "cleaned";
+      },
+    },
+  });
+  assert.deepStrictEqual(await handlers["cleanup:test"]({}, { engine: "builtin" }), { ok: true, sample: "cleaned" });
+  assert.deepStrictEqual(seen, [900]);
+});
+
 function loadIpcHandlers(cfg, {
   engines = {},
   hf = {},

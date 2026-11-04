@@ -350,7 +350,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#architecture) for the full architecture.
   its own page uses; `overlay-contract` and `settings-contract` check renderer scripts
   against their HTML/CSS; `tooling-contract` checks that each install and
   check target in the Makefile runs the same commands as its `ci.yml` steps,
-  and that `engines.node` is a floor every locked package accepts.
+  and that `engines.node` is a floor every locked package accepts;
+  `cleanup-limits-contract` checks that every cleanup call in `main/` passes
+  the max dictation length, since the engines facade reads no settings.
 - **What to cover:** happy path, error paths, and edge cases for new code.
 - **Fixtures / stubs:** no network or models needed; the STT server suite uses
   synthetic WAVs and fake recognizers.

@@ -58,7 +58,9 @@ default* device. If you switch outputs during a take, Earheart does not
 touch the new device; the original one stays lowered until it is the default
 again, and is restored then (on the next take or launch) if it still sits at
 the lowered level. Until then a new take does not lower anything, and
-Settings says why.
+Settings says why. Two outputs with the same name on the same transport
+(two identical USB DACs, say) can't be told apart, so with one of them as the
+default nothing is lowered and Settings says so.
 
 ## Status in Settings
 

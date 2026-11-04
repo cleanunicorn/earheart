@@ -508,6 +508,54 @@ test("system_profiler: the default output device is the flagged item, named with
   assert.throws(() => b.parseMacDefaultOutput("not json"), /unexpected system_profiler output/);
 });
 
+// Two identical USB DACs: same name, same transport. osascript would write
+// whichever is the default, so the identity can't guard a restore — refused.
+const twinDacs = (defaultIndex) => JSON.stringify({
+  SPAudioDataType: [{
+    _items: [0, 1].map((i) => ({
+      _name: "USB Audio DAC",
+      coreaudio_device_transport: "coreaudio_device_type_usb",
+      coreaudio_device_output: 2,
+      ...(i === defaultIndex ? { coreaudio_default_audio_output_device: "spaudio_yes" } : {}),
+    })),
+  }],
+});
+
+test("system_profiler: two outputs sharing a name and transport are refused, not guessed", () => {
+  assert.throws(() => b.parseMacDefaultOutput(twinDacs(0)), /two outputs are both named "USB Audio DAC"/);
+  // Same name on different transports stays distinguishable.
+  const mixed = JSON.stringify({ SPAudioDataType: [{ _items: [
+    { _name: "Headset", coreaudio_device_transport: "coreaudio_device_type_usb", coreaudio_device_output: 2, coreaudio_default_audio_output_device: "spaudio_yes" },
+    { _name: "Headset", coreaudio_device_transport: "coreaudio_device_type_bluetooth", coreaudio_device_output: 2 },
+  ] }] });
+  assert.strictEqual(b.parseMacDefaultOutput(mixed), "Headset|coreaudio_device_type_usb");
+});
+
+test("macOS backend + controller: with twin outputs nothing is lowered, the status says why, and the twin is never written", async () => {
+  let defaultIndex = 0;
+  const volumes = [80, 16];
+  const writes = [];
+  const run = async (cmd, args) => {
+    if (cmd === "system_profiler") return twinDacs(defaultIndex);
+    if (args.length === 2) return `output volume:${volumes[defaultIndex]}, output muted:false`;
+    writes.push([defaultIndex, Number(args.at(-1))]);
+    volumes[defaultIndex] = Number(args.at(-1));
+    return "";
+  };
+  const store = memoryStore();
+  const ducker = createDucker({ backends: [b.createMacBackend(run)], store, getConfig: () => ({ enabled: true, levelPercent: 20 }), logger: {} });
+  await ducker.setCapturing("dictation", true);
+  const status = await ducker.getStatus();
+  assert.strictEqual(status.available, true, "the tool works; this device can't be told apart");
+  assert.strictEqual(status.state, "skipped");
+  assert.match(status.lastError, /two outputs are both named/);
+  defaultIndex = 1; // the twin sitting at the would-be lowered level
+  await ducker.setCapturing("dictation", false);
+  assert.deepStrictEqual(writes, []);
+  assert.deepStrictEqual(volumes, [80, 16]);
+  assert.strictEqual(store.peek(), null);
+});
+
 test("macOS backend: refuses to write when another device became the default", async () => {
   let def = "Speakers";
   let volume = 50;

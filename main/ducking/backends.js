@@ -191,7 +191,9 @@ function parseOsaVolume(text) {
 // The default output device in `system_profiler SPAudioDataType -json`: the
 // item flagged coreaudio_default_audio_output_device, named with its
 // transport so two outputs that share a name on different buses stay apart.
-// null when none is flagged.
+// null when none is flagged. Two outputs with the same name on the same
+// transport (two identical USB DACs) can't be told apart, and osascript would
+// write whichever is the default: that is refused rather than guessed.
 function parseMacDefaultOutput(text) {
   let data;
   try {
@@ -199,18 +201,26 @@ function parseMacDefaultOutput(text) {
   } catch {
     throw new Error("unexpected system_profiler output");
   }
+  const outputs = [];
+  let def = null;
   const stack = [data];
   while (stack.length) {
     const node = stack.pop();
     if (Array.isArray(node)) stack.push(...node);
     else if (node && typeof node === "object") {
-      if (node.coreaudio_default_audio_output_device === "spaudio_yes" && typeof node._name === "string") {
-        return `${node._name}|${node.coreaudio_device_transport || ""}`;
+      if (typeof node._name === "string") {
+        const id = `${node._name}|${node.coreaudio_device_transport || ""}`;
+        const isDefault = node.coreaudio_default_audio_output_device === "spaudio_yes";
+        if (isDefault || node.coreaudio_device_output !== undefined) outputs.push(id);
+        if (isDefault) def = id;
       }
       stack.push(...Object.values(node));
     }
   }
-  return null;
+  if (def && outputs.filter((id) => id === def).length > 1) {
+    throw new Error(`two outputs are both named "${def.split("|")[0]}", so the one to restore can't be told apart`);
+  }
+  return def;
 }
 
 function createMacBackend(run) {
@@ -226,7 +236,8 @@ function createMacBackend(run) {
     // is the default now (its `device` says which), and write() is refused
     // unless that is the device asked for.
     addressable: false,
-    probe: () => read(),
+    // The tool itself; a device problem (none, ambiguous) is read()'s to report.
+    probe: async () => parseOsaVolume(await run(...osa.get())),
     read,
     scale: (raw, fraction) => Math.max(0, Math.min(100, Math.round(raw * fraction))),
     same: (a, b) => a === b,

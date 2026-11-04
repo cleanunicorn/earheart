@@ -53,7 +53,7 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
       openCorrection: (entry) => calls.corrections.push(entry),
       setCorrectionDirty() {},
       closeWizard() {},
-      sendToSettings: (channel) => calls.broadcasts.push({ channel }),
+      sendToSettings: (channel, payload) => calls.broadcasts.push({ channel, payload }),
     },
     [resolveFrom("./tray")]: {
       refresh: () => {
@@ -613,7 +613,10 @@ test("recordings:status and recordings:clear: History text stays", async (t) => 
   assert.deepStrictEqual(await handlers["recordings:clear"](), { ok: true });
   assert.strictEqual((await handlers["recordings:status"]()).count, 0);
   assert.strictEqual(history.list().length, 2);
-  assert.ok(calls.broadcasts.some((b) => b.channel === "history:changed"));
+  // An update to listed entries: Settings keeps its page (review b-5).
+  assert.deepStrictEqual(calls.broadcasts.filter((b) => b.channel === "history:changed"), [
+    { channel: "history:changed", payload: { updated: true } },
+  ]);
 });
 
 test("recordings:status says why without secure storage", async (t) => {

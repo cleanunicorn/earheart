@@ -273,6 +273,7 @@ function dictationRig({
     retries: [],
     failedTakeCards: [],
     settingsEvents: [],
+    settingsPayloads: [],
     overlaySent: [],
     hidden: 0,
     cleanCancels: 0,
@@ -357,7 +358,10 @@ function dictationRig({
         hideOverlay() {
           log.hidden += 1;
         },
-        sendToSettings: (channel) => log.settingsEvents.push(channel),
+        sendToSettings: (channel, payload) => {
+          log.settingsEvents.push(channel);
+          log.settingsPayloads.push({ channel, payload });
+        },
         sendToOverlay(channel, payload) {
           log.overlaySent.push(channel);
           if (channel === "record:start") {
@@ -2009,7 +2013,13 @@ test("pipeline: opted in, the recording is kept encrypted as its History entry's
   const id = rig.savedHistory()[0].id;
   const files = fs.readdirSync(path.join(userData, "audio")).sort();
   assert.deepStrictEqual(files, [`${id}.wav.enc`, "key.json"].sort());
-  assert.ok(rig.log.settingsEvents.filter((e) => e === "history:changed").length >= 2, "Settings redraws once the audio is there");
+  // The new entry resets Settings to the newest page; the audio landing on it
+  // is an update to that entry, which keeps the page (review b-5).
+  assert.deepStrictEqual(rig.log.settingsPayloads.filter((e) => e.channel === "history:changed"), [
+    { channel: "history:changed", payload: undefined },
+    { channel: "history:changed", payload: { updated: true } },
+  ]);
+  const eventsBeforeRetry = rig.log.settingsPayloads.length;
   // Retranscribing it: no delivery, no new entry, original kept, result beside it.
   rig.cfg.stt.engine = "remote";
   const before = rig.log.delivered.length;
@@ -2020,6 +2030,10 @@ test("pipeline: opted in, the recording is kept encrypted as its History entry's
   assert.strictEqual(rig.savedHistory()[0].text, "words");
   assert.strictEqual(rig.savedHistory()[0].retry.status, "done");
   assert.strictEqual(rig.savedHistory()[0].retry.text, "words");
+  // Its result is an update: Settings stays on the page showing the entry.
+  assert.deepStrictEqual(rig.log.settingsPayloads.slice(eventsBeforeRetry), [
+    { channel: "history:changed", payload: { updated: true } },
+  ]);
 });
 
 test("pipeline: History off means no recording is kept even when opted in", async (t) => {

@@ -217,7 +217,11 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
       }
       held = { device: cur.device, prior: cur.raw, target: mine ? seen.raw : targetRaw };
       saveMarker(held);
+      // The set landed after all: the output IS lowered, so Settings must not
+      // lead with the timeout (it is in the log).
       status.state = "lowered";
+      status.detail = "";
+      status.lastError = "";
       return;
     }
     if (!after) {

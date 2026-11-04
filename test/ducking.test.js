@@ -459,6 +459,9 @@ test("ducking: a write that timed out but landed is still restored", async () =>
   };
   await ducker.setCapturing("dictation", true);
   assert.strictEqual(vol(backend), 16);
+  const status = await ducker.getStatus();
+  assert.strictEqual(status.state, "lowered");
+  assert.strictEqual(status.lastError, "", "a lowering that landed is not reported as a failure");
   backend.write = realWrite;
   await ducker.setCapturing("dictation", false);
   assert.strictEqual(vol(backend), 80);

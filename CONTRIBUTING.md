@@ -221,7 +221,7 @@ main/                    Electron main process
   setup-notices.js       launch policy + "fix your setup" notices (→ Settings)
   settings.js            JSON settings with deep-merged defaults, atomic 0600 writes
   secret-store.js        remote API keys at rest: safeStorage encryption + status
-  history.js             local transcription history
+  history.js             local transcription history: stable entry ids, search, single delete
   tray.js                tray icon + menu
   windows.js             overlay + settings + wizard + correction windows (one factory)
   window-guard.js        navigation lock + permission policy for app windows
@@ -351,7 +351,9 @@ Design constraints worth keeping:
   transcript; paste-tool failure leaves text on the clipboard. If another app
   replaced the clipboard, leave its copy alone and retain the transcript for
   **Copy last transcription**, even with History off. A later non-cancelled
-  delivery supersedes it; Clear History drops it only if the delete succeeds.
+  delivery supersedes it; Clear History drops it only if the delete succeeds,
+  and deleting one History entry drops it only if it was saved as that entry
+  (matched by entry id, never by words) and the delete succeeds.
   When enabled, History is written as
   soon as the final text exists, before delivery, so a paste cancelled
   mid-keystroke or a paste tool that throws still leaves the row; and the
@@ -401,6 +403,27 @@ Design constraints worth keeping:
   `settings.get()` and the renderer only ever see plaintext keys, never
   ciphertext. `safeStorage` answers only after app `ready`, so settings load
   before then isn't cached and `save()` refuses. See `main/secret-store.js`.
+- **History entries have stable ids** (`main/history.js`). Every entry in
+  `history.json` carries an `id`: 1–64 characters of `[A-Za-z0-9_-]`, a UUID v4
+  for new entries, stamped by `history.add()` before delivery and returned by
+  it. An id never changes, History never generates one twice, and no two
+  entries share one. A caller that needs it before the entry exists (e.g. a
+  dictation session naming a file it keeps, #343) may pass its own
+  `entry.id` to `add()`: a UUID v4 it generated for that session and never
+  used before — History can't remember deleted entries' ids, so that is the
+  caller's to guarantee; anything else, or an id a saved entry already has, is
+  replaced. Rows saved before ids existed
+  (or with a missing, malformed or duplicate id) get a UUID on load, written
+  back once. Settings reads History only through `history:search`
+  (`{ query, offset, limit }` → `{ ok, entries, total, offset, limit, all }`;
+  query cut to 200 characters, NFKC + case-folded, whitespace-split terms all
+  required, matched in `text` and `raw`; pages of at most 50; an offset past
+  the matches falls back to the last page) and deletes one entry through
+  `history:delete` (id → `{ ok: true, removed }` or `{ ok: false, error:
+  <code> }`). A delete rewrites the file before the list changes, so a failed
+  write keeps the entry (the same rule as Clear history, #287); the deferred
+  flush writes the list as it is when it runs, so a write queued before a
+  delete can't bring the entry back.
 - **The UI has a design system.** [DESIGN.md](DESIGN.md) is derived from the
   shipped CSS and governs the overlay, settings and wizard: one coral accent
   reserved for the voice, filled-white for the primary action, no drop

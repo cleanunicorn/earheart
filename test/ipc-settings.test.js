@@ -16,11 +16,13 @@ const ipcPath = require.resolve("../main/ipc");
 const settingsPath = require.resolve("../main/settings");
 const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(ipcPath)] });
 
-function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy = canCorrect, clearResult = { ok: true } } = {}) {
+// `realHistory` loads the real main/history.js against this test's userData
+// instead of the stub, for the handlers that search and delete entries.
+function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy = canCorrect, clearResult = { ok: true }, realHistory = false } = {}) {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-ipc-"));
   t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
   const handlers = {};
-  const calls = { broadcasts: [], trayRefresh: 0, historyCleared: 0, deliveries: [] };
+  const calls = { broadcasts: [], trayRefresh: 0, historyCleared: 0, deliveries: [], entriesDeleted: [], corrections: [] };
   const stubs = {
     [resolveFrom("electron")]: {
       app: { getPath: () => userData, getVersion: () => "0.35.1" },
@@ -44,6 +46,7 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
     [resolveFrom("./windows")]: {
       sendToForms: (channel, payload) => calls.broadcasts.push({ channel, payload }),
       openSettings() {},
+      openCorrection: (entry) => calls.corrections.push(entry),
       setCorrectionDirty() {},
       closeWizard() {},
     },
@@ -54,6 +57,7 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
     },
     [resolveFrom("./history")]: {
       list: () => [],
+      isValidId: () => true,
       clear: () => {
         calls.historyCleared += 1;
         return clearResult;
@@ -66,6 +70,9 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
     [resolveFrom("./util/logger")]: { info() {}, warn() {}, error() {} },
   };
 
+  const historyPath = resolveFrom("./history");
+  if (realHistory) delete stubs[historyPath];
+  const savedHistory = require.cache[historyPath];
   const previous = new Map();
   for (const [p, exports] of Object.entries(stubs)) {
     previous.set(p, require.cache[p]);
@@ -78,7 +85,9 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
   delete require.cache[ipcPath];
   delete require.cache[settingsPath];
   let settings;
+  let history;
   try {
+    if (realHistory) delete require.cache[historyPath];
     settings = require(settingsPath);
     require(ipcPath).init({
       applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
@@ -86,17 +95,23 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
       canCorrect,
       canCopy,
       onHistoryCleared: () => { calls.undeliveredCleared = (calls.undeliveredCleared || 0) + 1; },
+      onHistoryEntryDeleted: (entry) => calls.entriesDeleted.push(entry),
     });
+    if (realHistory) history = require.cache[historyPath].exports;
   } finally {
     delete require.cache[ipcPath];
     delete require.cache[settingsPath];
+    if (realHistory) {
+      if (savedHistory) require.cache[historyPath] = savedHistory;
+      else delete require.cache[historyPath];
+    }
     for (const [p, old] of previous) {
       if (old) require.cache[p] = old;
       else delete require.cache[p];
     }
   }
   const file = path.join(userData, "settings.json");
-  return { handlers, settings, calls, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
+  return { handlers, settings, calls, history, userData, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
 }
 
 // What a form holds when it opens: the settings it spreads on save, and the
@@ -370,10 +385,98 @@ test("correction and copying cannot interrupt an active dictation", async (t) =>
 
 
 test("an unavailable History entry cannot open a correction while idle", async (t) => {
-  const { handlers } = loadIpc(t);
-  const result = await handlers["correction:open"]({}, { text: "forged", at: "missing" });
-  assert.strictEqual(result.ok, false);
-  assert.match(result.error, /no longer in History/);
+  const { handlers, calls, history } = loadIpc(t, { realHistory: true });
+  history.add({ text: "saved words" }, { enabled: true, limit: 100 });
+  const [entry] = history.list();
+  // Matching words and timestamp are not enough any more: only the entry id.
+  for (const request of [{ text: entry.text, at: entry.at }, { id: "missing" }, { id: 42 }, null]) {
+    const result = await handlers["correction:open"]({}, request);
+    assert.strictEqual(result.ok, false, JSON.stringify(request));
+    assert.match(result.error, /no longer in History/);
+  }
+  assert.deepStrictEqual(calls.corrections, []);
+});
+
+test("correction:open opens the saved History entry with that id", async (t) => {
+  const { handlers, calls, history } = loadIpc(t, { realHistory: true });
+  const id = history.add({ text: "fix my spelling" }, { enabled: true, limit: 100 });
+  assert.deepStrictEqual(await handlers["correction:open"]({}, { id, text: "forged words" }), { ok: true });
+  assert.deepStrictEqual(calls.corrections.map((entry) => entry.text), ["fix my spelling"]);
+});
+
+/* ---- History search and single delete (#342) ---- */
+
+const HISTORY_CFG = { enabled: true, limit: 100 };
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test("history:search answers one filtered page from saved History", async (t) => {
+  const { handlers, history } = loadIpc(t, { realHistory: true });
+  for (const text of ["deploy the app", "write the tests", "deploy again"]) history.add({ text }, HISTORY_CFG);
+  const result = await handlers["history:search"]({}, { query: "DEPLOY", offset: 0, limit: 1 });
+  assert.strictEqual(result.ok, true);
+  assert.deepStrictEqual(result.entries.map((entry) => entry.text), ["deploy again"]);
+  assert.deepStrictEqual([result.total, result.offset, result.limit, result.all], [2, 0, 1, 3]);
+  const everything = await handlers["history:search"]({});
+  assert.strictEqual(everything.total, 3, "no request means the whole list");
+});
+
+test("history:search refuses a malformed request instead of guessing", async (t) => {
+  const { handlers } = loadIpc(t, { realHistory: true });
+  for (const request of [null, "deploy", 5, { query: 5 }, { query: ["deploy"] }]) {
+    const result = await handlers["history:search"]({}, request);
+    assert.strictEqual(result.ok, false, JSON.stringify(request));
+    assert.strictEqual(typeof result.error, "string");
+  }
+});
+
+test("history:delete removes one entry, refreshes the tray and drops its held-back copy", async (t) => {
+  const { handlers, calls, history, userData } = loadIpc(t, { realHistory: true });
+  history.add({ text: "older" }, HISTORY_CFG);
+  const id = history.add({ text: "private" }, HISTORY_CFG);
+  history.add({ text: "newer" }, HISTORY_CFG);
+  calls.trayRefresh = 0;
+
+  assert.deepStrictEqual(handlers["history:delete"]({}, id), { ok: true, removed: true });
+  assert.deepStrictEqual(history.list().map((entry) => entry.text), ["newer", "older"]);
+  assert.strictEqual(calls.trayRefresh, 1, "Copy last transcription must not offer deleted words");
+  assert.deepStrictEqual(calls.entriesDeleted, [id], "the held-back copy is matched by entry id");
+  await settle();
+  const saved = JSON.parse(fs.readFileSync(path.join(userData, "history.json"), "utf8"));
+  assert.deepStrictEqual(saved.map((entry) => entry.text), ["newer", "older"]);
+});
+
+test("history:delete refuses an id that is not one, and an unknown id deletes nothing", async (t) => {
+  const { handlers, calls, history } = loadIpc(t, { realHistory: true });
+  history.add({ text: "keep me" }, HISTORY_CFG);
+  calls.trayRefresh = 0;
+  for (const id of [undefined, null, 42, "", "../history", "x".repeat(65), { id: "x" }]) {
+    assert.deepStrictEqual(handlers["history:delete"]({}, id), { ok: false, error: "EINVAL" }, JSON.stringify(id));
+  }
+  assert.deepStrictEqual(handlers["history:delete"]({}, "no-such-entry"), { ok: true, removed: false });
+  assert.deepStrictEqual(history.list().map((entry) => entry.text), ["keep me"]);
+  assert.strictEqual(calls.trayRefresh, 0);
+  assert.deepStrictEqual(calls.entriesDeleted, []);
+});
+
+test("history:delete hands a failed write back to Settings and keeps the entry", async (t) => {
+  const { handlers, calls, history } = loadIpc(t, { realHistory: true });
+  const id = history.add({ text: "still here" }, HISTORY_CFG);
+  await settle();
+  calls.trayRefresh = 0;
+  const original = fs.renameSync;
+  fs.renameSync = () => {
+    throw Object.assign(new Error("EPERM: simulated"), { code: "EPERM" });
+  };
+  let result;
+  try {
+    result = handlers["history:delete"]({}, id);
+  } finally {
+    fs.renameSync = original;
+  }
+  assert.deepStrictEqual(result, { ok: false, error: "EPERM" });
+  assert.deepStrictEqual(history.list().map((entry) => entry.text), ["still here"]);
+  assert.deepStrictEqual(calls.entriesDeleted, [], "a held-back copy stays when the entry does");
+  assert.strictEqual(calls.trayRefresh, 0);
 });
 
 test("copying is allowed while recording even though correction cannot open", async (t) => {

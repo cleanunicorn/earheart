@@ -232,16 +232,20 @@ function getState() {
 // The last transcript delivery held back because another app took over the
 // clipboard first (#291): not pasted, not on the clipboard, and with History
 // off, nowhere else. Kept in memory (never on disk) for the tray's "Copy last
-// transcription" — `{ text, at }`, so a newer History entry wins — until a
-// later delivery lands or History is cleared.
+// transcription" — `{ text, at, historyId }`, so a newer History entry wins —
+// until a later delivery lands, History is cleared, or the History entry it
+// was saved as (`historyId`; null with History off) is deleted.
 let undelivered = null;
 
 function getUndelivered() {
   return undelivered;
 }
 
-function clearUndelivered() {
-  undelivered = null;
+// With `historyId`, only the held-back transcript saved as that History entry
+// goes (the entry was deleted) — not one with the same words from another
+// dictation, nor one History never saved; without it, any (History cleared).
+function clearUndelivered(historyId) {
+  if (historyId === undefined || (historyId && undelivered?.historyId === historyId)) undelivered = null;
 }
 
 function overlayStatus(status, detail) {
@@ -734,9 +738,10 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
     // whatever delivery does next (a cancel mid-keystroke, a paste tool that
     // throws). And history never blocks delivery — a failure here is logged
     // and the words still go out.
+    let historyId = null;
     if (cfg.history.enabled) {
       try {
-        history.add({ raw, text, cleaned, ...(partial ? { incomplete: true } : {}) }, cfg.history);
+        historyId = history.add({ raw, text, cleaned, ...(partial ? { incomplete: true } : {}) }, cfg.history) ?? null;
         windows.sendToSettings("history:changed");
       } catch (err) {
         logger.error("history add failed:", err);
@@ -755,8 +760,12 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
     // cost the recording (a retry already took it out).
     if (!retry && !partial && result.method !== "cancelled") failedTake.discard();
     // A cancelled delivery landed nothing, so it supersedes nothing either.
-    if (result.method === "clipboard-changed") undelivered = { text, at: new Date().toISOString() };
-    else if (result.method !== "cancelled") undelivered = null;
+    // Saved to History but deleted (or cleared) while the paste ran: the user
+    // removed these words on purpose, so nothing holds them back either.
+    const deletedMeanwhile = historyId !== null && !history.list().some((entry) => entry.id === historyId);
+    if (result.method === "clipboard-changed") {
+      undelivered = deletedMeanwhile ? null : { text, at: new Date().toISOString(), historyId };
+    } else if (result.method !== "cancelled") undelivered = null;
     if (stale()) return;
 
     if (result.method === "clipboard-changed") {

@@ -406,10 +406,16 @@ for (const role of ROLE_NAMES) {
 test("the role tables are non-trivial and the overlay cannot touch settings or history", () => {
   assert.ok(ROLES.settings.INVOKE.size > 20, `settings should invoke many channels, got ${ROLES.settings.INVOKE.size}`);
   assert.ok(ROLES.overlay.SEND.size > 5, `overlay should send many channels, got ${ROLES.overlay.SEND.size}`);
-  for (const channel of ["settings:get", "settings:save", "history:list", "models:add-custom", "logs:open"]) {
+  for (const channel of ["settings:get", "settings:save", "history:search", "history:delete", "models:add-custom", "logs:open"]) {
     assert.ok(!ROLES.overlay.INVOKE.has(channel), `overlay must not invoke ${channel}`);
   }
-  assert.ok(!ROLES.wizard.INVOKE.has("history:list"), "the wizard must not read history");
+  // Only Settings may read or delete History (#342).
+  for (const channel of ["history:search", "history:delete", "history:clear"]) {
+    for (const role of ROLE_NAMES.filter((name) => name !== "settings")) {
+      assert.ok(!ROLES[role].INVOKE.has(channel), `the ${role} window must not invoke ${channel}`);
+    }
+    assert.ok(ROLES.settings.INVOKE.has(channel), `Settings must invoke ${channel}`);
+  }
 });
 
 // What main pushes through a window-specific helper must be heard by that

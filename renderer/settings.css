@@ -316,6 +316,7 @@ main {
 /* ---------- inputs ---------- */
 
 input[type="text"],
+input[type="search"],
 input[type="password"],
 input[type="number"],
 input:not([type]),
@@ -1118,6 +1119,13 @@ input[type="range"]:focus-visible {
   margin-bottom: 10px;
 }
 
+/* Same measure as the cards it filters; with the list's 6px top margin, the
+   same 10px gap the head row keeps above it. */
+.history-search {
+  max-width: 620px;
+  margin-bottom: 4px;
+}
+
 #history-list {
   list-style: none;
   margin-top: 6px;
@@ -1173,7 +1181,8 @@ input[type="range"]:focus-visible {
 }
 
 #history-list .copy,
-#history-list .more {
+#history-list .more,
+#history-list .delete {
   padding: 3px 11px;
   font-size: 12px;
   font-family:

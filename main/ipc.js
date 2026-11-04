@@ -258,7 +258,7 @@ function wrap(fn, describe = (err) => err.message) {
   };
 }
 
-function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {} }) {
+function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {}, onHistoryEntryDeleted = () => {} }) {
   onCleanupDownloaded = completed;
   // Custom models reach the registry through the settings themselves
   // (engines/catalog.js, bound in main.js), not through this layer: the saves
@@ -648,8 +648,8 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
 
   ipcMain.handle("correction:open", wrap((event, entry) => {
     if (!canCorrect()) throw new Error("Finish the current dictation before correcting a transcript.");
-    // Resolve against saved history, not arbitrary renderer-supplied text.
-    const found = history.list().find((item) => item.at === entry?.at && item.text === entry?.text);
+    // Resolve against saved history by entry id, not renderer-supplied text.
+    const found = history.isValidId(entry?.id) && history.list().find((item) => item.id === entry.id);
     if (!found) throw new Error("This transcript is no longer in History.");
     windows.openCorrection(found);
     return { ok: true };
@@ -679,7 +679,28 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   ipcMain.on("correction:dirty", (event, dirty) => windows.setCorrectionDirty(event.sender, dirty));
   ipcMain.handle("correction:close", () => windows.closeCorrection());
 
-  ipcMain.handle("history:list", () => history.list());
+  // One page of History matching a query: { ok: true, entries, total,
+  // offset, limit, all }. history.search bounds the query and page size.
+  ipcMain.handle("history:search", wrap((event, request) => {
+    if (request !== undefined && (request === null || typeof request !== "object")) {
+      throw new TypeError("The History search request is malformed.");
+    }
+    return { ok: true, ...history.search(request) };
+  }));
+  // Delete one entry by id: { ok: true, removed } or { ok: false, error } —
+  // a failed write keeps the entry (#287's rule, per entry), and Settings
+  // must say so instead of hiding it.
+  ipcMain.handle("history:delete", (event, id) => {
+    if (!history.isValidId(id)) return { ok: false, error: "EINVAL" };
+    const result = history.remove(id);
+    if (result.ok && result.removed) {
+      // A transcript held back from a paste (#291) saved as this entry goes too.
+      onHistoryEntryDeleted(id);
+      // "Copy last transcription" must not offer the deleted words.
+      tray.refresh();
+    }
+    return result;
+  });
   // { ok: true } or { ok: false, error }: a failed delete leaves the
   // transcripts on disk, and Settings must say so instead of showing none.
   ipcMain.handle("history:clear", () => {

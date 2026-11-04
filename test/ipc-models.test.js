@@ -1212,10 +1212,12 @@ test("the auto-paste permission handlers pass the platform answer through", asyn
   assert.strictEqual(await handlers["permissions:accessibility-fix"](), fix);
 });
 
-test("history:list returns the stored history", async () => {
-  const entries = [{ text: "hello" }];
-  const { handlers } = loadIpcHandlers({}, { history: { list: () => entries } });
-  assert.strictEqual(await handlers["history:list"](), entries);
+test("history:search returns the page history.search found", async () => {
+  const page = { entries: [{ id: "a", text: "hello" }], total: 1, offset: 0, limit: 5, all: 1 };
+  const requests = [];
+  const { handlers } = loadIpcHandlers({}, { history: { search: (request) => (requests.push(request), page) } });
+  assert.deepStrictEqual(await handlers["history:search"]({}, { query: "hello", limit: 5 }), { ok: true, ...page });
+  assert.deepStrictEqual(requests, [{ query: "hello", limit: 5 }]);
 });
 
 test("each updater handler calls its updater action and answers what the UI reads", async () => {

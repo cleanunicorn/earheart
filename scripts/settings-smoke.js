@@ -22,7 +22,13 @@
 //      model here instead of passing silently.
 //   9. A history entry saved from an interrupted dictation is marked in the
 //      list; a normal one isn't. The notification that announced it is long
-//      gone by the time History is reopened.
+//      gone by the time History is reopened. Search (#342) filters by any
+//      case, says when nothing matches, and an older query's late answer
+//      never replaces a newer one's; transcript and query text render as text,
+//      never HTML; Delete removes one entry (on disk too) and keeps the rest,
+//      and a delete that can't write the file says so on the card and keeps it.
+//      The pager pages through the matches only, and deleting the last match
+//      on a page lands on the page before it.
 //  10. A model download keeps progress through redraws, exposes a focused
 //      cancel action, handles a download owned by another window, and
 //      announces terminal results in the persistent region.
@@ -241,6 +247,11 @@ app.whenReady().then(async () => {
       { raw: "recovered words", text: "recovered words", cleaned: false, incomplete: true },
       historyCfg
     );
+    // And two for the search and delete checks: words that look like markup,
+    // and words that need Unicode-aware case folding to find.
+    const HTML_TEXT = '<img src=x onerror="window.__historyXss=1"><b>bold claim</b>';
+    history.add({ raw: HTML_TEXT, text: HTML_TEXT, cleaned: false }, historyCfg);
+    history.add({ raw: "École ΟΔΟΣ notes", text: "École ΟΔΟΣ notes", cleaned: false }, historyCfg);
 
     const win = windows.openSettings();
     await waitForLoad(win.webContents);
@@ -448,6 +459,172 @@ app.whenReady().then(async () => {
         failedClear.rows === historyRows.length && history.list().length === historyRows.length,
       JSON.stringify(failedClear)
     );
+
+    // 9 (cont.). Transcript text is text: the markup-looking entry made no
+    // element and ran nothing.
+    const htmlRow = JSON.parse(await js(`JSON.stringify({
+      text: [...document.querySelectorAll("#history-list .text")].map((el) => el.textContent),
+      elements: document.querySelectorAll("#history-list img, #history-list b").length,
+      ran: window.__historyXss === 1,
+    })`));
+    check(
+      "a transcript that looks like HTML is shown as its literal words",
+      htmlRow.text.includes(HTML_TEXT) && htmlRow.elements === 0 && !htmlRow.ran,
+      JSON.stringify(htmlRow)
+    );
+
+    // 9 (cont.). Search, through the real handler and history module.
+    const historyView = () => js(`JSON.stringify({
+      value: document.getElementById("history-search").value,
+      rows: [...document.querySelectorAll("#history-list li")].map((li) => (li.querySelector(".text") || li).textContent),
+      elements: document.querySelectorAll("#history-list b, #history-list img").length,
+      pager: !document.getElementById("history-pager").hidden,
+    })`).then(JSON.parse);
+    const searchFor = (query) => js(`(() => {
+      const field = document.getElementById("history-search");
+      field.value = ${JSON.stringify(query)};
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
+    })()`);
+    const showing = async (want, message) => {
+      let last;
+      await waitFor(async () => {
+        last = await historyView();
+        return JSON.stringify(last.rows) === JSON.stringify(want);
+      }, message);
+      return last;
+    };
+    await searchFor("éCOLE οδοσ");
+    const found = await showing(["École ΟΔΟΣ notes"], "a Unicode, any-case search never narrowed the list");
+    check("a search in another case, outside ASCII, finds the entry", !found.pager, JSON.stringify(found));
+    const NO_MATCH = "<b>no such words</b>";
+    await searchFor(NO_MATCH);
+    const none = await showing([`No transcriptions match “${NO_MATCH}”.`], "a search with no match never said so");
+    check("a search with no match says so, with the query as text", none.elements === 0 && !none.pager, JSON.stringify(none));
+
+    // An older query's answer that arrives last must not replace a newer one's.
+    const realSearch = invokeHandlers.get("history:search");
+    let releaseSlow;
+    const slowHeld = new Promise((resolve) => (releaseSlow = resolve));
+    ipcMain.removeHandler("history:search");
+    registerHandler("history:search", async (event, request) => {
+      const answer = await realSearch(event, request);
+      if (request?.query === "whole") await slowHeld;
+      return answer;
+    });
+    let stale;
+    try {
+      await searchFor("whole");
+      await sleep(300); // past the debounce: the "whole" request is in flight
+      await searchFor("recovered");
+      await showing(["recovered words"], "the newer search never drew");
+      releaseSlow();
+      await sleep(300);
+      stale = await historyView();
+    } finally {
+      releaseSlow();
+      ipcMain.removeHandler("history:search");
+      registerHandler("history:search", realSearch);
+    }
+    check(
+      "a slow answer for an older search never replaces the newer one",
+      stale.value === "recovered" && JSON.stringify(stale.rows) === JSON.stringify(["recovered words"]),
+      JSON.stringify(stale)
+    );
+    await searchFor("");
+    await showing(["École ΟΔΟΣ notes", HTML_TEXT, "recovered words", "whole dictation"], "clearing the search never listed everything");
+
+    // 9 (cont.). Delete one entry: gone from the list and the file, the rest kept.
+    const deleteRow = (text) => js(`(() => {
+      window.confirm = () => true;
+      const li = [...document.querySelectorAll("#history-list li")].find((row) => row.querySelector(".text")?.textContent === ${JSON.stringify(text)});
+      li.querySelector("button.delete").click();
+      return true;
+    })()`);
+    await deleteRow(HTML_TEXT);
+    const afterDelete = await showing(["École ΟΔΟΣ notes", "recovered words", "whole dictation"], "a deleted entry stayed in the list");
+    await sleep(50);
+    const onDisk = JSON.parse(fs.readFileSync(path.join(app.getPath("userData"), "history.json"), "utf8")).map((e) => e.text);
+    check(
+      "Delete removes one entry, on disk too, and keeps its neighbours",
+      JSON.stringify(onDisk) === JSON.stringify(afterDelete.rows),
+      JSON.stringify({ onDisk, rows: afterDelete.rows })
+    );
+
+    // A delete that can't replace the file says so on the card and keeps it.
+    const realRename = fs.renameSync;
+    fs.renameSync = (from, to, ...rest) => {
+      if (String(to).endsWith("history.json")) {
+        throw Object.assign(new Error("EBUSY: resource busy or locked"), { code: "EBUSY" });
+      }
+      return realRename(from, to, ...rest);
+    };
+    let failedDelete;
+    try {
+      await deleteRow("recovered words");
+      failedDelete = await waitFor(
+        () => js(`(() => {
+          const li = [...document.querySelectorAll("#history-list li")].find((row) => row.querySelector(".text")?.textContent === "recovered words");
+          const status = li?.querySelector(".status.err")?.textContent;
+          return status && JSON.stringify({ status, rows: document.querySelectorAll("#history-list li").length, enabled: !li.querySelector("button.delete").disabled });
+        })()`),
+        "a failed Delete never said so"
+      ).then(JSON.parse);
+    } finally {
+      fs.renameSync = realRename;
+    }
+    check(
+      "a Delete that can't write the file says so and keeps the entry",
+      /Couldn't delete this transcription/.test(failedDelete.status) && /\(EBUSY\)/.test(failedDelete.status) &&
+        !/history\.json/.test(failedDelete.status) && failedDelete.rows === 3 && failedDelete.enabled &&
+        history.list().some((e) => e.text === "recovered words"),
+      JSON.stringify(failedDelete)
+    );
+
+    // 9 (cont.). Filtered pagination: the pager pages through the matches, and
+    // deleting the only match on the last page lands on the page before it.
+    for (let i = 1; i <= 7; i++) history.add({ raw: `pager item ${i}`, text: `pager item ${i}`, cleaned: false }, historyCfg);
+    const pagerView = () => js(`JSON.stringify({
+      rows: [...document.querySelectorAll("#history-list li .text")].map((el) => el.textContent),
+      range: document.getElementById("history-range").textContent,
+      shown: !document.getElementById("history-pager").hidden,
+      newer: !document.getElementById("history-newer").disabled,
+      older: !document.getElementById("history-older").disabled,
+    })`).then(JSON.parse);
+    const pagerShows = async (want, message) => {
+      let last;
+      await waitFor(async () => {
+        last = await pagerView();
+        return JSON.stringify(last.rows) === JSON.stringify(want);
+      }, message);
+      return last;
+    };
+    await searchFor("PAGER item");
+    const firstPage = await pagerShows(
+      ["pager item 7", "pager item 6", "pager item 5", "pager item 4", "pager item 3"],
+      "a search never showed the first page of its matches"
+    );
+    await js(`document.getElementById("history-older").click(); true`);
+    const lastPage = await pagerShows(["pager item 2", "pager item 1"], "Older never showed the rest of the matches");
+    check(
+      "the pager pages through the matches only, with their count",
+      firstPage.shown && firstPage.range === "1–5 of 7 matching" && !firstPage.newer && firstPage.older &&
+        lastPage.shown && lastPage.range === "6–7 of 7 matching" && lastPage.newer && !lastPage.older,
+      JSON.stringify({ firstPage, lastPage })
+    );
+    await deleteRow("pager item 2");
+    const oneLeft = await pagerShows(["pager item 1"], "a delete on the last page lost the page");
+    await deleteRow("pager item 1");
+    const backOne = await pagerShows(
+      ["pager item 7", "pager item 6", "pager item 5", "pager item 4", "pager item 3"],
+      "deleting the last match on a page left the pager stranded"
+    );
+    check(
+      "deleting the last match on a page shows the page before it",
+      oneLeft.range === "6–6 of 6 matching" && !backOne.shown && history.list().filter((e) => /^pager item/.test(e.text)).length === 5,
+      JSON.stringify({ oneLeft, backOne })
+    );
+    await searchFor("");
 
     // 4. Roving tabindex seated before any interaction.
     const tabStops = JSON.parse(
@@ -746,7 +923,7 @@ app.whenReady().then(async () => {
     await waitForLoad(wizard.webContents);
     await checkWindowLock(wizard, {
       role: "wizard",
-      refused: { method: "invoke", channel: "history:list" },
+      refused: { method: "invoke", channel: "history:delete" },
       allowed: { method: "invoke", channel: "models:status" },
       check,
     });

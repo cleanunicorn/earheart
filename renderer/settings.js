@@ -1383,6 +1383,10 @@ bindAddCustomModel("cleanup");
 
 const HISTORY_PAGE_SIZE = 5;
 let historyPage = 0; // 0 = the newest page
+let historyQuery = ""; // what the search field filters by; "" = everything
+// Each render asks main for one page; only the newest request may draw it, so
+// a slow answer for an older query or page can't land under the current one.
+let historyRequest = 0;
 
 function historyCopyButton(label, value, report) {
   const button = document.createElement("button");
@@ -1400,26 +1404,52 @@ function historyCopyButton(label, value, report) {
   return button;
 }
 
+// The single line shown in place of cards: nothing saved, nothing matching,
+// or the search itself failing. Always text — the query is the user's.
+function historyNotice(message) {
+  const li = document.createElement("li");
+  const span = document.createElement("span");
+  span.className = "muted";
+  span.textContent = message;
+  li.appendChild(span);
+  $("history-list").replaceChildren(li);
+}
+
 async function renderHistory() {
-  const items = await earheart.invoke("history:list");
+  const request = ++historyRequest;
+  const query = historyQuery;
+  let res;
+  try {
+    res = await earheart.invoke("history:search", {
+      query, offset: historyPage * HISTORY_PAGE_SIZE, limit: HISTORY_PAGE_SIZE,
+    });
+  } catch (err) {
+    res = { ok: false, error: err.message };
+  }
+  if (request !== historyRequest) return; // superseded by a newer query, page or change
   const list = $("history-list");
   const pager = $("history-pager");
-  list.replaceChildren();
 
-  const pages = Math.max(1, Math.ceil(items.length / HISTORY_PAGE_SIZE));
-  historyPage = Math.min(historyPage, pages - 1); // clamp after clear/shrink
-  pager.hidden = pages <= 1;
-
-  if (items.length === 0) {
-    const li = document.createElement("li");
-    li.innerHTML = '<span class="muted">No transcriptions yet.</span>';
-    list.appendChild(li);
+  if (!res?.ok) {
+    pager.hidden = true;
+    historyNotice(`Could not search History: ${res?.error || "unknown error"}`);
     return;
   }
+  // Main pulls an offset past the last match back to the last page (after a
+  // delete, a clear or a narrower query), so follow it.
+  historyPage = Math.floor(res.offset / HISTORY_PAGE_SIZE);
+  const pages = Math.max(1, Math.ceil(res.total / HISTORY_PAGE_SIZE));
+  pager.hidden = pages <= 1;
 
-  const start = historyPage * HISTORY_PAGE_SIZE;
-  const slice = items.slice(start, start + HISTORY_PAGE_SIZE);
-  $("history-range").textContent = `${start + 1}–${start + slice.length} of ${items.length}`;
+  if (res.total === 0) {
+    historyNotice(res.all === 0 || !query.trim() ? "No transcriptions yet." : `No transcriptions match “${query.trim()}”.`);
+    return;
+  }
+  list.replaceChildren();
+
+  const start = res.offset;
+  const slice = res.entries;
+  $("history-range").textContent = `${start + 1}–${start + slice.length} of ${res.total}${query.trim() ? " matching" : ""}`;
   $("history-newer").disabled = historyPage === 0;
   $("history-older").disabled = historyPage >= pages - 1;
 
@@ -1448,7 +1478,7 @@ async function renderHistory() {
     correct.addEventListener("click", async () => {
       report("");
       try {
-        const result = await earheart.invoke("correction:open", { at: item.at, text: item.text });
+        const result = await earheart.invoke("correction:open", { id: item.id });
         if (!result.ok) throw new Error(result.error);
       } catch (err) { report(err.message); }
     });
@@ -1458,6 +1488,7 @@ async function renderHistory() {
       copyOriginal.title = "Copy the transcript before cleanup";
       actions.append(copyOriginal);
     }
+    actions.append(historyDeleteButton(item, report));
     meta.append(when, actions);
     li.append(text, meta, feedback);
     list.appendChild(li);
@@ -1478,6 +1509,45 @@ async function renderHistory() {
   }
 }
 
+// Deletes one entry, gated like Clear history: it is gone for good. A failed
+// delete keeps the card and says why on it; a successful one redraws the
+// current page (main keeps the pager in range), not the newest.
+function historyDeleteButton(item, report) {
+  const button = document.createElement("button");
+  button.className = "delete danger";
+  button.textContent = "Delete";
+  button.title = "Delete this transcription";
+  button.addEventListener("click", async () => {
+    report("");
+    if (!confirm("Delete this transcription? This can't be undone.")) return;
+    button.disabled = true;
+    let res;
+    try {
+      res = await earheart.invoke("history:delete", item.id);
+    } catch (err) {
+      res = { ok: false, error: err.message };
+    }
+    if (res?.ok) {
+      renderHistory();
+      return;
+    }
+    button.disabled = false;
+    report(historyEntryDeleteError(res?.error || "unknown error"));
+  });
+  return button;
+}
+
+// Typing filters as you go; each keystroke cancels any answer still on its
+// way, and the request itself waits for a pause.
+let historySearchTimer = null;
+$("history-search").addEventListener("input", (event) => {
+  historyQuery = event.target.value;
+  historyPage = 0;
+  historyRequest += 1;
+  clearTimeout(historySearchTimer);
+  historySearchTimer = setTimeout(renderHistory, 150);
+});
+
 $("history-newer").addEventListener("click", () => {
   historyPage -= 1;
   renderHistory();
@@ -1488,15 +1558,22 @@ $("history-older").addEventListener("click", () => {
   renderHistory();
 });
 
-// What a failed Clear history tells the user to do, by the reason the delete
-// failed: a file held open (Windows, an antivirus scan, a backup) clears once
-// it's let go; a refused delete (permissions, a locked file attribute) won't
-// until that's fixed.
-function historyClearError(code) {
-  const what = `Couldn't delete the saved transcriptions, so they're still on this computer (${code}). `;
+// What a failed delete (Clear history, or one entry) tells the user to do, by
+// the reason it failed: a file held open (Windows, an antivirus scan, a
+// backup) can be changed once it's let go; a refused write (permissions, a
+// locked file attribute) can't until that's fixed.
+function historyFileAdvice(code) {
   return code === "EBUSY"
-    ? `${what}Close anything that might be using the history file, such as a backup or antivirus scan, and try again.`
-    : `${what}Check that you can change files in Earheart's settings folder, then try again.`;
+    ? "Close anything that might be using the history file, such as a backup or antivirus scan, and try again."
+    : "Check that you can change files in Earheart's settings folder, then try again.";
+}
+
+function historyClearError(code) {
+  return `Couldn't delete the saved transcriptions, so they're still on this computer (${code}). ${historyFileAdvice(code)}`;
+}
+
+function historyEntryDeleteError(code) {
+  return `Couldn't delete this transcription, so it's still on this computer (${code}). ${historyFileAdvice(code)}`;
 }
 
 $("history-clear").addEventListener("click", async () => {

@@ -2128,3 +2128,44 @@ test("pipeline: a retranscription whose cleanup fails keeps the raw text, marked
   assert.strictEqual(rig.savedHistory()[0].text, "cleaned(first take)", "the original stays");
   assert.strictEqual(rig.log.notifications.length, notes, "a retranscription is quiet: History shows the result");
 });
+
+test("pipeline: retranscribing a long kept take decodes it in bounded pieces and marks a partial result", async (t) => {
+  // 50 s of pause-less speech → pieces of at most 20 s. On the retranscription
+  // the worker dies on the second piece, its retry and both recovery tries:
+  // the words from pieces 1 and 3 are the result, marked incomplete.
+  const userData = audioDir(t);
+  const pieces = [];
+  let calls = 0;
+  let base = null; // the call count when the retranscription starts
+  const rig = dictationRig({
+    engine: "builtin", display: false, userData, safeStorage: keyringStub(),
+    transcribe: async (n, wav) => {
+      calls += 1;
+      if (base === null) return "take";
+      const k = calls - 1 - base;
+      pieces.push(wavDurationSec(wav));
+      // Same failure shape as the dictation test above: piece 2, its retry,
+      // and both recovery tries die; pieces 1 and 3 decode.
+      if ([1, 2, 4, 5].includes(k)) throw exited();
+      return `w${k}`;
+    },
+  });
+  rig.cfg.recordings = { keep: true, maxAgeDays: 30, maxMegabytes: 1024 };
+  await rig.dictate(loudWav(50));
+  await settle();
+  const id = rig.savedHistory()[0].id;
+  const delivered = rig.log.delivered.length;
+  const original = rig.savedHistory()[0].text;
+  base = calls;
+  const res = await rig.pipeline.retranscribe(id);
+  assert.strictEqual(res.ok, true, JSON.stringify(res));
+  assert.ok(pieces.length >= 3, `decoded in pieces: ${pieces}`);
+  assert.ok(pieces.every((sec) => sec <= 20 + 0.05), `every worker input within the 20 s cap: ${pieces}`);
+  assert.strictEqual(res.retry.status, "done");
+  assert.strictEqual(res.retry.incomplete, true, "the recovered words are marked incomplete");
+  assert.strictEqual(res.retry.text, "w0 w3", "the words of pieces 1 and 3 are kept");
+  assert.strictEqual(rig.log.delivered.length, delivered, "nothing is pasted");
+  assert.strictEqual(rig.savedHistory().length, 1);
+  assert.strictEqual(rig.savedHistory()[0].text, original, "the original stays");
+  assert.strictEqual(rig.savedHistory()[0].incomplete, undefined, "the original wasn't incomplete");
+});

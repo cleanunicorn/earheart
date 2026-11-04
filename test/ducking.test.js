@@ -279,6 +279,20 @@ test("ducking: access denied on the write leaves the volume, clears the marker a
   assert.deepStrictEqual(backend.writes, []);
 });
 
+test("ducking: no lowering when the restore marker can't be saved (a crash would lose the prior volume)", async () => {
+  const store = memoryStore();
+  store.save = () => { throw Object.assign(new Error("no space left on device"), { code: "ENOSPC" }); };
+  const { ducker, backend } = setup({ store });
+  await ducker.setCapturing("dictation", true);
+  assert.deepStrictEqual(backend.writes, [], "the volume never moved");
+  const status = await ducker.getStatus();
+  assert.strictEqual(status.state, "skipped");
+  assert.strictEqual(status.detail, "could not save the restore marker");
+  assert.match(status.lastError, /could not save the restore marker: no space left on device/);
+  await ducker.setCapturing("dictation", false);
+  assert.strictEqual(vol(backend), 80);
+});
+
 test("ducking: a write that timed out but landed is still restored", async () => {
   const { ducker, backend } = setup();
   const realWrite = backend.write;

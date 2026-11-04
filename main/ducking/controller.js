@@ -91,11 +91,14 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
     logger.warn?.(`audio ducking: ${status.lastError}`);
   }
 
+  // Whether the marker is on disk.
   function saveMarker(entry) {
     try {
       store.save({ ...entry, mechanism: backend.name, at: now() });
+      return true;
     } catch (err) {
       fail("could not save the restore marker", err);
+      return false;
     }
   }
   function clearMarker() {
@@ -185,7 +188,10 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
     }
     // The marker lands before the volume moves: a crash in between restores
     // (or, the write never having landed, finds the volume changed and leaves it).
-    saveMarker({ device: cur.device, prior: cur.raw, target: targetRaw });
+    // No marker, no lowering: a crash would leave nothing to restore from.
+    if (!saveMarker({ device: cur.device, prior: cur.raw, target: targetRaw })) {
+      return skip("could not save the restore marker");
+    }
     let after;
     try {
       after = await b.write(cur.device, targetRaw);

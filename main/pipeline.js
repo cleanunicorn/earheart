@@ -867,8 +867,10 @@ function init({ isDownloading = () => false } = {}) {
   });
 
   ipcMain.on("record:capture", (event, { sid, live } = {}) => {
-    if (sid !== session || state !== "recording") return;
-    setCapturing(live === true);
+    // A malformed edge is dropped, not read as "stopped": un-ducking mid-take
+    // on a bad message would be as wrong as ducking on one.
+    if (sid !== session || state !== "recording" || typeof live !== "boolean") return;
+    setCapturing(live);
   });
 
   ipcMain.on("record:cancelled", (event, { sid } = {}) => {

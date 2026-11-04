@@ -1940,9 +1940,13 @@ test("pipeline: capture events from a stale session or outside recording are ign
   rig.pipeline.toggle();
   const sid = rig.log.lastStart.sid;
   rig.handlers["record:capture"]({}, { sid: sid - 1, live: true }); // stale
-  rig.handlers["record:capture"]({}, { sid, live: "yes" }); // not a boolean true
+  rig.handlers["record:capture"]({}, { sid, live: "yes" }); // malformed: ignored
   assert.deepStrictEqual(seen, []);
   rig.handlers["record:capture"]({}, { sid, live: true });
+  // Malformed while capturing: still ignored, not taken as a stop.
+  for (const live of ["no", 0, 1, undefined, null]) rig.handlers["record:capture"]({}, { sid, live });
+  rig.handlers["record:capture"]({}, { sid });
+  assert.deepStrictEqual(seen, [true]);
   rig.pipeline.cancel();
   assert.deepStrictEqual(seen, [true, false]);
   assert.strictEqual(rig.pipeline.getState(), "idle");

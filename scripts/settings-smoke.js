@@ -27,6 +27,8 @@
 //      never replaces a newer one's; transcript and query text render as text,
 //      never HTML; Delete removes one entry (on disk too) and keeps the rest,
 //      and a delete that can't write the file says so on the card and keeps it.
+//      The pager pages through the matches only, and deleting the last match
+//      on a page lands on the page before it.
 //  10. A model download keeps progress through redraws, exposes a focused
 //      cancel action, handles a download owned by another window, and
 //      announces terminal results in the persistent region.
@@ -578,6 +580,51 @@ app.whenReady().then(async () => {
         history.list().some((e) => e.text === "recovered words"),
       JSON.stringify(failedDelete)
     );
+
+    // 9 (cont.). Filtered pagination: the pager pages through the matches, and
+    // deleting the only match on the last page lands on the page before it.
+    for (let i = 1; i <= 7; i++) history.add({ raw: `pager item ${i}`, text: `pager item ${i}`, cleaned: false }, historyCfg);
+    const pagerView = () => js(`JSON.stringify({
+      rows: [...document.querySelectorAll("#history-list li .text")].map((el) => el.textContent),
+      range: document.getElementById("history-range").textContent,
+      shown: !document.getElementById("history-pager").hidden,
+      newer: !document.getElementById("history-newer").disabled,
+      older: !document.getElementById("history-older").disabled,
+    })`).then(JSON.parse);
+    const pagerShows = async (want, message) => {
+      let last;
+      await waitFor(async () => {
+        last = await pagerView();
+        return JSON.stringify(last.rows) === JSON.stringify(want);
+      }, message);
+      return last;
+    };
+    await searchFor("PAGER item");
+    const firstPage = await pagerShows(
+      ["pager item 7", "pager item 6", "pager item 5", "pager item 4", "pager item 3"],
+      "a search never showed the first page of its matches"
+    );
+    await js(`document.getElementById("history-older").click(); true`);
+    const lastPage = await pagerShows(["pager item 2", "pager item 1"], "Older never showed the rest of the matches");
+    check(
+      "the pager pages through the matches only, with their count",
+      firstPage.shown && firstPage.range === "1–5 of 7 matching" && !firstPage.newer && firstPage.older &&
+        lastPage.shown && lastPage.range === "6–7 of 7 matching" && lastPage.newer && !lastPage.older,
+      JSON.stringify({ firstPage, lastPage })
+    );
+    await deleteRow("pager item 2");
+    const oneLeft = await pagerShows(["pager item 1"], "a delete on the last page lost the page");
+    await deleteRow("pager item 1");
+    const backOne = await pagerShows(
+      ["pager item 7", "pager item 6", "pager item 5", "pager item 4", "pager item 3"],
+      "deleting the last match on a page left the pager stranded"
+    );
+    check(
+      "deleting the last match on a page shows the page before it",
+      oneLeft.range === "6–6 of 6 matching" && !backOne.shown && history.list().filter((e) => /^pager item/.test(e.text)).length === 5,
+      JSON.stringify({ oneLeft, backOne })
+    );
+    await searchFor("");
 
     // 4. Roving tabindex seated before any interaction.
     const tabStops = JSON.parse(

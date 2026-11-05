@@ -103,12 +103,15 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
     moveTop() {
       calls.push(["moveTop"]);
     }
+    // Queries are recorded too, so "no window call" assertions mean exactly that.
     isDestroyed() {
+      calls.push(["isDestroyed"]);
       return this.closed || false;
     }
     // Tracks show/hide so the wake re-join (#353) can tell a hidden card from
     // one on screen. Created hidden, as createOverlay() asks (show: false).
     isVisible() {
+      calls.push(["isVisible"]);
       return this.visible;
     }
     hide() {
@@ -222,6 +225,9 @@ function showOnceOnDarwin(t, options) {
 const names = (calls) => calls.map(([name]) => name);
 const indexOf = (calls, name) => names(calls).indexOf(name);
 const countOf = (calls, name) => names(calls).filter((n) => n === name).length;
+// The fake records liveness and visibility reads too; drop them where a test
+// means "nothing changed" rather than "nothing was asked".
+const withoutQueries = (calls) => calls.filter(([name]) => name !== "isDestroyed" && name !== "isVisible");
 
 test("overlay renderer loss invokes the injected callback before reload", () => {
   const { windows, calls, webContentsHandlers } = loadWindows();
@@ -556,7 +562,8 @@ test("darwin: a wake while the idle card is on screen defers, and a fade-out sup
   windows.showOverlay(); // e.g. an update prompt, pinned with the pipeline idle
   const wake = calls.length;
   assert.strictEqual(windows.rejoinOverlayAfterWake("resume"), false);
-  assert.deepStrictEqual(calls.slice(wake), []);
+  // Idle, the only calls allowed are the reads that find the card on screen.
+  assert.deepStrictEqual(calls.slice(wake), [["isDestroyed"], ["isVisible"]]);
   assert.match(infos.at(-1), /the overlay is on screen; .*deferred to the next show$/);
 
   // A show that cancels a fade-out finds the card still visible: no toggle yet.
@@ -794,7 +801,7 @@ test("overlay resize is capped by the work area and floored at the base height",
   const before = calls.length;
   ipc["overlay:resize"]({}, { height: 95 });
   ipc["overlay:resize"]({}, { height: "300" });
-  assert.strictEqual(calls.length, before);
+  assert.deepStrictEqual(withoutQueries(calls.slice(before)), []);
 });
 
 test("overlay growth near the top of the screen is floored at the work-area top", () => {

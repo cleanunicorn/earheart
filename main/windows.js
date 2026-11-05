@@ -371,6 +371,12 @@ function rejoinActiveSpace(win) {
   }
 }
 
+function deferWakeRejoin(reason, why) {
+  overlayWakeRejoin = reason;
+  logger.info(`wake (${reason}): ${why}; overlay all-Spaces re-join deferred to the next show`);
+  return false;
+}
+
 // Called by main/wake.js on powerMonitor resume / unlock-screen (macOS only;
 // #353). Re-joins the hidden overlay to every Space by toggling the bit, and logs
 // it so a recurrence can be read from earheart.log. While a dictation is in
@@ -384,14 +390,12 @@ function rejoinActiveSpace(win) {
 // only be learned on a Mac. Returns true when the toggle ran now.
 function rejoinOverlayAfterWake(reason, { deferOnly = false } = {}) {
   if (process.platform !== "darwin") return false;
+  // Before any BrowserWindow access, even a read-only query: during a dictation
+  // the wake path makes no window call at all.
+  if (deferOnly) return deferWakeRejoin(reason, "a dictation is in progress");
   const win = getOverlay();
   if (!win) return false;
-  if (deferOnly || win.isVisible()) {
-    overlayWakeRejoin = reason;
-    const why = deferOnly ? "a dictation is in progress" : "the overlay is on screen";
-    logger.info(`wake (${reason}): ${why}; overlay all-Spaces re-join deferred to the next show`);
-    return false;
-  }
+  if (win.isVisible()) return deferWakeRejoin(reason, "the overlay is on screen");
   overlayWakeRejoin = null;
   toggleAllSpaces(win);
   logger.info(`overlay re-joined all Spaces after ${reason} (now ${win.isVisibleOnAllWorkspaces()})`);

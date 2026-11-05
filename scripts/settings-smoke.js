@@ -259,6 +259,12 @@ app.whenReady().then(async () => {
           onProgress,
         });
       });
+    // Usage counts (#347) for the Usage checks, seeded before any window
+    // asks main/usage.js for them; its IPC wired as main.js does.
+    const usageSmoke = require("./usage-smoke");
+    usageSmoke.seedUsage(userData);
+    require("../main/usage").init();
+
     // Two entries for check 9, saved before the window reads them: one
     // delivered whole, one recovered from an interrupted dictation.
     const historyCfg = { enabled: true, limit: 100 };
@@ -2536,6 +2542,7 @@ app.whenReady().then(async () => {
       });
     }
 
+    await usageSmoke.checkUsage({ waitFor, check, savedThenClose, userData });
     await require("./wizard-smoke").checkWizard({ waitFor, check });
     await require("./correction-smoke").checkCorrection({ waitFor, check, savedThenClose });
 

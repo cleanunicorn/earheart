@@ -12,6 +12,7 @@
 
 const electron = require("electron");
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const path = require("node:path");
 const { createAudioStore } = require("./audio-store");
 const history = require("./history");
@@ -97,18 +98,32 @@ function startPruning(getCfg, onPruned = () => {}) {
  * failed write never leaves a truncated file under their chosen name. This
  * is the one place a recording leaves its encryption, and only by the user's
  * explicit choice. Returns { ok: true } or { ok: false, error: <code> }.
+ *
+ * The chosen folder may be writable by others, so the temp file has a random
+ * name and is created exclusively ("wx"): a file or symlink already at that
+ * path fails the export instead of being written through. Only a temp file
+ * this call created is removed on failure.
  */
 function exportWav(wav, dest, fsImpl = fs) {
-  const tmp = `${dest}.${process.pid}.tmp`;
+  const tmp = path.join(path.dirname(dest), `.${path.basename(dest)}.${crypto.randomBytes(8).toString("hex")}.tmp`);
+  let created = false;
   try {
-    fsImpl.writeFileSync(tmp, wav, { mode: 0o600 });
+    const fd = fsImpl.openSync(tmp, "wx", 0o600);
+    created = true;
+    try {
+      fsImpl.writeFileSync(fd, wav);
+    } finally {
+      fsImpl.closeSync(fd);
+    }
     fsImpl.renameSync(tmp, dest);
     return { ok: true };
   } catch (err) {
-    try {
-      fsImpl.unlinkSync(tmp);
-    } catch {
-      // Never created.
+    if (created) {
+      try {
+        fsImpl.unlinkSync(tmp);
+      } catch {
+        // Already gone.
+      }
     }
     return { ok: false, error: err.code || "unknown error" };
   }

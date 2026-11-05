@@ -155,6 +155,73 @@ test("a failed export leaves no partial file and returns the code", (t) => {
   assert.deepEqual(exportWav(WAV, path.join(dir, "missing-dir", "x.wav")), { ok: false, error: "ENOENT" });
 });
 
+// security-1: the folder the user exports into may be writable by others.
+// Whatever sits at a temp path there — a symlink to another file, a file —
+// is never written through, and a failed export removes only its own file.
+const POSIX = { skip: process.platform === "win32" && "POSIX permissions and symlinks" };
+
+// The temp name is random, so plant at whatever name the export picks, just
+// before its exclusive create.
+const plantingAt = (plant) => ({
+  ...fs,
+  openSync(file, ...rest) {
+    plant(file);
+    return fs.openSync(file, ...rest);
+  },
+});
+
+test("export fails rather than write into a file already at its temp path", (t) => {
+  const dir = tmp(t);
+  const dest = path.join(dir, "dictation.wav");
+  let planted = null;
+  const result = exportWav(WAV, dest, plantingAt((file) => {
+    planted = file;
+    fs.writeFileSync(file, "someone else's");
+  }));
+  assert.deepEqual(result, { ok: false, error: "EEXIST" });
+  assert.equal(fs.readFileSync(planted, "utf8"), "someone else's", "untouched, and not ours to remove");
+  assert.equal(fs.existsSync(dest), false, "nothing lands under the chosen name");
+});
+
+test("export never writes through a symlink planted at its temp path", POSIX, (t) => {
+  const dir = tmp(t);
+  const dest = path.join(dir, "dictation.wav");
+  const victim = path.join(tmp(t), "victim.txt");
+  fs.writeFileSync(victim, "keep me", { mode: 0o644 });
+  // The name an export used to pick, planted ahead of time…
+  fs.symlinkSync(victim, `${dest}.${process.pid}.tmp`);
+  // …and a link at the name it picks now.
+  const result = exportWav(WAV, dest, plantingAt((file) => fs.symlinkSync(victim, file)));
+  assert.deepEqual(result, { ok: false, error: "EEXIST" });
+  assert.equal(fs.readFileSync(victim, "utf8"), "keep me", "the symlink's target gets no audio");
+  assert.equal(fs.statSync(victim).mode & 0o777, 0o644);
+  assert.equal(fs.existsSync(dest), false, "nothing lands under the chosen name");
+  const left = fs.readdirSync(dir);
+  assert.equal(left.length, 2);
+  assert.ok(left.every((name) => fs.lstatSync(path.join(dir, name)).isSymbolicLink()), "the planted links aren't ours to remove");
+});
+
+test("export picks an unpredictable temp name beside the destination", (t) => {
+  const dir = tmp(t);
+  const dest = path.join(dir, "a.wav");
+  const seen = [];
+  const recording = plantingAt((file) => seen.push(file));
+  assert.deepEqual(exportWav(WAV, dest, recording), { ok: true });
+  assert.deepEqual(exportWav(WAV, dest, recording), { ok: true });
+  assert.equal(seen.length, 2);
+  assert.notEqual(seen[0], seen[1]);
+  assert.ok(seen.every((file) => path.dirname(file) === dir), "the temp sits beside the destination");
+  assert.ok(!seen.includes(`${dest}.${process.pid}.tmp`), "not the old pid-derived name");
+  assert.deepEqual(fs.readdirSync(dir), ["a.wav"]);
+  assert.ok(fs.readFileSync(dest).equals(WAV));
+});
+
+test("an exported file is private to the user", POSIX, (t) => {
+  const dest = path.join(tmp(t), "dictation.wav");
+  assert.deepEqual(exportWav(WAV, dest), { ok: true });
+  assert.equal(fs.statSync(dest).mode & 0o777, 0o600);
+});
+
 test("recordings are kept only when the user opted in and History is on", () => {
   assert.equal(shouldKeep({ recordings: { keep: true }, history: { enabled: true } }), true);
   assert.equal(shouldKeep({ recordings: { keep: false }, history: { enabled: true } }), false);

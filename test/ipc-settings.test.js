@@ -665,3 +665,30 @@ test("history:retranscribe hands a valid id to the pipeline and refuses anything
   assert.deepStrictEqual(await handlers["history:retranscribe"]({}, "../x"), { ok: false, error: "missing" });
   assert.deepStrictEqual(seen, [id]);
 });
+
+// #348: Appearance is edited only in Settings, but the wizard's save spreads
+// the snapshot it opened with. A stale wizard completing after Settings saved
+// Light must not put the old appearance back.
+test("a stale wizard does not overwrite an appearance saved in Settings", (t) => {
+  const { sharedBaseline } = require("../renderer/settings-sync");
+  const { handlers, settings, readFile } = loadIpc(t);
+  settings.save(settings.get());
+  // Both forms open on the same snapshot, with the baseline the pages send.
+  const wizard = settings.get();
+  const wizardBaseline = sharedBaseline(wizard);
+  const editor = settings.get();
+  assert.strictEqual(wizardBaseline.appearance, "system");
+
+  handlers["settings:save"]({}, { settings: { ...editor, appearance: "light" }, baseline: sharedBaseline(editor) });
+  assert.strictEqual(readFile().appearance, "light");
+
+  const reply = handlers["wizard:complete"]({}, { settings: { ...wizard, hotkey: "F9" }, baseline: wizardBaseline });
+  assert.strictEqual(readFile().appearance, "light", "the live appearance wins over the wizard's stale copy");
+  assert.strictEqual(reply.settings.appearance, "light");
+  assert.strictEqual(readFile().hotkey, "F9", "the wizard's own edit still lands");
+
+  // And Settings can still change it: its baseline matches the live value.
+  const again = settings.get();
+  handlers["settings:save"]({}, { settings: { ...again, appearance: "dark" }, baseline: sharedBaseline(again) });
+  assert.strictEqual(readFile().appearance, "dark");
+});

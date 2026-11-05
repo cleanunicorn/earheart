@@ -165,6 +165,14 @@ const SHARED_FIELDS = [
     }),
   },
   {
+    // Appearance (#348) is edited only in Settings; the wizard carries the
+    // value it opened with. A save elsewhere since then wins over that copy.
+    name: "appearance",
+    type: "string",
+    read: (cfg) => cfg.appearance,
+    write: (cfg, live) => ({ ...cfg, appearance: live.appearance }),
+  },
+  {
     name: "outputMode",
     type: "string",
     // Compared as the mode delivery performs, so retiring the legacy

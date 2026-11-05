@@ -1,11 +1,12 @@
 // Earheart entry point: app lifecycle, single-instance handling, and wiring
 // between the hotkey, tray, windows and the dictation pipeline.
 
-const { app, session, Notification } = require("electron");
+const { app, session, Notification, powerMonitor } = require("electron");
 const settings = require("./settings");
 const history = require("./history");
 const recordings = require("./recordings");
 const windows = require("./windows");
+const wake = require("./wake");
 const pipeline = require("./pipeline");
 const hotkeys = require("./hotkeys");
 const tray = require("./tray");
@@ -158,6 +159,14 @@ function main() {
     // gone, are deleted now and hourly — whether or not keeping is still on.
     recordings.startPruning(settings.get, () => windows.sendToSettings("history:changed", { updated: true }));
     windows.createOverlay({ onOverlayRendererGone: pipeline.onOverlayRendererGone });
+    // macOS: after sleep or unlock, re-join the hidden overlay to every Space so
+    // the next dictation shows on the Space the user is on (#353). Deferred to
+    // the next show while a dictation is in progress; no-op elsewhere.
+    wake.init({
+      powerMonitor,
+      isBusy: () => pipeline.getState() !== "idle",
+      rejoin: windows.rejoinOverlayAfterWake,
+    });
     tray.init(app, pipeline);
     // macOS: an update leaves auto-paste's permission grants stale; repair
     // them before the first dictation rather than during it.

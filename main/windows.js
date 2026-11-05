@@ -39,6 +39,10 @@ let overlayHideTimer = null;
 let overlayPinned = false; // update prompt holds the card on screen
 let overlayRendererReloading = false;
 let pendingOverlayStatus = null;
+// The wake event (#353) whose all-Spaces re-join could not run when it fired,
+// because a dictation was in progress or the card was on screen. The next show
+// performs it while the window is still hidden. See rejoinOverlayAfterWake().
+let overlayWakeRejoin = null;
 
 const alive = (win) => Boolean(win && !win.isDestroyed());
 
@@ -262,6 +266,7 @@ function createOverlay({ onOverlayRendererGone } = {}) {
   overlayWindow.on("closed", () => {
     overlayRendererReloading = false;
     pendingOverlayStatus = null;
+    overlayWakeRejoin = null;
     overlayWindow = null;
   });
   return overlayWindow;
@@ -320,13 +325,43 @@ function raiseWithinTopmostBand(win) {
 //
 // Windows documents this API as a no-op. The darwin guard also keeps it off
 // Linux, where the creation-time call has been sufficient.
+const ALL_SPACES = { visibleOnFullScreen: true, skipTransformProcessType: true };
+
+// Flip the all-Spaces bit off and back on. Hypothesis, unverified on a Mac
+// (#353): after a wake the bit can still read true while the window server no
+// longer honours it, and re-asserting a value that reads unchanged may change
+// nothing, while a real change from off to on makes AppKit apply it again.
+// Electron documents neither. Both calls skip the process-type transform, which
+// Electron documents as hiding the window and Dock for a moment on every call;
+// only the default path in createOverlay() should run it.
+// Hidden windows only: on a visible card the off half could strand it on one
+// Space, which is the jump this exists to prevent.
+function toggleAllSpaces(win) {
+  win.setVisibleOnAllWorkspaces(false, ALL_SPACES);
+  win.setVisibleOnAllWorkspaces(true, ALL_SPACES);
+}
+
+// The per-show path toggles only when a wake asked for it (overlayWakeRejoin),
+// not on every show. Toggling every show would also cover a loss that has
+// nothing to do with sleep, but it changes what every dictation on every Mac
+// does, and none of it can be measured from here; the wake path is the one the
+// report ties the bug to. If the real-Mac run shows the card still landing on
+// the wrong Space after a wake re-join, toggling every show is the next step.
 function rejoinActiveSpace(win) {
   if (process.platform !== "darwin") return;
   const wasJoined = win.isVisibleOnAllWorkspaces();
-  win.setVisibleOnAllWorkspaces(true, {
-    visibleOnFullScreen: true,
-    skipTransformProcessType: true,
-  });
+  // A show that supersedes a fade-out finds the window still visible; the wake
+  // re-join then waits for a show that starts hidden.
+  if (overlayWakeRejoin && !win.isVisible()) {
+    const reason = overlayWakeRejoin;
+    overlayWakeRejoin = null;
+    toggleAllSpaces(win);
+    logger.info(
+      `overlay re-joined all Spaces at show, deferred from ${reason} (now ${win.isVisibleOnAllWorkspaces()})`
+    );
+  } else {
+    win.setVisibleOnAllWorkspaces(true, ALL_SPACES);
+  }
   if (!wasJoined) {
     // The bit was lost after creation. Report what re-applying achieved, not just
     // that we tried: a read-back that still says false means the set itself didn't
@@ -335,6 +370,37 @@ function rejoinActiveSpace(win) {
       `overlay had lost its all-Spaces collection behaviour; re-applied (now ${win.isVisibleOnAllWorkspaces()})`
     );
   }
+}
+
+function deferWakeRejoin(reason, why) {
+  overlayWakeRejoin = reason;
+  logger.info(`wake (${reason}): ${why}; overlay all-Spaces re-join deferred to the next show`);
+  return false;
+}
+
+// Called by main/wake.js on powerMonitor resume / unlock-screen (macOS only;
+// #353). Re-joins the hidden overlay to every Space by toggling the bit, and logs
+// it so a recurrence can be read from earheart.log. While a dictation is in
+// progress (deferOnly) or the card is on screen (an update prompt, a fade-out),
+// no window call is made: the re-join is left for the next show, which runs it
+// while the window is hidden. Nothing here reloads or recreates the window, so
+// the renderer that owns the microphone is never torn down.
+//
+// Recreating the window after wake is the issue's fallback if a toggle does not
+// stick. It is not done: it reloads that renderer, and whether it is needed can
+// only be learned on a Mac. Returns true when the toggle ran now.
+function rejoinOverlayAfterWake(reason, { deferOnly = false } = {}) {
+  if (process.platform !== "darwin") return false;
+  // Before any BrowserWindow access, even a read-only query: during a dictation
+  // the wake path makes no window call at all.
+  if (deferOnly) return deferWakeRejoin(reason, "a dictation is in progress");
+  const win = getOverlay();
+  if (!win) return false;
+  if (win.isVisible()) return deferWakeRejoin(reason, "the overlay is on screen");
+  overlayWakeRejoin = null;
+  toggleAllSpaces(win);
+  logger.info(`overlay re-joined all Spaces after ${reason} (now ${win.isVisibleOnAllWorkspaces()})`);
+  return true;
 }
 
 function showOverlay() {
@@ -549,6 +615,7 @@ module.exports = {
   createOverlay,
   destroyOverlay,
   showOverlay,
+  rejoinOverlayAfterWake,
   hideOverlay,
   setOverlayPinned,
   isOverlayVisible,

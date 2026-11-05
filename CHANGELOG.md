@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.50.1 — 2026-11-05
+
+- Remove the extra scrollbar from settings (#364)
+
 ## v0.50.0 — 2026-11-05
 
 - Search transcription history and delete single entries (#355)

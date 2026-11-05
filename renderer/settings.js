@@ -56,7 +56,7 @@ function activateTab(name, { focus = false, focusSection = false } = {}) {
   const target = Math.max(
     0,
     Math.min(
-      section.offsetTop - panelHost.offsetTop - 12,
+      section.offsetTop - 12, // main is the section's positioned offset parent
       panelHost.scrollHeight - panelHost.clientHeight
     )
   );
@@ -91,7 +91,7 @@ function spySections() {
     name = sectionName(panels[panels.length - 1]);
   } else {
     for (const p of panels) {
-      if (p.offsetTop - panelHost.offsetTop - 40 <= fromTop) {
+      if (p.offsetTop - 40 <= fromTop) {
         name = sectionName(p);
       }
     }

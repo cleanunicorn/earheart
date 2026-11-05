@@ -431,6 +431,8 @@ vanishes on its own. The index is a scroll spy with roving tabindex: the
 entry currently in view takes the wash; clicking glides the page
 (`scroll-behavior: smooth`) and moves focus to the section legend. Below 600px
 the index docks horizontally above the page.
+The scrolling `main` is a positioned container so visually hidden labels stay
+inside its scroll range and cannot create an outer document scrollbar.
 
 **The setup wizard** (620×680, 560×560 minimum). Layers on `settings.css`:
 same header and materials. Steps (max-width 640px) center vertically in the

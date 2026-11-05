@@ -76,6 +76,16 @@ async function main() {
   })()`);
   await sleep(300);
   await shot(settings, "settings-audio-ducking");
+  // The record sounds controls (docs/record-sounds.md): the toggle on, the
+  // volume and its Play button. Ducking back at its default (off), so the
+  // shot shows only what this feature adds; framed from the Microphone card.
+  await settings.webContents.executeJavaScript(`(() => {
+    document.getElementById("duck-other-audio").checked = false;
+    document.getElementById("record-sounds").checked = true;
+    document.getElementById("mic-device").closest(".card").scrollIntoView({ block: "start" });
+  })()`);
+  await sleep(300);
+  await shot(settings, "settings-record-sounds");
   settings.close();
 
   // Correction: synthetic transcript, no dictionary/history writes.

@@ -6,7 +6,7 @@ microphone is really capturing, another when a take stops, and a lower one
 when the microphone fails. **Sound volume** sets their level (default 60%,
 5–100%); **Play** previews the start and stop tones. Issue #341.
 
-![The Microphone card with record sounds on](screenshots/settings-audio-ducking.png)
+![The Microphone card with Play sounds when recording starts and stops on, the sound volume and its Play button](screenshots/settings-record-sounds.png)
 
 The tones are synthesized in the overlay with Web Audio
 ([renderer/record-cues.js](../renderer/record-cues.js)): no sound files, no

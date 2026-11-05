@@ -21,6 +21,18 @@
   <sub>The overlay transcribes live as you speak, shows progress while it finishes up, then confirms where the text landed — without stealing focus.</sub>
 </p>
 
+## Watch Earheart in action
+
+[![Watch the Earheart demo: Talk to your coding agents](docs/videos/poster.jpg)](docs/videos/earheart-horizontal.mp4?raw=true)
+
+Hotkey → speak → clean up → paste, in 48 seconds with music. Cleanup gets a
+before-and-after sequence showing fillers removed, false starts resolved, and
+phrasing refined using the optional **Polished** style.
+
+Watch or download the [horizontal video (16:9)](docs/videos/earheart-horizontal.mp4?raw=true)
+or the [vertical video (9:16)](docs/videos/earheart-vertical.mp4?raw=true) for social media.
+Both show an illustrated workflow; see [video details](docs/videos/README.md).
+
 ---
 
 Working with an agent is a conversation, but you type it like a form. The

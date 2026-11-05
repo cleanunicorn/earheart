@@ -7,6 +7,7 @@ const path = require("node:path");
 const windows = require("../main/windows");
 const settings = require("../main/settings");
 const usage = require("../main/usage");
+const { ipcMain } = require("electron");
 const { waitForLoad } = require("./wait-for-load");
 
 // Written before anything reads usage.json (main/usage.js caches the first
@@ -30,13 +31,25 @@ function seedUsage(userData) {
 
 const digits = (s) => String(s).replace(/\D/g, "");
 
-async function checkUsage({ waitFor, check, savedThenClose, userData }) {
+// Shown to the user, not just un-hidden: no [hidden], no display:none up
+// the tree, and some text.
+const visibleText = (id) => `(() => {
+  const node = document.getElementById(${JSON.stringify(id)});
+  return node && !node.hidden && node.offsetParent !== null && getComputedStyle(node).display !== "none" ? node.textContent : null;
+})()`;
+
+async function checkUsage({ waitFor, check, savedThenClose, userData, invokeHandlers }) {
   const before = settings.get();
   const win = windows.openSettings();
   try {
     await waitForLoad(win.webContents);
     const run = (code) => win.webContents.executeJavaScript(code, true);
-    await waitFor(() => run(`document.querySelectorAll("#usage-days li").length === 14`), "Usage did not render its 14 days");
+    // Both halves loaded: the counts (usage:get) and the saved settings that
+    // fill the switch and typing speed (settings.js's own init).
+    await waitFor(
+      () => run(`document.querySelectorAll("#usage-days li").length === 14 && document.getElementById("typing-wpm").value !== ""`),
+      "Usage did not render its 14 days and saved settings"
+    );
     const shown = await run(`JSON.stringify({
       takes: document.getElementById("usage-takes").textContent,
       words: document.getElementById("usage-words").textContent,
@@ -72,6 +85,80 @@ async function checkUsage({ waitFor, check, savedThenClose, userData }) {
       digits(shown.firstDay) === "1230" && shown.barWidth === "100%" && shown.switchOn === true,
       JSON.stringify(shown)
     );
+
+    const file = path.join(userData, "usage.json");
+    const seeded = fs.readFileSync(file, "utf8");
+
+    // A declined Reset changes nothing, on screen or on disk.
+    await run(`window.confirm = () => false; document.getElementById("usage-reset").click(); true`);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const declined = await run(`JSON.stringify({
+      takes: document.getElementById("usage-takes").textContent,
+      status: document.getElementById("usage-reset-status").hidden,
+    })`).then(JSON.parse);
+    check(
+      "a declined Reset keeps the counts on screen and on disk",
+      digits(declined.takes) === "12" && declined.status && fs.readFileSync(file, "utf8") === seeded,
+      JSON.stringify(declined)
+    );
+
+    // A Reset the disk refuses says why and keeps the counts (the real
+    // handler and store; only the rename into place fails).
+    const realRename = fs.renameSync;
+    fs.renameSync = (from, to, ...rest) => {
+      if (String(to) === file) throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+      return realRename(from, to, ...rest);
+    };
+    let refused;
+    try {
+      await run(`window.confirm = () => true; document.getElementById("usage-reset").click(); true`);
+      refused = await waitFor(() => run(visibleText("usage-reset-status")), "a refused Reset never said so");
+    } finally {
+      fs.renameSync = realRename;
+    }
+    const keptTakes = await run(`document.getElementById("usage-takes").textContent`);
+    check(
+      "a Reset the disk refuses shows the error and keeps the counts",
+      refused === "Could not reset: EACCES" && digits(keptTakes) === "12" && fs.readFileSync(file, "utf8") === seeded &&
+        usage.summary().totals.takes === 12,
+      JSON.stringify({ refused, keptTakes })
+    );
+
+    // The read-only notices and a failed load, through a stand-in usage:get
+    // (main/usage.js caches its first load, so the file can't be swapped
+    // under it); the real handler goes back afterwards.
+    const realGet = invokeHandlers.get("usage:get");
+    const swapGet = (handler) => {
+      ipcMain.removeHandler("usage:get");
+      ipcMain.handle("usage:get", handler);
+    };
+    try {
+      for (const [readOnly, pattern] of [["newer", /newer version of Earheart/], ["unreadable", /couldn't be read/]]) {
+        swapGet(() => ({ ok: true, summary: { ...usage.summary(), readOnly } }));
+        windows.sendToSettings("usage:changed");
+        const notice = await waitFor(
+          () => run(visibleText("usage-readonly")).then((text) => (text && pattern.test(text) ? text : null)),
+          `the ${readOnly} notice never showed`
+        );
+        check(`the ${readOnly} read-only notice is visible`, pattern.test(notice), notice);
+      }
+      swapGet(() => {
+        throw new Error("smoke: usage unavailable");
+      });
+      windows.sendToSettings("usage:changed");
+      const stale = await waitFor(() => run(visibleText("usage-load-status")), "a failed refresh never said so");
+      const staleTakes = await run(`document.getElementById("usage-takes").textContent`);
+      check(
+        "a failed refresh keeps the numbers and says they may be out of date",
+        /may be out of date/.test(stale) && digits(staleTakes) === "12",
+        JSON.stringify({ stale, staleTakes })
+      );
+    } finally {
+      swapGet(realGet);
+    }
+    windows.sendToSettings("usage:changed");
+    await waitFor(() => run(`document.getElementById("usage-load-status").hidden && document.getElementById("usage-readonly").hidden`), "the notices did not clear once usage:get worked again");
+    check("the load and read-only notices clear once usage:get works again", true);
 
     // Reset: confirmed, written to disk, and the screen follows.
     await run(`window.confirm = (m) => ((window.lastConfirm = m), true); document.getElementById("usage-reset").click(); true`);

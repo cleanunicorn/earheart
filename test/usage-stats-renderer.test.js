@@ -1,6 +1,7 @@
 // Settings → Usage's renderer script (renderer/usage-stats.js, #347) run in a
 // VM against a minimal fake DOM and a scripted bridge: what it shows when
-// usage:get fails or recovers. The real window is driven in scripts/usage-smoke.js.
+// usage:get fails or recovers, how it handles Reset (declined, refused), and
+// the read-only notices. The real window is driven in scripts/usage-smoke.js.
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -157,4 +158,47 @@ test("usage renderer: load failure → recovery → failure keeps the numbers bu
   await s.settle();
   assert.equal(s.shown().takes, "13");
   assert.equal(s.shown().status, null, "cleared on recovery");
+});
+
+test("usage renderer: a declined Reset sends nothing and keeps the counts", async () => {
+  const s = loadSection({ replies: [{ ok: true, summary: SUMMARY }], confirmAnswer: false });
+  await s.settle();
+  await s.el("usage-reset").listeners.click();
+  await s.settle();
+  assert.deepEqual(s.calls, ["usage:get"]);
+  assert.equal(s.shown().takes, "12");
+  assert.equal(s.el("usage-reset-status").hidden, true);
+});
+
+for (const [name, refusal, message] of [
+  ["refused", { ok: false, error: "EACCES" }, "Could not reset: EACCES"],
+  ["rejected", new Error("bridge gone"), "Could not reset: bridge gone"],
+]) {
+  test(`usage renderer: a ${name} Reset shows the error and keeps the counts`, async () => {
+    const s = loadSection({ replies: [(channel) => (channel === "usage:reset" ? refusal : { ok: true, summary: SUMMARY })] });
+    await s.settle();
+    await s.el("usage-reset").listeners.click();
+    await s.settle();
+    assert.deepEqual(s.calls, ["usage:get", "usage:reset", "usage:get"]);
+    assert.equal(s.el("usage-reset-status").hidden, false);
+    assert.equal(s.el("usage-reset-status").textContent, message);
+    assert.equal(s.shown().takes, "12");
+  });
+}
+
+test("usage renderer: both read-only notices show, and go when the file is writable again", async () => {
+  let readOnly = "newer";
+  const s = loadSection({ replies: [() => ({ ok: true, summary: { ...SUMMARY, readOnly } })] });
+  await s.settle();
+  assert.equal(s.el("usage-readonly").hidden, false);
+  assert.match(s.el("usage-readonly").textContent, /newer version of Earheart/);
+  readOnly = "unreadable";
+  s.listeners["usage:changed"]();
+  await s.settle();
+  assert.equal(s.el("usage-readonly").hidden, false);
+  assert.match(s.el("usage-readonly").textContent, /couldn't be read/);
+  readOnly = false;
+  s.listeners["usage:changed"]();
+  await s.settle();
+  assert.equal(s.el("usage-readonly").hidden, true);
 });

@@ -2542,7 +2542,7 @@ app.whenReady().then(async () => {
       });
     }
 
-    await usageSmoke.checkUsage({ waitFor, check, savedThenClose, userData });
+    await usageSmoke.checkUsage({ waitFor, check, savedThenClose, userData, invokeHandlers });
     await require("./wizard-smoke").checkWizard({ waitFor, check });
     await require("./correction-smoke").checkCorrection({ waitFor, check, savedThenClose });
 

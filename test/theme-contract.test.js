@@ -147,3 +147,27 @@ test("the dark palette is unchanged by the light one (#348 keeps dark as it was)
   };
   for (const [token, value] of Object.entries(before)) assert.strictEqual(palettes.dark.get(token), value, token);
 });
+
+test("the composited pairs measured above match what settings.css draws", () => {
+  // scripts/theme-contrast.js models these fills at fixed alphas; if the CSS
+  // moves, the measured pair no longer describes the screen.
+  const flat = stripComments(read("renderer", "settings.css")).replace(/\s+/g, " ");
+  const rule = (selector) => {
+    const at = flat.indexOf(`${selector} {`);
+    assert.notStrictEqual(at, -1, `settings.css must keep ${selector}`);
+    return flat.slice(at, flat.indexOf("}", at));
+  };
+  const capturing = rule("#hotkey.capturing, #pause-hotkey.capturing");
+  assert.match(capturing, /border-color: rgb\(var\(--accent-rgb\) \/ 0\.9\)/);
+  assert.match(capturing, /background: rgb\(var\(--accent-rgb\) \/ 0\.07\)/);
+  assert.match(capturing, /box-shadow: 0 0 0 3px rgb\(var\(--accent-rgb\) \/ 0\.16\)/);
+  assert.match(rule(".segmented label:has(input:checked)"), /background: rgb\(var\(--fg-rgb\) \/ 0\.14\)/);
+  assert.match(rule(".segmented"), /background: var\(--field\)/);
+  assert.match(rule(".option:has(input:checked)"), /background: rgb\(var\(--fg-rgb\) \/ 0\.07\)/);
+  assert.match(rule("button"), /background: var\(--wash\)/);
+  assert.match(rule("button:hover:not(:disabled)"), /background: rgb\(var\(--fg-rgb\) \/ 0\.14\)/);
+  assert.match(rule("button.danger:hover:not(:disabled)"), /background: rgb\(var\(--err-rgb\) \/ 0\.12\)/);
+  for (const state of ["private", "external"]) {
+    assert.match(rule(`.state-badge-${state}`), new RegExp(`background: color-mix\\(in oklch, var\\(--state-${state}\\) 12%, transparent\\)`));
+  }
+});

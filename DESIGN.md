@@ -278,9 +278,13 @@ with no reload. Rules:
   light, with Bar Ink glyphs on it either way. `--text-strong` is its hover.
 - **Every pair is measured.** Text ≥4.5:1 and UI components ≥3:1 in both
   palettes, computed from the tokens by `scripts/theme-contrast.js` and
-  enforced by the contract test. Light minimums as shipped: Dim Text 6.08:1
-  (on a tray), Coral Voice 4.80:1 on Bar Ink (it is also the countdown's
-  text), Field Edge 3.34:1 on a card, Idle Gray 4.63:1, section hues ≥5.08:1.
+  enforced by the contract test. Each pair is measured on the pixels the CSS
+  actually composites: a chosen option, a selected segment, a hovered pill, a
+  badge on its own wash, the capture edge over its own coral fill. Lowest
+  pairs as shipped — text: Failed Red on a hovered danger pill, 4.84:1 dark /
+  4.66:1 light; UI: Field Edge on a card, 3.04:1 dark, and the capture edge
+  against its ring, 3.17:1 light. Coral Voice is 4.80:1 on the light Bar Ink,
+  enough to serve as the countdown's text.
 - Values below name the dark palette; each has a `-light` counterpart in the
   front matter.
 
@@ -376,9 +380,9 @@ grammar: filled white primary pill, white download-bar fill. Never spend coral
 on non-voice surfaces.
 
 **The Capture Exception.** On the settings window coral appears exactly once:
-a hotkey field mid-capture (`.capturing` — coral border
-rgba(251, 77, 92, 0.55), coral wash rgba(251, 77, 92, 0.07), 0-blur coral
-ring rgba(251, 77, 92, 0.16)), because the field is literally capturing the
+a hotkey field mid-capture (`.capturing` — coral border at 0.9 alpha, so the
+edge holds 3:1 against its own wash and its ring in both palettes; coral wash
+at 0.07; 0-blur coral ring at 0.16), because the field is literally capturing the
 user's key press. The wizard's mini-bar demo is the only other sanctioned
 non-overlay coral: it is a depiction of the real bar, not a new use. No third
 use exists.

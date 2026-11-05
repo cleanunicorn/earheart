@@ -381,7 +381,9 @@ select {
    literally capturing your key press, so it wears the capture grammar. */
 #hotkey.capturing,
 #pause-hotkey.capturing {
-  border-color: rgb(var(--accent-rgb) / 0.55);
+  /* 0.9: the edge must hold 3:1 against both its own coral fill and the
+     ring outside it, in either palette (0.55 measured ≈2.2:1). */
+  border-color: rgb(var(--accent-rgb) / 0.9);
   background: rgb(var(--accent-rgb) / 0.07);
   box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.16);
 }

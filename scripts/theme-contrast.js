@@ -96,7 +96,16 @@ const SURFACES = {
   hover: ["--ink", "--wash"], // a hovered row or key
   tray: ["--ink", "--wash-faint", "--tray"], // a model tray inside a card
   "err-wash": ["--ink", "err@0.12"], // the overlay's discard hover
-  "accent-wash": ["--field", "accent@0.07"], // a capturing hotkey field
+  "danger hover": ["--ink", "--wash-faint", "err@0.12"], // a danger pill hovered on a card
+  // A capturing hotkey field: its coral fill replaces --field, over the card;
+  // the 3px coral ring sits outside its edge.
+  "capture fill": ["--ink", "--wash-faint", "accent@0.07"],
+  "capture ring": ["--ink", "--wash-faint", "accent@0.16"],
+  "selected segment": ["--field", "fg@0.14"], // the engine choice, on its field-filled track
+  "chosen option": ["--ink", "--wash-faint", "fg@0.07"], // a checked option row on a card
+  "button on card": ["--ink", "--wash-faint", "--wash"], // a pill button at rest
+  "button hover on card": ["--ink", "--wash-faint", "fg@0.14"],
+  "button hover in tray": ["--ink", "--wash-faint", "--tray", "fg@0.14"],
   // An engine-state badge: its colour's 12% wash on the card it sits in.
   "own wash on card": ["--ink", "--wash-faint", "self@0.12"],
   "filled key": ["--text"], // Save, Done, the primary pill
@@ -109,13 +118,15 @@ const SURFACES = {
 const TEXT = 4.5;
 const UI = 3;
 const PAIRS = [
-  ["--text", ["ink", "card", "field", "hover", "tray", "accent-wash"], TEXT, "primary text"],
+  ["--text", ["ink", "card", "field", "hover", "tray", "capture fill"], TEXT, "primary text"],
+  ["--text", ["selected segment", "chosen option", "button on card", "button hover on card", "button hover in tray"], TEXT, "text on a selected / chosen / pill fill"],
+  ["accent@0.9", ["capture fill", "capture ring"], UI, "capturing hotkey field edge"],
   ["--text-mid", ["ink"], TEXT, "overlay status word"],
   ["--text-dim", ["ink", "card", "field", "hover", "tray"], TEXT, "secondary text, hints"],
   ["--accent", ["ink"], TEXT, "recording countdown (text)"],
-  ["--accent", ["card", "field"], UI, "capture dot, waveform, progress, capturing edge"],
+  ["--accent", ["card", "field"], UI, "capture dot, waveform, progress"],
   ["--ok", ["ink", "card"], TEXT, "success status"],
-  ["--err", ["ink", "card", "err-wash"], TEXT, "error status, discard hover"],
+  ["--err", ["ink", "card", "err-wash", "danger hover"], TEXT, "error status, discard / danger hover"],
   ["--idle", ["ink"], UI, "idle status dot"],
   ["--dot", ["ink"], UI, "wizard step dot, not yet reached"],
   ["--field-edge", ["ink", "card"], UI, "input boundary"],

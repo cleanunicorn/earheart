@@ -739,6 +739,22 @@ const os = require("node:os");
 const path = require("node:path");
 const harness = require("../scripts/eval-stt");
 
+// The --out file may sit in a folder others can write: the old `<out>.tmp`
+// was followed if a symlink was planted there. The temp is now random and
+// created exclusively, so a planted link's target is never written.
+test("eval-stt: writeJson never writes through a symlink at the old temp name", { skip: process.platform === "win32" && "symlinks" }, async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stt-out-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const out = path.join(dir, "result.json");
+  const victim = path.join(dir, "victim.txt");
+  fs.writeFileSync(victim, "keep me");
+  fs.symlinkSync(victim, `${out}.tmp`);
+  await harness.writeJson(out, { ok: 1 });
+  assert.strictEqual(fs.readFileSync(victim, "utf8"), "keep me");
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(out, "utf8")), { ok: 1 });
+  assert.deepStrictEqual(fs.readdirSync(dir).sort(), ["result.json", "result.json.tmp", "victim.txt"]);
+});
+
 // A minimal but complete pair of pass files, shaped like the harness writes them.
 function passFiles(t, { speedOver = {}, accOver = {} } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stt-combine-"));

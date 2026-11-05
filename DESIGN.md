@@ -283,7 +283,7 @@ with no reload. Rules:
   badge on its own wash, the capture edge over its own coral fill. Lowest
   pairs as shipped — text: Failed Red on a hovered danger pill, 4.84:1 dark /
   4.66:1 light; UI: Field Edge on a card, 3.04:1 dark, and the capture edge
-  against its ring, 3.17:1 light. Coral Voice is 4.80:1 on the light Bar Ink,
+  against its ring, 3.14:1 light. Coral Voice is 4.80:1 on the light Bar Ink,
   enough to serve as the countdown's text.
 - Values below name the dark palette; each has a `-light` counterpart in the
   front matter.

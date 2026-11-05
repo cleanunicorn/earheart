@@ -112,7 +112,10 @@ const SURFACES = {
   "filled key hover": ["--text-strong"],
 };
 
-// [foreground, surfaces, minimum, what it is]. 4.5 = text (WCAG 1.4.3),
+// [foreground, surfaces, minimum, what it is, paint surface?]. A translucent
+// foreground is resolved once, over the surface it is painted on — by default
+// each compared surface, as for text drawn straight onto it — and that opaque
+// colour is compared against every listed surface. 4.5 = text (WCAG 1.4.3),
 // 3 = a UI component or state indicator (1.4.11). --text-faint marks disabled
 // keys, which 1.4.3 exempts; --edge/--seam hairlines are decorative.
 const TEXT = 4.5;
@@ -120,7 +123,10 @@ const UI = 3;
 const PAIRS = [
   ["--text", ["ink", "card", "field", "hover", "tray", "capture fill"], TEXT, "primary text"],
   ["--text", ["selected segment", "chosen option", "button on card", "button hover on card", "button hover in tray"], TEXT, "text on a selected / chosen / pill fill"],
-  ["accent@0.9", ["capture fill", "capture ring"], UI, "capturing hotkey field edge"],
+  // The field's coral fill extends under its border (background-clip:
+  // border-box), so the edge is painted over the fill — then compared with
+  // the fill inside it and the ring outside it.
+  ["accent@0.9", ["capture fill", "capture ring"], UI, "capturing hotkey field edge", "capture fill"],
   ["--text-mid", ["ink"], TEXT, "overlay status word"],
   ["--text-dim", ["ink", "card", "field", "hover", "tray"], TEXT, "secondary text, hints"],
   ["--accent", ["ink"], TEXT, "recording countdown (text)"],
@@ -171,10 +177,10 @@ function surface(tokens, key, self) {
 // Every pair × surface for one palette: [{ fg, on, min, ratio, use, fgHex, bgHex }].
 function measure(tokens) {
   const rows = [];
-  for (const [fg, ons, min, use] of PAIRS) {
+  for (const [fg, ons, min, use, paintOn] of PAIRS) {
     for (const on of ons) {
       const bg = surface(tokens, on, fg);
-      const color = over(colorOf(tokens, fg), bg);
+      const color = over(colorOf(tokens, fg), paintOn ? surface(tokens, paintOn, fg) : bg);
       rows.push({ fg, on, min, use, ratio: ratio(color, bg), fgHex: hex(color), bgHex: hex(bg) });
     }
   }

@@ -171,3 +171,34 @@ test("the composited pairs measured above match what settings.css draws", () => 
     assert.match(rule(`.state-badge-${state}`), new RegExp(`background: color-mix\\(in oklch, var\\(--state-${state}\\) 12%, transparent\\)`));
   }
 });
+
+test("the capture edge is painted once, over its own fill, then compared (round-2 regression)", () => {
+  // The coral fill runs under the border (no background-clip in settings.css),
+  // so the edge's visible colour is accent 0.9 over the fill. That one colour
+  // is what meets both the fill inside and the ring outside. Composing it over
+  // the ring instead overstated the ring ratio (light 3.17 vs 3.14).
+  const css = stripComments(read("renderer", "settings.css"));
+  assert.doesNotMatch(css, /background-clip/, "a clipped background would change what the edge is painted over");
+  const { parseColor, over, ratio } = require("../scripts/theme-contrast");
+  for (const [name, tokens] of Object.entries(palettes)) {
+    const channel = (token, a) => {
+      const [r, g, b] = tokens.get(token).split(/\s+/).map(Number);
+      return { r, g, b, a };
+    };
+    const card = over(channel("--fg-rgb", 0.04), parseColor(tokens.get("--ink")));
+    const fill = over(channel("--accent-rgb", 0.07), card);
+    const ring = over(channel("--accent-rgb", 0.16), card);
+    const edge = over(channel("--accent-rgb", 0.9), fill);
+    const rows = measure(tokens).filter((r) => r.use === "capturing hotkey field edge");
+    assert.deepStrictEqual(rows.map((r) => r.on), ["capture fill", "capture ring"], name);
+    assert.strictEqual(rows[0].fgHex, rows[1].fgHex, `${name}: one painted edge colour for both comparisons`);
+    assert.ok(Math.abs(rows[0].ratio - ratio(edge, fill)) < 1e-9, `${name}: edge vs fill`);
+    assert.ok(Math.abs(rows[1].ratio - ratio(edge, ring)) < 1e-9, `${name}: edge vs ring`);
+    // The old underlay (edge composited over the ring) gives a different,
+    // higher number; this pins that the model no longer does that.
+    const wrong = ratio(over(channel("--accent-rgb", 0.9), ring), ring);
+    assert.ok(Math.abs(rows[1].ratio - wrong) > 0.01, `${name}: not painted over the ring`);
+  }
+  assert.strictEqual(measure(palettes.light).find((r) => r.on === "capture ring").ratio.toFixed(2), "3.14");
+  assert.strictEqual(measure(palettes.dark).find((r) => r.on === "capture ring").ratio.toFixed(2), "3.44");
+});

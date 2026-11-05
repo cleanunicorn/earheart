@@ -327,12 +327,13 @@ function raiseWithinTopmostBand(win) {
 // Linux, where the creation-time call has been sufficient.
 const ALL_SPACES = { visibleOnFullScreen: true, skipTransformProcessType: true };
 
-// Flip the all-Spaces bit off and back on. After a wake the bit can still read
-// true while the window server no longer honours it (#353), and re-asserting a
-// value that reads unchanged may be dropped as a no-op; a real change from off
-// to on is not. Both calls skip the process-type transform: with
-// visibleOnFullScreen kept true, Electron would otherwise hide the Dock on the
-// way back in, and only the default path in createOverlay() should do that.
+// Flip the all-Spaces bit off and back on. Hypothesis, unverified on a Mac
+// (#353): after a wake the bit can still read true while the window server no
+// longer honours it, and re-asserting a value that reads unchanged may change
+// nothing, while a real change from off to on makes AppKit apply it again.
+// Electron documents neither. Both calls skip the process-type transform, which
+// Electron documents as hiding the window and Dock for a moment on every call;
+// only the default path in createOverlay() should run it.
 // Hidden windows only: on a visible card the off half could strand it on one
 // Space, which is the jump this exists to prevent.
 function toggleAllSpaces(win) {

@@ -578,6 +578,16 @@ test("wizard respects another microphone chosen over an unavailable saved one", 
   assert.strictEqual(result.saved.audio.deviceId, "other-id");
   assert.strictEqual(result.invokeCount, 1);
 });
+test("record-cues.js loads before settings.js, whose Play preview uses it (#341)", () => {
+  // playCue only runs when Play is clicked, so a dropped tag passes the smoke
+  // checks and throws (silently, inside the handler) later.
+  const shared = html.indexOf('src="record-cues.js"');
+  const own = html.indexOf('src="settings.js"');
+  assert.notStrictEqual(shared, -1, "settings.html must load record-cues.js");
+  assert.ok(shared < own, "settings.html must load record-cues.js before settings.js");
+  assert.match(js, /\bplayCue\(/);
+});
+
 test("permission-status.js loads before settings.js, which uses it", () => {
   // settings.js only reaches for these when Fix is clicked or the window
   // regains focus, so a dropped tag passes the smoke checks and throws later.

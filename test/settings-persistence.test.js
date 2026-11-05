@@ -304,6 +304,24 @@ test("the setup wizard offers the lowered level with Settings' own range and ste
   assert.ok(step("settings.html"), "#duck-level declares a step");
 });
 
+test("record sounds are off by default, survive a reload, and their volume clamps to #record-sound-volume", (t) => {
+  const dir = makeSettingsDir(t);
+  const settings = loadSettings(dir);
+  const range = fieldRange("record-sound-volume");
+  assert.strictEqual(settings.DEFAULTS.audio.recordSounds, false, "opt-in");
+  assert.strictEqual(settings.DEFAULTS.audio.recordSoundVolumePercent, 60);
+  assert.deepStrictEqual(range, { min: 5, max: 100 });
+  for (const [input, expected] of [[0, range.min], [150, range.max], [33.4, 33], [NaN, 60], [100, 100]]) {
+    const saved = settings.save({ audio: { recordSounds: true, recordSoundVolumePercent: input } });
+    assert.strictEqual(saved.audio.recordSoundVolumePercent, expected, String(input));
+    assert.strictEqual(saved.audio.recordSounds, true);
+  }
+  settings.save({ audio: { recordSounds: true, recordSoundVolumePercent: 45 } });
+  const reloaded = loadSettings(dir).get().audio;
+  assert.strictEqual(reloaded.recordSounds, true);
+  assert.strictEqual(reloaded.recordSoundVolumePercent, 45);
+});
+
 test("deepMerge keeps defaults for missing keys and overrides present ones", () => {
   const base = { a: 1, nested: { x: "default", y: 2 }, arr: [1, 2] };
   const override = { nested: { x: "custom" }, arr: [3] };

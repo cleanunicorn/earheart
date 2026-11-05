@@ -15,6 +15,10 @@
 //      instead of stopping the take the moment it goes live.
 //   6. The discard hotkey's push (record:discard) does what the ✕ key does in
 //      every phase, and the ✕ key's tooltip names the hotkey.
+//   7. Record cues (#341): none by default; with sounds on, the start cue
+//      plays on the first samples and the take begins after its last frame,
+//      a failed start plays only the error cue, and a cue that cannot play
+//      never costs the take.
 //
 // Run under Electron:
 //
@@ -56,6 +60,14 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // would produce. Widened only where the flake lives: the other duration bounds
 // in this file already carry 200-250ms of slack.
 const WAV_LAG_ALLOWANCE_SEC = process.platform === "darwin" ? 0.35 : 0.15;
+
+// How long a take whose audio must be non-silent is held. Chromium's fake
+// capture device is digital silence with a short beep every 500 ms, and the
+// first beep of a freshly opened stream lands ~530 ms in (measured 522–532 ms
+// across takes). A take held ~500-600 ms holds that beep by a few ms or
+// not at all — its "not silence" check then fails on a working capture path
+// (#341: a 0.54 s take came back rms=0.0000). 1.2 s always holds two beeps.
+const SIGNAL_HOLD_MS = 1200;
 
 const checks = [];
 function check(name, ok, detail) {
@@ -440,7 +452,7 @@ app.whenReady().then(async () => {
       `transitions=${JSON.stringify(log)}`
     );
 
-    await sleep(1200); // "talk" for a bit while live
+    await sleep(SIGNAL_HOLD_MS); // "talk" for a bit while live
     const captured1P = waitForMessage("audio:captured");
     win.webContents.send("record:stop");
     const stoppedAt = Date.now();
@@ -533,7 +545,7 @@ app.whenReady().then(async () => {
     start(win, 3);
     await waitForStatus(win, "recording");
     console.log(`[overlay-smoke] warm start -> mic live in ${Date.now() - t0}ms`);
-    await sleep(600);
+    await sleep(SIGNAL_HOLD_MS);
     const captured3P = waitForMessage("audio:captured");
     win.webContents.send("record:stop");
     const stats3 = wavStats((await captured3P).wav);
@@ -543,13 +555,126 @@ app.whenReady().then(async () => {
       `wav=${stats3.seconds.toFixed(2)}s rms=${stats3.rms.toFixed(4)}`
     );
 
+    // ---- Record cues (#341): off by default, tied to real capture --------
+    const cueLog = () =>
+      win.webContents.executeJavaScript("cueLog.map((c) => `${c.cue}:${c.sid}:${c.played}`)");
+    check("no record cue plays when sounds are off (the default)",
+      (await cueLog()).length === 0, JSON.stringify(await cueLog()));
+    const startWithSounds = (sid, volume = 0.5) =>
+      win.webContents.send("record:start", {
+        sid,
+        deviceId: null,
+        maxSeconds: 30,
+        livePreview: { enabled: false },
+        sounds: { volume },
+      });
+
+    // A normal take: one start cue on the first samples, "Listening…" only
+    // after its guard, one stop cue, and the take still covers the window
+    // the card invited speech in.
+    await win.webContents.executeJavaScript("window.__statusLog = []");
+    startWithSounds(341);
+    const cueLiveAt = await waitForStatus(win, "recording");
+    const cueGuard = await win.webContents.executeJavaScript(`({
+      until: recording.guardUntil,
+      spent: recording.guardSpent,
+      cueEndFrame: Math.ceil(cuePlayer.active.endTime * audioContext.sampleRate),
+      statuses: window.__statusLog,
+    })`);
+    check("record cues: the start cue plays on the first samples", 
+      JSON.stringify(await cueLog()) === JSON.stringify(["start:341:true"]), JSON.stringify(await cueLog()));
+    check("record cues: the take begins after the start cue's last frame",
+      cueGuard.spent && cueGuard.until > cueGuard.cueEndFrame,
+      `guardUntil=${cueGuard.until} cueEnd=${cueGuard.cueEndFrame}`);
+    check("record cues: still starting before recording",
+      cueGuard.statuses.indexOf("starting") !== -1 &&
+        cueGuard.statuses.indexOf("recording") > cueGuard.statuses.indexOf("starting"),
+      JSON.stringify(cueGuard.statuses));
+    await sleep(800);
+    const cueCaptureP = waitForMessage("audio:captured");
+    win.webContents.send("record:stop");
+    const cueStoppedAt = Date.now();
+    const cueStats = wavStats((await cueCaptureP).wav);
+    check("record cues: the take with sounds on covers everything since Listening…",
+      cueStats.seconds >= (cueStoppedAt - cueLiveAt) / 1000 - WAV_LAG_ALLOWANCE_SEC && cueStats.rms > 0.001,
+      `wav=${cueStats.seconds.toFixed(2)}s window=${((cueStoppedAt - cueLiveAt) / 1000).toFixed(2)}s rms=${cueStats.rms.toFixed(4)}`);
+    check("record cues: one start and one stop for a normal take",
+      JSON.stringify(await cueLog()) === JSON.stringify(["start:341:true", "stop:341:true"]), JSON.stringify(await cueLog()));
+
+    // Stopped inside the start cue's window: nothing was kept, so the take is
+    // abandoned, but the start the user heard is paired with a stop. The stop
+    // is sent from inside the page the moment the guard is armed.
+    await win.webContents.executeJavaScript(`
+      cueLog.length = 0;
+      window.__stopInGuard = setInterval(() => {
+        if (recording?.guardUntil > 0 && !recording.guardSpent) {
+          clearInterval(window.__stopInGuard);
+          window.__stoppedInGuard = true;
+          stopRecording();
+        }
+      }, 0);
+      window.__stoppedInGuard = false;
+      "";
+    `);
+    const guardCancelP = waitForMessage("record:cancelled");
+    startWithSounds(342);
+    const guardCancel = await guardCancelP;
+    const stoppedInGuard = await win.webContents.executeJavaScript("clearInterval(window.__stopInGuard), window.__stoppedInGuard");
+    check("record cues: a stop during the start cue is an abandoned attempt with a stop cue",
+      stoppedInGuard && guardCancel.sid === 342 &&
+        JSON.stringify(await cueLog()) === JSON.stringify(["start:342:true", "stop:342:true"]),
+      `inGuard=${stoppedInGuard} sid=${guardCancel.sid} cues=${JSON.stringify(await cueLog())}`);
+
+    // Stop racing mic startup: no samples, so no cue at all.
+    await win.webContents.executeJavaScript("cueLog.length = 0");
+    const raceCancelP = waitForMessage("record:cancelled");
+    startWithSounds(343);
+    win.webContents.send("record:stop");
+    await raceCancelP;
+    await sleep(200);
+    check("record cues: a stop before the mic is live plays nothing",
+      (await cueLog()).length === 0, JSON.stringify(await cueLog()));
+
+    // A failed start never sounds like success: only the error cue.
+    await win.webContents.executeJavaScript("cueLog.length = 0; window.__micTest.failDefault = true");
+    const cueErrorP = waitForMessage("record:error");
+    startWithSounds(344);
+    await cueErrorP;
+    await win.webContents.executeJavaScript("window.__micTest.failDefault = false");
+    micErrors.length = 0;
+    check("record cues: a failed mic start plays only the error cue",
+      JSON.stringify(await cueLog()) === JSON.stringify(["error:344:true"]), JSON.stringify(await cueLog()));
+
+    // A broken audio output must never cost the take: oscillators that throw
+    // play nothing, guard nothing, and the dictation still delivers.
+    await win.webContents.executeJavaScript(`
+      cueLog.length = 0;
+      window.__realOscillator = AudioContext.prototype.createOscillator;
+      AudioContext.prototype.createOscillator = () => { throw new Error("no output"); };
+      "";
+    `);
+    startWithSounds(345);
+    await waitForStatus(win, "recording");
+    await sleep(SIGNAL_HOLD_MS);
+    const brokenGuard = await win.webContents.executeJavaScript("recording.guardUntil");
+    const brokenCaptureP = waitForMessage("audio:captured");
+    win.webContents.send("record:stop");
+    const brokenStats = wavStats((await brokenCaptureP).wav);
+    await win.webContents.executeJavaScript(
+      "AudioContext.prototype.createOscillator = window.__realOscillator; ''");
+    check("record cues: a cue that cannot play guards nothing and the take still delivers",
+      brokenGuard === 0 && brokenStats.seconds > 0.3 && brokenStats.rms > 0.001 &&
+        JSON.stringify(await cueLog()) === JSON.stringify(["start:345:false", "stop:345:false"]),
+      `guard=${brokenGuard} wav=${brokenStats.seconds.toFixed(2)}s rms=${brokenStats.rms.toFixed(4)} cues=${JSON.stringify(await cueLog())}`);
+    await win.webContents.executeJavaScript("cueLog.length = 0");
+
     // ---- Session 4/5: cancel mid-startup, then a full session again --------
     start(win, 4);
     win.webContents.send("record:cancel"); // lands while getUserMedia is pending
     await sleep(300);
     start(win, 5);
     await waitForStatus(win, "recording");
-    await sleep(600);
+    await sleep(SIGNAL_HOLD_MS);
     const captured5P = waitForMessage("audio:captured");
     win.webContents.send("record:stop");
     const captured5 = await captured5P;

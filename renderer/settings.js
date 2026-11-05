@@ -196,6 +196,27 @@ const refreshDuckStatus = () => DuckingStatus.show($("duck-status"));
 
 /* ---------- microphone list ---------- */
 
+// "Play" next to the record sound volume (#341): the start then the stop cue
+// at the typed volume, on a throwaway context so nothing lingers. Purely a
+// preview — any failure just stays silent.
+const RECORD_SOUND_PREVIEW_GAP_MS = 300;
+$("record-sound-test").addEventListener("click", () => {
+  let ctx = null;
+  try {
+    const percent = numInRange("record-sound-volume", defaults?.audio?.recordSoundVolumePercent ?? 60);
+    ctx = new AudioContext();
+    const volume = percent / 100;
+    ctx.resume().catch(() => {});
+    const first = playCue(ctx, "start", volume);
+    setTimeout(() => {
+      const second = playCue(ctx, "stop", volume);
+      setTimeout(() => ctx.close().catch(() => {}), (second?.ms || 0) + 200);
+    }, (first?.ms || 0) + RECORD_SOUND_PREVIEW_GAP_MS);
+  } catch {
+    ctx?.close().catch(() => {});
+  }
+});
+
 async function loadMicrophones() {
   const select = $("mic-device");
   const status = $("mic-device-status");
@@ -302,6 +323,8 @@ function populate() {
   $("max-seconds").value = current.audio.maxRecordingSeconds;
   $("duck-other-audio").checked = current.audio.duckOtherAudio === true;
   $("duck-level").value = current.audio.duckLevelPercent ?? defaults.audio.duckLevelPercent;
+  $("record-sounds").checked = current.audio.recordSounds === true;
+  $("record-sound-volume").value = current.audio.recordSoundVolumePercent ?? defaults.audio.recordSoundVolumePercent;
   $("idle-unload").value = current.engines?.idleUnloadMinutes ?? defaults.engines.idleUnloadMinutes;
 
   if (platform !== "linux") {
@@ -395,6 +418,13 @@ function collect() {
         numInRange(
           "duck-level",
           current.audio?.duckLevelPercent ?? defaults.audio.duckLevelPercent
+        )
+      ),
+      recordSounds: $("record-sounds").checked,
+      recordSoundVolumePercent: Math.round(
+        numInRange(
+          "record-sound-volume",
+          current.audio?.recordSoundVolumePercent ?? defaults.audio.recordSoundVolumePercent
         )
       ),
     },
@@ -1227,6 +1257,8 @@ async function saveSettings() {
     if (unchanged($("max-seconds"))) $("max-seconds").value = current.audio.maxRecordingSeconds;
     if (unchanged($("duck-other-audio"))) $("duck-other-audio").checked = current.audio.duckOtherAudio === true;
     if (unchanged($("duck-level"))) $("duck-level").value = current.audio.duckLevelPercent;
+    if (unchanged($("record-sounds"))) $("record-sounds").checked = current.audio.recordSounds === true;
+    if (unchanged($("record-sound-volume"))) $("record-sound-volume").value = current.audio.recordSoundVolumePercent;
     refreshDuckStatus();
     if (unchanged($("idle-unload"))) $("idle-unload").value = current.engines.idleUnloadMinutes;
     if (unchanged($("recordings-days"))) $("recordings-days").value = current.recordings.maxAgeDays;

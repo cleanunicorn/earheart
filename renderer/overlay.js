@@ -42,6 +42,66 @@ let levels = new Array(24).fill(0);
 // empty when none is set. The ✕ key's tooltip names it.
 let discardHotkeyLabel = "";
 
+// Record cues (#341, record-cues.js): opt-in tones when capture really starts,
+// when a live take stops, and when the mic fails. The start cue plays on the
+// recording context itself, so its span maps onto capture frames exactly and
+// is dropped from the take; stop and error cues play on a separate output
+// context, because teardown suspends the recording one the moment a take ends.
+// A cue is a courtesy: every path here is wrapped so a sound failure never
+// reaches capture or delivery.
+let cueSounds = null; // { volume } for the current take, null when sounds are off
+let cueState = initialCueState();
+const cuePlayer = createCuePlayer();
+let cueContext = null; // created on the first take with sounds on
+// Suspend the cue context this long after its last cue ends.
+const CUE_PARK_AFTER_MS = 1000;
+// The cues this page tried to play, newest last (read by the overlay smoke).
+const cueLog = [];
+
+function ensureCueContext() {
+  try {
+    if (!cueContext || cueContext.state === "closed") cueContext = new AudioContext();
+    cueContext.resume().catch(() => {});
+    return cueContext;
+  } catch {
+    cueContext = null;
+    return null;
+  }
+}
+
+// Feed one capture event to the cue lifecycle and play what it earns. The
+// reducer always runs; a cue only sounds when the user turned sounds on.
+// Returns the played cue's handle (see playCue), or null.
+function stepCue(event, startContext = null) {
+  try {
+    const prev = cueState;
+    const { state, cue } = cueStep(cueState, event);
+    cueState = state;
+    // A cancel for the current session cuts any cue still sounding — a start
+    // cue, or a stop or error cue that already ended the session — because
+    // the user wants quiet now. A stale session's cancel touches nothing.
+    if (event.type === "cancel" && event.sid === prev.sid) {
+      cuePlayer.silence();
+      if (cueContext) cuePlayer.park(cueContext, CUE_PARK_AFTER_MS);
+    }
+    let handle = null;
+    if (cue && cueSounds) {
+      const ctx = cue === "start" ? startContext : ensureCueContext();
+      handle = cuePlayer.play(ctx, cue, cueSounds.volume);
+      cueLog.push({ cue, sid: event.sid, played: Boolean(handle) });
+      if (cueLog.length > 20) cueLog.shift();
+    }
+    // The session just ended: park the cue output once its last cue is done
+    // (the player voids this if a newer session or cue comes first).
+    if (cueContext && state.phase === "ended" && prev.phase !== "ended") {
+      cuePlayer.park(cueContext, (handle?.ms || 0) + CUE_PARK_AFTER_MS);
+    }
+    return handle;
+  } catch {
+    return null;
+  }
+}
+
 // Persistent audio engine. Opening the audio stack is the latency-critical path
 // of every dictation — whatever the user says before samples flow is lost — so
 // the 16 kHz AudioContext and the worklet module are created ONCE (warmed at
@@ -633,7 +693,7 @@ function recordingCapSeconds(value) {
   return seconds >= 10 && seconds <= 3600 ? seconds : 600;
 }
 
-async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, discardHotkey }) {
+async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, discardHotkey, sounds }) {
   // A new session always supersedes whatever was running.
   teardown();
   const myGeneration = ++generation;
@@ -646,6 +706,12 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
   discardHotkeyLabel = typeof discardHotkey === "string" ? discardHotkey : "";
   stopWhenReady = false;
   livePreview = live && live.enabled ? live : null;
+  // Read per take, like the cap: a Settings change applies from the next one.
+  cueSounds = Number.isFinite(sounds?.volume) && sounds.volume > 0 ? { volume: Math.min(1, sounds.volume) } : null;
+  cuePlayer.begin(); // cut the previous take's cue, void its park
+  stepCue({ type: "start", sid });
+  // Wake the stop/error cue output while the mic opens, off the capture path.
+  if (cueSounds) ensureCueContext();
   // Honest status: the mic is NOT live yet. "Listening…" appears only when
   // the first samples arrive (micLive), so the user is never invited to talk
   // into a microphone that isn't capturing.
@@ -722,6 +788,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
       if (!isCurrent() || recording?.startedAt) return;
       teardown();
       resetAudioEngine();
+      stepCue({ type: "error", sid });
       earheart.send("record:error", {
         sid,
         message: "Microphone did not deliver audio in time — check the input device in Settings",
@@ -751,7 +818,26 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
       // Until the drain confirm, though, keep accepting: the batch in flight
       // holds the last pre-pause syllable, not pause silence.
       if (recording.pausedAt && !recording.draining) return;
-      chunks.push(event.data.samples);
+      // First samples: capture is proven live. With sounds on the start cue
+      // plays now, on this context's clock, and every frame it can reach (cue
+      // end + output and input latency + a tail) is dropped — by capture
+      // position, not arrival, so late or bunched posts are cut exactly where
+      // the cue ends. With no cue everything passes.
+      const { kept: samples, guardDone } = ingestPost(recording, event.data, () => {
+        const cue = stepCue({ type: "samples", sid }, context);
+        return cue
+          ? guardEndFrame({
+              cueEnd: cue.endTime,
+              outputLatency: context.outputLatency,
+              baseLatency: context.baseLatency,
+              inputLatency: recording.inputLatency,
+              sampleRate: context.sampleRate,
+            })
+          : 0;
+      });
+      if (guardDone) stepCue({ type: "guardDone", sid });
+      if (samples.length === 0) return;
+      chunks.push(samples);
       // Just record the level; the rAF meter loop reads `levels` each frame.
       levels.push(event.data.rms);
       levels.shift();
@@ -765,6 +851,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
       if (recording?.recorder !== recorder) return;
       recording.trackEnded = true;
       reportCapture(false);
+      stepCue({ type: "trackEnded", sid });
     });
 
     recording = {
@@ -774,6 +861,13 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
       source,
       recorder,
       chunks,
+      // The start-cue guard: the capture frame the take begins at (0 = no
+      // cue, nothing dropped), set on the first samples; guardSpent once
+      // samples past it arrive. "Listening…" waits for guardSpent.
+      guardUntil: null,
+      guardSpent: false,
+      // The mic path's own latency when Chromium reports it (seconds).
+      inputLatency: track?.getSettings?.().latency,
       // Set by micLive() on the first samples; "Listening…" and the timer wait
       // for it. Until then the card still shows "Starting mic…".
       startedAt: null,
@@ -823,6 +917,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
       // failed session never leaves the audio thread ticking while idle
       // (suspending an already-suspended context is a no-op).
       audioContext?.suspend().catch(() => {});
+      stepCue({ type: "error", sid });
       earheart.send("record:error", {
         sid,
         message: microphoneErrorMessage(err),
@@ -879,8 +974,14 @@ function teardown({ collectTail = false } = {}) {
       rec.recorder.port.onmessage = (event) => {
         if (event.data.flushed) done();
         // Only sample messages join the tail — a {drained} confirm from a
-        // pause immediately before the stop carries no audio.
-        else if (event.data.samples) rec.chunks.push(event.data.samples);
+        // pause immediately before the stop carries no audio. The tail goes
+        // through the same start-cue guard as live posts: a stop right after
+        // the guard ended must keep what follows it, never what the cue
+        // covered (once the guard is spent this passes everything).
+        else if (event.data.samples) {
+          const { kept } = ingestPost(rec, event.data, () => 0);
+          if (kept.length > 0) rec.chunks.push(kept);
+        }
       };
     });
   } else {
@@ -907,16 +1008,25 @@ async function stopRecording() {
     return;
   }
   const wasLive = Boolean(recording.startedAt);
-  const rec = teardown({ collectTail: wasLive });
+  // Samples have arrived but none kept yet (the start-cue guard): the audio
+  // thread may already be past the guard with the first kept batch still in
+  // flight, so collect the tail and decide on what it keeps.
+  const guardArmed = recording.guardUntil !== null;
+  const rec = teardown({ collectTail: wasLive || guardArmed });
   if (!rec) return;
-  if (!wasLive) {
-    // Stopped before any audio was captured: there is no dictation to
-    // transcribe, and "Nothing heard — try again closer to the mic" would be
+  // The mic is closed now, so the stop cue can't leak into the tail being
+  // flushed. Stopped during the start cue (nothing kept): the start is cut
+  // and the matching stop plays, though the take is still cancelled below.
+  stepCue({ type: "stop", sid: rec.sid });
+  if (!wasLive && guardArmed) await rec.flushed;
+  if (!wasLive && totalSamples(rec.chunks) === 0) {
+    // Stopped before any audio was kept (before the mic was live, or inside
+    // the start cue's guard): there is no dictation to transcribe, and "Nothing heard — try again closer to the mic" would be
     // misleading advice. Treat it as the user abandoning the attempt.
     earheart.send("record:cancelled", { sid: rec.sid });
     return;
   }
-  await rec.flushed; // pick up the last in-flight chunks before encoding
+  await rec.flushed; // pick up the last in-flight chunks before encoding (settled already if awaited above)
   const wav = encodeWav(rec.chunks);
   earheart.send("audio:captured", { sid: rec.sid, wav });
 }
@@ -924,6 +1034,7 @@ async function stopRecording() {
 function cancelRecording() {
   const sid = currentSid;
   const rec = teardown();
+  stepCue({ type: "cancel", sid });
   if (rec) {
     earheart.send("record:cancelled", { sid });
   } else {
@@ -987,6 +1098,7 @@ earheart.on("record:pause-toggle", togglePause);
 earheart.on("record:discard", cancelRecording);
 earheart.on("record:cancel", () => {
   teardown();
+  stepCue({ type: "cancel", sid: currentSid });
   clearTranscript();
   resetProgress();
 });

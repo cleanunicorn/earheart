@@ -78,8 +78,9 @@ function createOverlayVm({ outputLatency = 0.04, baseLatency = 0.01, inputLatenc
     }
     // The recording context's clock is the audio thread's frame count; the
     // page sees it as of the last rendered quantum, like Chromium.
+    // Other contexts (the cue output) keep a clock the test sets.
     get currentTime() {
-      return this.isRecording ? frame / this.sampleRate : 0;
+      return this.isRecording ? frame / this.sampleRate : this.time || 0;
     }
     async resume() {
       this.state = "running";

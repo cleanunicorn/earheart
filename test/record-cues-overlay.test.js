@@ -140,3 +140,65 @@ test("record cues: with sounds off the take keeps every frame from the first pos
   const [captured] = rig.messages("audio:captured");
   expectFrames(wavInts(captured.wav), 0, rig.frame, rig.marker, "final");
 });
+
+// A take that is live (past the guard, kept samples delivered).
+async function liveTake(rig, sid) {
+  rig.send("record:start", startPayload(sid));
+  await rig.settle();
+  rig.pump(4);
+  rig.deliver();
+  const guard = rig.eval("recording.guardUntil");
+  while (rig.frame < guard + 1024) rig.pump(1);
+  rig.deliver();
+  assert.ok(rig.eval("recording.startedAt") > 0, "live");
+}
+
+const cueOutput = (rig) => rig.contexts.find((c) => !c.isRecording && rig.oscillators.some((o) => o.ctx === c));
+const notesOn = (rig, ctx) => rig.oscillators.filter((o) => o.ctx === ctx);
+
+for (const [label, end] of [
+  ["stop", (rig) => rig.send("record:stop")],
+  ["a mic that ends mid-take", (rig) => rig.track.onended()],
+]) {
+  for (const cancel of ["record:cancel", "record:discard"]) {
+    test(`record cues: ${cancel} after ${label} cuts the end cue still sounding`, async () => {
+      const rig = createOverlayVm(LATENCY);
+      await liveTake(rig, 400);
+      end(rig);
+      rig.deliver();
+      await rig.settle();
+      const ctx = cueOutput(rig);
+      assert.ok(ctx, "an end cue played on the cue output");
+      const notes = notesOn(rig, ctx);
+      assert.ok(notes.length > 0);
+      for (const n of notes) assert.strictEqual(n.stops.length, 1, "only its own scheduled stop so far");
+      ctx.time = notes[0].startAt + 0.01; // mid-cue
+      rig.send(cancel);
+      for (const n of notes) {
+        assert.deepStrictEqual(n.stops.slice(1), [ctx.time], "cut at the cancel");
+        assert.ok(n.disconnected);
+      }
+    });
+  }
+}
+
+test("record cues: a stale session's cancel never cuts the newer session's cue", async () => {
+  const rig = createOverlayVm(LATENCY);
+  await liveTake(rig, 500);
+  rig.send("record:stop");
+  rig.deliver();
+  await rig.settle();
+  // Session 501 starts; its start cue is sounding on the recording context.
+  rig.send("record:start", startPayload(501));
+  await rig.settle();
+  rig.pump(4);
+  rig.deliver();
+  const startNotes = rig.oscillators.filter((o) => o.ctx.isRecording).slice(-2);
+  assert.strictEqual(startNotes.length, 2);
+  for (const n of startNotes) assert.strictEqual(n.stops.length, 1);
+  rig.eval('stepCue({ type: "cancel", sid: 500 })');
+  for (const n of startNotes) assert.strictEqual(n.stops.length, 1, "untouched by the stale cancel");
+  // The current session's cancel does cut it.
+  rig.eval('stepCue({ type: "cancel", sid: 501 })');
+  for (const n of startNotes) assert.strictEqual(n.stops.length, 2, "cut by the current cancel");
+});

@@ -77,8 +77,13 @@ function stepCue(event, startContext = null) {
     const prev = cueState;
     const { state, cue } = cueStep(cueState, event);
     cueState = state;
-    // A cancel cuts a cue still sounding (the user wants quiet now).
-    if (event.type === "cancel" && state !== prev) cuePlayer.silence();
+    // A cancel for the current session cuts any cue still sounding — a start
+    // cue, or a stop or error cue that already ended the session — because
+    // the user wants quiet now. A stale session's cancel touches nothing.
+    if (event.type === "cancel" && event.sid === prev.sid) {
+      cuePlayer.silence();
+      if (cueContext) cuePlayer.park(cueContext, CUE_PARK_AFTER_MS);
+    }
     let handle = null;
     if (cue && cueSounds) {
       const ctx = cue === "start" ? startContext : ensureCueContext();

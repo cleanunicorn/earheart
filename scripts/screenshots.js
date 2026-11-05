@@ -64,7 +64,7 @@ async function main() {
   await waitForLoad(settings.webContents);
   await sleep(1200);
   await shot(settings, "settings");
-  // The Microphone card with "Lower other audio while recording" turned on
+  // The Background audio card with "Lower other audio while recording" turned on
   // (docs/audio-ducking.md). The page only reads the toggle; the status line
   // comes from a fixed answer, as main/ducking/ would give on Linux.
   await settings.webContents.executeJavaScript(`(() => {

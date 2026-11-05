@@ -747,17 +747,26 @@ test("each framed window is created in the current palette's ink (#348)", () => 
 test("refreshInk repaints only the open framed windows, never the overlay (#348)", () => {
   const nativeTheme = { shouldUseDarkColors: true };
   const { windows, calls } = loadWindows({ nativeTheme });
+  const painted = () => calls.filter(([n]) => n === "setBackgroundColor").map(([, c]) => c);
   windows.refreshInk(); // nothing open yet: nothing to paint, nothing thrown
-  assert.deepStrictEqual(calls.filter(([n]) => n === "setBackgroundColor"), []);
+  assert.deepStrictEqual(painted(), []);
 
   windows.createOverlay();
-  windows.openSettings();
-  windows.openWizard();
+  const settingsWin = windows.openSettings();
+  const wizard = windows.openWizard();
+  const correction = windows.openCorrection({ text: "draft" });
   nativeTheme.shouldUseDarkColors = false;
   windows.refreshInk();
-  assert.deepStrictEqual(
-    calls.filter(([n]) => n === "setBackgroundColor"),
-    [["setBackgroundColor", "#fafafa"], ["setBackgroundColor", "#fafafa"]],
-    "Settings and the wizard repaint; the transparent overlay does not"
-  );
+  assert.deepStrictEqual(painted(), ["#fafafa", "#fafafa", "#fafafa"],
+    "Settings, the wizard and the correction window repaint; the transparent overlay does not");
+
+  // A window destroyed under its reference (closed, or destroyed before its
+  // closed handler ran) is skipped, and the others still repaint.
+  calls.length = 0;
+  wizard.close();
+  correction.closed = true; // destroyed without its closed handler running
+  nativeTheme.shouldUseDarkColors = true;
+  assert.doesNotThrow(() => windows.refreshInk());
+  assert.deepStrictEqual(painted(), ["#18181b"], "only the live Settings window repaints");
+  assert.ok(!settingsWin.isDestroyed());
 });

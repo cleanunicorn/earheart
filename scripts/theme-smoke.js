@@ -65,6 +65,27 @@ async function checkFramedInk({ waitFor, check }) {
     correction.close();
     await waitFor(() => correction.isDestroyed(), "correction did not close");
   }
+
+  // Both open at once, the palette flipped under them: nativeTheme 'updated'
+  // repaints their native backgrounds (main/appearance.js → refreshInk) and
+  // the pages follow prefers-color-scheme.
+  nativeTheme.themeSource = "dark";
+  const wizard = windows.openWizard();
+  const correction = windows.openCorrection({ text: "a themed draft" });
+  // Listen on both before awaiting either: one may finish loading first.
+  await Promise.all([waitForLoad(wizard.webContents), waitForLoad(correction.webContents)]);
+  for (const scheme of ["light", "dark"]) {
+    nativeTheme.themeSource = scheme;
+    const follows = async (win) => bgHex(win) === INK[scheme] && (await pageInk(win)) === INK[scheme];
+    await waitFor(async () => (await follows(wizard)) && (await follows(correction)),
+      `wizard and correction did not follow a flip to ${scheme}`, 300).catch(() => {});
+    check(`an open wizard and correction window follow a flip to ${scheme}`,
+      (await follows(wizard)) && (await follows(correction)),
+      `wizard=${bgHex(wizard)}/${await pageInk(wizard)} correction=${bgHex(correction)}/${await pageInk(correction)} want=${INK[scheme]}`);
+  }
+  windows.closeWizard();
+  correction.close();
+  await waitFor(() => wizard.isDestroyed() && correction.isDestroyed(), "wizard or correction did not close");
 }
 
 async function checkSettingsTheme({ waitFor, check, savedThenClose }) {

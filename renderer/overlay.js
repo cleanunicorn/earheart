@@ -125,8 +125,22 @@ const WAVE_COL_PX = 2.5; // CSS px per written column
 const WAVE_PUSH_MS = 80; // ms of audio per column (≈31px/s scroll speed)
 const WAVE_MAX_COLS = 600; // plenty to outrun any window width
 const WAVE_GAIN = 6; // level → amplitude gain, shared by both paint sites
-// The accent — kept in sync with --accent in tokens.css.
-const WAVE_COLOR = "#fb4d5c";
+// The wave is drawn in the palette's --accent (tokens.css), read from the
+// stylesheet rather than duplicated so it can't drift and follows the
+// appearance. Re-read when the scheme flips; a frozen take repaints at once.
+let waveColor = "";
+function readWaveColor() {
+  waveColor = getComputedStyle(document.documentElement)
+    .getPropertyValue("--accent")
+    .trim();
+}
+readWaveColor();
+window
+  .matchMedia("(prefers-color-scheme: dark)")
+  .addEventListener("change", () => {
+    readWaveColor();
+    drawMeter();
+  });
 let waveHistory = []; // newest first: waveHistory[0] sits at the right edge
 let wavePushAt = 0; // rAF timestamp of the last written column
 
@@ -301,7 +315,7 @@ function drawMeter(frac = 0) {
   const gapW = colW * 0.32;
   const barW = colW - gapW;
   const maxAmp = h - 2 * px;
-  meterCtx.fillStyle = WAVE_COLOR;
+  meterCtx.fillStyle = waveColor;
   // One painter for both sites below. The amp floor closes over barW (never
   // the bar's own width): the growing live column must keep the full-height
   // minimum, or its floor would shrink on every sub-column frame.

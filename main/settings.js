@@ -76,6 +76,9 @@ const DEFAULTS = {
   // on Windows/macOS, an XDG autostart .desktop file on Linux — on save, and
   // reconciled on every startup.
   startOnBoot: false,
+  // "system" (follow the OS), "light" or "dark" — every window's palette,
+  // applied by main/appearance.js. Anything else reads as "system".
+  appearance: "system",
   output: {
     // "paste" = type into focused app (restores clipboard afterwards),
     // "paste-copy" = paste AND keep the transcript on the clipboard,
@@ -420,6 +423,13 @@ function clampLimits(merged) {
   return out;
 }
 
+// An unknown or missing appearance reads as "system". Not rewritten on disk
+// until the next save, like clampLimits.
+const APPEARANCES = ["system", "light", "dark"];
+function normalizeAppearance(merged) {
+  return APPEARANCES.includes(merged.appearance) ? merged : { ...merged, appearance: "system" };
+}
+
 // Make cleanup.aliases valid whatever the file held (hand edits, another
 // version): invalid entries dropped, each heard form kept with the first term
 // that claims it. Idempotent, and like clampLimits nothing is rewritten on
@@ -492,7 +502,7 @@ function load() {
     ? secretStore.storageStatus(safeStorage, process.platform)
     : { secure: false, backend: null };
   const decoded = secretStore.decodeSecrets(stored, ready ? safeStorage : null);
-  const merged = normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored))));
+  const merged = normalizeAppearance(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored)))));
   // Before `ready` encrypted keys read as "", so the result is not cached:
   // the first load after `ready` decrypts them. Nothing saves before then
   // (save() refuses).
@@ -562,7 +572,7 @@ function writeFile(merged) {
 function save(next) {
   if (!appReady()) throw new Error("settings cannot be saved before the app is ready");
   const previous = load();
-  const merged = normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, next)));
+  const merged = normalizeAppearance(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, next))));
   // Fail closed (#343): recordings are only ever kept encrypted, so keeping
   // them can't be turned on without OS-backed secure storage.
   if (merged.recordings.keep === true && !keyStorageStatus.secure) {

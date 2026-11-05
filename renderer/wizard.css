@@ -46,7 +46,7 @@ footer {
   height: 7px;
   border-radius: 50%;
   /* Bright enough to clear the 3:1 UI-component bar on the ink. */
-  background: rgba(255, 255, 255, 0.35);
+  background: rgb(var(--fg-rgb) / 0.35);
 }
 
 .dot.active {
@@ -110,7 +110,7 @@ footer {
 
 kbd {
   background: var(--wash);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid rgb(var(--fg-rgb) / 0.16);
   border-bottom-width: 2px;
   border-radius: 6px;
   padding: 4px 7px;
@@ -131,7 +131,7 @@ kbd {
   padding: 0 10px;
   border-radius: 18px;
   background: var(--ink);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgb(var(--fg-rgb) / 0.14);
 }
 
 .mini-dot {
@@ -139,7 +139,7 @@ kbd {
   height: 6px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 5px rgba(251, 77, 92, 0.5);
+  box-shadow: 0 0 5px rgb(var(--accent-rgb) / 0.5);
   animation: mini-pulse 2s ease-in-out infinite;
 }
 

@@ -12,37 +12,9 @@
    are additive and only used here. */
 
 :root {
-  color-scheme: dark; /* native selects, spinners and dialogs render dark */
-
-  /* The bar's materials (--ink --edge --text --text-dim --wash --track
-     --accent --ok --err) live in tokens.css, shared with the overlay. */
-  --seam: rgba(255, 255, 255, 0.08); /* dividers between regions */
-  --wash-faint: rgba(255, 255, 255, 0.04); /* card fills, quiet hovers */
-
-  /* Settings-window derivatives. */
-  --field: #101013; /* input fill — a step below the ink */
-  --field-edge: #6b6b74; /* input boundary — ≥3:1 on --ink (WCAG 1.4.11) */
+  /* Every colour (both palettes) lives in tokens.css; this sheet adds only
+     non-colour values. */
   --mono: ui-monospace, "Cascadia Code", monospace;
-
-  /* Section wayfinding hues (settings window only — --accent stays the sole
-     brand coral, reserved for the hotkey Capture Exception; these six never
-     appear anywhere the coral could be mistaken for it). Each pairs an index
-     icon with its section's legend icon so the color, not just the glyph,
-     says "you are here" while scrolling. Equal OKLCH lightness/chroma so no
-     section reads as more important than another; all ≥6.7:1 on --ink. */
-  --section-general: #79a7e2; /* blue */
-  --section-live: #9cae65; /* lime */
-  --section-stt: #48b7c2; /* cyan */
-  --section-cleanup: #b49ce1; /* violet */
-  --section-history: #d389ba; /* magenta */
-  --section-advanced: #c49f4d; /* gold */
-
-  /* Engine-choice state color: what Built-in vs OpenAI-compatible actually
-     does with your audio/words, not decoration — teal reads as contained
-     and calm, amber as "this leaves the device." Neither reuses --ok/--err,
-     which stay reserved for success/fault status per DESIGN.md. */
-  --state-private: #16bbbc;
-  --state-external: #ea9941;
 }
 
 * {
@@ -363,14 +335,13 @@ select:focus,
 textarea:focus {
   outline: none;
   border-color: var(--text);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 0 3px rgb(var(--fg-rgb) / 0.1);
 }
 
 select {
   appearance: none;
-  /* Self-drawn caret: a CSS var can't be interpolated into a data: URI, so the
-     stroke hex is a hardcoded copy of --text-dim (#a1a1aa) — keep in sync. */
-  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="%23a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+  /* Self-drawn caret, drawn in this palette's --text-dim (see tokens.css). */
+  background-image: var(--caret);
   background-repeat: no-repeat;
   background-position: right 12px center;
   padding-right: 34px;
@@ -403,16 +374,16 @@ select {
 #hotkey:not(.capturing):hover,
 #pause-hotkey:not(.capturing):hover {
   border-color: var(--text-dim);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgb(var(--fg-rgb) / 0.06);
 }
 
 /* Armed and capturing: the one coral moment on this window — the field is
    literally capturing your key press, so it wears the capture grammar. */
 #hotkey.capturing,
 #pause-hotkey.capturing {
-  border-color: rgba(251, 77, 92, 0.55);
-  background: rgba(251, 77, 92, 0.07);
-  box-shadow: 0 0 0 3px rgba(251, 77, 92, 0.16);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  background: rgb(var(--accent-rgb) / 0.07);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.16);
 }
 
 /* ---------- layout helpers ---------- */
@@ -501,7 +472,7 @@ select {
 }
 
 .segmented label:has(input:checked) {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgb(var(--fg-rgb) / 0.14);
   color: var(--text);
   box-shadow: inset 0 0 0 1px var(--text);
 }
@@ -582,8 +553,8 @@ select {
 /* The chosen route: wash plus a brightened edge — chosen is white, like
    everything chosen in this system. */
 .option:has(input:checked) {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(255, 255, 255, 0.22);
+  background: rgb(var(--fg-rgb) / 0.07);
+  border-color: rgb(var(--fg-rgb) / 0.22);
 }
 
 /* Plain radios: a ring that fills with a white core when chosen. */
@@ -681,7 +652,7 @@ input.switch {
   flex-shrink: 0;
   border-radius: 11px;
   border: 1px solid var(--edge);
-  background: rgba(255, 255, 255, 0.1);
+  background: rgb(var(--fg-rgb) / 0.1);
   cursor: pointer;
   transition:
     background 0.16s ease,
@@ -795,8 +766,8 @@ input.switch:checked::after {
 }
 
 code {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgb(var(--fg-rgb) / 0.06);
+  border: 1px solid rgb(var(--fg-rgb) / 0.12);
   border-radius: 4px;
   padding: 1px 5px;
   font-size: 12px;
@@ -831,7 +802,7 @@ button {
 }
 
 button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgb(var(--fg-rgb) / 0.14);
 }
 
 button:active:not(:disabled) {
@@ -868,13 +839,13 @@ button.primary {
 }
 
 button.primary:hover:not(:disabled) {
-  background: #ffffff;
+  background: var(--text-strong);
 }
 
 /* Quiet pills: an edge and a label, brightening on hover. */
 button.ghost {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgb(var(--fg-rgb) / 0.14);
   color: var(--text-dim);
 }
 
@@ -896,8 +867,8 @@ button.ghost:disabled {
 /* Destructive pills: gray until you mean it — red names the consequence on
    hover only (the overlay discard key's grammar). */
 button.danger:hover:not(:disabled) {
-  background: rgba(248, 113, 113, 0.12);
-  border-color: rgba(248, 113, 113, 0.4);
+  background: rgb(var(--err-rgb) / 0.12);
+  border-color: rgb(var(--err-rgb) / 0.4);
   color: var(--err);
 }
 
@@ -982,7 +953,7 @@ ul.notes li::before {
   gap: 14px;
   max-width: 620px;
   margin: 0 0 20px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--fg-rgb) / 0.05);
   border: 1px solid var(--edge);
   border-radius: 12px;
   padding: 11px 14px;
@@ -995,7 +966,7 @@ ul.notes li::before {
 /* The banner's quiet white-wash note, inside the System prompt card. */
 .prompt-offer {
   margin: 0 0 14px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--fg-rgb) / 0.05);
   border: 1px solid var(--edge);
   border-radius: 12px;
   padding: 11px 14px;
@@ -1279,8 +1250,8 @@ footer {
 /* A darker inset tray inside the card: the model's note, its download
    progress, and its buttons. */
 .model-manage {
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: var(--tray);
+  border: 1px solid rgb(var(--fg-rgb) / 0.07);
   border-radius: 8px;
   padding: 12px 14px;
   margin-top: 12px;

@@ -21,6 +21,7 @@ const engines = require("./engines");
 const { deliver } = require("./output/deliver");
 const { deliverText } = require("./output/single-line");
 const history = require("./history");
+const usage = require("./usage");
 const { createLivePreview } = require("./live-preview");
 const { createPersistedRtfEstimator } = require("./util/rtf");
 const { wavDurationSec, wavSliceFromFrame } = require("./util/wav");
@@ -827,6 +828,17 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
     if (result.method === "clipboard-changed") {
       undelivered = deletedMeanwhile ? null : { text, at: new Date().toISOString(), historyId };
     } else if (result.method !== "cancelled") undelivered = null;
+    // Usage stats (#347): one count per take whose words landed, made after
+    // delivery so it costs the paste nothing, and before the stale check
+    // because a dismissed overlay doesn't undo a paste. Counts only, never
+    // text; a failure here is logged and nothing else changes.
+    if (result.method !== "cancelled" && result.method !== "clipboard-changed") {
+      try {
+        usage.record({ takeId: sid, words: usage.countWords(text), speechMs: wavDurationSec(wav) * 1000 }, cfg.usage);
+      } catch (err) {
+        logger.warn("usage record failed:", err?.message);
+      }
+    }
     if (stale()) return;
 
     if (result.method === "clipboard-changed") {

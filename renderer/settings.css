@@ -156,6 +156,10 @@ nav#tabs {
 #legend-history .legend-icon {
   color: var(--section-history);
 }
+[data-tab="usage"] .tab-icon,
+#legend-usage .legend-icon {
+  color: var(--section-usage);
+}
 [data-tab="advanced"] .tab-icon,
 #legend-advanced .legend-icon {
   color: var(--section-advanced);
@@ -1266,6 +1270,91 @@ footer {
 .model-manage .hint {
   margin-top: 0;
   margin-bottom: 11px;
+}
+
+/* ---------- usage (#347) ---------- */
+
+.usage-note {
+  margin: 0 0 12px;
+}
+
+/* Six figures, label over value; values stay under the 16px window title. */
+.usage-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 18px;
+  margin: 0;
+}
+
+.usage-stat dt {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.usage-stat dd {
+  margin: 3px 0 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-baseline {
+  margin-top: 14px;
+  max-width: 220px;
+}
+
+/* Last 14 days: the progress grammar (Track fill, white fill — never coral,
+   One Voice Rule), one row per day, the number in text beside its bar. */
+.usage-days {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.usage-day {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.usage-day-date,
+.usage-day-words {
+  font-family: var(--mono);
+  color: var(--text-dim);
+}
+
+.usage-day-words {
+  text-align: right;
+}
+
+.usage-day-track {
+  height: 6px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.usage-day-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: var(--text);
+}
+
+.usage-foot {
+  max-width: 620px;
+  margin-top: 10px;
+}
+
+@media (max-width: 600px) {
+  .usage-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* Download progress: the overlay's track/fill grammar. White, not coral —

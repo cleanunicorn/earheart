@@ -143,6 +143,7 @@ const PAIRS = [
   ["--section-stt", ["ink", "card"], TEXT, "section hue"],
   ["--section-cleanup", ["ink", "card"], TEXT, "section hue"],
   ["--section-history", ["ink", "card"], TEXT, "section hue"],
+  ["--section-usage", ["ink", "card"], TEXT, "section hue"],
   ["--section-advanced", ["ink", "card"], TEXT, "section hue"],
   ["--state-private", ["ink", "card", "own wash on card"], TEXT, "engine state badge (on-device)"],
   ["--state-external", ["ink", "card", "own wash on card"], TEXT, "engine state badge (leaves the device)"],

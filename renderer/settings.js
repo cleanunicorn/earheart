@@ -318,6 +318,9 @@ function populate() {
   $("recordings-days").value = current.recordings?.maxAgeDays ?? defaults.recordings.maxAgeDays;
   $("recordings-mb").value = current.recordings?.maxMegabytes ?? defaults.recordings.maxMegabytes;
   renderRecordingsStatus();
+  $("usage-enabled").checked = current.usage?.enabled !== false;
+  $("usage-off-hint").hidden = $("usage-enabled").checked;
+  $("typing-wpm").value = current.usage?.typingWpm ?? defaults.usage.typingWpm;
   $("output-single-line").checked = current.output.singleLine === true;
   $("updates-autocheck").checked = current.updates?.autoCheck !== false;
   $("updates-remind").checked = current.updates?.remind !== false;
@@ -445,6 +448,12 @@ function collect() {
       keep: $("recordings-keep").checked,
       maxAgeDays: Math.round(numInRange("recordings-days", current.recordings?.maxAgeDays ?? defaults.recordings.maxAgeDays)),
       maxMegabytes: Math.round(numInRange("recordings-mb", current.recordings?.maxMegabytes ?? defaults.recordings.maxMegabytes)),
+    },
+    // Usage counts (#347): the switch and the time-saved typing baseline.
+    usage: {
+      ...current.usage,
+      enabled: $("usage-enabled").checked,
+      typingWpm: Math.round(numInRange("typing-wpm", current.usage?.typingWpm ?? defaults.usage.typingWpm)),
     },
   };
 }
@@ -1110,6 +1119,7 @@ function limitAdjustments(saved, sent) {
     { id: "idle-unload", label: "Idle unload", unit: "min", value: saved.engines?.idleUnloadMinutes },
     { id: "recordings-days", label: "Delete recordings after", unit: "days", value: saved.recordings?.maxAgeDays },
     { id: "recordings-mb", label: "Keep at most", unit: "MB", value: saved.recordings?.maxMegabytes },
+    { id: "typing-wpm", label: "Typing speed", unit: "WPM", value: saved.usage?.typingWpm },
   ];
   return fields
     .filter(({ id, value }) => {
@@ -1265,6 +1275,7 @@ async function saveSettings() {
     if (unchanged($("idle-unload"))) $("idle-unload").value = current.engines.idleUnloadMinutes;
     if (unchanged($("recordings-days"))) $("recordings-days").value = current.recordings.maxAgeDays;
     if (unchanged($("recordings-mb"))) $("recordings-mb").value = current.recordings.maxMegabytes;
+    if (unchanged($("typing-wpm"))) $("typing-wpm").value = current.usage.typingWpm;
     // Main turns "keep" back off without secure storage: show what was saved.
     $("recordings-keep").checked = current.recordings.keep === true;
     renderRecordingsStatus();

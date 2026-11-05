@@ -48,6 +48,8 @@ function loadPipelineWith({ engines, settings, overrides = {} }) {
     [resolveFrom("./engines")]: engines,
     [resolveFrom("./output/deliver")]: { deliver: async () => ({}) },
     [resolveFrom("./history")]: { add() {} },
+    // Usage counts (#347) never touch the real userData from a test.
+    [resolveFrom("./usage")]: { record() {}, countWords: () => 0 },
     [resolveFrom("./live-preview")]: {
       createLivePreview: () => ({ cancel() {}, handleAudio() {}, snapshotFinal: () => null }),
     },
@@ -211,6 +213,8 @@ function loudWav(seconds) {
   return encodeWav(samples, SR);
 }
 
+const { countWords: realCountWords } = require("../main/usage");
+
 const exited = () => Object.assign(new Error("engine process exited"), { code: "ENGINE_EXITED", exitCode: 134 });
 
 // A pipeline wired to recording fakes, driven through its real IPC handlers:
@@ -237,6 +241,8 @@ function dictationRig({
   // `recordings` is absent (off) unless a test sets it.
   userData = os.tmpdir(),
   safeStorage = null,
+  // Replaces usage.record (#347); every call is still logged in log.usage.
+  usageRecord = () => true,
 } = {}) {
   const saved = []; // the History list, newest first, with the ids add() returned
   const log = {
@@ -247,6 +253,7 @@ function dictationRig({
     transcribe: [],
     delivered: [],
     history: [],
+    usage: [],
     notifications: [],
     logs: [],
     statuses: [],
@@ -270,6 +277,7 @@ function dictationRig({
     cleanup: { enabled: cleanup, engine: "builtin" },
     output: {},
     history: { enabled: true, limit: 100 },
+    usage: { enabled: true, typingWpm: 40 },
     audio: { deviceId: "", maxRecordingSeconds: 300 },
     engines: { idleUnloadMinutes: 0 },
   };
@@ -401,6 +409,13 @@ function dictationRig({
       },
       "./util/rtf": {
         createPersistedRtfEstimator: () => ({ record() {}, progressAt: () => 0.5, estimate: () => 0.1 }),
+      },
+      "./usage": {
+        countWords: realCountWords,
+        record: (take, usageCfg) => {
+          log.usage.push({ ...take, cfg: usageCfg });
+          return usageRecord(take, usageCfg);
+        },
       },
     },
   });
@@ -2348,4 +2363,119 @@ test("pipeline: capture events from a stale session or outside recording are ign
   assert.deepStrictEqual(seen, [true, false]);
   assert.strictEqual(rig.pipeline.getState(), "idle");
   assert.ok(rig.log.logs.some(([level, msg]) => level === "warn" && /capture listener failed/.test(msg)));
+});
+
+/* ---- Usage stats (#347): one count per take whose words landed ---- */
+
+test("pipeline: usage records once per delivered take, with its words, duration and settings", async () => {
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "  run the   whole test suite " });
+  await rig.dictate(speechWav(30));
+  assert.strictEqual(rig.log.usage.length, 1);
+  const [take] = rig.log.usage;
+  assert.strictEqual(take.words, 5, "the delivered text's words");
+  assert.strictEqual(Math.round(take.speechMs), 30000, "the whole take's duration");
+  assert.strictEqual(typeof take.takeId, "number");
+  assert.strictEqual(take.cfg, rig.cfg.usage, "the usage settings are handed over");
+  assert.ok(!("text" in take) && !("raw" in take), "counts only, never text");
+
+  // Another take is another count, under its own id.
+  await rig.dictate(speechWav(2));
+  assert.strictEqual(rig.log.usage.length, 2);
+  assert.notStrictEqual(rig.log.usage[1].takeId, take.takeId);
+});
+
+test("pipeline: usage counts with History off", async () => {
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "hello there" });
+  rig.cfg.history.enabled = false;
+  await rig.dictate(speechWav(2));
+  assert.deepStrictEqual(rig.log.history, []);
+  assert.strictEqual(rig.log.usage.length, 1);
+  assert.strictEqual(rig.log.usage[0].words, 2);
+});
+
+test("pipeline: usage counts the clipboard fallback and a partial paste, not a cancelled or held-back delivery", async () => {
+  let result;
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => "some words",
+    deliver: async () => result,
+  });
+  for (const [method, counted] of [
+    ["paste", true],
+    ["clipboard", true],
+    ["paste+clipboard", true],
+    ["partial", true],
+    ["cancelled", false],
+    ["clipboard-changed", false],
+  ]) {
+    result = { method, ...(method === "clipboard-changed" ? { hint: "nothing was pasted" } : {}) };
+    const before = rig.log.usage.length;
+    await rig.dictate(speechWav(2));
+    assert.strictEqual(rig.log.usage.length - before, counted ? 1 : 0, method);
+  }
+});
+
+test("pipeline: usage counts nothing for an empty transcript or a failed delivery", async () => {
+  const empty = dictationRig({ engine: "remote", transcribe: async () => "" });
+  await empty.dictate(speechWav(2));
+  assert.deepStrictEqual(empty.log.usage, []);
+
+  const broken = dictationRig({
+    engine: "remote",
+    transcribe: async () => "words",
+    deliver: async () => {
+      throw new Error("paste tool missing");
+    },
+  });
+  await broken.dictate(speechWav(2));
+  assert.deepStrictEqual(broken.log.usage, []);
+});
+
+test("pipeline: a failed transcription counts nothing, and its retry counts once", async () => {
+  const stt = flakyStt();
+  const rig = dictationRig({ engine: "remote", transcribe: stt.transcribe });
+  await rig.dictate(speechWav(4));
+  assert.deepStrictEqual(rig.log.usage, []);
+  stt.down = false;
+  assert.strictEqual(await retried(rig), true);
+  assert.strictEqual(rig.log.usage.length, 1);
+  assert.strictEqual(rig.log.usage[0].words, 3);
+  assert.strictEqual(Math.round(rig.log.usage[0].speechMs), 4000);
+  assert.strictEqual(await retried(rig), false);
+  assert.strictEqual(rig.log.usage.length, 1);
+});
+
+test("pipeline: a usage failure never blocks delivery or shows an error", async () => {
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => "keep my words",
+    usageRecord: () => {
+      throw new Error("usage disk exploded");
+    },
+  });
+  await rig.dictate(speechWav(2));
+  assert.deepStrictEqual(rig.log.delivered, ["keep my words"]);
+  assert.strictEqual(rig.log.usage.length, 1);
+  assert.ok(rig.log.statuses.includes("done"));
+  assert.ok(!rig.log.statuses.includes("error"));
+  assert.deepStrictEqual(rig.log.notifications, []);
+  assert.ok(rig.log.logs.some(([level, msg, detail]) => level === "warn" && /usage record failed/.test(msg) && /exploded/.test(detail)));
+});
+
+test("pipeline: only a delivered dictation counts — retranscribe and the live preview never call usage", () => {
+  // One call site, in process() after deliver(): History's Retranscribe
+  // (retranscribe.js) and live-preview chunks never reach it.
+  const mainDir = path.join(__dirname, "..", "main");
+  const callers = [];
+  for (const file of fs.readdirSync(mainDir, { recursive: true })) {
+    if (!String(file).endsWith(".js") || String(file) === "usage.js") continue;
+    const source = fs.readFileSync(path.join(mainDir, String(file)), "utf8");
+    const count = (source.match(/usage\.record\(/g) || []).length;
+    if (count) callers.push([String(file), count]);
+  }
+  assert.deepStrictEqual(callers, [["pipeline.js", 1]]);
+  const source = fs.readFileSync(pipelinePath, "utf8");
+  const processBody = source.slice(source.indexOf("async function process("), source.indexOf("function retranscribe("));
+  const recordAt = processBody.indexOf("usage.record(");
+  assert.ok(recordAt > processBody.indexOf("await deliver("), "counted after delivery");
 });

@@ -25,6 +25,7 @@ colors:
   section-stt: "#48b7c2"
   section-cleanup: "#b49ce1"
   section-history: "#d389ba"
+  section-usage: "#75b683"
   section-advanced: "#c49f4d"
   state-private: "#16bbbc"
   state-external: "#ea9941"
@@ -53,6 +54,7 @@ colors:
   section-stt-light: "#14707a"
   section-cleanup-light: "#6a578f"
   section-history-light: "#854e73"
+  section-usage-light: "#3e6e48"
   section-advanced-light: "#7b5f1b"
   state-private-light: "#006869"
   state-external-light: "#994500"
@@ -346,7 +348,7 @@ each barred from the overlay and the wizard.
 - **Idle Gray** (`idle-gray`): the idle / nothing-heard status dot.
 
 ### Wayfinding hues (settings window only)
-Six hues, one per settings section, worn by the index glyph and its matching
+Seven hues, one per settings section, worn by the index glyph and its matching
 legend glyph and nothing else. Derived in OKLCH at one lightness and chroma
 (L≈0.72, C≈0.10) so no section outranks another; each clears 6.8:1 on Bar Ink.
 The light set keeps the hues at L≈0.50, C≈0.09 (cyan at its in-gamut ≈0.08)
@@ -357,6 +359,7 @@ They name a place, never a state.
 - **Section Speech-to-text** (`section-stt`, #48b7c2): cyan — captions glyph.
 - **Section Cleanup** (`section-cleanup`, #b49ce1): violet — sparkle glyph.
 - **Section History** (`section-history`, #d389ba): magenta — clock glyph.
+- **Section Usage** (`section-usage`, #75b683): sage — bar-chart glyph.
 - **Section Advanced** (`section-advanced`, #c49f4d): gold — sliders glyph.
 
 ### Consequence hues (settings window only)
@@ -396,7 +399,7 @@ Failed Red text plus a red wash (rgba(248, 113, 113, 0.12), pills add a
 rgba(248, 113, 113, 0.4) border) on hover only — red names the consequence at
 the moment of intent, never at rest.
 
-**The Wayfinding Hue Rule.** The five section hues live on the settings
+**The Wayfinding Hue Rule.** The section hues live on the settings
 window's index and legend glyphs and nowhere else. Each is constant for its
 section — unmoved by hover, active, or the scroll spy — so the color reads as
 a landmark rather than a state cue; "you are here" stays Hover Wash + Primary
@@ -728,7 +731,9 @@ transcription** and a quiet **Discard**.
 - Overlay: 3px hairline tracks (Track fill, 2px radius); dictation progress
   fills Coral Voice, the update download fills white. Settings/wizard
   download and update bars (`.dl-bar`): 6px tracks (Track fill, 2px radius)
-  with solid white fills — always white, never coral (One Voice Rule). All
+  with solid white fills — always white, never coral (One Voice Rule). The
+  Usage section's per-day bars (`.usage-day-track`) are the same 6px track and
+  white fill, a static measure with the number in text beside it. All
   fills ease `width 0.15s linear`, driven from JS.
 - The overlay's dictation progress overlays the bottom of the wave area
   absolutely, so appearing never changes card height.

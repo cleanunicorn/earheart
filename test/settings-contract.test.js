@@ -862,6 +862,7 @@ test("Save names each limit it stored differently from what was typed", () => {
       "idle-unload": { value: idle, ...inputRange("idle-unload") },
       "recordings-days": { value: rec[0], ...inputRange("recordings-days") },
       "recordings-mb": { value: rec[1], ...inputRange("recordings-mb") },
+      "typing-wpm": { value: "", ...inputRange("typing-wpm") },
     };
     const sent = new Map(Object.values(elements).map((el) => [el, { value: el.value }]));
     for (const [id, value] of Object.entries(edited)) elements[id].value = value;
@@ -967,4 +968,87 @@ test("'Deliver as one line' is saved from and shown in its switch", () => {
   assert.match(html, /<input type="checkbox" id="output-single-line" class="switch" role="switch" \/>/);
   assert.match(js, /singleLine: \$\("output-single-line"\)\.checked/);
   assert.match(js, /\$\("output-single-line"\)\.checked = current\.output\.singleLine === true/);
+});
+
+/* ---- Settings → Usage (#347) ---- */
+
+const usageJs = fs.readFileSync(path.join(RENDERER, "usage-stats.js"), "utf8");
+
+test("every id usage-stats.js references exists in settings.html", () => {
+  const referenced = [...usageJs.matchAll(/\bel\(\s*"([a-z0-9-]+)"\s*\)/g)].map((m) => m[1]);
+  assert.ok(referenced.length > 10, `expected many referenced ids, got ${referenced.length}`);
+  const missing = [...new Set(referenced)].filter((id) => !htmlIds.has(id)).sort();
+  assert.deepStrictEqual(missing, [], `settings.html is missing ids: ${missing.join(", ")}`);
+  // settings.js fills and saves the two controls.
+  for (const id of ["usage-enabled", "typing-wpm", "usage-off-hint"]) assert.ok(js.includes(`$("${id}")`), id);
+});
+
+test("usage-stats.js loads before settings.js, and the Usage section sits between History and Advanced", () => {
+  const own = html.indexOf('src="settings.js"');
+  const usage = html.indexOf('src="usage-stats.js"');
+  assert.ok(usage !== -1 && usage < own);
+  const order = [...html.matchAll(/<section id="tab-([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepStrictEqual(order.slice(order.indexOf("history"), order.indexOf("history") + 3), ["history", "usage", "advanced"]);
+  // A new section takes its own wayfinding hue (DESIGN.md).
+  assert.ok(definesRule('[data-tab="usage"] .tab-icon'));
+  assert.match(tokensCss, /--section-usage:\s*#[0-9a-f]{6}/);
+});
+
+test("the Usage section never parses text as HTML and uses no colour literals", () => {
+  for (const sink of ["innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "DOMParser", "createContextualFragment"]) {
+    assert.ok(!usageJs.includes(sink), `usage-stats.js must not use ${sink}`);
+  }
+  const start = cssRules.indexOf(".usage-note");
+  const end = cssRules.indexOf(".dl-bar");
+  assert.ok(start !== -1 && end > start, "the usage rules moved");
+  const rules = cssRules.slice(start, end);
+  assert.doesNotMatch(rules, /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i, "usage rules use tokens only");
+  assert.doesNotMatch(rules, /var\(--accent\)/, "no coral on a non-voice surface (One Voice Rule)");
+});
+
+test("the typing-speed field offers exactly the range main clamps to", () => {
+  const settingsJs = fs.readFileSync(path.join(__dirname, "..", "main", "settings.js"), "utf8");
+  const match = settingsJs.match(/section: "usage", key: "typingWpm", min: (\d+), max: (\d+)/);
+  assert.ok(match);
+  const range = inputRange("typing-wpm");
+  assert.deepStrictEqual([String(range.min), String(range.max)], [match[1], match[2]]);
+  assert.strictEqual(DEFAULTS.usage.typingWpm, 40);
+  assert.strictEqual(DEFAULTS.usage.enabled, true);
+});
+
+test("the Usage figures say the time saved is an estimate against the stated baseline", () => {
+  const { usageFormatDuration, usageView } = require("../renderer/usage-stats.js");
+  assert.strictEqual(usageFormatDuration(0), "0 s");
+  assert.strictEqual(usageFormatDuration(NaN), "0 s");
+  assert.strictEqual(usageFormatDuration(45_000), "45 s");
+  assert.strictEqual(usageFormatDuration(12 * 60_000), "12 min");
+  assert.strictEqual(usageFormatDuration(2 * 3600_000), "2 h");
+  assert.strictEqual(usageFormatDuration((2 * 60 + 41) * 60_000), "2 h 41 min");
+
+  const summary = {
+    since: "2026-11-03",
+    totals: { takes: 1, words: 120, speechMs: 60_000 },
+    avgWpm: 120,
+    timeSavedMs: 120_000,
+    typingWpm: 40,
+    streak: { current: 2, longest: 5 },
+    days: [],
+    readOnly: false,
+  };
+  const view = usageView(summary);
+  assert.strictEqual(view.wpm, "120 WPM");
+  assert.strictEqual(view.saved, "≈ 2 min");
+  assert.strictEqual(view.streak, "2 days (best 5)");
+  assert.strictEqual(view.baseline, "40");
+  assert.strictEqual(view.readOnly, "");
+  assert.match(view.since, /^Counting since .*2026.*\.$/);
+  const empty = usageView({ ...summary, totals: { takes: 0, words: 0, speechMs: 0 }, avgWpm: null, timeSavedMs: null, streak: { current: 1, longest: 1 } });
+  assert.strictEqual(empty.empty, true);
+  assert.strictEqual(empty.wpm, "—");
+  assert.strictEqual(empty.saved, "—");
+  assert.strictEqual(empty.streak, "1 day");
+  assert.match(usageView({ ...summary, readOnly: "newer" }).readOnly, /newer version/);
+  // The markup labels the figure and discloses the baseline beside it.
+  assert.match(html, /<dt>Time saved \(estimate\)<\/dt>/);
+  assert.match(html, /Estimate: typing these words at <span id="usage-baseline">40<\/span> WPM, minus the time you spent speaking them\. Not measured\./);
 });

@@ -63,6 +63,7 @@
   --section-stt: #48b7c2; /* cyan */
   --section-cleanup: #b49ce1; /* violet */
   --section-history: #d389ba; /* magenta */
+  --section-usage: #75b683; /* sage */
   --section-advanced: #c49f4d; /* gold */
 
   /* Engine-choice state color: what Built-in vs OpenAI-compatible actually
@@ -107,6 +108,7 @@
     --section-stt: #14707a;
     --section-cleanup: #6a578f;
     --section-history: #854e73;
+    --section-usage: #3e6e48;
     --section-advanced: #7b5f1b;
 
     --state-private: #006869;

@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.46.0 — 2026-11-05
+
+- History search, kept dictation audio, aliases and audio ducking (#361)
+
 ## v0.45.1 — 2026-10-25
 
 - Ship the notarized macOS build that v0.45.0 left out (#333)

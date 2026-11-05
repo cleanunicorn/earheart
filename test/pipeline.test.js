@@ -442,6 +442,18 @@ test("pipeline: record:start forwards the saved max dictation length to the over
   assert.strictEqual(rig.log.lastStart.maxSeconds, 420);
 });
 
+test("pipeline: record:start carries the record sounds only when they are on (#341)", () => {
+  const rig = dictationRig({ transcribe: async () => "unused" });
+  rig.pipeline.toggle();
+  assert.strictEqual(rig.log.lastStart.sounds, null, "off by default: the overlay plays nothing");
+  rig.pipeline.cancel();
+
+  rig.cfg.audio.recordSounds = true;
+  rig.cfg.audio.recordSoundVolumePercent = 40;
+  rig.pipeline.toggle();
+  assert.deepStrictEqual(rig.log.lastStart.sounds, { volume: 0.4 });
+});
+
 test("pipeline: record:start names the discard hotkey for the ✕ key's tooltip", () => {
   const { prettyHotkey } = require("../main/util/hotkey-label");
   const rig = dictationRig({ transcribe: async () => "unused" });

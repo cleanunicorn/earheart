@@ -655,6 +655,10 @@ function startRecording() {
       sid,
       deviceId: cfg.audio.deviceId,
       maxSeconds: cfg.audio.maxRecordingSeconds,
+      // Start/stop/error cues (#341), read per take like the cap; null = off.
+      sounds: cfg.audio.recordSounds
+        ? { volume: cfg.audio.recordSoundVolumePercent / 100 }
+        : null,
       // Named in the ✕ key's tooltip, so the keyboard route is discoverable.
       discardHotkey: prettyHotkey(cfg.discardHotkey),
       // Chunked partial decoding runs whenever STT is builtin (the committed

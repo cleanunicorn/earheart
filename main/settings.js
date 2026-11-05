@@ -170,6 +170,10 @@ const DEFAULTS = {
     duckOtherAudio: false,
     // The lowered level, as a percentage of the volume before the take.
     duckLevelPercent: 20,
+    // Short tones when capture really starts and stops, and on a mic failure
+    // (#341, renderer/record-cues.js). Off by default.
+    recordSounds: false,
+    recordSoundVolumePercent: 60,
   },
   engines: {
     // Built-in STT/cleanup models stay resident for fast repeat dictations,
@@ -397,6 +401,7 @@ function migrateLegacy(stored) {
 const LIMITS = [
   { section: "audio", key: "maxRecordingSeconds", min: 10, max: 3600 },
   { section: "audio", key: "duckLevelPercent", min: 0, max: 80 },
+  { section: "audio", key: "recordSoundVolumePercent", min: 5, max: 100 },
   { section: "engines", key: "idleUnloadMinutes", min: 0, max: 240 },
   // Settings → History's recording limits (#recordings-days, #recordings-mb).
   { section: "recordings", key: "maxAgeDays", min: 1, max: 365 },

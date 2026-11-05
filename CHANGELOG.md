@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.48.0 — 2026-11-05
+
+- Remember mishearings as dictionary aliases (#357)
+
 ## v0.47.0 — 2026-11-05
 
 - Optionally keep dictation audio for replay, export and retranscription (#356)

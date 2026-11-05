@@ -181,6 +181,12 @@ const DEFAULTS = {
     enabled: true,
     limit: 100,
   },
+  // Local usage counts (#347, main/usage.js): takes, words and speech time,
+  // never text. typingWpm is the baseline the "time saved" estimate uses.
+  usage: {
+    enabled: true,
+    typingWpm: 40,
+  },
   // Retained dictation audio (#343, main/audio-store.js): off unless the user
   // turns it on, and only where the OS offers real secure storage (save()
   // refuses `keep` otherwise). Kept recordings go after maxAgeDays or, oldest
@@ -401,6 +407,8 @@ const LIMITS = [
   // Settings → History's recording limits (#recordings-days, #recordings-mb).
   { section: "recordings", key: "maxAgeDays", min: 1, max: 365 },
   { section: "recordings", key: "maxMegabytes", min: 50, max: 10240 },
+  // Settings → Usage's typing-speed baseline (#typing-wpm).
+  { section: "usage", key: "typingWpm", min: 10, max: 200 },
 ];
 
 // Clamp each limit into its range (rounded to whole units); a non-finite value

@@ -456,3 +456,17 @@ test("keeping recordings turns on with secure storage, and its limits are clampe
   settings.save({ ...cfg, recordings: { keep: "yes", maxAgeDays: Number.NaN, maxMegabytes: 49 } });
   assert.deepStrictEqual(settings.get().recordings, { keep: false, maxAgeDays: 30, maxMegabytes: 50 });
 });
+
+test("usage counting is on by default, and its typing baseline is clamped to 10–200 WPM", (t) => {
+  const dir = makeDir(t);
+  const { settings } = loadSettings(t, dir);
+  const cfg = settings.get();
+  assert.deepStrictEqual(cfg.usage, { enabled: true, typingWpm: 40 });
+  settings.save({ ...cfg, usage: { enabled: false, typingWpm: 5 } });
+  assert.deepStrictEqual(settings.get().usage, { enabled: false, typingWpm: 10 });
+  settings.save({ ...cfg, usage: { enabled: true, typingWpm: 900.4 } });
+  assert.strictEqual(settings.get().usage.typingWpm, 200);
+  settings.save({ ...cfg, usage: { enabled: true, typingWpm: Number.NaN } });
+  assert.strictEqual(settings.get().usage.typingWpm, 40);
+  assert.strictEqual(readFile(dir).usage.typingWpm, 40);
+});

@@ -55,6 +55,13 @@ function usageView(summary) {
   };
 }
 
+// What the section says when main couldn't hand over the counts.
+function usageLoadError(hadFigures) {
+  return hadFigures
+    ? "Usage statistics could not be refreshed; these numbers may be out of date."
+    : "Usage statistics could not be loaded.";
+}
+
 (function initUsageStats() {
   if (typeof document === "undefined" || typeof earheart === "undefined") return;
   const el = (id) => document.getElementById(id);
@@ -101,16 +108,29 @@ function usageView(summary) {
     renderDays(summary.days);
   }
 
+  // The figures start as "—" (markup), never a 0 that would read as a real
+  // count. A failed fetch says so: before any summary arrived, that nothing
+  // could be loaded; after one, that the figures shown may be out of date.
   let refreshing = 0;
+  let loaded = false;
   async function refresh() {
     const ticket = ++refreshing;
     let res;
     try {
       res = await earheart.invoke("usage:get");
-    } catch {
-      return; // the numbers on screen stay; nothing here is worth an error
+    } catch (err) {
+      res = { ok: false, error: err?.message || String(err) };
     }
-    if (ticket !== refreshing || !res?.ok) return;
+    if (ticket !== refreshing) return;
+    const status = el("usage-load-status");
+    status.textContent = ""; // emptied first, so a repeat failure is announced again
+    if (!res?.ok || !res.summary) {
+      status.hidden = false;
+      status.textContent = usageLoadError(loaded);
+      return;
+    }
+    status.hidden = true;
+    loaded = true;
     render(res.summary);
   }
 
@@ -146,5 +166,5 @@ function usageView(summary) {
 
 // Exported for unit tests only (permission-status.js pattern).
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { usageFormatDuration, usageFormatCount, usageView };
+  module.exports = { usageFormatDuration, usageFormatCount, usageView, usageLoadError };
 }

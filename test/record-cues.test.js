@@ -168,6 +168,13 @@ test("cueLengthMs: the start cue is short, error is distinct, unknown is 0", () 
   }
 });
 
+test("guard budget: the post-cue tail stays at or under 50 ms (amendment A2)", () => {
+  // An independent bound, not derived from the constant: a longer tail is
+  // more of every hurried first word lost.
+  assert.ok(GUARD_TAIL_S > 0 && GUARD_TAIL_S <= 0.05, String(GUARD_TAIL_S));
+  assert.ok(cueLengthMs("start") <= 100 && cueLengthMs("stop") <= 100);
+});
+
 test("guardEndFrame: cue end + output + input latency + tail, with no upper clamp", () => {
   const near = (a, b) => assert.ok(Math.abs(a - b) <= 1, `${a} ≈ ${b}`);
   near(

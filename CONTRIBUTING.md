@@ -261,6 +261,8 @@ renderer/                overlay (mic capture → 16 kHz WAV, live transcript
   transcript.js          pure two-layer (raw/cleaned) reconcile helper
   recorder-worklet.js    AudioWorklet: PCM + level from the audio thread
   microphone.js          mic constraints + error classification (overlay)
+  record-cues.js         optional start/stop/error tones: lifecycle reducer,
+                         start-cue guard by capture frame, Web Audio playback
   chunk-boundary.js      where to cut a live chunk at the hard cap
   speech-probe.js        did a committed chunk carry speech?
   hotkey-capture.js      shared classic-script hotkey capture (settings + wizard);

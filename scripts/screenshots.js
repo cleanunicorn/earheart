@@ -65,10 +65,12 @@ async function main() {
   await sleep(1200);
   await shot(settings, "settings");
   // The Microphone card with "Lower other audio while recording" turned on
-  // (docs/audio-ducking.md). The page only reads the toggle; the status line
-  // comes from a fixed answer, as main/ducking/ would give on Linux.
+  // (docs/audio-ducking.md), and the record sounds too (docs/record-sounds.md).
+  // The page only reads the toggles; the status line comes from a fixed
+  // answer, as main/ducking/ would give on Linux.
   await settings.webContents.executeJavaScript(`(() => {
     document.getElementById("duck-other-audio").checked = true;
+    document.getElementById("record-sounds").checked = true;
     document.getElementById("duck-status").textContent = "Uses pactl to change the output volume.";
     document.getElementById("duck-level").closest(".card").scrollIntoView({ block: "center" });
   })()`);

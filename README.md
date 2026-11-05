@@ -160,6 +160,11 @@ label, and opinions are welcome.
   alone. Uses `pactl`/`wpctl` on Linux, `osascript` on macOS, and Core Audio
   through PowerShell on Windows; when none is available Settings says so and
   dictation works as usual. See [docs/audio-ducking.md](docs/audio-ducking.md).
+- **Sounds when recording starts and stops (optional)** — turn on **Play sounds
+  when recording starts and stops** in Settings → General → Microphone for a
+  short tone once the microphone is really capturing, another when you stop, and
+  a low one if the microphone fails. Speak after the start tone: it is kept out
+  of the recording. Off by default. See [docs/record-sounds.md](docs/record-sounds.md).
 - **Private by default** — speech and cleanup run in-process, with no account,
   telemetry, cloud requirement, or network hop.
 - **Works anywhere without an integration** — the global hotkey (default

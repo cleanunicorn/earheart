@@ -146,6 +146,20 @@
             <input id="duck-level" type="number" min="0" max="80" step="5" />
             <p id="duck-status" class="hint" aria-live="polite">Checking this system's volume controls…</p>
           </div>
+          <label class="toggle">
+            <span class="toggle-text">
+              <span class="t">Play sounds when recording starts and stops</span>
+              <span class="d">A short tone once the microphone is really capturing — speak after it — another when you stop, and a low one if the microphone fails. The start tone is kept out of the recording.</span>
+            </span>
+            <input type="checkbox" id="record-sounds" class="switch" role="switch" />
+          </label>
+          <div class="field">
+            <label for="record-sound-volume">Sound volume (%)</label>
+            <div class="row">
+              <input id="record-sound-volume" type="number" min="5" max="100" step="5" />
+              <button id="record-sound-test" class="ghost" type="button" aria-label="Play the start and stop sounds">Play</button>
+            </div>
+          </div>
         </div>
 
         <div class="card">
@@ -751,6 +765,7 @@
     <script src="permission-status.js"></script>
     <script src="model-progress.js"></script>
     <script src="model-save.js"></script>
+    <script src="record-cues.js"></script>
     <script src="settings.js"></script>
   </body>
 </html>

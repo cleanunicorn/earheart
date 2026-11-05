@@ -180,6 +180,11 @@ label, and opinions are welcome.
 - **Local history** — recent transcriptions stay in a local JSON file, so a
   mis-aimed paste never loses a dictation. Search it, delete single entries,
   or turn it off.
+- **Usage stats** — Settings → Usage shows how many takes and words you've
+  dictated, your speaking speed, a streak, the last 14 days and an estimate
+  of the typing time saved (against a typing speed you set, 40 WPM by
+  default). Counts only, never your words, on this computer only; turn it
+  off or reset it there. See [docs/usage-stats.md](docs/usage-stats.md).
 - **Kept recordings (optional)** — opt in to keep each dictation's audio,
   encrypted with your OS keychain, then play, seek, export or retranscribe it
   from History. Off by default; 30 days and 1 GB unless you change them.

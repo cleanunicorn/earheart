@@ -222,6 +222,7 @@ main/                    Electron main process
   settings.js            JSON settings with deep-merged defaults, atomic 0600 writes
   secret-store.js        remote API keys at rest: safeStorage encryption + status
   history.js             local transcription history: stable entry ids, search, single delete
+  usage.js               local usage counts (#347): takes/words/speech time per day, never text
   audio-store.js         kept recordings (#343): AES-GCM files under a safeStorage-wrapped key, limits
   recordings.js          when a recording is kept, pruning, export, retranscription (no delivery)
   tray.js                tray icon + menu

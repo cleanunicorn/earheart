@@ -6,20 +6,23 @@
 //
 // The tones are synthesized with Web Audio — no asset files, no fetch, no
 // decode latency — so each cue's length is an exact constant. The overlay
-// relies on that: the start cue plays while the microphone is already open, so
-// the samples captured during it (plus output latency and room tail) are
-// dropped before the take begins (cueGuardSamples / trimGuard), keeping the
-// tone out of the transcript and the saved recording.
+// relies on that: the start cue plays while the microphone is already open, on
+// the recording context's own clock, so the capture frames it can reach (cue
+// end + output and input latency + a short tail) are known exactly and dropped
+// before the take begins (guardEndFrame / admitChunk), keeping the tone out of
+// the transcript and the saved recording.
 
-// Each cue: sine notes, `at`/`dur` in seconds from the cue's start.
+// Each cue: sine notes, `at`/`dur` in seconds from the cue's start. Start and
+// stop stay at or under ~100 ms: the start cue's span is dropped from the
+// take, so every millisecond of it is onset a hurried speaker could lose.
 const CUES = {
   start: [
-    { freq: 660, at: 0, dur: 0.055 },
-    { freq: 880, at: 0.06, dur: 0.06 },
+    { freq: 660, at: 0, dur: 0.045 },
+    { freq: 880, at: 0.05, dur: 0.045 },
   ],
   stop: [
-    { freq: 880, at: 0, dur: 0.055 },
-    { freq: 660, at: 0.06, dur: 0.06 },
+    { freq: 880, at: 0, dur: 0.045 },
+    { freq: 660, at: 0.05, dur: 0.045 },
   ],
   // Lower and longer than the other two, so a failure never sounds like either.
   error: [
@@ -38,42 +41,55 @@ const CUE_LEAD_S = 0.005;
 // Exponential ramps cannot reach 0; this is inaudible.
 const CUE_FLOOR_GAIN = 0.0001;
 
-// Extra room after the cue for reverb and the echo canceller to settle, and
-// the bounds of the whole guard: at least long enough to cover the tone on a
-// fast output, never so long that a word started over the cue loses more than
-// a syllable's onset.
-const GUARD_TAIL_MS = 80;
-const GUARD_MIN_MS = 150;
-const GUARD_MAX_MS = 450;
+// After the cue's last sample leaves the speaker and reaches the capture
+// timeline, this much more is dropped for room reverb and the echo canceller.
+const GUARD_TAIL_S = 0.05;
+// Used when the platform does not report a latency (a non-finite or negative
+// value). Deliberately generous: an unknown output path may be Bluetooth
+// (100–300 ms), and an unknown latency must never let the cue into the take.
+const FALLBACK_OUTPUT_LATENCY_S = 0.3;
+const FALLBACK_INPUT_LATENCY_S = 0.05;
 
 // A cue's length in milliseconds, from its last note's end (0 for an unknown cue).
 function cueLengthMs(name) {
   const notes = CUES[name];
   if (!notes) return 0;
-  return Math.round(Math.max(...notes.map((n) => n.at + n.dur)) * 1000 + CUE_LEAD_S * 1000);
+  return Math.round((Math.max(...notes.map((n) => n.at + n.dur)) + CUE_LEAD_S) * 1000);
 }
 
-// How many captured samples to drop after the start cue begins: the cue, the
-// output path's latency (Bluetooth adds 100–300 ms), and a tail, clamped to
-// [GUARD_MIN_MS, GUARD_MAX_MS]. A cue that did not play (cueMs 0) guards
-// nothing, so a failed sound never costs the user any audio.
-function cueGuardSamples({ cueMs, outputLatency, baseLatency, sampleRate }) {
-  if (!(cueMs > 0) || !(sampleRate > 0)) return 0;
-  const seconds = (value) => (Number.isFinite(value) && value > 0 ? value : 0);
-  const ms = cueMs + (seconds(outputLatency) + seconds(baseLatency)) * 1000 + GUARD_TAIL_MS;
-  const clamped = Math.min(GUARD_MAX_MS, Math.max(GUARD_MIN_MS, ms));
-  return Math.round((clamped * sampleRate) / 1000);
+const knownLatency = (value, fallback) => (Number.isFinite(value) && value >= 0 ? value : fallback);
+
+// The first capture frame that may join the take after a start cue whose last
+// note ends at `cueEnd` (seconds on the RECORDING context's clock — the cue is
+// scheduled there, so the worklet's frames and the cue share one timeline).
+// The cue leaves the speaker `outputLatency + baseLatency` after it is
+// rendered and reaches the capture timeline `inputLatency` after that; then a
+// short tail. No upper clamp: a long output path lengthens the guard rather
+// than letting the cue's tail into the recording.
+function guardEndFrame({ cueEnd, outputLatency, baseLatency, inputLatency, sampleRate }) {
+  if (!Number.isFinite(cueEnd) || !(sampleRate > 0)) return 0;
+  const seconds =
+    cueEnd +
+    knownLatency(outputLatency, FALLBACK_OUTPUT_LATENCY_S) +
+    knownLatency(baseLatency, 0) +
+    knownLatency(inputLatency, FALLBACK_INPUT_LATENCY_S) +
+    GUARD_TAIL_S;
+  return Math.ceil(seconds * sampleRate);
 }
 
-// Drop up to `remaining` samples from the front of a captured chunk. `kept` is
-// what joins the take (possibly empty); `remaining` is what is still to drop.
-function trimGuard(samples, remaining) {
-  const drop = Math.max(0, Math.floor(remaining) || 0);
-  if (drop === 0) return { kept: samples, remaining: 0 };
-  if (samples.length <= drop) {
-    return { kept: samples.subarray(0, 0), remaining: drop - samples.length };
-  }
-  return { kept: samples.subarray(drop), remaining: 0 };
+// Admit one worklet post against a guard ending at frame `until` (0 = none).
+// `frame` is the capture frame of samples[0]. Returns what joins the take and
+// whether the guard is spent — decided by capture position alone, so posts
+// delayed or bunched by a busy renderer are cut exactly where the cue ends.
+// A post without a usable frame passes whole and ends the guard: a missing
+// position must never swallow the user's words.
+function admitChunk(samples, frame, until) {
+  if (!(until > 0) || !Number.isFinite(frame)) return { kept: samples, guardDone: true };
+  const drop = Math.min(samples.length, Math.max(0, until - frame));
+  return {
+    kept: drop === 0 ? samples : samples.subarray(drop),
+    guardDone: frame + samples.length >= until,
+  };
 }
 
 // The cue lifecycle, one session (sid) at a time. Phases:
@@ -120,53 +136,144 @@ function cueStep(state, event) {
   }
 }
 
-// Schedule a cue on `ctx` at `volume` (0–1). Returns the cue's length in ms,
-// or 0 when nothing was scheduled (sounds off, volume 0, no context, or the
-// audio stack threw). Never throws: a cue is a courtesy, and a failure here
-// must not reach the capture code that called it.
+// Schedule a cue on `ctx` at `volume` (0–1). Transactional: every node is
+// built before any starts, and if starting fails part-way the notes already
+// started are stopped and disconnected. Returns null when nothing sounds
+// (volume 0, no context, unknown cue, or the audio stack threw) — the caller
+// then guards nothing — else a handle:
+//   { name, ms, startTime, endTime, stop() }
+// endTime is the last note's end on ctx's clock; stop() silences the cue now.
+// Never throws: a cue is a courtesy and must not break the capture code.
 function playCue(ctx, name, volume) {
   const notes = CUES[name];
   const level = Number(volume);
-  if (!ctx || !notes || !Number.isFinite(level) || level <= 0) return 0;
+  if (!ctx || !notes || !Number.isFinite(level) || level <= 0) return null;
+  let voices;
   try {
     const peak = Math.min(1, level) * CUE_PEAK_GAIN;
-    // Build every node before starting any, so a throw part-way never leaves
-    // half a cue playing while the caller treats it as silent.
-    const voices = notes.map((note) => {
+    voices = notes.map((note) => {
       const osc = ctx.createOscillator();
       const env = ctx.createGain();
       osc.type = "sine";
       osc.frequency.value = note.freq;
-      osc.connect(env);
-      env.connect(ctx.destination);
-      return { note, osc, env };
+      return { note, osc, env, started: false };
     });
     const t0 = ctx.currentTime + CUE_LEAD_S;
-    for (const { note, osc, env } of voices) {
-      const begin = t0 + note.at;
-      const end = begin + note.dur;
-      env.gain.setValueAtTime(CUE_FLOOR_GAIN, begin);
-      env.gain.exponentialRampToValueAtTime(peak, begin + CUE_ATTACK_S);
-      env.gain.exponentialRampToValueAtTime(CUE_FLOOR_GAIN, end);
-      osc.start(begin);
-      osc.stop(end + 0.01);
+    for (const v of voices) {
+      v.begin = t0 + v.note.at;
+      v.end = v.begin + v.note.dur;
+      v.env.gain.setValueAtTime(CUE_FLOOR_GAIN, v.begin);
+      v.env.gain.exponentialRampToValueAtTime(peak, v.begin + CUE_ATTACK_S);
+      v.env.gain.exponentialRampToValueAtTime(CUE_FLOOR_GAIN, v.end);
+      v.osc.connect(v.env);
+      v.env.connect(ctx.destination);
     }
-    return cueLengthMs(name);
+    for (const v of voices) {
+      v.osc.start(v.begin);
+      v.started = true;
+      v.osc.stop(v.end + 0.01);
+    }
   } catch {
-    return 0;
+    if (voices) silenceVoices(ctx, voices);
+    return null;
   }
+  let stopped = false;
+  return {
+    name,
+    ms: cueLengthMs(name),
+    startTime: voices[0].begin,
+    endTime: Math.max(...voices.map((v) => v.end)),
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      silenceVoices(ctx, voices);
+    },
+  };
+}
+
+// Cut voices immediately: started oscillators stop now, every node is
+// disconnected. Each step is guarded on its own so one failure can't keep
+// another note sounding.
+function silenceVoices(ctx, voices) {
+  let now = 0;
+  try {
+    now = ctx.currentTime;
+  } catch {}
+  for (const v of voices) {
+    if (v.started) {
+      try {
+        v.osc.stop(now);
+      } catch {}
+    }
+    try {
+      v.osc.disconnect();
+    } catch {}
+    try {
+      v.env.disconnect();
+    } catch {}
+  }
+}
+
+// One owner for cue playback across sessions. Only one cue sounds at a time:
+// a new cue, a cancel or a superseding session (begin) cuts whatever is still
+// playing. park() suspends the cue context once its last cue has finished,
+// and a park armed by an older session or cue is void the moment anything
+// newer happens, so it can never suspend a context a newer session is using.
+function createCuePlayer({ setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+  let active = null;
+  let token = 0;
+  let parkTimer = null;
+  const cancelPark = () => {
+    if (parkTimer !== null) clearTimer(parkTimer);
+    parkTimer = null;
+  };
+  const silence = () => {
+    token++;
+    cancelPark();
+    if (active) active.stop();
+    active = null;
+  };
+  return {
+    // A new session: cut any cue from the previous one, void its park.
+    begin: silence,
+    // Cancel/discard: the user wants quiet now.
+    silence,
+    play(ctx, name, volume) {
+      silence();
+      active = playCue(ctx, name, volume);
+      return active;
+    },
+    // Suspend `ctx` `afterMs` from now, unless anything else happens first.
+    park(ctx, afterMs) {
+      cancelPark();
+      const mine = ++token;
+      parkTimer = setTimer(() => {
+        parkTimer = null;
+        if (mine !== token) return;
+        active = null;
+        try {
+          Promise.resolve(ctx?.suspend?.()).catch(() => {});
+        } catch {}
+      }, afterMs);
+    },
+    get active() {
+      return active;
+    },
+  };
 }
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     CUES,
-    GUARD_MIN_MS,
-    GUARD_MAX_MS,
+    GUARD_TAIL_S,
+    FALLBACK_OUTPUT_LATENCY_S,
+    FALLBACK_INPUT_LATENCY_S,
     cueLengthMs,
-    cueGuardSamples,
-    trimGuard,
+    guardEndFrame,
+    admitChunk,
     initialCueState,
     cueStep,
     playCue,
+    createCuePlayer,
   };
 }

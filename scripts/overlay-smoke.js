@@ -61,6 +61,14 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // in this file already carry 200-250ms of slack.
 const WAV_LAG_ALLOWANCE_SEC = process.platform === "darwin" ? 0.35 : 0.15;
 
+// How long a take whose audio must be non-silent is held. Chromium's fake
+// capture device is digital silence with a short beep every 500 ms, and the
+// first beep of a freshly opened stream lands ~530 ms in (measured 522–532 ms
+// across takes). A take held ~500-600 ms holds that beep by a few ms or
+// not at all — its "not silence" check then fails on a working capture path
+// (#341: a 0.54 s take came back rms=0.0000). 1.2 s always holds two beeps.
+const SIGNAL_HOLD_MS = 1200;
+
 const checks = [];
 function check(name, ok, detail) {
   checks.push({ name, ok });
@@ -444,7 +452,7 @@ app.whenReady().then(async () => {
       `transitions=${JSON.stringify(log)}`
     );
 
-    await sleep(1200); // "talk" for a bit while live
+    await sleep(SIGNAL_HOLD_MS); // "talk" for a bit while live
     const captured1P = waitForMessage("audio:captured");
     win.webContents.send("record:stop");
     const stoppedAt = Date.now();
@@ -537,7 +545,7 @@ app.whenReady().then(async () => {
     start(win, 3);
     await waitForStatus(win, "recording");
     console.log(`[overlay-smoke] warm start -> mic live in ${Date.now() - t0}ms`);
-    await sleep(600);
+    await sleep(SIGNAL_HOLD_MS);
     const captured3P = waitForMessage("audio:captured");
     win.webContents.send("record:stop");
     const stats3 = wavStats((await captured3P).wav);
@@ -647,7 +655,7 @@ app.whenReady().then(async () => {
     `);
     startWithSounds(345);
     await waitForStatus(win, "recording");
-    await sleep(500);
+    await sleep(SIGNAL_HOLD_MS);
     const brokenGuard = await win.webContents.executeJavaScript("recording.guardUntil");
     const brokenCaptureP = waitForMessage("audio:captured");
     win.webContents.send("record:stop");
@@ -657,7 +665,7 @@ app.whenReady().then(async () => {
     check("record cues: a cue that cannot play guards nothing and the take still delivers",
       brokenGuard === 0 && brokenStats.seconds > 0.3 && brokenStats.rms > 0.001 &&
         JSON.stringify(await cueLog()) === JSON.stringify(["start:345:false", "stop:345:false"]),
-      `guard=${brokenGuard} wav=${brokenStats.seconds.toFixed(2)}s cues=${JSON.stringify(await cueLog())}`);
+      `guard=${brokenGuard} wav=${brokenStats.seconds.toFixed(2)}s rms=${brokenStats.rms.toFixed(4)} cues=${JSON.stringify(await cueLog())}`);
     await win.webContents.executeJavaScript("cueLog.length = 0");
 
     // ---- Session 4/5: cancel mid-startup, then a full session again --------
@@ -666,7 +674,7 @@ app.whenReady().then(async () => {
     await sleep(300);
     start(win, 5);
     await waitForStatus(win, "recording");
-    await sleep(600);
+    await sleep(SIGNAL_HOLD_MS);
     const captured5P = waitForMessage("audio:captured");
     win.webContents.send("record:stop");
     const captured5 = await captured5P;

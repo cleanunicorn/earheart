@@ -35,6 +35,18 @@ function inert() {
   });
 }
 
+// The page's root custom properties, from the real tokens.css (its first
+// declaration of each, i.e. the default :root palette), for the fake
+// getComputedStyle — the overlay reads its colours from the stylesheet.
+function rootTokens() {
+  const css = fs.readFileSync(path.join(RENDERER, "tokens.css"), "utf8");
+  const tokens = {};
+  for (const [, name, value] of css.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/gi)) {
+    if (!(name in tokens)) tokens[name] = value.trim();
+  }
+  return tokens;
+}
+
 // A fake Web Audio node graph that records what the cue code schedules.
 function fakeParam() {
   return { value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {} };
@@ -170,7 +182,12 @@ function createOverlayVm({ outputLatency = 0.04, baseLatency = 0.01, inputLatenc
     },
     AudioContext: FakeAudioContext,
     AudioWorkletNode: FakeWorkletNode,
-    document: { getElementById: () => inert(), createElement: () => inert(), body: inert() },
+    document: { getElementById: () => inert(), createElement: () => inert(), body: inert(), documentElement: inert() },
+    // Root custom properties read like the stylesheet's; anything else "".
+    getComputedStyle: (element) => {
+      const tokens = element === context.document.documentElement ? rootTokens() : {};
+      return { getPropertyValue: (name) => tokens[name] ?? "" };
+    },
     navigator: { mediaDevices: { getUserMedia: async () => stream } },
     earheart: {
       on: (channel, fn) => (handlers[channel] = fn),

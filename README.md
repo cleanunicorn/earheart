@@ -23,15 +23,16 @@
 
 ## Watch Earheart in action
 
-[![Watch the Earheart demo: Talk to your coding agents](docs/videos/poster.jpg)](docs/videos/earheart-horizontal.mp4?raw=true)
+[![Download the Earheart demo: Talk to your coding agents](docs/videos/poster.jpg)](https://raw.githubusercontent.com/cleanunicorn/earheart/refs/heads/main/docs/videos/earheart-horizontal.mp4)
 
 Hotkey → speak → clean up → paste, in 48 seconds with music. Cleanup gets a
 before-and-after sequence showing fillers removed, false starts resolved, and
 phrasing refined using the optional **Polished** style.
 
-Watch or download the [horizontal video (16:9)](docs/videos/earheart-horizontal.mp4?raw=true)
-or the [vertical video (9:16)](docs/videos/earheart-vertical.mp4?raw=true) for social media.
-Both show an illustrated workflow; see [video details](docs/videos/README.md).
+Download the [horizontal video (16:9)](https://raw.githubusercontent.com/cleanunicorn/earheart/refs/heads/main/docs/videos/earheart-horizontal.mp4)
+or the [vertical video (9:16)](https://raw.githubusercontent.com/cleanunicorn/earheart/refs/heads/main/docs/videos/earheart-vertical.mp4) for social media.
+Open either MP4 in your video player to watch. Both show an illustrated workflow;
+see [video details](docs/videos/README.md).
 
 ---
 

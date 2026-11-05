@@ -132,15 +132,17 @@ check out `main` (it may already be checked out in another worktree).
 first edit, do the whole change there, and open the PR from it:
 
 ```bash
-git worktree add ../earheart-<short-topic> -b <type>/<short-topic> origin/main
-cd ../earheart-<short-topic>
+git worktree add /tmp/earheart-<short-topic> -b <type>/<short-topic> origin/main
+cd /tmp/earheart-<short-topic>
 make install
 ```
 
-Worktrees live as siblings of the main checkout (`../earheart-<short-topic>`),
-so nothing needs to be gitignored. If the harness has a worktree tool (e.g.
-Claude Code's `EnterWorktree`), use it. After the PR merges, remove it with
-`git worktree remove ../earheart-<short-topic>`.
+Worktrees live under `/tmp` (`/tmp/earheart-<short-topic>`), outside the main
+checkout, so nothing needs to be gitignored. `/tmp` may be cleared on reboot,
+so commit and push work you care about. If the harness has a worktree tool
+(e.g. Claude Code's `EnterWorktree`), use it when it can create the worktree
+under `/tmp`. After the PR merges, remove it with
+`git worktree remove /tmp/earheart-<short-topic>`.
 
 Branch names are short, lowercase, hyphenated, and prefixed by intent. Match the
 Conventional Commits type you expect the PR to use (see [Commit](#4-commit)):

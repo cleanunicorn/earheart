@@ -34,6 +34,7 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
     constructor(options) {
       calls.push(["construct", options]);
       this.handlers = {};
+      this.visible = options.show !== false;
       // Geometry is tracked so the drag and resize handlers can be driven
       // against a window that really moves.
       this.bounds = { x: options.x ?? 0, y: options.y ?? 0, width: options.width, height: options.height };
@@ -88,6 +89,7 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
       this.bounds = { ...this.bounds, x, y };
     }
     showInactive() {
+      this.visible = true;
       calls.push(["showInactive"]);
     }
     // Present so the test can prove they are never reached: the card must never
@@ -104,10 +106,13 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
     isDestroyed() {
       return this.closed || false;
     }
+    // Tracks show/hide so the wake re-join (#353) can tell a hidden card from
+    // one on screen. Created hidden, as createOverlay() asks (show: false).
     isVisible() {
-      return true;
+      return this.visible;
     }
     hide() {
+      this.visible = false;
       calls.push(["hide"]);
     }
     destroy() {
@@ -141,6 +146,7 @@ function loadWindows({
 } = {}) {
   const calls = [];
   const warnings = [];
+  const infos = [];
   const webContentsHandlers = {};
   const ipc = {};
   const saved = [];
@@ -175,7 +181,7 @@ function loadWindows({
       return { get: () => stored, save: (next) => saved.push(next) };
     }
     if (request === "./util/logger") {
-      return { info: () => {}, warn: (msg) => warnings.push(msg), error: () => {} };
+      return { info: (msg) => infos.push(msg), warn: (msg) => warnings.push(msg), error: () => {} };
     }
     return realLoad.call(this, request, ...rest);
   };
@@ -183,7 +189,7 @@ function loadWindows({
   try {
     const windows = require(WINDOWS);
     if (init) windows.init(); // the overlay's handlers, as main.js registers them
-    return { windows, calls, warnings, webContentsHandlers, ipc, saved, displays };
+    return { windows, calls, warnings, infos, webContentsHandlers, ipc, saved, displays };
   } finally {
     Module._load = realLoad;
     delete require.cache[WINDOWS];
@@ -463,6 +469,134 @@ test("darwin: a re-apply that does not take is reported as such, not as a repair
   assert.strictEqual(warnings.length, 1);
   assert.match(warnings[0], /now false/);
   assert.strictEqual(countOf(calls.slice(show), "setVisibleOnAllWorkspaces"), 1);
+});
+
+// --- Re-joining all Spaces after sleep/wake (#353) ----------------------------
+// main/wake.js calls rejoinOverlayAfterWake() on powerMonitor resume and
+// unlock-screen (test/wake.test.js). These pin what it does to the window: a
+// false-then-true toggle on a hidden card, nothing at all on a visible one or
+// during a dictation (deferred to the next hidden show), nothing off macOS, and
+// never a reload or a second window, since the renderer owns the microphone.
+
+const ALL_SPACES = { visibleOnFullScreen: true, skipTransformProcessType: true };
+const spaceCalls = (calls) =>
+  calls.filter(([name]) => name === "setVisibleOnAllWorkspaces").map(([, visible, options]) => [visible, options]);
+// Anything that would tear down or replace the renderer that owns the mic.
+const TEARDOWN = ["construct", "reload", "destroy", "loadFile", "hide", "show", "showInactive"];
+
+test("darwin: an idle wake toggles the hidden overlay off then on, skipping the transform, and logs it", (t) => {
+  onPlatform(t, "darwin");
+  const { windows, calls, infos, warnings } = loadWindows();
+  windows.createOverlay();
+  const wake = calls.length;
+  assert.strictEqual(windows.rejoinOverlayAfterWake("resume"), true);
+  const during = calls.slice(wake);
+
+  assert.deepStrictEqual(spaceCalls(during), [
+    [false, ALL_SPACES],
+    [true, ALL_SPACES],
+  ]);
+  assert.deepStrictEqual(names(during).filter((n) => TEARDOWN.includes(n)), []);
+  assert.deepStrictEqual(infos, ["overlay re-joined all Spaces after resume (now true)"]);
+  assert.deepStrictEqual(warnings, []);
+
+  // Done at wake time, so the next show is the ordinary single re-assert.
+  const show = calls.length;
+  windows.showOverlay();
+  assert.deepStrictEqual(spaceCalls(calls.slice(show)), [[true, ALL_SPACES]]);
+});
+
+test("darwin: a wake during a dictation touches no window and the next hidden show toggles first", (t) => {
+  onPlatform(t, "darwin");
+  const { windows, calls, infos } = loadWindows();
+  const win = windows.createOverlay();
+  windows.showOverlay(); // the dictation's card is up
+  const wake = calls.length;
+  assert.strictEqual(windows.rejoinOverlayAfterWake("unlock-screen", { deferOnly: true }), false);
+  assert.deepStrictEqual(calls.slice(wake), [], "no window call of any kind while recording");
+  assert.match(infos.at(-1), /^wake \(unlock-screen\): a dictation is in progress; .*deferred to the next show$/);
+
+  win.hide(); // the dictation ended and the card faded out
+  const show = calls.length;
+  windows.showOverlay();
+  const during = calls.slice(show);
+  assert.deepStrictEqual(spaceCalls(during), [
+    [false, ALL_SPACES],
+    [true, ALL_SPACES],
+  ]);
+  assert.ok(
+    names(during).lastIndexOf("setVisibleOnAllWorkspaces") < indexOf(during, "showInactive"),
+    "the deferred toggle must finish before the window is ordered in"
+  );
+  assert.strictEqual(infos.at(-1), "overlay re-joined all Spaces at show, deferred from unlock-screen (now true)");
+
+  // Consumed once: the show after that is the plain re-assert again.
+  win.hide();
+  const next = calls.length;
+  windows.showOverlay();
+  assert.deepStrictEqual(spaceCalls(calls.slice(next)), [[true, ALL_SPACES]]);
+});
+
+test("darwin: deferOnly alone keeps the window untouched, even when the card reads hidden", (t) => {
+  // The visibility check is a second line of defence; the dictation guard must
+  // not depend on it (a recording whose card was hidden, e.g. after a renderer
+  // reload, still owns the microphone).
+  onPlatform(t, "darwin");
+  const { windows, calls } = loadWindows();
+  windows.createOverlay();
+  const wake = calls.length;
+  assert.strictEqual(windows.rejoinOverlayAfterWake("resume", { deferOnly: true }), false);
+  assert.deepStrictEqual(calls.slice(wake), []);
+});
+
+test("darwin: a wake while the idle card is on screen defers, and a fade-out superseded by a show keeps it pending", (t) => {
+  onPlatform(t, "darwin");
+  const { windows, calls, infos } = loadWindows();
+  const win = windows.createOverlay();
+  windows.showOverlay(); // e.g. an update prompt, pinned with the pipeline idle
+  const wake = calls.length;
+  assert.strictEqual(windows.rejoinOverlayAfterWake("resume"), false);
+  assert.deepStrictEqual(calls.slice(wake), []);
+  assert.match(infos.at(-1), /the overlay is on screen; .*deferred to the next show$/);
+
+  // A show that cancels a fade-out finds the card still visible: no toggle yet.
+  windows.hideOverlay();
+  const superseding = calls.length;
+  windows.showOverlay();
+  assert.deepStrictEqual(spaceCalls(calls.slice(superseding)), [[true, ALL_SPACES]]);
+
+  win.hide();
+  const show = calls.length;
+  windows.showOverlay();
+  windows.destroyOverlay();
+  assert.deepStrictEqual(spaceCalls(calls.slice(show)), [
+    [false, ALL_SPACES],
+    [true, ALL_SPACES],
+  ]);
+});
+
+for (const platform of ["linux", "win32"]) {
+  test(`${platform}: a wake re-join makes no window call and logs nothing`, (t) => {
+    onPlatform(t, platform);
+    const { windows, calls, infos } = loadWindows();
+    windows.createOverlay();
+    const wake = calls.length;
+    assert.strictEqual(windows.rejoinOverlayAfterWake("resume"), false);
+    assert.strictEqual(windows.rejoinOverlayAfterWake("resume", { deferOnly: true }), false);
+    assert.deepStrictEqual(calls.slice(wake), []);
+    assert.deepStrictEqual(infos, []);
+    // And nothing was left pending for the next show to act on.
+    windows.showOverlay();
+    assert.deepStrictEqual(spaceCalls(calls.slice(wake)), []);
+  });
+}
+
+test("darwin: a wake before the overlay exists does nothing", (t) => {
+  onPlatform(t, "darwin");
+  const { windows, calls, infos } = loadWindows();
+  assert.strictEqual(windows.rejoinOverlayAfterWake("resume"), false);
+  assert.deepStrictEqual(calls, []);
+  assert.deepStrictEqual(infos, []);
 });
 
 // --- The shared window factory (#193, #217) ----------------------------------

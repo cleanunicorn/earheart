@@ -227,6 +227,7 @@ main/                    Electron main process
   tray.js                tray icon + menu
   windows.js             overlay + settings + wizard + correction windows (one factory)
   window-guard.js        navigation lock + permission policy for app windows
+  wake.js                macOS sleep/unlock: re-join the hidden overlay to all Spaces (#353)
   updates.js             in-app updater: check, download to userData/updates, verify, re-verify, install
   services/update-feed.js     latest*.yml parsing + install-kind detection
   services/release-notes.js   what's-new: CHANGELOG.md ⇄ release-notes.json

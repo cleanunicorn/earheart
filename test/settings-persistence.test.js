@@ -191,10 +191,10 @@ test("a throwing change listener does not fail a save that reached disk", (t) =>
 // The limits Settings shows as min/max on its two Performance fields. Main
 // keeps its own copy (it must not parse renderer markup), so read the markup
 // here and hold the two together.
-function fieldRange(id) {
-  const html = fs.readFileSync(path.join(__dirname, "..", "renderer", "settings.html"), "utf8");
+function fieldRange(id, page = "settings.html") {
+  const html = fs.readFileSync(path.join(__dirname, "..", "renderer", page), "utf8");
   const tag = html.match(new RegExp(`<input id="${id}"[^>]*>`))?.[0];
-  assert.ok(tag, `settings.html must have #${id}`);
+  assert.ok(tag, `${page} must have #${id}`);
   const min = Number(tag.match(/\bmin="([^"]+)"/)?.[1]);
   const max = Number(tag.match(/\bmax="([^"]+)"/)?.[1]);
   assert.ok(Number.isFinite(min) && Number.isFinite(max), `#${id} must declare numeric min and max`);
@@ -294,6 +294,14 @@ test("audio ducking is off by default and its level clamps to the #duck-level ra
     assert.strictEqual(saved.audio.duckLevelPercent, expected, String(input));
     assert.strictEqual(saved.audio.duckOtherAudio, true);
   }
+});
+
+test("the setup wizard offers the lowered level with Settings' own range and step (#365)", () => {
+  const html = (page) => fs.readFileSync(path.join(__dirname, "..", "renderer", page), "utf8");
+  const step = (page) => html(page).match(/<input id="duck-level"[^>]*\bstep="([^"]+)"/)?.[1];
+  assert.deepStrictEqual(fieldRange("duck-level", "wizard.html"), fieldRange("duck-level"));
+  assert.strictEqual(step("wizard.html"), step("settings.html"));
+  assert.ok(step("settings.html"), "#duck-level declares a step");
 });
 
 test("deepMerge keeps defaults for missing keys and overrides present ones", () => {

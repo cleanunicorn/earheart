@@ -114,6 +114,7 @@ const ROLES = {
       "models:status",
       "models:download",
       "models:cancel",
+      "ducking:status",
     ],
   },
 };

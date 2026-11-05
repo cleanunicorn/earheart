@@ -4,7 +4,7 @@ const engines = require("../main/engines");
 const settings = require("../main/settings");
 const { waitForLoad } = require("./wait-for-load");
 
-async function checkWizard({ waitFor, check }) {
+async function checkWizard({ waitFor, check, setDuckingStatus }) {
   const original = { download: engines.download, isInstalled: engines.isInstalled };
   const installed = new Set();
   const active = new Map();
@@ -48,8 +48,33 @@ async function checkWizard({ waitFor, check }) {
   const key = "stt:" + speech;
   const cleanupKey = "cleanup:" + cleanup;
   try {
+    // "Lower other audio while recording" on the microphone step (#365): the
+    // saved choice is shown, an unavailable system says so without blocking
+    // setup, and what is chosen here is what Finish saves (checked below).
+    setDuckingStatus({ available: false, mechanism: null, reason: "smoke: no volume tool", state: "idle", detail: "", lastError: "", enabled: false });
+    const savedAudio = settings.get().audio;
     await open();
-    await click("next"); await click("next"); await click("next");
+    await click("next"); await click("next");
+    const duck = JSON.parse(await until(`document.querySelector(".step.active")?.id === "step-mic" &&
+      document.getElementById("duck-status").textContent.startsWith("Not available") &&
+      JSON.stringify({
+        checked: document.getElementById("duck-other-audio").checked,
+        level: document.getElementById("duck-level").value,
+        status: document.getElementById("duck-status").textContent,
+        nextEnabled: !document.getElementById("next").disabled,
+      })`, "microphone step did not show the lower-other-audio status"));
+    check("microphone step offers lowering other audio with the saved choice",
+      duck.checked === (savedAudio.duckOtherAudio === true) && duck.level === String(savedAudio.duckLevelPercent), JSON.stringify(duck));
+    check("an unavailable system says so on the microphone step and setup continues",
+      duck.status === "Not available on this system (smoke: no volume tool). Dictation works as usual." && duck.nextEnabled, JSON.stringify(duck));
+    await js('document.getElementById("duck-other-audio").checked = true; document.getElementById("duck-level").value = "35"; undefined');
+    // The docs shot shows the choice made, with the line main/ducking/ gives
+    // on Linux rather than this fixture's "no volume tool".
+    if (process.env.EARHEART_WIZARD_SCREENSHOTS) {
+      await js('document.getElementById("duck-status").textContent = "Uses pactl to change the output volume."; undefined');
+      await shot("wizard-microphone");
+    }
+    await click("next");
     check("wizard does not download before explicit speech consent", starts.length === 0);
     win.setSize(560, 560);
     await until("innerWidth <= 560", "minimum wizard width did not apply");
@@ -83,13 +108,19 @@ async function checkWizard({ waitFor, check }) {
     const cleanupBytes = engines.registry.totalBytes(engines.registry.getModel("cleanup", cleanup));
     active.get(cleanupKey).progress({ received: cleanupBytes / 4, total: cleanupBytes, fraction: 0.25 });
     await shot("wizard-speech-ready");
+    check("the summary lists the other-audio choice",
+      await js('document.getElementById("summary").textContent.includes("Lowered to 35% while recording")'));
     await click("next");
     await waitFor(() => win.isDestroyed(), "Finish did not close wizard");
+    check("Finish saves the lower-other-audio choice and level",
+      settings.get().audio.duckOtherAudio === true && settings.get().audio.duckLevelPercent === 35, JSON.stringify(settings.get().audio));
     check("closing wizard retains optional transfer", active.has(cleanupKey));
     const handoff = externalSettings = windows.openSettings();
     const form = (code) => handoff.webContents.executeJavaScript(code, true);
     await waitFor(() => form('typeof formReady !== "undefined" && formReady && !document.getElementById("wizard-banner").hidden'), "saved banner did not initialize");
     check("saved banner teaches committed hotkey without asking to save again", await form('document.getElementById("wizard-saved-message").textContent.includes(displayHotkey(savedSetup.hotkey)) && document.getElementById("wizard-saved-message").textContent.includes("saved")'));
+    check("Settings shows the lower-other-audio choice made in setup",
+      await form('document.getElementById("duck-other-audio").checked && document.getElementById("duck-level").value === "35"'));
     check("saved banner hydrates background progress before another tick", await form('document.getElementById("wizard-cleanup-progress").textContent.includes("25%")'));
     if (process.env.EARHEART_WIZARD_SCREENSHOTS) await form('renderHotkeyStatus({ hotkey: { ok: true }, pauseHotkey: { ok: true }, discardHotkey: { ok: true } }); undefined');
     await shot("settings-saved-setup", handoff);
@@ -102,6 +133,8 @@ async function checkWizard({ waitFor, check }) {
 
     installed.clear(); starts.length = 0; aborts.length = 0;
     await open();
+    check("running setup again keeps the earlier lower-other-audio choice",
+      await js('document.getElementById("duck-other-audio").checked && document.getElementById("duck-level").value === "35"'));
     await click("next"); await click("next"); await click("next"); await click("next");
     await waitFor(() => active.get(key), "second speech did not start");
     active.get(key).fail();

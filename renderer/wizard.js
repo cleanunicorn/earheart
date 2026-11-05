@@ -1,7 +1,7 @@
-// First-run setup wizard renderer. Walks through hotkey, microphone,
-// speech-to-text, cleanup and output; speech downloads while choices continue,
-// with optional cleanup following speech before saving and handing over to the
-// settings window.
+// First-run setup wizard renderer. Walks through hotkey, microphone (and
+// whether to lower other audio while recording), speech-to-text, cleanup and
+// output; speech downloads while choices continue, with optional cleanup
+// following speech before saving and handing over to the settings window.
 
 let current = null; // settings object being edited
 // The shared fields as this window last saw them from main; sent with the
@@ -48,6 +48,8 @@ function showStep(index) {
     micLoaded = true;
     loadMicrophones();
   }
+  // Fresh each visit: what lowering other audio can do on this system.
+  if (steps[stepIndex].id === "step-mic") DuckingStatus.show($("duck-status"));
   if (steps[stepIndex].id === "step-output") renderSummary();
   if (steps[stepIndex].id === "step-finish") enterDownloadStep();
   updateDownloadCopy();
@@ -224,8 +226,21 @@ function collect() {
     audio: {
       ...current.audio,
       deviceId: $("mic-device").value,
+      duckOtherAudio: $("duck-other-audio").checked,
+      duckLevelPercent: duckLevel(),
     },
   };
+}
+
+// The lowered level as Settings reads it: clamped to the field's own min/max
+// (the same 0–80 main enforces), and a blank or invalid entry keeps the value
+// already saved rather than silently changing it.
+function duckLevel() {
+  const input = $("duck-level");
+  const value = Number(input.value);
+  const fallback = current.audio.duckLevelPercent ?? defaults.audio.duckLevelPercent;
+  if (input.value.trim() === "" || !Number.isFinite(value)) return fallback;
+  return Math.round(Math.min(Number(input.max), Math.max(Number(input.min), value)));
 }
 
 /* ---------- summary ---------- */
@@ -236,6 +251,10 @@ function renderSummary() {
   const rows = [
     ["Hotkey", next.hotkey],
     ["Microphone", mic.selectedOptions[0]?.textContent || "System default"],
+    [
+      "Other audio",
+      next.audio.duckOtherAudio ? `Lowered to ${next.audio.duckLevelPercent}% while recording` : "Left as is",
+    ],
     ["Speech-to-text", "Built-in Parakeet (on this computer)"],
   ];
   if (!next.cleanup.enabled) {
@@ -540,6 +559,9 @@ async function finish() {
 
   hotkeyInput.value = current.hotkey;
   $("cleanup-enabled").checked = current.cleanup.enabled;
+  // An earlier choice stands when setup is run again (#365).
+  $("duck-other-audio").checked = current.audio.duckOtherAudio === true;
+  $("duck-level").value = current.audio.duckLevelPercent ?? defaults.audio.duckLevelPercent;
   document.querySelector(
     `input[name="output-mode"][value="${displayedOutputMode(current.output)}"]`
   ).checked = true;

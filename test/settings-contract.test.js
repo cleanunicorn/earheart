@@ -405,6 +405,10 @@ function microphonePage(source, page) {
     "updates-remind": { checked: true },
     "idle-unload": { value: "0", ...inputRange("idle-unload") },
     "history-enabled": { checked: true },
+    // Background audio: chosen on in this form, at a level other than the
+    // default, so the save proves both fields are read from the form.
+    "duck-other-audio": { checked: true },
+    "duck-level": { value: "35", ...inputRange("duck-level", page === "wizard" ? wizardHtml : html) },
     "finish-status": { textContent: "", className: "" },
   };
   let payload;
@@ -464,7 +468,7 @@ function microphonePage(source, page) {
     };
     require("node:vm").runInNewContext(settingsFunctions, context);
   } else {
-    const wizardFunctions = `${extractFunction(source, "collect")}; ${extractFunction(source, "finish")}; this.finish = finish;`;
+    const wizardFunctions = `${extractFunction(source, "collect")}; ${extractFunction(source, "duckLevel")}; ${extractFunction(source, "finish")}; this.finish = finish;`;
     require("node:vm").runInNewContext(wizardFunctions, context);
   }
 
@@ -506,6 +510,10 @@ for (const [page, source] of [["settings", js], ["wizard", wizardJs]]) {
     assert.strictEqual(result.selected, "");
     assert.strictEqual(result.saved.audio.deviceId, "");
     assert.strictEqual(result.invokeCount, 1);
+    // Both forms save "Lower other audio while recording" from their own
+    // controls (#365): the wizard's choice lands in the same two settings.
+    assert.strictEqual(result.saved.audio.duckOtherAudio, true);
+    assert.strictEqual(result.saved.audio.duckLevelPercent, 35);
     if (page === "wizard") {
       assert.strictEqual(result.saved.output.mode, "paste-copy");
       // The explicit mode replaces the legacy restoreClipboard: false.
@@ -772,8 +780,8 @@ test("Save never closes Settings; the footer's Close button does", () => {
 // collect() to them (there is no <form>/checkValidity), so collect() must clamp
 // itself. Runs the real collect() against stub elements carrying the markup's
 // own min/max attributes (#210: a typed -5 stopped every dictation at once).
-function inputRange(id) {
-  const tag = html.match(new RegExp(`<input id="${id}"[^>]*>`))?.[0];
+function inputRange(id, source = html) {
+  const tag = source.match(new RegExp(`<input id="${id}"[^>]*>`))?.[0];
   assert.ok(tag, `settings.html must have #${id}`);
   const min = tag.match(/\bmin="([^"]+)"/)?.[1];
   const max = tag.match(/\bmax="([^"]+)"/)?.[1];

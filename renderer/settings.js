@@ -186,32 +186,15 @@ $("correct-hotkey-clear").addEventListener("click", () => {
   correctHotkeyInput.value = "";
 });
 
-/* ---------- microphone list ---------- */
-
-// What "Lower other audio" can do here, said plainly: unavailable (and why),
-// the last failure, or what it did this take. Dictation never depends on it.
-function duckStatusText(status) {
-  if (!status) return "";
-  const asUsual = "Dictation works as usual.";
-  if (status.available === false) return `Not available on this system (${status.reason}). ${asUsual}`;
-  if (status.lastError) return `Last attempt failed: ${status.lastError}. ${asUsual}`;
-  if (status.state === "lowered") return "Other audio is lowered right now.";
-  if (status.state === "skipped" && status.detail) return `Not lowered this take: ${status.detail}.`;
-  if (status.state === "pending" && status.detail) return `Not restored yet: ${status.detail}.`;
-  return status.mechanism ? `Uses ${status.mechanism} to change the output volume.` : "";
-}
+/* ---------- background audio ---------- */
 
 const DUCK_STATUS_REFRESH_MS = 2000;
 
-async function refreshDuckStatus() {
-  let status = null;
-  try {
-    status = await earheart.invoke("ducking:status");
-  } catch {
-    // An older main without the handler: say nothing rather than guess.
-  }
-  $("duck-status").textContent = duckStatusText(status);
-}
+// The "Lower other audio while recording" status line, shared with the setup
+// wizard (renderer/ducking-status.js).
+const refreshDuckStatus = () => DuckingStatus.show($("duck-status"));
+
+/* ---------- microphone list ---------- */
 
 async function loadMicrophones() {
   const select = $("mic-device");

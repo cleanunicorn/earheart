@@ -37,6 +37,58 @@ function expectFrames(ints, from, to, marker, label) {
   }
 }
 
+// The frame the take must start at, computed independently from what the
+// overlay scheduled: the start cue's last oscillator stop, plus latencies and
+// the tail. A cue-era frame is anything before it.
+function startCueBound(rig, latency = LATENCY) {
+  const startNotes = rig.oscillators.filter((o) => o.ctx.sampleRate === RATE);
+  assert.ok(startNotes.length > 0, "the start cue was scheduled on the recording context");
+  const cueEnd = Math.max(...startNotes.map((o) => o.stops[0])) - 0.01;
+  return (cueEnd + latency.outputLatency + latency.baseLatency + latency.inputLatency + TAIL_S) * RATE;
+}
+
+for (const [label, latency] of [
+  ["speakers", LATENCY],
+  // A Bluetooth-scale output path: the guard grows with it, uncapped.
+  ["bluetooth", { ...LATENCY, outputLatency: 0.6 }],
+]) test(`record cues (${label}): delayed, bunched posts never put the start cue into a partial or the final WAV`, async () => {
+  const rig = createOverlayVm(latency);
+  rig.send("record:start", startPayload(341, { preview: true }));
+  await rig.settle();
+
+  // The audio thread runs ahead of a stalled page: 8 batches are captured
+  // before the page sees any of them, then the first arrives alone.
+  rig.pump(32);
+  rig.deliver(1);
+  const guard = rig.eval("recording.guardUntil");
+  const bound = startCueBound(rig, latency);
+  assert.ok(guard >= Math.floor(bound), `guard ${guard} covers the cue + latency + tail (${bound.toFixed(1)})`);
+  assert.ok(guard % 512 !== 0, "a batch straddles the guard boundary");
+  assert.strictEqual(rig.eval("recording.startedAt"), null, "not Listening… during the guard");
+
+  // Capture well past the guard, delivered as one burst.
+  while (rig.frame < guard + RATE / 2) rig.pump(1);
+  rig.deliver();
+  assert.ok(rig.eval("recording.startedAt") > 0, "Listening… once kept samples arrive");
+
+  // A live-preview partial: it covers the take from its first kept frame.
+  rig.eval("sendPartial()");
+  const [partial] = rig.messages("audio:partial");
+  assert.strictEqual(partial.fromSample, 0);
+  const keptSoFar = rig.eval("totalSamples(recording.chunks)");
+  expectFrames(wavInts(partial.wav), guard, guard + keptSoFar, rig.marker, "partial");
+
+  // More capture, a held-back post, then stop: the stop flush and the
+  // in-flight post both join the take, contiguous to the last captured frame.
+  rig.pump(10);
+  rig.send("record:stop");
+  rig.deliver();
+  await rig.settle();
+  const [captured] = rig.messages("audio:captured");
+  assert.ok(captured, `stop delivers the take (${JSON.stringify(rig.sent.map((m) => m.channel))})`);
+  expectFrames(wavInts(captured.wav), guard, rig.frame, rig.marker, "final");
+});
+
 test("record cues: a stop after the guard ends, before the first kept post arrives, keeps that audio", async () => {
   // Latencies chosen so the guard frame falls mid-batch (frame 3872 of the
   // 3584..4096 batch): that batch is still filling when the stop lands.
@@ -73,4 +125,18 @@ test("record cues: a stop inside the guard keeps nothing and abandons the attemp
   await rig.settle();
   assert.strictEqual(JSON.stringify(rig.messages("record:cancelled")), JSON.stringify([{ sid: 343 }]));
   assert.strictEqual(rig.messages("audio:captured").length, 0);
+});
+
+test("record cues: with sounds off the take keeps every frame from the first post", async () => {
+  const rig = createOverlayVm(LATENCY);
+  rig.send("record:start", startPayload(344, { sounds: null }));
+  await rig.settle();
+  rig.pump(20);
+  rig.deliver();
+  rig.send("record:stop");
+  rig.deliver();
+  await rig.settle();
+  assert.strictEqual(rig.oscillators.length, 0, "no cue scheduled");
+  const [captured] = rig.messages("audio:captured");
+  expectFrames(wavInts(captured.wav), 0, rig.frame, rig.marker, "final");
 });

@@ -2224,6 +2224,46 @@ test("pipeline: aliases apply to cleaned text and to the raw fallback when clean
   assert.strictEqual(failed.log.history[0].cleaned, false);
 });
 
+// Retranscribing a kept take delivers nothing, but its result is the text a
+// dictation would have produced: the aliases hold there too, over whichever
+// text cleanup leaves — off, cleaned, or the raw fallback after a failure.
+test("pipeline: a retranscription applies the aliases with cleanup off, cleaned and failing", async (t) => {
+  const retried = async (opts, setup = () => {}) => {
+    const rig = dictationRig({
+      engine: "remote", userData: audioDir(t), safeStorage: keyringStub(),
+      transcribe: async () => "Ship air heart.", ...opts,
+    });
+    rig.cfg.cleanup.aliases = ALIASES;
+    rig.cfg.recordings = { keep: true, maxAgeDays: 30, maxMegabytes: 1024 };
+    setup(rig);
+    await rig.dictate(speechWav(1));
+    await settle();
+    const res = await rig.pipeline.retranscribe(rig.savedHistory()[0].id);
+    assert.strictEqual(res.ok, true, JSON.stringify(res));
+    return { delivered: rig.log.delivered[0], ...res.retry };
+  };
+  const pick = ({ delivered, raw, text, cleaned }) => ({ delivered, raw, text, cleaned });
+
+  assert.deepStrictEqual(pick(await retried({})), {
+    delivered: "Ship Earheart.", raw: "Ship air heart.", text: "Ship Earheart.", cleaned: false,
+  });
+  assert.deepStrictEqual(pick(await retried({ cleanup: true })), {
+    delivered: "cleaned(Ship Earheart.)", raw: "Ship air heart.", text: "cleaned(Ship Earheart.)", cleaned: true,
+  });
+  let cleans = 0;
+  const failing = await retried({
+    cleanup: true,
+    clean: async (raw) => {
+      cleans += 1;
+      if (cleans > 1) throw new Error("cleanup worker crashed");
+      return `cleaned(${raw})`;
+    },
+  });
+  assert.deepStrictEqual(pick(failing), {
+    delivered: "cleaned(Ship Earheart.)", raw: "Ship air heart.", text: "Ship Earheart.", cleaned: false,
+  });
+});
+
 test("pipeline: a broken alias list still delivers the words", async () => {
   const rig = dictationRig({ engine: "remote", transcribe: async () => "Keep air heart." });
   // Not what settings.js would ever hand out; applyAliases must cope.

@@ -912,17 +912,18 @@ async function transcribeKept(wav, sttCfg, signal) {
 }
 
 // Cleanup for a retranscription: like a dictation's (the raw transcript when
-// cleanup is off, unavailable or fails), but quiet — the result is shown in
-// History, not announced.
+// cleanup is off, unavailable or fails, then the explicit aliases on whichever
+// text results), but quiet — the result is shown in History, not announced.
 async function cleanKept(raw, cleanupCfg, signal) {
-  if (!cleanupCfg.enabled || !cleanupAvailability(cleanupCfg).ok) return { text: raw, cleaned: false };
+  const done = (text, cleaned) => ({ text: withAliases(text, cleanupCfg.aliases), cleaned });
+  if (!cleanupCfg.enabled || !cleanupAvailability(cleanupCfg).ok) return done(raw, false);
   try {
     const text = await withRetry(() => route.clean(raw, cleanupCfg, signal, cleanupLimits()), { stale: () => signal.aborted });
-    return { text, cleaned: true };
+    return done(text, true);
   } catch (err) {
     if (signal.aborted) throw err;
     logger.warn("retranscription cleanup failed, kept the raw transcript:", err.message);
-    return { text: raw, cleaned: false };
+    return done(raw, false);
   }
 }
 

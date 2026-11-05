@@ -34,6 +34,10 @@ class RecorderProcessor extends AudioWorkletProcessor {
     this.stopped = false;
     this.batch = new Float32Array(BATCH_SAMPLES);
     this.filled = 0;
+    // The context frame of batch[0]: each post says WHERE on the capture
+    // timeline its samples sit, so the overlay can drop exactly the span a
+    // start cue covers (#341) however late or bunched the posts arrive.
+    this.batchFrame = 0;
     this.port.onmessage = (event) => {
       if (event.data === "stop") {
         this.stopped = true;
@@ -49,13 +53,14 @@ class RecorderProcessor extends AudioWorkletProcessor {
   flush() {
     if (this.filled === 0) return;
     const samples = this.batch.slice(0, this.filled);
+    const frame = this.batchFrame;
     this.filled = 0;
     let sum = 0;
     for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
     const rms = Math.sqrt(sum / samples.length);
     // Transfer, don't clone: the slice above is already a private copy, so
     // moving its buffer makes the whole post zero additional bytes.
-    this.port.postMessage({ samples, rms }, [samples.buffer]);
+    this.port.postMessage({ samples, rms, frame }, [samples.buffer]);
   }
 
   process(inputs) {
@@ -67,6 +72,9 @@ class RecorderProcessor extends AudioWorkletProcessor {
       // reserves the right to vary the render quantum size.
       let i = 0;
       while (i < channel.length) {
+        // `currentFrame` (an AudioWorkletGlobalScope global) is the context
+        // frame of this quantum's first sample.
+        if (this.filled === 0) this.batchFrame = currentFrame + i;
         const take = Math.min(channel.length - i, BATCH_SAMPLES - this.filled);
         this.batch.set(channel.subarray(i, i + take), this.filled);
         this.filled += take;

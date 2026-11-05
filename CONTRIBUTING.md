@@ -222,11 +222,13 @@ main/                    Electron main process
   settings.js            JSON settings with deep-merged defaults, atomic 0600 writes
   secret-store.js        remote API keys at rest: safeStorage encryption + status
   history.js             local transcription history: stable entry ids, search, single delete
+  usage.js               local usage counts (#347): takes/words/speech time per day, never text
   audio-store.js         kept recordings (#343): AES-GCM files under a safeStorage-wrapped key, limits
   recordings.js          when a recording is kept, pruning, export, retranscription (no delivery)
   tray.js                tray icon + menu
   windows.js             overlay + settings + wizard + correction windows (one factory)
   window-guard.js        navigation lock + permission policy for app windows
+  wake.js                macOS sleep/unlock: re-join the hidden overlay to all Spaces (#353)
   updates.js             in-app updater: check, download to userData/updates, verify, re-verify, install
   services/update-feed.js     latest*.yml parsing + install-kind detection
   services/release-notes.js   what's-new: CHANGELOG.md ⇄ release-notes.json
@@ -261,6 +263,8 @@ renderer/                overlay (mic capture → 16 kHz WAV, live transcript
   transcript.js          pure two-layer (raw/cleaned) reconcile helper
   recorder-worklet.js    AudioWorklet: PCM + level from the audio thread
   microphone.js          mic constraints + error classification (overlay)
+  record-cues.js         optional start/stop/error tones: lifecycle reducer,
+                         start-cue guard by capture frame, Web Audio playback
   chunk-boundary.js      where to cut a live chunk at the hard cap
   speech-probe.js        did a committed chunk carry speech?
   hotkey-capture.js      shared classic-script hotkey capture (settings + wizard);
@@ -271,6 +275,7 @@ renderer/                overlay (mic capture → 16 kHz WAV, live transcript
   aliases.js             Always replace: alias records, deterministic replacement,
                          remember/merge/parse (shared with main and the pipeline)
   permission-status.js   status copy after "Fix auto-paste permission"
+  ducking-status.js      "Lower other audio" status line (settings + wizard)
 stt-server/              Python: FastAPI + onnx-asr Parakeet server (optional)
 ```
 
@@ -457,15 +462,21 @@ Design constraints worth keeping:
 - **The UI has a design system.** [DESIGN.md](DESIGN.md) is derived from the
   shipped CSS and governs the overlay, settings and wizard: one coral accent
   reserved for the voice, filled-white for the primary action, no drop
-  shadows, and two hardcoded values that must stay in sync (`WAVE_COLOR` ↔
-  `--accent`, `INK_COLOR` ↔ `--ink`, both tokens in `renderer/tokens.css`).
+  shadows. Both palettes (dark, and light under `prefers-color-scheme`) live
+  in `renderer/tokens.css`; the Appearance setting drives
+  `nativeTheme.themeSource` (`main/appearance.js`), so pages re-theme without
+  a reload. One value is duplicated outside CSS: `INK_COLORS` in
+  `main/windows.js` ↔ `--ink` per palette (`test/theme-contract.test.js` pins
+  it, bans colour literals elsewhere, and checks WCAG contrast in both).
   Read it before changing any renderer CSS.
 
 ## README screenshots
 
 The screenshots in [docs/screenshots/](docs/screenshots/) are captured
 headlessly from the real windows (wizard, settings, correction, overlay in staged
-recording/done states). If the UI changes, re-capture them:
+recording/done states), in the dark palette whatever your desktop prefers; the
+`-light` shots repeat the wizard, settings, correction and the recording
+overlay in the light palette. If the UI changes, re-capture them:
 
 ```bash
 make screenshots       # runs scripts/screenshots.js under xvfb

@@ -1,20 +1,117 @@
 /* Earheart's shared palette — the bar's materials, declared once and loaded
-   before overlay.css and settings.css (which the wizard layers on). Each sheet
-   adds only its own derivatives on top. See DESIGN.md.
+   before overlay.css, settings.css (which the wizard layers on) and
+   correction.css. Every colour in the renderer lives here; the other sheets
+   only reference these tokens. See DESIGN.md.
 
-   Two values are duplicated outside CSS and must stay in sync:
-   --ink with INK_COLOR in main/windows.js, --accent with WAVE_COLOR in
-   overlay.js (test/overlay-contract.test.js pins both). */
+   Two palettes: dark is the base (the unconditional :root block) and light
+   overrides every colour token under prefers-color-scheme: light. Main sets
+   nativeTheme.themeSource from the Appearance setting, so Chromium resolves
+   the right block on the first paint and re-resolves it live when the OS (or
+   the setting) flips — no JS involved. Both blocks must declare the same token
+   names (test/theme-contract.test.js pins this, plus the WCAG ratios).
+
+   Washes are the foreground channel at an alpha: rgb(var(--fg-rgb) / 0.08) is
+   white in dark and black in light, at the same strength. --accent-rgb and
+   --err-rgb do the same for the coral glow and the error wash.
+
+   One value is duplicated outside CSS and must stay in sync: --ink with
+   INK_COLORS in main/windows.js (the framed windows' native background). The
+   overlay's canvas reads --accent at runtime. */
 
 :root {
+  color-scheme: light dark; /* native selects, scrollbars and dialogs follow */
+
   --ink: #18181b; /* the bar and the framed windows — solid near-black */
+  --fg-rgb: 255 255 255; /* the foreground channel washes are made of */
   --edge: rgba(255, 255, 255, 0.1); /* hairline card + panel edges */
-  --text: #f4f4f5; /* primary text */
-  --text-dim: #a1a1aa; /* secondary text, hints (≥4.5:1 on --ink) */
+  --seam: rgba(255, 255, 255, 0.08); /* dividers between regions */
   --wash: rgba(255, 255, 255, 0.08); /* hover fills */
+  --wash-faint: rgba(255, 255, 255, 0.04); /* card fills, quiet hovers */
   --track: rgba(255, 255, 255, 0.12); /* empty progress/download track fills */
+  --tray: rgba(0, 0, 0, 0.25); /* recessed tray inside a card */
+  --dot: rgba(255, 255, 255, 0.35); /* a wizard step not yet reached (≥3:1) */
+
+  --text-strong: #ffffff; /* a filled key's hover — one step past --text */
+  --text: #f4f4f5; /* primary text; the filled key */
+  --text-mid: #d4d4d8; /* the overlay's status word */
+  --text-dim: #a1a1aa; /* secondary text, hints (≥4.5:1 on --ink) */
+  --text-faint: rgba(255, 255, 255, 0.28); /* disabled key glyphs */
+  --idle: #71717a; /* status dot: idle / nothing heard */
+
+  --field: #101013; /* input fill — a step below the ink */
+  --field-edge: #6b6b74; /* input boundary — ≥3:1 on --ink (WCAG 1.4.11) */
+  /* The select caret: a CSS var can't be interpolated into a data: URI, so
+     the stroke is this palette's --text-dim, written out. */
+  --caret: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="%23a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+
   --accent: #fb4d5c; /* the voice: capture dot, waveform, progress; in the
                         framed windows only while a hotkey field captures */
+  --accent-rgb: 251 77 92;
   --ok: #34d399; /* status: delivered / success */
   --err: #f87171; /* status: failed / fault; destructive hover */
+  --err-rgb: 248 113 113;
+
+  /* Section wayfinding hues (settings window only — --accent stays the sole
+     brand coral, reserved for the hotkey Capture Exception; these six never
+     appear anywhere the coral could be mistaken for it). Each pairs an index
+     icon with its section's legend icon so the color, not just the glyph,
+     says "you are here" while scrolling. Near-equal OKLCH lightness/chroma so
+     no section reads as more important than another; all ≥4.5:1 on --ink in
+     both palettes. */
+  --section-general: #79a7e2; /* blue */
+  --section-live: #9cae65; /* lime */
+  --section-stt: #48b7c2; /* cyan */
+  --section-cleanup: #b49ce1; /* violet */
+  --section-history: #d389ba; /* magenta */
+  --section-usage: #75b683; /* sage */
+  --section-advanced: #c49f4d; /* gold */
+
+  /* Engine-choice state color: what Built-in vs OpenAI-compatible actually
+     does with your audio/words, not decoration — teal reads as contained
+     and calm, amber as "this leaves the device." Neither reuses --ok/--err,
+     which stay reserved for success/fault status per DESIGN.md. */
+  --state-private: #16bbbc;
+  --state-external: #ea9941;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --ink: #fafafa; /* near-white paper */
+    --fg-rgb: 0 0 0;
+    --edge: rgba(0, 0, 0, 0.1);
+    --seam: rgba(0, 0, 0, 0.08);
+    --wash: rgba(0, 0, 0, 0.06);
+    --wash-faint: rgba(0, 0, 0, 0.04);
+    --track: rgba(0, 0, 0, 0.1);
+    --tray: rgba(0, 0, 0, 0.05);
+    --dot: rgba(0, 0, 0, 0.45);
+
+    --text-strong: #000000;
+    --text: #18181b;
+    --text-mid: #3f3f46;
+    --text-dim: #52525b;
+    --text-faint: rgba(0, 0, 0, 0.32);
+    --idle: #71717a;
+
+    --field: #ffffff;
+    --field-edge: #82828b;
+    --caret: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="%2352525b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+
+    --accent: #d42a3c;
+    --accent-rgb: 212 42 60;
+    --ok: #047857;
+    --err: #b91c1c;
+    --err-rgb: 185 28 28;
+
+    --section-general: #3e6596;
+    --section-live: #5d6b2b;
+    --section-stt: #14707a;
+    --section-cleanup: #6a578f;
+    --section-history: #854e73;
+    --section-usage: #3e6e48;
+    --section-advanced: #7b5f1b;
+
+    --state-private: #006869;
+    --state-external: #994500;
+  }
 }

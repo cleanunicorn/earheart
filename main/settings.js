@@ -76,6 +76,9 @@ const DEFAULTS = {
   // on Windows/macOS, an XDG autostart .desktop file on Linux — on save, and
   // reconciled on every startup.
   startOnBoot: false,
+  // "system" (follow the OS), "light" or "dark" — every window's palette,
+  // applied by main/appearance.js. Anything else reads as "system".
+  appearance: "system",
   output: {
     // "paste" = type into focused app (restores clipboard afterwards),
     // "paste-copy" = paste AND keep the transcript on the clipboard,
@@ -170,6 +173,10 @@ const DEFAULTS = {
     duckOtherAudio: false,
     // The lowered level, as a percentage of the volume before the take.
     duckLevelPercent: 20,
+    // Short tones when capture really starts and stops, and on a mic failure
+    // (#341, renderer/record-cues.js). Off by default.
+    recordSounds: false,
+    recordSoundVolumePercent: 60,
   },
   engines: {
     // Built-in STT/cleanup models stay resident for fast repeat dictations,
@@ -180,6 +187,12 @@ const DEFAULTS = {
   history: {
     enabled: true,
     limit: 100,
+  },
+  // Local usage counts (#347, main/usage.js): takes, words and speech time,
+  // never text. typingWpm is the baseline the "time saved" estimate uses.
+  usage: {
+    enabled: true,
+    typingWpm: 40,
   },
   // Retained dictation audio (#343, main/audio-store.js): off unless the user
   // turns it on, and only where the OS offers real secure storage (save()
@@ -397,10 +410,13 @@ function migrateLegacy(stored) {
 const LIMITS = [
   { section: "audio", key: "maxRecordingSeconds", min: 10, max: 3600 },
   { section: "audio", key: "duckLevelPercent", min: 0, max: 80 },
+  { section: "audio", key: "recordSoundVolumePercent", min: 5, max: 100 },
   { section: "engines", key: "idleUnloadMinutes", min: 0, max: 240 },
   // Settings → History's recording limits (#recordings-days, #recordings-mb).
   { section: "recordings", key: "maxAgeDays", min: 1, max: 365 },
   { section: "recordings", key: "maxMegabytes", min: 50, max: 10240 },
+  // Settings → Usage's typing-speed baseline (#typing-wpm).
+  { section: "usage", key: "typingWpm", min: 10, max: 200 },
 ];
 
 // Clamp each limit into its range (rounded to whole units); a non-finite value
@@ -418,6 +434,13 @@ function clampLimits(merged) {
     };
   }
   return out;
+}
+
+// An unknown or missing appearance reads as "system". Not rewritten on disk
+// until the next save, like clampLimits.
+const APPEARANCES = ["system", "light", "dark"];
+function normalizeAppearance(merged) {
+  return APPEARANCES.includes(merged.appearance) ? merged : { ...merged, appearance: "system" };
 }
 
 // Make cleanup.aliases valid whatever the file held (hand edits, another
@@ -492,7 +515,7 @@ function load() {
     ? secretStore.storageStatus(safeStorage, process.platform)
     : { secure: false, backend: null };
   const decoded = secretStore.decodeSecrets(stored, ready ? safeStorage : null);
-  const merged = normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored))));
+  const merged = normalizeAppearance(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored)))));
   // Before `ready` encrypted keys read as "", so the result is not cached:
   // the first load after `ready` decrypts them. Nothing saves before then
   // (save() refuses).
@@ -562,7 +585,7 @@ function writeFile(merged) {
 function save(next) {
   if (!appReady()) throw new Error("settings cannot be saved before the app is ready");
   const previous = load();
-  const merged = normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, next)));
+  const merged = normalizeAppearance(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, next))));
   // Fail closed (#343): recordings are only ever kept encrypted, so keeping
   // them can't be turned on without OS-backed secure storage.
   if (merged.recordings.keep === true && !keyStorageStatus.secure) {

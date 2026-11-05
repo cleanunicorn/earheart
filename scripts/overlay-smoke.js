@@ -15,13 +15,17 @@
 //      instead of stopping the take the moment it goes live.
 //   6. The discard hotkey's push (record:discard) does what the ✕ key does in
 //      every phase, and the ✕ key's tooltip names the hotkey.
+//   7. Record cues (#341): none by default; with sounds on, the start cue
+//      plays on the first samples and the take begins after its last frame,
+//      a failed start plays only the error cue, and a cue that cannot play
+//      never costs the take.
 //
 // Run under Electron:
 //
 //   xvfb-run -a npx electron scripts/overlay-smoke.js --no-sandbox   # Linux
 //   npx electron scripts/overlay-smoke.js                            # macOS/Win
 
-const { app, ipcMain, session } = require("electron");
+const { app, ipcMain, session, nativeTheme } = require("electron");
 // A throwaway profile, set before main/ loads: the overlay reads settings
 // (its saved position among them), and a contributor's own profile must
 // neither steer the run nor be written by it (#295).
@@ -57,6 +61,14 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // in this file already carry 200-250ms of slack.
 const WAV_LAG_ALLOWANCE_SEC = process.platform === "darwin" ? 0.35 : 0.15;
 
+// How long a take whose audio must be non-silent is held. Chromium's fake
+// capture device is digital silence with a short beep every 500 ms, and the
+// first beep of a freshly opened stream lands ~530 ms in (measured 522–532 ms
+// across takes). A take held ~500-600 ms holds that beep by a few ms or
+// not at all — its "not silence" check then fails on a working capture path
+// (#341: a 0.54 s take came back rms=0.0000). 1.2 s always holds two beeps.
+const SIGNAL_HOLD_MS = 1200;
+
 const checks = [];
 function check(name, ok, detail) {
   checks.push({ name, ok });
@@ -68,6 +80,15 @@ function check(name, ok, detail) {
 // error here means the session plumbing broke. Collected so waitForStatus can
 // surface the real diagnostic instead of an opaque status timeout.
 const micErrors = [];
+
+// Both palettes' accent as the overlay computes it ("rgb(r, g, b)"), read from
+// tokens.css so the check follows the palette rather than a copy of it.
+const { readPalettes, parseColor } = require("./theme-contrast");
+const ACCENT = (() => {
+  const p = readPalettes();
+  const rgb = (v) => { const { r, g, b } = parseColor(v); return `rgb(${r}, ${g}, ${b})`; };
+  return { dark: rgb(p.dark.get("--accent")), light: rgb(p.light.get("--accent")) };
+})();
 
 function waitForMessage(channel, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
@@ -139,6 +160,9 @@ const start = (win, sid, deviceId = null) =>
 app.whenReady().then(async () => {
   try {
     assertIsolated(app, profile);
+    // Pinned: "system" would follow the runner's desktop theme. The light
+    // palette is flipped to explicitly below (#348).
+    nativeTheme.themeSource = "dark";
     // The shipped permission policy, so the microphone grant below is proven
     // through the same handler the app installs (main/window-guard.js).
     installPermissionHandler(session.defaultSession);
@@ -440,7 +464,7 @@ app.whenReady().then(async () => {
       `transitions=${JSON.stringify(log)}`
     );
 
-    await sleep(1200); // "talk" for a bit while live
+    await sleep(SIGNAL_HOLD_MS); // "talk" for a bit while live
     const captured1P = waitForMessage("audio:captured");
     win.webContents.send("record:stop");
     const stoppedAt = Date.now();
@@ -507,6 +531,29 @@ app.whenReady().then(async () => {
     check("the last minute counts down to the cap", /^−0:(10|09|08)$/.test(warned.timer), warned.timer);
     check("the countdown wears the accent", warned.flagged && warned.color === warned.accent,
       `flag=${warned.flagged} color=${warned.color} accent=${warned.accent}`);
+    // The recording state in both palettes (#348): the countdown and the
+    // filled capture dot wear each palette's own accent, and the switch
+    // happens mid-take without a reload.
+    const recordingColors = () => win.webContents.executeJavaScript(`({
+      timer: getComputedStyle(document.getElementById("timer")).color,
+      dot: getComputedStyle(document.getElementById("status-dot")).backgroundColor,
+      glow: getComputedStyle(document.getElementById("status-dot")).boxShadow,
+    })`);
+    const darkRec = await recordingColors();
+    nativeTheme.themeSource = "light";
+    let lightRec;
+    for (let i = 0; i < 100; i++) {
+      lightRec = await recordingColors();
+      if (lightRec.timer === ACCENT.light) break;
+      await sleep(20);
+    }
+    nativeTheme.themeSource = "dark";
+    const glowRgb = (shadow) => (shadow.match(/rgba?\((\d+), (\d+), (\d+)/) || []).slice(1, 4).join(",");
+    check("the recording countdown and dot wear each palette's accent",
+      darkRec.timer === ACCENT.dark && darkRec.dot === ACCENT.dark &&
+        lightRec.timer === ACCENT.light && lightRec.dot === ACCENT.light &&
+        glowRgb(lightRec.glow) === ACCENT.light.match(/\d+/g).join(","),
+      JSON.stringify({ darkRec, lightRec, ACCENT }));
     win.webContents.send("record:stop");
     const warnCapture = await warnCaptureP;
     check("a warned take still delivers on stop", warnCapture.sid === 270);
@@ -533,7 +580,7 @@ app.whenReady().then(async () => {
     start(win, 3);
     await waitForStatus(win, "recording");
     console.log(`[overlay-smoke] warm start -> mic live in ${Date.now() - t0}ms`);
-    await sleep(600);
+    await sleep(SIGNAL_HOLD_MS);
     const captured3P = waitForMessage("audio:captured");
     win.webContents.send("record:stop");
     const stats3 = wavStats((await captured3P).wav);
@@ -543,13 +590,126 @@ app.whenReady().then(async () => {
       `wav=${stats3.seconds.toFixed(2)}s rms=${stats3.rms.toFixed(4)}`
     );
 
+    // ---- Record cues (#341): off by default, tied to real capture --------
+    const cueLog = () =>
+      win.webContents.executeJavaScript("cueLog.map((c) => `${c.cue}:${c.sid}:${c.played}`)");
+    check("no record cue plays when sounds are off (the default)",
+      (await cueLog()).length === 0, JSON.stringify(await cueLog()));
+    const startWithSounds = (sid, volume = 0.5) =>
+      win.webContents.send("record:start", {
+        sid,
+        deviceId: null,
+        maxSeconds: 30,
+        livePreview: { enabled: false },
+        sounds: { volume },
+      });
+
+    // A normal take: one start cue on the first samples, "Listening…" only
+    // after its guard, one stop cue, and the take still covers the window
+    // the card invited speech in.
+    await win.webContents.executeJavaScript("window.__statusLog = []");
+    startWithSounds(341);
+    const cueLiveAt = await waitForStatus(win, "recording");
+    const cueGuard = await win.webContents.executeJavaScript(`({
+      until: recording.guardUntil,
+      spent: recording.guardSpent,
+      cueEndFrame: Math.ceil(cuePlayer.active.endTime * audioContext.sampleRate),
+      statuses: window.__statusLog,
+    })`);
+    check("record cues: the start cue plays on the first samples", 
+      JSON.stringify(await cueLog()) === JSON.stringify(["start:341:true"]), JSON.stringify(await cueLog()));
+    check("record cues: the take begins after the start cue's last frame",
+      cueGuard.spent && cueGuard.until > cueGuard.cueEndFrame,
+      `guardUntil=${cueGuard.until} cueEnd=${cueGuard.cueEndFrame}`);
+    check("record cues: still starting before recording",
+      cueGuard.statuses.indexOf("starting") !== -1 &&
+        cueGuard.statuses.indexOf("recording") > cueGuard.statuses.indexOf("starting"),
+      JSON.stringify(cueGuard.statuses));
+    await sleep(800);
+    const cueCaptureP = waitForMessage("audio:captured");
+    win.webContents.send("record:stop");
+    const cueStoppedAt = Date.now();
+    const cueStats = wavStats((await cueCaptureP).wav);
+    check("record cues: the take with sounds on covers everything since Listening…",
+      cueStats.seconds >= (cueStoppedAt - cueLiveAt) / 1000 - WAV_LAG_ALLOWANCE_SEC && cueStats.rms > 0.001,
+      `wav=${cueStats.seconds.toFixed(2)}s window=${((cueStoppedAt - cueLiveAt) / 1000).toFixed(2)}s rms=${cueStats.rms.toFixed(4)}`);
+    check("record cues: one start and one stop for a normal take",
+      JSON.stringify(await cueLog()) === JSON.stringify(["start:341:true", "stop:341:true"]), JSON.stringify(await cueLog()));
+
+    // Stopped inside the start cue's window: nothing was kept, so the take is
+    // abandoned, but the start the user heard is paired with a stop. The stop
+    // is sent from inside the page the moment the guard is armed.
+    await win.webContents.executeJavaScript(`
+      cueLog.length = 0;
+      window.__stopInGuard = setInterval(() => {
+        if (recording?.guardUntil > 0 && !recording.guardSpent) {
+          clearInterval(window.__stopInGuard);
+          window.__stoppedInGuard = true;
+          stopRecording();
+        }
+      }, 0);
+      window.__stoppedInGuard = false;
+      "";
+    `);
+    const guardCancelP = waitForMessage("record:cancelled");
+    startWithSounds(342);
+    const guardCancel = await guardCancelP;
+    const stoppedInGuard = await win.webContents.executeJavaScript("clearInterval(window.__stopInGuard), window.__stoppedInGuard");
+    check("record cues: a stop during the start cue is an abandoned attempt with a stop cue",
+      stoppedInGuard && guardCancel.sid === 342 &&
+        JSON.stringify(await cueLog()) === JSON.stringify(["start:342:true", "stop:342:true"]),
+      `inGuard=${stoppedInGuard} sid=${guardCancel.sid} cues=${JSON.stringify(await cueLog())}`);
+
+    // Stop racing mic startup: no samples, so no cue at all.
+    await win.webContents.executeJavaScript("cueLog.length = 0");
+    const raceCancelP = waitForMessage("record:cancelled");
+    startWithSounds(343);
+    win.webContents.send("record:stop");
+    await raceCancelP;
+    await sleep(200);
+    check("record cues: a stop before the mic is live plays nothing",
+      (await cueLog()).length === 0, JSON.stringify(await cueLog()));
+
+    // A failed start never sounds like success: only the error cue.
+    await win.webContents.executeJavaScript("cueLog.length = 0; window.__micTest.failDefault = true");
+    const cueErrorP = waitForMessage("record:error");
+    startWithSounds(344);
+    await cueErrorP;
+    await win.webContents.executeJavaScript("window.__micTest.failDefault = false");
+    micErrors.length = 0;
+    check("record cues: a failed mic start plays only the error cue",
+      JSON.stringify(await cueLog()) === JSON.stringify(["error:344:true"]), JSON.stringify(await cueLog()));
+
+    // A broken audio output must never cost the take: oscillators that throw
+    // play nothing, guard nothing, and the dictation still delivers.
+    await win.webContents.executeJavaScript(`
+      cueLog.length = 0;
+      window.__realOscillator = AudioContext.prototype.createOscillator;
+      AudioContext.prototype.createOscillator = () => { throw new Error("no output"); };
+      "";
+    `);
+    startWithSounds(345);
+    await waitForStatus(win, "recording");
+    await sleep(SIGNAL_HOLD_MS);
+    const brokenGuard = await win.webContents.executeJavaScript("recording.guardUntil");
+    const brokenCaptureP = waitForMessage("audio:captured");
+    win.webContents.send("record:stop");
+    const brokenStats = wavStats((await brokenCaptureP).wav);
+    await win.webContents.executeJavaScript(
+      "AudioContext.prototype.createOscillator = window.__realOscillator; ''");
+    check("record cues: a cue that cannot play guards nothing and the take still delivers",
+      brokenGuard === 0 && brokenStats.seconds > 0.3 && brokenStats.rms > 0.001 &&
+        JSON.stringify(await cueLog()) === JSON.stringify(["start:345:false", "stop:345:false"]),
+      `guard=${brokenGuard} wav=${brokenStats.seconds.toFixed(2)}s rms=${brokenStats.rms.toFixed(4)} cues=${JSON.stringify(await cueLog())}`);
+    await win.webContents.executeJavaScript("cueLog.length = 0");
+
     // ---- Session 4/5: cancel mid-startup, then a full session again --------
     start(win, 4);
     win.webContents.send("record:cancel"); // lands while getUserMedia is pending
     await sleep(300);
     start(win, 5);
     await waitForStatus(win, "recording");
-    await sleep(600);
+    await sleep(SIGNAL_HOLD_MS);
     const captured5P = waitForMessage("audio:captured");
     win.webContents.send("record:stop");
     const captured5 = await captured5P;
@@ -623,12 +783,46 @@ app.whenReady().then(async () => {
       return n;
     })()`);
     check("waveform paints while recording", litPixels > 0, `lit=${litPixels}`);
+    // The wave is painted in the palette's --accent (read from tokens.css, no
+    // copy in overlay.js). The bars are thinner than two pixels, so every
+    // pixel is anti-aliased: take the most opaque one, whose un-premultiplied
+    // colour is the fill to within rounding.
+    const wavePaint = () => win.webContents.executeJavaScript(`(() => {
+      const c = document.getElementById("meter");
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      let best = -1;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0 && (best < 0 || d[i + 3] > d[best + 3])) best = i;
+      return best < 0 ? null : [d[best], d[best + 1], d[best + 2], d[best + 3]];
+    })()`);
+    const isAccent = (px, scheme) =>
+      !!px && px[3] >= 128 && ACCENT[scheme].match(/\d+/g).every((v, k) => Math.abs(Number(v) - px[k]) <= 4);
+    const darkWave = await wavePaint();
     // Drive pause through the real channel (pause hotkey / `earheart --pause`
     // land here), so the preload whitelist and the renderer handler are both
     // exercised.
     win.webContents.send("record:pause-toggle");
     const pausedAt6 = await waitForStatus(win, "paused");
     const wave1 = await waveColumns();
+    // Paused, the take's frozen wave must recolour on a scheme flip too (the
+    // overlay repaints on prefers-color-scheme change, not only per frame).
+    // Paused time is not recorded, so this costs the measured spans nothing.
+    nativeTheme.themeSource = "light";
+    let lightWave;
+    for (let i = 0; i < 100; i++) {
+      lightWave = await wavePaint();
+      if (isAccent(lightWave, "light")) break;
+      await sleep(20);
+    }
+    nativeTheme.themeSource = "dark";
+    let backWave;
+    for (let i = 0; i < 100; i++) {
+      backWave = await wavePaint();
+      if (isAccent(backWave, "dark")) break;
+      await sleep(20);
+    }
+    check("the waveform is drawn in each palette's accent, and recolours when the scheme flips",
+      isAccent(darkWave, "dark") && isAccent(lightWave, "light") && isAccent(backWave, "dark"),
+      JSON.stringify({ darkWave, lightWave, backWave, ACCENT }));
     // Lower bound only: it is what detects a frozen rAF loop. An upper bound
     // would trip on descheduled CI runners (see WAV_LAG_ALLOWANCE_SEC above)
     // without catching anything the lower bound doesn't.

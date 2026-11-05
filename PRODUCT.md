@@ -119,7 +119,8 @@ shipped.
   of the end rather than overpromise.
 - Output modes: auto-paste with clipboard restore, paste + keep on clipboard,
   or clipboard-only. Local JSON history of recent transcriptions (can be
-  disabled). Editable cleanup prompt. Optional start-on-login.
+  disabled). Local usage stats (counts only, never text; can be disabled
+  and reset). Editable cleanup prompt. Optional start-on-login.
 - **Core engineering constraint: never lose the user's words.** If cleanup
   fails, the raw transcript is delivered. Any pipeline change must preserve
   the raw-transcript fallbacks.

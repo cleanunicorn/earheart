@@ -62,6 +62,8 @@ async function loadMain(
   let permissionHandler = null;
   let stateListener = null;
   let captureListener = null;
+  const powerHandlers = {};
+  let state = pipelineState;
 
   class FakeNotification {
     static isSupported() {
@@ -99,6 +101,12 @@ async function loadMain(
         },
       },
       Notification: FakeNotification,
+      powerMonitor: {
+        on: (event, handler) => {
+          events.push(`powerMonitor.on:${event}`);
+          powerHandlers[event] = handler;
+        },
+      },
       globalShortcut: {
         register(accelerator, callback) {
           events.push(`register:${accelerator}`);
@@ -120,6 +128,7 @@ async function loadMain(
     "./windows": {
       init: () => events.push("windows.init"),
       createOverlay: () => events.push("createOverlay"),
+      rejoinOverlayAfterWake: (reason, opts) => events.push(`rejoin:${reason}:${JSON.stringify(opts)}`),
       destroyOverlay: () => events.push("destroyOverlay"),
       openSettings: () => events.push("openSettings"),
       confirmCorrectionClose: () => canCloseCorrection,
@@ -128,6 +137,7 @@ async function loadMain(
       openCorrection: (entry) => events.push(`correct:${entry.text}`),
       sendToSettings: (channel, payload) => events.push(`settings:${channel}:${JSON.stringify(payload ?? null)}`),
     },
+    "./appearance": { init: () => events.push("appearance.init") },
     "./recordings": {
       startPruning: (getCfg, onPruned) => {
         events.push("recordings.startPruning");
@@ -140,7 +150,7 @@ async function loadMain(
     },
     "./history": { list: () => [{ text: "last transcript" }] },
     "./pipeline": {
-      getState: () => pipelineState,
+      getState: () => state,
       init: () => events.push("pipeline.init"),
       toggle: () => events.push("pipeline.toggle"),
       pauseToggle: () => events.push("pipeline.pauseToggle"),
@@ -150,6 +160,7 @@ async function loadMain(
       onSettingsChanged: () => {},
       onOverlayRendererGone: () => {},
     },
+    "./usage": { init: () => {} },
     "./tray": { init: () => events.push("tray.init"), refresh: () => {} },
     "./ipc": {
       init: (opts) => {
@@ -218,6 +229,8 @@ async function loadMain(
     permissionHandler: () => permissionHandler,
     changeState: (state) => stateListener(state),
     changeCapture: (live) => captureListener(live),
+    powerHandlers,
+    setPipelineState: (next) => { state = next; },
   };
 }
 
@@ -255,6 +268,8 @@ test("a healthy launch registers both hotkeys and announces ready", async () => 
   before(events, "pipeline.init", "ipc.init");
   // The overlay's IPC is registered before the overlay exists (#204).
   before(events, "windows.init", "createOverlay");
+  // The palette is set before any window exists, so none paints the wrong one.
+  before(events, "appearance.init", "windows.init");
   before(events, "createOverlay", "tray.init");
   before(events, `register:${RECORD}`, "notify:Earheart is ready");
   assert.ok(events.includes(`register:${PAUSE}`));
@@ -469,3 +484,40 @@ test("a settings save that prunes kept recordings tells History, as an update", 
   recordingsHooks.onPruned();
   assert.deepStrictEqual(sent().slice(before), ['settings:history:changed:{"updated":true}'], "exactly one new event");
 });
+
+// #353: wake.init() is wired with the real powerMonitor and reads the pipeline at
+// wake time. main.js passes no platform, so wake.js reads process.platform.
+function onPlatform(t, platform) {
+  const original = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { value: platform });
+  t.after(() => Object.defineProperty(process, "platform", original));
+}
+
+test("darwin: waking re-joins the overlay after it is created, deferred while a dictation runs", async (t) => {
+  onPlatform(t, "darwin");
+  const { events, powerHandlers, setPipelineState } = await loadMain();
+  before(events, "createOverlay", "powerMonitor.on:resume");
+  before(events, "createOverlay", "powerMonitor.on:unlock-screen");
+  events.length = 0;
+  powerHandlers.resume();
+  powerHandlers["unlock-screen"]();
+  setPipelineState("recording");
+  powerHandlers.resume();
+  setPipelineState("processing");
+  powerHandlers["unlock-screen"]();
+  assert.deepStrictEqual(events, [
+    'rejoin:resume:{"deferOnly":false}',
+    'rejoin:unlock-screen:{"deferOnly":false}',
+    'rejoin:resume:{"deferOnly":true}',
+    'rejoin:unlock-screen:{"deferOnly":true}',
+  ]);
+});
+
+for (const platform of ["linux", "win32"]) {
+  test(`${platform}: no wake listener is registered`, async (t) => {
+    onPlatform(t, platform);
+    const { events, powerHandlers } = await loadMain();
+    assert.deepStrictEqual(events.filter((e) => e.startsWith("powerMonitor")), []);
+    assert.deepStrictEqual(Object.keys(powerHandlers), []);
+  });
+}

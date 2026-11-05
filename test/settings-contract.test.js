@@ -96,6 +96,17 @@ test("settings controls keep authored colors above non-text contrast minimums", 
   );
 });
 
+test("the Appearance select offers exactly system, light and dark (#348)", () => {
+  const select = html.match(/<select id="appearance">([\s\S]*?)<\/select>/);
+  assert.ok(select, "settings.html must have <select id=\"appearance\">");
+  const values = [...select[1].matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]);
+  // The first option is what a fresh profile shows: the "system" default.
+  assert.deepStrictEqual(values, ["system", "light", "dark"]);
+  assert.match(html, /<label for="appearance"/, "the select has a label");
+  assert.match(js, /\$\("appearance"\)\.value = current\.appearance \|\| "system";/, "populate() shows the saved value");
+  assert.match(js, /appearance: \$\("appearance"\)\.value,/, "collect() saves it");
+});
+
 test("every id wizard.js references exists in wizard.html", () => {
   // wizard.js drives its UI by element id exactly like settings.js, but its
   // ids were previously unguarded: a renamed id (e.g. step-position, which
@@ -405,6 +416,10 @@ function microphonePage(source, page) {
     "updates-remind": { checked: true },
     "idle-unload": { value: "0", ...inputRange("idle-unload") },
     "history-enabled": { checked: true },
+    // Background audio: chosen on in this form, at a level other than the
+    // default, so the save proves both fields are read from the form.
+    "duck-other-audio": { checked: true },
+    "duck-level": { value: "35", ...inputRange("duck-level", page === "wizard" ? wizardHtml : html) },
     "finish-status": { textContent: "", className: "" },
   };
   let payload;
@@ -464,7 +479,7 @@ function microphonePage(source, page) {
     };
     require("node:vm").runInNewContext(settingsFunctions, context);
   } else {
-    const wizardFunctions = `${extractFunction(source, "collect")}; ${extractFunction(source, "finish")}; this.finish = finish;`;
+    const wizardFunctions = `${extractFunction(source, "collect")}; ${extractFunction(source, "duckLevel")}; ${extractFunction(source, "finish")}; this.finish = finish;`;
     require("node:vm").runInNewContext(wizardFunctions, context);
   }
 
@@ -506,6 +521,10 @@ for (const [page, source] of [["settings", js], ["wizard", wizardJs]]) {
     assert.strictEqual(result.selected, "");
     assert.strictEqual(result.saved.audio.deviceId, "");
     assert.strictEqual(result.invokeCount, 1);
+    // Both forms save "Lower other audio while recording" from their own
+    // controls (#365): the wizard's choice lands in the same two settings.
+    assert.strictEqual(result.saved.audio.duckOtherAudio, true);
+    assert.strictEqual(result.saved.audio.duckLevelPercent, 35);
     if (page === "wizard") {
       assert.strictEqual(result.saved.output.mode, "paste-copy");
       // The explicit mode replaces the legacy restoreClipboard: false.
@@ -570,6 +589,16 @@ test("wizard respects another microphone chosen over an unavailable saved one", 
   assert.strictEqual(result.saved.audio.deviceId, "other-id");
   assert.strictEqual(result.invokeCount, 1);
 });
+test("record-cues.js loads before settings.js, whose Play preview uses it (#341)", () => {
+  // playCue only runs when Play is clicked, so a dropped tag passes the smoke
+  // checks and throws (silently, inside the handler) later.
+  const shared = html.indexOf('src="record-cues.js"');
+  const own = html.indexOf('src="settings.js"');
+  assert.notStrictEqual(shared, -1, "settings.html must load record-cues.js");
+  assert.ok(shared < own, "settings.html must load record-cues.js before settings.js");
+  assert.match(js, /\bplayCue\(/);
+});
+
 test("permission-status.js loads before settings.js, which uses it", () => {
   // settings.js only reaches for these when Fix is clicked or the window
   // regains focus, so a dropped tag passes the smoke checks and throws later.
@@ -772,8 +801,8 @@ test("Save never closes Settings; the footer's Close button does", () => {
 // collect() to them (there is no <form>/checkValidity), so collect() must clamp
 // itself. Runs the real collect() against stub elements carrying the markup's
 // own min/max attributes (#210: a typed -5 stopped every dictation at once).
-function inputRange(id) {
-  const tag = html.match(new RegExp(`<input id="${id}"[^>]*>`))?.[0];
+function inputRange(id, source = html) {
+  const tag = source.match(new RegExp(`<input id="${id}"[^>]*>`))?.[0];
   assert.ok(tag, `settings.html must have #${id}`);
   const min = tag.match(/\bmin="([^"]+)"/)?.[1];
   const max = tag.match(/\bmax="([^"]+)"/)?.[1];
@@ -833,6 +862,7 @@ test("Save names each limit it stored differently from what was typed", () => {
       "idle-unload": { value: idle, ...inputRange("idle-unload") },
       "recordings-days": { value: rec[0], ...inputRange("recordings-days") },
       "recordings-mb": { value: rec[1], ...inputRange("recordings-mb") },
+      "typing-wpm": { value: "", ...inputRange("typing-wpm") },
     };
     const sent = new Map(Object.values(elements).map((el) => [el, { value: el.value }]));
     for (const [id, value] of Object.entries(edited)) elements[id].value = value;
@@ -938,4 +968,87 @@ test("'Deliver as one line' is saved from and shown in its switch", () => {
   assert.match(html, /<input type="checkbox" id="output-single-line" class="switch" role="switch" \/>/);
   assert.match(js, /singleLine: \$\("output-single-line"\)\.checked/);
   assert.match(js, /\$\("output-single-line"\)\.checked = current\.output\.singleLine === true/);
+});
+
+/* ---- Settings → Usage (#347) ---- */
+
+const usageJs = fs.readFileSync(path.join(RENDERER, "usage-stats.js"), "utf8");
+
+test("every id usage-stats.js references exists in settings.html", () => {
+  const referenced = [...usageJs.matchAll(/\bel\(\s*"([a-z0-9-]+)"\s*\)/g)].map((m) => m[1]);
+  assert.ok(referenced.length > 10, `expected many referenced ids, got ${referenced.length}`);
+  const missing = [...new Set(referenced)].filter((id) => !htmlIds.has(id)).sort();
+  assert.deepStrictEqual(missing, [], `settings.html is missing ids: ${missing.join(", ")}`);
+  // settings.js fills and saves the two controls.
+  for (const id of ["usage-enabled", "typing-wpm", "usage-off-hint"]) assert.ok(js.includes(`$("${id}")`), id);
+});
+
+test("usage-stats.js loads before settings.js, and the Usage section sits between History and Advanced", () => {
+  const own = html.indexOf('src="settings.js"');
+  const usage = html.indexOf('src="usage-stats.js"');
+  assert.ok(usage !== -1 && usage < own);
+  const order = [...html.matchAll(/<section id="tab-([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepStrictEqual(order.slice(order.indexOf("history"), order.indexOf("history") + 3), ["history", "usage", "advanced"]);
+  // A new section takes its own wayfinding hue (DESIGN.md).
+  assert.ok(definesRule('[data-tab="usage"] .tab-icon'));
+  assert.match(tokensCss, /--section-usage:\s*#[0-9a-f]{6}/);
+});
+
+test("the Usage section never parses text as HTML and uses no colour literals", () => {
+  for (const sink of ["innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "DOMParser", "createContextualFragment"]) {
+    assert.ok(!usageJs.includes(sink), `usage-stats.js must not use ${sink}`);
+  }
+  const start = cssRules.indexOf(".usage-note");
+  const end = cssRules.indexOf(".dl-bar");
+  assert.ok(start !== -1 && end > start, "the usage rules moved");
+  const rules = cssRules.slice(start, end);
+  assert.doesNotMatch(rules, /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i, "usage rules use tokens only");
+  assert.doesNotMatch(rules, /var\(--accent\)/, "no coral on a non-voice surface (One Voice Rule)");
+});
+
+test("the typing-speed field offers exactly the range main clamps to", () => {
+  const settingsJs = fs.readFileSync(path.join(__dirname, "..", "main", "settings.js"), "utf8");
+  const match = settingsJs.match(/section: "usage", key: "typingWpm", min: (\d+), max: (\d+)/);
+  assert.ok(match);
+  const range = inputRange("typing-wpm");
+  assert.deepStrictEqual([String(range.min), String(range.max)], [match[1], match[2]]);
+  assert.strictEqual(DEFAULTS.usage.typingWpm, 40);
+  assert.strictEqual(DEFAULTS.usage.enabled, true);
+});
+
+test("the Usage figures say the time saved is an estimate against the stated baseline", () => {
+  const { usageFormatDuration, usageView } = require("../renderer/usage-stats.js");
+  assert.strictEqual(usageFormatDuration(0), "0 s");
+  assert.strictEqual(usageFormatDuration(NaN), "0 s");
+  assert.strictEqual(usageFormatDuration(45_000), "45 s");
+  assert.strictEqual(usageFormatDuration(12 * 60_000), "12 min");
+  assert.strictEqual(usageFormatDuration(2 * 3600_000), "2 h");
+  assert.strictEqual(usageFormatDuration((2 * 60 + 41) * 60_000), "2 h 41 min");
+
+  const summary = {
+    since: "2026-11-03",
+    totals: { takes: 1, words: 120, speechMs: 60_000 },
+    avgWpm: 120,
+    timeSavedMs: 120_000,
+    typingWpm: 40,
+    streak: { current: 2, longest: 5 },
+    days: [],
+    readOnly: false,
+  };
+  const view = usageView(summary);
+  assert.strictEqual(view.wpm, "120 WPM");
+  assert.strictEqual(view.saved, "≈ 2 min");
+  assert.strictEqual(view.streak, "2 days (best 5)");
+  assert.strictEqual(view.baseline, "40");
+  assert.strictEqual(view.readOnly, "");
+  assert.match(view.since, /^Counting since .*2026.*\.$/);
+  const empty = usageView({ ...summary, totals: { takes: 0, words: 0, speechMs: 0 }, avgWpm: null, timeSavedMs: null, streak: { current: 1, longest: 1 } });
+  assert.strictEqual(empty.empty, true);
+  assert.strictEqual(empty.wpm, "—");
+  assert.strictEqual(empty.saved, "—");
+  assert.strictEqual(empty.streak, "1 day");
+  assert.match(usageView({ ...summary, readOnly: "newer" }).readOnly, /newer version/);
+  // The markup labels the figure and discloses the baseline beside it.
+  assert.match(html, /<dt>Time saved \(estimate\)<\/dt>/);
+  assert.match(html, /Estimate: typing these words at <span id="usage-baseline">40<\/span> WPM, minus the time you spent speaking them\. Not measured\./);
 });

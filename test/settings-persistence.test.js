@@ -191,10 +191,10 @@ test("a throwing change listener does not fail a save that reached disk", (t) =>
 // The limits Settings shows as min/max on its two Performance fields. Main
 // keeps its own copy (it must not parse renderer markup), so read the markup
 // here and hold the two together.
-function fieldRange(id) {
-  const html = fs.readFileSync(path.join(__dirname, "..", "renderer", "settings.html"), "utf8");
+function fieldRange(id, page = "settings.html") {
+  const html = fs.readFileSync(path.join(__dirname, "..", "renderer", page), "utf8");
   const tag = html.match(new RegExp(`<input id="${id}"[^>]*>`))?.[0];
-  assert.ok(tag, `settings.html must have #${id}`);
+  assert.ok(tag, `${page} must have #${id}`);
   const min = Number(tag.match(/\bmin="([^"]+)"/)?.[1]);
   const max = Number(tag.match(/\bmax="([^"]+)"/)?.[1]);
   assert.ok(Number.isFinite(min) && Number.isFinite(max), `#${id} must declare numeric min and max`);
@@ -294,6 +294,32 @@ test("audio ducking is off by default and its level clamps to the #duck-level ra
     assert.strictEqual(saved.audio.duckLevelPercent, expected, String(input));
     assert.strictEqual(saved.audio.duckOtherAudio, true);
   }
+});
+
+test("the setup wizard offers the lowered level with Settings' own range and step (#365)", () => {
+  const html = (page) => fs.readFileSync(path.join(__dirname, "..", "renderer", page), "utf8");
+  const step = (page) => html(page).match(/<input id="duck-level"[^>]*\bstep="([^"]+)"/)?.[1];
+  assert.deepStrictEqual(fieldRange("duck-level", "wizard.html"), fieldRange("duck-level"));
+  assert.strictEqual(step("wizard.html"), step("settings.html"));
+  assert.ok(step("settings.html"), "#duck-level declares a step");
+});
+
+test("record sounds are off by default, survive a reload, and their volume clamps to #record-sound-volume", (t) => {
+  const dir = makeSettingsDir(t);
+  const settings = loadSettings(dir);
+  const range = fieldRange("record-sound-volume");
+  assert.strictEqual(settings.DEFAULTS.audio.recordSounds, false, "opt-in");
+  assert.strictEqual(settings.DEFAULTS.audio.recordSoundVolumePercent, 60);
+  assert.deepStrictEqual(range, { min: 5, max: 100 });
+  for (const [input, expected] of [[0, range.min], [150, range.max], [33.4, 33], [NaN, 60], [100, 100]]) {
+    const saved = settings.save({ audio: { recordSounds: true, recordSoundVolumePercent: input } });
+    assert.strictEqual(saved.audio.recordSoundVolumePercent, expected, String(input));
+    assert.strictEqual(saved.audio.recordSounds, true);
+  }
+  settings.save({ audio: { recordSounds: true, recordSoundVolumePercent: 45 } });
+  const reloaded = loadSettings(dir).get().audio;
+  assert.strictEqual(reloaded.recordSounds, true);
+  assert.strictEqual(reloaded.recordSoundVolumePercent, 45);
 });
 
 test("deepMerge keeps defaults for missing keys and overrides present ones", () => {
@@ -468,4 +494,34 @@ test("idle model unload defaults to a finite window and is overridable", () => {
   // A stored custom window survives too.
   const custom = deepMerge(DEFAULTS, { engines: { idleUnloadMinutes: 10 } });
   assert.strictEqual(custom.engines.idleUnloadMinutes, 10);
+});
+
+test("appearance defaults to system and anything unknown reads as system (#348)", (t) => {
+  // A fresh profile and an existing one written before the setting existed.
+  assert.strictEqual(loadSettings(makeSettingsDir(t)).get().appearance, "system");
+  const old = makeSettingsDir(t);
+  fs.writeFileSync(path.join(old, "settings.json"), JSON.stringify({ startOnBoot: true }));
+  assert.strictEqual(loadSettings(old).get().appearance, "system");
+
+  for (const bad of ["sepia", "", null, 1, { dark: true }]) {
+    const dir = makeSettingsDir(t);
+    fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ appearance: bad }));
+    assert.strictEqual(loadSettings(dir).get().appearance, "system", `stored ${JSON.stringify(bad)}`);
+  }
+
+  // An invalid value handed to save() is stored as system, not as-is.
+  const saving = makeSettingsDir(t);
+  const settings = loadSettings(saving);
+  settings.save({ ...settings.get(), appearance: "sepia" });
+  assert.strictEqual(readFile(saving).appearance, "system");
+});
+
+test("a saved light or dark appearance survives a restart (#348)", (t) => {
+  for (const value of ["light", "dark", "system"]) {
+    const dir = makeSettingsDir(t);
+    const settings = loadSettings(dir);
+    settings.save({ ...settings.get(), appearance: value });
+    assert.strictEqual(readFile(dir).appearance, value);
+    assert.strictEqual(loadSettings(dir).get().appearance, value, "read back by a fresh load");
+  }
 });

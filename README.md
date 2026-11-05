@@ -12,13 +12,14 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/overlay-recording.png" width="500" alt="Earheart overlay transcribing a spoken coding-agent prompt" /><br/>
+  <img src="docs/screenshots/overlay-recording.png" width="400" alt="Earheart overlay transcribing a spoken coding-agent prompt, dark appearance" />
+  <img src="docs/screenshots/overlay-recording-light.png" width="400" alt="The same overlay in the light appearance" /><br/>
   <img src="docs/screenshots/overlay-processing.png" width="500" alt="Earheart overlay showing a progress bar while the transcript is cleaned up" /><br/>
   <img src="docs/screenshots/overlay-done.png" width="500" alt="Earheart overlay confirming an agent prompt was pasted" />
 </p>
 
 <p align="center">
-  <sub>The overlay transcribes live as you speak, shows progress while it finishes up, then confirms where the text landed — without stealing focus.</sub>
+  <sub>The overlay transcribes live as you speak, shows progress while it finishes up, then confirms where the text landed — without stealing focus. Dark or light, following your OS.</sub>
 </p>
 
 ## Watch Earheart in action
@@ -152,14 +153,19 @@ label, and opinions are welcome.
   the maximum length. You can also bind a global pause hotkey in Settings →
   General, and a discard hotkey that throws a take away without reaching for
   the mouse.
-- **Lower other audio while recording (optional)** — turn it on in Settings →
-  General → Microphone and music or a video drops to 20% of its volume (your
-  choice, 0–80%) while the microphone is capturing, and comes back when you
-  stop, pause, or cancel. A volume you change during the take is kept, muted
+- **Lower other audio while recording (optional)** — choose it on the setup
+  wizard's microphone step, or later in Settings → General → Background audio,
+  and music or a video drops to 20% of its volume (your choice, 0–80%) while
+  the microphone is capturing, and comes back when you stop, pause, or cancel. A volume you change during the take is kept, muted
   output stays muted, and a switch to another output device leaves the new one
   alone. Uses `pactl`/`wpctl` on Linux, `osascript` on macOS, and Core Audio
-  through PowerShell on Windows; when none is available Settings says so and
-  dictation works as usual. See [docs/audio-ducking.md](docs/audio-ducking.md).
+  through PowerShell on Windows; when none is available the wizard and Settings
+  say so and dictation works as usual. See [docs/audio-ducking.md](docs/audio-ducking.md).
+- **Sounds when recording starts and stops (optional)** — turn on **Play sounds
+  when recording starts and stops** in Settings → General → Microphone for a
+  short tone once the microphone is really capturing, another when you stop, and
+  a low one if the microphone fails. Speak after the start tone: it is kept out
+  of the recording. Off by default. See [docs/record-sounds.md](docs/record-sounds.md).
 - **Private by default** — speech and cleanup run in-process, with no account,
   telemetry, cloud requirement, or network hop.
 - **Works anywhere without an integration** — the global hotkey (default
@@ -180,6 +186,11 @@ label, and opinions are welcome.
 - **Local history** — recent transcriptions stay in a local JSON file, so a
   mis-aimed paste never loses a dictation. Search it, delete single entries,
   or turn it off.
+- **Usage stats** — Settings → Usage shows how many takes and words you've
+  dictated, your speaking speed, a streak, the last 14 days and an estimate
+  of the typing time saved (against a typing speed you set, 40 WPM by
+  default). Counts only, never your words, on this computer only; turn it
+  off or reset it there. See [docs/usage-stats.md](docs/usage-stats.md).
 - **Kept recordings (optional)** — opt in to keep each dictation's audio,
   encrypted with your OS keychain, then play, seek, export or retranscribe it
   from History. Off by default; 30 days and 1 GB unless you change them.
@@ -187,6 +198,10 @@ label, and opinions are welcome.
   automatically when you sign in, so the hotkey is always ready. Off by
   default; toggle it under Settings → General. Works on Windows, macOS and
   Linux.
+- **Light, dark or system appearance** — every window (the overlay, Settings,
+  the setup wizard and the correction editor) follows your OS by default, or
+  stays Light or Dark; pick it under Settings → General → Appearance. On
+  Linux, following the OS depends on your desktop reporting its colour scheme.
 
 ## Install
 
@@ -291,8 +306,9 @@ npm run dist     # installers for the current platform land in dist/
   <img src="docs/screenshots/wizard.png" width="560" alt="Earheart setup wizard" />
 </p>
 
-On first launch a short setup wizard walks through hotkey, microphone,
-speech-to-text, cleanup and output. It sets up the **on-device engines** for
+On first launch a short setup wizard walks through hotkey, microphone (with
+an optional **Lower other audio while recording**), speech-to-text, cleanup
+and output. It sets up the **on-device engines** for
 both speech-to-text and cleanup, so first-run dictation is fully local and
 private with nothing to configure. Prefer a remote service? Switch any time in
 Settings → Speech-to-text or Settings → Cleanup.

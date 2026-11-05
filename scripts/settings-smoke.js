@@ -82,7 +82,7 @@
 //   xvfb-run -a npx electron scripts/settings-smoke.js --no-sandbox   # Linux
 //   npx electron scripts/settings-smoke.js                            # macOS/Win
 
-const { app, session } = require("electron");
+const { app, session, nativeTheme } = require("electron");
 const settings = require("../main/settings");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -195,6 +195,9 @@ app.on("window-all-closed", () => {});
 
 app.whenReady().then(async () => {
   try {
+    // Pinned: "system" would resolve from the runner's desktop theme. The
+    // light palette is driven explicitly by the theme checks (#348).
+    nativeTheme.themeSource = "dark";
     // The shipped permission policy, so the microphone grant below is proven
     // through the same handler the app installs (main/window-guard.js).
     installPermissionHandler(session.defaultSession);
@@ -259,6 +262,12 @@ app.whenReady().then(async () => {
           onProgress,
         });
       });
+    // Usage counts (#347) for the Usage checks, seeded before any window
+    // asks main/usage.js for them; its IPC wired as main.js does.
+    const usageSmoke = require("./usage-smoke");
+    usageSmoke.seedUsage(userData);
+    require("../main/usage").init();
+
     // Two entries for check 9, saved before the window reads them: one
     // delivered whole, one recovered from an interrupted dictation.
     const historyCfg = { enabled: true, limit: 100 };
@@ -479,7 +488,13 @@ app.whenReady().then(async () => {
       checked: document.getElementById("duck-other-audio").checked,
       level: document.getElementById("duck-level").value,
       status: document.getElementById("duck-status").textContent,
+      card: document.getElementById("duck-other-audio").closest(".card").querySelector(".card-title").textContent,
+      tab: document.getElementById("duck-other-audio").closest(".panel").id,
     })`));
+    // Its own card in General, named for what people look for (#365), not
+    // tucked into the Microphone card.
+    check("lower-other-audio has its own Background audio card on the General tab",
+      ducking.card === "Background audio" && ducking.tab === "tab-general", JSON.stringify(ducking));
     check("lower-other-audio is off by default, at 20%, and says plainly when it is unavailable",
       ducking.checked === false &&
         ducking.level === "20" &&
@@ -2536,8 +2551,10 @@ app.whenReady().then(async () => {
       });
     }
 
-    await require("./wizard-smoke").checkWizard({ waitFor, check });
+    await usageSmoke.checkUsage({ waitFor, check, savedThenClose, userData, invokeHandlers });
+    await require("./wizard-smoke").checkWizard({ waitFor, check, setDuckingStatus: (status) => { duckingStatus = status; } });
     await require("./correction-smoke").checkCorrection({ waitFor, check, savedThenClose });
+    await require("./theme-smoke").checkTheme({ waitFor, check, savedThenClose });
 
     const failed = checks.filter((c) => !c.ok);
     console.log(

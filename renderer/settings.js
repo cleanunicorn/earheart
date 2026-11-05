@@ -186,32 +186,36 @@ $("correct-hotkey-clear").addEventListener("click", () => {
   correctHotkeyInput.value = "";
 });
 
-/* ---------- microphone list ---------- */
-
-// What "Lower other audio" can do here, said plainly: unavailable (and why),
-// the last failure, or what it did this take. Dictation never depends on it.
-function duckStatusText(status) {
-  if (!status) return "";
-  const asUsual = "Dictation works as usual.";
-  if (status.available === false) return `Not available on this system (${status.reason}). ${asUsual}`;
-  if (status.lastError) return `Last attempt failed: ${status.lastError}. ${asUsual}`;
-  if (status.state === "lowered") return "Other audio is lowered right now.";
-  if (status.state === "skipped" && status.detail) return `Not lowered this take: ${status.detail}.`;
-  if (status.state === "pending" && status.detail) return `Not restored yet: ${status.detail}.`;
-  return status.mechanism ? `Uses ${status.mechanism} to change the output volume.` : "";
-}
+/* ---------- background audio ---------- */
 
 const DUCK_STATUS_REFRESH_MS = 2000;
 
-async function refreshDuckStatus() {
-  let status = null;
+// The "Lower other audio while recording" status line, shared with the setup
+// wizard (renderer/ducking-status.js).
+const refreshDuckStatus = () => DuckingStatus.show($("duck-status"));
+
+/* ---------- microphone list ---------- */
+
+// "Play" next to the record sound volume (#341): the start then the stop cue
+// at the typed volume, on a throwaway context so nothing lingers. Purely a
+// preview — any failure just stays silent.
+const RECORD_SOUND_PREVIEW_GAP_MS = 300;
+$("record-sound-test").addEventListener("click", () => {
+  let ctx = null;
   try {
-    status = await earheart.invoke("ducking:status");
+    const percent = numInRange("record-sound-volume", defaults?.audio?.recordSoundVolumePercent ?? 60);
+    ctx = new AudioContext();
+    const volume = percent / 100;
+    ctx.resume().catch(() => {});
+    const first = playCue(ctx, "start", volume);
+    setTimeout(() => {
+      const second = playCue(ctx, "stop", volume);
+      setTimeout(() => ctx.close().catch(() => {}), (second?.ms || 0) + 200);
+    }, (first?.ms || 0) + RECORD_SOUND_PREVIEW_GAP_MS);
   } catch {
-    // An older main without the handler: say nothing rather than guess.
+    ctx?.close().catch(() => {});
   }
-  $("duck-status").textContent = duckStatusText(status);
-}
+});
 
 async function loadMicrophones() {
   const select = $("mic-device");
@@ -307,18 +311,24 @@ function populate() {
   syncEngine("cleanup");
 
   $("start-on-boot").checked = !!current.startOnBoot;
+  $("appearance").value = current.appearance || "system";
 
   $("history-enabled").checked = current.history.enabled;
   $("recordings-keep").checked = current.recordings?.keep === true;
   $("recordings-days").value = current.recordings?.maxAgeDays ?? defaults.recordings.maxAgeDays;
   $("recordings-mb").value = current.recordings?.maxMegabytes ?? defaults.recordings.maxMegabytes;
   renderRecordingsStatus();
+  $("usage-enabled").checked = current.usage?.enabled !== false;
+  $("usage-off-hint").hidden = $("usage-enabled").checked;
+  $("typing-wpm").value = current.usage?.typingWpm ?? defaults.usage.typingWpm;
   $("output-single-line").checked = current.output.singleLine === true;
   $("updates-autocheck").checked = current.updates?.autoCheck !== false;
   $("updates-remind").checked = current.updates?.remind !== false;
   $("max-seconds").value = current.audio.maxRecordingSeconds;
   $("duck-other-audio").checked = current.audio.duckOtherAudio === true;
   $("duck-level").value = current.audio.duckLevelPercent ?? defaults.audio.duckLevelPercent;
+  $("record-sounds").checked = current.audio.recordSounds === true;
+  $("record-sound-volume").value = current.audio.recordSoundVolumePercent ?? defaults.audio.recordSoundVolumePercent;
   $("idle-unload").value = current.engines?.idleUnloadMinutes ?? defaults.engines.idleUnloadMinutes;
 
   if (platform !== "linux") {
@@ -349,6 +359,7 @@ function collect() {
     discardHotkey: current.discardHotkey || "",
     correctHotkey: current.correctHotkey || "",
     startOnBoot: $("start-on-boot").checked,
+    appearance: $("appearance").value,
     updates: {
       ...current.updates,
       autoCheck: $("updates-autocheck").checked,
@@ -414,6 +425,13 @@ function collect() {
           current.audio?.duckLevelPercent ?? defaults.audio.duckLevelPercent
         )
       ),
+      recordSounds: $("record-sounds").checked,
+      recordSoundVolumePercent: Math.round(
+        numInRange(
+          "record-sound-volume",
+          current.audio?.recordSoundVolumePercent ?? defaults.audio.recordSoundVolumePercent
+        )
+      ),
     },
     engines: {
       ...current.engines,
@@ -430,6 +448,12 @@ function collect() {
       keep: $("recordings-keep").checked,
       maxAgeDays: Math.round(numInRange("recordings-days", current.recordings?.maxAgeDays ?? defaults.recordings.maxAgeDays)),
       maxMegabytes: Math.round(numInRange("recordings-mb", current.recordings?.maxMegabytes ?? defaults.recordings.maxMegabytes)),
+    },
+    // Usage counts (#347): the switch and the time-saved typing baseline.
+    usage: {
+      ...current.usage,
+      enabled: $("usage-enabled").checked,
+      typingWpm: Math.round(numInRange("typing-wpm", current.usage?.typingWpm ?? defaults.usage.typingWpm)),
     },
   };
 }
@@ -1095,6 +1119,7 @@ function limitAdjustments(saved, sent) {
     { id: "idle-unload", label: "Idle unload", unit: "min", value: saved.engines?.idleUnloadMinutes },
     { id: "recordings-days", label: "Delete recordings after", unit: "days", value: saved.recordings?.maxAgeDays },
     { id: "recordings-mb", label: "Keep at most", unit: "MB", value: saved.recordings?.maxMegabytes },
+    { id: "typing-wpm", label: "Typing speed", unit: "WPM", value: saved.usage?.typingWpm },
   ];
   return fields
     .filter(({ id, value }) => {
@@ -1244,10 +1269,13 @@ async function saveSettings() {
     if (unchanged($("max-seconds"))) $("max-seconds").value = current.audio.maxRecordingSeconds;
     if (unchanged($("duck-other-audio"))) $("duck-other-audio").checked = current.audio.duckOtherAudio === true;
     if (unchanged($("duck-level"))) $("duck-level").value = current.audio.duckLevelPercent;
+    if (unchanged($("record-sounds"))) $("record-sounds").checked = current.audio.recordSounds === true;
+    if (unchanged($("record-sound-volume"))) $("record-sound-volume").value = current.audio.recordSoundVolumePercent;
     refreshDuckStatus();
     if (unchanged($("idle-unload"))) $("idle-unload").value = current.engines.idleUnloadMinutes;
     if (unchanged($("recordings-days"))) $("recordings-days").value = current.recordings.maxAgeDays;
     if (unchanged($("recordings-mb"))) $("recordings-mb").value = current.recordings.maxMegabytes;
+    if (unchanged($("typing-wpm"))) $("typing-wpm").value = current.usage.typingWpm;
     // Main turns "keep" back off without secure storage: show what was saved.
     $("recordings-keep").checked = current.recordings.keep === true;
     renderRecordingsStatus();

@@ -116,6 +116,23 @@
           </select>
           <p class="hint" id="mic-hint"></p>
         </div>
+        <!-- The same two settings as Settings → General → Background audio
+             (audio.duckOtherAudio / audio.duckLevelPercent), off unless chosen. -->
+        <div class="field">
+          <label class="choice">
+            <input type="checkbox" id="duck-other-audio" />
+            Lower other audio while recording
+          </label>
+          <p class="hint">
+            Music, videos and calls get quieter while the microphone is
+            capturing, and come back when you stop, pause or cancel.
+          </p>
+        </div>
+        <div class="field">
+          <label for="duck-level">Lowered volume (% of the volume before)</label>
+          <input id="duck-level" type="number" min="0" max="80" step="5" />
+          <p id="duck-status" class="hint" aria-live="polite">Checking this system's volume controls…</p>
+        </div>
       </section>
 
       <!-- 4. Speech-to-text -->
@@ -257,6 +274,7 @@
     <script src="hotkey-capture.js"></script>
     <script src="settings-sync.js"></script>
     <script src="model-progress.js"></script>
+    <script src="ducking-status.js"></script>
     <script src="wizard.js"></script>
   </body>
 </html>

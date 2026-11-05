@@ -4,6 +4,8 @@
 //   1. The panel is one continuous scroll: every section renders at once
 //      (the scroll range is far taller than the viewport), none are
 //      display:none-swapped.
+//      Only the panel scrolls: hidden labels must not create an outer page
+//      scrollbar, including at the minimum window size.
 //   2. The scroll spy works: scrolling to the bottom lights the last index
 //      entry (Advanced) with .active + aria-current.
 //   3. The index navigates: clicking General re-highlights its entry immediately
@@ -409,6 +411,58 @@ app.whenReady().then(async () => {
       `)
     );
     check("panel scrolls as one surface", layout.scrollable);
+    const originalSize = win.getSize();
+    for (const [width, height] of [[772, 780], [755, 740], [560, 480]]) {
+      win.setSize(width, height);
+      await js(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`);
+      const bounds = await js(`(() => {
+        const host = document.querySelector("main");
+        const root = document.scrollingElement;
+        const header = document.querySelector("header");
+        const footer = document.querySelector("footer");
+        host.style.scrollBehavior = "auto";
+        host.scrollTop = host.scrollHeight;
+        window.scrollTo(0, root.scrollHeight);
+        const result = {
+          pageOverflow: root.scrollHeight - root.clientHeight,
+          pageScroll: window.scrollY,
+          panelScroll: host.scrollTop,
+          headerTop: header.getBoundingClientRect().top,
+          footerBottom: footer.getBoundingClientRect().bottom,
+          viewport: innerHeight,
+          horizontalOverflow: root.scrollWidth - root.clientWidth,
+        };
+        host.scrollTop = 0;
+        host.style.scrollBehavior = "";
+        return result;
+      })()`);
+      check(`only the settings panel scrolls at ${width}×${height}`,
+        bounds.pageOverflow === 0 && bounds.pageScroll === 0 &&
+        bounds.panelScroll > 0 && bounds.headerTop === 0 &&
+        Math.abs(bounds.footerBottom - bounds.viewport) < 1 &&
+        bounds.horizontalOverflow === 0, JSON.stringify(bounds));
+    }
+    win.setSize(...originalSize);
+    await js(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`);
+    const middleSpy = await js(`(() => {
+      const host = document.querySelector("main");
+      const section = document.getElementById("tab-cleanup");
+      const top = section.getBoundingClientRect().top - host.getBoundingClientRect().top + host.scrollTop;
+      host.style.scrollBehavior = "auto";
+      const activeAt = (offset) => {
+        host.scrollTop = top - offset;
+        host.dispatchEvent(new Event("scroll"));
+        return document.querySelector(".tab.active").dataset.tab;
+      };
+      const before = activeAt(60);
+      const after = activeAt(20);
+      host.scrollTop = 0;
+      host.dispatchEvent(new Event("scroll"));
+      host.style.scrollBehavior = "";
+      return { before, after };
+    })()`);
+    check("scroll spy changes sections at the panel read line",
+      middleSpy.before === "stt" && middleSpy.after === "cleanup", JSON.stringify(middleSpy));
     const microphone = JSON.parse(await js(`JSON.stringify({
       value: document.getElementById("mic-device").value,
       label: document.querySelector('#mic-device option[value="missing-saved-device"]')?.textContent,

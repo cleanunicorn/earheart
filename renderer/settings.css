@@ -208,6 +208,9 @@ nav#tabs {
 /* ---------- scroll area + sections ---------- */
 
 main {
+  /* Keep absolutely positioned accessibility labels inside this scroller;
+     otherwise their static positions extend the document's scroll range. */
+  position: relative;
   flex: 1;
   min-width: 0;
   overflow-y: auto;

@@ -457,15 +457,21 @@ Design constraints worth keeping:
 - **The UI has a design system.** [DESIGN.md](DESIGN.md) is derived from the
   shipped CSS and governs the overlay, settings and wizard: one coral accent
   reserved for the voice, filled-white for the primary action, no drop
-  shadows, and two hardcoded values that must stay in sync (`WAVE_COLOR` ↔
-  `--accent`, `INK_COLOR` ↔ `--ink`, both tokens in `renderer/tokens.css`).
+  shadows. Both palettes (dark, and light under `prefers-color-scheme`) live
+  in `renderer/tokens.css`; the Appearance setting drives
+  `nativeTheme.themeSource` (`main/appearance.js`), so pages re-theme without
+  a reload. One value is duplicated outside CSS: `INK_COLORS` in
+  `main/windows.js` ↔ `--ink` per palette (`test/theme-contract.test.js` pins
+  it, bans colour literals elsewhere, and checks WCAG contrast in both).
   Read it before changing any renderer CSS.
 
 ## README screenshots
 
 The screenshots in [docs/screenshots/](docs/screenshots/) are captured
 headlessly from the real windows (wizard, settings, correction, overlay in staged
-recording/done states). If the UI changes, re-capture them:
+recording/done states), in the dark palette whatever your desktop prefers; the
+`-light` shots repeat the wizard, settings, correction and the recording
+overlay in the light palette. If the UI changes, re-capture them:
 
 ```bash
 make screenshots       # runs scripts/screenshots.js under xvfb

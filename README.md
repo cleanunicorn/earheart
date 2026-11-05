@@ -12,13 +12,14 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/overlay-recording.png" width="500" alt="Earheart overlay transcribing a spoken coding-agent prompt" /><br/>
+  <img src="docs/screenshots/overlay-recording.png" width="400" alt="Earheart overlay transcribing a spoken coding-agent prompt, dark appearance" />
+  <img src="docs/screenshots/overlay-recording-light.png" width="400" alt="The same overlay in the light appearance" /><br/>
   <img src="docs/screenshots/overlay-processing.png" width="500" alt="Earheart overlay showing a progress bar while the transcript is cleaned up" /><br/>
   <img src="docs/screenshots/overlay-done.png" width="500" alt="Earheart overlay confirming an agent prompt was pasted" />
 </p>
 
 <p align="center">
-  <sub>The overlay transcribes live as you speak, shows progress while it finishes up, then confirms where the text landed — without stealing focus.</sub>
+  <sub>The overlay transcribes live as you speak, shows progress while it finishes up, then confirms where the text landed — without stealing focus. Dark or light, following your OS.</sub>
 </p>
 
 ## Watch Earheart in action
@@ -187,6 +188,10 @@ label, and opinions are welcome.
   automatically when you sign in, so the hotkey is always ready. Off by
   default; toggle it under Settings → General. Works on Windows, macOS and
   Linux.
+- **Light, dark or system appearance** — every window (the overlay, Settings,
+  the setup wizard and the correction editor) follows your OS by default, or
+  stays Light or Dark; pick it under Settings → General → Appearance. On
+  Linux, following the OS depends on your desktop reporting its colour scheme.
 
 ## Install
 

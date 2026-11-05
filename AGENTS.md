@@ -332,10 +332,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#architecture) for the full architecture.
 - **Naming:** files kebab-case; tests are `test/<area>.test.js`.
 - **Configuration:** user settings are JSON with deep-merged defaults in
   `main/settings.js`.
-- **UI:** [DESIGN.md](DESIGN.md) governs the overlay, settings, and wizard. Two
-  hardcoded values must stay in sync with the CSS: `WAVE_COLOR` ↔ `--accent`,
-  `INK_COLOR` ↔ `--ink`. Both tokens, like the rest of the shared palette,
-  live in `renderer/tokens.css`.
+- **UI:** [DESIGN.md](DESIGN.md) governs the overlay, settings, and wizard.
+  Every colour, in both the dark and the light palette, lives in
+  `renderer/tokens.css`; page sheets and scripts use tokens only. One value
+  is duplicated outside CSS: `INK_COLORS` in `main/windows.js` ↔ `--ink` per
+  palette. `test/theme-contract.test.js` pins both and checks contrast.
 - **Error handling:** degrade, don't drop — every failure path still delivers
   the user's text (see Golden rule 8).
 
@@ -354,7 +355,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#architecture) for the full architecture.
   check target in the Makefile runs the same commands as its `ci.yml` steps,
   and that `engines.node` is a floor every locked package accepts;
   `cleanup-limits-contract` checks that every cleanup call in `main/` passes
-  the max dictation length, since the engines facade reads no settings.
+  the max dictation length, since the engines facade reads no settings;
+  `theme-contract` checks that both palettes in `renderer/tokens.css` declare
+  the same tokens, that no colour literal sits outside it, that the native
+  ink matches `--ink`, and that every text and UI pair meets WCAG contrast in
+  both palettes.
 - **What to cover:** happy path, error paths, and edge cases for new code.
 - **Fixtures / stubs:** no network or models needed; the STT server suite uses
   synthetic WAVs and fake recognizers.

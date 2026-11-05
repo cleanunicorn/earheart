@@ -1823,7 +1823,7 @@ async function renderRecordingsStatus() {
   $("recordings-clear").disabled = status.count === 0 && status.key !== "lost" && status.key !== "locked";
 
   const problems = [];
-  if (status.key === "locked") problems.push("Kept recordings can't be read: the system keyring that protects them is locked or was replaced. They play again if it unlocks; otherwise delete them to keep new ones.");
+  if (status.key === "locked") problems.push("Kept recordings can't be read: the system keyring that protects them is locked or was replaced. Unlock it, then restart Earheart to play them again; otherwise delete them to keep new ones.");
   if (status.key === "lost") problems.push("The key for kept recordings is missing, so they can't be read. Delete all recordings to start keeping new ones.");
   if (status.lastError && !["insecure", "locked", "lost"].includes(status.lastError.code)) {
     problems.push(status.lastError.code === "too-large"

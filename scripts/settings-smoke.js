@@ -1004,6 +1004,31 @@ app.whenReady().then(async () => {
         overlap.players === 1 && overlap.inSecond && !overlap.inFirst,
         JSON.stringify(overlap)
       );
+
+      // A keyring that won't unwrap the key: the store remembers that for its
+      // lifetime (audio-store.js), so unlocking alone doesn't bring the audio
+      // back — the guidance says to restart, as docs/retained-audio.md does.
+      const lockedStore = createAudioStore({
+        dir: () => path.join(app.getPath("userData"), "audio"),
+        safeStorage: () => ({ ...keyring, decryptString: () => { throw new Error("keyring locked"); } }),
+      });
+      recordings.getStore = () => lockedStore;
+      await js(`document.getElementById("history-enabled").dispatchEvent(new Event("change")); true`);
+      const lockedLine = await waitFor(
+        () => js(`(() => {
+          const line = document.getElementById("recordings-status");
+          return !line.hidden && /keyring/.test(line.textContent) && line.textContent;
+        })()`),
+        "a locked keyring never showed its guidance"
+      );
+      check(
+        "a locked keyring's guidance says to unlock it and restart Earheart before deleting",
+        /Unlock it, then restart Earheart to play them again; otherwise delete them/.test(lockedLine),
+        JSON.stringify(lockedLine)
+      );
+      recordings.getStore = () => smokeStore;
+      await js(`document.getElementById("history-enabled").dispatchEvent(new Event("change")); true`);
+      await waitFor(() => js(`document.getElementById("recordings-status").hidden`), "the guidance stayed after the keyring came back");
     } finally {
       recordings.getStore = realGetStore;
       dialog.showSaveDialog = realSaveDialog;

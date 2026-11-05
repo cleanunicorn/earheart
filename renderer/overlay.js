@@ -813,13 +813,14 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
       // Until the drain confirm, though, keep accepting: the batch in flight
       // holds the last pre-pause syllable, not pause silence.
       if (recording.pausedAt && !recording.draining) return;
-      let { samples } = event.data;
-      if (recording.guardUntil === null) {
-        // First samples: capture is proven live. With sounds on the start cue
-        // plays now, on this context's clock, and every frame it can reach
-        // (cue end + output and input latency + a tail) is dropped below.
+      // First samples: capture is proven live. With sounds on the start cue
+      // plays now, on this context's clock, and every frame it can reach (cue
+      // end + output and input latency + a tail) is dropped — by capture
+      // position, not arrival, so late or bunched posts are cut exactly where
+      // the cue ends. With no cue everything passes.
+      const { kept: samples, guardDone } = ingestPost(recording, event.data, () => {
         const cue = stepCue({ type: "samples", sid }, context);
-        recording.guardUntil = cue
+        return cue
           ? guardEndFrame({
               cueEnd: cue.endTime,
               outputLatency: context.outputLatency,
@@ -828,18 +829,9 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
               sampleRate: context.sampleRate,
             })
           : 0;
-      }
-      if (!recording.guardSpent) {
-        // By capture position, not arrival: late or bunched posts are cut
-        // exactly where the cue ends. With no cue this passes everything.
-        const gate = admitChunk(samples, event.data.frame, recording.guardUntil);
-        samples = gate.kept;
-        if (gate.guardDone) {
-          recording.guardSpent = true;
-          stepCue({ type: "guardDone", sid });
-        }
-        if (samples.length === 0) return;
-      }
+      });
+      if (guardDone) stepCue({ type: "guardDone", sid });
+      if (samples.length === 0) return;
       chunks.push(samples);
       // Just record the level; the rAF meter loop reads `levels` each frame.
       levels.push(event.data.rms);
@@ -977,8 +969,14 @@ function teardown({ collectTail = false } = {}) {
       rec.recorder.port.onmessage = (event) => {
         if (event.data.flushed) done();
         // Only sample messages join the tail — a {drained} confirm from a
-        // pause immediately before the stop carries no audio.
-        else if (event.data.samples) rec.chunks.push(event.data.samples);
+        // pause immediately before the stop carries no audio. The tail goes
+        // through the same start-cue guard as live posts: a stop right after
+        // the guard ended must keep what follows it, never what the cue
+        // covered (once the guard is spent this passes everything).
+        else if (event.data.samples) {
+          const { kept } = ingestPost(rec, event.data, () => 0);
+          if (kept.length > 0) rec.chunks.push(kept);
+        }
       };
     });
   } else {
@@ -1005,20 +1003,25 @@ async function stopRecording() {
     return;
   }
   const wasLive = Boolean(recording.startedAt);
-  const rec = teardown({ collectTail: wasLive });
+  // Samples have arrived but none kept yet (the start-cue guard): the audio
+  // thread may already be past the guard with the first kept batch still in
+  // flight, so collect the tail and decide on what it keeps.
+  const guardArmed = recording.guardUntil !== null;
+  const rec = teardown({ collectTail: wasLive || guardArmed });
   if (!rec) return;
   // The mic is closed now, so the stop cue can't leak into the tail being
   // flushed. Stopped during the start cue (nothing kept): the start is cut
   // and the matching stop plays, though the take is still cancelled below.
   stepCue({ type: "stop", sid: rec.sid });
-  if (!wasLive) {
-    // Stopped before any audio was captured: there is no dictation to
-    // transcribe, and "Nothing heard — try again closer to the mic" would be
+  if (!wasLive && guardArmed) await rec.flushed;
+  if (!wasLive && totalSamples(rec.chunks) === 0) {
+    // Stopped before any audio was kept (before the mic was live, or inside
+    // the start cue's guard): there is no dictation to transcribe, and "Nothing heard — try again closer to the mic" would be
     // misleading advice. Treat it as the user abandoning the attempt.
     earheart.send("record:cancelled", { sid: rec.sid });
     return;
   }
-  await rec.flushed; // pick up the last in-flight chunks before encoding
+  await rec.flushed; // pick up the last in-flight chunks before encoding (settled already if awaited above)
   const wav = encodeWav(rec.chunks);
   earheart.send("audio:captured", { sid: rec.sid, wav });
 }

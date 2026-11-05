@@ -92,6 +92,28 @@ function admitChunk(samples, frame, until) {
   };
 }
 
+// The overlay's ingestion step for one worklet post (live or in the stop
+// flush), shared so both paths drop exactly the same frames. `take` holds
+// `guardUntil` (null until the first post, then the guard's end frame, 0 for
+// none) and `guardSpent`. On the first post `armGuard()` is called — it plays
+// the start cue and returns the guard end frame (0 when no cue sounded).
+// Returns the samples that join the take (possibly empty), whether this was
+// the first post, and whether this post spent the guard.
+function ingestPost(take, data, armGuard) {
+  const first = take.guardUntil === null;
+  if (first) {
+    let until = 0;
+    try {
+      until = Number(armGuard?.()) || 0;
+    } catch {}
+    take.guardUntil = until;
+  }
+  if (take.guardSpent) return { kept: data.samples, first, guardDone: false };
+  const { kept, guardDone } = admitChunk(data.samples, data.frame, take.guardUntil);
+  if (guardDone) take.guardSpent = true;
+  return { kept, first, guardDone };
+}
+
 // The cue lifecycle, one session (sid) at a time. Phases:
 //   opening — record:start received, no samples yet
 //   cueing  — first samples arrived (start cue), guard window being dropped
@@ -271,6 +293,7 @@ if (typeof module !== "undefined" && module.exports) {
     cueLengthMs,
     guardEndFrame,
     admitChunk,
+    ingestPost,
     initialCueState,
     cueStep,
     playCue,

@@ -60,7 +60,7 @@ test("overlay.html loads every sibling script overlay.js calls into", () => {
     { file: "chunk-boundary.js", fn: "quietestOffset" },
     { file: "microphone.js", fn: "microphoneConstraints" },
     { file: "record-cues.js", fn: "cueStep" },
-    { file: "record-cues.js", fn: "admitChunk" },
+    { file: "record-cues.js", fn: "ingestPost" },
     { file: "transcript.js", fn: "reconcileTranscript" },
     { file: "speech-probe.js", fn: "chunkSpeechVerdict" },
   ]) {

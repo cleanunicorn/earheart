@@ -477,7 +477,7 @@ app.whenReady().then(async () => {
     };
     let failedClear;
     try {
-      await js(`window.confirm = () => true; document.getElementById("history-clear").click(); true`);
+      await js(`window.confirm = (m) => ((window.lastConfirm = m), true); document.getElementById("history-clear").click(); true`);
       failedClear = await waitFor(
         () => js(`(() => {
           const status = document.getElementById("history-clear-status");
@@ -497,6 +497,14 @@ app.whenReady().then(async () => {
         /settings folder/.test(failedClear.status) && !/history\.json/.test(failedClear.status) &&
         failedClear.rows === historyRows.length && history.list().length === historyRows.length,
       JSON.stringify(failedClear)
+    );
+    // Clear history deletes every kept recording too (main/ipc.js): the
+    // question says so before anything goes.
+    const clearQuestion = await js(`window.lastConfirm`);
+    check(
+      "the Clear history confirmation says kept recordings are deleted too",
+      clearQuestion === "Clear all saved transcriptions and any kept recordings? This can't be undone.",
+      JSON.stringify(clearQuestion)
     );
 
     // 9 (cont.). Transcript text is text: the markup-looking entry made no
@@ -575,7 +583,7 @@ app.whenReady().then(async () => {
 
     // 9 (cont.). Delete one entry: gone from the list and the file, the rest kept.
     const deleteRow = (text) => js(`(() => {
-      window.confirm = () => true;
+      window.confirm = (m) => ((window.lastConfirm = m), true);
       const li = [...document.querySelectorAll("#history-list li")].find((row) => row.querySelector(".text")?.textContent === ${JSON.stringify(text)});
       li.querySelector("button.delete").click();
       return true;
@@ -588,6 +596,12 @@ app.whenReady().then(async () => {
       "Delete removes one entry, on disk too, and keeps its neighbours",
       JSON.stringify(onDisk) === JSON.stringify(afterDelete.rows),
       JSON.stringify({ onDisk, rows: afterDelete.rows })
+    );
+    const plainQuestion = await js(`window.lastConfirm`);
+    check(
+      "deleting an entry with no kept recording asks about the transcription alone",
+      plainQuestion === "Delete this transcription? This can't be undone.",
+      JSON.stringify(plainQuestion)
     );
 
     // A delete that can't replace the file says so on the card and keeps it.
@@ -801,7 +815,7 @@ app.whenReady().then(async () => {
       await js(`(() => {
         const a = document.querySelector("#history-list audio.player");
         a.play().catch(() => {});
-        window.confirm = () => true;
+        window.confirm = (m) => ((window.lastConfirm = m), true);
         ${rowWith("whole dictation")}.querySelector("button.delete").click();
         return true;
       })()`);
@@ -821,6 +835,12 @@ app.whenReady().then(async () => {
         released.players === 0 && released.revoked === 2 && released.errors.length === 0 &&
           !fs.existsSync(path.join(app.getPath("userData"), "audio", `${keptEntry.id}.wav.enc`)),
         JSON.stringify(released)
+      );
+      const keptQuestion = await js(`window.lastConfirm`);
+      check(
+        "deleting an entry with a kept recording says the recording goes too",
+        keptQuestion === "Delete this transcription and its kept recording? This can't be undone.",
+        JSON.stringify(keptQuestion)
       );
 
       // Retranscribe, through the real button, on the second page: the

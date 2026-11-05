@@ -1867,7 +1867,11 @@ function historyDeleteButton(item, report) {
   button.title = "Delete this transcription";
   button.addEventListener("click", async () => {
     report("");
-    if (!confirm("Delete this transcription? This can't be undone.")) return;
+    // Its kept recording goes with it (main/ipc.js history:delete): say so.
+    const question = item.audio
+      ? "Delete this transcription and its kept recording? This can't be undone."
+      : "Delete this transcription? This can't be undone.";
+    if (!confirm(question)) return;
     // Deleted mid-playback: stop and release it before the audio goes.
     if (activePlayer?.id === item.id) releasePlayer();
     button.disabled = true;
@@ -1931,8 +1935,9 @@ function historyEntryDeleteError(code) {
 
 $("history-clear").addEventListener("click", async () => {
   // Unlike a removed model, cleared history is gone for good — gate it the
-  // same way model removal already is.
-  if (!confirm("Clear all saved transcriptions? This can't be undone.")) return;
+  // same way model removal already is. Every kept recording goes with it
+  // (main/ipc.js history:clear), so the question says so.
+  if (!confirm("Clear all saved transcriptions and any kept recordings? This can't be undone.")) return;
   const res = await earheart.invoke("history:clear");
   // A failed delete left the transcripts on disk: say so, and keep showing
   // them so the user can try again (#287).

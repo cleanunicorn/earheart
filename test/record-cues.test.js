@@ -354,7 +354,10 @@ test("playCue: off or silent plays nothing", () => {
 test("playCue: a failure at any stage leaves nothing sounding and never throws", () => {
   for (const stage of ["oscillator", "gain", "connect", "start2"]) {
     const { ctx, log } = fakeContext({ throwOn: stage });
-    assert.strictEqual(playCue(ctx, "start", 1), null, stage);
+    const cue = playCue(ctx, "start", 1);
+    // Null only when nothing started; a note that began keeps its guard.
+    if (stage === "start2") assert.ok(cue && cue.rolledBack, stage);
+    else assert.strictEqual(cue, null, stage);
     for (const osc of log.oscillators) {
       if (osc.startAt !== undefined) {
         // Started before the failure: stopped at once, not left to finish.
@@ -455,4 +458,38 @@ test("createCuePlayer: a stale park never suspends a context a newer session use
   // A context whose suspend throws doesn't throw out of the timer.
   player.park({ suspend: () => { throw new Error("closed"); } }, 10);
   assert.doesNotThrow(() => timers.runAll());
+});
+
+test("playCue: a failure after the first note started still guards what it emitted", () => {
+  const { ctx, log } = fakeContext({ throwOn: "start2" });
+  // The audio clock runs on between the two starts: past note one's start,
+  // so note one is already audible when note two's start throws.
+  const realStart = ctx.createOscillator;
+  ctx.createOscillator = function () {
+    const osc = realStart.call(this);
+    const start = osc.start;
+    osc.start = (t) => {
+      start(t);
+      ctx.currentTime = t + 0.02;
+    };
+    return osc;
+  };
+  const cue = playCue(ctx, "start", 1);
+  assert.ok(cue, "not null: a note sounded");
+  assert.strictEqual(cue.rolledBack, true);
+  const first = log.oscillators[0];
+  assert.ok(first.startAt !== undefined && ctx.currentTime > first.startAt, "clock is past note one's start");
+  assert.ok(first.stops.includes(ctx.currentTime), "note one is cut now");
+  assert.ok(first.disconnected && log.oscillators[1].disconnected);
+  assert.strictEqual(log.oscillators[1].startAt, undefined, "note two never started");
+  // The bound covers note one up to its own scheduled stop, never less.
+  assert.ok(cue.endTime >= Math.max(...first.stops), `${cue.endTime} ≥ ${Math.max(...first.stops)}`);
+  assert.ok(cue.endTime >= first.startAt + CUES.start[0].dur);
+  // So the guard is not zero, and covers it plus latency and tail.
+  const until = guardEndFrame({ cueEnd: cue.endTime, outputLatency: 0, baseLatency: 0, inputLatency: 0, sampleRate: RATE });
+  assert.ok(until >= Math.ceil((first.startAt + CUES.start[0].dur + GUARD_TAIL_S) * RATE));
+  // stop() on a rolled-back handle is a no-op (already silenced).
+  const stopsBefore = first.stops.length;
+  cue.stop();
+  assert.strictEqual(first.stops.length, stopsBefore);
 });

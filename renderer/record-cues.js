@@ -160,11 +160,13 @@ function cueStep(state, event) {
 
 // Schedule a cue on `ctx` at `volume` (0–1). Transactional: every node is
 // built before any starts, and if starting fails part-way the notes already
-// started are stopped and disconnected. Returns null when nothing sounds
-// (volume 0, no context, unknown cue, or the audio stack threw) — the caller
-// then guards nothing — else a handle:
-//   { name, ms, startTime, endTime, stop() }
-// endTime is the last note's end on ctx's clock; stop() silences the cue now.
+// started are stopped and disconnected. Returns null only when nothing
+// started (volume 0, no context, unknown cue, or the audio stack threw before
+// any note began) — the caller then guards nothing — else a handle:
+//   { name, ms, rolledBack, startTime, endTime, stop() }
+// endTime bounds, on ctx's clock, everything the cue may have emitted — for a
+// rolled-back cue, the started notes' own scheduled stops — so the guard still
+// covers it; stop() silences the cue now.
 // Never throws: a cue is a courtesy and must not break the capture code.
 function playCue(ctx, name, volume) {
   const notes = CUES[name];
@@ -196,15 +198,27 @@ function playCue(ctx, name, volume) {
       v.osc.stop(v.end + 0.01);
     }
   } catch {
-    if (voices) silenceVoices(ctx, voices);
-    return null;
+    if (!voices) return null;
+    silenceVoices(ctx, voices);
+    // Nothing started: nothing could have sounded, so nothing to guard.
+    const started = voices.filter((v) => v.started);
+    if (started.length === 0) return null;
+    // A note started before the failure may already be audible (the clock
+    // can be past its start). Keep a guard over everything it could have
+    // emitted: up to its own scheduled stop, the latest bound there is.
+    return cueHandle(ctx, name, started, (v) => v.end + 0.01, true);
   }
-  let stopped = false;
+  return cueHandle(ctx, name, voices, (v) => v.end, false);
+}
+
+function cueHandle(ctx, name, voices, endOf, rolledBack) {
+  let stopped = rolledBack;
   return {
     name,
     ms: cueLengthMs(name),
-    startTime: voices[0].begin,
-    endTime: Math.max(...voices.map((v) => v.end)),
+    rolledBack,
+    startTime: Math.min(...voices.map((v) => v.begin)),
+    endTime: Math.max(...voices.map(endOf)),
     stop() {
       if (stopped) return;
       stopped = true;

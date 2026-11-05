@@ -479,7 +479,13 @@ app.whenReady().then(async () => {
       checked: document.getElementById("duck-other-audio").checked,
       level: document.getElementById("duck-level").value,
       status: document.getElementById("duck-status").textContent,
+      card: document.getElementById("duck-other-audio").closest(".card").querySelector(".card-title").textContent,
+      tab: document.getElementById("duck-other-audio").closest(".panel").id,
     })`));
+    // Its own card in General, named for what people look for (#365), not
+    // tucked into the Microphone card.
+    check("lower-other-audio has its own Background audio card on the General tab",
+      ducking.card === "Background audio" && ducking.tab === "tab-general", JSON.stringify(ducking));
     check("lower-other-audio is off by default, at 20%, and says plainly when it is unavailable",
       ducking.checked === false &&
         ducking.level === "20" &&
@@ -2536,7 +2542,7 @@ app.whenReady().then(async () => {
       });
     }
 
-    await require("./wizard-smoke").checkWizard({ waitFor, check });
+    await require("./wizard-smoke").checkWizard({ waitFor, check, setDuckingStatus: (status) => { duckingStatus = status; } });
     await require("./correction-smoke").checkCorrection({ waitFor, check, savedThenClose });
 
     const failed = checks.filter((c) => !c.ok);

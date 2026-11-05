@@ -272,6 +272,7 @@ renderer/                overlay (mic capture → 16 kHz WAV, live transcript
   aliases.js             Always replace: alias records, deterministic replacement,
                          remember/merge/parse (shared with main and the pipeline)
   permission-status.js   status copy after "Fix auto-paste permission"
+  ducking-status.js      "Lower other audio" status line (settings + wizard)
 stt-server/              Python: FastAPI + onnx-asr Parakeet server (optional)
 ```
 

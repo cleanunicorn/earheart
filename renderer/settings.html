@@ -134,10 +134,14 @@
             </p>
             <p id="mic-device-status" class="hint" aria-live="polite"></p>
           </div>
+        </div>
+
+        <div class="card" id="background-audio-card">
+          <div class="card-title">Background audio</div>
           <label class="toggle">
             <span class="toggle-text">
               <span class="t">Lower other audio while recording</span>
-              <span class="d">Turns the system output down while the microphone is capturing, and back up when you stop, pause or cancel. A volume you change during the take is kept, and muted output stays muted.</span>
+              <span class="d">Music, videos and calls get quieter while the microphone is capturing, and come back when you stop, pause or cancel. A volume you change during the take is kept, and muted output stays muted.</span>
             </span>
             <input type="checkbox" id="duck-other-audio" class="switch" role="switch" />
           </label>
@@ -751,6 +755,7 @@
     <script src="permission-status.js"></script>
     <script src="model-progress.js"></script>
     <script src="model-save.js"></script>
+    <script src="ducking-status.js"></script>
     <script src="settings.js"></script>
   </body>
 </html>

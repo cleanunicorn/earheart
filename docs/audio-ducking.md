@@ -1,11 +1,20 @@
 # Lower other audio while recording
 
-Settings → General → Microphone → **Lower other audio while recording** (off
-by default). While the microphone is capturing, Earheart lowers the system
-output to a percentage of its volume before the take (**Lowered volume**,
-default 20%, 0–80%), then puts it back. Issue #340.
+Settings → General → Background audio → **Lower other audio while
+recording** (off by default). While the microphone is capturing, Earheart
+lowers the system output to a percentage of its volume before the take
+(**Lowered volume**, default 20%, 0–80%), then puts it back. Issue #340.
 
-![The Microphone card with Lower other audio while recording on](screenshots/settings-audio-ducking.png)
+![The Background audio card with Lower other audio while recording on](screenshots/settings-audio-ducking.png)
+
+The setup wizard offers the same choice on its microphone step (#365): the
+checkbox and **Lowered volume** there are the same two settings
+(`audio.duckOtherAudio`, `audio.duckLevelPercent`), with the same 0–80% range,
+and show what is already saved when setup runs again. The step's status line
+is the one Settings shows, so a system without a volume tool says so there and
+setup continues; Finish setup saves the choice, and Settings shows it.
+
+![The wizard's microphone step with Lower other audio while recording](screenshots/wizard-microphone.png)
 
 ## What happens when
 

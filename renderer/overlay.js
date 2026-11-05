@@ -609,6 +609,15 @@ function micLive() {
     recording.maxSeconds * 1000
   );
   setStatus("recording", listeningTitle(recording), recording.microphoneNotice || "");
+  reportCapture(true);
+}
+
+// Tell main whether the microphone is capturing right now (first samples,
+// pause, resume, a track that ended). Main lowers other apps' playback while
+// it is, when the user opted in (main/ducking/); leaving the recording state
+// counts as not capturing there, so stop/cancel/error need no message.
+function reportCapture(live) {
+  if (recording) earheart.send("record:capture", { sid: recording.sid, live: live && !recording.trackEnded });
 }
 
 // The max-recording cap arrives over IPC and arms setTimeout(stopRecording,
@@ -749,6 +758,14 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
       micLive(); // no-op after the first chunk
     };
     source.connect(recorder);
+    // A device unplugged mid-take ends its track: the take goes on (stop still
+    // delivers what was captured), but nothing is being captured any more.
+    const [track] = stream.getAudioTracks();
+    track?.addEventListener("ended", () => {
+      if (recording?.recorder !== recorder) return;
+      recording.trackEnded = true;
+      reportCapture(false);
+    });
 
     recording = {
       sid,
@@ -941,6 +958,7 @@ function togglePause() {
     // discards any chunk already in flight.
     recording.stream.getAudioTracks().forEach((track) => (track.enabled = false));
     setStatus("paused", "Paused", recording.microphoneNotice || "Press play to resume");
+    reportCapture(false);
   } else {
     recording.pausedMs += Date.now() - recording.pausedAt;
     recording.pausedAt = null;
@@ -956,6 +974,7 @@ function togglePause() {
     // matching the capture — no gap is written for the gap.
     wavePushAt = 0;
     setStatus("recording", listeningTitle(recording), recording.microphoneNotice || "");
+    reportCapture(true);
   }
 }
 

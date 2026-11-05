@@ -10,22 +10,28 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 
 const ipcPath = require.resolve("../main/ipc");
 const settingsPath = require.resolve("../main/settings");
+const recordingsPath = require.resolve("../main/recordings");
 const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(ipcPath)] });
 
-function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy = canCorrect, clearResult = { ok: true } } = {}) {
+// `realHistory` loads the real main/history.js against this test's userData
+// instead of the stub, for the handlers that search and delete entries.
+function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy = canCorrect, clearResult = { ok: true }, realHistory = false, safeStorage = null, saveDialog = async () => ({ canceled: true }), retranscribe } = {}) {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-ipc-"));
   t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
   const handlers = {};
-  const calls = { broadcasts: [], trayRefresh: 0, historyCleared: 0, deliveries: [] };
+  const calls = { broadcasts: [], trayRefresh: 0, historyCleared: 0, deliveries: [], entriesDeleted: [], corrections: [] };
   const stubs = {
     [resolveFrom("electron")]: {
-      app: { getPath: () => userData, getVersion: () => "0.35.1" },
+      app: { getPath: () => userData, getVersion: () => "0.35.1", isReady: () => true },
       ipcMain: { handle: (channel, fn) => { handlers[channel] = fn; }, on() {} },
       shell: {},
+      safeStorage,
+      dialog: { showSaveDialog: (win, opts) => saveDialog(opts) },
+      BrowserWindow: { fromWebContents: () => null },
     },
     [resolveFrom("./engines")]: {
       registry: {
@@ -44,8 +50,10 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
     [resolveFrom("./windows")]: {
       sendToForms: (channel, payload) => calls.broadcasts.push({ channel, payload }),
       openSettings() {},
+      openCorrection: (entry) => calls.corrections.push(entry),
       setCorrectionDirty() {},
       closeWizard() {},
+      sendToSettings: (channel, payload) => calls.broadcasts.push({ channel, payload }),
     },
     [resolveFrom("./tray")]: {
       refresh: () => {
@@ -54,6 +62,7 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
     },
     [resolveFrom("./history")]: {
       list: () => [],
+      isValidId: () => true,
       clear: () => {
         calls.historyCleared += 1;
         return clearResult;
@@ -66,37 +75,33 @@ function loadIpc(t, { remove = async () => {}, canCorrect = () => true, canCopy 
     [resolveFrom("./util/logger")]: { info() {}, warn() {}, error() {} },
   };
 
-  const previous = new Map();
-  for (const [p, exports] of Object.entries(stubs)) {
-    previous.set(p, require.cache[p]);
-    const m = new Module(p, null);
-    m.filename = p;
-    m.loaded = true;
-    m.exports = exports;
-    require.cache[p] = m;
-  }
-  delete require.cache[ipcPath];
-  delete require.cache[settingsPath];
+  const historyPath = resolveFrom("./history");
+  if (realHistory) delete stubs[historyPath];
+  const savedHistory = require.cache[historyPath];
   let settings;
+  let history;
+  let recordings;
   try {
-    settings = require(settingsPath);
-    require(ipcPath).init({
-      applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
-      onSettingsChanged() {},
-      canCorrect,
-      canCopy,
-      onHistoryCleared: () => { calls.undeliveredCleared = (calls.undeliveredCleared || 0) + 1; },
+    withStubs(stubs, [ipcPath, settingsPath, recordingsPath, ...(realHistory ? [historyPath] : [])], () => {
+      settings = require(settingsPath);
+      require(ipcPath).init({
+        applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
+        onSettingsChanged() {},
+        canCorrect,
+        canCopy,
+        onHistoryCleared: () => { calls.undeliveredCleared = (calls.undeliveredCleared || 0) + 1; },
+        onHistoryEntryDeleted: (entry) => calls.entriesDeleted.push(entry),
+        ...(retranscribe ? { retranscribe } : {}),
+      });
+      if (realHistory) history = require.cache[historyPath].exports;
+      recordings = require.cache[recordingsPath].exports;
     });
   } finally {
-    delete require.cache[ipcPath];
-    delete require.cache[settingsPath];
-    for (const [p, old] of previous) {
-      if (old) require.cache[p] = old;
-      else delete require.cache[p];
-    }
+    // withStubs drops the fresh real history; put back whatever was cached before.
+    if (realHistory && savedHistory) require.cache[historyPath] = savedHistory;
   }
   const file = path.join(userData, "settings.json");
-  return { handlers, settings, calls, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
+  return { handlers, settings, calls, history, recordings, userData, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
 }
 
 // What a form holds when it opens: the settings it spreads on save, and the
@@ -251,7 +256,7 @@ test("every successful save broadcasts settings:changed and refreshes the tray",
   for (const side of ["previous", "current"]) {
     assert.deepStrictEqual(
       Object.keys(changed[0].payload[side]).sort(),
-      ["customModels", "dictionary", "output", "overlay", "updates"],
+      ["aliases", "customModels", "dictionary", "output", "overlay", "updates"],
       side
     );
   }
@@ -327,6 +332,57 @@ test("remembered spellings survive a stale Settings save with independent dictio
   assert.deepStrictEqual(readFile().cleanup.dictionary, ["keep", "kubectl", "typed"]);
 });
 
+test("remember with heard words saves the spelling and its alias together", async (t) => {
+  const { handlers, readFile } = loadIpc(t);
+  const result = await handlers["correction:remember"]({}, { spelling: "Earheart", heard: "air heart" });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.alias, true);
+  assert.deepStrictEqual(readFile().cleanup.dictionary, ["Earheart"]);
+  assert.deepStrictEqual(readFile().cleanup.aliases, [{ term: "Earheart", heard: ["air heart"] }]);
+  const plain = await handlers["correction:remember"]({}, { spelling: "kubectl" });
+  assert.strictEqual(plain.alias, false);
+  assert.deepStrictEqual(readFile().cleanup.aliases, [{ term: "Earheart", heard: ["air heart"] }]);
+});
+
+test("remember refuses an alias another term owns and saves nothing", async (t) => {
+  const { handlers, readFile } = loadIpc(t);
+  await handlers["correction:remember"]({}, { spelling: "Earheart", heard: "air heart" });
+  const before = readFile().cleanup;
+  const result = await handlers["correction:remember"]({}, { spelling: "Airheart", heard: "Air Heart" });
+  assert.strictEqual(result.ok, false);
+  assert.match(result.error, /already becomes “Earheart”/);
+  assert.deepStrictEqual(readFile().cleanup.dictionary, before.dictionary, "the spelling is not saved either");
+  assert.deepStrictEqual(readFile().cleanup.aliases, before.aliases);
+  for (const bad of [{ spelling: "x -> y", heard: "air" }, { spelling: "x", heard: 5 }, { spelling: "x", heard: "a\nb" }, { spelling: "x", heard: "" }]) {
+    assert.strictEqual((await handlers["correction:remember"]({}, bad)).ok, false, JSON.stringify(bad));
+  }
+  assert.deepStrictEqual(readFile().cleanup.aliases, before.aliases);
+});
+
+test("an alias remembered while Settings is open survives its stale save with independent edits", async (t) => {
+  const { settings, handlers, readFile } = loadIpc(t);
+  settings.save({ ...settings.get(), cleanup: { ...settings.get().cleanup, aliases: [{ term: "Earheart", heard: ["air heart", "old"] }] } });
+  const snapshot = settings.get();
+  const baseline = require("../renderer/settings-sync").sharedBaseline(snapshot);
+  assert.strictEqual((await handlers["correction:remember"]({}, { spelling: "kubectl", heard: "cube cuddle" })).ok, true);
+  snapshot.cleanup.aliases = [{ term: "Earheart", heard: ["air heart", "ear heart"] }];
+  await handlers["settings:save"]({}, { settings: snapshot, baseline });
+  assert.deepStrictEqual(readFile().cleanup.aliases, [
+    { term: "Earheart", heard: ["air heart", "ear heart"] },
+    { term: "kubectl", heard: ["cube cuddle"] },
+  ]);
+});
+
+test("a stale Settings save that conflicts with a remembered alias fails and keeps it", async (t) => {
+  const { settings, handlers, readFile } = loadIpc(t);
+  const snapshot = settings.get();
+  const baseline = require("../renderer/settings-sync").sharedBaseline(snapshot);
+  assert.strictEqual((await handlers["correction:remember"]({}, { spelling: "Other", heard: "Earheart" })).ok, true);
+  snapshot.cleanup.aliases = [{ term: "Earheart", heard: ["air heart"] }];
+  await assert.rejects(async () => handlers["settings:save"]({}, { settings: snapshot, baseline }), /Always replace was not saved/);
+  assert.deepStrictEqual(readFile().cleanup.aliases, [{ term: "Other", heard: ["Earheart"] }]);
+});
+
 test("remember failure preserves existing dictionary and reports failure", async (t) => {
   const { settings, handlers } = loadIpc(t);
   const before = settings.get().cleanup.dictionary;
@@ -370,10 +426,98 @@ test("correction and copying cannot interrupt an active dictation", async (t) =>
 
 
 test("an unavailable History entry cannot open a correction while idle", async (t) => {
-  const { handlers } = loadIpc(t);
-  const result = await handlers["correction:open"]({}, { text: "forged", at: "missing" });
-  assert.strictEqual(result.ok, false);
-  assert.match(result.error, /no longer in History/);
+  const { handlers, calls, history } = loadIpc(t, { realHistory: true });
+  history.add({ text: "saved words" }, { enabled: true, limit: 100 });
+  const [entry] = history.list();
+  // Matching words and timestamp are not enough any more: only the entry id.
+  for (const request of [{ text: entry.text, at: entry.at }, { id: "missing" }, { id: 42 }, null]) {
+    const result = await handlers["correction:open"]({}, request);
+    assert.strictEqual(result.ok, false, JSON.stringify(request));
+    assert.match(result.error, /no longer in History/);
+  }
+  assert.deepStrictEqual(calls.corrections, []);
+});
+
+test("correction:open opens the saved History entry with that id", async (t) => {
+  const { handlers, calls, history } = loadIpc(t, { realHistory: true });
+  const id = history.add({ text: "fix my spelling" }, { enabled: true, limit: 100 });
+  assert.deepStrictEqual(await handlers["correction:open"]({}, { id, text: "forged words" }), { ok: true });
+  assert.deepStrictEqual(calls.corrections.map((entry) => entry.text), ["fix my spelling"]);
+});
+
+/* ---- History search and single delete (#342) ---- */
+
+const HISTORY_CFG = { enabled: true, limit: 100 };
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test("history:search answers one filtered page from saved History", async (t) => {
+  const { handlers, history } = loadIpc(t, { realHistory: true });
+  for (const text of ["deploy the app", "write the tests", "deploy again"]) history.add({ text }, HISTORY_CFG);
+  const result = await handlers["history:search"]({}, { query: "DEPLOY", offset: 0, limit: 1 });
+  assert.strictEqual(result.ok, true);
+  assert.deepStrictEqual(result.entries.map((entry) => entry.text), ["deploy again"]);
+  assert.deepStrictEqual([result.total, result.offset, result.limit, result.all], [2, 0, 1, 3]);
+  const everything = await handlers["history:search"]({});
+  assert.strictEqual(everything.total, 3, "no request means the whole list");
+});
+
+test("history:search refuses a malformed request instead of guessing", async (t) => {
+  const { handlers } = loadIpc(t, { realHistory: true });
+  for (const request of [null, "deploy", 5, { query: 5 }, { query: ["deploy"] }]) {
+    const result = await handlers["history:search"]({}, request);
+    assert.strictEqual(result.ok, false, JSON.stringify(request));
+    assert.strictEqual(typeof result.error, "string");
+  }
+});
+
+test("history:delete removes one entry, refreshes the tray and drops its held-back copy", async (t) => {
+  const { handlers, calls, history, userData } = loadIpc(t, { realHistory: true });
+  history.add({ text: "older" }, HISTORY_CFG);
+  const id = history.add({ text: "private" }, HISTORY_CFG);
+  history.add({ text: "newer" }, HISTORY_CFG);
+  calls.trayRefresh = 0;
+
+  assert.deepStrictEqual(handlers["history:delete"]({}, id), { ok: true, removed: true });
+  assert.deepStrictEqual(history.list().map((entry) => entry.text), ["newer", "older"]);
+  assert.strictEqual(calls.trayRefresh, 1, "Copy last transcription must not offer deleted words");
+  assert.deepStrictEqual(calls.entriesDeleted, [id], "the held-back copy is matched by entry id");
+  await settle();
+  const saved = JSON.parse(fs.readFileSync(path.join(userData, "history.json"), "utf8"));
+  assert.deepStrictEqual(saved.map((entry) => entry.text), ["newer", "older"]);
+});
+
+test("history:delete refuses an id that is not one, and an unknown id deletes nothing", async (t) => {
+  const { handlers, calls, history } = loadIpc(t, { realHistory: true });
+  history.add({ text: "keep me" }, HISTORY_CFG);
+  calls.trayRefresh = 0;
+  for (const id of [undefined, null, 42, "", "../history", "x".repeat(65), { id: "x" }]) {
+    assert.deepStrictEqual(handlers["history:delete"]({}, id), { ok: false, error: "EINVAL" }, JSON.stringify(id));
+  }
+  assert.deepStrictEqual(handlers["history:delete"]({}, "no-such-entry"), { ok: true, removed: false });
+  assert.deepStrictEqual(history.list().map((entry) => entry.text), ["keep me"]);
+  assert.strictEqual(calls.trayRefresh, 0);
+  assert.deepStrictEqual(calls.entriesDeleted, []);
+});
+
+test("history:delete hands a failed write back to Settings and keeps the entry", async (t) => {
+  const { handlers, calls, history } = loadIpc(t, { realHistory: true });
+  const id = history.add({ text: "still here" }, HISTORY_CFG);
+  await settle();
+  calls.trayRefresh = 0;
+  const original = fs.renameSync;
+  fs.renameSync = () => {
+    throw Object.assign(new Error("EPERM: simulated"), { code: "EPERM" });
+  };
+  let result;
+  try {
+    result = handlers["history:delete"]({}, id);
+  } finally {
+    fs.renameSync = original;
+  }
+  assert.deepStrictEqual(result, { ok: false, error: "EPERM" });
+  assert.deepStrictEqual(history.list().map((entry) => entry.text), ["still here"]);
+  assert.deepStrictEqual(calls.entriesDeleted, [], "a held-back copy stays when the entry does");
+  assert.strictEqual(calls.trayRefresh, 0);
 });
 
 test("copying is allowed while recording even though correction cannot open", async (t) => {
@@ -402,4 +546,122 @@ test("cleanup:prompt-offer saves the answer at once and is not offered again", a
 
   const bad = await handlers["cleanup:prompt-offer"]({}, { decision: "maybe" });
   assert.strictEqual(bad.ok, false);
+});
+
+/* ---- Kept recordings (#343) ---- */
+
+function keyring() {
+  return {
+    isEncryptionAvailable: () => true,
+    getSelectedStorageBackend: () => "gnome_libsecret",
+    encryptString: (text) => Buffer.from(`k:${text}`),
+    decryptString: (buf) => buf.toString().slice(2),
+  };
+}
+
+const LIMITS = { maxAgeDays: 30, maxMegabytes: 1024 };
+const WAV = Buffer.from("RIFF\x24\x00\x00\x00WAVEfmt fake audio");
+
+function withRecording(t, opts = {}) {
+  const rig = loadIpc(t, { realHistory: true, safeStorage: keyring(), ...opts });
+  const id = rig.history.add({ text: "kept words" }, HISTORY_CFG);
+  const other = rig.history.add({ text: "no audio" }, HISTORY_CFG);
+  assert.deepStrictEqual(rig.recordings.getStore().save(id, WAV, { limits: LIMITS }), { ok: true });
+  return { ...rig, id, other, file: path.join(rig.userData, "audio", `${id}.wav.enc`) };
+}
+
+test("history:search marks which entries have a kept recording", async (t) => {
+  const { handlers, id, other, file } = withRecording(t);
+  let result = await handlers["history:search"]({}, {});
+  assert.strictEqual(result.entries.find((e) => e.id === id).audio, "kept");
+  assert.strictEqual("audio" in result.entries.find((e) => e.id === other), false);
+  // A file in a format this build can't read is marked unreadable up front.
+  const bytes = fs.readFileSync(file);
+  bytes[4] = 9;
+  fs.writeFileSync(file, bytes);
+  result = await handlers["history:search"]({}, {});
+  assert.strictEqual(result.entries.find((e) => e.id === id).audio, "unreadable");
+});
+
+test("history:audio-get returns the original WAV, and only for an entry in History", async (t) => {
+  const { handlers, id, other } = withRecording(t);
+  const got = await handlers["history:audio-get"]({}, id);
+  assert.strictEqual(got.ok, true);
+  assert.ok(Buffer.from(got.wav).equals(WAV));
+  assert.deepStrictEqual(await handlers["history:audio-get"]({}, other), { ok: false, error: "missing" });
+  assert.deepStrictEqual(await handlers["history:audio-get"]({}, "../../etc"), { ok: false, error: "missing" });
+  assert.deepStrictEqual(await handlers["history:audio-get"]({}, "4a1b2c3d-0000-4000-8000-000000000000"), { ok: false, error: "missing" });
+});
+
+test("history:audio-get reports damaged audio as unreadable", async (t) => {
+  const { handlers, id, file } = withRecording(t);
+  const bytes = fs.readFileSync(file);
+  bytes[bytes.length - 1] ^= 1;
+  fs.writeFileSync(file, bytes);
+  assert.deepStrictEqual(await handlers["history:audio-get"]({}, id), { ok: false, error: "unreadable" });
+});
+
+test("history:audio-export saves the original WAV where the user picks; cancel writes nothing", async (t) => {
+  let answer = { canceled: true };
+  const asked = [];
+  const { handlers, id, other, userData } = withRecording(t, { saveDialog: async (opts) => { asked.push(opts); return answer; } });
+  assert.deepStrictEqual(await handlers["history:audio-export"]({ sender: {} }, id), { ok: false, cancelled: true });
+  assert.match(asked[0].defaultPath, /earheart-.*\.wav$/);
+  const dest = path.join(userData, "export.wav");
+  assert.strictEqual(fs.existsSync(dest), false);
+  answer = { canceled: false, filePath: dest };
+  assert.deepStrictEqual(await handlers["history:audio-export"]({ sender: {} }, id), { ok: true });
+  assert.ok(fs.readFileSync(dest).equals(WAV));
+  // Nothing to export: answered before any dialog.
+  asked.length = 0;
+  assert.deepStrictEqual(await handlers["history:audio-export"]({ sender: {} }, other), { ok: false, error: "missing" });
+  assert.strictEqual(asked.length, 0);
+  // A destination that can't be written says so.
+  answer = { canceled: false, filePath: path.join(userData, "no-such-dir", "x.wav") };
+  assert.deepStrictEqual(await handlers["history:audio-export"]({ sender: {} }, id), { ok: false, error: "ENOENT" });
+});
+
+test("history:delete removes the entry's kept recording too", async (t) => {
+  const { handlers, id, file, recordings } = withRecording(t);
+  assert.ok(fs.existsSync(file));
+  assert.deepStrictEqual(handlers["history:delete"]({}, id), { ok: true, removed: true });
+  assert.strictEqual(fs.existsSync(file), false);
+  assert.strictEqual(recordings.getStore().status().count, 0);
+});
+
+test("history:clear removes every kept recording and the key", async (t) => {
+  const { handlers, userData } = withRecording(t);
+  assert.deepStrictEqual(handlers["history:clear"](), { ok: true });
+  assert.deepStrictEqual(fs.readdirSync(path.join(userData, "audio")), []);
+});
+
+test("recordings:status and recordings:clear: History text stays", async (t) => {
+  const { handlers, history, calls } = withRecording(t);
+  const status = await handlers["recordings:status"]();
+  assert.strictEqual(status.secure, true);
+  assert.strictEqual(status.count, 1);
+  assert.strictEqual(status.key, "ok");
+  assert.deepStrictEqual(await handlers["recordings:clear"](), { ok: true });
+  assert.strictEqual((await handlers["recordings:status"]()).count, 0);
+  assert.strictEqual(history.list().length, 2);
+  // An update to listed entries: Settings keeps its page (review b-5).
+  assert.deepStrictEqual(calls.broadcasts.filter((b) => b.channel === "history:changed"), [
+    { channel: "history:changed", payload: { updated: true } },
+  ]);
+});
+
+test("recordings:status says why without secure storage", async (t) => {
+  const { handlers } = loadIpc(t, { realHistory: true, safeStorage: { ...keyring(), getSelectedStorageBackend: () => "basic_text", isEncryptionAvailable: () => false } });
+  const status = await handlers["recordings:status"]();
+  assert.strictEqual(status.secure, false);
+  assert.match(status.reason, /can't be encrypted/);
+});
+
+test("history:retranscribe hands a valid id to the pipeline and refuses anything else", async (t) => {
+  const seen = [];
+  const { handlers } = loadIpc(t, { realHistory: true, retranscribe: async (id) => { seen.push(id); return { ok: true, stored: true }; } });
+  const id = "4a1b2c3d-0000-4000-8000-000000000000";
+  assert.deepStrictEqual(await handlers["history:retranscribe"]({}, id), { ok: true, stored: true });
+  assert.deepStrictEqual(await handlers["history:retranscribe"]({}, "../x"), { ok: false, error: "missing" });
+  assert.deepStrictEqual(seen, [id]);
 });

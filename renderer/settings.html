@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:"
+      content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; media-src blob:"
     />
     <title>Earheart</title>
     <link rel="stylesheet" href="tokens.css" />
@@ -133,6 +133,18 @@
               whatever your OS has selected.
             </p>
             <p id="mic-device-status" class="hint" aria-live="polite"></p>
+          </div>
+          <label class="toggle">
+            <span class="toggle-text">
+              <span class="t">Lower other audio while recording</span>
+              <span class="d">Turns the system output down while the microphone is capturing, and back up when you stop, pause or cancel. A volume you change during the take is kept, and muted output stays muted.</span>
+            </span>
+            <input type="checkbox" id="duck-other-audio" class="switch" role="switch" />
+          </label>
+          <div class="field">
+            <label for="duck-level">Lowered volume (% of the volume before)</label>
+            <input id="duck-level" type="number" min="0" max="80" step="5" />
+            <p id="duck-status" class="hint" aria-live="polite">Checking this system's volume controls…</p>
           </div>
         </div>
 
@@ -342,6 +354,21 @@
             </span>
             <input type="checkbox" id="cleanup-enabled" class="switch" role="switch" />
           </label>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Always replace</div>
+          <div class="field">
+            <label for="cleanup-aliases">Heard words → spelling <span class="muted">(one term per line)</span></label>
+            <textarea id="cleanup-aliases" rows="4" spellcheck="false" aria-describedby="cleanup-aliases-hint"
+              placeholder="air heart, ear heart -> Earheart&#10;cooper netties -> Kubernetes"></textarea>
+            <p id="cleanup-aliases-hint" class="hint">
+              Exact replacements for words the speech engine keeps mishearing,
+              applied to every dictation even with cleanup off. Whole words
+              only, any capitalization; code in backticks, paths and URLs are
+              left alone. History keeps the original transcript.
+            </p>
+          </div>
         </div>
 
         <div id="cleanup-fields">
@@ -573,11 +600,40 @@
             <input type="checkbox" id="history-enabled" class="switch" role="switch" />
           </label>
         </div>
+        <div class="card" id="recordings-card">
+          <label class="toggle">
+            <span class="toggle-text">
+              <span class="t">Keep recordings</span>
+              <span class="d">Saves each dictation's audio, encrypted on this computer, so you can play, export or retranscribe it from History. Needs History on.</span>
+            </span>
+            <input type="checkbox" id="recordings-keep" class="switch" role="switch" />
+          </label>
+          <p id="recordings-reason" class="hint" hidden></p>
+          <div class="grid-2">
+            <div class="field">
+              <label for="recordings-days">Delete recordings after (days)</label>
+              <input id="recordings-days" type="number" min="1" max="365" step="1" />
+            </div>
+            <div class="field">
+              <label for="recordings-mb">Keep at most (MB)</label>
+              <input id="recordings-mb" type="number" min="50" max="10240" step="50" />
+            </div>
+          </div>
+          <div class="row space-between recordings-foot">
+            <span id="recordings-usage" class="muted"></span>
+            <button id="recordings-clear" class="ghost danger" type="button">Delete all recordings</button>
+          </div>
+          <p id="recordings-status" class="status err" role="status" hidden></p>
+        </div>
         <div class="row space-between history-head">
           <span class="muted">Recent transcriptions</span>
           <button id="history-clear" class="ghost danger">Clear history</button>
         </div>
         <p id="history-clear-status" class="status err" role="alert" hidden></p>
+        <div class="history-search">
+          <label for="history-search" class="sr-only">Search transcriptions</label>
+          <input type="search" id="history-search" placeholder="Search transcriptions" maxlength="200" autocomplete="off" spellcheck="false" />
+        </div>
         <ul id="history-list"></ul>
         <div class="row space-between history-pager" id="history-pager" hidden>
           <button id="history-newer" class="ghost" type="button">Newer</button>
@@ -689,6 +745,7 @@
 
     <script src="hotkey-capture.js"></script>
     <script src="vocabulary.js"></script>
+    <script src="aliases.js"></script>
     <script src="prompt-diff.js"></script>
     <script src="settings-sync.js"></script>
     <script src="permission-status.js"></script>

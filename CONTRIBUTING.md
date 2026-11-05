@@ -221,7 +221,9 @@ main/                    Electron main process
   setup-notices.js       launch policy + "fix your setup" notices (→ Settings)
   settings.js            JSON settings with deep-merged defaults, atomic 0600 writes
   secret-store.js        remote API keys at rest: safeStorage encryption + status
-  history.js             local transcription history
+  history.js             local transcription history: stable entry ids, search, single delete
+  audio-store.js         kept recordings (#343): AES-GCM files under a safeStorage-wrapped key, limits
+  recordings.js          when a recording is kept, pruning, export, retranscription (no delivery)
   tray.js                tray icon + menu
   windows.js             overlay + settings + wizard + correction windows (one factory)
   window-guard.js        navigation lock + permission policy for app windows
@@ -245,6 +247,10 @@ main/                    Electron main process
     host.js              createHost() factory: one worker process per host
     index.js             facade routing STT → sttHost, cleanup → cleanupHost
   output/deliver.js      clipboard + per-OS paste keystroke injection
+  ducking/               lower other audio while capturing (opt-in, #340)
+    backends.js          per-OS volume read/write: pactl, wpctl, osascript, PowerShell
+    controller.js        owners, ownership-checked restore, crash marker (pure)
+    index.js             Electron wiring: userData marker, settings, ducking:status
   output/mac-permissions.js  macOS permission probes, repair state and settings panes
   util/                  small pure helpers: WAV, silence splitting, text
                          joins, cleanup turn + context budget, stumble strip,
@@ -262,6 +268,8 @@ renderer/                overlay (mic capture → 16 kHz WAV, live transcript
   settings-sync.js       forms follow settings saved while open (settings + wizard)
   correction.js          selected-range spelling edits and explicit corrected copy
   vocabulary.js          bounded remember operation + concurrent dictionary merge
+  aliases.js             Always replace: alias records, deterministic replacement,
+                         remember/merge/parse (shared with main and the pipeline)
   permission-status.js   status copy after "Fix auto-paste permission"
 stt-server/              Python: FastAPI + onnx-asr Parakeet server (optional)
 ```
@@ -347,11 +355,22 @@ Design constraints worth keeping:
   (re-cleaned on pauses, best-effort) and, with the built-in engine, become the
   final transcript's prefix, so stop decodes only the tail (`main/live-preview.js`;
   see [docs/live-transcription-plan.md](docs/live-transcription-plan.md)).
+- **Audio ducking follows capture, not the state machine.** The overlay
+  reports `record:capture` (first samples, pause, resume, a mic track that
+  ended); `main/pipeline.js` turns any exit from `recording` into "not
+  capturing" and hands the edge to `main/ducking/` through
+  `onCaptureChange`. The controller never blocks the pipeline: OS tools run
+  serialized in the background with timeouts, and a restore writes the prior
+  volume only to the device it lowered, and only while that device still
+  reads exactly the lowered level. See
+  [docs/audio-ducking.md](docs/audio-ducking.md).
 - **Never lose the user's words.** If cleanup fails, deliver the raw
   transcript; paste-tool failure leaves text on the clipboard. If another app
   replaced the clipboard, leave its copy alone and retain the transcript for
   **Copy last transcription**, even with History off. A later non-cancelled
-  delivery supersedes it; Clear History drops it only if the delete succeeds.
+  delivery supersedes it; Clear History drops it only if the delete succeeds,
+  and deleting one History entry drops it only if it was saved as that entry
+  (matched by entry id, never by words) and the delete succeeds.
   When enabled, History is written as
   soon as the final text exists, before delivery, so a paste cancelled
   mid-keystroke or a paste tool that throws still leaves the row; and the
@@ -401,6 +420,40 @@ Design constraints worth keeping:
   `settings.get()` and the renderer only ever see plaintext keys, never
   ciphertext. `safeStorage` answers only after app `ready`, so settings load
   before then isn't cached and `save()` refuses. See `main/secret-store.js`.
+- **Kept recordings are opt-in and fail closed** (`main/audio-store.js`,
+  `main/recordings.js`, #343). With `recordings.keep` off (the default)
+  no new recording is written; ones kept earlier stay until pruned or
+  deleted. When on, with History on and real `safeStorage`, each
+  dictation's WAV is sealed with AES-256-GCM under a random data key whose
+  only stored form is `safeStorage`-wrapped (`audio/key.json`), named by its
+  History entry id, written a turn after `history.add` so it never delays the
+  paste. Never plaintext; no secure storage means `settings.save()` refuses
+  `keep`; a key that won't unwrap, or a missing key with recordings left, is
+  reported, never replaced on its own. Limits prune by age, orphaned id, then
+  oldest-first by size. A retranscription stores `entry.retry` beside the
+  original (`history.setRetry`, ordered by `seq`) and never delivers. Format,
+  limits and the failure table: [docs/retained-audio.md](docs/retained-audio.md).
+- **History entries have stable ids** (`main/history.js`). Every entry in
+  `history.json` carries an `id`: 1–64 characters of `[A-Za-z0-9_-]`, a UUID v4
+  for new entries, stamped by `history.add()` before delivery and returned by
+  it. An id never changes, History never generates one twice, and no two
+  entries share one. A caller that needs it before the entry exists (e.g. a
+  dictation session naming a file it keeps, #343) may pass its own
+  `entry.id` to `add()`: a UUID v4 it generated for that session and never
+  used before — History can't remember deleted entries' ids, so that is the
+  caller's to guarantee; anything else, or an id a saved entry already has, is
+  replaced. Rows saved before ids existed
+  (or with a missing, malformed or duplicate id) get a UUID on load, written
+  back once. Settings reads History only through `history:search`
+  (`{ query, offset, limit }` → `{ ok, entries, total, offset, limit, all }`;
+  query cut to 200 characters, NFKC + case-folded, whitespace-split terms all
+  required, matched in `text` and `raw`; pages of at most 50; an offset past
+  the matches falls back to the last page) and deletes one entry through
+  `history:delete` (id → `{ ok: true, removed }` or `{ ok: false, error:
+  <code> }`). A delete rewrites the file before the list changes, so a failed
+  write keeps the entry (the same rule as Clear history, #287); the deferred
+  flush writes the list as it is when it runs, so a write queued before a
+  delete can't bring the entry back.
 - **The UI has a design system.** [DESIGN.md](DESIGN.md) is derived from the
   shipped CSS and governs the overlay, settings and wizard: one coral accent
   reserved for the voice, filled-white for the primary action, no drop

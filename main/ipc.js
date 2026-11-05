@@ -1,14 +1,16 @@
 // IPC handlers backing Settings, the setup wizard and transcript corrections.
 
-const { ipcMain, app, shell } = require("electron");
+const { ipcMain, app, shell, dialog, BrowserWindow } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const settings = require("./settings");
 const { mergeVocabulary, rememberVocabulary } = require("../renderer/vocabulary");
+const { mergeAliases, rememberAlias, normalizeAliases } = require("../renderer/aliases");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { deliverText } = require("./output/single-line");
 const history = require("./history");
+const recordings = require("./recordings");
 const windows = require("./windows");
 const route = require("./services/route");
 const engines = require("./engines");
@@ -149,6 +151,20 @@ const SHARED_FIELDS = [
     }),
   },
   {
+    // Explicit aliases (#335), merged per heard form like the dictionary is
+    // per term: the correction window adds them while Settings may be open.
+    name: "aliases",
+    type: "array",
+    read: (cfg) => cfg.cleanup?.aliases || [],
+    write: (cfg, live, seen) => ({
+      ...cfg,
+      cleanup: {
+        ...cfg.cleanup,
+        aliases: mergeAliases(seen, cfg.cleanup?.aliases, live.cleanup?.aliases),
+      },
+    }),
+  },
+  {
     name: "outputMode",
     type: "string",
     // Compared as the mode delivery performs, so retiring the legacy
@@ -201,6 +217,7 @@ function formSyncFields(cfg) {
   return {
     ...Object.fromEntries(FORM_SYNC_KEYS.map((key) => [key, cfg[key]])),
     dictionary: cfg.cleanup?.dictionary || [],
+    aliases: cfg.cleanup?.aliases || [],
   };
 }
 
@@ -258,7 +275,7 @@ function wrap(fn, describe = (err) => err.message) {
   };
 }
 
-function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {} }) {
+function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {}, onHistoryEntryDeleted = () => {}, retranscribe = async () => ({ ok: false, error: "unavailable" }) }) {
   onCleanupDownloaded = completed;
   // Custom models reach the registry through the settings themselves
   // (engines/catalog.js, bound in main.js), not through this layer: the saves
@@ -560,7 +577,10 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
 
   ipcMain.handle("cleanup:test", wrap(async (event, cfg) => {
     const sample = "um so this is uh a test of the cleanup service";
-    const result = await route.clean(sample, cfg);
+    // The saved Max dictation length sizes a builtin context, as for a dictation.
+    const result = await route.clean(sample, cfg, undefined, {
+      maxRecordingSeconds: settings.get().audio?.maxRecordingSeconds,
+    });
     return { ok: true, sample: result.slice(0, 200) };
   }));
 
@@ -648,8 +668,8 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
 
   ipcMain.handle("correction:open", wrap((event, entry) => {
     if (!canCorrect()) throw new Error("Finish the current dictation before correcting a transcript.");
-    // Resolve against saved history, not arbitrary renderer-supplied text.
-    const found = history.list().find((item) => item.at === entry?.at && item.text === entry?.text);
+    // Resolve against saved history by entry id, not renderer-supplied text.
+    const found = history.isValidId(entry?.id) && history.list().find((item) => item.id === entry.id);
     if (!found) throw new Error("This transcript is no longer in History.");
     windows.openCorrection(found);
     return { ok: true };
@@ -657,12 +677,21 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   ipcMain.handle("correction:get", () => ({
     text: windows.getCorrectionText(), cleanupEnabled: settings.get().cleanup.enabled,
   }));
-  ipcMain.handle("correction:remember", wrap((event, spelling) => {
+  // { spelling, heard? }: the spelling joins the dictionary; with `heard`
+  // (the selected words, "Always replace" checked) it also becomes that
+  // phrase's alias (#335). Both are checked before either is saved, so a
+  // conflicting alias saves nothing. A bare string is the spelling alone.
+  ipcMain.handle("correction:remember", wrap((event, request) => {
+    const { spelling, heard } = typeof request === "string" ? { spelling: request } : (isPlainObject(request) ? request : {});
+    if (heard !== undefined && typeof heard !== "string") throw new Error("Select the words to replace.");
     const cfg = settings.get();
     const dictionary = rememberVocabulary(cfg.cleanup.dictionary, spelling);
-    settings.save({ ...cfg, cleanup: { ...cfg.cleanup, dictionary } });
+    const aliases = heard === undefined
+      ? normalizeAliases(cfg.cleanup.aliases)
+      : rememberAlias(cfg.cleanup.aliases, heard, spelling);
+    settings.save({ ...cfg, cleanup: { ...cfg.cleanup, dictionary, aliases } });
     onSettingsChanged?.();
-    return { ok: true, cleanupEnabled: cfg.cleanup.enabled };
+    return { ok: true, cleanupEnabled: cfg.cleanup.enabled, alias: heard !== undefined };
   }));
   ipcMain.handle("transcript:copy", wrap(async (event, text) => {
     if (!canCopy()) throw new Error("Wait for the current dictation to finish processing before copying a transcript.");
@@ -679,7 +708,45 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   ipcMain.on("correction:dirty", (event, dirty) => windows.setCorrectionDirty(event.sender, dirty));
   ipcMain.handle("correction:close", () => windows.closeCorrection());
 
-  ipcMain.handle("history:list", () => history.list());
+  // One page of History matching a query: { ok: true, entries, total,
+  // offset, limit, all }. history.search bounds the query and page size.
+  ipcMain.handle("history:search", wrap((event, request) => {
+    if (request !== undefined && (request === null || typeof request !== "object")) {
+      throw new TypeError("The History search request is malformed.");
+    }
+    const page = history.search(request);
+    // Which entries have a kept recording (#343): "kept", "unreadable", or
+    // none — from the file header and the key, without decrypting.
+    // A store that can't answer marks nothing: search itself never fails
+    // over audio.
+    let audio = {};
+    try {
+      audio = recordings.getStore().availability(page.entries.map((entry) => entry.id));
+    } catch (err) {
+      logger.warn("could not check kept recordings:", err.message);
+    }
+    const entries = page.entries.map((entry) => (audio[entry.id] ? { ...entry, audio: audio[entry.id] } : entry));
+    return { ok: true, ...page, entries };
+  }));
+  // Delete one entry by id: { ok: true, removed } or { ok: false, error } —
+  // a failed write keeps the entry (#287's rule, per entry), and Settings
+  // must say so instead of hiding it.
+  ipcMain.handle("history:delete", (event, id) => {
+    if (!history.isValidId(id)) return { ok: false, error: "EINVAL" };
+    const result = history.remove(id);
+    if (result.ok && result.removed) {
+      // A transcript held back from a paste (#291) saved as this entry goes too.
+      onHistoryEntryDeleted(id);
+      // "Copy last transcription" must not offer the deleted words.
+      tray.refresh();
+    }
+    // Its kept recording goes with it (#343) — also when the entry was
+    // already gone. A recording that can't be deleted now (held open) is an
+    // orphan the next prune deletes; Settings says so instead of implying
+    // it is gone.
+    if (result.ok && !recordings.getStore().remove(id)) return { ...result, audioError: "EBUSY" };
+    return result;
+  });
   // { ok: true } or { ok: false, error }: a failed delete leaves the
   // transcripts on disk, and Settings must say so instead of showing none.
   ipcMain.handle("history:clear", () => {
@@ -688,6 +755,53 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     if (result.ok) onHistoryCleared();
     // "Copy last transcription" must go disabled with nothing left to copy.
     tray.refresh();
+    // And so is every kept recording (#343), the key last (audio-store.js).
+    if (result.ok) {
+      const audio = recordings.getStore().clear();
+      if (!audio.ok) return { ...result, audioError: audio.error };
+    }
+    return result;
+  });
+
+  /* ---- Kept recordings (#343) ---- */
+
+  // The decrypted WAV of entry `id`, for the History player: { ok: true,
+  // wav } or { ok: false, error } — "missing", "unreadable", "insecure" or a
+  // file-system code. Only for an entry still in History.
+  ipcMain.handle("history:audio-get", (event, id) => {
+    if (!history.isValidId(id) || !history.list().some((entry) => entry.id === id)) return { ok: false, error: "missing" };
+    return recordings.getStore().read(id);
+  });
+  // Save entry `id`'s recording as a WAV where the user picks: { ok: true },
+  // { ok: false, cancelled: true }, or { ok: false, error }. The dialog asks
+  // first, so a recording that can't be read fails before it.
+  ipcMain.handle("history:audio-export", async (event, id) => {
+    if (!history.isValidId(id)) return { ok: false, error: "missing" };
+    const entry = history.list().find((item) => item.id === id);
+    if (!entry) return { ok: false, error: "missing" };
+    const audio = recordings.getStore().read(id);
+    if (!audio.ok) return audio;
+    const stamp = String(entry.at || new Date().toISOString()).slice(0, 19).replace(/[:T]/g, "-");
+    const choice = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
+      title: "Export recording",
+      defaultPath: path.join(app.getPath("downloads"), `earheart-${stamp}.wav`),
+      filters: [{ name: "WAV audio", extensions: ["wav"] }],
+    });
+    if (choice.canceled || !choice.filePath) return { ok: false, cancelled: true };
+    return recordings.exportWav(audio.wav, choice.filePath);
+  });
+  // Transcribe entry `id`'s recording again (pipeline.retranscribe): never
+  // pastes; the result is stored beside the original as entry.retry.
+  ipcMain.handle("history:retranscribe", async (event, id) => {
+    if (!history.isValidId(id)) return { ok: false, error: "missing" };
+    return retranscribe(id);
+  });
+  // { secure, reason, key, count, bytes, lastError } for Settings.
+  ipcMain.handle("recordings:status", () => recordings.getStore().status());
+  // Delete every kept recording and the key; History's text stays.
+  ipcMain.handle("recordings:clear", () => {
+    const result = recordings.getStore().clear();
+    windows.sendToSettings("history:changed", { updated: true });
     return result;
   });
 

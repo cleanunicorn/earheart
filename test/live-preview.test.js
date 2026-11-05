@@ -7,6 +7,7 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 
 const { createLivePreview } = require("../main/live-preview");
+const { deepMerge, DEFAULTS } = require("../main/settings");
 
 // A deferred promise so a test can hold a transcribe/cleanup "in flight" and
 // resolve it on demand, to drive the busy/stale races deterministically.
@@ -864,4 +865,20 @@ test("missing cleanup avoids live work and a timer rechecks availability", async
   await tick();
   assert.equal(h.cleanupCalls.length, 0);
   h.lp.cancel();
+});
+
+/* ---------------- live preview settings ---------------- */
+
+test("live preview defaults are present and overridable", () => {
+  const lp = DEFAULTS.stt.livePreview;
+  assert.strictEqual(lp.enabled, true);
+  assert.ok(lp.intervalMs > 0);
+  assert.ok(lp.chunkSeconds > 0);
+  assert.ok(lp.cleanupPauseMs > 0);
+
+  // A saved file that only flips the toggle keeps the rest of the tuning.
+  const off = deepMerge(DEFAULTS, { stt: { livePreview: { enabled: false } } });
+  assert.strictEqual(off.stt.livePreview.enabled, false);
+  assert.strictEqual(off.stt.livePreview.intervalMs, lp.intervalMs);
+  assert.strictEqual(off.stt.livePreview.cleanupPauseMs, lp.cleanupPauseMs);
 });

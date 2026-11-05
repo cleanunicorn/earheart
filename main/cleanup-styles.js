@@ -14,6 +14,8 @@
 // numbers under cleanup.custom, for power users and for migrated configs that
 // only ever set a bare temperature.
 
+const { aliasTerms } = require("../renderer/aliases");
+
 const STYLES = [
   {
     id: "verbatim",
@@ -83,13 +85,22 @@ function dictionaryDirective(terms) {
   );
 }
 
+// The dictionary's terms plus the canonical term of every alias (#335), once
+// each: an alias's spelling is vocabulary the model should prefer too, and
+// the deterministic replacement after cleanup only catches the exact heard
+// forms.
+function promptTerms(cfg) {
+  const terms = (cfg.dictionary || []).map((t) => String(t).trim()).filter(Boolean);
+  return [...new Set([...terms, ...aliasTerms(cfg.aliases)])];
+}
+
 // Resolve a cleanup config slice into the prompt + sampling actually used.
 // custom → the user's raw numbers and their base prompt untouched; otherwise
 // the chosen preset's sampling plus its directive appended to the base prompt.
 // The dictionary applies in every mode — preferring the user's spellings is
 // orthogonal to how aggressively the model is allowed to edit.
 function resolveCleanup(cfg) {
-  const base = (cfg.systemPrompt || "") + dictionaryDirective(cfg.dictionary);
+  const base = (cfg.systemPrompt || "") + dictionaryDirective(promptTerms(cfg));
   if (cfg.style === "custom") {
     return { systemPrompt: base, sampling: { ...(cfg.custom || {}) } };
   }

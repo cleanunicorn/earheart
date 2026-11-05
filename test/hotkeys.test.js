@@ -1,7 +1,8 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 const { prettyHotkey, registrationHint } = require("../main/util/hotkey-label");
+const { acceleratorFromEvent } = require("../renderer/hotkey-capture");
 
 const A = "CommandOrControl+Shift+Space";
 const B = "CommandOrControl+Alt+P";
@@ -11,15 +12,10 @@ function loadHotkeys({ registerImpl = () => true, occupied = [] } = {}) {
   const hotkeysPath = require.resolve("../main/hotkeys");
   const loggerPath = require.resolve("../main/util/logger");
   const electronPath = require.resolve("electron");
-  const savedLogger = require.cache[loggerPath];
-  const savedElectron = require.cache[electronPath];
   const calls = { registered: [], unregistered: [], events: [], warnings: [] };
   const bindings = new Map();
   const attempts = new Map();
-  const electron = new Module(electronPath, null);
-  electron.filename = electronPath;
-  electron.loaded = true;
-  electron.exports = {
+  const electron = {
     globalShortcut: {
       register(accelerator, callback) {
         calls.registered.push({ accelerator, callback });
@@ -42,19 +38,12 @@ function loadHotkeys({ registerImpl = () => true, occupied = [] } = {}) {
       },
     },
   };
-  const logger = new Module(loggerPath, null);
-  logger.filename = loggerPath;
-  logger.loaded = true;
-  logger.exports = { warn: (message) => calls.warnings.push(message) };
-  require.cache[loggerPath] = logger;
-  require.cache[electronPath] = electron;
-  delete require.cache[hotkeysPath];
-  const hotkeys = require(hotkeysPath);
-  delete require.cache[hotkeysPath];
-  if (savedElectron) require.cache[electronPath] = savedElectron;
-  else delete require.cache[electronPath];
-  if (savedLogger) require.cache[loggerPath] = savedLogger;
-  else delete require.cache[loggerPath];
+  const logger = { warn: (message) => calls.warnings.push(message) };
+  const hotkeys = withStubs(
+    { [loggerPath]: logger, [electronPath]: electron },
+    [hotkeysPath],
+    () => require(hotkeysPath)
+  );
   return { hotkeys, calls, bindings };
 }
 
@@ -1241,4 +1230,140 @@ test("a four-way rotation through correction never leaves record unbound", () =>
   occupied.push(K(1));
   const result = hotkeys.applyAll(cfg(K(3), K(4), K(1), K(2)));
   assert.ok(!result.record.unbound, JSON.stringify(result.record));
+});
+
+// acceleratorFromEvent reads the page-global `platform` (classic-script
+// sharing in the renderer); tests provide it via global and reset after.
+test("acceleratorFromEvent maps modifiers per platform and names keys", () => {
+  const ev = (o) => ({ ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...o });
+  try {
+    global.platform = "linux";
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "k", code: "KeyK", ctrlKey: true })),
+      "CommandOrControl+K"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: " ", code: "Space", ctrlKey: true, shiftKey: true })),
+      "CommandOrControl+Shift+Space"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "ArrowUp", code: "ArrowUp", ctrlKey: true })),
+      "CommandOrControl+Up"
+    );
+    assert.strictEqual(acceleratorFromEvent(ev({ key: "1", code: "Digit1", ctrlKey: true })), "CommandOrControl+1");
+    assert.strictEqual(acceleratorFromEvent(ev({ key: "1", code: "Numpad1", ctrlKey: true })), "CommandOrControl+num1");
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "Enter", code: "NumpadEnter", ctrlKey: true })),
+      "CommandOrControl+Enter"
+    );
+    assert.strictEqual(acceleratorFromEvent(ev({ key: "0", code: "Numpad0", ctrlKey: true })), "CommandOrControl+num0");
+    for (let digit = 0; digit <= 9; digit++) {
+      const code = "Numpad" + digit;
+      const accelerator = "CommandOrControl+num" + digit;
+      assert.strictEqual(acceleratorFromEvent(ev({ key: String(digit), code, ctrlKey: true })), accelerator);
+    }
+    for (const [code, key, accelerator] of [
+      ["NumpadDecimal", ".", "numdec"],
+      ["NumpadAdd", "+", "numadd"],
+      ["NumpadSubtract", "-", "numsub"],
+      ["NumpadMultiply", "*", "nummult"],
+      ["NumpadDivide", "/", "numdiv"],
+    ]) {
+      assert.strictEqual(
+        acceleratorFromEvent(ev({ key, code, ctrlKey: true })),
+        "CommandOrControl+" + accelerator
+      );
+    }
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "k", code: "KeyK", metaKey: true })),
+      "Super+K"
+    );
+    assert.strictEqual(acceleratorFromEvent(ev({ key: "k" })), null, "requires a modifier");
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "Control", ctrlKey: true })),
+      null,
+      "a modifier alone is not a hotkey"
+    );
+    // macOS: physical Ctrl stays Ctrl (CommandOrControl would register Cmd),
+    // and Meta is the Command key.
+    global.platform = "darwin";
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "k", code: "KeyK", ctrlKey: true })),
+      "Control+K"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "k", code: "KeyK", metaKey: true })),
+      "Command+K"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "π", code: "KeyP", ctrlKey: true, altKey: true })),
+      "Control+Alt+P"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "ö", code: "Semicolon", ctrlKey: true })),
+      "Control+;"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "Ö", code: "Semicolon", altKey: true, shiftKey: true })),
+      "Alt+Shift+;"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "?", code: "IntlBackslash", ctrlKey: true })),
+      null,
+      "unknown printable physical keys are rejected"
+    );
+    assert.strictEqual(
+      acceleratorFromEvent(ev({ key: "Dead", code: "Quote", ctrlKey: true })),
+      null,
+      "dead keys cannot form Electron accelerators"
+    );
+    assert.strictEqual(acceleratorFromEvent(ev({ key: "1", code: "constructor", ctrlKey: true })), null);
+  } finally {
+    delete global.platform;
+  }
+});
+
+test("prettyHotkey names modifiers the way each platform does", () => {
+  assert.strictEqual(prettyHotkey("CommandOrControl+Shift+Space", "linux"), "Ctrl+Shift+Space");
+  assert.strictEqual(prettyHotkey("CommandOrControl+Shift+Space", "win32"), "Ctrl+Shift+Space");
+  assert.strictEqual(prettyHotkey("CommandOrControl+Shift+Space", "darwin"), "Cmd+Shift+Space");
+  // macOS spells the physical Ctrl and Alt keys differently from the rest.
+  assert.strictEqual(prettyHotkey("Control+Alt+P", "darwin"), "Control+Option+P");
+  assert.strictEqual(prettyHotkey("Control+Alt+P", "linux"), "Ctrl+Alt+P");
+  // Aliases a hand-edited settings.json may carry, and the Super/Meta key.
+  assert.strictEqual(prettyHotkey("CmdOrCtrl+K", "win32"), "Ctrl+K");
+  assert.strictEqual(prettyHotkey("Super+K", "win32"), "Win+K");
+  assert.strictEqual(prettyHotkey("Meta+K", "linux"), "Super+K");
+  assert.strictEqual(prettyHotkey("CommandOrControl+num0", "win32"), "Ctrl+Numpad 0");
+  assert.strictEqual(prettyHotkey("CommandOrControl+numdec", "linux"), "Ctrl+Numpad Decimal");
+  assert.strictEqual(prettyHotkey("CommandOrControl+numadd", "linux"), "Ctrl+Numpad +");
+  assert.strictEqual(prettyHotkey("CommandOrControl+numsub", "linux"), "Ctrl+Numpad -");
+  assert.strictEqual(prettyHotkey("CommandOrControl+nummult", "linux"), "Ctrl+Numpad *");
+  assert.strictEqual(prettyHotkey("CommandOrControl+numdiv", "linux"), "Ctrl+Numpad /");
+  // The key itself passes through untouched, and unbound stays empty.
+  assert.strictEqual(prettyHotkey("CommandOrControl+Up", "linux"), "Ctrl+Up");
+  assert.strictEqual(prettyHotkey("", "linux"), "");
+});
+
+// The Wayland note only exists in Settings on Linux (renderer/settings.js hides
+// it elsewhere), so the hint must not point at it on macOS or Windows.
+test("registrationHint points only at help that exists on the platform", () => {
+  assert.match(registrationHint("linux"), /Wayland note in Settings/);
+  for (const platform of ["darwin", "win32"]) {
+    const hint = registrationHint(platform);
+    assert.doesNotMatch(hint, /Wayland/);
+    assert.match(hint, /already in use/);
+  }
+});
+
+test("onboarding hotkey prose names the platform key and preserves edited shortcuts", () => {
+  const { displayHotkey } = require("../renderer/hotkey-capture");
+  const previous = global.platform;
+  try {
+    global.platform = "linux";
+    assert.strictEqual(displayHotkey("CommandOrControl+Shift+Space"), "Ctrl+Shift+Space");
+    global.platform = "darwin";
+    assert.strictEqual(displayHotkey("CmdOrCtrl+Shift+Space"), "Cmd+Shift+Space");
+    assert.strictEqual(displayHotkey("F8"), "F8");
+  } finally { global.platform = previous; }
 });

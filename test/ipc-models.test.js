@@ -12,7 +12,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 
 const ipcPath = require.resolve("../main/ipc");
 const registry = require("../main/engines/registry");
@@ -27,6 +27,23 @@ const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(ipcPa
 // `windows`, `deliver`, `history`, `autostart`, `updates` and `logger` override
 // those modules' members, and `init` the options init() receives. Every window
 // broadcast lands in `broadcasts`, and every other windows call in `windowCalls`.
+// #204: the engines facade reads no settings, so the Settings "Test" button
+// passes the saved Max dictation length — as the facade read it before — and
+// a builtin test clean gets the context a dictation would.
+test("cleanup:test passes the saved max dictation length to the cleanup route", async () => {
+  const seen = [];
+  const { handlers } = loadIpcHandlers({ audio: { maxRecordingSeconds: 900 } }, {
+    route: {
+      clean: async (text, cfg, signal, opts) => {
+        seen.push(opts?.maxRecordingSeconds);
+        return "cleaned";
+      },
+    },
+  });
+  assert.deepStrictEqual(await handlers["cleanup:test"]({}, { engine: "builtin" }), { ok: true, sample: "cleaned" });
+  assert.deepStrictEqual(seen, [900]);
+});
+
 function loadIpcHandlers(cfg, {
   engines = {},
   hf = {},
@@ -107,27 +124,11 @@ function loadIpcHandlers(cfg, {
     },
   };
 
-  const previous = {};
-  for (const p of Object.keys(stubs)) {
-    previous[p] = require.cache[p];
-    const m = new Module(p, null);
-    m.filename = p;
-    m.loaded = true;
-    m.exports = stubs[p];
-    require.cache[p] = m;
-  }
-  delete require.cache[ipcPath];
-  // As main.js wires it: custom models follow the settings (engines/catalog.js).
-  require("../main/engines/catalog").bindCustomModels(settings);
-  try {
+  withStubs(stubs, [ipcPath], () => {
+    // As main.js wires it: custom models follow the settings (engines/catalog.js).
+    require("../main/engines/catalog").bindCustomModels(settings);
     require(ipcPath).init({ applyHotkeys: () => ({}), onSettingsChanged() {}, ...init });
-  } finally {
-    delete require.cache[ipcPath];
-    for (const p of Object.keys(stubs)) {
-      if (previous[p]) require.cache[p] = previous[p];
-      else delete require.cache[p];
-    }
-  }
+  });
   return { handlers, saved, broadcasts, warnings, windowCalls };
 }
 
@@ -1212,10 +1213,12 @@ test("the auto-paste permission handlers pass the platform answer through", asyn
   assert.strictEqual(await handlers["permissions:accessibility-fix"](), fix);
 });
 
-test("history:list returns the stored history", async () => {
-  const entries = [{ text: "hello" }];
-  const { handlers } = loadIpcHandlers({}, { history: { list: () => entries } });
-  assert.strictEqual(await handlers["history:list"](), entries);
+test("history:search returns the page history.search found", async () => {
+  const page = { entries: [{ id: "a", text: "hello" }], total: 1, offset: 0, limit: 5, all: 1 };
+  const requests = [];
+  const { handlers } = loadIpcHandlers({}, { history: { search: (request) => (requests.push(request), page) } });
+  assert.deepStrictEqual(await handlers["history:search"]({}, { query: "hello", limit: 5 }), { ok: true, ...page });
+  assert.deepStrictEqual(requests, [{ query: "hello", limit: 5 }]);
 });
 
 test("each updater handler calls its updater action and answers what the UI reads", async () => {

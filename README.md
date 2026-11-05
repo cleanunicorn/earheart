@@ -86,6 +86,10 @@ Three settings are worth a minute for agent work:
   names you say every day — `pnpm`, `kubectl`, `PostgreSQL`, `useEffect` — so
   the cleanup model corrects near-misses to the exact spelling. It works through
   cleanup, so it has no effect with cleanup turned off.
+- **Always replace** (Settings → Cleanup). For a mishearing that keeps coming
+  back, write an exact rule: `air heart, ear heart -> Earheart`. Each heard
+  phrase is swapped for the spelling in every dictation, with cleanup on, off,
+  or failing. See [Always replace](#always-replace).
 - **System prompt** (Settings → Cleanup). Tell it to preserve file paths,
   flags, and identifiers exactly as spoken and never to answer the transcript.
   The default prompt already treats your dictation as text to clean, never as
@@ -127,12 +131,22 @@ label, and opinions are welcome.
   logged with the engine name and exit code or timeout, without transcript text.
 - **A dictionary for technical names** — teach Earheart the exact spelling of
   repo and product names, `pnpm`, `kubectl`, `useEffect`, or colleagues' names.
-  Select **Correct…** in History to fix a phrase and remember its spelling.
+  Select **Correct…** in History to fix a phrase and remember its spelling, or
+  map a recurring mishearing to it with **Always replace**, which works with
+  cleanup off.
 - **Pause and resume mid-dictation** — hold a take while you talk to someone or
   take a call, then resume it. Paused time is never captured or counted against
   the maximum length. You can also bind a global pause hotkey in Settings →
   General, and a discard hotkey that throws a take away without reaching for
   the mouse.
+- **Lower other audio while recording (optional)** — turn it on in Settings →
+  General → Microphone and music or a video drops to 20% of its volume (your
+  choice, 0–80%) while the microphone is capturing, and comes back when you
+  stop, pause, or cancel. A volume you change during the take is kept, muted
+  output stays muted, and a switch to another output device leaves the new one
+  alone. Uses `pactl`/`wpctl` on Linux, `osascript` on macOS, and Core Audio
+  through PowerShell on Windows; when none is available Settings says so and
+  dictation works as usual. See [docs/audio-ducking.md](docs/audio-ducking.md).
 - **Private by default** — speech and cleanup run in-process, with no account,
   telemetry, cloud requirement, or network hop.
 - **Works anywhere without an integration** — the global hotkey (default
@@ -151,7 +165,11 @@ label, and opinions are welcome.
   to everything Earheart pastes or copies (code blocks lose their line
   structure too); History keeps the transcript as it was.
 - **Local history** — recent transcriptions stay in a local JSON file, so a
-  mis-aimed paste never loses a dictation. History can be disabled.
+  mis-aimed paste never loses a dictation. Search it, delete single entries,
+  or turn it off.
+- **Kept recordings (optional)** — opt in to keep each dictation's audio,
+  encrypted with your OS keychain, then play, seek, export or retranscribe it
+  from History. Off by default; 30 days and 1 GB unless you change them.
 - **Start on login (optional)** — have Earheart launch into the tray
   automatically when you sign in, so the hotkey is always ready. Off by
   default; toggle it under Settings → General. Works on Windows, macOS and
@@ -390,6 +408,26 @@ the wizard:
 A mis-aimed paste never loses your words: the History section in Settings
 keeps recent transcriptions in a local file (you can turn this off).
 
+Type in **Search transcriptions** to find an old prompt: every word you type
+must appear in the entry (or in its transcript before cleanup), in any order,
+ignoring case — `ÉCOLE` finds `école`, but accents still count, so `cafe` does
+not find `café`. **Delete** on an entry removes just that one, for good; if the
+file can't be changed (a backup or antivirus scan holding it), the entry stays
+and the card says why. Deleting the entry also drops it from **Copy last
+transcription** if it was the transcript held back there.
+
+**Keep recordings** (off by default) also saves each dictation's audio with
+its History entry, so you can **Play** it (with seeking), **Export…** it as a
+WAV, or **Retranscribe** it with your current settings. A retranscription
+never pastes anything and never replaces the original: it shows under it with
+its own Copy button. Recordings are encrypted with a key held by your OS
+keychain; where there is none (Linux without GNOME Keyring or KWallet) the
+switch stays off and says why. They are deleted after 30 days, or oldest first
+past 1 GB (both adjustable), and with their History entry or Clear history.
+Turning it off keeps no new recordings; to remove the ones already kept, use
+**Delete all recordings**. See [docs/retained-audio.md](docs/retained-audio.md) for the storage format,
+encryption and recovery.
+
 A failed transcription doesn't lose the recording either. When the speech
 service times out or the model won't load, Earheart keeps that one recording in
 memory for 10 minutes. You can fix the service or switch engines in Settings,
@@ -412,7 +450,10 @@ paste's focus.
 Select the mistaken words in the full transcript, press Tab, and type the exact
 spelling. **Replace & remember** (Enter in the spelling field) changes only that
 occurrence and adds the spelling to your dictionary; **Replace only** makes a
-one-off correction. Shift+Tab back to the transcript keeps your pending spelling.
+one-off correction. Tick **Always replace the selected words with this
+spelling** before **Replace & remember** to also save the selected words as an
+alias, so future dictations get the spelling wherever those exact words come
+back, cleanup or not (see [Always replace](#always-replace)). Shift+Tab back to the transcript keeps your pending spelling.
 Repeat for other terms, or edit the transcript directly.
 **Undo replacement** reverses these replacements without removing words already
 remembered. Direct typing starts a new replacement-undo history.
@@ -450,6 +491,38 @@ cases. Reproduce with `node scripts/eval-vocabulary.mjs /path/to/model.gguf
 /tmp/vocabulary.json`; use the catalog's Qwen3 4B Instruct 2507 Q4_K_M model.
 The script uses the shipped cleanup prompt and scores the final postprocessed
 text. A missing exact spelling remains possible even after remembering it.
+
+### Always replace
+
+Settings → Cleanup → **Always replace** holds exact rules, one canonical
+spelling per line, the misheard phrases before the arrow:
+
+```
+air heart, ear heart -> Earheart
+cooper netties -> Kubernetes
+```
+
+Every delivered dictation goes through these rules after cleanup, or in place
+of it when cleanup is off or fails. History keeps the original transcript; the
+delivered text carries the replacement. The rules are deliberately narrow:
+
+- **Whole words, any capitalization.** `Air Heart` matches; `fair heart`,
+  `air hearted` and `airheart` don't. The spelling is written exactly as you
+  typed it. Spaces inside a phrase match any run of spaces or line breaks.
+- **One pass, no chains.** Replaced text is never scanned again, and where two
+  phrases start at the same place the longer one wins.
+- **Code stays as spoken.** Text in backticks, URLs and anything that looks
+  like a path (`/`, `\`, `~`) is left alone.
+- **One owner per phrase.** A phrase can map to one spelling only. Saving a
+  second owner, or a phrase that is itself another rule's spelling, is refused
+  with the line number, and nothing is saved.
+- **Bounded.** Phrases and spellings are up to 120 characters on one line, with
+  up to 256 phrases in total. No fuzzy or sound-alike matching; nothing is
+  learned automatically.
+
+Alias spellings also join the dictionary's guidance to the cleanup model.
+They are stored as `cleanup.aliases` beside the dictionary, which older
+versions ignore, so downgrading keeps every dictionary word.
 
 
 When something goes wrong (a service can't be reached, cleanup fails and the

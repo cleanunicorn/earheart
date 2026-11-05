@@ -12,7 +12,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 const path = require("node:path");
-const Module = require("node:module");
+const { withStubs } = require("./helpers/stub-modules");
 const { pathToFileURL } = require("node:url");
 
 const MAIN = require.resolve("../main/main");
@@ -49,15 +49,19 @@ async function loadMain(
     notificationsSupported = true,
     pipelineState = "idle",
     canCloseCorrection = true,
+    pruned = () => [], // ids a kept-recordings prune (#343) removes
+    ducking = {},
   } = {}
 ) {
   const events = [];
   const appHandlers = {};
   const shortcuts = new Map();
   const ipcInit = {};
+  const recordingsHooks = {};
   const notices = [];
   let permissionHandler = null;
   let stateListener = null;
+  let captureListener = null;
 
   class FakeNotification {
     static isSupported() {
@@ -122,6 +126,17 @@ async function loadMain(
       closeCorrection: () => events.push("closeCorrection"),
       openWizard: () => events.push("openWizard"),
       openCorrection: (entry) => events.push(`correct:${entry.text}`),
+      sendToSettings: (channel, payload) => events.push(`settings:${channel}:${JSON.stringify(payload ?? null)}`),
+    },
+    "./recordings": {
+      startPruning: (getCfg, onPruned) => {
+        events.push("recordings.startPruning");
+        recordingsHooks.onPruned = onPruned;
+      },
+      prune: () => {
+        events.push("recordings.prune");
+        return pruned();
+      },
     },
     "./history": { list: () => [{ text: "last transcript" }] },
     "./pipeline": {
@@ -131,6 +146,7 @@ async function loadMain(
       pauseToggle: () => events.push("pipeline.pauseToggle"),
       discard: () => events.push("pipeline.discard"),
       onStateChange: (listener) => { stateListener = listener; },
+      onCaptureChange: (listener) => { captureListener = listener; },
       onSettingsChanged: () => {},
       onOverlayRendererGone: () => {},
     },
@@ -146,6 +162,14 @@ async function loadMain(
       stop: () => events.push("engines.stop"),
     },
     "./autostart": { apply: () => events.push("autostart.apply") },
+    "./ducking": {
+      init: () => events.push("ducking.init"),
+      setCapturing: (owner, live) => events.push(`ducking.capture:${owner}:${live}`),
+      refresh: () => events.push("ducking.refresh"),
+      holding: () => false,
+      shutdown: async () => events.push("ducking.shutdown"),
+      ...ducking,
+    },
     "./updates": {
       init: (...args) => {
         events.push("updates.init");
@@ -170,30 +194,17 @@ async function loadMain(
     },
   };
 
-  const saved = new Map();
-  const install = (file, exports) => {
-    saved.set(file, require.cache[file]);
-    const mod = new Module(file, null);
-    mod.filename = file;
-    mod.loaded = true;
-    mod.exports = exports;
-    require.cache[file] = mod;
-  };
-  for (const [spec, exports] of Object.entries(stubs)) install(resolveFrom(spec), exports);
-  for (const file of FRESH) delete require.cache[file];
+  const resolved = Object.fromEntries(
+    Object.entries(stubs).map(([spec, exports]) => [resolveFrom(spec), exports])
+  );
 
   const originalArgv = process.argv;
   process.argv = [...originalArgv.slice(0, 2), ...argv];
   try {
-    require(MAIN);
+    withStubs(resolved, FRESH, () => require(MAIN));
   } finally {
     // isSmokeTest and startHidden are read at load time.
     process.argv = originalArgv;
-    for (const file of FRESH) delete require.cache[file];
-    for (const [file, previous] of saved) {
-      if (previous) require.cache[file] = previous;
-      else delete require.cache[file];
-    }
   }
   // Let the whenReady().then(...) startup body run.
   await new Promise((resolve) => setImmediate(resolve));
@@ -202,9 +213,11 @@ async function loadMain(
     appHandlers,
     shortcuts,
     ipcInit,
+    recordingsHooks,
     notices,
     permissionHandler: () => permissionHandler,
     changeState: (state) => stateListener(state),
+    changeCapture: (live) => captureListener(live),
   };
 }
 
@@ -363,6 +376,44 @@ test("quitting destroys the overlay, then releases hotkeys, engines and updates"
 });
 
 
+test("the pipeline's capture signal drives ducking, and saving settings refreshes it", async () => {
+  const { events, changeCapture, ipcInit } = await loadMain();
+  assert.ok(events.includes("ducking.init"));
+  events.length = 0;
+  changeCapture(true);
+  changeCapture(false);
+  ipcInit.onSettingsChanged();
+  // A save also applies kept-recording limits (#343) before ducking refreshes.
+  assert.deepStrictEqual(events, ["ducking.capture:dictation:true", "ducking.capture:dictation:false", "recordings.prune", "ducking.refresh"]);
+});
+
+test("quitting while other audio is lowered waits for the restore, then quits again", async () => {
+  let holding = true;
+  let finish;
+  const { events, appHandlers } = await loadMain({
+    ducking: {
+      holding: () => holding,
+      shutdown: (ms) => {
+        events.push(`ducking.shutdown:${ms}`);
+        return new Promise((resolve) => { finish = resolve; });
+      },
+    },
+  });
+  events.length = 0;
+  let prevented = false;
+  appHandlers["before-quit"]({ preventDefault: () => { prevented = true; } });
+  assert.strictEqual(prevented, true, "the first quit waits for the restore");
+  assert.deepStrictEqual(events, ["destroyOverlay", "ducking.shutdown:2000"]);
+  holding = false;
+  finish();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepStrictEqual(events.slice(-1), ["app.quit"]);
+  // The second pass finds nothing held and lets the quit through.
+  prevented = false;
+  appHandlers["before-quit"]({ preventDefault: () => { prevented = true; } });
+  assert.strictEqual(prevented, false);
+});
+
 test("correction hotkey and desktop command open the latest saved transcript only when idle", async () => {
   const key = "CommandOrControl+Alt+C";
   for (const pipelineState of ["idle", "recording", "processing"]) {
@@ -394,4 +445,27 @@ test("an update install asks about an uncopied correction first, then closes the
     assert.strictEqual(callbacks.confirmInstall(), canCloseCorrection);
     assert.deepStrictEqual(events, canCloseCorrection ? ["closeCorrection"] : [], "a kept draft keeps its editor");
   }
+});
+
+// Kept recordings (#343): a settings save applies the new limits at once, and
+// when that removes recordings History redraws — keeping its page — so one
+// that was playing stops instead of playing on with stale buttons (review b-4).
+test("a settings save that prunes kept recordings tells History, as an update", async () => {
+  let removed = [];
+  const { events, ipcInit, recordingsHooks } = await loadMain({ pruned: () => removed });
+  assert.ok(events.includes("recordings.startPruning"));
+  const sent = () => events.filter((e) => e.startsWith("settings:history:changed"));
+
+  ipcInit.onSettingsChanged();
+  assert.ok(events.includes("recordings.prune"), "new limits apply on save");
+  assert.deepStrictEqual(sent(), [], "nothing removed, nothing to redraw");
+
+  removed = ["2b0e0a46-2c3f-4b5e-9f00-0123456789ab"];
+  ipcInit.onSettingsChanged();
+  assert.deepStrictEqual(sent(), ['settings:history:changed:{"updated":true}']);
+
+  // The startup/hourly prune's redraw is an update too.
+  const before = sent().length;
+  recordingsHooks.onPruned();
+  assert.deepStrictEqual(sent().slice(before), ['settings:history:changed:{"updated":true}'], "exactly one new event");
 });

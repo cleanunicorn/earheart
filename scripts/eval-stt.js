@@ -968,10 +968,26 @@ function combine(accFile, speedFiles, overrides = {}) {
     : `accuracy: ${acc.status}; speed: ${spds[0] ? spds[0].status : "not measured"}`;
   return out;
 }
+// `file` is the user's --out path, possibly in a folder others can write: the
+// temp file beside it has a random name and is created exclusively ("wx"),
+// so a file or symlink already there fails the write instead of being
+// written through. Only a temp file this call created is removed.
 async function writeJson(file, data) {
-  const tmp = `${file}.tmp`;
-  await fsp.writeFile(tmp, JSON.stringify(data, null, 1));
-  await fsp.rename(tmp, file);
+  const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomBytes(8).toString("hex")}.tmp`);
+  let created = false;
+  try {
+    const handle = await fsp.open(tmp, "wx", 0o644);
+    created = true;
+    try {
+      await handle.writeFile(JSON.stringify(data, null, 1));
+    } finally {
+      await handle.close();
+    }
+    await fsp.rename(tmp, file);
+  } catch (err) {
+    if (created) await fsp.rm(tmp, { force: true });
+    throw err;
+  }
 }
 
 async function run(opts) {
@@ -1257,5 +1273,5 @@ if (process.versions.electron || require.main === module) {
 
 module.exports = {
   parseArgs, combine, report, runStatus, runExitCode, assertContentionObservable,
-  diskCheck, diskBlocked, MIN_FREE_BYTES, DISK_BUDGET_BYTES, workerRecognizer, directRecognizer,
+  diskCheck, diskBlocked, MIN_FREE_BYTES, DISK_BUDGET_BYTES, workerRecognizer, directRecognizer, writeJson,
 };

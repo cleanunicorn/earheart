@@ -739,6 +739,22 @@ const os = require("node:os");
 const path = require("node:path");
 const harness = require("../scripts/eval-stt");
 
+// The --out file may sit in a folder others can write: the old `<out>.tmp`
+// was followed if a symlink was planted there. The temp is now random and
+// created exclusively, so a planted link's target is never written.
+test("eval-stt: writeJson never writes through a symlink at the old temp name", { skip: process.platform === "win32" && "symlinks" }, async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stt-out-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const out = path.join(dir, "result.json");
+  const victim = path.join(dir, "victim.txt");
+  fs.writeFileSync(victim, "keep me");
+  fs.symlinkSync(victim, `${out}.tmp`);
+  await harness.writeJson(out, { ok: 1 });
+  assert.strictEqual(fs.readFileSync(victim, "utf8"), "keep me");
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(out, "utf8")), { ok: 1 });
+  assert.deepStrictEqual(fs.readdirSync(dir).sort(), ["result.json", "result.json.tmp", "victim.txt"]);
+});
+
 // A minimal but complete pair of pass files, shaped like the harness writes them.
 function passFiles(t, { speedOver = {}, accOver = {} } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stt-combine-"));
@@ -874,7 +890,7 @@ test("stt-eval harness: argument parsing", () => {
 /* ---------------- the harness's recognizers: a timed-out decode never keeps running ---------------- */
 
 const { mock } = require("node:test");
-const Module = require("node:module");
+const { stubModules } = require("./helpers/stub-modules");
 
 test("stt-eval harness: a worker request that times out stops the worker; other errors do not", async () => {
   const hostModule = require("../main/engines/host");
@@ -896,7 +912,6 @@ test("stt-eval harness: a worker request that times out stops the worker; other 
 
 test("stt-eval harness: an exploratory request that times out kills its utility process", async () => {
   const electronPath = require.resolve("electron", { paths: [path.join(__dirname, "../scripts")] });
-  const saved = require.cache[electronPath];
   const killed = [];
   const posted = [];
   const child = {
@@ -904,11 +919,9 @@ test("stt-eval harness: an exploratory request that times out kills its utility 
     postMessage: (msg) => posted.push(msg),
     kill: () => killed.push(true),
   };
-  const stub = new Module(electronPath, null);
-  stub.filename = electronPath;
-  stub.loaded = true;
-  stub.exports = { utilityProcess: { fork: (file) => { child.file = file; return child; } } };
-  require.cache[electronPath] = stub;
+  const restore = stubModules({
+    [electronPath]: { utilityProcess: { fork: (file) => { child.file = file; return child; } } },
+  });
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
     const rec = harness.directRecognizer({ id: "m", sherpa: { family: "moonshine" } }, "/models/m");
@@ -922,8 +935,7 @@ test("stt-eval harness: an exploratory request that times out kills its utility 
     assert.deepStrictEqual(killed, [true]);
   } finally {
     mock.timers.reset();
-    if (saved) require.cache[electronPath] = saved;
-    else delete require.cache[electronPath];
+    restore();
   }
 });
 
@@ -979,14 +991,11 @@ test("stt-eval worker config: a map without a joiner, family or Whisper type is 
 test("stt-eval worker: load reports the app's runtime; transcribe before load fails", async () => {
   const workerPath = require.resolve("../scripts/stt-eval-worker");
   const sherpaPath = require.resolve("sherpa-onnx-node", { paths: [path.dirname(workerPath)] });
-  const savedSherpa = require.cache[sherpaPath];
   const savedPort = process.parentPort;
   const built = [];
-  const stub = new Module(sherpaPath, null);
-  stub.filename = sherpaPath;
-  stub.loaded = true;
-  stub.exports = { OfflineRecognizer: class { constructor(c) { built.push(c); } } };
-  require.cache[sherpaPath] = stub;
+  const restore = stubModules({
+    [sherpaPath]: { OfflineRecognizer: class { constructor(c) { built.push(c); } } },
+  });
   let onMessage = null;
   const replies = [];
   process.parentPort = { on: (ev, fn) => { if (ev === "message") onMessage = fn; }, postMessage: (m) => replies.push(m) };
@@ -1010,8 +1019,7 @@ test("stt-eval worker: load reports the app's runtime; transcribe before load fa
     assert.match(unknown.error, /Unknown request: nope/);
   } finally {
     delete require.cache[workerPath];
-    if (savedSherpa) require.cache[sherpaPath] = savedSherpa;
-    else delete require.cache[sherpaPath];
+    restore();
     process.parentPort = savedPort;
   }
 });

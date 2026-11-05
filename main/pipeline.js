@@ -30,6 +30,8 @@ const logger = require("./util/logger");
 const { prettyHotkey } = require("./util/hotkey-label");
 const { createNotifier, sttNotReadyNotice, BODY_MAX } = require("./setup-notices");
 const { createFailedTake } = require("./failed-take");
+const recordings = require("./recordings");
+const { applyAliases } = require("../renderer/aliases");
 
 let state = "idle"; // idle | recording | processing
 // Shows the "model not downloaded" notice; its click opens Settings.
@@ -102,6 +104,13 @@ function missingCleanupNotice(readiness) {
     body: (readiness.label || readiness.modelId) + " is not downloaded — raw transcripts work. Click to download it in Settings → Cleanup.",
   });
 }
+// The builtin cleanup context is sized from Max dictation length, which the
+// engines facade doesn't read itself (#204). Every cleanup call passes this,
+// read at call time — the moment the facade used to read it.
+// test/cleanup-limits-contract.test.js checks that no call site drops it.
+function cleanupLimits() {
+  return { maxRecordingSeconds: settings.get().audio?.maxRecordingSeconds };
+}
 function reconcileCompletedCleanup() {
   const cfg = settings.get().cleanup;
   const id = cfg?.builtin?.model;
@@ -116,7 +125,7 @@ function reconcileCompletedCleanup() {
   primedCleanup.add(id);
   const prime = {};
   backgroundPrime = prime;
-  engines.primeCleanup(cfg).catch((err) => {
+  engines.primeCleanup(cfg, "", cleanupLimits()).catch((err) => {
     if (err?.name !== "AbortError" && err?.message !== "cleanup cancelled") logger.warn("cleanup warm-up failed:", { model: id }, err);
   }).finally(() => { if (backgroundPrime === prime) backgroundPrime = false; });
 }
@@ -157,7 +166,7 @@ async function transcribeLive(wav, sttCfg, signal) {
 
 const livePreview = createLivePreview({
   runTranscribe: transcribeLive,
-  runCleanup: route.clean,
+  runCleanup: (raw, cleanupCfg, signal) => route.clean(raw, cleanupCfg, signal, cleanupLimits()),
   canCleanup: (cfg) => cleanupAvailability(cfg).ok,
   sendToOverlay: windows.sendToOverlay,
   getSettings: settings.get,
@@ -213,12 +222,37 @@ function armIdleUnload(delayMs) {
 
 function setState(next) {
   state = next;
+  // Capture ends with the recording state, whichever way it leaves.
+  if (next !== "recording") setCapturing(false);
   // Models should stay resident while a dictation is active; only count idle
   // time once we're back to idle. Re-arming on each return to idle resets the
   // window after every dictation.
   if (next === "idle") { armIdleUnload(); reconcileCompletedCleanup(); }
   else cancelIdleUnload();
   for (const listener of stateListeners) listener(state);
+}
+
+// Whether the overlay's microphone is capturing right now: from its first
+// samples, off while paused, back on resume, off when the track ends or the
+// recording state is left (stop, cancel, error, renderer gone). Audio ducking
+// (main/ducking/) follows it. Listeners run synchronously and must not throw
+// into the state machine.
+let capturing = false;
+const captureListeners = new Set();
+function setCapturing(live) {
+  if (capturing === live) return;
+  capturing = live;
+  for (const listener of captureListeners) {
+    try {
+      listener(live);
+    } catch (err) {
+      logger.warn("capture listener failed:", err);
+    }
+  }
+}
+
+function onCaptureChange(listener) {
+  captureListeners.add(listener);
 }
 
 function onStateChange(listener) {
@@ -232,16 +266,20 @@ function getState() {
 // The last transcript delivery held back because another app took over the
 // clipboard first (#291): not pasted, not on the clipboard, and with History
 // off, nowhere else. Kept in memory (never on disk) for the tray's "Copy last
-// transcription" — `{ text, at }`, so a newer History entry wins — until a
-// later delivery lands or History is cleared.
+// transcription" — `{ text, at, historyId }`, so a newer History entry wins —
+// until a later delivery lands, History is cleared, or the History entry it
+// was saved as (`historyId`; null with History off) is deleted.
 let undelivered = null;
 
 function getUndelivered() {
   return undelivered;
 }
 
-function clearUndelivered() {
-  undelivered = null;
+// With `historyId`, only the held-back transcript saved as that History entry
+// goes (the entry was deleted) — not one with the same words from another
+// dictation, nor one History never saved; without it, any (History cleared).
+function clearUndelivered(historyId) {
+  if (historyId === undefined || (historyId && undelivered?.historyId === historyId)) undelivered = null;
 }
 
 function overlayStatus(status, detail) {
@@ -410,6 +448,17 @@ async function transcribeWithEstimate(wav, sttCfg, signal, stale, assembly) {
   }
 }
 
+// Apply the user's aliases to `text`. Never throws: a failure is logged and
+// the text goes out as it was (golden rule 8).
+function withAliases(text, aliases) {
+  try {
+    return applyAliases(text, aliases);
+  } catch (err) {
+    logger.warn("dictionary aliases failed; delivering the text without them:", err);
+    return text;
+  }
+}
+
 // Sibling of transcribeWithEstimate: run cleanup with its streamed progress.
 // The builtin worker reports real token progress (generated vs transcript
 // length, capped below 1 — only the reply says done), so on success this sends
@@ -418,6 +467,7 @@ async function transcribeWithEstimate(wav, sttCfg, signal, stale, assembly) {
 // in cleanWithFallback — that's dictation policy, not progress plumbing.
 async function cleanWithProgress(raw, cleanupCfg, signal, stale) {
   const text = await route.clean(raw, cleanupCfg, signal, {
+    ...cleanupLimits(),
     onProgress: (fraction) => {
       if (!stale()) sendProgress("cleaning", fraction);
     },
@@ -465,7 +515,7 @@ async function cleanWithFallback(raw, cleanupCfg, signal, stale) {
 // Priming is best-effort, but a failed model startup must leave a diagnostic.
 // Cancellation while stopping a recording is expected and stays quiet.
 function primeCleanupLogged(cfg, sid, prefix) {
-  engines.primeCleanup(cfg, prefix).catch((err) => {
+  engines.primeCleanup(cfg, prefix, cleanupLimits()).catch((err) => {
     if (session !== sid || state === "idle" || err?.name === "AbortError" ||
         err?.message === "cleanup cancelled") return;
     logger.warn("cleanup warm-up failed:", { model: cfg.builtin?.model }, err);
@@ -520,6 +570,7 @@ function discard() {
 let retryPending = null; // session id of a retry waiting for the overlay
 function retryFailedTake() {
   if (state !== "idle" || !failedTake.info() || retryPending === session) return false;
+  retranscriber.cancel();
   const sid = ++session;
   retryPending = sid;
   const win = windows.createOverlay();
@@ -571,6 +622,9 @@ function startRecording() {
     setupNotifier.show(sttNotReadyNotice(readiness), { critical: true });
     return;
   }
+  // The dictation wins the engines: a History retranscription still running
+  // (#343) stops and is marked cancelled, to be tried again later.
+  retranscriber.cancel();
   const sid = ++session;
   setState("recording");
   const liveOn = cfg.stt.engine === "builtin" && cfg.stt.livePreview?.enabled;
@@ -729,15 +783,23 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
       ({ text, cleaned } = await cleanWithFallback(raw, cfg.cleanup, signal, stale));
       if (stale()) return;
     }
+    // Explicit aliases (#335) run on what is delivered — the cleaned text or
+    // the raw fallback — so they hold with cleanup off or failing. `raw`
+    // stays as transcribed for History.
+    text = withAliases(text, cfg.cleanup.aliases);
 
     // History first: the final text is the user's as soon as it exists,
     // whatever delivery does next (a cancel mid-keystroke, a paste tool that
     // throws). And history never blocks delivery — a failure here is logged
     // and the words still go out.
+    let historyId = null;
     if (cfg.history.enabled) {
       try {
-        history.add({ raw, text, cleaned, ...(partial ? { incomplete: true } : {}) }, cfg.history);
+        historyId = history.add({ raw, text, cleaned, ...(partial ? { incomplete: true } : {}) }, cfg.history) ?? null;
         windows.sendToSettings("history:changed");
+        // Opted in (#343): keep the recording as this entry's audio — a turn
+        // later, so the encrypted write never delays the paste below.
+        recordings.keepLater(historyId, wav, cfg, () => windows.sendToSettings("history:changed", { updated: true }));
       } catch (err) {
         logger.error("history add failed:", err);
       }
@@ -755,8 +817,12 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
     // cost the recording (a retry already took it out).
     if (!retry && !partial && result.method !== "cancelled") failedTake.discard();
     // A cancelled delivery landed nothing, so it supersedes nothing either.
-    if (result.method === "clipboard-changed") undelivered = { text, at: new Date().toISOString() };
-    else if (result.method !== "cancelled") undelivered = null;
+    // Saved to History but deleted (or cleared) while the paste ran: the user
+    // removed these words on purpose, so nothing holds them back either.
+    const deletedMeanwhile = historyId !== null && !history.list().some((entry) => entry.id === historyId);
+    if (result.method === "clipboard-changed") {
+      undelivered = deletedMeanwhile ? null : { text, at: new Date().toISOString(), historyId };
+    } else if (result.method !== "cancelled") undelivered = null;
     if (stale()) return;
 
     if (result.method === "clipboard-changed") {
@@ -824,6 +890,68 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
   }
 }
 
+/* ---- Retranscribing a kept recording (#343) ---- */
+
+// STT for a History retranscription: the configured engine, whole take, no
+// overlay — this isn't a dictation, so it shows no card and no progress bar.
+async function transcribeKept(wav, sttCfg, signal) {
+  const stale = () => signal.aborted;
+  if (sttCfg.engine !== "builtin") {
+    const text = await withRetry(() => route.transcribe(wav, sttCfg, signal), { stale });
+    return { text, partial: false };
+  }
+  await withRetry(() => engines.ensureStt(sttCfg.builtin.model), { stale });
+  const result = await transcribeChunked(wav, {
+    runTranscribe: (piece, opts) => route.transcribe(piece, sttCfg, signal, opts),
+    restartStt: engines.restartStt,
+    stale,
+    log: logger,
+  });
+  if (result.stale) throw new Error("cancelled");
+  return { text: result.text, partial: result.partial };
+}
+
+// Cleanup for a retranscription: like a dictation's (the raw transcript when
+// cleanup is off, unavailable or fails, then the explicit aliases on whichever
+// text results), but quiet — the result is shown in History, not announced.
+async function cleanKept(raw, cleanupCfg, signal) {
+  const done = (text, cleaned) => ({ text: withAliases(text, cleanupCfg.aliases), cleaned });
+  if (!cleanupCfg.enabled || !cleanupAvailability(cleanupCfg).ok) return done(raw, false);
+  try {
+    const text = await withRetry(() => route.clean(raw, cleanupCfg, signal, cleanupLimits()), { stale: () => signal.aborted });
+    return done(text, true);
+  } catch (err) {
+    if (signal.aborted) throw err;
+    logger.warn("retranscription cleanup failed, kept the raw transcript:", err.message);
+    return done(raw, false);
+  }
+}
+
+const retranscriber = recordings.createRetranscriber({
+  read: (id) => recordings.getStore().read(id),
+  transcribe: (wav, signal) => transcribeKept(wav, settings.get().stt, signal),
+  clean: (raw, signal) => cleanKept(raw, settings.get().cleanup, signal),
+  setRetry: (id, retry) => history.setRetry(id, retry),
+  canStart: () => state === "idle",
+  // The engines just ran: restart their idle window from now.
+  onSettled: () => {
+    if (state === "idle") armIdleUnload();
+  },
+});
+
+/**
+ * Transcribe History entry `id`'s kept recording again with the settings as
+ * they are now. Never delivers. Resolves to { ok: true, stored, retry } or
+ * { ok: false, error } — "busy", "dictating", "missing", "unreadable",
+ * "insecure" or a file-system code.
+ */
+async function retranscribe(id) {
+  const result = await retranscriber.run(id);
+  // An update to an existing entry: Settings stays on the page showing it.
+  if (result.ok || result.retry) windows.sendToSettings("history:changed", { updated: true });
+  return result;
+}
+
 function init({ isDownloading = () => false } = {}) {
   isModelDownloading = isDownloading;
   ipcMain.on("audio:captured", (event, { sid, wav } = {}) => {
@@ -839,6 +967,13 @@ function init({ isDownloading = () => false } = {}) {
   // word and the speech inside it is never decoded again.
   ipcMain.on("audio:partial", (event, { sid, seq, final, fromSample, hasSpeech, wav } = {}) => {
     livePreview.handleAudio(sid, { seq, final, fromSample, hasSpeech, wav });
+  });
+
+  ipcMain.on("record:capture", (event, { sid, live } = {}) => {
+    // A malformed edge is dropped, not read as "stopped": un-ducking mid-take
+    // on a bad message would be as wrong as ducking on one.
+    if (sid !== session || state !== "recording" || typeof live !== "boolean") return;
+    setCapturing(live);
   });
 
   ipcMain.on("record:cancelled", (event, { sid } = {}) => {
@@ -886,6 +1021,7 @@ module.exports = {
   pauseToggle,
   discard,
   retryFailedTake,
+  retranscribe,
   discardFailedTake,
   getFailedTake,
   onFailedTakeChange,
@@ -895,6 +1031,7 @@ module.exports = {
   getUndelivered,
   clearUndelivered,
   onStateChange,
+  onCaptureChange,
   onSettingsChanged,
   onCleanupDownloaded,
 };

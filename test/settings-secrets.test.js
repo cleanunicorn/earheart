@@ -9,7 +9,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
+const { stubModules } = require("./helpers/stub-modules");
 const secretStore = require("../main/secret-store");
 
 // A stand-in for Electron's safeStorage: reversible, and recognisably not the
@@ -41,24 +41,6 @@ function makeDir(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-secrets-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
-}
-
-function stubModules(stubs) {
-  const previous = new Map();
-  for (const [p, exports] of Object.entries(stubs)) {
-    previous.set(p, require.cache[p]);
-    const m = new Module(p, null);
-    m.filename = p;
-    m.loaded = true;
-    m.exports = exports;
-    require.cache[p] = m;
-  }
-  return () => {
-    for (const [p, old] of previous) {
-      if (old) require.cache[p] = old;
-      else delete require.cache[p];
-    }
-  };
 }
 
 const settingsPath = require.resolve("../main/settings");
@@ -445,4 +427,32 @@ test("settings:get reports an undecryptable key as empty and unreadable", (t) =>
   assert.strictEqual(payload.settings.cleanup.apiKey, "");
   assert.ok(!JSON.stringify(payload).includes(blob));
   assert.deepStrictEqual(payload.keyStorage.unreadable, ["cleanup"]);
+});
+
+// Retained audio (#343) is fail closed: "keep recordings" can only be saved
+// on where the same OS-backed storage that protects API keys is available.
+test("keeping recordings can't be turned on without secure storage", (t) => {
+  for (const safeStorage of [
+    fakeSafeStorage({ available: false }),
+    ...(process.platform === "linux" ? [fakeSafeStorage({ backend: "basic_text" })] : []),
+  ]) {
+    const dir = makeDir(t);
+    const { settings } = loadSettings(t, dir, { safeStorage });
+    assert.strictEqual(settings.get().recordings.keep, false, "off by default");
+    const cfg = settings.get();
+    settings.save({ ...cfg, recordings: { ...cfg.recordings, keep: true } });
+    assert.strictEqual(settings.get().recordings.keep, false);
+    assert.strictEqual(readFile(dir).recordings.keep, false);
+  }
+});
+
+test("keeping recordings turns on with secure storage, and its limits are clamped", (t) => {
+  const dir = makeDir(t);
+  const { settings } = loadSettings(t, dir);
+  const cfg = settings.get();
+  assert.deepStrictEqual(cfg.recordings, { keep: false, maxAgeDays: 30, maxMegabytes: 1024 });
+  settings.save({ ...cfg, recordings: { keep: true, maxAgeDays: 0, maxMegabytes: 1e9 } });
+  assert.deepStrictEqual(settings.get().recordings, { keep: true, maxAgeDays: 1, maxMegabytes: 10240 });
+  settings.save({ ...cfg, recordings: { keep: "yes", maxAgeDays: Number.NaN, maxMegabytes: 49 } });
+  assert.deepStrictEqual(settings.get().recordings, { keep: false, maxAgeDays: 30, maxMegabytes: 50 });
 });

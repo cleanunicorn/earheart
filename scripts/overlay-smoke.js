@@ -142,6 +142,9 @@ app.whenReady().then(async () => {
     // The shipped permission policy, so the microphone grant below is proven
     // through the same handler the app installs (main/window-guard.js).
     installPermissionHandler(session.defaultSession);
+    // Every capture edge the overlay reports (main/ducking/ follows these).
+    const captureEdges = [];
+    ipcMain.on("record:capture", (event, payload) => captureEdges.push(payload));
     ipcMain.on("record:error", (event, payload) => {
       micErrors.push(payload?.message || "unknown");
       console.error("[overlay-smoke] record:error:", payload?.message);
@@ -294,6 +297,27 @@ app.whenReady().then(async () => {
       "window.__micTest.streams.at(-1).getTracks()[0].readyState");
     check("fallback track is stopped after capture teardown", stoppedFallbackTrack === "ended", stoppedFallbackTrack);
     await win.webContents.executeJavaScript("window.__micTest.failSaved = false; window.__micTest.calls = []");
+    check("capture edges: live on first samples, off on pause, live on resume (session 90)",
+      JSON.stringify(captureEdges.filter((e) => e.sid === 90).map((e) => e.live)) === "[true,false,true]",
+      JSON.stringify(captureEdges));
+
+    // A microphone track that ends mid-take (device unplugged) reports not
+    // live, and a later resume of that take never claims it is live again.
+    captureEdges.length = 0;
+    start(win, 89);
+    await waitForStatus(win, "recording");
+    await win.webContents.executeJavaScript(
+      "window.__micTest.streams.at(-1).getAudioTracks()[0].dispatchEvent(new Event('ended'))");
+    win.webContents.send("record:pause-toggle");
+    await waitForStatus(win, "paused");
+    win.webContents.send("record:pause-toggle");
+    await waitForStatus(win, "recording");
+    check("capture edges: an ended track reports not live and stays so on resume (session 89)",
+      JSON.stringify(captureEdges.map((e) => [e.sid, e.live])) === "[[89,true],[89,false],[89,false],[89,false]]",
+      JSON.stringify(captureEdges));
+    const endedCapture = waitForMessage("audio:captured");
+    win.webContents.send("record:stop");
+    await endedCapture;
 
     await win.webContents.executeJavaScript("window.__micTest.failSaved = true; window.__micTest.failDefault = true; window.__micTest.calls = []");
     const retryError = waitForMessage("record:error");

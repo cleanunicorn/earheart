@@ -188,6 +188,31 @@ $("correct-hotkey-clear").addEventListener("click", () => {
 
 /* ---------- microphone list ---------- */
 
+// What "Lower other audio" can do here, said plainly: unavailable (and why),
+// the last failure, or what it did this take. Dictation never depends on it.
+function duckStatusText(status) {
+  if (!status) return "";
+  const asUsual = "Dictation works as usual.";
+  if (status.available === false) return `Not available on this system (${status.reason}). ${asUsual}`;
+  if (status.lastError) return `Last attempt failed: ${status.lastError}. ${asUsual}`;
+  if (status.state === "lowered") return "Other audio is lowered right now.";
+  if (status.state === "skipped" && status.detail) return `Not lowered this take: ${status.detail}.`;
+  if (status.state === "pending" && status.detail) return `Not restored yet: ${status.detail}.`;
+  return status.mechanism ? `Uses ${status.mechanism} to change the output volume.` : "";
+}
+
+const DUCK_STATUS_REFRESH_MS = 2000;
+
+async function refreshDuckStatus() {
+  let status = null;
+  try {
+    status = await earheart.invoke("ducking:status");
+  } catch {
+    // An older main without the handler: say nothing rather than guess.
+  }
+  $("duck-status").textContent = duckStatusText(status);
+}
+
 async function loadMicrophones() {
   const select = $("mic-device");
   const status = $("mic-device-status");
@@ -272,6 +297,7 @@ function populate() {
   $("cleanup-model").value = current.cleanup.model;
   populateCleanupStyle();
   $("cleanup-dictionary").value = (current.cleanup.dictionary || []).join("\n");
+  $("cleanup-aliases").value = formatAliases(current.cleanup.aliases);
   $("cleanup-prompt").value = current.cleanup.systemPrompt;
   selectEngine("cleanup", current.cleanup.engine);
   renderKeyStorage();
@@ -283,16 +309,35 @@ function populate() {
   $("start-on-boot").checked = !!current.startOnBoot;
 
   $("history-enabled").checked = current.history.enabled;
+  $("recordings-keep").checked = current.recordings?.keep === true;
+  $("recordings-days").value = current.recordings?.maxAgeDays ?? defaults.recordings.maxAgeDays;
+  $("recordings-mb").value = current.recordings?.maxMegabytes ?? defaults.recordings.maxMegabytes;
+  renderRecordingsStatus();
   $("output-single-line").checked = current.output.singleLine === true;
   $("updates-autocheck").checked = current.updates?.autoCheck !== false;
   $("updates-remind").checked = current.updates?.remind !== false;
   $("max-seconds").value = current.audio.maxRecordingSeconds;
+  $("duck-other-audio").checked = current.audio.duckOtherAudio === true;
+  $("duck-level").value = current.audio.duckLevelPercent ?? defaults.audio.duckLevelPercent;
   $("idle-unload").value = current.engines?.idleUnloadMinutes ?? defaults.engines.idleUnloadMinutes;
 
   if (platform !== "linux") {
     $("wayland-note").style.display = "none";
     $("pause-wayland-note").style.display = "none";
     $("discard-wayland-note").style.display = "none";
+  }
+}
+
+// The Always replace textarea as records. Never throws, since every form
+// comparison calls collect(): text that doesn't parse is carried as it is,
+// so it still counts as an unsaved edit, and saveSettings refuses it with
+// parseAliases' message before anything is sent.
+function collectAliases() {
+  const text = $("cleanup-aliases").value;
+  try {
+    return parseAliases(text);
+  } catch {
+    return { unparsed: text };
   }
 }
 
@@ -348,6 +393,7 @@ function collect() {
         .value.split("\n")
         .map((t) => t.trim())
         .filter(Boolean),
+      aliases: collectAliases(),
       systemPrompt: $("cleanup-prompt").value,
     },
     audio: {
@@ -361,6 +407,13 @@ function collect() {
           current.audio?.maxRecordingSeconds ?? defaults.audio.maxRecordingSeconds
         )
       ),
+      duckOtherAudio: $("duck-other-audio").checked,
+      duckLevelPercent: Math.round(
+        numInRange(
+          "duck-level",
+          current.audio?.duckLevelPercent ?? defaults.audio.duckLevelPercent
+        )
+      ),
     },
     engines: {
       ...current.engines,
@@ -370,6 +423,13 @@ function collect() {
     history: {
       ...current.history,
       enabled: $("history-enabled").checked,
+    },
+    // Kept recordings (#343). Main refuses `keep` without secure storage.
+    recordings: {
+      ...current.recordings,
+      keep: $("recordings-keep").checked,
+      maxAgeDays: Math.round(numInRange("recordings-days", current.recordings?.maxAgeDays ?? defaults.recordings.maxAgeDays)),
+      maxMegabytes: Math.round(numInRange("recordings-mb", current.recordings?.maxMegabytes ?? defaults.recordings.maxMegabytes)),
     },
   };
 }
@@ -876,6 +936,32 @@ function applySettingsChange({ previous, current: saved }) {
     baseline.dictionary = [...saved.dictionary];
     flipped.push("Dictionary updated with saved spellings.");
   }
+  if (Array.isArray(saved.aliases) && JSON.stringify(previous.aliases) !== JSON.stringify(saved.aliases)) {
+    // Another window (the correction window) added aliases. Append the ones
+    // the field doesn't have yet as new lines and never rewrite what the user
+    // typed, even when it doesn't parse yet; the save merges by heard form.
+    const field = $("cleanup-aliases");
+    const caret = [field.selectionStart, field.selectionEnd, field.selectionDirection];
+    const focused = document.activeElement === field;
+    const shown = new Set();
+    for (const line of field.value.split("\n")) {
+      const heardPart = line.split(/->|→/)[0];
+      for (const heard of heardPart.split(",")) if (heard.trim()) shown.add(aliasKey(heard));
+    }
+    const before = new Set((baseline.aliases || []).flatMap((r) => r.heard.map(aliasKey)));
+    const added = saved.aliases
+      .map((r) => ({ term: r.term, heard: r.heard.filter((h) => !before.has(aliasKey(h)) && !shown.has(aliasKey(h))) }))
+      .filter((r) => r.heard.length);
+    if (added.length) {
+      const text = formatAliases(added);
+      field.value = field.value.trim() ? `${field.value.replace(/\n+$/, "")}\n${text}` : text;
+      if (focused) field.setSelectionRange(...caret);
+      flipped.push("Always replace updated with saved aliases.");
+    }
+    const parsed = collectAliases();
+    current.cleanup.aliases = Array.isArray(parsed) ? mergeAliases(baseline.aliases, parsed, saved.aliases) : saved.aliases;
+    baseline.aliases = saved.aliases.map((r) => ({ term: r.term, heard: [...r.heard] }));
+  }
   current.overlay = saved.overlay;
   current.customModels = saved.customModels;
   current.updates = {
@@ -1007,6 +1093,8 @@ function limitAdjustments(saved, sent) {
   const fields = [
     { id: "max-seconds", label: "Max dictation length", unit: "s", value: saved.audio?.maxRecordingSeconds },
     { id: "idle-unload", label: "Idle unload", unit: "min", value: saved.engines?.idleUnloadMinutes },
+    { id: "recordings-days", label: "Delete recordings after", unit: "days", value: saved.recordings?.maxAgeDays },
+    { id: "recordings-mb", label: "Keep at most", unit: "MB", value: saved.recordings?.maxMegabytes },
   ];
   return fields
     .filter(({ id, value }) => {
@@ -1107,6 +1195,14 @@ async function saveSettings() {
   saveButton.disabled = true;
   save.textContent = "Saving…";
   save.className = "status";
+  try {
+    parseAliases($("cleanup-aliases").value);
+  } catch (err) {
+    save.textContent = `Not saved — ${err.message}`;
+    save.className = "status err";
+    saveButton.disabled = false;
+    return;
+  }
   let next;
   try {
     next = await downloadSelectedModels(save);
@@ -1146,7 +1242,15 @@ async function saveSettings() {
     if (unchanged($("updates-remind"))) $("updates-remind").checked = current.updates.remind !== false;
     const adjusted = limitAdjustments(current, sent);
     if (unchanged($("max-seconds"))) $("max-seconds").value = current.audio.maxRecordingSeconds;
+    if (unchanged($("duck-other-audio"))) $("duck-other-audio").checked = current.audio.duckOtherAudio === true;
+    if (unchanged($("duck-level"))) $("duck-level").value = current.audio.duckLevelPercent;
+    refreshDuckStatus();
     if (unchanged($("idle-unload"))) $("idle-unload").value = current.engines.idleUnloadMinutes;
+    if (unchanged($("recordings-days"))) $("recordings-days").value = current.recordings.maxAgeDays;
+    if (unchanged($("recordings-mb"))) $("recordings-mb").value = current.recordings.maxMegabytes;
+    // Main turns "keep" back off without secure storage: show what was saved.
+    $("recordings-keep").checked = current.recordings.keep === true;
+    renderRecordingsStatus();
     // Older mains don't report a pause result; treat that as fine.
     pauseResult = result.pauseHotkey ?? { ok: true };
     discardResult = result.discardHotkey ?? { ok: true };
@@ -1383,6 +1487,10 @@ bindAddCustomModel("cleanup");
 
 const HISTORY_PAGE_SIZE = 5;
 let historyPage = 0; // 0 = the newest page
+let historyQuery = ""; // what the search field filters by; "" = everything
+// Each render asks main for one page; only the newest request may draw it, so
+// a slow answer for an older query or page can't land under the current one.
+let historyRequest = 0;
 
 function historyCopyButton(label, value, report) {
   const button = document.createElement("button");
@@ -1400,26 +1508,57 @@ function historyCopyButton(label, value, report) {
   return button;
 }
 
+// The single line shown in place of cards: nothing saved, nothing matching,
+// or the search itself failing. Always text — the query is the user's.
+function historyNotice(message) {
+  const li = document.createElement("li");
+  const span = document.createElement("span");
+  span.className = "muted";
+  span.textContent = message;
+  li.appendChild(span);
+  $("history-list").replaceChildren(li);
+}
+
 async function renderHistory() {
-  const items = await earheart.invoke("history:list");
+  const request = ++historyRequest;
+  const query = historyQuery;
+  let res;
+  try {
+    res = await earheart.invoke("history:search", {
+      query, offset: historyPage * HISTORY_PAGE_SIZE, limit: HISTORY_PAGE_SIZE,
+    });
+  } catch (err) {
+    res = { ok: false, error: err.message };
+  }
+  if (request !== historyRequest) return; // superseded by a newer query, page or change
+  // The entry being played was deleted, expired, cleared or paged away: stop
+  // it and let go of its audio.
+  if (activePlayer && !(res?.ok && res.entries.some((entry) => entry.id === activePlayer.id && entry.audio === "kept"))) {
+    releasePlayer();
+  }
   const list = $("history-list");
   const pager = $("history-pager");
-  list.replaceChildren();
 
-  const pages = Math.max(1, Math.ceil(items.length / HISTORY_PAGE_SIZE));
-  historyPage = Math.min(historyPage, pages - 1); // clamp after clear/shrink
-  pager.hidden = pages <= 1;
-
-  if (items.length === 0) {
-    const li = document.createElement("li");
-    li.innerHTML = '<span class="muted">No transcriptions yet.</span>';
-    list.appendChild(li);
+  if (!res?.ok) {
+    pager.hidden = true;
+    historyNotice(`Could not search History: ${res?.error || "unknown error"}`);
     return;
   }
+  // Main pulls an offset past the last match back to the last page (after a
+  // delete, a clear or a narrower query), so follow it.
+  historyPage = Math.floor(res.offset / HISTORY_PAGE_SIZE);
+  const pages = Math.max(1, Math.ceil(res.total / HISTORY_PAGE_SIZE));
+  pager.hidden = pages <= 1;
 
-  const start = historyPage * HISTORY_PAGE_SIZE;
-  const slice = items.slice(start, start + HISTORY_PAGE_SIZE);
-  $("history-range").textContent = `${start + 1}–${start + slice.length} of ${items.length}`;
+  if (res.total === 0) {
+    historyNotice(res.all === 0 || !query.trim() ? "No transcriptions yet." : `No transcriptions match “${query.trim()}”.`);
+    return;
+  }
+  list.replaceChildren();
+
+  const start = res.offset;
+  const slice = res.entries;
+  $("history-range").textContent = `${start + 1}–${start + slice.length} of ${res.total}${query.trim() ? " matching" : ""}`;
   $("history-newer").disabled = historyPage === 0;
   $("history-older").disabled = historyPage >= pages - 1;
 
@@ -1435,7 +1574,7 @@ async function renderHistory() {
     // recovered — the entry has to say so long after the notification went.
     when.textContent = `${new Date(item.at).toLocaleString()}${item.cleaned ? " · cleaned" : ""}${
       item.incomplete ? " · incomplete" : ""
-    }`;
+    }${item.audio === "unreadable" ? " · recording unreadable" : ""}`;
     const feedback = document.createElement("span");
     feedback.className = "status err";
     feedback.setAttribute("role", "status");
@@ -1448,7 +1587,7 @@ async function renderHistory() {
     correct.addEventListener("click", async () => {
       report("");
       try {
-        const result = await earheart.invoke("correction:open", { at: item.at, text: item.text });
+        const result = await earheart.invoke("correction:open", { id: item.id });
         if (!result.ok) throw new Error(result.error);
       } catch (err) { report(err.message); }
     });
@@ -1458,9 +1597,17 @@ async function renderHistory() {
       copyOriginal.title = "Copy the transcript before cleanup";
       actions.append(copyOriginal);
     }
+    if (item.audio === "kept") actions.append(...recordingButtons(item, li, report));
+    actions.append(historyDeleteButton(item, report));
     meta.append(when, actions);
-    li.append(text, meta, feedback);
+    li.dataset.id = item.id;
+    li.append(text, meta);
+    const retry = retryBlock(item, report);
+    if (retry) li.append(retry);
+    li.append(feedback);
     list.appendChild(li);
+    // Still playing this entry's recording from before the redraw: keep it.
+    if (activePlayer?.id === item.id) li.insertBefore(activePlayer.audio, li.querySelector(".meta"));
     // The card is laid out as soon as it is attached (the History section is
     // always visible), so overflow past the 3-line clamp is measurable here.
     if (text.scrollHeight > text.clientHeight + 1) {
@@ -1478,6 +1625,286 @@ async function renderHistory() {
   }
 }
 
+/* ---------- kept recordings (#343) ---------- */
+
+// The one recording playing (or loaded) in History: { id, audio, url }.
+// Released — paused, detached, its blob URL revoked — whenever its entry
+// leaves the page, is deleted, or another recording starts.
+let activePlayer = null;
+// Bumped by every Play and every release: a recording that finishes loading
+// after a newer Play, a delete or a clear belongs to nobody and is dropped,
+// so at most one player (and one blob URL) ever exists.
+let playGeneration = 0;
+
+function releasePlayer() {
+  playGeneration += 1;
+  if (!activePlayer) return;
+  const { audio, url } = activePlayer;
+  activePlayer = null;
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load();
+  audio.remove();
+  URL.revokeObjectURL(url);
+}
+
+// What a failed recording action tells the user, by the error main returned.
+function recordingError(code) {
+  switch (code) {
+    case "missing": return "This recording is no longer kept.";
+    case "unreadable": return "This recording can't be read: it is damaged, or the key that protects it isn't available. You can delete it.";
+    case "insecure": return "Recordings can't be read without the system keyring.";
+    case "busy": return "Another retranscription is still running. Try again when it finishes.";
+    case "dictating": return "Finish the current dictation, then try again.";
+    default: return `Something went wrong (${code}).`;
+  }
+}
+
+function recordingButtons(item, li, report) {
+  const play = document.createElement("button");
+  play.className = "play";
+  play.type = "button";
+  play.textContent = "Play";
+  play.title = "Play the recording";
+  play.addEventListener("click", async () => {
+    report("");
+    if (activePlayer?.id === item.id) {
+      activePlayer.audio.play().catch(() => {});
+      return;
+    }
+    releasePlayer();
+    const ticket = playGeneration;
+    play.disabled = true;
+    let res;
+    try {
+      res = await earheart.invoke("history:audio-get", item.id);
+    } catch (err) {
+      res = { ok: false, error: err.message };
+    }
+    play.disabled = false;
+    // Another Play, a delete or a clear came first, or the card was redrawn
+    // away while this loaded: it isn't wanted any more.
+    if (ticket !== playGeneration || !li.isConnected) return;
+    if (!res?.ok) return report(recordingError(res?.error || "unknown error"));
+    const url = URL.createObjectURL(new Blob([res.wav], { type: "audio/wav" }));
+    const audio = document.createElement("audio");
+    audio.className = "player";
+    audio.controls = true; // play, pause and seek
+    audio.preload = "auto";
+    audio.src = url;
+    audio.setAttribute("aria-label", "Recording of this transcription");
+    audio.addEventListener("error", () => {
+      if (activePlayer?.audio === audio) { releasePlayer(); report(recordingError("unreadable")); }
+    });
+    activePlayer = { id: item.id, audio, url };
+    li.insertBefore(audio, li.querySelector(".meta"));
+    audio.play().catch(() => {});
+  });
+
+  const exportButton = document.createElement("button");
+  exportButton.className = "export";
+  exportButton.type = "button";
+  exportButton.textContent = "Export…";
+  exportButton.title = "Save the recording as a WAV file";
+  exportButton.addEventListener("click", async () => {
+    report("");
+    exportButton.disabled = true;
+    let res;
+    try {
+      res = await earheart.invoke("history:audio-export", item.id);
+    } catch (err) {
+      res = { ok: false, error: err.message };
+    }
+    exportButton.disabled = false;
+    if (res?.ok || res?.cancelled) return;
+    report(res?.error === "missing" || res?.error === "unreadable" || res?.error === "insecure"
+      ? recordingError(res.error)
+      : `Couldn't save the file (${res?.error || "unknown error"}). Choose another folder and try again.`);
+  });
+
+  const again = document.createElement("button");
+  again.className = "retranscribe";
+  again.type = "button";
+  again.textContent = "Retranscribe";
+  again.title = "Transcribe the recording again with the current settings. Nothing is pasted; the original stays.";
+  again.addEventListener("click", async () => {
+    report("");
+    again.disabled = true;
+    again.textContent = "Retranscribing…";
+    let res;
+    try {
+      res = await earheart.invoke("history:retranscribe", item.id);
+    } catch (err) {
+      res = { ok: false, error: err.message };
+    }
+    // A stored result redraws the page (history:changed); otherwise say why.
+    if (!res?.ok && !res?.retry) {
+      again.disabled = false;
+      again.textContent = "Retranscribe";
+      report(recordingError(res?.error || "unknown error"));
+    } else if (res?.ok === false) {
+      again.disabled = false;
+      again.textContent = "Retranscribe";
+      report(`Couldn't save the retranscription (${res.error}).`);
+    }
+  });
+  return [play, exportButton, again];
+}
+
+// The latest retranscription of an entry, under its original: what it said,
+// or why there is nothing (failed, or cancelled by a new dictation).
+function retryBlock(item, report) {
+  const retry = item.retry;
+  if (!retry || typeof retry !== "object") return null;
+  const box = document.createElement("div");
+  box.className = "retry";
+  const head = document.createElement("div");
+  head.className = "retry-head";
+  const when = retry.at ? new Date(retry.at).toLocaleString() : "";
+  if (retry.status === "done") {
+    head.textContent = `Retranscribed ${when}${retry.cleaned ? " · cleaned" : ""}${retry.incomplete ? " · incomplete" : ""}`;
+    const text = document.createElement("div");
+    text.className = "retry-text";
+    text.textContent = retry.text || "(no speech found)";
+    box.append(head, text);
+    if (retry.text) {
+      const copy = historyCopyButton("Copy retranscription", retry.text, report);
+      copy.classList.add("retry-copy");
+      box.append(copy);
+    }
+  } else if (retry.status === "cancelled") {
+    head.textContent = `Retranscription ${when} was cancelled by a new dictation. Try again any time.`;
+    box.append(head);
+  } else {
+    head.textContent = `Retranscription ${when} failed: ${retry.error || "unknown error"}`;
+    box.append(head);
+  }
+  return box;
+}
+
+function historyNoticeAfterDelete(message) {
+  const status = $("history-clear-status");
+  status.textContent = "";
+  status.hidden = false;
+  status.textContent = message;
+}
+
+function formatMegabytes(bytes) {
+  const mb = bytes / (1024 * 1024);
+  return mb >= 10 ? `${Math.round(mb)} MB` : `${mb.toFixed(1)} MB`;
+}
+
+// The Keep recordings card: whether it can be on here, what is kept, and
+// anything that went wrong keeping it.
+let recordingsRequest = 0;
+async function renderRecordingsStatus() {
+  const request = ++recordingsRequest;
+  let status;
+  try {
+    status = await earheart.invoke("recordings:status");
+  } catch {
+    status = null;
+  }
+  if (request !== recordingsRequest || !status) return;
+  const keep = $("recordings-keep");
+  const reason = $("recordings-reason");
+  const historyOn = $("history-enabled").checked;
+  // Fail closed: no secure storage, no turning it on (main refuses too).
+  keep.disabled = !status.secure && !keep.checked;
+  const reasons = [];
+  if (!status.secure) reasons.push(status.reason || "Secure storage isn't available, so recordings can't be kept.");
+  else if (!historyOn) reasons.push("Turn on History to keep recordings: each one is kept with its transcription.");
+  reason.textContent = reasons.join(" ");
+  reason.hidden = reasons.length === 0;
+
+  $("recordings-usage").textContent = status.count
+    ? `${status.count} recording${status.count === 1 ? "" : "s"} · ${formatMegabytes(status.bytes)}`
+    : "No recordings kept";
+  $("recordings-clear").disabled = status.count === 0 && status.key !== "lost" && status.key !== "locked";
+
+  const problems = [];
+  if (status.key === "locked") problems.push("Kept recordings can't be read: the system keyring that protects them is locked or was replaced. Unlock it, then restart Earheart to play them again; otherwise delete them to keep new ones.");
+  if (status.key === "lost") problems.push("The key for kept recordings is missing, so they can't be read. Delete all recordings to start keeping new ones.");
+  if (status.lastError && !["insecure", "locked", "lost"].includes(status.lastError.code)) {
+    problems.push(status.lastError.code === "too-large"
+      ? "The last recording was bigger than the size limit, so it wasn't kept. Its transcription is in History."
+      : status.lastError.code === "over-limit"
+        ? "The last recording wasn't kept: older recordings over the size limit couldn't be deleted (something may be holding them open). Its transcription is in History."
+        : `The last recording couldn't be kept (${status.lastError.code}). Check free disk space; its transcription is in History.`);
+  }
+  const line = $("recordings-status");
+  line.textContent = problems.join(" ");
+  line.hidden = problems.length === 0;
+}
+
+$("recordings-clear").addEventListener("click", async () => {
+  if (!confirm("Delete all kept recordings? Transcriptions stay in History. This can't be undone.")) return;
+  releasePlayer();
+  let res;
+  try {
+    res = await earheart.invoke("recordings:clear");
+  } catch (err) {
+    res = { ok: false, error: err.message };
+  }
+  await renderRecordingsStatus();
+  if (!res?.ok) {
+    const line = $("recordings-status");
+    line.hidden = false;
+    line.textContent = `Some recordings couldn't be deleted (${res?.error || "unknown error"}). Close anything that might be using them and try again.`;
+  }
+  renderHistory();
+});
+
+$("history-enabled").addEventListener("change", () => renderRecordingsStatus());
+
+// Deletes one entry, gated like Clear history: it is gone for good. A failed
+// delete keeps the card and says why on it; a successful one redraws the
+// current page (main keeps the pager in range), not the newest.
+function historyDeleteButton(item, report) {
+  const button = document.createElement("button");
+  button.className = "delete danger";
+  button.textContent = "Delete";
+  button.title = "Delete this transcription";
+  button.addEventListener("click", async () => {
+    report("");
+    // Its kept recording goes with it (main/ipc.js history:delete): say so.
+    const question = item.audio
+      ? "Delete this transcription and its kept recording? This can't be undone."
+      : "Delete this transcription? This can't be undone.";
+    if (!confirm(question)) return;
+    // Deleted mid-playback: stop and release it before the audio goes.
+    if (activePlayer?.id === item.id) releasePlayer();
+    button.disabled = true;
+    let res;
+    try {
+      res = await earheart.invoke("history:delete", item.id);
+    } catch (err) {
+      res = { ok: false, error: err.message };
+    }
+    if (res?.ok) {
+      if (res.audioError) {
+        historyNoticeAfterDelete(`Deleted. Its recording couldn't be deleted yet (${res.audioError}); Earheart will try again.`);
+      }
+      renderHistory();
+      return;
+    }
+    button.disabled = false;
+    report(historyEntryDeleteError(res?.error || "unknown error"));
+  });
+  return button;
+}
+
+// Typing filters as you go; each keystroke cancels any answer still on its
+// way, and the request itself waits for a pause.
+let historySearchTimer = null;
+$("history-search").addEventListener("input", (event) => {
+  historyQuery = event.target.value;
+  historyPage = 0;
+  historyRequest += 1;
+  clearTimeout(historySearchTimer);
+  historySearchTimer = setTimeout(renderHistory, 150);
+});
+
 $("history-newer").addEventListener("click", () => {
   historyPage -= 1;
   renderHistory();
@@ -1488,21 +1915,29 @@ $("history-older").addEventListener("click", () => {
   renderHistory();
 });
 
-// What a failed Clear history tells the user to do, by the reason the delete
-// failed: a file held open (Windows, an antivirus scan, a backup) clears once
-// it's let go; a refused delete (permissions, a locked file attribute) won't
-// until that's fixed.
-function historyClearError(code) {
-  const what = `Couldn't delete the saved transcriptions, so they're still on this computer (${code}). `;
+// What a failed delete (Clear history, or one entry) tells the user to do, by
+// the reason it failed: a file held open (Windows, an antivirus scan, a
+// backup) can be changed once it's let go; a refused write (permissions, a
+// locked file attribute) can't until that's fixed.
+function historyFileAdvice(code) {
   return code === "EBUSY"
-    ? `${what}Close anything that might be using the history file, such as a backup or antivirus scan, and try again.`
-    : `${what}Check that you can change files in Earheart's settings folder, then try again.`;
+    ? "Close anything that might be using the history file, such as a backup or antivirus scan, and try again."
+    : "Check that you can change files in Earheart's settings folder, then try again.";
+}
+
+function historyClearError(code) {
+  return `Couldn't delete the saved transcriptions, so they're still on this computer (${code}). ${historyFileAdvice(code)}`;
+}
+
+function historyEntryDeleteError(code) {
+  return `Couldn't delete this transcription, so it's still on this computer (${code}). ${historyFileAdvice(code)}`;
 }
 
 $("history-clear").addEventListener("click", async () => {
   // Unlike a removed model, cleared history is gone for good — gate it the
-  // same way model removal already is.
-  if (!confirm("Clear all saved transcriptions? This can't be undone.")) return;
+  // same way model removal already is. Every kept recording goes with it
+  // (main/ipc.js history:clear), so the question says so.
+  if (!confirm("Clear all saved transcriptions and any kept recordings? This can't be undone.")) return;
   const res = await earheart.invoke("history:clear");
   // A failed delete left the transcripts on disk: say so, and keep showing
   // them so the user can try again (#287).
@@ -1511,12 +1946,24 @@ $("history-clear").addEventListener("click", async () => {
   status.textContent = "";
   status.hidden = res?.ok !== false;
   if (!status.hidden) status.textContent = historyClearError(res.error);
+  else if (res?.audioError) {
+    status.hidden = false;
+    status.textContent = `Cleared the transcriptions, but some recordings couldn't be deleted (${res.audioError}). Use Delete all recordings to try again.`;
+  }
+  releasePlayer();
   renderHistory();
+  renderRecordingsStatus();
 });
 
 // The History section is always on the panel now, so keep it live. A new
 // dictation snaps back to the newest page so it is immediately visible.
-earheart.on("history:changed", () => { historyPage = 0; renderHistory(); });
+// `{ updated: true }` marks a change to entries already listed (a
+// retranscription, a recording kept, pruned or deleted): stay on the page.
+earheart.on("history:changed", (change) => {
+  if (!change?.updated) historyPage = 0;
+  renderHistory();
+  renderRecordingsStatus();
+});
 
 /* ---------- setup wizard ---------- */
 
@@ -1794,4 +2241,10 @@ earheart.on("updates:state", renderUpdateState);
   settingsChangesReady();
   renderHistory();
   loadMicrophones();
+  refreshDuckStatus();
+  // The line says what is happening now (lowered, skipped, failed), which
+  // changes with every take: keep it current while the window is shown.
+  setInterval(() => {
+    if (!document.hidden) refreshDuckStatus();
+  }, DUCK_STATUS_REFRESH_MS);
 })();

@@ -183,14 +183,19 @@ async function checkSettingsTheme({ waitFor, check, savedThenClose }) {
       probe.remove();
       const button = document.getElementById("close");
       button.focus({ focusVisible: true });
-      const focus = getComputedStyle(button).outlineColor;
+      const style = getComputedStyle(button);
+      const focus = { color: style.outlineColor, style: style.outlineStyle, width: parseFloat(style.outlineWidth) };
       const visible = button.matches(":focus-visible");
       button.blur();
       return JSON.stringify({ err, focus, visible });
     })()`));
-    check(`${scheme}: error text and focus outline wear the palette`,
-      states.err === asRgb(tokens.get("--err")) && (!states.visible || states.focus === asRgb(tokens.get("--text"))),
-      JSON.stringify(states));
+    check(`${scheme}: error text wears the palette`, states.err === asRgb(tokens.get("--err")), JSON.stringify(states));
+    // A focus ring that is actually drawn: :focus-visible matched, a real
+    // outline style and width, in this palette's Primary Text.
+    check(`${scheme}: the keyboard focus outline is visible and wears the palette`,
+      states.visible && states.focus.style !== "none" && states.focus.width > 0 &&
+        states.focus.color === asRgb(tokens.get("--text")),
+      JSON.stringify(states.focus) + ` visible=${states.visible}`);
   }
 
   // Back to the starting point, the edit undone so Close needs no answer.

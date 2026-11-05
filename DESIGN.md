@@ -54,8 +54,8 @@ colors:
   section-cleanup-light: "#6a578f"
   section-history-light: "#854e73"
   section-advanced-light: "#7b5f1b"
-  state-private-light: "#0b7475"
-  state-external-light: "#a6510c"
+  state-private-light: "#006869"
+  state-external-light: "#994500"
 typography:
   body:
     fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
@@ -360,7 +360,9 @@ Two hues on the Speech-to-text and Cleanup engine badges, naming what the
 chosen engine does with the user's audio and words. Neither reuses Delivered
 Green or Failed Red: this is a consequence, not a success or a fault, and
 choosing an external engine is a legitimate choice rather than an error. Both
-hold ≥5.5:1 as text on their own 12% wash.
+hold ≥5.5:1 as text on their own 12% wash over a card in dark; the light pair
+(#006869 / #994500, the same hues at lower OKLCH lightness) holds ≥4.83:1
+there.
 - **Private Teal** (`state-private`, #16bbbc): the engine runs on this device
   — nothing leaves it.
 - **External Amber** (`state-external`, #ea9941): the engine sends audio (STT)

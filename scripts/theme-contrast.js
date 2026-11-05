@@ -95,8 +95,10 @@ const SURFACES = {
   field: ["--field"], // inputs
   hover: ["--ink", "--wash"], // a hovered row or key
   tray: ["--ink", "--wash-faint", "--tray"], // a model tray inside a card
-  "err-wash": ["--ink", "err-wash"], // the overlay's discard hover
-  "accent-wash": ["--field", "accent-wash"], // a capturing hotkey field
+  "err-wash": ["--ink", "err@0.12"], // the overlay's discard hover
+  "accent-wash": ["--field", "accent@0.07"], // a capturing hotkey field
+  // An engine-state badge: its colour's 12% wash on the card it sits in.
+  "own wash on card": ["--ink", "--wash-faint", "self@0.12"],
   "filled key": ["--text"], // Save, Done, the primary pill
   "filled key hover": ["--text-strong"],
 };
@@ -125,25 +127,33 @@ const PAIRS = [
   ["--section-cleanup", ["ink", "card"], TEXT, "section hue"],
   ["--section-history", ["ink", "card"], TEXT, "section hue"],
   ["--section-advanced", ["ink", "card"], TEXT, "section hue"],
-  ["--state-private", ["ink", "card"], TEXT, "engine state (on-device)"],
-  ["--state-external", ["ink", "card"], TEXT, "engine state (leaves the device)"],
+  ["--state-private", ["ink", "card", "own wash on card"], TEXT, "engine state badge (on-device)"],
+  ["--state-external", ["ink", "card", "own wash on card"], TEXT, "engine state badge (leaves the device)"],
 ];
 
-// The washes built from channel tokens in the page sheets, at their alphas.
-function channelWash(tokens, channel, alpha) {
-  const [r, g, b] = tokens.get(channel).split(/\s+/).map(Number);
-  return { r, g, b, a: alpha };
-}
+// A layer or foreground is a token ("--text"), or a colour at an alpha the
+// page sheets draw it at: "fg@0.14" / "accent@0.55" / "err@0.12" use the
+// channel tokens (rgb(var(--fg-rgb) / 0.14) …), "--state-private@0.12" a
+// token's colour, and "self@0.12" the pair's own foreground (a badge's wash).
+const CHANNELS = { fg: "--fg-rgb", accent: "--accent-rgb", err: "--err-rgb" };
 
-function colorOf(tokens, name) {
-  if (name === "err-wash") return channelWash(tokens, "--err-rgb", 0.12);
-  if (name === "accent-wash") return channelWash(tokens, "--accent-rgb", 0.07);
+function colorOf(tokens, name, self) {
+  const at = name.match(/^(.+)@([\d.]+)$/);
+  if (at) {
+    const [, what, alpha] = at;
+    if (what === "self") return { ...colorOf(tokens, self), a: Number(alpha) };
+    if (CHANNELS[what]) {
+      const [r, g, b] = tokens.get(CHANNELS[what]).split(/\s+/).map(Number);
+      return { r, g, b, a: Number(alpha) };
+    }
+    return { ...colorOf(tokens, what), a: Number(alpha) };
+  }
   if (!tokens.has(name)) throw new Error(`tokens.css does not declare ${name}`);
   return parseColor(tokens.get(name));
 }
 
-function surface(tokens, key) {
-  const [base, ...layers] = SURFACES[key].map((n) => colorOf(tokens, n));
+function surface(tokens, key, self) {
+  const [base, ...layers] = SURFACES[key].map((n) => colorOf(tokens, n, self));
   return layers.reduce((under, top) => over(top, under), base);
 }
 
@@ -152,7 +162,7 @@ function measure(tokens) {
   const rows = [];
   for (const [fg, ons, min, use] of PAIRS) {
     for (const on of ons) {
-      const bg = surface(tokens, on);
+      const bg = surface(tokens, on, fg);
       const color = over(colorOf(tokens, fg), bg);
       rows.push({ fg, on, min, use, ratio: ratio(color, bg), fgHex: hex(color), bgHex: hex(bg) });
     }

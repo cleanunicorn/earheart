@@ -115,6 +115,7 @@ const PAIRS = [
   ["--ok", ["ink", "card"], TEXT, "success status"],
   ["--err", ["ink", "card", "err-wash"], TEXT, "error status, discard hover"],
   ["--idle", ["ink"], UI, "idle status dot"],
+  ["--dot", ["ink"], UI, "wizard step dot, not yet reached"],
   ["--field-edge", ["ink", "card"], UI, "input boundary"],
   ["--text", ["ink", "card", "field"], UI, "focus outline / focused edge"],
   ["--ink", ["filled key", "filled key hover"], TEXT, "text on a filled key"],

@@ -45,8 +45,9 @@ footer {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  /* Bright enough to clear the 3:1 UI-component bar on the ink. */
-  background: rgb(var(--fg-rgb) / 0.35);
+  /* Strong enough to clear the 3:1 UI-component bar on the ink in either
+     palette (black needs more alpha than white to get there). */
+  background: var(--dot);
 }
 
 .dot.active {

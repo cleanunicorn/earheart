@@ -16,6 +16,7 @@ colors:
   field: "#101013"
   field-edge: "#6b6b74"
   tray: "rgba(0, 0, 0, 0.25)"
+  step-dot: "rgba(255, 255, 255, 0.35)"
   delivered-green: "#34d399"
   failed-red: "#f87171"
   idle-gray: "#71717a"
@@ -43,6 +44,7 @@ colors:
   field-light: "#ffffff"
   field-edge-light: "#82828b"
   tray-light: "rgba(0, 0, 0, 0.05)"
+  step-dot-light: "rgba(0, 0, 0, 0.45)"
   delivered-green-light: "#047857"
   failed-red-light: "#b91c1c"
   idle-gray-light: "#71717a"
@@ -738,8 +740,9 @@ transcription** and a quiet **Discard**.
   version heading per release.
 
 ### Wizard step dots
-- 7px circles, white 0.35 at rest (clearing the 3:1 UI bar on the ink), solid
-  white when active; centered in the footer with an sr-only spoken
+- 7px circles in `--dot` at rest — white 0.35 in dark (3.23:1), black 0.45
+  in light (3.33:1), clearing the 3:1 UI bar on the ink — solid Primary Text
+  when active; centered in the footer with an sr-only spoken
   counterpart.
 
 ### Wizard demo (welcome step)

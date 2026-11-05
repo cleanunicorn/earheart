@@ -29,6 +29,7 @@
   --wash-faint: rgba(255, 255, 255, 0.04); /* card fills, quiet hovers */
   --track: rgba(255, 255, 255, 0.12); /* empty progress/download track fills */
   --tray: rgba(0, 0, 0, 0.25); /* recessed tray inside a card */
+  --dot: rgba(255, 255, 255, 0.35); /* a wizard step not yet reached (≥3:1) */
 
   --text-strong: #ffffff; /* a filled key's hover — one step past --text */
   --text: #f4f4f5; /* primary text; the filled key */
@@ -82,6 +83,7 @@
     --wash-faint: rgba(0, 0, 0, 0.04);
     --track: rgba(0, 0, 0, 0.1);
     --tray: rgba(0, 0, 0, 0.05);
+    --dot: rgba(0, 0, 0, 0.45);
 
     --text-strong: #000000;
     --text: #18181b;

@@ -1,7 +1,7 @@
 // Window management: the recording overlay (a small always-on-top card that
 // also owns the microphone), Settings, the first-run wizard and correction editor.
 
-const { BrowserWindow, ipcMain, screen, dialog } = require("electron");
+const { BrowserWindow, ipcMain, screen, dialog, nativeTheme } = require("electron");
 const path = require("node:path");
 const settings = require("./settings");
 const logger = require("./util/logger");
@@ -23,9 +23,16 @@ const OVERLAY_WIDTH = 500;
 const OVERLAY_HEIGHT = 95;
 // Matches the card's fade-out transition in overlay.css.
 const OVERLAY_FADE_MS = 200;
-// Matches --ink in renderer/tokens.css (which settings and the wizard load),
-// so neither window flashes white before its stylesheet paints.
-const INK_COLOR = "#18181b";
+// Match --ink in each palette of renderer/tokens.css (which every framed
+// window loads), so no window flashes the other palette before its stylesheet
+// paints (test/theme-contract.test.js pins both).
+const INK_COLORS = { dark: "#18181b", light: "#fafafa" };
+
+// The ink of the palette the stylesheets resolve right now: nativeTheme
+// follows the Appearance setting (main/appearance.js) and, on "system", the OS.
+function inkColor() {
+  return nativeTheme.shouldUseDarkColors ? INK_COLORS.dark : INK_COLORS.light;
+}
 
 let overlayWindow = null;
 let settingsWindow = null;
@@ -81,7 +88,7 @@ function createFormWindow(role, options) {
   return createAppWindow(role, {
     ...options,
     autoHideMenuBar: true,
-    backgroundColor: INK_COLOR,
+    backgroundColor: inkColor(),
     icon: path.join(__dirname, "..", "assets", "icon.png"),
   });
 }
@@ -610,8 +617,21 @@ function broadcast(channel, payload) {
   }
 }
 
+// Repaint the framed windows' native background in the current palette. The
+// pages re-theme themselves (prefers-color-scheme); this keeps the window
+// behind them — visible while resizing — from showing the old ink.
+function refreshInk() {
+  const ink = inkColor();
+  for (const win of [settingsWindow, wizardWindow, correctionWindow]) {
+    if (win && !win.isDestroyed()) win.setBackgroundColor(ink);
+  }
+}
+
 module.exports = {
   init,
+  INK_COLORS,
+  inkColor,
+  refreshInk,
   createOverlay,
   destroyOverlay,
   showOverlay,

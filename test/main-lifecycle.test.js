@@ -137,6 +137,7 @@ async function loadMain(
       openCorrection: (entry) => events.push(`correct:${entry.text}`),
       sendToSettings: (channel, payload) => events.push(`settings:${channel}:${JSON.stringify(payload ?? null)}`),
     },
+    "./appearance": { init: () => events.push("appearance.init") },
     "./recordings": {
       startPruning: (getCfg, onPruned) => {
         events.push("recordings.startPruning");
@@ -266,6 +267,8 @@ test("a healthy launch registers both hotkeys and announces ready", async () => 
   before(events, "pipeline.init", "ipc.init");
   // The overlay's IPC is registered before the overlay exists (#204).
   before(events, "windows.init", "createOverlay");
+  // The palette is set before any window exists, so none paints the wrong one.
+  before(events, "appearance.init", "windows.init");
   before(events, "createOverlay", "tray.init");
   before(events, `register:${RECORD}`, "notify:Earheart is ready");
   assert.ok(events.includes(`register:${PAUSE}`));

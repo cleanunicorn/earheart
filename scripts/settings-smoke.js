@@ -82,7 +82,7 @@
 //   xvfb-run -a npx electron scripts/settings-smoke.js --no-sandbox   # Linux
 //   npx electron scripts/settings-smoke.js                            # macOS/Win
 
-const { app, session } = require("electron");
+const { app, session, nativeTheme } = require("electron");
 const settings = require("../main/settings");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -195,6 +195,9 @@ app.on("window-all-closed", () => {});
 
 app.whenReady().then(async () => {
   try {
+    // Pinned: "system" would resolve from the runner's desktop theme. The
+    // light palette is driven explicitly by the theme checks (#348).
+    nativeTheme.themeSource = "dark";
     // The shipped permission policy, so the microphone grant below is proven
     // through the same handler the app installs (main/window-guard.js).
     installPermissionHandler(session.defaultSession);
@@ -2544,6 +2547,7 @@ app.whenReady().then(async () => {
 
     await require("./wizard-smoke").checkWizard({ waitFor, check, setDuckingStatus: (status) => { duckingStatus = status; } });
     await require("./correction-smoke").checkCorrection({ waitFor, check, savedThenClose });
+    await require("./theme-smoke").checkTheme({ waitFor, check, savedThenClose });
 
     const failed = checks.filter((c) => !c.ok);
     console.log(

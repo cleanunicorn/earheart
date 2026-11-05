@@ -25,7 +25,7 @@
 //   xvfb-run -a npx electron scripts/overlay-smoke.js --no-sandbox   # Linux
 //   npx electron scripts/overlay-smoke.js                            # macOS/Win
 
-const { app, ipcMain, session } = require("electron");
+const { app, ipcMain, session, nativeTheme } = require("electron");
 // A throwaway profile, set before main/ loads: the overlay reads settings
 // (its saved position among them), and a contributor's own profile must
 // neither steer the run nor be written by it (#295).
@@ -80,6 +80,15 @@ function check(name, ok, detail) {
 // error here means the session plumbing broke. Collected so waitForStatus can
 // surface the real diagnostic instead of an opaque status timeout.
 const micErrors = [];
+
+// Both palettes' accent as the overlay computes it ("rgb(r, g, b)"), read from
+// tokens.css so the check follows the palette rather than a copy of it.
+const { readPalettes, parseColor } = require("./theme-contrast");
+const ACCENT = (() => {
+  const p = readPalettes();
+  const rgb = (v) => { const { r, g, b } = parseColor(v); return `rgb(${r}, ${g}, ${b})`; };
+  return { dark: rgb(p.dark.get("--accent")), light: rgb(p.light.get("--accent")) };
+})();
 
 function waitForMessage(channel, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
@@ -151,6 +160,9 @@ const start = (win, sid, deviceId = null) =>
 app.whenReady().then(async () => {
   try {
     assertIsolated(app, profile);
+    // Pinned: "system" would follow the runner's desktop theme. The light
+    // palette is flipped to explicitly below (#348).
+    nativeTheme.themeSource = "dark";
     // The shipped permission policy, so the microphone grant below is proven
     // through the same handler the app installs (main/window-guard.js).
     installPermissionHandler(session.defaultSession);
@@ -519,6 +531,29 @@ app.whenReady().then(async () => {
     check("the last minute counts down to the cap", /^−0:(10|09|08)$/.test(warned.timer), warned.timer);
     check("the countdown wears the accent", warned.flagged && warned.color === warned.accent,
       `flag=${warned.flagged} color=${warned.color} accent=${warned.accent}`);
+    // The recording state in both palettes (#348): the countdown and the
+    // filled capture dot wear each palette's own accent, and the switch
+    // happens mid-take without a reload.
+    const recordingColors = () => win.webContents.executeJavaScript(`({
+      timer: getComputedStyle(document.getElementById("timer")).color,
+      dot: getComputedStyle(document.getElementById("status-dot")).backgroundColor,
+      glow: getComputedStyle(document.getElementById("status-dot")).boxShadow,
+    })`);
+    const darkRec = await recordingColors();
+    nativeTheme.themeSource = "light";
+    let lightRec;
+    for (let i = 0; i < 100; i++) {
+      lightRec = await recordingColors();
+      if (lightRec.timer === ACCENT.light) break;
+      await sleep(20);
+    }
+    nativeTheme.themeSource = "dark";
+    const glowRgb = (shadow) => (shadow.match(/rgba?\((\d+), (\d+), (\d+)/) || []).slice(1, 4).join(",");
+    check("the recording countdown and dot wear each palette's accent",
+      darkRec.timer === ACCENT.dark && darkRec.dot === ACCENT.dark &&
+        lightRec.timer === ACCENT.light && lightRec.dot === ACCENT.light &&
+        glowRgb(lightRec.glow) === ACCENT.light.match(/\d+/g).join(","),
+      JSON.stringify({ darkRec, lightRec, ACCENT }));
     win.webContents.send("record:stop");
     const warnCapture = await warnCaptureP;
     check("a warned take still delivers on stop", warnCapture.sid === 270);
@@ -748,12 +783,46 @@ app.whenReady().then(async () => {
       return n;
     })()`);
     check("waveform paints while recording", litPixels > 0, `lit=${litPixels}`);
+    // The wave is painted in the palette's --accent (read from tokens.css, no
+    // copy in overlay.js). The bars are thinner than two pixels, so every
+    // pixel is anti-aliased: take the most opaque one, whose un-premultiplied
+    // colour is the fill to within rounding.
+    const wavePaint = () => win.webContents.executeJavaScript(`(() => {
+      const c = document.getElementById("meter");
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      let best = -1;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0 && (best < 0 || d[i + 3] > d[best + 3])) best = i;
+      return best < 0 ? null : [d[best], d[best + 1], d[best + 2], d[best + 3]];
+    })()`);
+    const isAccent = (px, scheme) =>
+      !!px && px[3] >= 128 && ACCENT[scheme].match(/\d+/g).every((v, k) => Math.abs(Number(v) - px[k]) <= 4);
+    const darkWave = await wavePaint();
     // Drive pause through the real channel (pause hotkey / `earheart --pause`
     // land here), so the preload whitelist and the renderer handler are both
     // exercised.
     win.webContents.send("record:pause-toggle");
     const pausedAt6 = await waitForStatus(win, "paused");
     const wave1 = await waveColumns();
+    // Paused, the take's frozen wave must recolour on a scheme flip too (the
+    // overlay repaints on prefers-color-scheme change, not only per frame).
+    // Paused time is not recorded, so this costs the measured spans nothing.
+    nativeTheme.themeSource = "light";
+    let lightWave;
+    for (let i = 0; i < 100; i++) {
+      lightWave = await wavePaint();
+      if (isAccent(lightWave, "light")) break;
+      await sleep(20);
+    }
+    nativeTheme.themeSource = "dark";
+    let backWave;
+    for (let i = 0; i < 100; i++) {
+      backWave = await wavePaint();
+      if (isAccent(backWave, "dark")) break;
+      await sleep(20);
+    }
+    check("the waveform is drawn in each palette's accent, and recolours when the scheme flips",
+      isAccent(darkWave, "dark") && isAccent(lightWave, "light") && isAccent(backWave, "dark"),
+      JSON.stringify({ darkWave, lightWave, backWave, ACCENT }));
     // Lower bound only: it is what detects a frozen rAF loop. An upper bound
     // would trip on descheduled CI runners (see WAV_LAG_ALLOWANCE_SEC above)
     // without catching anything the lower bound doesn't.

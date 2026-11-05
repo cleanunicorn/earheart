@@ -19,8 +19,8 @@ const RENDERER = path.join(ROOT, "renderer");
 const html = fs.readFileSync(path.join(RENDERER, "overlay.html"), "utf8");
 const js = fs.readFileSync(path.join(RENDERER, "overlay.js"), "utf8");
 const css = fs.readFileSync(path.join(RENDERER, "overlay.css"), "utf8");
-// The shared palette (--ink, --accent, …) lives in tokens.css, loaded before
-// overlay.css; the overlay's own derivatives stay in overlay.css's :root.
+// The palette (--ink, --accent, …, both schemes) lives in tokens.css, loaded
+// before overlay.css; overlay.css declares no colours of its own.
 const tokensCss = fs.readFileSync(path.join(RENDERER, "tokens.css"), "utf8");
 
 function rootTokens(source, file) {
@@ -89,14 +89,14 @@ test("the update overflow note uses readable secondary text", () => {
 });
 
 test("every var() overlay.css uses is defined in tokens.css or its own :root", () => {
-  // overlay.css sees the shared palette from tokens.css plus its own
-  // overlay-only tokens (--idle/--text-mid/--text-faint) — never the
-  // settings-window derivatives, so it is not checked against settings.css.
+  // overlay.css sees the palette from tokens.css plus any non-colour tokens
+  // of its own :root (none today) — never settings.css, so it is not checked
+  // against settings.css.
   // Regexes mirror settings-contract's: digits allowed in token names, and
   // `var(--x` without requiring the closing paren so fallbacks still match.
   const defined = new Set([
     ...rootTokens(tokensCss, "tokens.css"),
-    ...rootTokens(css, "overlay.css"),
+    ...(/:root\s*\{/.test(css) ? rootTokens(css, "overlay.css") : []),
   ]);
   const used = new Set([...css.matchAll(/var\((--[a-z0-9-]+)/g)].map((m) => m[1]));
   const undefinedVars = [...used].filter((v) => !defined.has(v)).sort();
@@ -121,7 +121,13 @@ test("the shared palette is declared only in tokens.css", () => {
   assert.ok(shared.has("--ink") && shared.has("--accent"), "tokens.css must declare --ink and --accent");
   const settingsCss = fs.readFileSync(path.join(RENDERER, "settings.css"), "utf8");
   const wizardCss = fs.readFileSync(path.join(RENDERER, "wizard.css"), "utf8");
-  for (const [file, source] of [["overlay.css", css], ["settings.css", settingsCss], ["wizard.css", wizardCss]]) {
+  const correctionCss = fs.readFileSync(path.join(RENDERER, "correction.css"), "utf8");
+  for (const [file, source] of [
+    ["overlay.css", css],
+    ["settings.css", settingsCss],
+    ["wizard.css", wizardCss],
+    ["correction.css", correctionCss],
+  ]) {
     const redeclared = [...source.matchAll(/(--[a-z0-9-]+)\s*:/g)]
       .map((m) => m[1])
       .filter((t) => shared.has(t));
@@ -148,33 +154,9 @@ test("reduced motion keeps the warming/paused dot distinction", () => {
   );
 });
 
-test("the hand-duplicated color constants match their CSS tokens", () => {
-  // Two values are deliberately duplicated across file boundaries with
-  // keep-in-sync comments; drift is invisible at runtime, so pin them here.
-  // WAVE_COLOR paints the canvas waveform and must equal the accent that
-  // colors the capture dot and progress fill.
-  const waveColor = js.match(/const WAVE_COLOR = "([^"]+)"/);
-  const accent = tokensCss.match(/--accent:\s*([^;/]+)/);
-  assert.ok(waveColor && accent, "WAVE_COLOR and --accent must both exist");
-  assert.strictEqual(
-    waveColor[1].toLowerCase(),
-    accent[1].trim().toLowerCase(),
-    "overlay.js WAVE_COLOR must equal tokens.css --accent"
-  );
-
-  // INK_COLOR pre-paints the framed windows and must equal the ink the
-  // stylesheets actually render, or settings/wizard flash the wrong color.
-  // Both the overlay and the framed windows read --ink from tokens.css.
-  const windowsJs = fs.readFileSync(path.join(ROOT, "main", "windows.js"), "utf8");
-  const inkConst = windowsJs.match(/const INK_COLOR = "([^"]+)"/);
-  const inkToken = tokensCss.match(/--ink:\s*([^;/]+)/);
-  assert.ok(inkConst && inkToken, "INK_COLOR and the --ink token must both exist");
-  assert.strictEqual(
-    inkConst[1].toLowerCase(),
-    inkToken[1].trim().toLowerCase(),
-    "main/windows.js INK_COLOR must equal tokens.css --ink"
-  );
-});
+// The colour constants duplicated outside CSS (the framed windows' native ink)
+// and the overlay canvas reading --accent are pinned per palette in
+// test/theme-contract.test.js.
 
 test("the overlay and the decode splitter share one silence level", () => {
   // The overlay commits a live chunk at a pause below QUIET_RMS, and

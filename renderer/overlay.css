@@ -9,13 +9,7 @@
    under text is solid — nothing may depend on what shows through behind the
    overlay. */
 
-:root {
-  /* Shared palette (--ink --edge --text --text-dim --wash --track --accent
-     --ok --err) lives in tokens.css; these are the overlay's own. */
-  --text-mid: #d4d4d8; /* the status word */
-  --text-faint: rgba(255, 255, 255, 0.28); /* disabled key glyphs */
-  --idle: #71717a; /* status dot: idle / nothing heard */
-}
+/* Every colour (both palettes) lives in tokens.css. */
 
 * {
   margin: 0;
@@ -93,12 +87,12 @@ body {
   height: 4px;
   margin: 6px auto 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.16);
+  background: rgb(var(--fg-rgb) / 0.16);
   transition: background 0.15s ease;
 }
 
 #card:hover #grip {
-  background: rgba(255, 255, 255, 0.28);
+  background: rgb(var(--fg-rgb) / 0.28);
 }
 
 /* Update prompt: a quiet panel pinned above the transcript and the control
@@ -112,7 +106,7 @@ body {
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--edge);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--fg-rgb) / 0.05);
 }
 
 /* Solo prompt: the card came up for the update alone, with no dictation behind
@@ -226,7 +220,7 @@ body {
 }
 
 .pill.primary:hover {
-  background: #ffffff;
+  background: var(--text-strong);
 }
 
 /* Quiet pills and the dismiss key ride the button base for color and hover
@@ -279,7 +273,7 @@ body {
 /* A hairline divider above the controls only when the transcript is showing;
    when the card is controls-only there's nothing to divide from. */
 #card[data-transcript] #transcript {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgb(var(--fg-rgb) / 0.08);
 }
 
 /* Control row: status, waveform, timer, keys. */
@@ -334,7 +328,7 @@ body {
    "mic is live" signal, with a soft bloom so it reads lit, not printed. */
 [data-status="recording"] #status-dot {
   background: var(--accent);
-  box-shadow: 0 0 6px rgba(251, 77, 92, 0.45);
+  box-shadow: 0 0 6px rgb(var(--accent-rgb) / 0.45);
   animation: pulse 2s ease-in-out infinite;
 }
 
@@ -561,7 +555,7 @@ button:focus-visible {
 }
 
 #stop:hover {
-  background: #ffffff;
+  background: var(--text-strong);
   color: var(--ink);
 }
 
@@ -607,7 +601,7 @@ button:focus-visible {
 }
 
 #cancel:hover {
-  background: rgba(248, 113, 113, 0.12);
+  background: rgb(var(--err-rgb) / 0.12);
   color: var(--err);
 }
 

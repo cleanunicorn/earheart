@@ -1,4 +1,3 @@
-:root { --field: #101013; --field-edge: #6b6b74; }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--ink); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
 main { max-width: 760px; margin: auto; padding: 24px; }

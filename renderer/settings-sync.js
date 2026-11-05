@@ -14,6 +14,7 @@ function sharedBaseline(cfg) {
     remind: cfg.updates?.remind !== false,
     dictionary: [...(cfg.cleanup?.dictionary || [])],
     aliases: (cfg.cleanup?.aliases || []).map((r) => ({ term: r.term, heard: [...r.heard] })),
+    appearance: cfg.appearance,
   };
 }
 

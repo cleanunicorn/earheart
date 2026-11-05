@@ -108,6 +108,9 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
       calls.push(["isDestroyed"]);
       return this.closed || false;
     }
+    setBackgroundColor(color) {
+      calls.push(["setBackgroundColor", color]);
+    }
     // Tracks show/hide so the wake re-join (#353) can tell a hidden card from
     // one on screen. Created hidden, as createOverlay() asks (show: false).
     isVisible() {
@@ -146,6 +149,7 @@ function loadWindows({
   stored = {},
   confirm = () => 0,
   init = true,
+  nativeTheme = { shouldUseDarkColors: true },
 } = {}) {
   const calls = [];
   const warnings = [];
@@ -164,6 +168,7 @@ function loadWindows({
     return displays.reduce((best, a) => (dist(a) < dist(best) ? a : best));
   };
   const electron = {
+    nativeTheme,
     BrowserWindow: makeFakeWindow(calls, { refuseRejoin, webContentsHandlers }),
     dialog: { showMessageBoxSync: (win, options) => { calls.push(["confirm", options]); return confirm(); } },
     ipcMain: {
@@ -645,7 +650,7 @@ test("the overlay keeps backgroundThrottling off; the forms keep their framed op
   assert.strictEqual(overlay.backgroundColor, undefined, "the transparent overlay must not get the ink background");
   for (const form of [settingsWin, wizard]) {
     assert.strictEqual(form.autoHideMenuBar, true);
-    assert.strictEqual(form.backgroundColor, "#18181b");
+    assert.strictEqual(form.backgroundColor, "#18181b", "dark palette: the dark ink");
     assert.match(form.icon, /icon\.png$/);
   }
   assert.strictEqual(settingsWin.title, "Earheart");
@@ -865,4 +870,44 @@ test("requiring windows.js registers no IPC handler until init(), which is idemp
   const handlers = channels.map((c) => ipc[c]);
   windows.init();
   assert.deepStrictEqual(channels.map((c) => ipc[c]), handlers, "a second init registers nothing new");
+});
+
+test("each framed window is created in the current palette's ink (#348)", () => {
+  for (const [dark, ink] of [[true, "#18181b"], [false, "#fafafa"]]) {
+    const { windows, calls } = loadWindows({ nativeTheme: { shouldUseDarkColors: dark } });
+    windows.openSettings();
+    windows.openWizard();
+    windows.openCorrection({ text: "draft" });
+    const forms = calls.filter(([name]) => name === "construct").map(([, o]) => o);
+    assert.strictEqual(forms.length, 3);
+    for (const form of forms) assert.strictEqual(form.backgroundColor, ink, `dark=${dark}`);
+    assert.strictEqual(windows.inkColor(), ink);
+  }
+});
+
+test("refreshInk repaints only the open framed windows, never the overlay (#348)", () => {
+  const nativeTheme = { shouldUseDarkColors: true };
+  const { windows, calls } = loadWindows({ nativeTheme });
+  const painted = () => calls.filter(([n]) => n === "setBackgroundColor").map(([, c]) => c);
+  windows.refreshInk(); // nothing open yet: nothing to paint, nothing thrown
+  assert.deepStrictEqual(painted(), []);
+
+  windows.createOverlay();
+  const settingsWin = windows.openSettings();
+  const wizard = windows.openWizard();
+  const correction = windows.openCorrection({ text: "draft" });
+  nativeTheme.shouldUseDarkColors = false;
+  windows.refreshInk();
+  assert.deepStrictEqual(painted(), ["#fafafa", "#fafafa", "#fafafa"],
+    "Settings, the wizard and the correction window repaint; the transparent overlay does not");
+
+  // A window destroyed under its reference (closed, or destroyed before its
+  // closed handler ran) is skipped, and the others still repaint.
+  calls.length = 0;
+  wizard.close();
+  correction.closed = true; // destroyed without its closed handler running
+  nativeTheme.shouldUseDarkColors = true;
+  assert.doesNotThrow(() => windows.refreshInk());
+  assert.deepStrictEqual(painted(), ["#18181b"], "only the live Settings window repaints");
+  assert.ok(!settingsWin.isDestroyed());
 });

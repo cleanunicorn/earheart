@@ -495,3 +495,33 @@ test("idle model unload defaults to a finite window and is overridable", () => {
   const custom = deepMerge(DEFAULTS, { engines: { idleUnloadMinutes: 10 } });
   assert.strictEqual(custom.engines.idleUnloadMinutes, 10);
 });
+
+test("appearance defaults to system and anything unknown reads as system (#348)", (t) => {
+  // A fresh profile and an existing one written before the setting existed.
+  assert.strictEqual(loadSettings(makeSettingsDir(t)).get().appearance, "system");
+  const old = makeSettingsDir(t);
+  fs.writeFileSync(path.join(old, "settings.json"), JSON.stringify({ startOnBoot: true }));
+  assert.strictEqual(loadSettings(old).get().appearance, "system");
+
+  for (const bad of ["sepia", "", null, 1, { dark: true }]) {
+    const dir = makeSettingsDir(t);
+    fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ appearance: bad }));
+    assert.strictEqual(loadSettings(dir).get().appearance, "system", `stored ${JSON.stringify(bad)}`);
+  }
+
+  // An invalid value handed to save() is stored as system, not as-is.
+  const saving = makeSettingsDir(t);
+  const settings = loadSettings(saving);
+  settings.save({ ...settings.get(), appearance: "sepia" });
+  assert.strictEqual(readFile(saving).appearance, "system");
+});
+
+test("a saved light or dark appearance survives a restart (#348)", (t) => {
+  for (const value of ["light", "dark", "system"]) {
+    const dir = makeSettingsDir(t);
+    const settings = loadSettings(dir);
+    settings.save({ ...settings.get(), appearance: value });
+    assert.strictEqual(readFile(dir).appearance, value);
+    assert.strictEqual(loadSettings(dir).get().appearance, value, "read back by a fresh load");
+  }
+});

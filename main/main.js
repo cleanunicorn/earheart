@@ -7,6 +7,7 @@ const history = require("./history");
 const recordings = require("./recordings");
 const windows = require("./windows");
 const wake = require("./wake");
+const appearance = require("./appearance");
 const pipeline = require("./pipeline");
 const hotkeys = require("./hotkeys");
 const tray = require("./tray");
@@ -122,6 +123,8 @@ function main() {
     // the app's own pages and nothing else (main/window-guard.js).
     installPermissionHandler(session.defaultSession);
 
+    // The palette before the first window, so nothing paints in the wrong one.
+    appearance.init();
     windows.init();
     pipeline.init({ isDownloading: ipc.isDownloading });
     // The discard hotkey is held only while there is a dictation to discard

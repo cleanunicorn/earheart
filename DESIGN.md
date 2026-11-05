@@ -16,6 +16,7 @@ colors:
   field: "#101013"
   field-edge: "#6b6b74"
   tray: "rgba(0, 0, 0, 0.25)"
+  step-dot: "rgba(255, 255, 255, 0.35)"
   delivered-green: "#34d399"
   failed-red: "#f87171"
   idle-gray: "#71717a"
@@ -27,6 +28,34 @@ colors:
   section-advanced: "#c49f4d"
   state-private: "#16bbbc"
   state-external: "#ea9941"
+  # The light palette (#348): same roles, prefers-color-scheme: light.
+  bar-ink-light: "#fafafa"
+  coral-voice-light: "#d42a3c"
+  text-primary-light: "#18181b"
+  text-strong-light: "#000000"
+  text-status-light: "#3f3f46"
+  text-dim-light: "#52525b"
+  text-faint-light: "rgba(0, 0, 0, 0.32)"
+  hairline-edge-light: "rgba(0, 0, 0, 0.1)"
+  seam-light: "rgba(0, 0, 0, 0.08)"
+  hover-wash-light: "rgba(0, 0, 0, 0.06)"
+  wash-faint-light: "rgba(0, 0, 0, 0.04)"
+  track-light: "rgba(0, 0, 0, 0.1)"
+  field-light: "#ffffff"
+  field-edge-light: "#82828b"
+  tray-light: "rgba(0, 0, 0, 0.05)"
+  step-dot-light: "rgba(0, 0, 0, 0.45)"
+  delivered-green-light: "#047857"
+  failed-red-light: "#b91c1c"
+  idle-gray-light: "#71717a"
+  section-general-light: "#3e6596"
+  section-live-light: "#5d6b2b"
+  section-stt-light: "#14707a"
+  section-cleanup-light: "#6a578f"
+  section-history-light: "#854e73"
+  section-advanced-light: "#7b5f1b"
+  state-private-light: "#006869"
+  state-external-light: "#994500"
 typography:
   body:
     fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
@@ -210,24 +239,54 @@ previous "Tape Transport" service-panel system and the earlier violet/rose
 setup wizard (`renderer/wizard.*`, which layers on `settings.css`) all speak
 this language; the framed windows extend the bar's grammar with white-wash
 cards, solid inputs, and pill buttons, documented below. The main process
-paints framed windows in Bar Ink before load (`INK_COLOR` in
-`main/windows.js`), which must stay in sync with `--ink`. The shared palette
-(`--ink`, `--accent` and the other bar materials) is declared once, in
-`renderer/tokens.css`, which every page loads before its own sheet; `overlay.css`
-and `settings.css` add only their own derivatives. The retired Tape
+paints framed windows in the current palette's Bar Ink before load
+(`INK_COLORS` in `main/windows.js`), which must stay in sync with `--ink` in
+each palette. Every colour — both palettes — is declared once, in
+`renderer/tokens.css`, which every page loads before its own sheet; the page
+sheets hold no colour literals of their own (see Appearance below). The retired Tape
 Transport and On-Air Lamp systems survive only as historical notes.
 
 **Key Characteristics:**
-- Solid neutral near-black surfaces; nothing translucent under text
+- Solid neutral surfaces — near-black in dark, near-white in light; nothing
+  translucent under text
 - One coral accent, reserved exclusively for the voice being heard or captured
 - Hue only where recognition or consequence needs it: the settings index's
   section glyphs and the engine badges — never on chrome, never as decoration
-- Universally-read glyphs in circular ghost keys; one filled white Done key
-- Chosen things are white: washes, radio cores, switch tracks, the Save pill
-- Hairline edges and subtle white washes instead of shadows
+- Universally-read glyphs in circular ghost keys; one filled Done key
+- Chosen things are filled in Primary Text (white in dark, ink in light):
+  washes, radio cores, switch tracks, the Save pill
+- Hairline edges and subtle foreground washes instead of shadows
 - The live transcript is the hero; chrome stays quiet around it
 
 ## Colors
+
+### Appearance: two palettes, one grammar
+Earheart ships a dark palette (the base, unchanged since before #348) and a
+light one. Settings → General → Appearance picks System (the default), Light
+or Dark; main sets `nativeTheme.themeSource` from it, and every page resolves
+`prefers-color-scheme` from that — on its first paint and live afterwards,
+with no reload. Rules:
+- **Both palettes, one file.** `renderer/tokens.css` holds the dark `:root`
+  and a `@media (prefers-color-scheme: light)` `:root` that sets every token
+  the dark one does. Page sheets use tokens only — no hex, `rgb()` or named
+  colour (`test/theme-contract.test.js`).
+- **Washes are the foreground at an alpha.** `rgb(var(--fg-rgb) / a)` is white
+  in dark and black in light at the same strength; coral and red washes use
+  `--accent-rgb` / `--err-rgb` the same way.
+- **"White" means Primary Text.** Everything this document calls filled white
+  (Done, Save, switch tracks, radio cores) is `--text`: white in dark, ink in
+  light, with Bar Ink glyphs on it either way. `--text-strong` is its hover.
+- **Every pair is measured.** Text ≥4.5:1 and UI components ≥3:1 in both
+  palettes, computed from the tokens by `scripts/theme-contrast.js` and
+  enforced by the contract test. Each pair is measured on the pixels the CSS
+  actually composites: a chosen option, a selected segment, a hovered pill, a
+  badge on its own wash, the capture edge over its own coral fill. Lowest
+  pairs as shipped — text: Failed Red on a hovered danger pill, 4.84:1 dark /
+  4.66:1 light; UI: Field Edge on a card, 3.04:1 dark, and the capture edge
+  against its ring, 3.14:1 light. Coral Voice is 4.80:1 on the light Bar Ink,
+  enough to serve as the countdown's text.
+- Values below name the dark palette; each has a `-light` counterpart in the
+  front matter.
 
 A single-accent dark-neutral palette: near-black ink, four steps of white/gray
 text, a small family of white washes and hairlines, one coral voice, and
@@ -240,16 +299,17 @@ each barred from the overlay and the wizard.
   icon's waveform-heart. On the overlay it appears only where the user's voice
   is live or being processed: the capture dot (filled) and warming/paused ring
   (hollow), the canvas waveform, the dictation progress fill, and the timer's
-  last-minute countdown before the cap stops a live take. The value is
-  duplicated as `WAVE_COLOR` in `overlay.js` and must be kept in sync with
-  `--accent` in `tokens.css`. Off the overlay it appears only under The
+  last-minute countdown before the cap stops a live take. The canvas reads
+  `--accent` from the stylesheet (no copy in `overlay.js`), so it follows the
+  palette. Light: #d42a3c, deep enough to hold 4.5:1 as countdown text. Off the
+  overlay it appears only under The
   Capture Exception below.
 
 ### Neutral
 - **Bar Ink** (`bar-ink`): every surface — the overlay bar (solid, never
   translucent) and the framed settings/wizard windows, painted before load via
-  `INK_COLOR` in `main/windows.js`. Also the glyph/label color on filled-white
-  elements.
+  `INK_COLORS` in `main/windows.js` (one per palette). Also the glyph/label
+  color on filled-white elements.
 - **Primary Text** (`text-primary`): settled transcript text, active timer,
   headings and labels, the filled Done key / Save pill, white download fills,
   switch-on tracks, chosen radio cores.
@@ -289,6 +349,8 @@ each barred from the overlay and the wizard.
 Six hues, one per settings section, worn by the index glyph and its matching
 legend glyph and nothing else. Derived in OKLCH at one lightness and chroma
 (L≈0.72, C≈0.10) so no section outranks another; each clears 6.8:1 on Bar Ink.
+The light set keeps the hues at L≈0.50, C≈0.09 (cyan at its in-gamut ≈0.08)
+and clears 5.0:1 on a card.
 They name a place, never a state.
 - **Section General** (`section-general`, #79a7e2): blue — mic glyph.
 - **Section Live transcript** (`section-live`, #9cae65): lime — waveform glyph.
@@ -302,7 +364,9 @@ Two hues on the Speech-to-text and Cleanup engine badges, naming what the
 chosen engine does with the user's audio and words. Neither reuses Delivered
 Green or Failed Red: this is a consequence, not a success or a fault, and
 choosing an external engine is a legitimate choice rather than an error. Both
-hold ≥5.5:1 as text on their own 12% wash.
+hold ≥5.5:1 as text on their own 12% wash over a card in dark; the light pair
+(#006869 / #994500, the same hues at lower OKLCH lightness) holds ≥4.83:1
+there.
 - **Private Teal** (`state-private`, #16bbbc): the engine runs on this device
   — nothing leaves it.
 - **External Amber** (`state-external`, #ea9941): the engine sends audio (STT)
@@ -316,9 +380,9 @@ grammar: filled white primary pill, white download-bar fill. Never spend coral
 on non-voice surfaces.
 
 **The Capture Exception.** On the settings window coral appears exactly once:
-a hotkey field mid-capture (`.capturing` — coral border
-rgba(251, 77, 92, 0.55), coral wash rgba(251, 77, 92, 0.07), 0-blur coral
-ring rgba(251, 77, 92, 0.16)), because the field is literally capturing the
+a hotkey field mid-capture (`.capturing` — coral border at 0.9 alpha, so the
+edge holds 3:1 against its own wash and its ring in both palettes; coral wash
+at 0.07; 0-blur coral ring at 0.16), because the field is literally capturing the
 user's key press. The wizard's mini-bar demo is the only other sanctioned
 non-overlay coral: it is a depiction of the real bar, not a new use. No third
 use exists.
@@ -657,7 +721,8 @@ transcription** and a quiet **Discard**.
   CSS box × devicePixelRatio so bars stay crisp at any width.
 - Outside capture it dims to a ghost of the take (opacity 0.25); when the
   detail line needs the space it steps back to 0.07.
-- `WAVE_COLOR` in `overlay.js` must equal `--accent` in `tokens.css`.
+- Drawn in `--accent`, read from the stylesheet at load and again when the
+  colour scheme changes (a frozen take repaints at once).
 
 ### Progress fills
 - Overlay: 3px hairline tracks (Track fill, 2px radius); dictation progress
@@ -681,8 +746,9 @@ transcription** and a quiet **Discard**.
   version heading per release.
 
 ### Wizard step dots
-- 7px circles, white 0.35 at rest (clearing the 3:1 UI bar on the ink), solid
-  white when active; centered in the footer with an sr-only spoken
+- 7px circles in `--dot` at rest — white 0.35 in dark (3.23:1), black 0.45
+  in light (3.33:1), clearing the 3:1 UI bar on the ink — solid Primary Text
+  when active; centered in the footer with an sr-only spoken
   counterpart.
 
 ### Wizard demo (welcome step)
@@ -720,13 +786,14 @@ transcription** and a quiet **Discard**.
 
 ### Do:
 - **Do** keep every surface under text solid; every window is opaque Bar Ink
-  (#18181b) — the overlay by its own paint, framed windows via `INK_COLOR` in
-  `main/windows.js`, kept in sync with `--ink`.
+  (#18181b dark, #fafafa light) — the overlay by its own paint, framed windows
+  via `INK_COLORS` in `main/windows.js`, kept in sync with `--ink`.
 - **Do** reserve Coral Voice (#fb4d5c) for the dictation itself — capture dot,
   waveform, dictation progress — plus only the two Capture Exception moments
-  (a hotkey field mid-capture; the wizard's mini-bar demo). Keep `WAVE_COLOR`
-  in `overlay.js` in sync with `--accent`.
-- **Do** use the filled-white grammar (Done key, Save / Get started pill,
+  (a hotkey field mid-capture; the wizard's mini-bar demo). Declare it only as
+  `--accent` in `tokens.css`; the waveform reads it from there.
+- **Do** use the filled-white grammar — filled Primary Text, so ink in the
+  light palette — (Done key, Save / Get started pill,
   switch-on track, radio core, download fill) for the single strongest action,
   the chosen state, or the app talking about itself.
 - **Do** keep keys in their slots across all states — disable and fade, never
@@ -764,6 +831,9 @@ transcription** and a quiet **Discard**.
 - **Don't** add a third settings hue family, or bring either family to the
   overlay or the wizard — those surfaces stay white/gray plus coral. New color
   is a decision at this file's level, not a per-surface one.
+- **Don't** write a colour literal outside `renderer/tokens.css`, or add a
+  token to one palette only; a colour that ignores the appearance is a defect
+  in the other palette. Don't animate the switch between palettes.
 - **Don't** make chrome text larger than the transcript (15px) on the bar, or
   larger than the 16px window title on framed windows; the words stay the
   biggest thing in the system.

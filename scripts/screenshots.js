@@ -5,7 +5,7 @@
 //
 // (or: xvfb-run -a npx electron scripts/screenshots.js --no-sandbox)
 
-const { app, session } = require("electron");
+const { app, session, nativeTheme } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const { isolateProfile, assertIsolated } = require("./demo-profile");
@@ -26,14 +26,64 @@ const { installPermissionHandler } = require(path.join(ROOT, "main", "window-gua
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// The overlay mid-dictation, as the README's hero shot shows it. setStatus/
+// waveHistory/drawMeter/timerEl are top-level bindings in overlay.js.
+const STAGE_RECORDING = `
+    // Stage a written waveform: a speech-like burst pattern, newest at the
+    // right edge. 120 columns × 2.5px overruns the area, so it shows the
+    // filled-edge-to-edge state a take reaches after ~7s.
+    waveHistory = Array.from({ length: 120 }, (_, i) =>
+      0.02 + 0.13 * Math.abs(Math.sin(i * 0.7 + 1)) * (0.4 + ((i * 7919) % 13) / 13)
+    );
+    drawMeter();
+    timerEl.textContent = "0:07";
+    setStatus("recording", "Listening…");
+    // The live transcript mid-dictation: settled cleaned text plus the dimmed
+    // still-streaming raw tail (the README's hero moment).
+    partialClean = "In the auth middleware, don't retry on a 401.";
+    partialRaw =
+      "in the auth middleware don't retry on a 401 just surface the error and add a test";
+    renderTranscript();
+    "";
+  `;
+
 async function shot(win, name) {
   const img = await win.webContents.capturePage();
   fs.writeFileSync(path.join(OUT, `${name}.png`), img.toPNG());
   console.log(`captured ${name}.png`);
 }
 
+// The correction editor with a staged spelling fix: synthetic transcript, no
+// dictionary or history writes.
+async function shootCorrection(name) {
+  const correction = windows.openCorrection({ text: "Run cube cuddle against staging, then check the logs.\nKeep src/Foo.ts unchanged and add a test for the error path." });
+  await waitForLoad(correction.webContents);
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (await correction.webContents.executeJavaScript('!document.getElementById("copy").disabled')) break;
+    if (attempt === 99) throw new Error("correction editor did not initialize");
+    await sleep(50);
+  }
+  await correction.webContents.executeJavaScript(`
+    document.getElementById("transcript").focus();
+    document.getElementById("transcript").setSelectionRange(4, 15);
+    document.getElementById("transcript").dispatchEvent(new Event("select"));
+    document.getElementById("spelling").value = "kubectl";
+    document.getElementById("spelling").dispatchEvent(new Event("input"));
+    document.getElementById("always-replace").checked = true;
+    document.getElementById("spelling").focus();
+    "";
+  `);
+  await correction.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))");
+  await shot(correction, name);
+  windows.setCorrectionDirty(correction.webContents, false); // discard this synthetic staged draft
+  correction.close();
+}
+
 async function main() {
   assertIsolated(app, profile);
+  // The README's shots are the dark palette whatever this desktop prefers;
+  // the light pass at the end flips it explicitly (#348).
+  nativeTheme.themeSource = "dark";
   fs.mkdirSync(OUT, { recursive: true });
   // The shipped permission policy, so the microphone grant below is proven
   // through the same handler the app installs (main/window-guard.js).
@@ -89,27 +139,7 @@ async function main() {
   settings.close();
 
   // Correction: synthetic transcript, no dictionary/history writes.
-  const correction = windows.openCorrection({ text: "Run cube cuddle against staging, then check the logs.\nKeep src/Foo.ts unchanged and add a test for the error path." });
-  await waitForLoad(correction.webContents);
-  for (let attempt = 0; attempt < 100; attempt++) {
-    if (await correction.webContents.executeJavaScript('!document.getElementById("copy").disabled')) break;
-    if (attempt === 99) throw new Error("correction editor did not initialize");
-    await sleep(50);
-  }
-  await correction.webContents.executeJavaScript(`
-    document.getElementById("transcript").focus();
-    document.getElementById("transcript").setSelectionRange(4, 15);
-    document.getElementById("transcript").dispatchEvent(new Event("select"));
-    document.getElementById("spelling").value = "kubectl";
-    document.getElementById("spelling").dispatchEvent(new Event("input"));
-    document.getElementById("always-replace").checked = true;
-    document.getElementById("spelling").focus();
-    "";
-  `);
-  await correction.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))");
-  await shot(correction, "correction");
-  windows.setCorrectionDirty(correction.webContents, false); // discard this synthetic staged draft
-  correction.close();
+  await shootCorrection("correction");
 
   // Overlay: staged recording and done states. setStatus/waveHistory/
   // drawMeter/timerEl are top-level bindings in overlay.js, reachable from
@@ -119,24 +149,7 @@ async function main() {
   windows.showOverlay();
   await sleep(800);
 
-  await overlay.webContents.executeJavaScript(`
-    // Stage a written waveform: a speech-like burst pattern, newest at the
-    // right edge. 120 columns × 2.5px overruns the area, so it shows the
-    // filled-edge-to-edge state a take reaches after ~7s.
-    waveHistory = Array.from({ length: 120 }, (_, i) =>
-      0.02 + 0.13 * Math.abs(Math.sin(i * 0.7 + 1)) * (0.4 + ((i * 7919) % 13) / 13)
-    );
-    drawMeter();
-    timerEl.textContent = "0:07";
-    setStatus("recording", "Listening…");
-    // The live transcript mid-dictation: settled cleaned text plus the dimmed
-    // still-streaming raw tail (the README's hero moment).
-    partialClean = "In the auth middleware, don't retry on a 401.";
-    partialRaw =
-      "in the auth middleware don't retry on a 401 just surface the error and add a test";
-    renderTranscript();
-    "";
-  `);
+  await overlay.webContents.executeJavaScript(STAGE_RECORDING);
   await sleep(400);
   await shot(overlay, "overlay-recording");
 
@@ -205,8 +218,38 @@ async function main() {
   await sleep(400);
   await shot(overlay, "overlay-update-solo");
 
+  // The light palette (#348): the same windows, staged the same way, saved
+  // beside the dark shots with a -light suffix.
+  nativeTheme.themeSource = "light";
+  windows.destroyOverlay();
+  const lightWizard = windows.openWizard();
+  await waitForLoad(lightWizard.webContents);
+  await sleep(1800);
+  await shot(lightWizard, "wizard-light");
+  windows.closeWizard();
+
+  const lightSettings = windows.openSettings();
+  await waitForLoad(lightSettings.webContents);
+  await sleep(1200);
+  await shot(lightSettings, "settings-light");
+  lightSettings.close();
+
+  await shootCorrection("correction-light");
+
+  const lightOverlay = windows.createOverlay();
+  await waitForLoad(lightOverlay.webContents);
+  windows.showOverlay();
+  await sleep(800);
+  await lightOverlay.webContents.executeJavaScript(STAGE_RECORDING);
+  await sleep(400);
+  await shot(lightOverlay, "overlay-recording-light");
+
   app.exit(0);
 }
+
+// A closed window must not quit the app: the light pass closes every window
+// between shots, and Electron's default quit would exit 0 with shots missing.
+app.on("window-all-closed", () => {});
 
 // Any failure exits non-zero with the error; without this an unhandled
 // rejection left Electron running and `make screenshots` hung instead of

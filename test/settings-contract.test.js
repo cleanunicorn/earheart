@@ -96,6 +96,17 @@ test("settings controls keep authored colors above non-text contrast minimums", 
   );
 });
 
+test("the Appearance select offers exactly system, light and dark (#348)", () => {
+  const select = html.match(/<select id="appearance">([\s\S]*?)<\/select>/);
+  assert.ok(select, "settings.html must have <select id=\"appearance\">");
+  const values = [...select[1].matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]);
+  // The first option is what a fresh profile shows: the "system" default.
+  assert.deepStrictEqual(values, ["system", "light", "dark"]);
+  assert.match(html, /<label for="appearance"/, "the select has a label");
+  assert.match(js, /\$\("appearance"\)\.value = current\.appearance \|\| "system";/, "populate() shows the saved value");
+  assert.match(js, /appearance: \$\("appearance"\)\.value,/, "collect() saves it");
+});
+
 test("every id wizard.js references exists in wizard.html", () => {
   // wizard.js drives its UI by element id exactly like settings.js, but its
   // ids were previously unguarded: a renamed id (e.g. step-position, which

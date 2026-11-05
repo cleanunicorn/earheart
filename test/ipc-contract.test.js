@@ -409,8 +409,9 @@ test("the role tables are non-trivial and the overlay cannot touch settings or h
   for (const channel of ["settings:get", "settings:save", "history:search", "history:delete", "models:add-custom", "logs:open"]) {
     assert.ok(!ROLES.overlay.INVOKE.has(channel), `overlay must not invoke ${channel}`);
   }
-  // Only Settings may read or delete History (#342).
-  for (const channel of ["history:search", "history:delete", "history:clear"]) {
+  // Only Settings may read or delete History (#342), or read and reset the
+  // usage counts (#347).
+  for (const channel of ["history:search", "history:delete", "history:clear", "usage:get", "usage:reset"]) {
     for (const role of ROLE_NAMES.filter((name) => name !== "settings")) {
       assert.ok(!ROLES[role].INVOKE.has(channel), `the ${role} window must not invoke ${channel}`);
     }

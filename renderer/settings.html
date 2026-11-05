@@ -42,6 +42,10 @@
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg>
           <span class="tab-label">History</span>
         </button>
+        <button class="tab" data-tab="usage">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><path d="M7 16v-4"/><path d="M12 16V5"/><path d="M17 16V9"/></svg>
+          <span class="tab-label">Usage</span>
+        </button>
         <button class="tab" data-tab="advanced">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="14" cy="6" r="2.2" fill="currentColor" stroke="none"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="8" cy="12" r="2.2" fill="currentColor" stroke="none"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="16" cy="18" r="2.2" fill="currentColor" stroke="none"/></svg>
           <span class="tab-label">Advanced</span>
@@ -642,6 +646,50 @@
         </div>
       </section>
 
+      <!-- Usage (#347): counts only, never text; renderer/usage-stats.js -->
+      <section id="tab-usage" class="panel" aria-labelledby="legend-usage">
+        <h2 class="legend" tabindex="-1" id="legend-usage">
+          <svg class="legend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><path d="M7 16v-4"/><path d="M12 16V5"/><path d="M17 16V9"/></svg>
+          Usage
+        </h2>
+        <div class="card">
+          <label class="toggle">
+            <span class="toggle-text">
+              <span class="t">Count my dictations</span>
+              <span class="d">Counts takes, words and speaking time on this computer. Never the words themselves, never uploaded.</span>
+            </span>
+            <input type="checkbox" id="usage-enabled" class="switch" role="switch" />
+          </label>
+          <p id="usage-off-hint" class="hint" hidden>Counting is off. Earlier numbers are kept.</p>
+        </div>
+        <div class="card" id="usage-card" aria-live="polite">
+          <p id="usage-empty" class="muted usage-note" hidden>No dictations counted yet.</p>
+          <p id="usage-readonly" class="hint usage-note" hidden></p>
+          <dl class="usage-stats">
+            <div class="usage-stat"><dt>Takes</dt><dd id="usage-takes">0</dd></div>
+            <div class="usage-stat"><dt>Words</dt><dd id="usage-words">0</dd></div>
+            <div class="usage-stat"><dt>Speaking time</dt><dd id="usage-speech">0 min</dd></div>
+            <div class="usage-stat"><dt>Average speed</dt><dd id="usage-wpm">—</dd></div>
+            <div class="usage-stat"><dt>Streak</dt><dd id="usage-streak">0 days</dd></div>
+            <div class="usage-stat"><dt>Time saved (estimate)</dt><dd id="usage-saved">—</dd></div>
+          </dl>
+          <p id="usage-estimate-note" class="hint">Estimate: typing these words at <span id="usage-baseline">40</span> WPM, minus the time you spent speaking them. Not measured.</p>
+          <div class="field usage-baseline">
+            <label for="typing-wpm">Your typing speed (WPM)</label>
+            <input id="typing-wpm" type="number" min="10" max="200" step="1" />
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title" id="usage-days-title">Last 14 days</div>
+          <ol id="usage-days" class="usage-days" aria-labelledby="usage-days-title"></ol>
+        </div>
+        <div class="row space-between usage-foot">
+          <span id="usage-since" class="muted"></span>
+          <button id="usage-reset" class="ghost danger" type="button">Reset statistics</button>
+        </div>
+        <p id="usage-reset-status" class="status err" role="alert" hidden></p>
+      </section>
+
       <!-- Advanced -->
       <section id="tab-advanced" class="panel" aria-labelledby="legend-advanced">
         <h2 class="legend" tabindex="-1" id="legend-advanced">
@@ -751,6 +799,7 @@
     <script src="permission-status.js"></script>
     <script src="model-progress.js"></script>
     <script src="model-save.js"></script>
+    <script src="usage-stats.js"></script>
     <script src="settings.js"></script>
   </body>
 </html>

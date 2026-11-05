@@ -59,6 +59,7 @@ const ROLES = {
       "models:done",
       "updates:state",
       "settings:changed",
+      "usage:changed",
     ],
     SEND: ["hotkeys:capture"],
     INVOKE: [
@@ -87,6 +88,8 @@ const ROLES = {
       "correction:open",
       "transcript:copy",
       "history:clear",
+      "usage:get",
+      "usage:reset",
       "models:status",
       "models:download",
       "models:cancel",

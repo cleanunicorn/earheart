@@ -150,6 +150,7 @@ async function loadMain(
       onSettingsChanged: () => {},
       onOverlayRendererGone: () => {},
     },
+    "./usage": { init: () => {} },
     "./tray": { init: () => events.push("tray.init"), refresh: () => {} },
     "./ipc": {
       init: (opts) => {

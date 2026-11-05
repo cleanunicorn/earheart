@@ -7,6 +7,7 @@ const history = require("./history");
 const recordings = require("./recordings");
 const windows = require("./windows");
 const pipeline = require("./pipeline");
+const usage = require("./usage");
 const hotkeys = require("./hotkeys");
 const tray = require("./tray");
 const ipc = require("./ipc");
@@ -123,6 +124,7 @@ function main() {
 
     windows.init();
     pipeline.init({ isDownloading: ipc.isDownloading });
+    usage.init();
     // The discard hotkey is held only while there is a dictation to discard
     // (recording or processing); idle, the combination is the user's again.
     pipeline.onStateChange((state) => hotkeys.armDiscard(state !== "idle"));

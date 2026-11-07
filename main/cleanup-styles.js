@@ -63,7 +63,9 @@ const STYLES = [
       "content, summarize, or invent details.",
     // Freer than Clean on purpose: full temperature for varied wording, with
     // top-k 10 and min-p 0.02 cutting off the unlikely tail so the variety
-    // stays on-topic. topP 1 leaves those two to do the filtering.
+    // stays on-topic. topP 1 leaves those two to do the filtering. Built-in
+    // engine only: a remote server gets temperature 1 with no tail cut-off,
+    // because top_k / min_p make strict servers 400 (see remoteSamplingBody).
     sampling: { temperature: 1.0, topP: 1.0, topK: 10, minP: 0.02 },
   },
 ];

@@ -5,7 +5,7 @@
 // exact words") instead of raw sampling numbers. Each stop bundles two things:
 //
 //   1. a prompt directive — the DOMINANT lever. How aggressively the model is
-//      allowed to edit (touch nothing vs. lightly rephrase) is driven far more
+//      allowed to edit (touch nothing vs. rewrite freely) is driven far more
 //      by the instructions than by sampling temperature.
 //   2. a sampling profile — temperature plus nucleus (topP) / top-k / min-p,
 //      which mostly control determinism and reinforce the directive.

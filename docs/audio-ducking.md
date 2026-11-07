@@ -60,8 +60,10 @@ out after 3.0 s (4.5 s on the first take) on Windows and 1.4–1.5 s on macOS; n
 way to name the default device without a native module, and the restore
 needs that name.
 
-`test/ducking.test.js` pins this: once prepared, the set must go out within
-1.5 device lookups on macOS and well under one PowerShell start on Windows.
+`test/ducking.test.js` pins this against stand-in tools with those cost
+ratios: once prepared, exactly one device lookup precedes the set, and the
+set goes out within two lookups' time on macOS and half a PowerShell start
+on Windows (the old paths took about three lookups and two or more starts).
 
 The Windows helper is one idle `powershell.exe` that stays running while
 the setting is on (its memory use is not measured yet); it stops when the setting is turned off and when

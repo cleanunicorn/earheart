@@ -1185,14 +1185,18 @@ test("ducking: prepare()/close() — warm failures are logged not thrown, off wa
 
 // #369: what the user hears is the set, so this measures the time from the
 // first samples (setCapturing) to the volume actually moving — not just that
-// the caller returns at once. Each tool call costs what it does on a real
-// machine, scaled down; the budget is one device lookup (+ the set) on macOS
-// and the helper's round trip on Windows. Before the fix these were two
-// system_profiler runs plus a probe on macOS (~2.4× the budget here), and
-// three PowerShell starts on Windows.
+// the caller returns at once. Each tool call is given a cost in the ratio a
+// real machine shows (system_profiler ≫ osascript; a PowerShell start ≫ a
+// helper request), and each budget sits about halfway between the fixed path
+// and the old one, so a loaded CI runner has room either way:
+//   macOS   fixed ≈ one lookup + the set (400 ms here); old ≈ probe + two
+//           sequential lookups + the set (900–1000 ms); budget 2 × SP = 600 ms
+//   Windows fixed ≈ two helper requests (~4 ms); old ≥ two PowerShell starts
+//           (1200 ms+); budget START / 2 = 300 ms
 test("ducking: once prepared, the volume moves within one tool round trip of the first samples (#369)", async () => {
-  const SP = 200; // system_profiler; osascript 20
-  const tools = fakeMacTools({ cost: { system_profiler: SP, osascript: 20 } });
+  const SP = 300; // system_profiler; osascript 100
+  const MAC_BUDGET = SP * 2;
+  const tools = fakeMacTools({ cost: { system_profiler: SP, osascript: 100 } });
   const mac = setup({ backend: b.createMacBackend(tools.run) });
   await mac.ducker.prepare();
   for (let take = 1; take <= 2; take++) {
@@ -1201,11 +1205,12 @@ test("ducking: once prepared, the volume moves within one tool round trip of the
     tools.t0 = Date.now();
     await mac.ducker.setCapturing("dictation", true);
     assert.deepStrictEqual(tools.calls.slice(0, tools.calls.indexOf("set")).sort(), ["get", "system_profiler"], `take ${take}: one lookup before the set`);
-    assert.ok(tools.setAt < SP * 1.5, `take ${take}: macOS set after ${tools.setAt} ms (budget ${SP * 1.5} ms)`);
+    assert.ok(tools.setAt < MAC_BUDGET, `take ${take}: macOS set after ${tools.setAt} ms (budget ${MAC_BUDGET} ms)`);
     await mac.ducker.setCapturing("dictation", false);
   }
 
-  const START = 300; // starting PowerShell and compiling the shim
+  const START = 600; // starting PowerShell and compiling the shim
+  const WIN_BUDGET = START / 2;
   const fake = fakeSpawn({ startMs: START, requestMs: 2 });
   const win = setup({ backend: b.createWindowsBackend(b.createWinHelper(fake.spawn)) });
   await win.ducker.prepare();
@@ -1214,7 +1219,7 @@ test("ducking: once prepared, the volume moves within one tool round trip of the
     await win.ducker.setCapturing("dictation", true);
     const ms = Date.now() - t0;
     assert.strictEqual(fake.devices["{0.0.0.00000000}.{x}"].volume, 0.1);
-    assert.ok(ms < START / 3, `take ${take}: Windows lowered after ${ms} ms (budget ${START / 3} ms)`);
+    assert.ok(ms < WIN_BUDGET, `take ${take}: Windows lowered after ${ms} ms (budget ${WIN_BUDGET} ms)`);
     await win.ducker.setCapturing("dictation", false);
   }
   await win.ducker.shutdown();

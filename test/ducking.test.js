@@ -1171,3 +1171,32 @@ test("real OS: the Windows helper compiles once and answers repeat reads fast", 
     helper.close();
   }
 });
+
+// #369: the launch wiring is the fix — the tool must be started by init(), not
+// at the first take. main-lifecycle stubs ./ducking whole, so it is pinned here.
+test("ducking init(): starts the volume tool at launch and hands the call timeout to the backends", async (t) => {
+  const { withStubs } = require("./helpers/stub-modules");
+  const indexPath = require.resolve("../main/ducking/index");
+  const from = (spec) => require.resolve(spec, { paths: [path.dirname(indexPath)] });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-duck-init-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const calls = [];
+  const backend = { ...fakeBackend(), warm: async () => calls.push("warm"), probe: async () => calls.push("probe") };
+  let options = null;
+  const handlers = {};
+  const ducking = withStubs(
+    {
+      [from("electron")]: { app: { getPath: () => dir }, ipcMain: { handle: (ch, fn) => (handlers[ch] = fn) } },
+      [from("../settings")]: { get: () => ({ audio: { duckOtherAudio: true, duckLevelPercent: 20 } }) },
+      [from("../util/logger")]: { warn() {}, info() {} },
+      [from("./backends")]: { candidates: (platform, run, opts) => ((options = opts), [backend]) },
+    },
+    [indexPath],
+    () => require(indexPath)
+  );
+  ducking.init();
+  for (let i = 0; i < 50 && !calls.includes("warm"); i++) await new Promise((r) => setImmediate(r));
+  assert.deepStrictEqual(calls, ["probe", "warm"], "probed and warmed before any take");
+  assert.ok(Number.isFinite(options?.timeoutMs) && options.timeoutMs > 0, "the helper gets the per-call timeout");
+  await ducking.shutdown(100);
+});

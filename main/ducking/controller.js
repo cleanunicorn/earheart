@@ -342,7 +342,7 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
   function prepare() {
     if (closed) return chain;
     if (!config().enabled) {
-      chain = chain.then(release);
+      chain = chain.then(release).catch((err) => fail("unexpected", err));
       return chain;
     }
     return pick()

@@ -39,8 +39,9 @@
 
 const MARKER_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 // A probe that failed for a reason that can pass (the audio server not up yet
-// at login, a PowerShell start that timed out under load) is tried again after
-// this long; a missing tool or an unsupported platform is final.
+// at login, a PowerShell start that timed out under load) is tried again by the
+// next pick() — a take, getStatus, prepare — once this long has passed; a
+// missing tool or an unsupported platform is final.
 const PROBE_RETRY_MS = 30 * 1000;
 
 function createDucker({ backends, store, getConfig, logger = console, now = Date.now }) {

@@ -40,8 +40,9 @@ fade). What stands between the two is the volume tool, so the tool is started
 **at launch** (or when the setting is turned on), never at the first take, and
 a take issues the set after a single read of the output (#369). A start
 that fails for a reason that can pass (the audio server not up yet at login,
-a PowerShell start that timed out) is tried again at the next take after
-30 s; a tool that is not installed is not tried again:
+a PowerShell start that timed out) is tried again, at most once per 30 s,
+the next time anything needs the tool: a take, opening Settings, or turning
+the setting on. A tool that is not installed is not tried again:
 
 | OS | Before the set | Measured (set issued after "Listening…") |
 | --- | --- | --- |

@@ -8,12 +8,15 @@
 //   macOS    osascript (`get volume settings` / `set volume output volume`)
 //   Windows  PowerShell + inline C# over Core Audio's IAudioEndpointVolume
 //
-// The commands are argv arrays run through execFile with a timeout; nothing
-// is ever interpolated into a shell string. Values that reach a script (a
-// device id, a level) go in through argv or the environment and are validated
-// first.
+// On Linux and macOS the commands are argv arrays run through execFile with a
+// timeout. On Windows one long-lived PowerShell (createWinHelper) takes each
+// request as a JSON line on its stdin. Nothing is ever interpolated into a
+// shell string or a script. Values that reach a tool (a device id, a level)
+// go in through argv or as JSON data, and are validated first.
 //
-// Interface (everything async; `run(cmd, args, opts)` resolves to stdout):
+// Interface (everything async; the Linux and macOS backends are built from
+// `run(cmd, args, opts)`, which resolves to stdout; the Windows backend from
+// the helper):
 //   name                 "pactl" | "wpctl" | "osascript" | "powershell"
 //   probe()              resolves when the tool answers; rejects with a reason
 //   read(device?)        the default device (no argument) or that device:

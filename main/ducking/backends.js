@@ -33,7 +33,11 @@
 //                        write landing, within the tool's own rounding — and
 //                        not someone else's change in between
 //   write(device, raw)   sets it and resolves to read(device) afterwards, or
-//                        null when the device is gone
+//                        null when the device is gone. Not addressable
+//                        (macOS): it sets whichever device is the default,
+//                        never resolves null, and the readback's `device`
+//                        names the device that took the set — callers compare
+//                        it with the one they meant
 //   addressable          false when read(device)/write(device) can only reach
 //                        the current default device (macOS): read(device)
 //                        then returns whichever device is the default

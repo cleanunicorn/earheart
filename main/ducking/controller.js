@@ -250,19 +250,24 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
       return;
     }
     if (!after) {
-      // Nothing was written: the device is gone, or (macOS) another device
-      // became the default before the set.
+      // Nothing was written: the device is gone.
       clearMarker();
       return skip("the output device changed");
     }
     if (after.device !== cur.device) {
-      // The set landed, then the default moved on before the readback
-      // (macOS). Hold what was asked for and keep the marker: the restore
-      // finds the device "elsewhere" and leaves it to be recovered when back.
+      // macOS: the default moved between the read and the readback. If it
+      // moved after the set, the lowered device is ours and comes back when
+      // it is the default again (the marker stays; the restore finds it
+      // "elsewhere"). If it moved before the set, the NEW output took the
+      // lowered level, and its own level before was never read, so nothing
+      // can put it back safely (writing the old output's level onto, say,
+      // headphones could be far too loud). Hold the original either way, and
+      // say so: a quieter new output is Earheart's doing, not a fault.
       held = { device: cur.device, prior: cur.raw, target: targetRaw };
       status.state = "lowered";
       status.detail = "";
-      status.lastError = "";
+      status.lastError = "the output switched while it was being lowered; if the new output is quieter, set its volume back by hand";
+      logger.warn?.(`audio ducking: ${status.lastError}`);
       return;
     }
     if (!b.matches(after.raw, targetRaw)) {

@@ -1058,6 +1058,34 @@ test("Windows backend + controller: the helper starts at prepare(), is reused by
   assert.strictEqual(fake.spawned[1].killed, true, "quit lets it go");
 });
 
+test("macOS backend + controller: a switch between the lowering's read and its set lowers the new output — the original is held, and Settings says so", async () => {
+  const tools = fakeMacTools();
+  const backend = b.createMacBackend(tools.run);
+  const { ducker, store } = setup({ backend });
+  const read = backend.read;
+  backend.read = async (...a) => {
+    const r = await read(...a);
+    tools.def = "AirPods"; // the user switches right after the read
+    backend.read = read;
+    return r;
+  };
+  await ducker.setCapturing("dictation", true);
+  assert.strictEqual(tools.volumes.AirPods, 10, "the set took the output that was the default when it landed");
+  assert.strictEqual(tools.volumes.Speakers, 50);
+  const status = await ducker.getStatus();
+  assert.strictEqual(status.state, "lowered");
+  assert.match(status.lastError, /switched while it was being lowered/);
+  assert.strictEqual(store.peek()?.device, "Speakers|");
+  await ducker.setCapturing("dictation", false);
+  // AirPods' own level before was never read: it is left quiet (safe) rather
+  // than set to Speakers' level (possibly far too loud in headphones).
+  assert.strictEqual(tools.volumes.AirPods, 10);
+  tools.def = "Speakers";
+  await ducker.recover();
+  assert.strictEqual(tools.volumes.Speakers, 50, "Speakers was never lowered: left as is");
+  assert.strictEqual(store.peek(), null);
+});
+
 // #369: what the user hears is the set, so this measures the time from the
 // first samples (setCapturing) to the volume actually moving — not just that
 // the caller returns at once. Each tool call costs what it does on a real

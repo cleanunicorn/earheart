@@ -112,11 +112,23 @@ default* device. If you switch outputs during a take, Earheart does not
 touch the new device; the original one stays lowered until it is the default
 again, and is restored then (on the next take or launch) if it still sits at
 the lowered level. Until then a new take does not lower anything, and
-Settings says why. osascript sets whichever device is the default when the
-set lands. A switch in the instant between Earheart's read and its set (the
-read ends with the set going out tens of milliseconds later) moves the new
-device. The readback names that device, so Earheart keeps the marker for
-the one it meant and restores it once it is back. Two outputs with the same name on the same transport
+Settings says why.
+
+osascript sets whichever device is the default when the set lands, and a
+switch can land in the tens of milliseconds between Earheart's read and its
+set:
+
+- **During the restore**, the new output gets the old one's level. The
+  readback names it, so Earheart keeps the marker and restores the original
+  once it is back.
+- **During the lowering**, the new output is lowered instead. Its level
+  before was never read, so Earheart leaves it quiet rather than guess (the
+  old output's level could be far too loud in headphones), and Settings says
+  the output switched mid-lowering: set it back by hand.
+
+Before #369 the same window existed, one `osascript` call later.
+
+Two outputs with the same name on the same transport
 (two identical USB DACs, say) can't be told apart, so with one of them as the
 default nothing is lowered and Settings says so.
 

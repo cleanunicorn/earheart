@@ -1,7 +1,8 @@
 // What "Lower other audio while recording" can do on this system, said
 // plainly, from main's `ducking:status` (main/ducking/controller.js): not
-// available (and why), the last failure, or what it did this take. Dictation
-// never depends on it. Shared by Settings and the setup wizard.
+// available (and why), the last failure, advice from the last take, or what
+// it did this take. Dictation never depends on it. Shared by Settings and
+// the setup wizard.
 const DuckingStatus = (() => {
   function text(status) {
     if (!status) return "";

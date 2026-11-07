@@ -9,7 +9,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { createDucker, createFileStore, MARKER_MAX_AGE_MS } = require("../main/ducking/controller");
+const { createDucker, createFileStore, MARKER_MAX_AGE_MS, PROBE_RETRY_MS } = require("../main/ducking/controller");
 const b = require("../main/ducking/backends");
 const { execFileAsync } = require("../main/util/exec-file");
 
@@ -453,6 +453,48 @@ test("ducking: no backend for the platform is unavailable, not an error", async 
   const status = await ducker.getStatus();
   assert.strictEqual(status.available, false);
   assert.match(status.reason, /not supported/);
+});
+
+test("ducking: a probe that failed at launch is tried again later; a missing tool is not", async () => {
+  // The audio server is not up yet (start-on-login): connection refused.
+  let clock = 1000;
+  const backend = fakeBackend();
+  let probes = 0;
+  let down = true;
+  backend.probe = async () => {
+    probes++;
+    if (down) throw new Error("Connection failure: Connection refused");
+  };
+  const { ducker } = setup({ backend, now: () => clock });
+  await ducker.prepare();
+  assert.strictEqual((await ducker.getStatus()).available, false);
+  down = false;
+  // Within the retry interval the failure stands (no probe per take)…
+  await ducker.setCapturing("dictation", true);
+  await ducker.setCapturing("dictation", false);
+  assert.strictEqual(probes, 1);
+  assert.strictEqual(vol(backend), 80);
+  // …after it, the next take probes again and lowers.
+  clock += PROBE_RETRY_MS;
+  await ducker.setCapturing("dictation", true);
+  assert.strictEqual(probes, 2);
+  assert.strictEqual(vol(backend), 16);
+  assert.strictEqual((await ducker.getStatus()).available, true);
+  await ducker.setCapturing("dictation", false);
+
+  // A tool that is not installed stays unavailable: no re-probe per take.
+  const missing = fakeBackend();
+  let missingProbes = 0;
+  missing.probe = async () => {
+    missingProbes++;
+    throw Object.assign(new Error("spawn pactl ENOENT"), { code: "ENOENT" });
+  };
+  const m = setup({ backend: missing, now: () => clock });
+  await m.ducker.prepare();
+  clock += PROBE_RETRY_MS * 10;
+  await m.ducker.setCapturing("dictation", true);
+  await m.ducker.prepare();
+  assert.strictEqual(missingProbes, 1);
 });
 
 test("ducking: access denied on the write leaves the volume, clears the marker and says so", async () => {

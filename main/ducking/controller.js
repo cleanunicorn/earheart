@@ -38,10 +38,15 @@
 // device is the default, and recovers it once the lowered device is back.
 
 const MARKER_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+// A probe that failed for a reason that can pass (the audio server not up yet
+// at login, a PowerShell start that timed out under load) is tried again after
+// this long; a missing tool or an unsupported platform is final.
+const PROBE_RETRY_MS = 30 * 1000;
 
 function createDucker({ backends, store, getConfig, logger = console, now = Date.now }) {
   const owners = new Set();
   let backendPromise = null;
+  let retryAt = null; // when a passing probe failure may be tried again
   let backend = null;
   let held = null; // { device, prior, target } while the output is lowered
   let skipped = false; // decided not to lower for the current capture span
@@ -57,11 +62,19 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
     lastError: "",
   };
 
-  // The first backend whose tool answers. Cached, including "none".
+  // The first backend whose tool answers. Cached, including "none" — but a
+  // failure that can pass is probed again after PROBE_RETRY_MS (#369: the probe
+  // now runs at launch, which with start-on-login can be before the audio
+  // server is up).
   function pick() {
+    if (backendPromise && retryAt !== null && now() >= retryAt) {
+      backendPromise = null;
+      retryAt = null;
+    }
     if (!backendPromise) {
       backendPromise = (async () => {
         let reason = backends.length ? "" : "not supported on this platform";
+        let final = true; // every candidate missing, or none at all
         for (const candidate of backends) {
           try {
             await candidate.probe();
@@ -71,11 +84,12 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
             status.reason = "";
             return candidate;
           } catch (err) {
-            reason = err?.code === "ENOENT" || /ENOENT/.test(err?.message || "")
-              ? `${candidate.name} not found`
-              : `${candidate.name}: ${err?.message || err}`;
+            const missing = err?.code === "ENOENT" || /ENOENT/.test(err?.message || "");
+            if (!missing) final = false;
+            reason = missing ? `${candidate.name} not found` : `${candidate.name}: ${err?.message || err}`;
           }
         }
+        if (!final) retryAt = now() + PROBE_RETRY_MS;
         status.available = false;
         status.reason = reason;
         logger.warn?.(`audio ducking unavailable: ${reason}`);
@@ -392,4 +406,4 @@ function createFileStore(file, fs = require("node:fs")) {
   };
 }
 
-module.exports = { createDucker, createFileStore, MARKER_MAX_AGE_MS };
+module.exports = { createDucker, createFileStore, MARKER_MAX_AGE_MS, PROBE_RETRY_MS };

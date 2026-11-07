@@ -38,7 +38,10 @@ The lowering starts with the first samples, the moment the overlay says
 "Listening…", and the volume drops in one step to the lowered level (no
 fade). What stands between the two is the volume tool, so the tool is started
 **at launch** (or when the setting is turned on), never at the first take, and
-a take issues the set after a single read of the output (#369):
+a take issues the set after a single read of the output (#369). A start
+that fails for a reason that can pass (the audio server not up yet at login,
+a PowerShell start that timed out) is tried again at the next take after
+30 s; a tool that is not installed is not tried again:
 
 | OS | Before the set | Measured (set issued after "Listening…") |
 | --- | --- | --- |

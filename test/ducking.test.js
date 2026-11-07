@@ -1021,6 +1021,55 @@ test("Windows helper: one PowerShell answers every request; errors, timeouts and
   dying.spawned[0].emit("exit", 1);
   await assert.rejects(pending, /error CS1002/);
 
+  // A late answer from the killed helper never answers the fresh one's request.
+  hang = true;
+  await assert.rejects(h.request("read"), /did not answer/);
+  hang = false;
+  const fresh = h.request("read");
+  while (flaky.spawned.length < 3 || !flaky.spawned[2].requests.length) await new Promise((r) => setImmediate(r));
+  const freshId = flaky.spawned[2].requests[0].id;
+  flaky.spawned[1].stdout.emit("data", `${JSON.stringify({ id: freshId, r: { device: "{0.0.0.00000000}.{stale}", volume: 0.9, muted: false } })}\n`);
+  // A mismatched id on the live helper is ignored too.
+  flaky.spawned[2].stdout.emit("data", `${JSON.stringify({ id: freshId + 100, r: { gone: true } })}\n`);
+  assert.deepStrictEqual(b.parseWinState(await fresh), { device: "{0.0.0.00000000}.{x}", volume: 0.5, muted: false, raw: 0.5 });
+
+  // close() while a request is in flight rejects it; the next one starts afresh.
+  const busy = fakeSpawn({ answer: () => undefined });
+  const c = b.createWinHelper(busy.spawn, { timeoutMs: 1000 });
+  const inFlight = c.request("read");
+  await new Promise((r) => setImmediate(r));
+  c.close();
+  await assert.rejects(inFlight, /helper closed/);
+  assert.strictEqual(busy.spawned[0].killed, true);
+
+  // powershell.exe missing: the spawn's error event rejects, and a later
+  // request tries a fresh process.
+  const enoent = fakeSpawn({ answer: () => undefined });
+  const e = b.createWinHelper(enoent.spawn, { timeoutMs: 1000 });
+  const first = e.request("read");
+  await new Promise((r) => setImmediate(r));
+  enoent.spawned[0].emit("error", Object.assign(new Error("spawn powershell.exe ENOENT"), { code: "ENOENT" }));
+  await assert.rejects(first, /ENOENT/);
+  const second = e.request("read");
+  await new Promise((r) => setImmediate(r));
+  assert.strictEqual(enoent.spawned.length, 2);
+  e.close();
+  await assert.rejects(second, /closed/);
+
+  // spawn() throwing synchronously rejects the request; the queue still works.
+  let throwOnce = true;
+  const ok = fakeSpawn();
+  const s2 = b.createWinHelper((...args) => {
+    if (throwOnce) {
+      throwOnce = false;
+      throw new Error("spawn EPERM");
+    }
+    return ok.spawn(...args);
+  });
+  await assert.rejects(s2.request("read"), /EPERM/);
+  assert.strictEqual(b.parseWinState(await s2.request("read")).volume, 0.5);
+  s2.close();
+
   // A broken pipe on stdin rejects the request instead of crashing the app.
   const piped = fakeSpawn({ answer: () => undefined });
   const p = b.createWinHelper(piped.spawn, { timeoutMs: 1000 });

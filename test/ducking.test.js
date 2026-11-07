@@ -1123,7 +1123,8 @@ test("macOS backend + controller: a switch between the lowering's read and its s
   assert.strictEqual(tools.volumes.Speakers, 50);
   const status = await ducker.getStatus();
   assert.strictEqual(status.state, "lowered");
-  assert.match(status.lastError, /switched while it was being lowered/);
+  assert.strictEqual(status.lastError, "", "a landed lowering is not a failure");
+  assert.match(status.notice, /switched while it was being lowered/);
   assert.strictEqual(store.peek()?.device, "Speakers|");
   await ducker.setCapturing("dictation", false);
   // AirPods' own level before was never read: it is left quiet (safe) rather
@@ -1133,6 +1134,12 @@ test("macOS backend + controller: a switch between the lowering's read and its s
   await ducker.recover();
   assert.strictEqual(tools.volumes.Speakers, 50, "Speakers was never lowered: left as is");
   assert.strictEqual(store.peek(), null);
+  assert.match((await ducker.getStatus()).notice, /switched/, "the advice outlives the restore");
+  // The next take starts afresh: a clean lowering clears it.
+  await ducker.setCapturing("dictation", true);
+  assert.strictEqual(tools.volumes.Speakers, 10);
+  assert.strictEqual((await ducker.getStatus()).notice, "");
+  await ducker.setCapturing("dictation", false);
 });
 
 test("ducking: prepare()/close() — warm failures are logged not thrown, off waits for the restore, and nothing starts after quit", async () => {

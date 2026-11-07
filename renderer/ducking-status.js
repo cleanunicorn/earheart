@@ -8,6 +8,9 @@ const DuckingStatus = (() => {
     const asUsual = "Dictation works as usual.";
     if (status.available === false) return `Not available on this system (${status.reason}). ${asUsual}`;
     if (status.lastError) return `Last attempt failed: ${status.lastError}. ${asUsual}`;
+    // Advice from the last take (a macOS output switch mid-lowering): a full
+    // sentence already, and not a failure.
+    if (status.notice) return status.notice;
     if (status.state === "lowered") return "Other audio is lowered right now.";
     if (status.state === "skipped" && status.detail) return `Not lowered this take: ${status.detail}.`;
     if (status.state === "pending" && status.detail) return `Not restored yet: ${status.detail}.`;

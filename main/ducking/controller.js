@@ -60,6 +60,10 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
     state: "idle", // idle | lowered | skipped | pending (a restore waits for its device)
     detail: "",
     lastError: "",
+    // Advice that outlives the take (not a failure): set when a macOS output
+    // switch landed mid-lowering, kept through the restore — when the user
+    // needs it — and cleared when the next lowering starts.
+    notice: "",
   };
 
   // The first backend whose tool answers. Cached, including "none" — but a
@@ -177,6 +181,7 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
   }
 
   async function lower() {
+    status.notice = "";
     const b = await pick();
     if (!b) {
       skip(status.reason);
@@ -266,8 +271,9 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
       held = { device: cur.device, prior: cur.raw, target: targetRaw };
       status.state = "lowered";
       status.detail = "";
-      status.lastError = "the output switched while it was being lowered; if the new output is quieter, set its volume back by hand";
-      logger.warn?.(`audio ducking: ${status.lastError}`);
+      status.lastError = "";
+      status.notice = "The output switched while it was being lowered, so the new output may be quieter now. Set its volume back by hand if so.";
+      logger.warn?.(`audio ducking: ${status.notice}`);
       return;
     }
     if (!b.matches(after.raw, targetRaw)) {

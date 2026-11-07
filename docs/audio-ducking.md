@@ -138,8 +138,10 @@ default nothing is lowered and Settings says so.
 
 The line under the level field says what the feature can do here:
 unavailable (and why — e.g. `pactl not found`), the last failure (e.g. access
-denied), whether the last take was skipped (muted, no volume control on the
-device), or which tool it uses. Dictation is the same either way.
+denied), advice from the last take (macOS: the output switched mid-lowering,
+kept until the next take starts), whether the last take was skipped (muted,
+no volume control on the device), or which tool it uses. Dictation is the
+same either way.
 
 ## Recovery
 

@@ -1086,6 +1086,54 @@ test("macOS backend + controller: a switch between the lowering's read and its s
   assert.strictEqual(store.peek(), null);
 });
 
+test("ducking: prepare()/close() — warm failures are logged not thrown, off waits for the restore, and nothing starts after quit", async () => {
+  // Turned off mid-take: the tool is let go only after the restore landed.
+  const events = [];
+  const backend = fakeBackend();
+  const write = backend.write;
+  backend.write = async (...a) => {
+    await new Promise((r) => setTimeout(r, 20));
+    events.push(`write:${a[1]}`);
+    return write(...a);
+  };
+  backend.close = () => events.push("close");
+  const { ducker, cfg } = setup({ backend });
+  await ducker.setCapturing("dictation", true);
+  cfg.enabled = false;
+  await ducker.refresh();
+  assert.deepStrictEqual(events, ["write:16", "write:80", "close"]);
+  ducker.close();
+  assert.deepStrictEqual(events.slice(-1), ["close"], "close() lets the tool go directly");
+
+  // warm() rejecting (antivirus blocking the compile, say) resolves and logs.
+  const infos = [];
+  const cold = fakeBackend();
+  cold.warm = async () => {
+    throw new Error("Add-Type blocked");
+  };
+  const warmFail = createDucker({ backends: [cold], store: memoryStore(), getConfig: () => ({ enabled: true }), logger: { info: (m) => infos.push(m), warn() {} } });
+  await warmFail.prepare();
+  assert.match(infos.join("\n"), /could not start fake ahead of time: Add-Type blocked/);
+  await warmFail.setCapturing("dictation", true);
+  assert.strictEqual(vol(cold), 16, "the take still lowers");
+
+  // No backend for the platform: prepare() resolves, nothing to start.
+  const none = createDucker({ backends: [], store: memoryStore(), getConfig: () => ({ enabled: true }), logger: {} });
+  await none.prepare();
+  assert.strictEqual((await none.getStatus()).available, false);
+
+  // After quit, prepare() starts nothing.
+  const late = fakeBackend();
+  let probes = 0;
+  late.probe = async () => {
+    probes++;
+  };
+  const q = setup({ backend: late });
+  await q.ducker.shutdown();
+  await q.ducker.prepare();
+  assert.strictEqual(probes, 0);
+});
+
 // #369: what the user hears is the set, so this measures the time from the
 // first samples (setCapturing) to the volume actually moving — not just that
 // the caller returns at once. Each tool call costs what it does on a real

@@ -66,9 +66,9 @@ set goes out within two lookups' time on macOS and half a PowerShell start
 on Windows (the old paths took about three lookups and two or more starts).
 
 The Windows helper is one idle `powershell.exe` that stays running while
-the setting is on (its memory use is not measured yet); it stops when the setting is turned off and when
-Earheart quits. If it hangs past the call timeout it is killed, and the next
-call starts a fresh one.
+the setting is on; it stops when the setting is turned off and when Earheart
+quits. If it hangs past the call timeout it is killed, and the next call
+starts a fresh one. Its memory use is not measured yet.
 
 ## What is never overwritten
 

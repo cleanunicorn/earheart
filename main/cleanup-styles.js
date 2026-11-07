@@ -5,7 +5,7 @@
 // exact words") instead of raw sampling numbers. Each stop bundles two things:
 //
 //   1. a prompt directive — the DOMINANT lever. How aggressively the model is
-//      allowed to edit (touch nothing vs. lightly rephrase) is driven far more
+//      allowed to edit (touch nothing vs. rewrite freely) is driven far more
 //      by the instructions than by sampling temperature.
 //   2. a sampling profile — temperature plus nucleus (topP) / top-k / min-p,
 //      which mostly control determinism and reinforce the directive.
@@ -43,15 +43,34 @@ const STYLES = [
   {
     id: "polished",
     label: "Polished",
-    hint: "Smooth it into clear, readable prose",
+    hint: "Rewrite it into clear, well-written prose",
+    // Deliberately no length bound here: Polished may reword at whatever
+    // length reads best. The shared base prompt (main/settings.js) still says
+    // the output is never longer than the input, and that line is left as it
+    // is on purpose, so the two pull against each other and the model weighs
+    // them. The hard limit is the generation cap (main/util/clean-budget.js):
+    // twice the transcript's tokens + 64 (outputRatio below). A rewrite that
+    // runs past it stops, and the pipeline delivers the raw transcript.
     directive:
       "Delete every filler word (um, uh, er, mm, you know, like, I mean) and " +
       "every false start — none may appear in your output. Collapse repeated " +
-      "words and restarted phrases into one clean version. Then produce " +
-      "readable prose: fix grammar and lightly rephrase awkward phrasing for " +
-      "clarity. Preserve the speaker's meaning, intent and approximate " +
-      "length — do not summarize, expand or invent details.",
-    sampling: { temperature: 0.4, topP: 1.0, topK: 0, minP: 0.02 },
+      "words and restarted phrases into one clean version. Then rewrite it " +
+      "as clear, well-written prose: fix grammar, restructure and reorder " +
+      "sentences, merge or split them, and replace vague, clumsy or " +
+      "repetitive wording with more precise words wherever that reads " +
+      "better. Do not stay close to the spoken wording. Keep every point, " +
+      "request and detail the speaker made and their intent — do not drop " +
+      "content, summarize, or invent details.",
+    // Freer than Clean on purpose: full temperature for varied wording, with
+    // top-k 10 and min-p 0.02 cutting off the unlikely tail so the variety
+    // stays on-topic. topP 1 leaves those two to do the filtering. Built-in
+    // engine only: a remote server gets temperature 1 with no tail cut-off,
+    // because top_k / min_p make strict servers 400 (see remoteSamplingBody).
+    sampling: { temperature: 1.0, topP: 1.0, topK: 10, minP: 0.02 },
+    // Room for a rewrite longer than the dictation: the built-in engine's
+    // output cap (and the context sized for it) is twice the transcript, the
+    // most main/util/clean-budget.js allows. Other styles get 1x.
+    outputRatio: 2,
   },
 ];
 
@@ -94,7 +113,9 @@ function promptTerms(cfg) {
   return [...new Set([...terms, ...aliasTerms(cfg.aliases)])];
 }
 
-// Resolve a cleanup config slice into the prompt + sampling actually used.
+// Resolve a cleanup config slice into the prompt + sampling actually used,
+// plus the output ratio that sizes the built-in engine's output budget (1
+// unless the style asks for more; clamped in main/util/clean-budget.js).
 // custom → the user's raw numbers and their base prompt untouched; otherwise
 // the chosen preset's sampling plus its directive appended to the base prompt.
 // The dictionary applies in every mode — preferring the user's spellings is
@@ -102,11 +123,11 @@ function promptTerms(cfg) {
 function resolveCleanup(cfg) {
   const base = (cfg.systemPrompt || "") + dictionaryDirective(promptTerms(cfg));
   if (cfg.style === "custom") {
-    return { systemPrompt: base, sampling: { ...(cfg.custom || {}) } };
+    return { systemPrompt: base, sampling: { ...(cfg.custom || {}) }, outputRatio: 1 };
   }
   const style = styleById(cfg.style);
   const systemPrompt = `${base}\n\nEditing style: ${style.directive}`;
-  return { systemPrompt, sampling: { ...style.sampling } };
+  return { systemPrompt, sampling: { ...style.sampling }, outputRatio: style.outputRatio || 1 };
 }
 
 // OpenAI-compatible chat body fields. Only the portable knobs go on the wire:

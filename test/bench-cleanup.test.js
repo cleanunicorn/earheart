@@ -125,9 +125,11 @@ test("plan: FLUENT under clean + polished, REPORTED under clean, every seed", as
   // The prompt is the app's own, through resolveCleanup.
   const fc = turns.find((t) => t.corpus === "fluent" && t.style === "clean");
   assert.deepStrictEqual(
-    { systemPrompt: fc.systemPrompt, sampling: fc.sampling },
+    { systemPrompt: fc.systemPrompt, sampling: fc.sampling, outputRatio: fc.outputRatio },
     resolveCleanup({ ...DEFAULTS.cleanup, style: "clean" })
   );
+  // ...and so is the output budget: Polished turns get the app's 2x cap.
+  assert.strictEqual(turns.find((t) => t.style === "polished").outputRatio, 2);
   assert.strictEqual(fc.input, FLUENT.raw);
   // SHORT is opt-in and adds its 12 inputs under clean.
   assert.strictEqual(plan({ corpora: ["fluent", "short"], seeds: [1], gpu: false }).length, 2 + 12);
@@ -422,7 +424,7 @@ test("benchModel: the CPU pass prompts as the app does, fresh each time, and sav
     const { onToken, seed, maxTokens, ...sampling } = options;
     assert.deepStrictEqual(sampling, cleanupSamplingOptions(t.sampling));
     assert.strictEqual(seed, t.seed);
-    assert.strictEqual(maxTokens, cleanMaxTokens(t.input.split(/\s+/).length));
+    assert.strictEqual(maxTokens, cleanMaxTokens(t.input.split(/\s+/).length, t.outputRatio));
   });
 
   // Every artifact, one raw file per clean.

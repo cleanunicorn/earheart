@@ -29,18 +29,19 @@ test("cleanup-arms: no two arms share a directive and a sampling profile", () =>
   }
 });
 
-test("cleanup-arms: today polished/prompt-only duplicates polished/new, and only it", () => {
-  // Polished sampling in main/cleanup-styles.js is back at the pre-sharpening
-  // profile, so "sharpened directive + old sampling" IS polished/new. If the
-  // sampling changes again this arm comes back on its own and this pin moves.
-  assert.deepStrictEqual(DROPPED_ARMS, [{ id: "polished/prompt-only", sameAs: "polished/new" }]);
-  assert.ok(!ids(ALL_ARMS).includes("polished/prompt-only"));
+test("cleanup-arms: today no arm is dropped; polished/prompt-only is its own experiment", () => {
+  // Polished sampling in main/cleanup-styles.js moved off the pre-sharpening
+  // profile (temperature 1, top-k 10), so "sharpened directive + old
+  // sampling" is no longer polished/new and runs as its own arm. If the
+  // sampling goes back, dedupeArms drops it again and this pin moves.
+  assert.deepStrictEqual(DROPPED_ARMS, []);
+  assert.ok(ids(ALL_ARMS).includes("polished/prompt-only"));
   const raw = Object.fromEntries(RAW_ARMS.map((a) => [a.id, a]));
   const a = raw["polished/prompt-only"];
   const b = raw["polished/new"];
-  // A dropped pair would have produced byte-identical requests.
+  // Same directive, different sampling on the wire.
   assert.strictEqual(cleanupUserTurn(`sys ${a.directive}`, "um hi"), cleanupUserTurn(`sys ${b.directive}`, "um hi"));
-  assert.deepStrictEqual(cleanupSamplingOptions(a.sampling), cleanupSamplingOptions(b.sampling));
+  assert.notDeepStrictEqual(cleanupSamplingOptions(a.sampling), cleanupSamplingOptions(b.sampling));
 });
 
 test("cleanup-arms: dedupeArms keeps the first of equal arms, ignoring sampling key order", () => {
@@ -71,6 +72,6 @@ test("cleanup-arms: selectArms validates ARMS instead of silently narrowing the 
     return true;
   });
   assert.throws(() => selectArms(ALL_ARMS, ","), /selects no arm/);
-  // A dropped duplicate is not selectable: asking for it names its twin.
-  assert.throws(() => selectArms(ALL_ARMS, "polished/prompt-only"), /polished\/prompt-only.*same as polished\/new/);
+  // (A dropped duplicate naming its twin is pinned on a synthetic table in the
+  // dedupeArms test above: today's real table drops nothing.)
 });

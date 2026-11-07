@@ -13,6 +13,15 @@ MacBook will differ, and the ranking is what carries over. The host was shared
 with other jobs during the run, so every timing sits next to the 1-minute load
 average it was taken under.
 
+> **Polished changed on 2026-11-07 (#378).** Every `polished` number on this
+> page was measured with the earlier profile: temperature 0.4, top-k off,
+> min-p 0.02, and a directive to "lightly rephrase" at "approximate length".
+> Polished now samples at temperature 1, top-k 10, min-p 0.02, asks for a
+> free rewrite, and may generate up to twice the transcript's tokens (the
+> other styles keep 1x). It has not been re-measured. `polished/old` vs `polished/new`
+> in [`scripts/cleanup-arms.js`](../scripts/cleanup-arms.js) is the comparison
+> to run.
+
 ## Result
 
 **No candidate clears the catalog bar, so none is added.** Two come close,
@@ -585,7 +594,7 @@ again.
   directive through `resolveCleanup` (`main/cleanup-styles.js`), wrapped in
   the single user turn the engine sends (`main/util/cleanup-turn.js`, shared
   with the worker), no system role, 4096-token context, the worker's
-  generation cap (`cleanMaxTokens`). No candidate-specific prompt, template or
+  generation cap (`cleanMaxTokens`, 2x the input for Polished). No candidate-specific prompt, template or
   sampling: a model that only wins under a different prompt is a follow-up.
 - **Inputs** (`scripts/dictation-corpus.js`): FLUENT (one long, mostly fluent
   dictation with 6 fillers — the shape where the shipped models copy the

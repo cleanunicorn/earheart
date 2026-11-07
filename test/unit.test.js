@@ -426,6 +426,30 @@ test("cleanup styles that promise a tidy result actually deliver it", () => {
   assert.match(verbatim.systemPrompt, /or repetition/i);
 });
 
+// Polished is the free end of the slider: it rewrites rather than tidies, so
+// it samples at full temperature with top-k 10 / min-p 0.02 keeping that
+// variety on-topic, and its directive asks for restructuring while still
+// forbidding dropped content. Remote servers get temperature only (top_p 1 is
+// the no-op, top-k / min-p are built-in-engine only).
+test("polished cleanup samples freely and asks for a real rewrite", () => {
+  const { remoteSamplingBody } = require("../main/cleanup-styles");
+  const { cleanupSamplingOptions } = require("../main/util/cleanup-turn");
+  const polished = resolveCleanup({ systemPrompt: "Base.", style: "polished" });
+  assert.deepStrictEqual(polished.sampling, { temperature: 1.0, topP: 1.0, topK: 10, minP: 0.02 });
+  assert.deepStrictEqual(cleanupSamplingOptions(polished.sampling), { temperature: 1, topP: 1, topK: 10, minP: 0.02 });
+  assert.deepStrictEqual(remoteSamplingBody(polished.sampling), { temperature: 1 });
+  assert.match(polished.systemPrompt, /restructure and reorder sentences/);
+  assert.match(polished.systemPrompt, /do not drop content, summarize, or invent details/);
+  // Only Polished asks for room to come out longer than the dictation.
+  assert.strictEqual(polished.outputRatio, 2);
+  for (const style of ["verbatim", "clean", "custom"]) {
+    assert.strictEqual(resolveCleanup({ style, custom: { temperature: 0.7 } }).outputRatio, 1, style);
+  }
+  // Each step along the slider samples at least as freely as the one before.
+  const temps = ["verbatim", "clean", "polished"].map((id) => resolveCleanup({ style: id }).sampling.temperature);
+  assert.deepStrictEqual([...temps].sort((a, b) => a - b), temps);
+});
+
 // #290: the backstop runs after the model was told to reproduce commands,
 // paths and strings exactly, so it must never edit them itself.
 test("stripStumbles leaves code, paths and quoted strings exactly as they are", () => {

@@ -2379,8 +2379,32 @@ test("the cleanup descriptor carries the transcript budget the worker sizes from
   assert.strictEqual(primes[0].payload.systemPrompt, resolveCleanup(cfg).systemPrompt);
   assert.ok(primes[0].payload.text.startsWith(primes[0].payload.systemPrompt));
   assert.ok(primes[0].payload.text.endsWith("so far"));
+  assert.strictEqual(primes[0].payload.outputRatio, 1);
   primes[0].resolve({ primed: true });
   return Promise.all([pending, primed]);
+});
+
+test("the cleanup facade sends the style's output ratio with every prime and clean", async () => {
+  // Polished's 2x output budget sizes the worker's context and its cap; a
+  // prime has to carry the same ratio as the clean, or the clean rebuilds the
+  // context and loses the primed prefix.
+  const { facade, hostsBySvc } = loadTwoHostFacade();
+  const cleanup = hostsBySvc["earheart-cleanup"];
+  const primes = holdLoads(cleanup, "prime-cleanup");
+  const cleans = holdLoads(cleanup, "clean");
+  const polished = { builtin: { model: registry.DEFAULT_CLEANUP_MODEL }, systemPrompt: "rules", style: "polished" };
+  const clean = { ...polished, style: "clean" };
+  const primed = facade.primeCleanup(polished, "so far");
+  const cleanedPolished = facade.clean("hello", polished);
+  const cleanedClean = facade.clean("hello", clean);
+  await new Promise(setImmediate);
+  assert.strictEqual(primes[0].payload.outputRatio, 2);
+  assert.strictEqual(cleans[0].payload.outputRatio, 2);
+  assert.strictEqual(cleans[1].payload.outputRatio, 1);
+  primes[0].resolve({ primed: true });
+  cleans[0].resolve("Hello.");
+  cleans[1].resolve("Hello.");
+  await Promise.all([primed, cleanedPolished, cleanedClean]);
 });
 
 // #204: the facade reads no settings; Max dictation length reaches it as an

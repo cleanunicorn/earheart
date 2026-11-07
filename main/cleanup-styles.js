@@ -49,8 +49,8 @@ const STYLES = [
     // the output is never longer than the input, and that line is left as it
     // is on purpose, so the two pull against each other and the model weighs
     // them. The hard limit is the generation cap (main/util/clean-budget.js):
-    // transcript tokens + 64. A rewrite that runs past it stops, and the
-    // pipeline delivers the raw transcript instead.
+    // twice the transcript's tokens + 64 (outputRatio below). A rewrite that
+    // runs past it stops, and the pipeline delivers the raw transcript.
     directive:
       "Delete every filler word (um, uh, er, mm, you know, like, I mean) and " +
       "every false start — none may appear in your output. Collapse repeated " +
@@ -67,6 +67,10 @@ const STYLES = [
     // engine only: a remote server gets temperature 1 with no tail cut-off,
     // because top_k / min_p make strict servers 400 (see remoteSamplingBody).
     sampling: { temperature: 1.0, topP: 1.0, topK: 10, minP: 0.02 },
+    // Room for a rewrite longer than the dictation: the built-in engine's
+    // output cap (and the context sized for it) is twice the transcript, the
+    // most main/util/clean-budget.js allows. Other styles get 1x.
+    outputRatio: 2,
   },
 ];
 
@@ -109,7 +113,9 @@ function promptTerms(cfg) {
   return [...new Set([...terms, ...aliasTerms(cfg.aliases)])];
 }
 
-// Resolve a cleanup config slice into the prompt + sampling actually used.
+// Resolve a cleanup config slice into the prompt + sampling actually used,
+// plus the output ratio that sizes the built-in engine's output budget (1
+// unless the style asks for more; clamped in main/util/clean-budget.js).
 // custom → the user's raw numbers and their base prompt untouched; otherwise
 // the chosen preset's sampling plus its directive appended to the base prompt.
 // The dictionary applies in every mode — preferring the user's spellings is
@@ -117,11 +123,11 @@ function promptTerms(cfg) {
 function resolveCleanup(cfg) {
   const base = (cfg.systemPrompt || "") + dictionaryDirective(promptTerms(cfg));
   if (cfg.style === "custom") {
-    return { systemPrompt: base, sampling: { ...(cfg.custom || {}) } };
+    return { systemPrompt: base, sampling: { ...(cfg.custom || {}) }, outputRatio: 1 };
   }
   const style = styleById(cfg.style);
   const systemPrompt = `${base}\n\nEditing style: ${style.directive}`;
-  return { systemPrompt, sampling: { ...style.sampling } };
+  return { systemPrompt, sampling: { ...style.sampling }, outputRatio: style.outputRatio || 1 };
 }
 
 // OpenAI-compatible chat body fields. Only the portable knobs go on the wire:

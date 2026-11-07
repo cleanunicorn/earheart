@@ -8,6 +8,12 @@
 // input. So the need is prompt + transcript + a little slack, and it grows at
 // twice the rate of the dictation.
 //
+// A style can allow more output than that: Polished rewrites freely and may
+// come out longer, so its style sets an output ratio (main/cleanup-styles.js)
+// and the output budget is the transcript times that ratio, never more than
+// MAX_OUTPUT_RATIO. The context need and the generation cap both take it, so
+// they stay derived from the same numbers.
+//
 // Getting this wrong is not a graceful failure: llama.cpp answers an overflow
 // by shifting the context, which drops the OLDEST tokens — the start of the
 // dictation — and returns a cleaned transcript missing words with nothing
@@ -22,14 +28,32 @@
 // Slack for the chat template's own wrapper tokens on top of prompt + output.
 const CLEAN_CONTEXT_SLACK_TOKENS = 64;
 
+// The most output a style may ask for, as a multiple of the transcript: every
+// extra multiple is that much more KV cache on a long dictation.
+const MAX_OUTPUT_RATIO = 2;
+
+/**
+ * Output tokens one cleanup turn may generate before the slack: the
+ * transcript times the style's output ratio. Anything but a finite ratio is
+ * 1; the ratio is clamped to [1, MAX_OUTPUT_RATIO].
+ * @param {number} transcriptTokens tokens in the transcript alone
+ * @param {number} [outputRatio] the style's output ratio
+ * @returns {number}
+ */
+function cleanOutputTokens(transcriptTokens, outputRatio = 1) {
+  const ratio = Number.isFinite(outputRatio) ? Math.min(MAX_OUTPUT_RATIO, Math.max(1, outputRatio)) : 1;
+  return Math.ceil(transcriptTokens * ratio);
+}
+
 /**
  * Context tokens one cleanup turn needs.
  * @param {number} promptTokens tokens in the full user turn (rules + transcript)
  * @param {number} transcriptTokens tokens in the transcript alone — the output budget
+ * @param {number} [outputRatio] the style's output ratio (cleanOutputTokens)
  * @returns {number}
  */
-function cleanContextNeed(promptTokens, transcriptTokens) {
-  return promptTokens + transcriptTokens + CLEAN_CONTEXT_SLACK_TOKENS;
+function cleanContextNeed(promptTokens, transcriptTokens, outputRatio = 1) {
+  return promptTokens + cleanOutputTokens(transcriptTokens, outputRatio) + CLEAN_CONTEXT_SLACK_TOKENS;
 }
 
 /**
@@ -48,10 +72,11 @@ function cleanContextNeed(promptTokens, transcriptTokens) {
  * main/engines/engine-worker.js clean) rather than as quiet truncation, and the
  * caller answers it by keeping the raw transcript.
  * @param {number} transcriptTokens tokens in the transcript alone
+ * @param {number} [outputRatio] the style's output ratio (cleanOutputTokens)
  * @returns {number}
  */
-function cleanMaxTokens(transcriptTokens) {
-  return transcriptTokens + CLEAN_CONTEXT_SLACK_TOKENS;
+function cleanMaxTokens(transcriptTokens, outputRatio = 1) {
+  return cleanOutputTokens(transcriptTokens, outputRatio) + CLEAN_CONTEXT_SLACK_TOKENS;
 }
 
 /**
@@ -120,10 +145,11 @@ function cleanTranscriptBudget(maxRecordingSeconds) {
  * allocation predictable.
  * @param {number} instructionTokens tokens in the instructions alone
  * @param {number} transcriptTokens the transcript budget
+ * @param {number} [outputRatio] the style's output ratio (cleanOutputTokens)
  * @returns {number} tokens, within [CLEAN_CONTEXT_MIN, CLEAN_CONTEXT_MAX]
  */
-function cleanContextSize(instructionTokens, transcriptTokens) {
-  const needed = cleanContextNeed(instructionTokens + transcriptTokens, transcriptTokens);
+function cleanContextSize(instructionTokens, transcriptTokens, outputRatio = 1) {
+  const needed = cleanContextNeed(instructionTokens + transcriptTokens, transcriptTokens, outputRatio);
   let size = CLEAN_CONTEXT_MIN;
   while (size < needed && size < CLEAN_CONTEXT_MAX) size *= 2;
   return size;
@@ -146,6 +172,8 @@ module.exports = {
   CLEAN_CONTEXT_MAX,
   CLEAN_RUNAWAY_MESSAGE,
   CLEAN_PROMPT_TOKENS,
+  MAX_OUTPUT_RATIO,
+  cleanOutputTokens,
   cleanContextNeed,
   cleanContextSize,
   cleanContextFor,

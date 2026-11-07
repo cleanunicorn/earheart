@@ -16,6 +16,8 @@ const {
   CLEAN_CONTEXT_MAX,
   CLEAN_RUNAWAY_MESSAGE,
   CLEAN_PROMPT_TOKENS,
+  MAX_OUTPUT_RATIO,
+  cleanOutputTokens,
   cleanContextNeed,
   cleanContextSize,
   cleanContextFor,
@@ -72,6 +74,34 @@ test("clean cap: scales with the transcript and never reaches zero", () => {
   assert.ok(cleanMaxTokens(1000) > cleanMaxTokens(100));
   assert.strictEqual(cleanMaxTokens(1000) - cleanMaxTokens(100), 900);
   assert.ok(cleanMaxTokens(0) > 0);
+});
+
+test("clean cap: a style's output ratio scales the cap and the context together", () => {
+  // Polished may come out longer than the dictation, so its style asks for 2x.
+  assert.strictEqual(MAX_OUTPUT_RATIO, 2);
+  assert.strictEqual(cleanMaxTokens(400, 2), 800 + CLEAN_CONTEXT_SLACK_TOKENS);
+  assert.strictEqual(cleanContextNeed(1100, 400, 2), 1100 + 800 + CLEAN_CONTEXT_SLACK_TOKENS);
+  // The cap still fits the context sized with the same ratio, at the boundary.
+  const transcriptTokens = 400;
+  const promptTokens = 700 + transcriptTokens;
+  assert.strictEqual(
+    promptTokens + cleanMaxTokens(transcriptTokens, 2),
+    cleanContextNeed(promptTokens, transcriptTokens, 2)
+  );
+  // A doubled output budget can need the next doubling step of context.
+  assert.strictEqual(cleanContextSize(700, 1500), 4096);
+  assert.strictEqual(cleanContextSize(700, 1500, 2), 8192);
+});
+
+test("clean cap: the output ratio is clamped to [1, MAX_OUTPUT_RATIO]", () => {
+  assert.strictEqual(cleanOutputTokens(400), 400, "omitted means 1x");
+  assert.strictEqual(cleanOutputTokens(400, 1.5), 600);
+  assert.strictEqual(cleanOutputTokens(401, 1.5), 602, "rounded up, never short");
+  assert.strictEqual(cleanOutputTokens(400, 5), 800, "never past 2x");
+  assert.strictEqual(cleanOutputTokens(400, 0.5), 400, "never below the transcript");
+  for (const bad of [undefined, null, NaN, Infinity, "2"]) {
+    assert.strictEqual(cleanOutputTokens(400, bad), 400, `${String(bad)} falls back to 1x`);
+  }
 });
 
 test("clean cap: the runaway message says what happened, once", () => {

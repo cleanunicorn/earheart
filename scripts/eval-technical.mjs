@@ -115,7 +115,7 @@ async function run(opts) {
   fs.writeFileSync(runsFile, "");
   for (const style of opts.styles) {
     const cfg = { ...DEFAULTS.cleanup, style, ...(opts.prompt ? { systemPrompt: opts.prompt } : {}) };
-    const { systemPrompt, sampling } = resolveCleanup(cfg);
+    const { systemPrompt, sampling, outputRatio } = resolveCleanup(cfg);
     for (const corpus of opts.corpora) {
       for (const [index, item] of CORPORA[corpus].entries()) {
         for (const seed of opts.seeds) {
@@ -124,7 +124,7 @@ async function run(opts) {
           const { responseText, stopReason } = await session.promptWithMeta(cleanupUserTurn(systemPrompt, item.text), {
             ...cleanupSamplingOptions(sampling),
             seed,
-            maxTokens: cleanMaxTokens(model.tokenize(item.text).length),
+            maxTokens: cleanMaxTokens(model.tokenize(item.text).length, outputRatio),
           });
           const output = (responseText || "").trim();
           const s = score(item, output, stopReason);

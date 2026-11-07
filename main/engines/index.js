@@ -264,10 +264,11 @@ async function ensureCleanup(modelId, opts) {
 // (cleanupModel); a prime and the clean it serves must pass the same value.
 async function primeCleanup(cfg, transcriptPrefix = "", opts) {
   const model = cleanupModel(cfg.builtin.model, opts);
-  const { systemPrompt } = resolveCleanup(cfg);
+  const { systemPrompt, outputRatio } = resolveCleanup(cfg);
   return cleanupRequest("prime-cleanup", {
     model,
     systemPrompt,
+    outputRatio,
     text: cleanupTurnPrefix(systemPrompt, transcriptPrefix),
   });
 }
@@ -287,7 +288,7 @@ function cancelClean() {
 async function clean(transcript, cfg, signal, { onProgress, maxRecordingSeconds } = {}) {
   if (signal?.aborted) throw new Error("aborted");
   const model = cleanupModel(cfg.builtin.model, { maxRecordingSeconds });
-  const { systemPrompt, sampling } = resolveCleanup(cfg);
+  const { systemPrompt, sampling, outputRatio } = resolveCleanup(cfg);
   const operationId = ++cleanupOperationId;
   // A caller's signal cancels its own turn. Pipeline cancelClean() still
   // cancels all outstanding previews/primes before authoritative final cleanup.
@@ -295,7 +296,7 @@ async function clean(transcript, cfg, signal, { onProgress, maxRecordingSeconds 
     if (cleanupResident) cleanupHost.request("cancel-clean", { operationId }).catch(() => {});
   };
   const pending = cleanupRequest("clean", {
-    model, operationId, transcript, systemPrompt, sampling,
+    model, operationId, transcript, systemPrompt, sampling, outputRatio,
   }, { onProgress });
   signal?.addEventListener("abort", abort, { once: true });
   if (signal?.aborted) abort();

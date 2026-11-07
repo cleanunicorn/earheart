@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Manual check for "lower other audio while recording" on the machine it runs
 // on: picks the platform backend the app would use (main/ducking/backends.js),
-// lowers the default output through the real controller, holds it, restores
-// it, and prints the volume at each step. Plain Node — no Electron, no
-// settings, nothing persisted (the marker lives in memory).
+// starts it, then runs two takes through the real controller — lowers the
+// default output, holds it (--hold seconds on the first take, 0.5 s on the
+// second), restores it — and prints the volume at each step. Plain Node — no
+// Electron, no settings, nothing persisted (the marker lives in memory).
 //
 //   node scripts/ducking-check.js [--level=20] [--hold=3] [--backend=wpctl]
 //

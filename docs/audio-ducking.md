@@ -160,7 +160,7 @@ until the set was issued and confirmed. It exits 1 if the volume after
 differs from the one before. Play some audio to hear it.
 
 ```sh
-node scripts/ducking-check.js                 # 20%, hold 3 s
+node scripts/ducking-check.js                 # 20%, first take held 3 s
 node scripts/ducking-check.js --level=50 --hold=5
 node scripts/ducking-check.js --backend=wpctl  # Linux: force wpctl
 ```

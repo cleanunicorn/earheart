@@ -43,15 +43,21 @@ const STYLES = [
   {
     id: "polished",
     label: "Polished",
-    hint: "Smooth it into clear, readable prose",
+    hint: "Rewrite it into clear, well-written prose",
     directive:
       "Delete every filler word (um, uh, er, mm, you know, like, I mean) and " +
       "every false start — none may appear in your output. Collapse repeated " +
-      "words and restarted phrases into one clean version. Then produce " +
-      "readable prose: fix grammar and lightly rephrase awkward phrasing for " +
-      "clarity. Preserve the speaker's meaning, intent and approximate " +
-      "length — do not summarize, expand or invent details.",
-    sampling: { temperature: 0.4, topP: 1.0, topK: 0, minP: 0.02 },
+      "words and restarted phrases into one clean version. Then rewrite it " +
+      "as clear, well-written prose: fix grammar, restructure and reorder " +
+      "sentences, merge or split them, and replace vague, clumsy or " +
+      "repetitive wording with more precise words wherever that reads " +
+      "better. Do not stay close to the spoken wording. Keep every point, " +
+      "request and detail the speaker made and their intent — do not drop " +
+      "content, summarize, or invent details.",
+    // Freer than Clean on purpose: full temperature for varied wording, with
+    // top-k 10 and min-p 0.02 cutting off the unlikely tail so the variety
+    // stays on-topic. topP 1 leaves those two to do the filtering.
+    sampling: { temperature: 1.0, topP: 1.0, topK: 10, minP: 0.02 },
   },
 ];
 

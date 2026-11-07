@@ -13,6 +13,14 @@ MacBook will differ, and the ranking is what carries over. The host was shared
 with other jobs during the run, so every timing sits next to the 1-minute load
 average it was taken under.
 
+> **Polished changed on 2026-11-07 (#378).** Every `polished` number on this
+> page was measured with the earlier profile: temperature 0.4, top-k off,
+> min-p 0.02, and a directive to "lightly rephrase" at "approximate length".
+> Polished now samples at temperature 1, top-k 10, min-p 0.02 and asks for a
+> free rewrite. It has not been re-measured. `polished/old` vs `polished/new`
+> in [`scripts/cleanup-arms.js`](../scripts/cleanup-arms.js) is the comparison
+> to run.
+
 ## Result
 
 **No candidate clears the catalog bar, so none is added.** Two come close,

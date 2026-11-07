@@ -524,15 +524,10 @@ function createWinHelper(spawn, { timeoutMs = 15000 } = {}) {
     },
     close() {
       if (!child) return;
-      const proc = child;
-      child = null;
       try {
-        proc.stdin.end();
+        child.stdin.end();
       } catch {}
-      try {
-        proc.kill();
-      } catch {}
-      take()?.reject(new Error("PowerShell helper closed"));
+      drop(child, new Error("PowerShell helper closed"));
     },
     running: () => !!child,
   };

@@ -440,12 +440,13 @@ function createWinHelper(spawn, { timeoutMs = 15000 } = {}) {
   let nextId = 1;
   let queue = Promise.resolve();
 
-  function settle(fn, value) {
+  // The request in flight, now answered: its timer stopped, no longer current.
+  function take() {
     const c = current;
-    if (!c) return;
+    if (!c) return null;
     current = null;
     clearTimeout(c.timer);
-    fn === "resolve" ? c.resolve(value) : c.reject(value);
+    return c;
   }
 
   function drop(proc, err) {
@@ -454,7 +455,7 @@ function createWinHelper(spawn, { timeoutMs = 15000 } = {}) {
     try {
       proc.kill();
     } catch {}
-    settle("reject", err);
+    take()?.reject(err);
   }
 
   function start() {
@@ -477,7 +478,7 @@ function createWinHelper(spawn, { timeoutMs = 15000 } = {}) {
         } catch {
           continue; // not ours (a PowerShell warning, say)
         }
-        if (current && msg?.id === current.id) settle("resolve", msg.r);
+        if (current && msg?.id === current.id) take().resolve(msg.r);
       }
     });
     proc.stderr?.on("data", (chunk) => {
@@ -531,7 +532,7 @@ function createWinHelper(spawn, { timeoutMs = 15000 } = {}) {
       try {
         proc.kill();
       } catch {}
-      settle("reject", new Error("PowerShell helper closed"));
+      take()?.reject(new Error("PowerShell helper closed"));
     },
     running: () => !!child,
   };

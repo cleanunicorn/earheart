@@ -482,6 +482,50 @@ test("ducking: a probe that failed at launch is tried again later; a missing too
   assert.strictEqual((await ducker.getStatus()).available, true);
   await ducker.setCapturing("dictation", false);
 
+  // A probe that keeps failing re-probes at most once per interval, whoever
+  // asks (a take, Settings' status, prepare) — never once per call.
+  const stuck = fakeBackend();
+  let stuckProbes = 0;
+  stuck.probe = async () => {
+    stuckProbes++;
+    throw new Error("PowerShell did not answer within 15000 ms");
+  };
+  const st = setup({ backend: stuck, now: () => clock });
+  await st.ducker.prepare();
+  for (let i = 0; i < 3; i++) {
+    await st.ducker.getStatus();
+    await st.ducker.setCapturing("dictation", true);
+    await st.ducker.setCapturing("dictation", false);
+  }
+  assert.strictEqual(stuckProbes, 1, "inside the interval: no re-probe");
+  clock += PROBE_RETRY_MS;
+  await st.ducker.getStatus();
+  await st.ducker.prepare();
+  assert.strictEqual(stuckProbes, 2, "one re-probe after it");
+  clock += PROBE_RETRY_MS - 1;
+  await st.ducker.getStatus();
+  assert.strictEqual(stuckProbes, 2, "the failed re-probe set a new interval");
+
+  // One candidate missing and another failing for a reason that can pass
+  // (pactl absent, wpctl's server not up): not final.
+  const absent = fakeBackend({ name: "pactl" });
+  absent.probe = async () => {
+    throw Object.assign(new Error("spawn pactl ENOENT"), { code: "ENOENT" });
+  };
+  const notUp = fakeBackend({ name: "wpctl" });
+  let notUpProbes = 0;
+  notUp.probe = async () => {
+    if (++notUpProbes === 1) throw new Error("Could not connect to PipeWire");
+  };
+  const mixed = createDucker({ backends: [absent, notUp], store: memoryStore(), getConfig: () => ({ enabled: true, levelPercent: 20 }), logger: {}, now: () => clock });
+  await mixed.prepare();
+  assert.strictEqual((await mixed.getStatus()).available, false);
+  clock += PROBE_RETRY_MS;
+  await mixed.setCapturing("dictation", true);
+  assert.strictEqual((await mixed.getStatus()).mechanism, "wpctl");
+  assert.strictEqual(vol(notUp), 16);
+  await mixed.setCapturing("dictation", false);
+
   // A tool that is not installed stays unavailable: no re-probe per take.
   const missing = fakeBackend();
   let missingProbes = 0;

@@ -32,6 +32,39 @@ setup continues; Finish setup saves the choice, and Settings shows it.
 Opening the microphone is not enough: if the mic never delivers audio (a
 permission prompt, a dead device), nothing is lowered.
 
+## How fast it lowers
+
+The lowering starts with the first samples, the moment the overlay says
+"Listening…", and the volume drops in one step to the lowered level (no
+fade). What stands between the two is the volume tool, so the tool is started
+**at launch** (or when the setting is turned on), never at the first take, and
+a take issues the set after a single read of the output (#369):
+
+| OS | Before the set | Measured (set issued after "Listening…") |
+| --- | --- | --- |
+| Linux | `pactl` default sink, then volume + mute in parallel (`wpctl`: inspect, get-volume) | pactl 11–12 ms, wpctl 17–20 ms (was 14–22 / 17–27 ms) |
+| Windows | one request to the PowerShell helper, already running | not measured on a real machine yet |
+| macOS | `system_profiler` (default device) alongside `osascript` (volume) | not measured on a real machine yet |
+
+Linux was measured with `scripts/ducking-check.js` (below) on the machine
+recorded there. Before #369, Windows started PowerShell and compiled the
+Core Audio shim on every call — a probe, a read and a write before the volume
+moved, ~1–2 s each — and macOS ran `system_profiler` twice (plus a probe on
+the first take) before the set. Modelled with those per-call costs
+(PowerShell 1.5 s, `system_profiler` 0.6 s, `osascript` 0.08 s), the set went
+out after 3.0 s (4.5 s on the first take) on Windows and 1.4–1.5 s on macOS; now
+10 ms and 0.7 s. macOS still pays one `system_profiler` run: it is the only
+way to name the default device without a native module, and the restore
+needs that name.
+
+`test/ducking.test.js` pins this: once prepared, the set must go out within
+1.5 device lookups on macOS and well under one PowerShell start on Windows.
+
+The Windows helper is one idle `powershell.exe` that stays running while
+the setting is on (its memory use is not measured yet); it stops when the setting is turned off and when
+Earheart quits. If it hangs past the call timeout it is killed, and the next
+call starts a fresh one.
+
 ## What is never overwritten
 
 - **Muted output** stays muted, and its volume is never touched. Muting
@@ -60,22 +93,27 @@ it is the system output's master volume, for the length of the capture.
 
 ## Per-OS mechanism
 
-All commands run with `execFile` (argv, no shell), with a timeout, in the
-background — a slow or failing tool never delays a dictation.
+All commands run with `execFile` (argv, no shell), or on Windows through
+the helper's stdin, with a timeout, in the background. A slow or failing tool
+never delays a dictation.
 
 | OS | Tool | Device identity | Notes |
 | --- | --- | --- | --- |
 | Linux | `pactl` (PulseAudio, or PipeWire through pipewire-pulse) | sink name | Preferred: keeps the per-channel balance. Run with `LC_ALL=C`. |
 | Linux | `wpctl` (PipeWire/WirePlumber) | node id + `node.name` | Used when `pactl` is missing. Sets all channels to one level. |
-| macOS | `osascript` (`get volume settings`, `set volume output volume`) | `system_profiler SPAudioDataType -json` default output (name + transport) | No permission prompt. osascript only reaches the default device, see below. |
-| Windows | PowerShell + inline C# over Core Audio `IAudioEndpointVolume` | endpoint id | Default render endpoint, multimedia role. Values passed through environment variables. ~1–2 s per call (the shim compiles each time). |
+| macOS | `osascript` (`get volume settings`, `set volume output volume`) | `system_profiler SPAudioDataType -json` default output (name + transport) | No permission prompt. osascript only reaches the default device, see below. The two run in parallel. |
+| Windows | PowerShell + inline C# over Core Audio `IAudioEndpointVolume` | endpoint id | Default render endpoint, multimedia role. One long-lived helper: the shim compiles once (~1–2 s, at launch), then each request is a validated JSON line on stdin, answered in milliseconds. |
 
 **macOS and device switches.** osascript can only change the *current
 default* device. If you switch outputs during a take, Earheart does not
 touch the new device; the original one stays lowered until it is the default
 again, and is restored then (on the next take or launch) if it still sits at
 the lowered level. Until then a new take does not lower anything, and
-Settings says why. Two outputs with the same name on the same transport
+Settings says why. osascript sets whichever device is the default when the
+set lands. A switch in the instant between Earheart's read and its set (the
+read ends with the set going out tens of milliseconds later) moves the new
+device. The readback names that device, so Earheart keeps the marker for
+the one it meant and restores it once it is back. Two outputs with the same name on the same transport
 (two identical USB DACs, say) can't be told apart, so with one of them as the
 default nothing is lowered and Settings says so.
 
@@ -98,9 +136,11 @@ writing.
 ## Checking it by hand
 
 `scripts/ducking-check.js` runs the real backend and controller (no Electron,
-nothing persisted): it lowers the default output, holds it, restores it, and
-prints the volume at each step. It exits 1 if the volume after differs from
-the one before. Play some audio to hear it.
+nothing persisted): it starts the tool, lowers the default output twice,
+restores it, and prints the volume at each step. It also prints how long
+starting the tool took, and for each take how long from the first samples
+until the set was issued and confirmed. It exits 1 if the volume after
+differs from the one before. Play some audio to hear it.
 
 ```sh
 node scripts/ducking-check.js                 # 20%, hold 3 s
@@ -118,12 +158,18 @@ Recorded on Linux 6.17, PipeWire 1.6.2 (`pactl 17.0`, dummy `auto_null` sink),
 | pactl, sink muted | 100%, muted | untouched ("output is muted, left as is") | 100%, muted |
 | pactl, set to 45% mid-take | 100% | 20% | 45% kept ("left the volume as is (changed)") |
 
+Timing, same machine, 2026-11-07 (#369): pactl started in 8 ms, set issued
+11 / 12 ms after the first samples (takes 1 / 2), confirmed at 23 / 24 ms;
+wpctl started in 17 ms, set issued 20 / 17 ms, confirmed at 44 / 44 ms.
+
 **macOS and Windows: needs manual verification.** On each:
 
 1. Play audio. Run `node scripts/ducking-check.js --hold=5` from a checkout
    (`make install` first). Expect `backend: osascript` / `backend: powershell`,
    the volume dropping to ~20% for 5 s, then `OK: restored to the volume
-   before`.
+   before`. Note the `tool started in` and both `set issued … ms` lines: on
+   Windows the takes should be tens of milliseconds (the start is the slow
+   part, paid once); on macOS about one `system_profiler` run.
 2. Mute the output, run it again: expect `not lowered: output is muted` and
    the output still muted afterwards.
 3. Run with `--hold=10` and move the volume slider during the hold: expect the

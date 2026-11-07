@@ -784,47 +784,90 @@ test("macOS backend + controller: with twin outputs nothing is lowered, the stat
   assert.strictEqual(store.peek(), null);
 });
 
-test("macOS backend: refuses to write when another device became the default", async () => {
-  let def = "Speakers";
-  let volume = 50;
-  const run = async (cmd, args) => {
+// A system_profiler + osascript double: `def` is the default output, each
+// tool takes `cost` ms, and `calls` records what ran in order (with "set"
+// marking the moment the volume moved).
+function fakeMacTools({ cost = { system_profiler: 0, osascript: 0 } } = {}) {
+  const tools = { def: "Speakers", volumes: { Speakers: 50, AirPods: 70 }, calls: [], setAt: null, t0: Date.now() };
+  tools.run = async (cmd, args) => {
+    const delay = cost[cmd] || 0;
     if (cmd === "system_profiler") {
+      tools.calls.push("system_profiler");
+      const def = tools.def; // what the profile sees is the default when it starts
+      if (delay) await new Promise((r) => setTimeout(r, delay));
       return JSON.stringify({ SPAudioDataType: [{ _items: [{ _name: def, coreaudio_default_audio_output_device: "spaudio_yes" }] }] });
     }
-    if (args.length === 2) return `output volume:${volume}, input volume:50, alert volume:100, output muted:false`;
-    volume = Number(args.at(-1));
+    if (args.length === 2) {
+      tools.calls.push("get");
+      if (delay) await new Promise((r) => setTimeout(r, delay));
+      return `output volume:${tools.volumes[tools.def]}, input volume:50, alert volume:100, output muted:false`;
+    }
+    if (delay) await new Promise((r) => setTimeout(r, delay));
+    tools.calls.push("set");
+    tools.setAt ??= Date.now() - tools.t0;
+    tools.volumes[tools.def] = Number(args.at(-1));
     return "";
   };
-  const backend = b.createMacBackend(run);
+  return tools;
+}
+
+test("macOS backend: the set goes out at once, and a switch before it shows in the readback", async () => {
+  const tools = fakeMacTools();
+  const backend = b.createMacBackend(tools.run);
   assert.strictEqual(backend.addressable, false);
   const cur = await backend.read();
   assert.strictEqual(cur.device, "Speakers|");
-  assert.strictEqual((await backend.write("Speakers|", 10)).raw, 10);
-  def = "AirPods";
-  assert.strictEqual(await backend.write("Speakers|", 50), null);
-  assert.strictEqual(volume, 10, "AirPods never got Speakers' level");
+  tools.calls.length = 0;
+  assert.deepStrictEqual(await backend.write("Speakers|", 10), { device: "Speakers|", volume: 0.1, muted: false, raw: 10 });
+  assert.strictEqual(tools.calls[0], "set", "no second device lookup before the set (#369)");
+  assert.strictEqual(tools.calls[1], "get", "the volume query starts right after the set");
+  tools.def = "AirPods";
+  const after = await backend.write("Speakers|", 50);
+  assert.strictEqual(after.device, "AirPods|", "the readback names the device that took the set");
   await assert.rejects(b.createMacBackend(async (c) => (c === "system_profiler" ? "{}" : "")).read(), /no default output/);
 });
 
-test("PowerShell: fixed encoded script, values only through validated environment variables", () => {
-  const [cmd, args, opts] = b.winCommand("set", "{0.0.0.00000000}.{c3a1f2e4-1111-2222-3333-444455556666}", 0.16);
+test("macOS backend + controller: a switch between the restore's read and its set keeps the marker, and the original is restored once back", async () => {
+  const tools = fakeMacTools();
+  const backend = b.createMacBackend(tools.run);
+  const { ducker, store } = setup({ backend });
+  await ducker.setCapturing("dictation", true);
+  assert.strictEqual(tools.volumes.Speakers, 10);
+  // The user switches outputs right after the restore read Speakers.
+  const read = backend.read;
+  backend.read = async (...a) => {
+    const r = await read(...a);
+    tools.def = "AirPods";
+    backend.read = read;
+    return r;
+  };
+  await ducker.setCapturing("dictation", false);
+  assert.strictEqual(tools.volumes.AirPods, 50, "the race the set can't see: AirPods got Speakers' level");
+  assert.strictEqual(store.peek()?.device, "Speakers|", "marker kept for the device that is still lowered");
+  assert.strictEqual((await ducker.getStatus()).state, "pending");
+  tools.def = "Speakers";
+  await ducker.recover();
+  assert.strictEqual(tools.volumes.Speakers, 50, "restored once it is the default again");
+  assert.strictEqual(store.peek(), null);
+});
+
+test("PowerShell: fixed encoded helper script; requests are validated JSON lines, never script", () => {
+  const [cmd, args] = b.WIN_HELPER;
   assert.strictEqual(cmd, "powershell.exe");
   assert.deepStrictEqual(args.slice(0, -1), ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand"]);
   assert.strictEqual(Buffer.from(args.at(-1), "base64").toString("utf16le"), b.WIN_SCRIPT);
-  assert.strictEqual(opts.windowsHide, true);
-  assert.strictEqual(opts.env.EARHEART_VOLUME_OP, "set");
-  assert.strictEqual(opts.env.EARHEART_VOLUME_DEVICE, "{0.0.0.00000000}.{c3a1f2e4-1111-2222-3333-444455556666}");
-  assert.strictEqual(opts.env.EARHEART_VOLUME_LEVEL, "0.1600");
-  // Read of the default device: no id, no level.
-  const [, , readOpts] = b.winCommand("read");
-  assert.strictEqual(readOpts.env.EARHEART_VOLUME_DEVICE, "");
-  assert.strictEqual(readOpts.env.EARHEART_VOLUME_LEVEL, "");
-  assert.throws(() => b.winCommand("read", "x'; Remove-Item C:\\ -Recurse"), /unexpected audio endpoint id/);
-  assert.throws(() => b.winCommand("set", "{0.0.0.00000000}.{a}", 1.5), /out of range/);
-  assert.throws(() => b.winCommand("set", "{0.0.0.00000000}.{a}", NaN), /out of range/);
-  // The script reads its inputs from the environment only.
-  assert.match(b.WIN_SCRIPT, /\$env:EARHEART_VOLUME_OP/);
-  assert.match(b.WIN_SCRIPT, /\$env:EARHEART_VOLUME_DEVICE/);
+  const id = "{0.0.0.00000000}.{c3a1f2e4-1111-2222-3333-444455556666}";
+  assert.deepStrictEqual(JSON.parse(b.winRequest(7, "set", id, 0.16)), { id: 7, op: "set", device: id, level: 0.16 });
+  assert.strictEqual(JSON.parse(b.winRequest(7, "set", id, 1 / 3)).level, 0.3333, "four decimals, as before");
+  assert.deepStrictEqual(JSON.parse(b.winRequest(8, "read")), { id: 8, op: "read", device: "" });
+  assert.ok(b.winRequest(8, "read").endsWith("\n") && !b.winRequest(8, "read").slice(0, -1).includes("\n"), "one line");
+  assert.throws(() => b.winRequest(1, "read", "x'; Remove-Item C:\\ -Recurse"), /unexpected audio endpoint id/);
+  assert.throws(() => b.winRequest(1, "read", 'a"}\n{"op":"set'), /unexpected audio endpoint id/);
+  assert.throws(() => b.winRequest(1, "set", "{0.0.0.00000000}.{a}", 1.5), /out of range/);
+  assert.throws(() => b.winRequest(1, "set", "{0.0.0.00000000}.{a}", NaN), /out of range/);
+  // The script parses each request as JSON and never evaluates it.
+  assert.match(b.WIN_SCRIPT, /ConvertFrom-Json \$line/);
+  assert.doesNotMatch(b.WIN_SCRIPT, /Invoke-Expression|iex /);
 });
 
 test("PowerShell: parses the endpoint state, a gone endpoint, and rejects anything else", () => {
@@ -839,15 +882,175 @@ test("PowerShell: parses the endpoint state, a gone endpoint, and rejects anythi
   assert.throws(() => b.parseWinState('{"device":1}'), /unexpected PowerShell output/);
 });
 
-test("Windows backend: a gone endpoint reads as null; scale stays within 0..1", async () => {
-  const backend = b.createWindowsBackend(async (cmd, args, opts) =>
-    opts.env.EARHEART_VOLUME_DEVICE ? '{"gone":true}' : '{"device":"{0.0.0.00000000}.{x}","volume":0.5,"muted":false}'
-  );
+// A stand-in for the PowerShell helper process: each spawn costs `startMs`
+// (PowerShell + compiling the shim), each request `requestMs`. `answer(req)`
+// is the result object; return undefined to never answer.
+function fakeSpawn({ startMs = 0, requestMs = 0, answer } = {}) {
+  const { EventEmitter } = require("node:events");
+  const spawned = [];
+  const devices = { "{0.0.0.00000000}.{x}": { volume: 0.5, muted: false } };
+  const fallback = (req) => {
+    const id = req.device || "{0.0.0.00000000}.{x}";
+    const d = devices[id];
+    if (!d) return { gone: true };
+    if (req.op === "set") d.volume = req.level;
+    return { device: id, ...d };
+  };
+  function spawn(cmd, args, opts) {
+    const child = new EventEmitter();
+    child.cmd = cmd;
+    child.args = args;
+    child.opts = opts;
+    child.requests = [];
+    child.killed = false;
+    child.stdout = new EventEmitter();
+    child.stdout.setEncoding = () => {};
+    child.stderr = new EventEmitter();
+    let ready = new Promise((r) => setTimeout(r, startMs));
+    child.stdin = new EventEmitter();
+    Object.assign(child.stdin, {
+      write(line) {
+        const req = JSON.parse(line);
+        child.requests.push(req);
+        ready = ready.then(() => new Promise((r) => setTimeout(r, requestMs))).then(() => {
+          if (child.killed) return;
+          const r = (answer || fallback)(req, fallback);
+          if (r === undefined) return;
+          // Noise first: only the line with the request's id answers it.
+          child.stdout.emit("data", "WARNING: some PowerShell chatter\n");
+          const text = JSON.stringify({ id: req.id, r });
+          child.stdout.emit("data", text.slice(0, 5));
+          child.stdout.emit("data", `${text.slice(5)}\r\n`);
+        });
+      },
+      end() {},
+    });
+    child.kill = () => {
+      child.killed = true;
+    };
+    spawned.push(child);
+    return child;
+  }
+  return { spawn, spawned, devices };
+}
+
+test("Windows helper: one PowerShell answers every request; errors, timeouts and exits come back as rejections", async () => {
+  const fake = fakeSpawn();
+  const helper = b.createWinHelper(fake.spawn, { timeoutMs: 200 });
+  const backend = b.createWindowsBackend(helper);
   assert.strictEqual((await backend.read()).volume, 0.5);
-  assert.strictEqual(await backend.read("{0.0.0.00000000}.{x}"), null);
+  assert.strictEqual(await backend.read("{0.0.0.00000000}.{gone}"), null);
+  assert.strictEqual((await backend.write("{0.0.0.00000000}.{x}", 0.1)).volume, 0.1);
+  // Concurrent callers are answered one at a time, in order.
+  const both = await Promise.all([backend.read(), backend.write("{0.0.0.00000000}.{x}", 0.2)]);
+  assert.deepStrictEqual(both.map((x) => x.volume), [0.1, 0.2]);
+  assert.strictEqual(fake.spawned.length, 1, "started once");
+  assert.strictEqual(fake.spawned[0].opts.windowsHide, true);
   assert.strictEqual(backend.scale(0.5, 0.2), 0.1);
   assert.ok(backend.same(0.1, 0.1 + 1e-9));
   assert.ok(!backend.same(0.1, 0.11));
+  // A refused request never reaches the process.
+  await assert.rejects(backend.read("x'; Remove-Item C:\\"), /unexpected audio endpoint id/);
+  assert.strictEqual(fake.spawned[0].requests.length, 5);
+  helper.close();
+  assert.strictEqual(fake.spawned[0].killed, true);
+  assert.strictEqual(helper.running(), false);
+
+  // The shim's own error (no endpoint, access denied) is the rejection's message.
+  const failing = b.createWindowsBackend(b.createWinHelper(fakeSpawn({ answer: () => ({ error: "Element not found. (0x80070490)" }) }).spawn));
+  await assert.rejects(failing.read(), /Element not found/);
+
+  // A hung helper is killed at the timeout; the next request starts a fresh one.
+  let hang = true;
+  const flaky = fakeSpawn({ answer: (req, fallback) => (hang ? undefined : fallback(req)) });
+  const h = b.createWinHelper(flaky.spawn, { timeoutMs: 50 });
+  await assert.rejects(h.request("read"), /did not answer within 50 ms/);
+  assert.strictEqual(flaky.spawned[0].killed, true);
+  hang = false;
+  assert.strictEqual(b.parseWinState(await h.request("read")).volume, 0.5);
+  assert.strictEqual(flaky.spawned.length, 2);
+
+  // The process dying mid-request rejects it with what PowerShell said.
+  const dying = fakeSpawn({ answer: () => undefined });
+  const d = b.createWinHelper(dying.spawn, { timeoutMs: 1000 });
+  const pending = d.request("read");
+  await new Promise((r) => setImmediate(r));
+  dying.spawned[0].stderr.emit("data", "Add-Type : error CS1002");
+  dying.spawned[0].emit("exit", 1);
+  await assert.rejects(pending, /error CS1002/);
+
+  // A broken pipe on stdin rejects the request instead of crashing the app.
+  const piped = fakeSpawn({ answer: () => undefined });
+  const p = b.createWinHelper(piped.spawn, { timeoutMs: 1000 });
+  const broken = p.request("read");
+  await new Promise((r) => setImmediate(r));
+  piped.spawned[0].stdin.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" }));
+  await assert.rejects(broken, /EPIPE/);
+  assert.strictEqual(piped.spawned[0].killed, true);
+  h.close();
+});
+
+test("Windows backend + controller: the helper starts at prepare(), is reused by every take, and stops when the setting is turned off", async () => {
+  const fake = fakeSpawn();
+  const backend = b.createWindowsBackend(b.createWinHelper(fake.spawn));
+  const { ducker, cfg } = setup({ backend });
+  await ducker.prepare();
+  assert.strictEqual(fake.spawned.length, 1, "running before the first take");
+  for (let take = 0; take < 2; take++) {
+    await ducker.setCapturing("dictation", true);
+    assert.strictEqual(fake.devices["{0.0.0.00000000}.{x}"].volume, 0.1);
+    await ducker.setCapturing("dictation", false);
+    assert.strictEqual(fake.devices["{0.0.0.00000000}.{x}"].volume, 0.5);
+  }
+  assert.strictEqual(fake.spawned.length, 1, "one helper for every take");
+  // Turned off mid-take: the restore lands first, then the helper goes.
+  await ducker.setCapturing("dictation", true);
+  cfg.enabled = false;
+  await ducker.refresh();
+  assert.strictEqual(fake.devices["{0.0.0.00000000}.{x}"].volume, 0.5);
+  assert.strictEqual(fake.spawned[0].killed, true);
+  cfg.enabled = true;
+  await ducker.refresh();
+  assert.strictEqual(fake.spawned.length, 2, "turned back on: started again ahead of the take");
+  await ducker.shutdown();
+  assert.strictEqual(fake.spawned[1].killed, true, "quit lets it go");
+});
+
+// #369: what the user hears is the set, so this measures the time from the
+// first samples (setCapturing) to the volume actually moving — not just that
+// the caller returns at once. Each tool call costs what it does on a real
+// machine, scaled down; the budget is one device lookup (+ the set) on macOS
+// and the helper's round trip on Windows. Before the fix these were two
+// system_profiler runs plus a probe on macOS (~2.4× the budget here), and
+// three PowerShell starts on Windows.
+test("ducking: once prepared, the volume moves within one tool round trip of the first samples (#369)", async () => {
+  const SP = 200; // system_profiler; osascript 20
+  const tools = fakeMacTools({ cost: { system_profiler: SP, osascript: 20 } });
+  const mac = setup({ backend: b.createMacBackend(tools.run) });
+  await mac.ducker.prepare();
+  for (let take = 1; take <= 2; take++) {
+    tools.calls.length = 0;
+    tools.setAt = null;
+    tools.t0 = Date.now();
+    await mac.ducker.setCapturing("dictation", true);
+    assert.deepStrictEqual(tools.calls.slice(0, tools.calls.indexOf("set")).sort(), ["get", "system_profiler"], `take ${take}: one lookup before the set`);
+    assert.ok(tools.setAt < SP * 1.5, `take ${take}: macOS set after ${tools.setAt} ms (budget ${SP * 1.5} ms)`);
+    await mac.ducker.setCapturing("dictation", false);
+  }
+
+  const START = 300; // starting PowerShell and compiling the shim
+  const fake = fakeSpawn({ startMs: START, requestMs: 2 });
+  const win = setup({ backend: b.createWindowsBackend(b.createWinHelper(fake.spawn)) });
+  await win.ducker.prepare();
+  for (let take = 1; take <= 2; take++) {
+    const t0 = Date.now();
+    await win.ducker.setCapturing("dictation", true);
+    const ms = Date.now() - t0;
+    assert.strictEqual(fake.devices["{0.0.0.00000000}.{x}"].volume, 0.1);
+    assert.ok(ms < START / 3, `take ${take}: Windows lowered after ${ms} ms (budget ${START / 3} ms)`);
+    await win.ducker.setCapturing("dictation", false);
+  }
+  await win.ducker.shutdown();
 });
 
 test("backend selection: pactl before wpctl on Linux, one each on macOS and Windows, none elsewhere", () => {
@@ -872,15 +1075,29 @@ test("real OS: the macOS commands run and parse", { skip: process.platform !== "
   assert.ok(device === null || typeof device === "string");
 });
 
-test("real OS: the Windows Core Audio shim compiles and reads", { skip: process.platform !== "win32" }, async () => {
-  const [cmd, args, opts] = b.winCommand("read");
+test("real OS: the Windows helper compiles once and answers repeat reads fast", { skip: process.platform !== "win32" }, async () => {
+  const helper = b.createWinHelper(require("node:child_process").spawn, { timeoutMs: 60000 });
+  const backend = b.createWindowsBackend(helper);
+  const timed = async () => {
+    const t0 = Date.now();
+    try {
+      const state = await backend.read();
+      assert.ok(state && state.volume >= 0 && state.volume <= 1, JSON.stringify(state));
+    } catch (err) {
+      // No audio endpoint on the runner (E_NOTFOUND 0x80070490) is fine; a
+      // compile or PowerShell parse error is not.
+      assert.doesNotMatch(err.message, /error CS\d+|ParserError|Cannot add type|unexpected PowerShell output|exited/, err.message);
+      assert.match(err.message, /0x8|HRESULT|Element not found|not found|no default output/i, err.message);
+    }
+    return Date.now() - t0;
+  };
   try {
-    const state = b.parseWinState(await execFileAsync(cmd, args, { ...opts, timeout: 60000 }));
-    assert.ok(state && state.volume >= 0 && state.volume <= 1, JSON.stringify(state));
-  } catch (err) {
-    // No audio endpoint on the runner (E_NOTFOUND 0x80070490) is fine; a
-    // compile or PowerShell parse error is not.
-    assert.doesNotMatch(err.message, /error CS\d+|ParserError|Cannot add type|unexpected PowerShell output/, err.message);
-    assert.match(err.message, /0x8|HRESULT|Element not found|not found/i, err.message);
+    const first = await timed();
+    const second = await timed();
+    const third = await timed();
+    console.log(`Windows helper: first read ${first} ms (start + compile), then ${second} ms, ${third} ms`);
+    assert.ok(Math.max(second, third) < 500, `repeat reads ${second}/${third} ms: the helper is not being reused`);
+  } finally {
+    helper.close();
   }
 });

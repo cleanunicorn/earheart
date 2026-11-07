@@ -17,6 +17,12 @@
 // what is wanted with what is held, so a burst of events collapses into the
 // last one.
 //
+// Speed (#369): the lowering starts when the first samples arrive — the
+// moment the overlay says "Listening…" — so only read() and write() may stand
+// between that and the quieter output. The tool is probed (and on Windows its
+// helper started) by prepare(), at launch and when the setting is turned on,
+// never at the first take.
+//
 // Ownership: the restore writes the prior volume only when the device still
 // reads exactly the level we set (in the tool's own units, see `same` in
 // backends.js). A user who moved the volume during the take keeps their
@@ -125,7 +131,10 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
     if (cur.device !== device) return "elsewhere";
     if (!backend.same(cur.raw, target)) return "changed";
     const after = await backend.write(device, prior);
-    return after ? "restored" : "gone";
+    if (!after) return "gone";
+    // macOS: the default moved between the read and the set. The marker stays
+    // and the lowered device is settled again once it is back.
+    return after.device === device ? "restored" : "elsewhere";
   }
 
   // A marker left by a crash, a failed restore, or a device switch on a
@@ -304,6 +313,24 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
     return chain;
   }
 
+  // Off with nothing left to restore: let a long-lived tool go (Windows).
+  function release() {
+    if (!wanted() && !held && !config().enabled) backend?.close?.();
+  }
+
+  // Have the tool ready before the first take (#369). Off: let it go once
+  // whatever is queued has settled.
+  function prepare() {
+    if (closed) return chain;
+    if (!config().enabled) {
+      chain = chain.then(release);
+      return chain;
+    }
+    return pick()
+      .then((b) => b?.warm?.())
+      .catch((err) => logger.info?.(`audio ducking: could not start ${backend?.name || "the volume tool"} ahead of time: ${err?.message || err}`));
+  }
+
   return {
     // Synchronous for the caller; returns the settled work for tests.
     setCapturing(owner, live) {
@@ -313,7 +340,9 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
       return kick();
     },
     // Settings changed (turned off mid-take restores; on mid-take lowers).
-    refresh: () => kick(),
+    refresh: () => Promise.all([kick(), prepare()]),
+    // Launch: start the tool now, when the feature is on.
+    prepare,
     // Launch: settle what a crash or a failed restore left behind.
     recover() {
       pending++;
@@ -323,11 +352,13 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
     // Quit: release everything and wait (bounded) for the restore.
     shutdown(timeoutMs = 2000) {
       owners.clear();
-      const done = kick();
+      const done = kick().finally(() => backend?.close?.());
       closed = true;
       let timer;
       return Promise.race([done, new Promise((r) => { timer = setTimeout(r, timeoutMs); })]).finally(() => clearTimeout(timer));
     },
+    // Exit: stop a long-lived tool (the Windows helper) now.
+    close: () => backend?.close?.(),
     // Whether quitting now would leave the output lowered.
     holding: () => !closed && (!!held || pending > 0),
     async getStatus() {

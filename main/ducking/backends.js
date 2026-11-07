@@ -34,6 +34,13 @@
 //   addressable          false when read(device)/write(device) can only reach
 //                        the current default device (macOS): read(device)
 //                        then returns whichever device is the default
+//   warm(), close()      optional: start the tool ahead of the first take, and
+//                        let it go (Windows' long-lived PowerShell helper)
+//
+// Speed (#369): a lowering is read() then write(), issued the moment the
+// first samples arrive, so every call before the set is time the user's
+// background audio stays loud. Independent queries run in parallel, and
+// write() sets first — the caller has just read the device.
 //
 // The pure builders and parsers are exported for the unit tests.
 
@@ -77,8 +84,12 @@ function createPactlBackend(run) {
     const sink = device ?? (await run(...pactl.defaultSink(), C_LOCALE)).trim();
     if (!sink) throw new Error("pactl reports no default output");
     try {
-      const channels = parsePactlVolume(await run(...pactl.getVolume(sink), C_LOCALE));
-      const muted = parsePactlMute(await run(...pactl.getMute(sink), C_LOCALE));
+      const [volumeOut, muteOut] = await Promise.all([
+        run(...pactl.getVolume(sink), C_LOCALE),
+        run(...pactl.getMute(sink), C_LOCALE),
+      ]);
+      const channels = parsePactlVolume(volumeOut);
+      const muted = parsePactlMute(muteOut);
       return { device: sink, volume: Math.max(...channels) / PACTL_NORM, muted, raw: channels };
     } catch (err) {
       if (device && isPactlGone(err)) return null;
@@ -234,17 +245,20 @@ function parseMacDefaultOutput(text) {
 }
 
 function createMacBackend(run) {
+  // system_profiler is the slow one (most of a second): the volume query
+  // runs alongside it.
   async function read() {
-    const device = parseMacDefaultOutput(await run(...osa.devices()));
+    const [profile, settings] = await Promise.all([run(...osa.devices()), run(...osa.get())]);
+    const device = parseMacDefaultOutput(profile);
     if (!device) throw new Error("macOS reports no default output device");
-    const { raw, volume, muted } = parseOsaVolume(await run(...osa.get()));
+    const { raw, volume, muted } = parseOsaVolume(settings);
     return { device, volume, muted, raw };
   }
   return {
     name: "osascript",
     // osascript only reaches the default device: read(device) reads whatever
-    // is the default now (its `device` says which), and write() is refused
-    // unless that is the device asked for.
+    // is the default now (its `device` says which), and write() sets whatever
+    // is the default and says which device that was afterwards.
     addressable: false,
     // The tool itself; a device problem (none, ambiguous) is read()'s to report.
     probe: async () => parseOsaVolume(await run(...osa.get())),
@@ -254,15 +268,19 @@ function createMacBackend(run) {
     // Many outputs snap to 1/16 steps (6.25 points): up to ~3 points of
     // rounding; a volume-key press moves a whole step and is not mistaken.
     matches: (got, asked) => Math.abs(got - asked) <= 3,
+    // Every caller has just read() the default device (lower, restore): the
+    // set goes out at once, without a second system_profiler (#369; that
+    // lookup cost most of a second and narrowed no window — a switch can land
+    // between its answer and the set just the same). A switch before the set
+    // shows up here: the readback names the device that is the default now,
+    // and the controller keeps the marker for the one it meant.
     async write(device, raw) {
-      const now = await read();
-      if (now.device !== device) return null;
       await run(...osa.set(raw));
-      // Volume first, right after the set: the slower device lookup must not
-      // widen the window in which a user's change could pass for ours.
-      const { raw: got, volume, muted } = parseOsaVolume(await run(...osa.get()));
-      const after = parseMacDefaultOutput(await run(...osa.devices()));
-      return { device: after, volume, muted, raw: got };
+      // The volume query starts right after the set (alongside the slower
+      // device lookup), so a user's change can't slip in behind ours.
+      const [settings, profile] = await Promise.all([run(...osa.get()), run(...osa.devices())]);
+      const { raw: got, volume, muted } = parseOsaVolume(settings);
+      return { device: parseMacDefaultOutput(profile), volume, muted, raw: got };
     },
   };
 }
@@ -271,8 +289,8 @@ function createMacBackend(run) {
 
 // Core Audio through COM interop. Only the vtable slots before the ones used
 // need to exist, in order; the placeholders stand for the methods skipped.
-// The op, device id and level come from the environment (set by execFile, so
-// no quoting), and the output is one JSON object.
+// It runs as one long-lived helper (createWinHelper): requests arrive as JSON
+// lines on stdin, and each answer is one JSON line.
 const WIN_SCRIPT = String.raw`
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
@@ -342,10 +360,25 @@ public static class EarheartVolume {
   }
 }
 '@
-if ($env:EARHEART_VOLUME_OP -eq 'set') {
-  [Console]::Out.Write([EarheartVolume]::Set($env:EARHEART_VOLUME_DEVICE, [float]::Parse($env:EARHEART_VOLUME_LEVEL, [System.Globalization.CultureInfo]::InvariantCulture)))
-} else {
-  [Console]::Out.Write([EarheartVolume]::Read($env:EARHEART_VOLUME_DEVICE))
+# One helper per app run (#369): the shim above compiles once, then each
+# request is one JSON line in and one out, a few milliseconds apiece. The
+# request is data, never script: ConvertFrom-Json, and the device id and level
+# were validated before they were sent. stdin closing (the app exiting) ends it.
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+while ($true) {
+  $line = [Console]::In.ReadLine()
+  if ($null -eq $line) { break }
+  $id = 0
+  try {
+    $req = ConvertFrom-Json $line
+    $id = [int]$req.id
+    if ($req.op -eq 'set') { $out = [EarheartVolume]::Set([string]$req.device, [float]$req.level) }
+    else { $out = [EarheartVolume]::Read([string]$req.device) }
+  } catch {
+    $out = '{"error":' + (ConvertTo-Json ([string]$_.Exception.Message) -Compress) + '}'
+  }
+  [Console]::Out.WriteLine('{"id":' + $id + ',"r":' + $out + '}')
+  [Console]::Out.Flush()
 }
 `;
 
@@ -355,31 +388,29 @@ const WIN_DEVICE_ID = /^[A-Za-z0-9{}.\-#_\\?&]{1,256}$/;
 
 const winEncoded = Buffer.from(WIN_SCRIPT, "utf16le").toString("base64");
 
-function winCommand(op, device, level) {
+const WIN_HELPER = [
+  "powershell.exe",
+  ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", winEncoded],
+];
+
+// One request line for the helper, validated: nothing else reaches PowerShell.
+function winRequest(id, op, device, level) {
   if (device && !WIN_DEVICE_ID.test(device)) throw new Error("refusing an unexpected audio endpoint id");
   if (op === "set" && !(Number.isFinite(level) && level >= 0 && level <= 1)) throw new Error("volume out of range");
-  return [
-    "powershell.exe",
-    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", winEncoded],
-    {
-      windowsHide: true,
-      env: {
-        ...process.env,
-        EARHEART_VOLUME_OP: op,
-        EARHEART_VOLUME_DEVICE: device || "",
-        EARHEART_VOLUME_LEVEL: op === "set" ? level.toFixed(4) : "",
-      },
-    },
-  ];
+  const req = { id, op: op === "set" ? "set" : "read", device: device || "" };
+  if (op === "set") req.level = Number(level.toFixed(4));
+  return `${JSON.stringify(req)}\n`;
 }
 
 function parseWinState(text) {
   let data;
   try {
-    data = JSON.parse(String(text).trim());
+    data = typeof text === "string" ? JSON.parse(text.trim()) : text;
   } catch {
     throw new Error(`unexpected PowerShell output: ${String(text).trim().slice(0, 80)}`);
   }
+  if (!data || typeof data !== "object") throw new Error("unexpected PowerShell output");
+  if (typeof data.error === "string") throw new Error(data.error);
   if (data.gone) return null;
   if (typeof data.device !== "string" || !Number.isFinite(data.volume) || typeof data.muted !== "boolean") {
     throw new Error("unexpected PowerShell output");
@@ -387,11 +418,120 @@ function parseWinState(text) {
   return { device: data.device, volume: data.volume, muted: data.muted, raw: data.volume };
 }
 
-function createWindowsBackend(run) {
-  const call = async (op, device, level) => {
-    const [cmd, args, opts] = winCommand(op, device, level);
-    return parseWinState(await run(cmd, args, opts));
+// The long-lived PowerShell behind the Windows backend (#369). Starting
+// PowerShell and compiling the shim costs ~1–2 s; a lowering used to pay it on
+// every call (probe, read, write: 3–5 s before the volume moved). Started
+// once — ahead of the first take, see warm() — it answers each request in
+// milliseconds. One request at a time; a request that times out kills the
+// process, and the next one starts a fresh helper. close() lets it go
+// (the feature turned off, quit); the next request starts it again.
+function createWinHelper(spawn, { timeoutMs = 15000 } = {}) {
+  let child = null;
+  let buf = "";
+  let stderr = "";
+  let current = null; // { id, resolve, reject, timer }
+  let nextId = 1;
+  let queue = Promise.resolve();
+
+  function settle(fn, value) {
+    const c = current;
+    if (!c) return;
+    current = null;
+    clearTimeout(c.timer);
+    fn === "resolve" ? c.resolve(value) : c.reject(value);
+  }
+
+  function drop(proc, err) {
+    if (child !== proc) return;
+    child = null;
+    try {
+      proc.kill();
+    } catch {}
+    settle("reject", err);
+  }
+
+  function start() {
+    const [cmd, args] = WIN_HELPER;
+    const proc = spawn(cmd, args, { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+    child = proc;
+    buf = "";
+    stderr = "";
+    proc.stdout.setEncoding?.("utf8");
+    proc.stdout.on("data", (chunk) => {
+      if (child !== proc) return;
+      buf += chunk;
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        let msg;
+        try {
+          msg = JSON.parse(line);
+        } catch {
+          continue; // not ours (a PowerShell warning, say)
+        }
+        if (current && msg?.id === current.id) settle("resolve", msg.r);
+      }
+    });
+    proc.stderr?.on("data", (chunk) => {
+      stderr = (stderr + chunk).slice(-2000);
+    });
+    proc.on("error", (err) => drop(proc, err));
+    // A write after PowerShell died (EPIPE) must not become an uncaught error.
+    proc.stdin.on?.("error", (err) => drop(proc, err));
+    proc.on("exit", (code) => drop(proc, new Error(stderr.trim() || `PowerShell exited (${code})`)));
+    // Never what keeps a process alive: the app quits, or a script exits, with
+    // the helper idle (stdin closing ends it).
+    proc.unref?.();
+    for (const s of [proc.stdin, proc.stdout, proc.stderr]) s?.unref?.();
+  }
+
+  function send(op, device, level) {
+    return new Promise((resolve, reject) => {
+      const id = nextId++;
+      const line = winRequest(id, op, device, level);
+      if (!child) start();
+      const proc = child;
+      current = {
+        id,
+        resolve,
+        reject,
+        timer: setTimeout(() => drop(proc, new Error(`PowerShell did not answer within ${timeoutMs} ms`)), timeoutMs),
+      };
+      try {
+        proc.stdin.write(line);
+      } catch (err) {
+        drop(proc, err);
+      }
+    });
+  }
+
+  return {
+    // Resolves to the request's raw result ({ device, volume, muted } |
+    // { gone } | { error }), parsed by parseWinState.
+    request(op, device, level) {
+      const result = queue.then(() => send(op, device, level));
+      queue = result.catch(() => {});
+      return result;
+    },
+    close() {
+      if (!child) return;
+      const proc = child;
+      child = null;
+      try {
+        proc.stdin.end();
+      } catch {}
+      try {
+        proc.kill();
+      } catch {}
+      settle("reject", new Error("PowerShell helper closed"));
+    },
+    running: () => !!child,
   };
+}
+
+function createWindowsBackend(helper) {
+  const call = async (op, device, level) => parseWinState(await helper.request(op, device, level));
   return {
     name: "powershell",
     addressable: true,
@@ -399,6 +539,9 @@ function createWindowsBackend(run) {
     // The level goes in with four decimals and comes back as a float32.
     matches: (got, asked) => Math.abs(got - asked) <= 1e-4,
     probe: () => call("read"),
+    // Start the helper (and compile the shim) ahead of the first take.
+    warm: () => call("read").then(() => {}),
+    close: () => helper.close(),
     async read(device) {
       const state = await call("read", device);
       if (!state && !device) throw new Error("no default output device");
@@ -413,9 +556,10 @@ function createWindowsBackend(run) {
 
 // The backends to try on `platform`, best first; the first whose probe answers
 // is used.
-function candidates(platform, run) {
+// `spawn` (child_process.spawn) starts the Windows helper.
+function candidates(platform, run, { spawn = require("node:child_process").spawn, timeoutMs } = {}) {
   if (platform === "darwin") return [createMacBackend(run)];
-  if (platform === "win32") return [createWindowsBackend(run)];
+  if (platform === "win32") return [createWindowsBackend(createWinHelper(spawn, { timeoutMs }))];
   if (platform === "linux") return [createPactlBackend(run), createWpctlBackend(run)];
   return [];
 }
@@ -429,7 +573,9 @@ module.exports = {
   pactl,
   wpctl,
   osa,
-  winCommand,
+  winRequest,
+  createWinHelper,
+  WIN_HELPER,
   parsePactlVolume,
   parsePactlMute,
   parseWpctlInspect,

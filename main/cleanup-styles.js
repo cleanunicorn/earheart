@@ -44,6 +44,13 @@ const STYLES = [
     id: "polished",
     label: "Polished",
     hint: "Rewrite it into clear, well-written prose",
+    // Deliberately no length bound here: Polished may reword at whatever
+    // length reads best. The shared base prompt (main/settings.js) still says
+    // the output is never longer than the input, and that line is left as it
+    // is on purpose, so the two pull against each other and the model weighs
+    // them. The hard limit is the generation cap (main/util/clean-budget.js):
+    // transcript tokens + 64. A rewrite that runs past it stops, and the
+    // pipeline delivers the raw transcript instead.
     directive:
       "Delete every filler word (um, uh, er, mm, you know, like, I mean) and " +
       "every false start — none may appear in your output. Collapse repeated " +

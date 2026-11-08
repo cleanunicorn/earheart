@@ -192,6 +192,11 @@ label, and opinions are welcome.
   of the typing time saved (against a typing speed you set, 40 WPM by
   default). Counts only, never your words, on this computer only; turn it
   off or reset it there. See [docs/usage-stats.md](docs/usage-stats.md).
+- **Formatting by destination.** Format a dictation by where it lands: exact
+  website rules (macOS Safari/Chromium browsers), application rules, and a
+  default, kept apart from the Verbatim/Clean/Polished slider. Unavailable
+  context falls back to the default and never blocks dictation. See
+  [docs/formatting-profiles.md](docs/formatting-profiles.md).
 - **Kept recordings (optional)** — opt in to keep each dictation's audio,
   encrypted with your OS keychain, then play, seek, export or retranscribe it
   from History. Off by default; 30 days and 1 GB unless you change them.

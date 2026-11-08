@@ -525,3 +525,29 @@ test("a saved light or dark appearance survives a restart (#348)", (t) => {
     assert.strictEqual(loadSettings(dir).get().appearance, value, "read back by a fresh load");
   }
 });
+
+test("formatting rules (#336): an older file gets the default, bad rules are dropped on load and save", (t) => {
+  const dir = makeSettingsDir(t);
+  const file = path.join(dir, "settings.json");
+  fs.writeFileSync(file, JSON.stringify({ hotkey: "Old" }));
+  assert.deepStrictEqual(loadSettings(dir).get().formatting, { defaultStyle: "standard", rules: [] });
+
+  fs.writeFileSync(file, JSON.stringify({
+    formatting: {
+      defaultStyle: "chat",
+      rules: [
+        { id: "a", scope: { type: "host", value: "https://www.GitHub.com/x" }, style: "code-safe" },
+        { id: "b", scope: { type: "host", value: "github.com" }, style: "email" },
+        { id: "c", scope: { type: "host", value: "*.evil.com" }, style: "email" },
+        "junk",
+      ],
+    },
+  }));
+  const settings = loadSettings(dir);
+  assert.deepStrictEqual(settings.get().formatting, {
+    defaultStyle: "chat",
+    rules: [{ id: "a", scope: { type: "host", value: "github.com" }, style: "code-safe" }],
+  });
+  settings.save({ ...settings.get(), formatting: { defaultStyle: "nope", rules: new Array(500).fill(null) } });
+  assert.deepStrictEqual(settings.get().formatting, { defaultStyle: "standard", rules: [] });
+});

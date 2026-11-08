@@ -596,6 +596,32 @@
           </div>
 
           <div class="card">
+            <div class="card-title">Formatting by destination</div>
+            <div class="field">
+              <label for="format-default">Default formatting</label>
+              <select id="format-default" aria-describedby="format-hint"></select>
+            </div>
+            <div class="field">
+              <span class="field-label" id="format-rules-label">Rules</span>
+              <div id="format-rules" role="list" aria-labelledby="format-rules-label"></div>
+              <div class="row">
+                <button id="format-add" class="ghost" type="button">Add rule</button>
+              </div>
+              <p id="format-hint" class="hint">
+                Capitalization and punctuation, chosen by where the text goes —
+                separate from how much the cleanup edits. A website rule
+                matches that exact site (<code>github.com</code>, not its
+                subdomains or look-alikes) and beats an application rule
+                (macOS bundle id, e.g. <code>com.apple.Terminal</code>), which
+                beats the default. Website names are read from Safari and
+                Chromium-based browsers on macOS only; elsewhere, or if
+                detection fails, the default is used. It applies when cleanup
+                is on. Only the site name is read, never the page.
+              </p>
+            </div>
+          </div>
+
+          <div class="card">
             <div class="card-title">System prompt</div>
             <div id="prompt-offer" class="prompt-offer" role="region" aria-labelledby="prompt-offer-title" hidden>
               <p>

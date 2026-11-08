@@ -2417,6 +2417,39 @@ app.whenReady().then(async () => {
         settings.save({ ...after, cleanup: { ...after.cleanup, enabled: beforeEdit.cleanup.enabled, aliases: beforeEdit.cleanup.aliases } });
       }
 
+      // #336: formatting rules are added, edited and removed in the real
+      // window, saved normalized (www. stripped, duplicates and wildcards
+      // dropped), and shown again from disk.
+      {
+        const beforeEdit = settings.get();
+        const { saveWin, run } = await openSaveWindow();
+        const ok = await run(`(() => {
+          const set = (el, value) => { el.value = value; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); };
+          const defaultSelect = document.getElementById("format-default");
+          set(defaultSelect, "chat");
+          for (const [type, value, style] of [["host", "https://www.GitHub.com/x", "code-safe"], ["host", "github.com", "email"], ["host", "*.evil.com", "email"], ["app", "com.apple.Terminal", "code-safe"]]) {
+            document.getElementById("format-add").click();
+            const row = document.querySelector("#format-rules .format-rule:last-child");
+            const [t, v, st] = row.querySelectorAll("select, input");
+            set(t, type); set(v, value); set(st, style);
+          }
+          document.querySelector("#format-rules .format-rule:last-child button").click();
+          document.querySelector("#format-rules .format-rule:last-child button").click();
+          return document.querySelectorAll("#format-rules .format-rule").length === 2;
+        })()`);
+        check("rule rows can be added and removed", ok === true);
+        await run(`document.getElementById("save").click()`);
+        await waitFor(() => run(`document.getElementById("save-status").className === "status ok"`), "the formatting Save never reported Saved", 500);
+        const saved = savedJson().formatting;
+        check("Save stores the normalized rules and the default",
+          saved.defaultStyle === "chat" && saved.rules.length === 1 &&
+            saved.rules[0].scope.type === "host" && saved.rules[0].scope.value === "github.com" && saved.rules[0].style === "code-safe",
+          JSON.stringify(saved));
+        await clickClose(saveWin);
+        const after = settings.get();
+        settings.save({ ...after, formatting: beforeEdit.formatting });
+      }
+
       // An edit made while the save is in flight is not in what was saved:
       // Save must say so instead of "Saved", and disk keeps the sent value.
       // Cover a plain field and a limit that the response used to overwrite.

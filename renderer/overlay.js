@@ -716,6 +716,8 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
     stream?.getTracks().forEach((track) => track.stop());
   };
   currentSid = sid;
+  destinationEl.hidden = true;
+  destinationEl.textContent = "";
   // Read per take, so a binding saved in Settings shows on the next dictation.
   discardHotkeyLabel = typeof discardHotkey === "string" ? discardHotkey : "";
   stopWhenReady = false;
@@ -1104,6 +1106,14 @@ function togglePause() {
 }
 
 earheart.on("record:start", startRecording);
+// The matched destination rule, shown while recording (#336). textContent
+// only: the label holds a user-supplied host. Dropped for a stale take.
+const destinationEl = document.getElementById("destination");
+earheart.on("record:destination", ({ sid, label } = {}) => {
+  if (sid !== currentSid || typeof label !== "string" || !label) return;
+  destinationEl.textContent = label.slice(0, 120);
+  destinationEl.hidden = false;
+});
 earheart.on("record:stop", stopRecording);
 // Pause hotkey / `earheart --pause`: same action as the pause key.
 earheart.on("record:pause-toggle", togglePause);
@@ -1159,6 +1169,7 @@ function retryDetail(detail) {
 }
 
 earheart.on("pipeline:status", ({ status, detail }) => {
+  if (status === "done" || status === "empty" || status === "error") destinationEl.hidden = true;
   // The live preview belongs to the recording phase; the moment the pipeline
   // reports a post-recording status, retire the transcript so it doesn't linger
   // alongside the control row's own status/preview.

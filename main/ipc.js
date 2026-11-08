@@ -27,6 +27,7 @@ const {
   searchUrl,
 } = require("./services/hf-models");
 const { STYLES: CLEANUP_STYLES } = require("./cleanup-styles");
+const { FORMATTING_STYLES } = require("./formatting-profiles");
 const { encodeSilenceWav } = require("./util/wav");
 
 // One model's key in `downloads` and `busyModels` (the renderer's
@@ -327,6 +328,8 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
       // A new default system prompt this user hasn't decided on yet, if any
       // (settings.cleanupPromptOffer): Settings → Cleanup offers it.
       promptOffer: settings.cleanupPromptOffer(cfg),
+      // Formatting styles for the destination rules (#336): id/label/hint.
+      formattingStyles: FORMATTING_STYLES.map(({ id, label, hint }) => ({ id, label, hint })),
       cleanupStyles: CLEANUP_STYLES.map(({ id, label, hint, sampling }) => ({
         id,
         label,

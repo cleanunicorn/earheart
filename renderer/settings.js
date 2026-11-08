@@ -8,6 +8,7 @@ let defaults = null;
 let platform = "linux";
 let modelStatus = null; // { stt: [...], cleanup: [...] } from the main process
 let keyStorage = null; // how main stores API keys (settings:get keyStorage)
+let formattingStyles = []; // [{ id, label, hint }] — destination formatting styles
 let cleanupStyles = []; // [{ id, label, hint }] — the cleanup style slider stops
 
 const $ = (id) => document.getElementById(id);
@@ -302,6 +303,7 @@ function populate() {
   populateCleanupStyle();
   $("cleanup-dictionary").value = (current.cleanup.dictionary || []).join("\n");
   $("cleanup-aliases").value = formatAliases(current.cleanup.aliases);
+  renderFormatting(current.formatting);
   $("cleanup-prompt").value = current.cleanup.systemPrompt;
   selectEngine("cleanup", current.cleanup.engine);
   renderKeyStorage();
@@ -389,6 +391,7 @@ function collect() {
         enabled: $("stt-live-preview").checked,
       },
     },
+    formatting: collectFormatting(),
     cleanup: {
       ...current.cleanup,
       enabled: $("cleanup-enabled").checked,
@@ -2229,6 +2232,87 @@ $("update-skip").addEventListener("click", () => earheart.invoke("updates:skip")
 
 earheart.on("updates:state", renderUpdateState);
 
+/* ---------- formatting by destination (#336) ---------- */
+
+function formatStyleSelect(value, label) {
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", label);
+  for (const style of formattingStyles) {
+    const option = document.createElement("option");
+    option.value = style.id;
+    option.textContent = style.label;
+    option.title = style.hint;
+    select.append(option);
+  }
+  select.value = formattingStyles.some((s) => s.id === value) ? value : "standard";
+  return select;
+}
+
+function addFormatRow(rule) {
+  const row = document.createElement("div");
+  row.className = "row format-rule";
+  row.setAttribute("role", "listitem");
+  row.dataset.ruleId = rule.id || "";
+
+  const type = document.createElement("select");
+  type.setAttribute("aria-label", "Rule applies to");
+  for (const [value, text] of [["host", "Website"], ["app", "Application"]]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = text;
+    type.append(option);
+  }
+  type.value = rule.scope?.type === "app" ? "app" : "host";
+
+  const value = document.createElement("input");
+  value.type = "text";
+  value.spellcheck = false;
+  value.autocomplete = "off";
+  value.maxLength = 253;
+  value.setAttribute("aria-label", "Website or application id");
+  value.placeholder = "github.com";
+  value.value = rule.scope?.value || "";
+
+  const style = formatStyleSelect(rule.style, "Formatting style");
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "ghost";
+  remove.textContent = "Remove";
+  remove.setAttribute("aria-label", "Remove rule");
+  remove.addEventListener("click", () => {
+    row.remove();
+    $("format-add").focus();
+  });
+  row.append(type, value, style, remove);
+  $("format-rules").append(row);
+}
+
+function renderFormatting(formatting) {
+  const select = $("format-default");
+  select.replaceChildren(...formatStyleSelect(formatting?.defaultStyle, "").children);
+  select.value = formattingStyles.some((s) => s.id === formatting?.defaultStyle) ? formatting.defaultStyle : "standard";
+  $("format-rules").replaceChildren();
+  (formatting?.rules || []).forEach((rule) => addFormatRow(rule));
+}
+
+// Rows → stored shape. Empty rows are skipped; main validates the rest
+// (exact host / app id, no duplicates) when it saves.
+function collectFormatting() {
+  const rules = [...document.querySelectorAll("#format-rules .format-rule")]
+    .map((row) => {
+      const [type, value, style] = row.querySelectorAll("select, input");
+      return { id: row.dataset.ruleId, scope: { type: type.value, value: value.value.trim() }, style: style.value };
+    })
+    .filter((rule) => rule.scope.value);
+  return { defaultStyle: $("format-default").value || "standard", rules };
+}
+
+$("format-add").addEventListener("click", () => {
+  addFormatRow({ id: `rule-${Date.now().toString(36)}`, scope: { type: "host", value: "" }, style: "standard" });
+  document.querySelector("#format-rules .format-rule:last-child input").focus();
+});
+
 /* ---------- init ---------- */
 
 (async () => {
@@ -2238,6 +2322,7 @@ earheart.on("updates:state", renderUpdateState);
   defaults = data.defaults;
   platform = data.platform;
   cleanupStyles = data.cleanupStyles || [];
+  formattingStyles = data.formattingStyles || [];
   promptOffer = data.promptOffer || null;
   keyStorage = data.keyStorage || null;
   // A hotkey that failed at launch shows now, not after a Save — and before

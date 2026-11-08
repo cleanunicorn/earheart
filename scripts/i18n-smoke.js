@@ -15,6 +15,8 @@ const { app } = require("electron");
 const windows = require("../main/windows");
 const settings = require("../main/settings");
 const i18n = require("../main/i18n");
+const locales = require("../renderer/locales");
+const draftRo = require("../renderer/locales/ro.js");
 const { waitForLoad } = require("./wait-for-load");
 
 const read = (win, expr) =>
@@ -26,6 +28,9 @@ const saved = () => JSON.parse(fs.readFileSync(path.join(app.getPath("userData")
 
 async function checkI18n({ waitFor, check }) {
   i18n.bind({ settings, systemLanguages: () => ["de-DE"] });
+  // Romanian is a draft that is not registered in the app: register it here,
+  // in main and in each page, to exercise the real multi-window path.
+  locales.ro = draftRo;
   const before = settings.get();
   let correctionWin = null;
   try {
@@ -37,7 +42,7 @@ async function checkI18n({ waitFor, check }) {
     await Promise.all(Object.values(wins).map((w) => waitForLoad(w.webContents)));
     for (const w of Object.values(wins)) {
       await waitFor(() => read(w, `typeof i18n === "object" && i18n.locale`), "i18n client did not start");
-      await read(w, `window.__marker = "same page"; true`);
+      await read(w, `EarheartLocales.ro = ${JSON.stringify(draftRo)}; window.__marker = "same page"; true`);
     }
     const langs = await Promise.all(Object.values(wins).map((w) => read(w, `document.documentElement.lang`)));
     check("every window starts in the same effective locale", langs.every((l) => l === "en"), JSON.stringify(langs));
@@ -63,6 +68,23 @@ async function checkI18n({ waitFor, check }) {
     check("the language persists and dictation settings are untouched",
       saved().uiLanguage === "ro" && JSON.stringify(settings.get().stt) === sttBefore, JSON.stringify(saved().uiLanguage));
 
+    // Longer Romanian copy at the minimum window sizes: no sideways page scroll
+    // and no button, label or heading whose text is clipped.
+    const clipProbe = `(() => {
+      const bad = [...document.querySelectorAll("button, label, h1, h2, .card-title, .tab-label, option")]
+        .filter((el) => el.offsetParent !== null && el.scrollWidth > el.clientWidth + 1 &&
+          getComputedStyle(el).overflowX !== "visible" && !el.classList.contains("sr-only"))
+        .map((el) => (el.id || el.className || el.tagName) + ":" + el.textContent.trim().slice(0, 30));
+      return { pageScroll: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1, bad };
+    })()`;
+    for (const [name, win, w, h] of [["Settings", settingsWin, 560, 480], ["wizard", wizard, 560, 560], ["correction", correction, 520, 600]]) {
+      win.setContentSize(w, h);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const clip = await read(win, clipProbe);
+      check(`${name} has no clipped controls or sideways scroll in Romanian at its minimum size`,
+        !clip.pageScroll && clip.bad.length === 0, JSON.stringify(clip));
+    }
+
     // A later window starts in the effective locale, not English.
     windows.closeWizard();
     await waitFor(() => wizard.isDestroyed(), "wizard did not close");
@@ -78,6 +100,7 @@ async function checkI18n({ waitFor, check }) {
     check("an unsupported saved language falls back readably", settings.get().uiLanguage === "system" && i18n.getLocale() === "en",
       `${settings.get().uiLanguage} / ${i18n.getLocale()}`);
   } finally {
+    delete locales.ro;
     settings.save({ ...settings.get(), uiLanguage: before.uiLanguage });
     // The draft above marked the correction dirty; closing it would ask.
     windows.setCorrectionDirty(correctionWin?.webContents, false);

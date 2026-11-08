@@ -3,5 +3,5 @@
 // Adding a language: docs/localization.md.
 module.exports = {
   en: require("./en.js"),
-  ro: require("./ro.js"),
+  // ro: require("./ro.js"), // draft, enabled only after the owner reviews it
 };

@@ -112,8 +112,15 @@ test("applyDom writes text and attributes without parsing HTML", () => {
 // ---- shipped catalogs ----
 
 test("every locale file is registered in index.js and loaded by each page", () => {
-  const files = fs.readdirSync(path.join(RENDERER, "locales")).filter((f) => f.endsWith(".js") && f !== "index.js");
+  const all = fs.readdirSync(path.join(RENDERER, "locales")).filter((f) => f.endsWith(".js") && f !== "index.js");
+  // A draft awaiting review stays out of the registry and the pages (see ro.js).
+  const drafts = all.filter((f) => fs.readFileSync(path.join(RENDERER, "locales", f), "utf8").includes("NOT REGISTERED"));
+  const files = all.filter((f) => !drafts.includes(f));
   assert.deepEqual(files.map((f) => f.slice(0, -3)).sort(), Object.keys(catalogs).sort());
+  for (const f of drafts) {
+    const html = fs.readFileSync(path.join(RENDERER, "settings.html"), "utf8");
+    assert.ok(!html.includes(`locales/${f}`), `${f} is a draft and must not be loaded by the pages`);
+  }
   for (const page of ["settings", "wizard", "overlay", "correction"]) {
     const html = fs.readFileSync(path.join(RENDERER, `${page}.html`), "utf8");
     for (const f of files) assert.ok(html.includes(`src="locales/${f}"`), `${page}.html loads locales/${f}`);
@@ -121,9 +128,13 @@ test("every locale file is registered in index.js and loaded by each page", () =
   }
 });
 
+// The unreviewed Romanian draft is checked like a shipped catalog, but is only
+// registered temporarily, inside a test.
+const draftRo = require("../renderer/locales/ro.js");
+
 test("catalogs match English: keys, placeholders and plural shape", () => {
   const en = catalogs.en;
-  for (const [tag, catalog] of Object.entries(catalogs)) {
+  for (const [tag, catalog] of Object.entries({ ...catalogs, ro: draftRo })) {
     assert.equal(typeof catalog["meta.name"], "string", `${tag} names itself`);
     for (const [key, entry] of Object.entries(catalog)) {
       assert.ok(core.validEntry(entry), `${tag}:${key} is a string or has \`other\``);
@@ -246,7 +257,9 @@ test("service errors carry a key and clipped scalar params, never a response bod
 test("Romanian (draft catalog): system and override selection, plurals and fallback (#349)", (t) => {
   const i18n = require("../main/i18n");
   const notices = require("../main/setup-notices");
-  t.after(() => i18n.setLocale("en"));
+  const registry = require("../renderer/locales");
+  registry.ro = draftRo; // registered for this test only
+  t.after(() => { i18n.setLocale("en"); delete registry.ro; });
   const r = (o) => core.resolveLocale(o);
   assert.equal(r({ system: ["ro-RO", "en-US"] }), "ro");
   assert.equal(r({ system: ["de", "ro_MD"] }), "ro");
@@ -254,7 +267,7 @@ test("Romanian (draft catalog): system and override selection, plurals and fallb
   assert.equal(r({ override: "ro", system: ["en-US"] }), "ro");
   assert.equal(r({ override: "en", system: ["ro"] }), "en", "an explicit English override wins over a Romanian OS");
 
-  const ro = core.createTranslator({ locale: "ro", catalogs });
+  const ro = core.createTranslator({ locale: "ro", catalogs: { ...catalogs, ro: draftRo } });
   assert.equal(ro.t("pipeline.minutes", { count: 1 }), "1 minut");
   assert.equal(ro.t("pipeline.minutes", { count: 3 }), "3 minute");
   assert.equal(ro.t("pipeline.minutes", { count: 20 }), "20 de minute");
@@ -266,5 +279,5 @@ test("Romanian (draft catalog): system and override selection, plurals and fallb
   assert.equal(i18n.t("tray.quit"), "Închide Earheart");
   assert.equal(notices.readyNotice("").body, "Deschide meniul din bara de sistem pentru a începe.");
   // Dictation settings are not part of the UI catalog.
-  assert.ok(!Object.keys(catalogs.ro).some((k) => /^(stt|cleanup)\./.test(k)));
+  assert.ok(!Object.keys(draftRo).some((k) => /^(stt|cleanup)\./.test(k)));
 });

@@ -88,16 +88,24 @@ shows a generic readable message. In development a one-time
   overlay (statuses, accessible names, update card), safe service-error text,
   and all *static* page copy in Settings, the wizard, the overlay and the
   correction window (tagged with `data-i18n` / `data-i18n-attr`).
-- **Romanian (`ro`)** covers every English key. It is a **draft pending review**
-  by the task owner (see the header of `renderer/locales/ro.js`); fill in its
-  `Reviewed:` line once the catalog and the rendered screens are signed off.
-- **Not yet extracted** (still English in every locale): strings that
-  `settings.js` / `wizard.js` and the status helpers build at runtime — save and
-  test feedback, validation messages, model download progress, permission and
-  ducking status, History and Usage formatting, and cleanup preset labels.
-  Elements whose text a script rewrites carry no `data-i18n`, so a language
-  change never overwrites them. Convert them to `i18n.t(...)` with
-  `i18n.onChange(...)` to re-render.
+- **Romanian (`ro`)** has a complete draft in `renderer/locales/ro.js`
+  (every English key, checked for placeholder and plural parity by
+  `test/i18n.test.js`). It is **deliberately not registered**: it is not in
+  `renderer/locales/index.js`, not loaded by the pages and not offered in the
+  picker, because it has not been reviewed by a fluent reviewer. After the task
+  owner signs off the catalog and the rendered screens, fill in its `Reviewed:`
+  line, uncomment its line in `index.js`, remove the "NOT REGISTERED" note and
+  add its `<script>` to the four pages. Tests and `settings-smoke` register it
+  temporarily.
+- **Runtime strings** in `settings.js` and `wizard.js` (save/test feedback,
+  download and update status, History and recordings controls) use
+  `i18n.t("rt.…")`. They are formatted when shown, so a status already on screen
+  keeps its language until its next update; static copy and the overlay
+  re-render immediately. A few computed messages (model-download progress,
+  permission and ducking status helpers, usage figures, cleanup preset labels)
+  remain English.
+- `settings-smoke` checks Romanian at the minimum Settings, wizard and
+  correction sizes for clipped controls and sideways scrolling.
 - Native macOS/Windows acceptance (system-locale selection, tray labels, OS
   notifications, dialogs) is still to be recorded; only Linux/xvfb checks ran.
 

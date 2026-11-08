@@ -447,6 +447,11 @@ function microphonePage(source, page) {
       },
     },
     CSS: { escape: (value) => value },
+    // The window's i18n client, in English.
+    i18n: {
+      locale: "en",
+      t: require("../renderer/i18n").createTranslator({ locale: "en", catalogs: require("../renderer/locales") }).t,
+    },
     current,
     baseline: { outputMode: current.output.mode, remind: true },
     formBaseline: new Map(),

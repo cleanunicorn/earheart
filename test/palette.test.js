@@ -14,14 +14,15 @@ function fixture() {
   win.destroy = () => { win.emit("closed"); };
   const entries = [{ id: "saved", text: "<img src=x onerror=alert(1)>", raw: "original" }];
   const destinations = [];
+  const restored = [];
   const palette = createPalette({
-    windows: { createPaletteWindow: () => win, loadPalette: () => new Promise(r => { resolveLoad = r; }), openSettings: d => destinations.push(d), paletteCaller: () => true },
+    windows: { createPaletteWindow: () => win, loadPalette: () => new Promise(r => { resolveLoad = r; }), openSettings: d => destinations.push(d), capturePaletteCaller: () => "settings-caller", restorePaletteCaller: caller => restored.push(caller), paletteCaller: () => true },
     pipeline: { isPaletteIdle: () => idle },
     history: { search: ({ limit }) => ({ entries: entries.slice(0, limit), total: entries.length }), list: () => entries, isValidId: id => typeof id === "string" },
     settings: { get: () => ({ history: { enabled: true } }) },
     actions,
   });
-  return { palette, win, entries, destinations, actions, copies: () => copies, busy: () => { idle = false; }, loaded: async () => { resolveLoad(); await Promise.resolve(); await Promise.resolve(); } };
+  return { palette, win, entries, destinations, restored, actions, copies: () => copies, busy: () => { idle = false; }, loaded: async () => { resolveLoad(); await Promise.resolve(); await Promise.resolve(); } };
 }
 test("reserve singleton before load; close during load never shows", async () => {
   const f = fixture(); f.palette.open(); f.palette.open();
@@ -107,4 +108,45 @@ test("navigation History and Open History preserve their distinct query semantic
     await f.palette.execute(f.win.webContents, { id, query: "history" });
     assert.deepEqual(f.destinations[0], id === "nav-history" ? { section: "history" } : { section: "history", query: "history" });
   }
+});
+
+
+test("a delayed action never restores its caller after blur and still dispatches once", async () => {
+  for (const blur of [false, true]) {
+    const f = fixture(); f.palette.open(); await f.loaded();
+    let finish, checks = 0;
+    f.actions.checkUpdates = () => {
+      checks++;
+      return new Promise(resolve => { finish = resolve; });
+    };
+    const pending = f.palette.execute(f.win.webContents, { id: "updates" });
+    if (blur) f.win.emit("blur");
+    await assert.rejects(f.palette.execute(f.win.webContents, { id: "updates" }), /already/);
+    assert.equal(checks, 1);
+    finish(); await pending;
+    assert.equal(f.palette.isOpen(), false);
+    assert.deepEqual(f.restored, blur ? [] : ["settings-caller"]);
+  }
+});
+test("Close cannot restore a caller after a pending command lost focus", async () => {
+  const f = fixture(); f.palette.open(); await f.loaded();
+  let finish;
+  f.actions.checkUpdates = () => new Promise(resolve => { finish = resolve; });
+  const pending = f.palette.execute(f.win.webContents, { id: "updates" });
+  f.win.emit("blur");
+  f.palette.close(true);
+  finish(); await pending;
+  assert.deepEqual(f.restored, []);
+});
+
+test("an action failing after blur releases its reservation without restoring focus", async () => {
+  const f = fixture(); f.palette.open(); await f.loaded();
+  let fail;
+  f.actions.checkUpdates = () => new Promise((resolve, reject) => { fail = reject; });
+  const pending = f.palette.execute(f.win.webContents, { id: "updates" });
+  f.win.emit("blur");
+  fail(new Error("offline"));
+  await assert.rejects(pending, /offline/);
+  assert.equal(f.palette.isOpen(), false);
+  assert.deepEqual(f.restored, []);
 });

@@ -45,7 +45,10 @@ precedence over Commands.
 Escape restores an existing Earheart window's focused control. For an
 external caller the palette closes without bringing Settings or the overlay
 forward; foreground restoration is left to the OS. Deliberately focus the
-intended destination before dictating. The palette has a separate preload
+intended destination before dictating. Switching apps while a command is
+pending prevents its completion from restoring an Earheart window. Commands
+refusal and dismissal guidance never open Settings when notifications are
+unavailable or clicked. The palette has a separate preload
 role: bounded search and fixed commands only, with sender checks in main;
 the overlay gets no new Settings or History capabilities.
 

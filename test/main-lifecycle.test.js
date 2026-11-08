@@ -570,3 +570,21 @@ test("cold --palette opens Commands for a returning user; first-run setup wins",
     }
   }
 });
+
+test("Commands refusal never opens Settings without notification support", async () => {
+  for (const options of [
+    { pipelineState: "recording" },
+    { pipelineState: "processing" },
+    { firstRun: true },
+  ]) {
+    // Keep the real palette and notifier wired by main; disregard startup's
+    // separate setup notices before triggering each Commands entry point.
+    const rig = await loadMain({ ...options, notificationsSupported: false });
+    rig.events.length = 0;
+    rig.shortcuts.get("CommandOrControl+Shift+K")();
+    rig.openCommands();
+    rig.appHandlers["second-instance"]({}, ["earheart", "--palette"]);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepStrictEqual(rig.events, [], JSON.stringify(options));
+  }
+});

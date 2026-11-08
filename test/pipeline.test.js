@@ -2522,3 +2522,13 @@ test("pipeline: a superseded retry reservation cannot block Commands forever", a
   rig.pipeline.cancel();
   assert.equal(rig.pipeline.isPaletteIdle(), true);
 });
+
+test("pipeline: Commands dismissal guidance never opens Settings without notifications", () => {
+  const rig = dictationRig({ notificationsSupported: false });
+  rig.pipeline.setPaletteGuard(() => true);
+  rig.pipeline.toggle();
+  rig.pipeline.retryFailedTake();
+  assert.equal(rig.pipeline.getState(), "idle");
+  assert.equal(rig.log.overlaysCreated, 0);
+  assert.equal(rig.log.settingsOpened, 0);
+});

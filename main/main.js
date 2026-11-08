@@ -94,6 +94,15 @@ const notifier = createNotifier({
   logger,
 });
 
+// Commands guidance must never bring a focusable window forward, including
+// when the notification service is unavailable or a stale notice is clicked.
+const commandsNotifier = createNotifier({
+  Notification,
+  openSettings: () => {},
+  logger,
+  settingsWhenUnsupported: false,
+});
+
 // The new-default-prompt notice opens Settings at the offer. Not news worth a
 // Settings window on its own when notifications are unavailable: the offer
 // waits in Settings → Cleanup either way.
@@ -180,7 +189,7 @@ function main() {
     });
     tray.init(app, pipeline);
     palette = require("./palette").createPalette({ windows, pipeline, history, settings,
-      actions: { notice: body => notifier.show({ title: "Commands unavailable", body }), lastTranscript: tray.lastTranscript, copyLast: tray.copyLast,
+      actions: { notice: body => commandsNotifier.show({ title: "Commands unavailable", body }), lastTranscript: tray.lastTranscript, copyLast: tray.copyLast,
         correctLast: openLastCorrection, checkUpdates: () => updates.check({ manual: true }), openLog: ipc.openLog } });
     palette.install(ipcMain);
     pipeline.setPaletteGuard(palette.dismissForDictation);

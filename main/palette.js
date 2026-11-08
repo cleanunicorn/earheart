@@ -15,7 +15,7 @@ function createPalette({ windows, pipeline, history, settings, actions }) {
     session = null; // release synchronously, including while load is pending
     if (!old) return;
     if (!old.win.isDestroyed()) old.win.destroy();
-    if (restore) windows.restorePaletteCaller?.(old.caller);
+    if (restore && !old.lostFocus) windows.restorePaletteCaller?.(old.caller);
   }
   function open() {
     if (!pipeline.isPaletteIdle() || windows.isWizardOpen?.()) {
@@ -28,7 +28,13 @@ function createPalette({ windows, pipeline, history, settings, actions }) {
     const current = { win, caller, ready: false, executed: false };
     session = current;
     win.on("closed", () => { if (session === current) session = null; });
-    win.on("blur", () => { if (session === current && current.ready && !current.dispatching) close(); });
+    win.on("blur", () => {
+      if (session !== current || !current.ready) return;
+      // Preserve the dispatch latch while an action settles, but never reclaim
+      // foreground from an app the user switched to in the meantime.
+      current.lostFocus = true;
+      if (!current.dispatching) close();
+    });
     win.webContents.on("render-process-gone", () => { if (session === current) close(); });
     (async () => { await windows.loadPalette(win); })().then(() => {
       if (session !== current) return;
@@ -94,6 +100,7 @@ function createPalette({ windows, pipeline, history, settings, actions }) {
     } finally {
       // A failed session stays latched, but blur and Close still dismiss it.
       current.dispatching = false;
+      if (session === current && current.lostFocus) close();
     }
   }
   function install(ipcMain) {

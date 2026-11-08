@@ -7,11 +7,12 @@ const history = require("../main/history");
 const { createPalette } = require("../main/palette");
 const { waitForLoad } = require("./wait-for-load");
 async function checkPalette({ waitFor, check, invokeHandlers }) {
-  let busy = false, win, creates = 0, copies = 0;
+  let busy = false, win, creates = 0, copies = 0, restores = 0;
+  let checkUpdates = async () => {};
   const palette = createPalette({
-    windows: { ...windows, createPaletteWindow: () => { creates++; win = windows.createPaletteWindow(); return win; } },
+    windows: { ...windows, restorePaletteCaller: caller => { restores++; windows.restorePaletteCaller(caller); }, createPaletteWindow: () => { creates++; win = windows.createPaletteWindow(); return win; } },
     pipeline: { isPaletteIdle: () => !busy }, history, settings,
-    actions: { lastTranscript: () => "recoverable", copyLast: async () => { copies++; }, correctLast: () => windows.openCorrection(history.list()[0]), checkUpdates: async () => {}, openLog: async () => ({ ok: true }) },
+    actions: { lastTranscript: () => "recoverable", copyLast: async () => { copies++; }, correctLast: () => windows.openCorrection(history.list()[0]), checkUpdates: () => checkUpdates(), openLog: async () => ({ ok: true }) },
   });
   palette.install(ipcMain);
   const form = windows.openSettings();
@@ -31,7 +32,7 @@ async function checkPalette({ waitFor, check, invokeHandlers }) {
     await waitFor(() => run(`!document.getElementById("status").textContent.includes("Loading") && search.value === ${JSON.stringify(value)}`), "query not set");
   }
   try {
-    await waitFor(() => formRun('document.getElementById("version").textContent.startsWith("v")'), "Settings not ready for Commands");
+    await waitFor(() => formRun('typeof formReady !== "undefined" && formReady'), "Settings not ready for Commands");
     await formRun('document.getElementById("cleanup-dictionary").value = "unsaved palette draft"; document.getElementById("commands").focus()');
     form.focus();
     key(form, "K", [process.platform === "darwin" ? "meta" : "control"]);
@@ -69,6 +70,27 @@ async function checkPalette({ waitFor, check, invokeHandlers }) {
     key(win, "Enter"); key(win, "Enter");
     await waitFor(() => Promise.resolve(!palette.isOpen()), "copy did not close Commands");
     check("repeated Enter executes one copy", copies === 1);
+
+    // Switch to another real Electron window while an action is pending.
+    // Completion must not restore Settings over that newly chosen window.
+    let finishUpdate;
+    checkUpdates = () => new Promise(resolve => { finishUpdate = resolve; });
+    form.focus();
+    palette.open(); await opened(); await search("Check for updates");
+    await waitFor(() => run('document.querySelector("[role=option]").textContent === "Check for updates"'), "update command missing");
+    key(win, "Enter");
+    await waitFor(() => Promise.resolve(!!finishUpdate), "update command did not start");
+    const restoresBeforeBlur = restores;
+    const other = windows.openCorrection({ text: "Keep focus in this other window." });
+    if (other.webContents.isLoadingMainFrame()) await waitForLoad(other.webContents);
+    other.focus();
+    await waitFor(() => Promise.resolve(other.isFocused() && !win.isFocused()), "pending Commands did not lose focus");
+    finishUpdate();
+    await waitFor(() => Promise.resolve(!palette.isOpen()), "completed update did not close Commands");
+    check("a delayed command preserves the newly focused window", restores === restoresBeforeBlur && other.isFocused());
+    windows.closeCorrection();
+    await waitFor(() => Promise.resolve(other.isDestroyed()), "other window did not close");
+    form.focus();
 
     // A late old reply cannot overwrite a newly typed query.
     const originalQuery = invokeHandlers.get("palette:query");
@@ -117,7 +139,7 @@ async function checkPalette({ waitFor, check, invokeHandlers }) {
     assert.equal(spoof.ok, false);
     check("Settings cannot impersonate the palette query sender", /window/.test(spoof.error));
   } finally {
-    palette.close(); windows.closeSettings();
+    palette.close(); windows.closeCorrection(); windows.closeSettings();
     for (const channel of ["palette:open", "palette:query", "palette:execute", "palette:close"]) ipcMain.removeHandler(channel);
   }
 }

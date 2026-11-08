@@ -1087,3 +1087,16 @@ test("the Usage figures say the time saved is an estimate against the stated bas
   assert.match(html, /<dt[^>]*>Time saved \(estimate\)<\/dt>/);
   assert.match(html, /Estimate: typing these words at <span id="usage-baseline">40<\/span> WPM, minus the time you spent speaking them\. Not measured\./);
 });
+
+test("snippets.js loads before settings.js, and the Snippets section sits between Cleanup and History (#334)", () => {
+  assert.ok(html.indexOf('src="aliases.js"') < html.indexOf('src="snippets.js"'), "snippets.js needs aliases.js's aliasKey");
+  assert.ok(html.indexOf('src="snippets.js"') < html.indexOf('src="settings.js"'));
+  const order = [...html.matchAll(/<section id="tab-([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepStrictEqual(order.slice(order.indexOf("cleanup"), order.indexOf("cleanup") + 3), ["cleanup", "snippets", "history"]);
+  assert.ok(definesRule('[data-tab="snippets"] .tab-icon'));
+  assert.match(tokensCss, /--section-snippets:\s*#[0-9a-f]{6}/);
+  // Every tag button inserts a tag the renderer knows.
+  const { SNIPPET_TAGS } = require("../renderer/snippets");
+  const buttons = [...html.matchAll(/data-snippet-tag="([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepStrictEqual(buttons, SNIPPET_TAGS);
+});

@@ -257,7 +257,7 @@ test("every successful save broadcasts settings:changed and refreshes the tray",
   for (const side of ["previous", "current"]) {
     assert.deepStrictEqual(
       Object.keys(changed[0].payload[side]).sort(),
-      ["aliases", "customModels", "dictionary", "output", "overlay", "updates"],
+      ["aliases", "customModels", "dictionary", "output", "overlay", "snippets", "updates"],
       side
     );
   }
@@ -834,4 +834,64 @@ test("a stale wizard does not overwrite a UI language saved in Settings", (t) =>
   const again = settings.get();
   handlers["settings:save"]({}, { settings: { ...again, uiLanguage: "system" }, baseline: sharedBaseline(again) });
   assert.strictEqual(readFile().uiLanguage, "system");
+});
+
+// #334: snippets ride the same save path as aliases, merged per snippet id.
+const snip = (id, triggers, content = "body") => ({ id, triggers, content });
+const withBaseline = (settings) => {
+  const snapshot = settings.get();
+  return { snapshot, baseline: require("../renderer/settings-sync").sharedBaseline(snapshot) };
+};
+
+test("two Settings windows adding different snippets both keep theirs", async (t) => {
+  const { settings, handlers, readFile } = loadIpc(t);
+  const first = withBaseline(settings);
+  const second = withBaseline(settings);
+  first.snapshot.snippets = [snip("snp_a", ["alpha"])];
+  second.snapshot.snippets = [snip("snp_b", ["bravo"])];
+  await handlers["settings:save"]({}, { settings: first.snapshot, baseline: first.baseline });
+  const result = await handlers["settings:save"]({}, { settings: second.snapshot, baseline: second.baseline });
+  assert.deepStrictEqual(readFile().snippets.map((r) => r.id), ["snp_b", "snp_a"]);
+  assert.deepStrictEqual(result.settings.snippets.map((r) => r.id), ["snp_b", "snp_a"]);
+});
+
+test("two windows giving different snippets one trigger: the second save fails and keeps the first", async (t) => {
+  const { settings, handlers, readFile } = loadIpc(t);
+  const first = withBaseline(settings);
+  const second = withBaseline(settings);
+  first.snapshot.snippets = [snip("snp_a", ["My Address"])];
+  second.snapshot.snippets = [snip("snp_b", ["my  address"])];
+  await handlers["settings:save"]({}, { settings: first.snapshot, baseline: first.baseline });
+  await assert.rejects(
+    async () => handlers["settings:save"]({}, { settings: second.snapshot, baseline: second.baseline }),
+    /already inserts/
+  );
+  assert.deepStrictEqual(readFile().snippets, [snip("snp_a", ["My Address"])]);
+});
+
+test("an invalid snippet list is refused before hotkeys or disk are touched", async (t) => {
+  const { settings, handlers, readFile } = loadIpc(t);
+  settings.save(settings.get());
+  const before = JSON.stringify(readFile());
+  const { snapshot, baseline } = withBaseline(settings);
+  snapshot.snippets = [snip("snp_a", ["x1"], "uses {{bogus}}")];
+  await assert.rejects(async () => handlers["settings:save"]({}, { settings: snapshot, baseline }), /Unknown tag/);
+  assert.strictEqual(JSON.stringify(readFile()), before);
+});
+
+test("a save from a form that has no snippets key keeps the saved snippets", async (t) => {
+  const { settings, handlers, readFile } = loadIpc(t);
+  settings.save({ ...settings.get(), snippets: [snip("snp_a", ["alpha"])] });
+  const { snapshot } = withBaseline(settings);
+  delete snapshot.snippets;
+  await handlers["settings:save"]({}, { settings: snapshot, baseline: {} });
+  assert.deepStrictEqual(readFile().snippets, [snip("snp_a", ["alpha"])]);
+});
+
+test("the wizard passes snippets saved elsewhere through its stale copy", async (t) => {
+  const { settings, handlers, readFile } = loadIpc(t);
+  const wizard = withBaseline(settings); // opens with none
+  settings.save({ ...settings.get(), snippets: [snip("snp_a", ["alpha"])] });
+  await handlers["settings:save"]({}, { settings: wizard.snapshot, baseline: wizard.baseline });
+  assert.deepStrictEqual(readFile().snippets, [snip("snp_a", ["alpha"])]);
 });

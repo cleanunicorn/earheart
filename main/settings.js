@@ -15,6 +15,7 @@ const { normalizeAliases } = require("../renderer/aliases");
 const i18nCore = require("../renderer/i18n");
 const { sanitizeFormatting, DEFAULT_FORMATTING_STYLE } = require("./formatting-profiles");
 const { normalizePackIds } = require("../renderer/vocab-packs");
+const { normalizeSnippets } = require("../renderer/snippets");
 
 // The invariant core of the cleanup instructions, inlined into the model's user
 // turn (not used as a chat system prompt) — see main/engines/engine-worker.js
@@ -216,6 +217,10 @@ const DEFAULTS = {
     defaultStyle: DEFAULT_FORMATTING_STYLE,
     rules: [],
   },
+  // Text snippets (#334): [{ id, triggers: [...], content }]. A spoken trigger
+  // becomes its content, cleanup or not — see main/text-expansions.js. Top
+  // level, not under cleanup, because it works with cleanup off.
+  snippets: [],
   audio: {
     deviceId: "", // empty = system default microphone
     // How a take picks its microphone (#339). "manual" (default, as before):
@@ -579,6 +584,14 @@ function normalizeStoredFormatting(merged) {
   return { ...merged, formatting };
 }
 
+// Make snippets valid whatever the file held, like normalizeStoredAliases.
+function normalizeStoredSnippets(merged) {
+  return {
+    ...merged,
+    snippets: normalizeSnippets(merged.snippets, (reason) => logger.warn(`dropped a saved snippet: ${reason}`)),
+  };
+}
+
 // safeStorage answers only after app `ready` (before it, Linux reports no
 // encryption at all). A stub without isReady (unit tests) counts as ready.
 function appReady() {
@@ -641,7 +654,7 @@ function load() {
     ? secretStore.storageStatus(safeStorage, process.platform)
     : { secure: false, backend: null };
   const decoded = secretStore.decodeSecrets(stored, ready ? safeStorage : null);
-  const merged = normalizeActivation(normalizeMic(normalizeAppearance(normalizeStoredFormatting(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored))))))));
+  const merged = normalizeActivation(normalizeMic(normalizeAppearance(normalizeStoredSnippets(normalizeStoredFormatting(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored)))))))));
   // Before `ready` encrypted keys read as "", so the result is not cached:
   // the first load after `ready` decrypts them. Nothing saves before then
   // (save() refuses).
@@ -711,7 +724,7 @@ function writeFile(merged) {
 function save(next) {
   if (!appReady()) throw new Error("settings cannot be saved before the app is ready");
   const previous = load();
-  const merged = normalizeActivation(normalizeMic(normalizeAppearance(normalizeStoredFormatting(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, next)))))));
+  const merged = normalizeActivation(normalizeMic(normalizeAppearance(normalizeStoredSnippets(normalizeStoredFormatting(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, next))))))));
   // Fail closed (#343): recordings are only ever kept encrypted, so keeping
   // them can't be turned on without OS-backed secure storage.
   if (merged.recordings.keep === true && !keyStorageStatus.secure) {

@@ -111,6 +111,10 @@ Three settings are worth a minute for agent work:
   back, write an exact rule: `air heart, ear heart -> Earheart`. Each heard
   phrase is swapped for the spelling in every dictation, with cleanup on, off,
   or failing. See [Always replace](#always-replace).
+- **Snippets** (Settings → Snippets). Say a short phrase and get a saved block
+  of text instead: an address, a signature, a standing brief for an agent. The
+  text is inserted exactly, with cleanup on or off, and can include the
+  clipboard, date, time and time zone. See [docs/snippets.md](docs/snippets.md).
 - **System prompt** (Settings → Cleanup). Tell it to preserve file paths,
   flags, and identifiers exactly as spoken and never to answer the transcript.
   The default prompt already treats your dictation as text to clean, never as
@@ -155,6 +159,8 @@ label, and opinions are welcome.
   Select **Correct…** in History to fix a phrase and remember its spelling, or
   map a recurring mishearing to it with **Always replace**, which works with
   cleanup off.
+- **Spoken snippets** — save a block of text under a trigger phrase and dictate
+  just the phrase. See [docs/snippets.md](docs/snippets.md).
 - **Pause and resume mid-dictation** — hold a take while you talk to someone or
   take a call, then resume it. Paused time is never captured or counted against
   the maximum length. You can also bind a global pause hotkey in Settings →

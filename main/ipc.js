@@ -7,6 +7,7 @@ const settings = require("./settings");
 const { mergeVocabulary, rememberVocabulary } = require("../renderer/vocabulary");
 const { learnVocabulary } = require("./vocab-learn");
 const { mergeAliases, rememberAlias, normalizeAliases } = require("../renderer/aliases");
+const { mergeSnippets, validateSnippets } = require("../renderer/snippets");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { deliverText } = require("./output/single-line");
@@ -169,6 +170,15 @@ const SHARED_FIELDS = [
     }),
   },
   {
+    // Text snippets (#334), merged per snippet id: Settings and the wizard
+    // each hold a copy, and a trigger clash between two windows' additions
+    // throws, so that save fails whole and the live snippets stay.
+    name: "snippets",
+    type: "array",
+    read: (cfg) => cfg.snippets || [],
+    write: (cfg, live, seen) => ({ ...cfg, snippets: mergeSnippets(seen, cfg.snippets, live.snippets) }),
+  },
+  {
     // Appearance (#348) is edited only in Settings; the wizard carries the
     // value it opened with. A save elsewhere since then wins over that copy.
     name: "appearance",
@@ -272,6 +282,7 @@ function formSyncFields(cfg) {
     ...Object.fromEntries(FORM_SYNC_KEYS.map((key) => [key, cfg[key]])),
     dictionary: cfg.cleanup?.dictionary || [],
     aliases: cfg.cleanup?.aliases || [],
+    snippets: cfg.snippets || [],
   };
 }
 
@@ -439,6 +450,12 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     // win, and vocabulary must reconcile from live values, not the snapshot.
     const prepared = wizard ? withWizardOwned(next, previous) : next;
     const candidate = withMainOwned(prepared, previous, baseline);
+    // Snippets (#334) are checked before anything else happens: a rejected
+    // list throws here, with no hotkey changed and nothing written. A request
+    // without the key (an older form) keeps what is saved.
+    candidate.snippets = Array.isArray(candidate.snippets)
+      ? validateSnippets(candidate.snippets, { trusted: previous.snippets })
+      : previous.snippets;
     const hotkeyResults = applyHotkeys(candidate);
     const rejectedFields = HOTKEY_FIELDS.filter((field) => {
       const result = hotkeyResults[field];

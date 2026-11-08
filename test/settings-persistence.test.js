@@ -629,3 +629,27 @@ test("formatting rules (#336): an older file gets the default, bad rules are dro
   settings.save({ ...settings.get(), formatting: { defaultStyle: "nope", rules: new Array(500).fill(null) } });
   assert.deepStrictEqual(settings.get().formatting, { defaultStyle: "standard", rules: [] });
 });
+
+// #334: snippets are a top-level key. Files from before it load with none; a
+// hand-edited list is made valid deterministically and survives save/restart.
+test("snippets default to none, normalize on load and survive a save and restart", (t) => {
+  const dir = makeSettingsDir(t);
+  fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ cleanup: { dictionary: ["x"] } }));
+  assert.deepStrictEqual(loadSettings(dir).get().snippets, []);
+
+  warnings.length = 0;
+  fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({
+    snippets: [
+      { id: "snp_a", triggers: ["My Address", "home"], content: "1 Main St\r\nTown\n" },
+      { id: "snp_b", triggers: ["my  address"], content: "dup trigger" },
+      { id: "snp_c", triggers: ["x"], content: "" },
+    ],
+  }));
+  const settings = loadSettings(dir);
+  const expected = [{ id: "snp_a", triggers: ["My Address", "home"], content: "1 Main St\nTown\n" }];
+  assert.deepStrictEqual(settings.get().snippets, expected);
+  assert.ok(warnings.some((w) => /dropped a saved snippet/.test(w)), warnings.join("\n"));
+  settings.save(settings.get());
+  assert.deepStrictEqual(readFile(dir).snippets, expected);
+  assert.deepStrictEqual(loadSettings(dir).get().snippets, expected);
+});

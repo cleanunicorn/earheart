@@ -24,6 +24,7 @@ colors:
   section-live: "#9cae65"
   section-stt: "#48b7c2"
   section-cleanup: "#b49ce1"
+  section-snippets: "#e0916a"
   section-history: "#d389ba"
   section-usage: "#75b683"
   section-advanced: "#c49f4d"
@@ -53,6 +54,7 @@ colors:
   section-live-light: "#5d6b2b"
   section-stt-light: "#14707a"
   section-cleanup-light: "#6a578f"
+  section-snippets-light: "#9a4a25"
   section-history-light: "#854e73"
   section-usage-light: "#3e6e48"
   section-advanced-light: "#7b5f1b"
@@ -358,6 +360,7 @@ They name a place, never a state.
 - **Section Live transcript** (`section-live`, #9cae65): lime — waveform glyph.
 - **Section Speech-to-text** (`section-stt`, #48b7c2): cyan — captions glyph.
 - **Section Cleanup** (`section-cleanup`, #b49ce1): violet — sparkle glyph.
+- **Section Snippets** (`section-snippets`, #e0916a): coral — text-lines glyph.
 - **Section History** (`section-history`, #d389ba): magenta — clock glyph.
 - **Section Usage** (`section-usage`, #75b683): sage — bar-chart glyph.
 - **Section Advanced** (`section-advanced`, #c49f4d): gold — sliders glyph.

@@ -142,6 +142,7 @@ const PAIRS = [
   ["--section-live", ["ink", "card"], TEXT, "section hue"],
   ["--section-stt", ["ink", "card"], TEXT, "section hue"],
   ["--section-cleanup", ["ink", "card"], TEXT, "section hue"],
+  ["--section-snippets", ["ink", "card"], TEXT, "section hue"],
   ["--section-history", ["ink", "card"], TEXT, "section hue"],
   ["--section-usage", ["ink", "card"], TEXT, "section hue"],
   ["--section-advanced", ["ink", "card"], TEXT, "section hue"],

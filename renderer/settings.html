@@ -40,6 +40,10 @@
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6z"/></svg>
           <span class="tab-label" data-i18n="settings.cleanup">Cleanup</span>
         </button>
+        <button class="tab" data-tab="snippets">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="11" x2="20" y2="11"/><line x1="4" y1="16" x2="14" y2="16"/></svg>
+          <span class="tab-label">Snippets</span>
+        </button>
         <button class="tab" data-tab="history">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg>
           <span class="tab-label" data-i18n="settings.history">History</span>
@@ -826,6 +830,72 @@
         </div>
       </section>
 
+      <!-- Snippets (#334): spoken trigger -> saved text; renderer/snippets.js -->
+      <section id="tab-snippets" class="panel" aria-labelledby="legend-snippets">
+        <h2 class="legend" tabindex="-1" id="legend-snippets">
+          <svg class="legend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="11" x2="20" y2="11"/><line x1="4" y1="16" x2="14" y2="16"/></svg>
+          Snippets
+        </h2>
+        <div class="card">
+          <div class="card-title">Saved snippets</div>
+          <p class="hint">
+            Say a trigger phrase and Earheart types the saved text instead,
+            exactly as written, with cleanup on or off. Matching ignores
+            capitalization and needs whole words; when two triggers overlap,
+            the longer one wins. A snippet never triggers another. History
+            keeps what you said.
+          </p>
+          <div class="snippet-search">
+            <label for="snippet-search" class="sr-only">Search snippets</label>
+            <input type="search" id="snippet-search" placeholder="Search snippets" maxlength="200" autocomplete="off" spellcheck="false" />
+          </div>
+          <ul id="snippet-list"></ul>
+          <p id="snippet-empty" class="hint" role="status"></p>
+          <div class="row space-between">
+            <span id="snippet-count" class="muted"></span>
+            <button id="snippet-new" class="ghost" type="button">New snippet</button>
+          </div>
+          <p class="hint">
+            Changes to the list are saved with Save at the bottom of this window.
+          </p>
+        </div>
+        <div class="card" id="snippet-editor" hidden>
+          <div class="card-title" id="snippet-editor-title">New snippet</div>
+          <div class="field">
+            <label for="snippet-triggers">When I say <span class="muted">(one phrase per line)</span></label>
+            <textarea id="snippet-triggers" rows="2" spellcheck="false" placeholder="my address&#10;home address"></textarea>
+          </div>
+          <div class="field">
+            <label for="snippet-content">Type this</label>
+            <textarea id="snippet-content" rows="6" spellcheck="false" aria-describedby="snippet-content-hint"></textarea>
+            <div class="snippet-tags row" role="group" aria-label="Insert a tag">
+              <button type="button" class="ghost" data-snippet-tag="clipboard">{{clipboard}}</button>
+              <button type="button" class="ghost" data-snippet-tag="date">{{date}}</button>
+              <button type="button" class="ghost" data-snippet-tag="time">{{time}}</button>
+              <button type="button" class="ghost" data-snippet-tag="timezone">{{timezone}}</button>
+            </div>
+            <p id="snippet-content-hint" class="hint">
+              Tags are filled in when you dictate: the clipboard as it was
+              when you stopped recording, today's date (2026-11-08), the time
+              (14:05) and your time zone. Text a tag inserts is never read for
+              tags again. Anything else in double braces is refused.
+            </p>
+          </div>
+          <div class="field">
+            <span class="label" id="snippet-preview-label">Preview</span>
+            <pre id="snippet-preview" aria-labelledby="snippet-preview-label"></pre>
+          </div>
+          <p id="snippet-error" class="status err" role="alert" hidden></p>
+          <div class="row space-between">
+            <span class="row">
+              <button id="snippet-apply" class="ghost" type="button">Add snippet</button>
+              <button id="snippet-cancel" class="ghost" type="button">Cancel</button>
+            </span>
+            <button id="snippet-delete" class="ghost danger" type="button" hidden>Delete snippet</button>
+          </div>
+        </div>
+      </section>
+
       <!-- History -->
       <section id="tab-history" class="panel" aria-labelledby="legend-history">
         <h2 class="legend" tabindex="-1" id="legend-history">
@@ -1104,6 +1174,7 @@
     <script src="vocabulary.js"></script>
     <script src="vocab-packs.js"></script>
     <script src="aliases.js"></script>
+    <script src="snippets.js"></script>
     <script src="prompt-diff.js"></script>
     <script src="settings-sync.js"></script>
     <script src="permission-status.js"></script>

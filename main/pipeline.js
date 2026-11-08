@@ -41,6 +41,15 @@ const setupNotifier = createNotifier({
   openSettings: () => windows.openSettings(),
   logger,
 });
+// Commands guidance must never bring a focusable window forward, including
+// when the notification service is unavailable or a stale notice is clicked.
+const commandsNotifier = createNotifier({
+  Notification,
+  openSettings: () => {},
+  logger,
+  settingsWhenUnsupported: false,
+});
+
 let session = 0; // current dictation session id
 let abortController = null;
 const stateListeners = new Set();
@@ -574,7 +583,7 @@ function setPaletteGuard(guard) { dismissPalette = guard; }
 function isPaletteIdle() { return state === "idle" && retryPending !== session; }
 function paletteBlocksDictation() {
   if (!dismissPalette()) return false;
-  setupNotifier.show({ title: "Commands closed", body: "Focus your destination and press the dictation shortcut again." });
+  commandsNotifier.show({ title: "Commands closed", body: "Focus your destination and press the dictation shortcut again." });
   return true;
 }
 function retryFailedTake() {

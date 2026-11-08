@@ -10,6 +10,7 @@ const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { deliverText } = require("./output/single-line");
 const history = require("./history");
+const { DISABLED } = require("./agent-api");
 const recordings = require("./recordings");
 const windows = require("./windows");
 const i18n = require("./i18n");
@@ -316,6 +317,13 @@ function staleDefinitions(existing, model) {
 
 // Wrap a handler whose failures are answers, not exceptions: whatever it
 // throws reaches the renderer as { ok: false, error }, worded by `describe`.
+// Used when init() is given no agent API (tests): every call is refused.
+const INERT_AGENT_API = {
+  ...Object.fromEntries(["state", "send", "cancel", "reply", "remove", "copyResume", "pickProject"].map((name) => [name, async () => DISABLED])),
+  clearTasks: () => ({ ok: true }),
+  removeForHistory() {},
+};
+
 function wrap(fn, describe = (err) => err.message) {
   return async (...args) => {
     try {
@@ -350,7 +358,7 @@ async function openLog() {
   }
 }
 
-function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {}, onHistoryEntryDeleted = () => {}, retranscribe = async () => ({ ok: false, error: "unavailable" }) }) {
+function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {}, onHistoryEntryDeleted = () => {}, agentApi = INERT_AGENT_API, retranscribe = async () => ({ ok: false, error: "unavailable" }) }) {
   onCleanupDownloaded = completed;
   // Custom models reach the registry through the settings themselves
   // (engines/catalog.js, bound in main.js), not through this layer: the saves
@@ -802,6 +810,8 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     if (!history.isValidId(id)) return { ok: false, error: "EINVAL" };
     const result = history.remove(id);
     if (result.ok && result.removed) {
+      // A brief sent from this entry is its transcript text too (#345).
+      agentApi.removeForHistory(id);
       // A transcript held back from a paste (#291) saved as this entry goes too.
       onHistoryEntryDeleted(id);
       // "Copy last transcription" must not offer the deleted words.
@@ -818,6 +828,8 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   // transcripts on disk, and Settings must say so instead of showing none.
   ipcMain.handle("history:clear", () => {
     const result = history.clear();
+    // Briefs sent to agents are transcript text: they go with it (#345).
+    if (result.ok) agentApi.clearTasks();
     // A transcript held back from a paste (#291) is history too.
     if (result.ok) onHistoryCleared();
     // "Copy last transcription" must go disabled with nothing left to copy.
@@ -859,6 +871,18 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   });
   // Transcribe entry `id`'s recording again (pipeline.retranscribe): never
   // pastes; the result is stored beside the original as entry.retry.
+  // Send to agents (#345). Only the Settings window may ask; every handler
+  // is inert until the setting is on (main/agent-api.js).
+  const fromSettings = (fn) => (event, ...args) =>
+    windows.isSettingsContents(event.sender) ? fn(event, ...args) : { ok: false, error: "Not available here." };
+  ipcMain.handle("agent:state", fromSettings(agentApi.state));
+  ipcMain.handle("agent:send", fromSettings(agentApi.send));
+  ipcMain.handle("agent:cancel", fromSettings(agentApi.cancel));
+  ipcMain.handle("agent:reply", fromSettings(agentApi.reply));
+  ipcMain.handle("agent:remove", fromSettings(agentApi.remove));
+  ipcMain.handle("agent:copy-resume", fromSettings(agentApi.copyResume));
+  ipcMain.handle("agent:pick-project", fromSettings(agentApi.pickProject));
+
   ipcMain.handle("history:retranscribe", async (event, id) => {
     if (!history.isValidId(id)) return { ok: false, error: "missing" };
     return retranscribe(id);

@@ -194,6 +194,16 @@ const DEFAULTS = {
     enabled: true,
     limit: 100,
   },
+  // Send a reviewed transcript to an installed coding agent (#345,
+  // main/agent-tasks.js). Off until the user turns it on. `permission` is the
+  // agent's sandbox: "edit" (workspace-write / acceptEdits) or "read"
+  // (read-only / plan). There is no full-access mode. `binaries` optionally
+  // pins an agent's executable (absolute path) instead of looking it up on PATH.
+  agents: {
+    enabled: false,
+    permission: "edit",
+    binaries: { codex: "", claude: "" },
+  },
   // Local usage counts (#347, main/usage.js): takes, words and speech time,
   // never text. typingWpm is the baseline the "time saved" estimate uses.
   usage: {

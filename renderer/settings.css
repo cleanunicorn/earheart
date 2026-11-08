@@ -1423,3 +1423,72 @@ footer {
     scroll-behavior: auto;
   }
 }
+
+/* Send to agents (#345): the review form on a History entry and the task list. */
+#agent-tasks {
+  max-width: 620px;
+  margin-bottom: 14px;
+}
+
+#agent-task-list {
+  list-style: none;
+}
+
+#agent-task-list li,
+#history-list .agent-review {
+  background: var(--wash-faint);
+  border: 1px solid var(--seam);
+  border-radius: 10px;
+  padding: 11px 13px;
+  margin-bottom: 8px;
+}
+
+#history-list .agent-review {
+  margin: 9px 0 0;
+}
+
+.agent-review textarea {
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+}
+
+.agent-review .agent-row,
+#agent-task-list .agent-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+#agent-task-list .agent-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#agent-task-list .agent-status {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+#agent-task-list .agent-status.failed,
+#agent-task-list .agent-status.interrupted {
+  color: var(--err);
+}
+
+#agent-task-list .agent-brief,
+#agent-task-list .agent-output {
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow: auto;
+  margin-top: 6px;
+}
+
+#agent-task-list .agent-output {
+  border-top: 1px solid var(--seam);
+  padding-top: 6px;
+}

@@ -416,6 +416,10 @@ function microphonePage(source, page) {
     "updates-remind": { checked: true },
     "idle-unload": { value: "0", ...inputRange("idle-unload") },
     "history-enabled": { checked: true },
+    "agents-enabled": { checked: false },
+    "agents-permission": { value: "edit" },
+    "agents-codex-path": { value: "" },
+    "agents-claude-path": { value: "" },
     // Background audio: chosen on in this form, at a level other than the
     // default, so the save proves both fields are read from the form.
     "duck-other-audio": { checked: true },

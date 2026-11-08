@@ -631,6 +631,12 @@ function closeSettings() {
   if (alive(settingsWindow)) settingsWindow.close();
 }
 
+// True when `contents` is the Settings window's own page: the agent:* handlers
+// (#345) accept requests from nowhere else.
+function isSettingsContents(contents) {
+  return alive(settingsWindow) && settingsWindow.webContents === contents;
+}
+
 function sendToSettings(channel, payload) {
   if (alive(settingsWindow)) settingsWindow.webContents.send(channel, payload);
 }
@@ -675,6 +681,7 @@ function refreshInk() {
 }
 
 module.exports = {
+  isSettingsContents,
   init,
   INK_COLORS,
   inkColor,

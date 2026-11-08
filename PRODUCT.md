@@ -72,10 +72,17 @@ Supporting truths (real, but not the lead):
 - **Cross-platform equal citizen** — first-class Linux support (X11 and
   Wayland) alongside Windows and macOS, which desktop dictation rarely offers.
 
-**Not claimed (yet):** Earheart does not submit the prompt for you, does not
-speak the agent's replies, and has no MCP or agent-side integration. These are
-tracked as roadmap issues under the `agents` label — never describe them as
-shipped.
+**Opt-in task sending:** with "Send transcripts to coding agents" on, a
+History entry can be reviewed and explicitly sent to an installed Codex or
+Claude Code, with tracked status, cancel, replies and a finish notification
+([docs/agent-tasks.md](docs/agent-tasks.md)). It is off by default, never
+sends without that review step, and the brief is processed off-device by the
+agent's provider. Ordinary dictation still only pastes.
+
+**Not claimed (yet):** Earheart does not auto-submit dictation into other
+apps, does not speak the agent's replies, and has no MCP or agent-side
+integration. These are tracked as roadmap issues under the `agents` label —
+never describe them as shipped.
 
 ## Operating Context
 

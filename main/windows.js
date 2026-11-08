@@ -38,6 +38,7 @@ let overlayWindow = null;
 let settingsWindow = null;
 let wizardWindow = null;
 let correctionWindow = null;
+let paletteWindow = null;
 let correctionText = "";
 let correctionDirty = false;
 let overlayCustomPosition = null; // set when the user drags the card
@@ -487,16 +488,48 @@ function sendToOverlay(channel, payload) {
   if (win) win.webContents.send(channel, payload);
 }
 
-function openSettings({ fromWizard = false, section, model = false } = {}) {
+// A hidden palette reserves its lifecycle before loading. Only its controller
+// may show it after checking the pipeline again.
+function createPaletteWindow() {
+  paletteWindow = createFormWindow("palette", { width: 620, height: 600, minWidth: 420,
+    minHeight: 360, title: "Commands · Earheart", show: false });
+  const win = paletteWindow;
+  win.on("closed", () => { if (paletteWindow === win) paletteWindow = null; });
+  return win;
+}
+function loadPalette(win) { return win.loadFile(path.join(RENDERER, "palette.html")); }
+function paletteCaller(sender) { return alive(settingsWindow) && settingsWindow.webContents === sender; }
+function capturePaletteCaller() {
+  const win = BrowserWindow.getFocusedWindow();
+  return [settingsWindow, wizardWindow, correctionWindow].includes(win) ? win : null;
+}
+function restorePaletteCaller(win) {
+  // Chromium retains the focused control in the existing document. For an
+  // external caller, leave foreground restoration to the window manager.
+  if (alive(win)) bringForward(win);
+}
+
+function openSettings({ fromWizard = false, section, model = false, query: historyQuery, entryId } = {}) {
   const destination = ["general", "live", "stt", "cleanup", "history", "advanced"].includes(section) ? section : undefined;
-  const navigation = { fromWizard, section: destination, model: !!model };
+  const historyDestination = destination === "history" && typeof historyQuery === "string"
+    ? { query: historyQuery.slice(0, 200), ...(typeof entryId === "string" ? { entryId } : {}) } : {};
+  const navigation = { fromWizard, section: destination, model: !!model, ...historyDestination };
   const query = {
+    ...historyDestination,
     ...(fromWizard ? { wizard: "1" } : {}),
     ...(destination ? { section: destination, ...(model ? { model: "1" } : {}) } : {}),
   };
   const load = (win) => win.loadFile(path.join(RENDERER, "settings.html"), Object.keys(query).length ? { query } : undefined);
   if (alive(settingsWindow)) {
-    if (fromWizard || destination) settingsWindow.webContents.send("settings:navigate", navigation);
+    if (fromWizard || destination) {
+      const target = settingsWindow;
+      const send = () => {
+        if (alive(target) && settingsWindow === target) target.webContents.send("settings:navigate", navigation);
+      };
+      // A loading page has not necessarily installed its navigation listener.
+      if (target.webContents.isLoadingMainFrame?.()) target.webContents.once("did-finish-load", send);
+      else send();
+    }
     return bringForward(settingsWindow);
   }
   settingsWindow = createFormWindow("settings", {
@@ -622,7 +655,7 @@ function broadcast(channel, payload) {
 // behind them — visible while resizing — from showing the old ink.
 function refreshInk() {
   const ink = inkColor();
-  for (const win of [settingsWindow, wizardWindow, correctionWindow]) {
+  for (const win of [settingsWindow, wizardWindow, correctionWindow, paletteWindow]) {
     if (win && !win.isDestroyed()) win.setBackgroundColor(ink);
   }
 }
@@ -640,6 +673,12 @@ module.exports = {
   setOverlayPinned,
   isOverlayVisible,
   sendToOverlay,
+  isWizardOpen: () => alive(wizardWindow),
+  createPaletteWindow,
+  loadPalette,
+  paletteCaller,
+  capturePaletteCaller,
+  restorePaletteCaller,
   openSettings,
   openCorrection,
   getCorrectionText,

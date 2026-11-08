@@ -77,6 +77,13 @@ tabindex is seated at load, a setting saved from the tray reaches an open
 Settings window or wizard without discarding unsaved edits, and a microphone
 chosen while device enumeration is pending survives it and Save writes that
 choice to disk. CI runs all five on every platform.
+The settings smoke also drives Commands with real keyboard events: search,
+selection, Escape/Tab focus, singleton opening, safe History text, stale replies,
+selected-card navigation and preservation of unsaved Settings fields. Commands
+uses a dedicated preload role and the pipeline's central start/retry guard;
+see [Commands](docs/command-palette.md) for shortcuts and native acceptance that
+headless tests cannot establish.
+
 Built-in models download to Electron's `userData/models` on first use; the
 smoke checks don't need them present.
 

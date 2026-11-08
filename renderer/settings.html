@@ -18,6 +18,8 @@
         <h1>Earheart</h1>
         <p>Press the hotkey, speak, press it again — your words appear where you type.</p>
       </div>
+      <p id="commands-status" class="status" role="status"></p>
+      <button id="commands" class="ghost">Commands… <span id="commands-shortcut"></span></button>
     </header>
 
     <div class="deck">
@@ -121,6 +123,15 @@
             </div>
             <p class="hint">Open your last saved transcript, correct a spelling and remember it. Optional. On Wayland, bind <code>earheart --correct-last</code> in your desktop settings.</p>
             <p id="correct-hotkey-status" class="status" aria-live="polite"></p>
+          </div>
+          <div class="field">
+            <label for="palette-hotkey">Commands hotkey</label>
+            <div class="row">
+              <input id="palette-hotkey" readonly placeholder="Not set — click, then press a key combination" />
+              <button id="palette-hotkey-clear" class="ghost">Clear</button>
+            </div>
+            <p class="hint">Open navigation, common actions and saved dictations. Leave empty to disable the global shortcut. Desktop bindings can run <code>earheart --palette</code>.</p>
+            <p id="palette-hotkey-status" class="status" aria-live="polite"></p>
           </div>
 
         </div>

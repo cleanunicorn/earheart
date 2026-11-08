@@ -175,4 +175,4 @@ function capabilities() {
   return { capture: platform.captureSupport(), apply: platform.fingerprintSupport() };
 }
 
-module.exports = { init, isRecording: () => session?.isRecording() ?? false, begin, cancel, applyHotkey, suspend, getHotkeyStatus, capabilities, commandConfig };
+module.exports = { init, transform, paste, isRecording: () => session?.isRecording() ?? false, begin, cancel, applyHotkey, suspend, getHotkeyStatus, capabilities, commandConfig };

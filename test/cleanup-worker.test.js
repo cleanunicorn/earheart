@@ -414,3 +414,60 @@ test("cleanup worker: the context never grows past the model's training context"
   assert.equal((await w.send("clean", { model: budgeted("A"), transcript: "hello", systemPrompt: words(9000) })).ok, false);
   assert.deepEqual(w.contextEvents, ["context:A:4096", "context:A:8192"]);
 });
+
+/* ---------- voice command transform (#344) ---------- */
+
+const manyWords = (n) => Array.from({ length: n }, () => "w").join(" ");
+const command = (modelPath, over = {}) => ({
+  model: model(modelPath), operationId: 21, turn: "rules\n\nInstruction:\nshorten it\n\nResult:", maxTokens: 256, sampling: { temperature: 0.4 }, ...over,
+});
+
+test("transform: returns the generated text under its own output cap", async () => {
+  const w = worker();
+  const reply = await w.send("transform", command("A"));
+  assert.equal(reply.ok, true);
+  assert.equal(reply.result, "A");
+  assert.deepEqual(w.promptOptions, [{ maxTokens: 256 }], "the cap is the request's, not the cleanup ratio");
+});
+
+test("transform: hitting the output cap is an error, never a partial result", async () => {
+  const w = worker({ stopReason: "maxTokens" });
+  const reply = await w.send("transform", command("A"));
+  assert.equal(reply.ok, false);
+  assert.match(reply.error, /length limit/);
+});
+
+test("transform: an empty reply is an error", async () => {
+  const w = worker();
+  const reply = await w.send("transform", command(""));
+  assert.equal(reply.ok, false);
+  assert.match(reply.error, /returned no text/);
+});
+
+test("transform: a long selection grows the context, within the ceiling", async () => {
+  const w = worker();
+  const reply = await w.send("transform", command("A", { turn: manyWords(5000), maxTokens: 1024 }));
+  assert.equal(reply.ok, true);
+  assert.ok(w.contextEvents.includes("context:A:8192"), w.contextEvents.join(","));
+});
+
+test("transform: a turn that can't fit even the largest context is refused before generating", async () => {
+  const w = worker();
+  const reply = await w.send("transform", command("A", { turn: manyWords(20000), maxTokens: 1024 }));
+  assert.equal(reply.ok, false);
+  assert.match(reply.error, /too long for the local model/);
+  assert.deepEqual(w.promptOptions, []);
+});
+
+test("transform: a cancel reaches it and frees the queue for the next turn", async () => {
+  const promptGate = deferred();
+  const promptStarted = deferred();
+  const w = worker({ promptGate, promptStarted });
+  const active = w.send("transform", command("A", { operationId: 31 }));
+  await promptStarted.promise;
+  const next = w.send("clean", { ...turn("B"), operationId: 32 });
+  assert.equal((await w.send("cancel-clean", { operationId: 31 })).result.cancelled, 1);
+  promptGate.resolve();
+  assert.equal((await active).ok, false);
+  assert.equal((await next).result, "B");
+});

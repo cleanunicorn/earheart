@@ -42,6 +42,10 @@ overlay-smoke: ## Drive the overlay with a fake mic and check capture/UI sync
 settings-smoke: ## Drive the settings window and check its UI, microphone picker, and live settings sync
 	xvfb-run -a npx electron scripts/settings-smoke.js --no-sandbox
 
+.PHONY: command-smoke
+command-smoke: ## Drive the voice command card and check rendering, Apply/Copy rules, cancellation and sender checks
+	xvfb-run -a npx electron scripts/command-smoke.js --no-sandbox
+
 .PHONY: icons
 icons: ## Regenerate app/tray icons into assets/
 	node scripts/gen-icons.js

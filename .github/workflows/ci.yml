@@ -69,6 +69,17 @@ jobs:
       - name: Settings panel smoke
         if: runner.os != 'Linux'
         run: npx electron scripts/settings-smoke.js --no-sandbox
+      # Drive the real voice command card (#344): text-only rendering, the
+      # Apply/Copy rules, cancellation, and that only the card may call the
+      # command channels. CI can't prove native selection capture or paste;
+      # those are checked by hand per OS (docs/commands.md).
+      # make command-smoke
+      - name: Voice command card smoke (headless)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npx electron scripts/command-smoke.js --no-sandbox
+      - name: Voice command card smoke
+        if: runner.os != 'Linux'
+        run: npx electron scripts/command-smoke.js --no-sandbox
 
   # `.nvmrc` floats to the newest Node 22, so the job above never sees the
   # oldest Node that package.json's engines field promises. Install and unit-test

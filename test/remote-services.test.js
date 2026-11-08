@@ -569,3 +569,86 @@ test("listRemoteModels times out when a service never responds", async () => {
     server.close();
   }
 });
+
+/* ---------- voice command transform (#344) ---------- */
+
+const { transform: remoteTransform } = require("../main/services/transform");
+const { TRANSFORM_TRUNCATED_MESSAGE, TRANSFORM_EMPTY_MESSAGE } = require("../main/util/transform-turn");
+
+const replyWith = (choice) => JSON.stringify({ choices: [choice] });
+function withReply(body, run, { status = 200 } = {}) {
+  const seen = [];
+  return withServer((req, res) => {
+    let raw = "";
+    req.on("data", (chunk) => (raw += chunk));
+    req.on("end", () => {
+      seen.push({ url: req.url, auth: req.headers.authorization, body: JSON.parse(raw || "{}") });
+      res.writeHead(status, { "content-type": "application/json" });
+      res.end(body);
+    });
+  }, (base) => run(base, seen));
+}
+
+test("transform: posts the rules, the delimited selection and its own output cap", async () => {
+  await withReply(replyWith({ message: { content: "<think>hmm</think>Shorter." }, finish_reason: "stop" }), async (base, seen) => {
+    const text = await remoteTransform(
+      { instruction: "shorten it", selection: "A very long sentence indeed." },
+      { baseUrl: base, apiKey: "sk-x", model: "m", maxOutputTokens: 300 }
+    );
+    assert.strictEqual(text, "Shorter.");
+    const { url, auth, body } = seen[0];
+    assert.strictEqual(url, "/v1/chat/completions");
+    assert.strictEqual(auth, "Bearer sk-x");
+    assert.strictEqual(body.max_tokens, 300, "the command's budget, not the cleanup ratio");
+    assert.strictEqual(body.model, "m");
+    assert.match(body.messages[0].content, /ONE instruction/);
+    assert.match(body.messages[1].content, /SELECTED TEXT [0-9a-f]{12} BEGIN\nA very long sentence indeed\.\nSELECTED TEXT/);
+    assert.match(body.messages[1].content, /Instruction:\nshorten it$/);
+  });
+});
+
+test("transform: a reply cut off at the token limit is an error, not a partial result", async () => {
+  await withReply(replyWith({ message: { content: "Half a rew" }, finish_reason: "length" }), async (base) => {
+    await assert.rejects(remoteTransform({ instruction: "x", selection: "y" }, { baseUrl: base, model: "m" }),
+      { message: TRANSFORM_TRUNCATED_MESSAGE });
+  });
+});
+
+test("transform: an empty or reasoning-only reply is an error", async () => {
+  for (const content of ["", "   ", "<think>only thoughts</think>"]) {
+    await withReply(replyWith({ message: { content }, finish_reason: "stop" }), async (base) => {
+      await assert.rejects(remoteTransform({ instruction: "x", selection: "y" }, { baseUrl: base, model: "m" }),
+        { message: TRANSFORM_EMPTY_MESSAGE });
+    });
+  }
+  await withReply(replyWith({ message: {}, finish_reason: "stop" }), async (base) => {
+    await assert.rejects(remoteTransform({ instruction: "x" }, { baseUrl: base, model: "m" }), /no message content/);
+  });
+});
+
+test("transform: transport failures use the shared plain-language errors", async () => {
+  await withReply("{}", async (base) => {
+    await assert.rejects(remoteTransform({ instruction: "x" }, { baseUrl: base, model: "m", apiKey: "bad" }),
+      (err) => err.status === 401 && /Command service error 401 — check the API key in Settings/.test(err.message));
+  }, { status: 401 });
+  await withServer(() => { /* never answers */ }, async (base) => {
+    await assert.rejects(remoteTransform({ instruction: "x" }, { baseUrl: base, model: "m", timeoutMs: 100 }),
+      (err) => err.code === "SERVICE_TIMEOUT" && /Command service didn't answer/.test(err.message));
+  });
+  await assert.rejects(remoteTransform({ instruction: "x" }, { baseUrl: "http://127.0.0.1:1/v1", model: "m" }),
+    (err) => err.code === "SERVICE_UNREACHABLE");
+});
+
+test("transform: a caller's cancel is an AbortError, not a failure to describe", async () => {
+  await withServer(() => { /* never answers */ }, async (base) => {
+    const controller = new AbortController();
+    const pending = remoteTransform({ instruction: "x" }, { baseUrl: base, model: "m" }, controller.signal);
+    setTimeout(() => controller.abort(), 30);
+    await assert.rejects(pending, (err) => err.name === "AbortError");
+  });
+});
+
+test("transform: an unset service is explained, and never falls back to another endpoint", async () => {
+  await assert.rejects(remoteTransform({ instruction: "x" }, { baseUrl: "", model: "" }), /isn't set up: add its URL and model in Settings → Commands/);
+  await assert.rejects(remoteTransform({ instruction: "x" }, { baseUrl: "http://127.0.0.1:1/v1", model: "" }), /isn't set up/);
+});

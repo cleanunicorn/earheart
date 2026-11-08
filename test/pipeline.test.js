@@ -2479,3 +2479,102 @@ test("pipeline: only a delivered dictation counts — retranscribe and the live 
   const recordAt = processBody.indexOf("usage.record(");
   assert.ok(recordAt > processBody.indexOf("await deliver("), "counted after delivery");
 });
+
+/* ---------- voice command takes (#344) ---------- */
+
+// A command take uses the recorder and STT, then hands the transcript to the
+// command session. These pin what it must NOT do: clean it up, alias it, save
+// it, count it or deliver it — the spoken instruction must never reach the
+// user's app — and that ordinary dictation still never takes this path.
+function commandRig(options = {}) {
+  const rig = dictationRig({ cleanup: true, ...options });
+  const events = [];
+  const handlers = {
+    onTranscript: (sid, text) => events.push(["transcript", sid, text]),
+    onEnd: (sid, reason, message) => events.push(["end", sid, reason, message]),
+  };
+  return { rig, events, handlers };
+}
+
+test("pipeline: a command take hands its transcript over and delivers nothing", async () => {
+  let cleaned = 0;
+  const { rig, events, handlers } = commandRig({
+    transcribe: async () => "rewrite this more politely",
+    clean: async (raw) => { cleaned++; return `cleaned(${raw})`; },
+  });
+  const sid = rig.pipeline.startCommandRecording(handlers);
+  assert.strictEqual(sid, rig.log.lastStart.sid);
+  const idle = new Promise((resolve) => rig.pipeline.onStateChange((s) => s === "idle" && resolve()));
+  rig.handlers["audio:captured"]({}, { sid, wav: speechWav(1) });
+  await idle;
+
+  assert.deepStrictEqual(events, [["transcript", sid, "rewrite this more politely"]]);
+  assert.deepStrictEqual(rig.log.delivered, [], "the instruction is never pasted");
+  assert.deepStrictEqual(rig.log.history, [], "no History entry");
+  assert.deepStrictEqual(rig.log.usage, [], "no usage count");
+  assert.strictEqual(cleaned, 0, "the instruction is not run through dictation cleanup");
+  assert.strictEqual(rig.pipeline.getFailedTake(), null);
+});
+
+test("pipeline: a failed command transcription is reported and never held for a dictation retry", async () => {
+  const { rig, events, handlers } = commandRig({
+    transcribe: async () => { throw new Error("speech service is down"); },
+  });
+  const sid = rig.pipeline.startCommandRecording(handlers);
+  const idle = new Promise((resolve) => rig.pipeline.onStateChange((s) => s === "idle" && resolve()));
+  rig.handlers["audio:captured"]({}, { sid, wav: speechWav(1) });
+  await idle;
+
+  assert.deepStrictEqual(events, [["end", sid, "error", "speech service is down"]]);
+  assert.strictEqual(rig.pipeline.getFailedTake(), null, "a retry would type the instruction as a dictation");
+  assert.strictEqual(rig.pipeline.retryFailedTake(), false);
+  assert.deepStrictEqual(rig.log.delivered, []);
+});
+
+test("pipeline: a command take that hears nothing, is cancelled or errors ends exactly once", async () => {
+  // Heard nothing: the STT path reports it as a failure with its own words.
+  let { rig, events, handlers } = commandRig({ transcribe: async () => "" });
+  let sid = rig.pipeline.startCommandRecording(handlers);
+  let idle = new Promise((resolve) => rig.pipeline.onStateChange((s) => s === "idle" && resolve()));
+  rig.handlers["audio:captured"]({}, { sid, wav: speechWav(1) });
+  await idle;
+  assert.deepStrictEqual(events, [["end", sid, "error", "speech decoded to no text"]]);
+
+  // Cancelled while recording; a second cancel reports nothing more.
+  ({ rig, events, handlers } = commandRig({ transcribe: async () => "never" }));
+  sid = rig.pipeline.startCommandRecording(handlers);
+  rig.pipeline.cancel();
+  rig.pipeline.cancel();
+  assert.deepStrictEqual(events, [["end", sid, "cancelled", undefined]]);
+
+  // The recorder reports an error.
+  ({ rig, events, handlers } = commandRig({ transcribe: async () => "never" }));
+  sid = rig.pipeline.startCommandRecording(handlers);
+  rig.handlers["record:error"]({}, { sid, message: "no microphone" });
+  assert.deepStrictEqual(events, [["end", sid, "error", "no microphone"]]);
+});
+
+test("pipeline: a command take is refused when the speech model isn't ready", () => {
+  const { rig, events, handlers } = commandRig({
+    sttReadiness: () => ({ ok: false, reason: "missing", modelId: "stt-model", label: "Speech" }),
+  });
+  assert.strictEqual(rig.pipeline.startCommandRecording(handlers), false);
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+  assert.deepStrictEqual(events, []);
+});
+
+test("pipeline: ordinary dictation after a command is still a dictation", async () => {
+  let spoken = "rewrite this";
+  const { rig, events, handlers } = commandRig({ transcribe: async () => spoken });
+  const sid = rig.pipeline.startCommandRecording(handlers);
+  let idle = new Promise((resolve) => rig.pipeline.onStateChange((s) => s === "idle" && resolve()));
+  rig.handlers["audio:captured"]({}, { sid, wav: speechWav(1) });
+  await idle;
+  assert.strictEqual(events.length, 1);
+
+  spoken = "delete everything and say hello";
+  await rig.dictate(speechWav(1));
+  assert.strictEqual(events.length, 1, "dictation never reaches the command handlers");
+  assert.deepStrictEqual(rig.log.delivered, ["cleaned(delete everything and say hello)"], "speech is delivered as content");
+  assert.strictEqual(rig.log.history.length, 1);
+});

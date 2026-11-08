@@ -1,7 +1,9 @@
 # Overlay clock stall investigation (#371)
 
-This is investigation and regression coverage, not a capture-path fix. Same-take
-recovery is not authorized by the reviewed plan. Issue #371 remains open.
+The initial investigation (`e9e97c0`) added regression coverage and measurements
+without changing production capture. The maintainer subsequently approved the
+bounded same-take recovery in this thread. The approved follow-up and its
+validation are recorded below; the baseline evidence remains separate.
 
 ## Scope and method
 
@@ -150,10 +152,10 @@ calling the application's start/stop/generation/cue/status code. It does not
 isolate Chromium internals from the platform audio backend or prove an upstream
 bug. The graph still uses the application's window, warm-up and recorder module.
 
-## Proposed decision (not implemented)
+## Recovery proposal and approval
 
-Maintainer approval is required before changing production capture recovery.
-A concrete bounded option is one same-take rebuild only when **no first sample
+The reviewed plan required maintainer approval before changing production capture
+recovery; that approval was given in this thread. The approved behavior is one same-take rebuild only when **no first sample
 post has arrived**, the granted track remains live/enabled/unmuted, resume has
 resolved, the context reports running, and its clock has remained unchanged
 for at least one measured second across multiple wall-clock probes. Keep the
@@ -163,14 +165,14 @@ If the new graph also fails, release it and send the existing SID-scoped error.
 Stop/discard/supersession must invalidate the rebuild and release its nodes;
 retired callbacks must not claim the successor's samples, watchdog or cues.
 
-That proposal requires deterministic tests for frozen versus advancing clocks,
+The implementation is validated with deterministic tests for frozen versus advancing clocks,
 late old posts, retry exhaustion, stop/discard/supersession during every await,
 cue-on capture alignment and cleanup, followed by smoke and matched stress runs.
 A serialized transition chain is another experiment; a passing stress sample
-for that control would not establish a fix by itself. Neither remedy is included
-in this investigation commit.
+for that control would not establish a fix by itself. The initial investigation commit includes neither remedy; the approved
+follow-up implements the bounded rebuild.
 
-## Validation limits
+## Initial investigation validation and limits
 
 The full unit suite currently fails at module load in
 `test/release-contract.test.js`: main's `37508c2` removes `AGENTS.md`, but the test
@@ -195,3 +197,63 @@ load logs are not available).
 supplies the display flags above; the Makefile is unchanged. The native engine
 smoke successfully loaded both STT and cleanup addons. macOS and Windows capture
 were not exercised on this Linux host.
+
+
+## Approved recovery implementation
+
+Before the first sample post, the overlay probes `currentTime` every 250 ms.
+After resume resolves, a running context whose clock stays unchanged for at
+least one measured second is eligible for one replacement, provided its granted
+track is live, enabled and unmuted. The probe uses `performance.now()` and stops
+on the first sample post, including samples inside a start-cue guard. An
+advancing clock with delayed posts and a muted/ended track use the normal
+watchdog instead. Recovery does not run after recording has become live.
+
+The retry retires the old source and worklet, closes the context and warms a
+fresh 16 kHz engine. It reconnects the same stream under the same SID, keeps the
+Starting status until real samples arrive and arms no second clock probe. The
+original ten-second watchdog and all session timers remain in place. A failed
+replacement releases the stream and reports one error. Stop/discard/cancellation
+or a superseding take invalidates any pending reconnect.
+
+The cache now publishes pending contexts so reset can close a replacement whose
+module is still loading. A late warm-up success or failure cannot publish over a
+newer context or clear its cached promise. The normal overlap of resume and graph
+setup is retained; this change handles a measured stall rather than claiming to
+correct Chromium's transition ordering.
+
+`test/overlay-clock-recovery.test.js` covers one retry on the same stream/SID,
+original-deadline exhaustion, advancing clocks with delayed posts, ineligible
+tracks/states, unresolved resume, wall-clock jumps, stop/discard/cancel and
+supersession during replacement, module and suspend completion after timeout,
+late resume after cancellation, construction failure cleanup, retired messages
+and exact cue-guard WAV samples. This supplements the original engine and cue
+integration tests.
+
+The harness accepts `--freeze-first` in overlay mode: the first real engine stays
+suspended while its state/resume surface reports running. The replacement is
+unmodified and must capture non-silent fake-device audio. Two injected native
+iterations passed; the first replacement closed the frozen engine approximately
+1000.9 ms after its resume and returned a non-silent WAV under SID 1001. This
+validates the recovery handling independently of whether a probabilistic run
+happens to encounter the Chromium/runtime stall.
+
+Post-change native sampling was fixed at 120 unloaded and 120 loaded application
+iterations, with the same environment, capture checks and continuous unit-test
+load as the initial investigation. Both samples finished with zero failures and
+zero observed retries. No natural stall appeared in those samples; the initial
+investigation itself had 0/480 in one application batch, so the passing stress
+samples alone establish no fix. The deterministic and injected native failures
+provide the direct evidence for the approved handling behavior.
+
+All 19 new recovery tests passed in the final suite. Final full `make test`:
+1659 pass, 3 skip, 1 failing file, the same pre-existing release-contract read of
+missing `AGENTS.md`. All remaining `*.test.js` files: 1657 pass, 3 skip, zero
+failures. All seven complete load-loop test runs have that same sole existing
+failure, with their full individual logs retained. The app/engine/overlay/settings
+smoke checks all pass, including overlay 99/99, settings 211/211 and both native
+engine imports, using the previously documented Xvfb workaround. macOS/Windows
+validation remains for the platform CI gates.
+
+Follow-up raw evidence is retained under the `issue-371/recovery` directory in
+this BB thread's storage, separate from the pre-approval measurements.

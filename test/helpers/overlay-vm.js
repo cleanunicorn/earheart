@@ -52,7 +52,7 @@ function fakeParam() {
   return { value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {} };
 }
 
-function createOverlayVm({ outputLatency = 0.04, baseLatency = 0.01, inputLatency = 0.02, trackLatency = inputLatency } = {}) {
+function createOverlayVm({ outputLatency = 0.04, baseLatency = 0.01, inputLatency = 0.02, trackLatency = inputLatency, now = () => performance.now(), loadWorklet = async () => {} } = {}) {
   const sent = [];
   const handlers = {};
   const oscillators = []; // { ctx, startAt, stops: [], disconnected }
@@ -87,7 +87,7 @@ function createOverlayVm({ outputLatency = 0.04, baseLatency = 0.01, inputLatenc
       this.outputLatency = outputLatency;
       this.baseLatency = baseLatency;
       this.destination = { node: "destination" };
-      this.audioWorklet = { addModule: async () => {} };
+      this.audioWorklet = { addModule: () => loadWorklet(this) };
       this.isRecording = this.sampleRate === 16000;
       contexts.push(this);
     }
@@ -165,6 +165,7 @@ function createOverlayVm({ outputLatency = 0.04, baseLatency = 0.01, inputLatenc
 
   const context = {
     console,
+    performance: { now },
     Math,
     Date,
     Promise,

@@ -1,5 +1,6 @@
 // Investigation harness for #371, not a CI gate or a recovery implementation.
 // xvfb-run -a npx electron scripts/overlay-clock-stress.js --no-sandbox [overlay|runtime|runtime-serial|runtime-gap] [120]
+// Add --freeze-first in overlay mode to validate a forced stalled-clock recovery.
 // All modes exercise stop during pending acquisition, then a 1.2 s take.
 // runtime uses only the platform graph, with the same shared 16 kHz context,
 // real recorder processor, disconnect/stop/suspend ordering and fake device.
@@ -92,6 +93,14 @@ app.whenReady().then(async () => {
         source.connect(node); runtime.rec = rec; runtime.pending = false;
         if (runtime.stopPending) runtime.stop();
       };
+      if (${mode === "overlay" && process.argv.includes("--freeze-first")}) {
+        // Controlled native fault: a parked engine falsely reports running.
+        // Its replacement is unmodified and must deliver real fake-device PCM.
+        Object.defineProperty(audioContext, "state", { get: () => "running" });
+        audioContext.resume = async () => {
+          clockProbe.timeline.push({ method: "resume:injected-freeze", at: performance.now(), time: audioContext.currentTime });
+        };
+      }
     })()`);
     const start = (sid) => win.webContents.send("record:start", { sid, deviceId: null, maxSeconds: 30, livePreview: { enabled: false } });
     const stop = () => win.webContents.send("record:stop");

@@ -22,7 +22,7 @@ function holdGrant(rig) {
 
 // This deliberately models state=running with a frozen render clock: no pump
 // means no quantum or worklet message. It tests handling, not Chromium's cause.
-test("a frozen running engine times out, releases its track and rebuilds on the next take", async (t) => {
+test("a non-delivering muted stream times out, releases its track and rebuilds on the next take", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const rig = createOverlayVm();
   cleanup(t, rig);
@@ -30,6 +30,7 @@ test("a frozen running engine times out, releases its track and rebuilds on the 
   await rig.settle();
   const retired = rig.contexts[0];
   const track = rig.track;
+  track.muted = true; // ineligible for frozen-clock recovery; exercise the ordinary watchdog
   assert.equal(retired.state, "running");
   assert.equal(retired.currentTime, 0);
   t.mock.timers.tick(9999);

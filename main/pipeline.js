@@ -12,7 +12,7 @@
 // messages. Events from a torn-down session (late cancels, slow renderers)
 // are ignored instead of corrupting the current one.
 
-const { app, ipcMain, Notification } = require("electron");
+const { app, clipboard, ipcMain, Notification } = require("electron");
 const path = require("node:path");
 const windows = require("./windows");
 const settings = require("./settings");
@@ -33,6 +33,8 @@ const { createNotifier, sttNotReadyNotice, BODY_MAX } = require("./setup-notices
 const { createFailedTake } = require("./failed-take");
 const recordings = require("./recordings");
 const { applyAliases } = require("../renderer/aliases");
+const { usesClipboard } = require("../renderer/snippets");
+const { expandTranscript } = require("./text-expansions");
 
 let state = "idle"; // idle | recording | processing
 // Shows the "model not downloaded" notice; its click opens Settings.
@@ -460,6 +462,21 @@ function withAliases(text, aliases) {
   }
 }
 
+// The values for a snippet's tags (#334), fixed once per dictation: the
+// clipboard is read here, before delivery can replace it, and only when a
+// saved snippet asks for it. Never throws; an unreadable clipboard is empty.
+function snippetContext(snippets) {
+  let text = "";
+  if (usesClipboard(snippets)) {
+    try {
+      text = clipboard?.readText() ?? "";
+    } catch (err) {
+      logger.warn("could not read the clipboard for a snippet:", err?.message);
+    }
+  }
+  return { clipboard: text, now: new Date() };
+}
+
 // Sibling of transcribeWithEstimate: run cleanup with its streamed progress.
 // The builtin worker reports real token progress (generated vs transcript
 // length, capped below 1 — only the reply says done), so on success this sends
@@ -729,6 +746,9 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
   abortController = controller;
   const { signal } = controller;
   const wav = Buffer.from(wavArrayBuffer);
+  // The snippet tags' values (#334) are fixed here, as the take stops: the
+  // clipboard is the user's own until delivery replaces it.
+  const snippetValues = snippetContext(cfg.snippets);
   // Once deliver() returns, the words are on the clipboard or pasted; a later
   // failure (the done card) must not tell the user they were lost.
   let delivered = false;
@@ -783,15 +803,35 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
     let cleaned = false;
     const cleanupReady = cleanupAvailability(cfg.cleanup);
     const rawReason = cfg.cleanup.enabled && !cleanupReady.ok && isModelDownloading("cleanup", cleanupReady.modelId) ? "cleanup-downloading" : null;
-    if (cfg.cleanup.enabled && cleanupReady.ok) {
-      overlayStatus("cleaning");
-      ({ text, cleaned } = await cleanWithFallback(raw, cfg.cleanup, signal, stale));
-      if (stale()) return;
+    const cleanupOn = cfg.cleanup.enabled && cleanupReady.ok;
+    // Saved snippets (#334): a spoken trigger becomes its saved text, exactly,
+    // with or without cleanup. Cleanup and aliases then only see the words
+    // around the snippets. Nothing spoken as a trigger = the usual path below.
+    const expansion = await expandTranscript(raw, cfg.snippets, {
+      context: snippetValues,
+      clean: cleanupOn
+        ? (words) => {
+            overlayStatus("cleaning");
+            return cleanWithFallback(words, cfg.cleanup, signal, stale);
+          }
+        : null,
+      finish: (words) => withAliases(words, cfg.cleanup.aliases),
+      stale,
+    });
+    if (expansion?.stale || stale()) return;
+    if (expansion) {
+      ({ text, cleaned } = expansion);
+    } else {
+      if (cleanupOn) {
+        overlayStatus("cleaning");
+        ({ text, cleaned } = await cleanWithFallback(raw, cfg.cleanup, signal, stale));
+        if (stale()) return;
+      }
+      // Explicit aliases (#335) run on what is delivered — the cleaned text or
+      // the raw fallback — so they hold with cleanup off or failing. `raw`
+      // stays as transcribed for History.
+      text = withAliases(text, cfg.cleanup.aliases);
     }
-    // Explicit aliases (#335) run on what is delivered — the cleaned text or
-    // the raw fallback — so they hold with cleanup off or failing. `raw`
-    // stays as transcribed for History.
-    text = withAliases(text, cfg.cleanup.aliases);
 
     // History first: the final text is the user's as soon as it exists,
     // whatever delivery does next (a cancel mid-keystroke, a paste tool that
@@ -930,23 +970,40 @@ async function transcribeKept(wav, sttCfg, signal) {
 // Cleanup for a retranscription: like a dictation's (the raw transcript when
 // cleanup is off, unavailable or fails, then the explicit aliases on whichever
 // text results), but quiet — the result is shown in History, not announced.
-async function cleanKept(raw, cleanupCfg, signal) {
-  const done = (text, cleaned) => ({ text: withAliases(text, cleanupCfg.aliases), cleaned });
-  if (!cleanupCfg.enabled || !cleanupAvailability(cleanupCfg).ok) return done(raw, false);
-  try {
-    const text = await withRetry(() => route.clean(raw, cleanupCfg, signal, cleanupLimits()), { stale: () => signal.aborted });
-    return done(text, true);
-  } catch (err) {
-    if (signal.aborted) throw err;
-    logger.warn("retranscription cleanup failed, kept the raw transcript:", err.message);
-    return done(raw, false);
-  }
+async function cleanKept(raw, settingsCfg, signal) {
+  const cleanupCfg = settingsCfg.cleanup;
+  const ready = cleanupCfg.enabled && cleanupAvailability(cleanupCfg).ok;
+  const finish = (words) => withAliases(words, cleanupCfg.aliases);
+  // One piece of text through cleanup: { text, cleaned }, the text itself when
+  // cleanup is off, unavailable or fails.
+  const cleanOne = async (words) => {
+    if (!ready) return { text: words, cleaned: false };
+    try {
+      const text = await withRetry(() => route.clean(words, cleanupCfg, signal, cleanupLimits()), { stale: () => signal.aborted });
+      return { text, cleaned: true };
+    } catch (err) {
+      if (signal.aborted) throw err;
+      logger.warn("retranscription cleanup failed, kept the raw transcript:", err.message);
+      return { text: words, cleaned: false };
+    }
+  };
+  // Saved snippets (#334) expand exactly as in a dictation (the same helper).
+  const expansion = await expandTranscript(raw, settingsCfg.snippets, {
+    context: snippetContext(settingsCfg.snippets),
+    clean: ready ? cleanOne : null,
+    finish,
+    stale: () => signal.aborted,
+  });
+  if (expansion?.stale) throw new Error("cancelled");
+  if (expansion) return expansion;
+  const { text, cleaned } = await cleanOne(raw);
+  return { text: finish(text), cleaned };
 }
 
 const retranscriber = recordings.createRetranscriber({
   read: (id) => recordings.getStore().read(id),
   transcribe: (wav, signal) => transcribeKept(wav, settings.get().stt, signal),
-  clean: (raw, signal) => cleanKept(raw, settings.get().cleanup, signal),
+  clean: (raw, signal) => cleanKept(raw, settings.get(), signal),
   setRetry: (id, retry) => history.setRetry(id, retry),
   canStart: () => state === "idle",
   // The engines just ran: restart their idle window from now.

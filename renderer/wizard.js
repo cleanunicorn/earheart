@@ -463,6 +463,11 @@ function applySettingsChange({ previous, current: saved }) {
     current.cleanup.aliases = saved.aliases.map((r) => ({ term: r.term, heard: [...r.heard] }));
     baseline.aliases = saved.aliases.map((r) => ({ term: r.term, heard: [...r.heard] }));
   }
+  if (Array.isArray(saved.snippets)) {
+    // The wizard never edits snippets: it carries the saved list unchanged.
+    current.snippets = saved.snippets.map((r) => ({ id: r.id, triggers: [...r.triggers], content: r.content }));
+    baseline.snippets = saved.snippets.map((r) => ({ id: r.id, triggers: [...r.triggers], content: r.content }));
+  }
   current.overlay = saved.overlay;
   current.customModels = saved.customModels;
   current.updates = { ...saved.updates };

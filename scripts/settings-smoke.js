@@ -2417,6 +2417,88 @@ app.whenReady().then(async () => {
         settings.save({ ...after, cleanup: { ...after.cleanup, enabled: beforeEdit.cleanup.enabled, aliases: beforeEdit.cleanup.aliases } });
       }
 
+      // #334: Snippets are created, searched and edited in the real window, a
+      // snippet saved elsewhere meanwhile joins the list without losing the
+      // typed one, Save stores both, a reopened window shows them, and a bad
+      // tag or a half-edited snippet blocks Save.
+      {
+        const beforeEdit = settings.get();
+        const { saveWin, run } = await openSaveWindow();
+        const body = "Ada Lovelace\n  12 Analytical Way\n\nOn {{date}}";
+        const created = await run(`(() => {
+          const set = (id, value) => {
+            const el = document.getElementById(id);
+            el.value = value;
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+          };
+          document.getElementById("snippet-new").click();
+          set("snippet-triggers", "my address\\nhome address");
+          set("snippet-content", ${JSON.stringify(body)});
+          const preview = document.getElementById("snippet-preview").textContent;
+          document.getElementById("snippet-apply").click();
+          return {
+            preview,
+            rows: [...document.querySelectorAll("#snippet-list li")].map((li) => li.textContent),
+            editorHidden: document.getElementById("snippet-editor").hidden,
+          };
+        })()`);
+        check("a new snippet is added to the list with a rendered preview",
+          created.editorHidden && created.rows.length === 1 && /my address · home address/.test(created.rows[0]) &&
+            /On \d{4}-\d{2}-\d{2}$/.test(created.preview) && !created.preview.includes("{{"),
+          JSON.stringify(created));
+        const live = settings.get();
+        settings.save({ ...live, snippets: [{ id: "snp_elsewhere", triggers: ["sign off"], content: "Best,\nAda" }] });
+        await waitFor(
+          () => run(`document.querySelectorAll("#snippet-list li").length === 2`),
+          "a snippet saved elsewhere never reached the open list"
+        );
+        const searched = await run(`(() => {
+          const search = document.getElementById("snippet-search");
+          search.value = "sign";
+          search.dispatchEvent(new Event("input", { bubbles: true }));
+          const shown = document.querySelectorAll("#snippet-list li").length;
+          search.value = "";
+          search.dispatchEvent(new Event("input", { bubbles: true }));
+          return shown;
+        })()`);
+        check("search narrows the list to matching triggers or text", searched === 1, String(searched));
+        const blocked = await run(`(() => {
+          document.getElementById("snippet-new").click();
+          document.getElementById("snippet-triggers").value = "bad tag";
+          document.getElementById("snippet-content").value = "x {{nope}}";
+          document.getElementById("snippet-apply").click();
+          return document.getElementById("snippet-error").textContent;
+        })()`);
+        check("an unknown tag is refused where it is typed", /Unknown tag {{nope}}/.test(blocked), blocked);
+        const halfEdited = await run(`(() => {
+          document.getElementById("save").click();
+          return document.getElementById("save-status").textContent;
+        })()`);
+        check("Save refuses while a snippet is half-edited and writes nothing new",
+          /^Not saved — add or cancel the snippet/.test(halfEdited) && savedJson().snippets.every((r) => r.id === "snp_elsewhere"),
+          halfEdited);
+        await run(`document.getElementById("snippet-cancel").click(); document.getElementById("save").click()`);
+        await waitFor(() => run(`document.getElementById("save-status").className === "status ok"`), "the snippet Save never reported Saved", 500);
+        const stored = savedJson().snippets;
+        check("Save stores the typed snippet exactly beside the one saved elsewhere",
+          stored.length === 2 && stored.some((r) => r.content === body && r.triggers.join("|") === "my address|home address") &&
+            stored.some((r) => r.id === "snp_elsewhere"),
+          JSON.stringify(stored));
+        await clickClose(saveWin);
+        const reopened = await openSaveWindow();
+        const rows = await reopened.run(`document.querySelectorAll("#snippet-list li").length`);
+        check("a reopened Settings window lists the saved snippets", rows === 2, String(rows));
+        await reopened.run(`(() => {
+          document.querySelector("#snippet-list li button").click();
+          document.getElementById("snippet-delete").click();
+          document.getElementById("save").click();
+        })()`);
+        await waitFor(() => reopened.run(`document.getElementById("save-status").className === "status ok"`), "the snippet delete never reported Saved", 500);
+        check("deleting a snippet and saving removes it from disk", savedJson().snippets.length === 1, JSON.stringify(savedJson().snippets));
+        await clickClose(reopened.saveWin);
+        settings.save({ ...settings.get(), snippets: beforeEdit.snippets });
+      }
+
       // An edit made while the save is in flight is not in what was saved:
       // Save must say so instead of "Saved", and disk keeps the sent value.
       // Cover a plain field and a limit that the response used to overwrite.

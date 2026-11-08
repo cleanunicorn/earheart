@@ -243,7 +243,10 @@ function dictationRig({
   safeStorage = null,
   // Replaces usage.record (#347); every call is still logged in log.usage.
   usageRecord = () => true,
+  // The system clipboard a snippet's {{clipboard}} tag reads (#334).
+  clipboardText = "",
 } = {}) {
+  const clipboardState = { text: clipboardText, reads: 0 };
   const saved = []; // the History list, newest first, with the ids add() returned
   const log = {
     warmups: [],
@@ -306,6 +309,7 @@ function dictationRig({
       electron: {
         app: { getPath: () => userData, isReady: () => true },
         safeStorage,
+        clipboard: { readText: () => { clipboardState.reads += 1; return clipboardState.text; } },
         ipcMain: { on: (channel, fn) => (handlers[channel] = fn) },
         Notification: class {
           static isSupported() {
@@ -435,6 +439,7 @@ function dictationRig({
     dictate,
     pipeline,
     cfg,
+    clipboard: clipboardState,
     handlers,
     // Delete one saved History entry, as Settings → History does.
     deleteHistory: (id) => saved.splice(saved.findIndex((entry) => entry.id === id), 1),
@@ -2478,4 +2483,126 @@ test("pipeline: only a delivered dictation counts — retranscribe and the live 
   const processBody = source.slice(source.indexOf("async function process("), source.indexOf("function retranscribe("));
   const recordAt = processBody.indexOf("usage.record(");
   assert.ok(recordAt > processBody.indexOf("await deliver("), "counted after delivery");
+});
+
+// #334: a spoken trigger becomes its saved text. The multiline body must come
+// through byte for byte with cleanup on or off; only the words around it are
+// cleaned; History keeps what was said.
+const SNIPPETS = [
+  { id: "snp_addr", triggers: ["my address"], content: "Ada Lovelace\n  12 Analytical Way\n\nLondon  " },
+  { id: "snp_sig", triggers: ["sign off"], content: "Best,\nAda — air heart" },
+];
+
+test("pipeline: a snippet inserts its exact multiline text with cleanup off and on (#334)", async () => {
+  const off = dictationRig({ engine: "remote", transcribe: async () => "My Address." });
+  off.cfg.snippets = SNIPPETS;
+  await off.dictate(speechWav(1));
+  assert.deepStrictEqual(off.log.delivered, [SNIPPETS[0].content]);
+  assert.strictEqual(off.log.history[0].raw, "My Address.", "History keeps the recognized speech");
+  assert.strictEqual(off.log.history[0].text, SNIPPETS[0].content);
+  assert.strictEqual(off.log.history[0].cleaned, false);
+
+  const on = dictationRig({ cleanup: true, transcribe: async () => "my address" });
+  on.cfg.snippets = SNIPPETS;
+  await on.dictate(speechWav(1));
+  assert.deepStrictEqual(on.log.delivered, [SNIPPETS[0].content], "a whole-utterance trigger skips cleanup");
+});
+
+test("pipeline: cleanup and aliases only touch the words between snippets (#334)", async () => {
+  const seen = [];
+  const rig = dictationRig({
+    cleanup: true,
+    transcribe: async () => "please send my address air heart then sign off",
+    clean: async (words) => { seen.push(words); return `<${words}>`; },
+  });
+  rig.cfg.snippets = SNIPPETS;
+  rig.cfg.cleanup.aliases = ALIASES;
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(seen, ["please send", "air heart then"]);
+  // The alias rewrote "air heart" outside the snippet and left the one inside
+  // the sign-off body alone.
+  assert.deepStrictEqual(rig.log.delivered, [
+    `<please send> ${SNIPPETS[0].content} <Earheart then> ${SNIPPETS[1].content}`,
+  ]);
+  assert.strictEqual(rig.log.history[0].raw, "please send my address air heart then sign off");
+  assert.strictEqual(rig.log.history[0].cleaned, true);
+});
+
+test("pipeline: speech without a trigger takes the unchanged path (#334)", async () => {
+  const rig = dictationRig({ cleanup: true, transcribe: async () => "hello there" });
+  rig.cfg.snippets = SNIPPETS;
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(rig.log.delivered, ["cleaned(hello there)"]);
+});
+
+test("pipeline: a failing cleanup falls back to raw words around a snippet, notifying once (#334)", async () => {
+  let calls = 0;
+  const rig = dictationRig({
+    cleanup: true,
+    transcribe: async () => "hi my address and my address thanks",
+    clean: async () => { calls += 1; throw new Error("Cleanup returned no usable text"); },
+  });
+  rig.cfg.snippets = SNIPPETS;
+  await rig.dictate(speechWav(1));
+  const body = SNIPPETS[0].content;
+  assert.deepStrictEqual(rig.log.delivered, [`hi ${body} and ${body} thanks`]);
+  assert.strictEqual(rig.log.history[0].cleaned, false);
+  assert.strictEqual(calls, 1, "after one failure the rest stay raw");
+  assert.strictEqual(rig.log.notifications.filter((n) => /cleanup failed/.test(n.title)).length, 1);
+});
+
+test("pipeline: {{clipboard}} is read once before delivery and never expanded again (#334)", async () => {
+  const rig = dictationRig({
+    engine: "remote",
+    clipboardText: "copied {{date}} and my address",
+    transcribe: async () => "quote",
+    deliver: async (text) => {
+      rig.log.delivered.push(text);
+      rig.clipboard.text = text; // delivery replaces the clipboard
+      return { method: "paste" };
+    },
+  });
+  rig.cfg.snippets = [{ id: "snp_q", triggers: ["quote"], content: "> {{clipboard}} <" }, ...SNIPPETS];
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(rig.log.delivered, ["> copied {{date}} and my address <"]);
+  assert.strictEqual(rig.clipboard.reads, 1);
+
+  const none = dictationRig({ engine: "remote", transcribe: async () => "hello" });
+  none.cfg.snippets = SNIPPETS;
+  await none.dictate(speechWav(1));
+  assert.strictEqual(none.clipboard.reads, 0, "the clipboard is not touched unless a snippet asks");
+});
+
+test("pipeline: a cancel while snippet words are being cleaned delivers and records nothing (#334)", async () => {
+  let release;
+  const rig = dictationRig({
+    cleanup: true,
+    transcribe: async () => "hello my address",
+    clean: () => new Promise((resolve) => { release = () => resolve("cleaned"); }),
+  });
+  rig.cfg.snippets = SNIPPETS;
+  const done = rig.dictate(speechWav(1));
+  await settle();
+  rig.pipeline.cancel();
+  release();
+  await done;
+  await settle();
+  assert.deepStrictEqual(rig.log.delivered, []);
+  assert.deepStrictEqual(rig.log.history, []);
+});
+
+test("pipeline: a retranscription expands snippets exactly as a dictation does (#334)", async (t) => {
+  const dictated = dictationRig({
+    cleanup: true, userData: audioDir(t), safeStorage: keyringStub(), engine: "remote",
+    transcribe: async () => "please send my address air heart",
+  });
+  dictated.cfg.snippets = SNIPPETS;
+  dictated.cfg.cleanup.aliases = ALIASES;
+  dictated.cfg.recordings = { keep: true, maxAgeDays: 30, maxMegabytes: 1024 };
+  await dictated.dictate(speechWav(1));
+  await settle();
+  const res = await dictated.pipeline.retranscribe(dictated.savedHistory()[0].id);
+  assert.strictEqual(res.ok, true, JSON.stringify(res));
+  assert.strictEqual(res.retry.text, dictated.log.delivered[0]);
+  assert.strictEqual(res.retry.raw, "please send my address air heart");
 });

@@ -302,6 +302,7 @@ function populate() {
   populateCleanupStyle();
   $("cleanup-dictionary").value = (current.cleanup.dictionary || []).join("\n");
   $("cleanup-aliases").value = formatAliases(current.cleanup.aliases);
+  renderSnippets();
   $("cleanup-prompt").value = current.cleanup.systemPrompt;
   selectEngine("cleanup", current.cleanup.engine);
   renderKeyStorage();
@@ -986,6 +987,20 @@ function applySettingsChange({ previous, current: saved }) {
     current.cleanup.aliases = Array.isArray(parsed) ? mergeAliases(baseline.aliases, parsed, saved.aliases) : saved.aliases;
     baseline.aliases = saved.aliases.map((r) => ({ term: r.term, heard: [...r.heard] }));
   }
+  if (Array.isArray(saved.snippets) && JSON.stringify(previous.snippets) !== JSON.stringify(saved.snippets)) {
+    // Saved elsewhere (another Settings or wizard window). Merge by snippet id
+    // so unsaved edits here stay. If the two lists clash (the same trigger on
+    // two snippets) nothing moves: the baseline stays put and Save names the
+    // clash, instead of silently dropping either side.
+    try {
+      current.snippets = SnippetsLib.mergeSnippets(baseline.snippets, snippetsList(), saved.snippets);
+      baseline.snippets = saved.snippets.map((r) => ({ id: r.id, triggers: [...r.triggers], content: r.content }));
+      renderSnippets();
+      flipped.push("Snippets updated with saved changes.");
+    } catch {
+      // Surfaces as an error on Save.
+    }
+  }
   current.overlay = saved.overlay;
   current.customModels = saved.customModels;
   current.updates = {
@@ -1220,6 +1235,12 @@ async function saveSettings() {
   saveButton.disabled = true;
   save.textContent = "Saving…";
   save.className = "status";
+  if (snippetEditorDirty()) {
+    save.textContent = "Not saved — add or cancel the snippet you're editing first.";
+    save.className = "status err";
+    saveButton.disabled = false;
+    return;
+  }
   try {
     parseAliases($("cleanup-aliases").value);
   } catch (err) {
@@ -1258,6 +1279,7 @@ async function saveSettings() {
     );
     current = result.settings;
     baseline = sharedBaseline(current);
+    renderSnippets();
     // Main may have kept its own value for a shared field (a tray change this
     // form hadn't seen yet), so show what was actually saved unless the user
     // edited that control while waiting. Treat the output radios as one field.
@@ -2228,6 +2250,148 @@ $("update-action").addEventListener("click", async () => {
 $("update-skip").addEventListener("click", () => earheart.invoke("updates:skip"));
 
 earheart.on("updates:state", renderUpdateState);
+
+/* ---------- snippets (#334) ---------- */
+
+// The list lives in current.snippets and is saved with everything else;
+// "Add/Update snippet" validates one edit at once (the same rules main applies
+// on Save) so a mistake is named where it is made. The editor holds a draft
+// until then, and Save refuses while a draft is unapplied.
+let snippetQuery = "";
+let snippetEditing = null; // null = closed, else { id: string|null } (null = a new snippet)
+
+const snippetsList = () => (Array.isArray(current?.snippets) ? current.snippets : []);
+
+function snippetDraft() {
+  return {
+    triggers: $("snippet-triggers").value.split("\n").map((t) => t.trim()).filter(Boolean),
+    content: $("snippet-content").value,
+  };
+}
+
+// Whether the open editor holds anything not yet applied to the list.
+function snippetEditorDirty() {
+  if (!snippetEditing) return false;
+  const draft = snippetDraft();
+  const saved = snippetsList().find((r) => r.id === snippetEditing.id);
+  if (!saved) return draft.triggers.length > 0 || draft.content !== "";
+  return JSON.stringify(draft.triggers) !== JSON.stringify(saved.triggers) || draft.content !== saved.content;
+}
+
+function snippetMatches(record, query) {
+  const needle = query.normalize("NFC").trim().toLowerCase();
+  if (!needle) return true;
+  return [...record.triggers, record.content].some((t) => t.normalize("NFC").toLowerCase().includes(needle));
+}
+
+function renderSnippets() {
+  const all = snippetsList();
+  const shown = all.filter((r) => snippetMatches(r, snippetQuery));
+  const list = $("snippet-list");
+  list.replaceChildren();
+  for (const record of shown) {
+    const li = document.createElement("li");
+    li.dataset.id = record.id;
+    if (snippetEditing?.id === record.id) li.classList.add("editing");
+    const body = document.createElement("div");
+    body.className = "snippet-body";
+    const triggers = document.createElement("div");
+    triggers.className = "snippet-triggers";
+    triggers.textContent = record.triggers.join(" · ");
+    const excerpt = document.createElement("div");
+    excerpt.className = "snippet-excerpt";
+    excerpt.textContent = record.content.replace(/\s*\n\s*/g, " ⏎ ");
+    body.append(triggers, excerpt);
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "ghost";
+    edit.textContent = "Edit";
+    edit.setAttribute("aria-label", `Edit snippet ${record.triggers[0]}`);
+    edit.addEventListener("click", () => openSnippetEditor(record));
+    li.append(body, edit);
+    list.appendChild(li);
+  }
+  $("snippet-empty").textContent = all.length === 0
+    ? "No snippets yet. Add one to dictate a longer text by saying a short phrase."
+    : shown.length === 0 ? `No snippets match “${snippetQuery.trim()}”.` : "";
+  $("snippet-count").textContent = `${all.length} of ${SnippetsLib.SNIPPET_MAX} snippets`;
+  $("snippet-new").disabled = all.length >= SnippetsLib.SNIPPET_MAX;
+}
+
+function renderSnippetPreview() {
+  const { content } = snippetDraft();
+  // The clipboard is only known when you dictate; the preview shows where it goes.
+  $("snippet-preview").textContent = SnippetsLib.renderSnippet(content, { clipboard: "‹clipboard›", now: new Date() });
+}
+
+function showSnippetError(message) {
+  const el = $("snippet-error");
+  el.textContent = message;
+  el.hidden = !message;
+}
+
+function openSnippetEditor(record) {
+  snippetEditing = { id: record ? record.id : null };
+  $("snippet-triggers").value = record ? record.triggers.join("\n") : "";
+  $("snippet-content").value = record ? record.content : "";
+  $("snippet-editor-title").textContent = record ? "Edit snippet" : "New snippet";
+  $("snippet-apply").textContent = record ? "Update snippet" : "Add snippet";
+  $("snippet-delete").hidden = !record;
+  $("snippet-editor").hidden = false;
+  showSnippetError("");
+  renderSnippetPreview();
+  renderSnippets();
+  $("snippet-triggers").focus();
+}
+
+function closeSnippetEditor() {
+  snippetEditing = null;
+  $("snippet-editor").hidden = true;
+  showSnippetError("");
+  renderSnippets();
+}
+
+// The list is replaced wholesale by a save in flight (current = the saved
+// settings), so changes wait for it.
+const snippetsLocked = () => saveButton.disabled;
+
+$("snippet-new").addEventListener("click", () => { if (!snippetsLocked()) openSnippetEditor(null); });
+$("snippet-cancel").addEventListener("click", closeSnippetEditor);
+$("snippet-search").addEventListener("input", (event) => {
+  snippetQuery = event.target.value;
+  renderSnippets();
+});
+for (const id of ["snippet-triggers", "snippet-content"]) $(id).addEventListener("input", renderSnippetPreview);
+for (const button of document.querySelectorAll("[data-snippet-tag]")) {
+  button.addEventListener("click", () => {
+    const field = $("snippet-content");
+    field.setRangeText(`{{${button.dataset.snippetTag}}}`, field.selectionStart, field.selectionEnd, "end");
+    field.focus();
+    renderSnippetPreview();
+  });
+}
+
+$("snippet-apply").addEventListener("click", () => {
+  if (!snippetEditing || snippetsLocked()) return;
+  const list = snippetsList();
+  const draft = snippetDraft();
+  const existing = list.find((r) => r.id === snippetEditing.id);
+  const record = { id: existing ? existing.id : SnippetsLib.newSnippetId(), ...draft };
+  const next = existing ? list.map((r) => (r.id === existing.id ? record : r)) : [...list, record];
+  try {
+    current.snippets = SnippetsLib.validateSnippets(next, { trusted: baseline?.snippets });
+  } catch (err) {
+    showSnippetError(err.message);
+    return;
+  }
+  closeSnippetEditor();
+});
+
+$("snippet-delete").addEventListener("click", () => {
+  if (!snippetEditing?.id || snippetsLocked()) return;
+  current.snippets = snippetsList().filter((r) => r.id !== snippetEditing.id);
+  closeSnippetEditor();
+});
 
 /* ---------- init ---------- */
 

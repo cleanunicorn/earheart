@@ -2,7 +2,7 @@
 // between the hotkey, tray, windows and the dictation pipeline.
 
 const path = require("node:path");
-const { app, session, Notification, powerMonitor, ipcMain, dialog, clipboard } = require("electron");
+const { app, session, Notification, powerMonitor, ipcMain, dialog, clipboard, safeStorage } = require("electron");
 const settings = require("./settings");
 const history = require("./history");
 const recordings = require("./recordings");
@@ -19,6 +19,7 @@ const engines = require("./engines");
 const autostart = require("./autostart");
 const updates = require("./updates");
 const ducking = require("./ducking");
+const tools = require("./tools");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { createHost, LOADCHECK_TIMEOUT_MS } = require("./engines/host");
@@ -66,6 +67,7 @@ if (!gotLock) {
 // The result of the last applyHotkeys() call — launch, save, or a save's
 // rollback — kept so Settings can show it when it opens (settings:get).
 let lastHotkeyStatus = null;
+let toolsStopped = false;
 
 function openLastCorrection() {
   // A focusable editor must never steal the pending dictation's paste target.
@@ -196,6 +198,17 @@ function main() {
     // settles a lowering a crash left behind first.
     ducking.init();
     pipeline.onCaptureChange((live) => ducking.setCapturing("dictation", live));
+    // Optional local MCP tool servers (#346). Nothing is started here: servers
+    // run only on an explicit Discover or a call, and no part of the app calls
+    // tools from voice until command mode (#344) uses tools.host.
+    tools.init({
+      ipcMain,
+      app,
+      safeStorage,
+      secretStorageSecure: () => settings.keyStorage().secure,
+      windows,
+      logger,
+    });
     ipc.init({
       onCleanupDownloaded: pipeline.onCleanupDownloaded,
       onHistoryCleared: () => pipeline.clearUndelivered(),
@@ -365,6 +378,13 @@ function main() {
     }
     palette?.close();
     windows.destroyOverlay();
+    // Stop owned tool servers (bounded) and deny pending approvals first.
+    if (!toolsStopped && tools.running() > 0) {
+      event.preventDefault();
+      toolsStopped = true;
+      tools.shutdown(2500).finally(() => app.quit());
+      return;
+    }
     // Put lowered output back before exiting (bounded, best effort; a marker
     // covers the rest on the next launch), then quit again.
     if (ducking.holding()) {
@@ -379,5 +399,6 @@ function main() {
     engines.stop();
     updates.dispose();
     ducking.close();
+    tools.shutdown(0);
   });
 }

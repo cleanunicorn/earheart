@@ -201,6 +201,12 @@ label, and opinions are welcome.
 - **Kept recordings (optional)** — opt in to keep each dictation's audio,
   encrypted with your OS keychain, then play, seek, export or retranscribe it
   from History. Off by default; 30 days and 1 GB unless you change them.
+- **Local tool servers (optional, experimental)** — connect MCP servers you
+  run yourself over stdio (Settings → Advanced → Tools), see the tools they
+  offer, and choose per tool: off, ask each time, always allow or deny. Servers
+  start only when you press Discover or a tool is called. Voice command mode
+  (#344) isn't available yet, so nothing calls these tools from your voice
+  today. See [docs/tools.md](docs/tools.md).
 - **Start on login (optional)** — have Earheart launch into the tray
   automatically when you sign in, so the hotkey is always ready. Off by
   default; toggle it under Settings → General. Works on Windows, macOS and
@@ -730,6 +736,11 @@ checksum-verified. Only add models from repos you trust.
   the Linux Secret Service such as GNOME Keyring or KWallet). On Linux without
   a keyring they are saved unencrypted, and Settings says so under each API key
   field — set up a keyring and restart Earheart to encrypt them.
+- Tool servers you add (optional) are programs on your computer that run with
+  your permissions: Earheart starts one only on request, with a minimal
+  environment, and asks before each call by default. Secret environment values
+  are encrypted like API keys where the OS allows it. See
+  [docs/tools.md](docs/tools.md).
 - A settings file damaged by a crash or a bad hand-edit is kept as
   `settings.json.corrupt-<timestamp>` next to the fresh one, so nothing is
   silently thrown away.

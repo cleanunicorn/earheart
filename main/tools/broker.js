@@ -31,8 +31,9 @@ function createBroker({ ttlMs = DEFAULT_TTL_MS, onChange = () => {}, now = Date.
   }
 
   // info: { serverId, serverName, tool, description, args, argsHash }
-  function request(info) {
+  function request(info, { signal } = {}) {
     return new Promise((resolve) => {
+      if (signal?.aborted) return resolve({ approved: false, reason: "cancelled" });
       if (queue.length >= MAX_QUEUE) return resolve({ approved: false, reason: "too many pending approvals" });
       const id = randomId();
       const expiresAt = now() + ttlMs;
@@ -55,6 +56,12 @@ function createBroker({ ttlMs = DEFAULT_TTL_MS, onChange = () => {}, now = Date.
         if (drop(entry)) { resolve({ approved: false, reason: "approval expired" }); emit(); }
       }, ttlMs);
       entry.timer.unref?.();
+      if (signal) {
+        // A caller that gives up withdraws its prompt: nobody can approve a dead call.
+        signal.addEventListener("abort", () => {
+          if (drop(entry)) { resolve({ approved: false, reason: "cancelled" }); emit(); }
+        }, { once: true });
+      }
       queue.push(entry);
       emit();
     });

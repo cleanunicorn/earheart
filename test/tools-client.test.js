@@ -6,7 +6,7 @@ const os = require("node:os");
 const { createClient } = require("../main/tools/client");
 const { validateServer } = require("../main/tools/config");
 
-const FIXTURE = path.join(__dirname, "fixtures", "mcp-server.js");
+const FIXTURE = path.join(__dirname, "..", "scripts", "fixtures", "mcp-server.js");
 const server = (extra = {}) => ({ id: "fx", name: "fixture", command: process.execPath, args: [FIXTURE], cwd: "", env: {}, ...extra });
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const withClient = async (opts, fn, srv = server()) => {

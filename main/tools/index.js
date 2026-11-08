@@ -2,7 +2,7 @@
 // window, and the IPC handlers. `host` is the narrow seam command mode (#344)
 // will call; nothing in the app invokes tools from voice yet.
 //
-//   host.catalog()            -> tools the model may be offered (enabled, not denied)
+//   await host.catalog()      -> tools the model may be offered (enabled, not denied)
 //   host.execute({serverId, tool, args, signal}) -> { ok, text, modelText, error }
 //
 // Every tools:* handler checks that it was called from the Settings window,
@@ -92,7 +92,8 @@ function register({ ipcMain, windows, manager, store, logger }) {
 }
 
 const host = {
-  catalog: () => (manager ? manager.modelCatalog() : []),
+  // Async: lists enabled servers that haven't been listed yet this session.
+  catalog: async () => { if (!manager) return []; await manager.prepare(); return manager.modelCatalog(); },
   execute: (req) => (manager ? manager.execute(req) : Promise.resolve({ ok: false, error: "tools are not available" })),
 };
 

@@ -3,6 +3,8 @@
 // well-behaved tools it misbehaves on purpose: slow, crash, huge output,
 // prompt-injection and terminal-escape text, forged JSON-RPC lines, duplicate
 // and unknown response ids, and server-initiated requests.
+// Lives outside test/ on purpose: `node --test` runs every .js file under a
+// test/ directory, and this server would wait on stdin forever.
 // Env: FIXTURE_LOG=<file> appends one line per tools/call, so tests can prove
 // whether a call ever reached the server.
 const fs = require("node:fs");

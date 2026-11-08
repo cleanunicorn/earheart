@@ -7,7 +7,7 @@ const { register } = require("../main/tools");
 const { createManager } = require("../main/tools/manager");
 const { createStore } = require("../main/tools/store");
 
-const FIXTURE = path.join(__dirname, "fixtures", "mcp-server.js");
+const FIXTURE = path.join(__dirname, "..", "scripts", "fixtures", "mcp-server.js");
 
 function harness() {
   const handlers = new Map();

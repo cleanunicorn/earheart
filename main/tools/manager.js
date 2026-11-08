@@ -142,14 +142,19 @@ function createManager({ store, createClient = realCreateClient, clientOptions =
       });
       policies.prune(serverId, tools);
       catalog.set(serverId, { tools, at: now(), error: null });
-      persist();
     } catch (err) {
       const message = line(redact(err?.message ?? err, server), 300);
       catalog.set(serverId, { tools: [], at: now(), error: message });
       await dropClient(serverId);
       return { ok: false, error: message, servers: view() };
     }
+    try { persist(); } catch (err) { log(`could not save tool policies: ${boundedError(err)}`); }
     return { ok: true, servers: view() };
+  }
+
+  // Discover every enabled server that has no catalog yet (e.g. after a restart).
+  async function prepare() {
+    await Promise.all(servers.filter((s) => s.enabled && !catalog.has(s.id)).map((s) => discover(s.id)));
   }
 
   function setPolicy({ serverId, tool, schemaHash, enabled, policy }) {
@@ -196,6 +201,9 @@ function createManager({ store, createClient = realCreateClient, clientOptions =
 
   async function execute({ serverId, tool: toolName, args, signal } = {}) {
     try {
+      // After a restart the catalog is empty: list the enabled server's tools
+      // on first use. Consent is keyed by schema hash, so this grants nothing.
+      if (find(serverId)?.enabled && !catalog.has(serverId)) await discover(serverId);
       const first = resolveCall(serverId, toolName);
       if (first.error) return { ok: false, error: first.error };
       const { server, tool } = first;
@@ -209,7 +217,7 @@ function createManager({ store, createClient = realCreateClient, clientOptions =
       const startRev = rev(serverId);
 
       if (first.verdict.action === "ask") {
-        const asked = await broker.request({ serverId, serverName: server.name, tool: toolName, description: tool.description, args: sent, argsHash });
+        const asked = await broker.request({ serverId, serverName: server.name, tool: toolName, description: tool.description, args: sent, argsHash }, { signal });
         if (!asked.approved || asked.argsHash !== argsHash) return { ok: false, error: asked.reason ?? "not approved", denied: true };
         // The user took time to decide; consent applies to the state they saw.
         if (rev(serverId) !== startRev) return { ok: false, error: "configuration changed while waiting for approval", denied: true };
@@ -236,7 +244,7 @@ function createManager({ store, createClient = realCreateClient, clientOptions =
   }
 
   return {
-    view, saveServer, removeServer, discover, setPolicy, modelCatalog, execute, shutdown,
+    view, saveServer, removeServer, discover, prepare, setPolicy, modelCatalog, execute, shutdown,
     broker,
     running: () => clients.size,
     // test hooks

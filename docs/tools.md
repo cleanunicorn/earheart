@@ -35,7 +35,7 @@ without a shell, and Earheart never falls back to one.
 
 Then press **Discover tools**. This **starts the program you configured**, runs
 the MCP handshake and lists its tools. Servers are never started at app launch;
-they start on Discover or on the first call, and stop after five idle minutes or
+they start on Discover or on the first call (a call, or listing the catalog, discovers an enabled server that hasn't been listed since the app started), and stop after five idle minutes or
 when you quit.
 
 ## Per-tool control

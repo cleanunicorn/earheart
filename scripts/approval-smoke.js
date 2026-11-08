@@ -27,7 +27,7 @@ const logger = require("../main/util/logger");
 const tools = require("../main/tools");
 const { waitForLoad } = require("./wait-for-load");
 
-const FIXTURE = path.join(__dirname, "..", "test", "fixtures", "mcp-server.js");
+const FIXTURE = path.join(__dirname, "fixtures", "mcp-server.js");
 const LOG = path.join(userData, "calls.log");
 const checks = [];
 const check = (name, ok, detail = "") => {
@@ -86,7 +86,7 @@ app.whenReady().then(async () => {
       manager.view()[0].tools.find((t) => t.name === "echo").policy === "ask" && serverEnabled);
     check("secret env values never reach the Settings page",
       !(await js("document.body.innerText")).includes("s3cret") && manager.view()[0].env.TOKEN.secret === true);
-    check("a tool the user did not enable is absent from the model catalog", tools.host.catalog().map((t) => t.tool).join() === "echo", JSON.stringify(tools.host.catalog().map((t) => t.tool)) + JSON.stringify(manager.view()[0].tools.map(t=>[t.name,t.enabled,t.policy])));
+    check("a tool the user did not enable is absent from the model catalog", (await tools.host.catalog()).map((t) => t.tool).join() === "echo", JSON.stringify((await tools.host.catalog()).map((t) => t.tool)) + JSON.stringify(manager.view()[0].tools.map(t=>[t.name,t.enabled,t.policy])));
 
     // 3. The approval window: ask -> shown -> Deny.
     const approval = async () => {

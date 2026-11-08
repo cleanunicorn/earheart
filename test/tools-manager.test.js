@@ -6,7 +6,7 @@ const os = require("node:os");
 const { createManager } = require("../main/tools/manager");
 const { createStore } = require("../main/tools/store");
 
-const FIXTURE = path.join(__dirname, "fixtures", "mcp-server.js");
+const FIXTURE = path.join(__dirname, "..", "scripts", "fixtures", "mcp-server.js");
 
 function setup(extra = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tools-"));
@@ -32,7 +32,6 @@ test("nothing runs until discovered, enabled and allowed", async () => {
   const { mgr, raw, calls } = setup();
   try {
     assert.ok((await mgr.saveServer(raw)).ok);
-    assert.match((await mgr.execute({ serverId: "fx", tool: "echo", args: { message: "x" } })).error, /not in the discovered catalog/);
     assert.ok((await mgr.discover("fx")).ok);
     assert.match((await mgr.execute({ serverId: "fx", tool: "echo", args: { message: "x" } })).error, /disabled/);
     enable(mgr, "echo", "deny");
@@ -224,5 +223,44 @@ test("secrets stay out of the renderer view and out of error text; secret edits 
     assert.strictEqual(failed.ok, false);
     assert.ok(!failed.error.includes("s3cret-token"), failed.error);
     assert.match(failed.error, /\[redacted\]/);
+  } finally { await mgr.shutdown(); }
+});
+
+test("after a restart an enabled server is discovered on first use; consent persists by schema hash", async () => {
+  const a = setup();
+  await a.mgr.saveServer(a.raw); await a.mgr.discover("fx");
+  enable(a.mgr, "echo", "allow");
+  await a.mgr.shutdown();
+  // A fresh manager over the same tools.json: empty in-memory catalog.
+  const mgr = createManager({ store: a.store, clientOptions: { killGraceMs: 300 } });
+  try {
+    assert.strictEqual(mgr.view()[0].discovered, false);
+    const res = await mgr.execute({ serverId: "fx", tool: "echo", args: { message: "again" } });
+    assert.ok(res.ok, res.error);
+    assert.match(res.text, /echo: again/);
+    // The catalog seam lists persisted-consent tools too, and nothing else.
+    await mgr.prepare();
+    assert.deepStrictEqual(mgr.modelCatalog().map((t) => t.tool), ["echo"]);
+    // A disabled server is never started by a call or by listing.
+    await mgr.saveServer({ ...a.raw, enabled: false, env: { ...a.raw.env, TOKEN: { secret: true, keep: true } } });
+    assert.match((await mgr.execute({ serverId: "fx", tool: "echo", args: { message: "x" } })).error, /not enabled/);
+  } finally { await mgr.shutdown(); }
+});
+
+test("aborting a call withdraws its pending approval prompt", async () => {
+  const { mgr, raw, calls } = setup();
+  try {
+    await mgr.saveServer(raw); await mgr.discover("fx");
+    enable(mgr, "echo", "ask");
+    const ac = new AbortController();
+    const p = mgr.execute({ serverId: "fx", tool: "echo", args: { message: "x" }, signal: ac.signal });
+    for (let i = 0; i < 100 && !mgr.broker.current(); i++) await new Promise((r) => setTimeout(r, 10));
+    const id = mgr.broker.current().id;
+    ac.abort();
+    const res = await p;
+    assert.strictEqual(res.ok, false);
+    assert.strictEqual(mgr.broker.size(), 0, "the prompt is gone");
+    assert.strictEqual(mgr.broker.decide(id, "allow"), false, "and can no longer approve");
+    assert.strictEqual(calls().length, 0);
   } finally { await mgr.shutdown(); }
 });

@@ -80,3 +80,15 @@ test("displayed strings are bounded plain text", () => {
   assert.ok(v.args.length < 4100);
   b.cancelAll();
 });
+
+test("an aborted signal withdraws the request, before or after it is queued", async () => {
+  const b = createBroker();
+  const ac = new AbortController();
+  const p = b.request(info(), { signal: ac.signal });
+  assert.strictEqual(b.size(), 1);
+  ac.abort();
+  assert.deepStrictEqual(await p, { approved: false, reason: "cancelled" });
+  assert.strictEqual(b.size(), 0);
+  assert.deepStrictEqual(await b.request(info(), { signal: ac.signal }), { approved: false, reason: "cancelled" });
+  assert.strictEqual(b.size(), 0);
+});

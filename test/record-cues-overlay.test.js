@@ -201,6 +201,7 @@ test("record cues: a stale session's cancel never cuts the newer session's cue",
   // The current session's cancel does cut it.
   rig.eval('stepCue({ type: "cancel", sid: 501 })');
   for (const n of startNotes) assert.strictEqual(n.stops.length, 2, "cut by the current cancel");
+  rig.send("record:cancel");
 });
 
 test("overlay VM fixture: root custom properties read like the real stylesheet", () => {

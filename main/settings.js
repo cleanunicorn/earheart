@@ -61,6 +61,13 @@ const DEFAULTS = {
   // Global hotkey (Electron accelerator format). Press once to start
   // recording, press again to stop and transcribe.
   hotkey: "CommandOrControl+Shift+Space",
+  // How the record hotkey starts a dictation: "toggle" (press to start, press
+  // again to stop) or "double-tap" (two quick presses start; one press stops —
+  // see main/double-tap.js). Only the hotkey and `earheart --tap` follow it;
+  // the tray and `--toggle` always toggle.
+  activationMode: "toggle",
+  // Longest gap between the two taps of a double tap, in ms (250–1000).
+  doubleTapWindowMs: 500,
   // Optional pause/resume hotkey for a dictation in progress. Empty = not
   // registered — deliberately unset by default, since a second global grab
   // shadows some app's shortcut for somebody; the combo is the user's choice
@@ -525,6 +532,20 @@ function normalizeAppearance(merged) {
   return language === out.uiLanguage ? out : { ...out, uiLanguage: language };
 }
 
+// An unknown activation mode reads as "toggle"; the double-tap window is
+// clamped to what Settings offers. Not rewritten until the next save.
+const ACTIVATION_MODES = ["toggle", "double-tap"];
+function normalizeActivation(merged) {
+  const window = merged.doubleTapWindowMs;
+  return {
+    ...merged,
+    activationMode: ACTIVATION_MODES.includes(merged.activationMode) ? merged.activationMode : "toggle",
+    doubleTapWindowMs: Number.isFinite(window)
+      ? Math.round(Math.min(1000, Math.max(250, window)))
+      : DEFAULTS.doubleTapWindowMs,
+  };
+}
+
 // Make cleanup.aliases valid whatever the file held (hand edits, another
 // version): invalid entries dropped, each heard form kept with the first term
 // that claims it. Idempotent, and like clampLimits nothing is rewritten on
@@ -597,7 +618,7 @@ function load() {
     ? secretStore.storageStatus(safeStorage, process.platform)
     : { secure: false, backend: null };
   const decoded = secretStore.decodeSecrets(stored, ready ? safeStorage : null);
-  const merged = normalizeMic(normalizeAppearance(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored))))));
+  const merged = normalizeActivation(normalizeMic(normalizeAppearance(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored)))))));
   // Before `ready` encrypted keys read as "", so the result is not cached:
   // the first load after `ready` decrypts them. Nothing saves before then
   // (save() refuses).
@@ -667,7 +688,7 @@ function writeFile(merged) {
 function save(next) {
   if (!appReady()) throw new Error("settings cannot be saved before the app is ready");
   const previous = load();
-  const merged = normalizeMic(normalizeAppearance(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, next)))));
+  const merged = normalizeActivation(normalizeMic(normalizeAppearance(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, next))))));
   // Fail closed (#343): recordings are only ever kept encrypted, so keeping
   // them can't be turned on without OS-backed secure storage.
   if (merged.recordings.keep === true && !keyStorageStatus.secure) {

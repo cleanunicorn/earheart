@@ -294,9 +294,15 @@ test("every overlay dictation key has a keyboard route to the same handler", () 
     const slot = mainJs.match(new RegExp(`(\\w+): cfg\\.${route.setting},`));
     assert.ok(slot, `applyHotkeys must register cfg.${route.setting}`);
     const callback = `on${slot[1][0].toUpperCase()}${slot[1].slice(1)}`;
-    assert.match(
-      mainJs,
-      new RegExp(`${callback}: \\(\\) => pipeline\\.${route.entry}\\(\\)`),
+    // The record slot goes through recordPress, which toggles directly in the
+    // default mode and via the double-tap recognizer when opted in.
+    const direct = new RegExp(`${callback}: \\(\\) => pipeline\\.${route.entry}\\(\\)`);
+    const viaRecordPress =
+      route.entry === "toggle" &&
+      new RegExp(`${callback}: recordPress,`).test(mainJs) &&
+      /function recordPress\(\) \{[^}]*else pipeline\.toggle\(\);/.test(mainJs);
+    assert.ok(
+      direct.test(mainJs) || viaRecordPress,
       `the ${route.setting} slot must call pipeline.${route.entry}`
     );
     assert.match(

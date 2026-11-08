@@ -183,7 +183,8 @@ label, and opinions are welcome.
 - **Works anywhere without an integration** — the global hotkey (default
   `Ctrl/Cmd+Shift+Space`) starts and stops dictation without moving focus. Or,
   with Earheart running, bind `earheart --toggle` to a system shortcut, mouse
-  button, or foot pedal; `earheart --pause` pauses and resumes.
+  button, or foot pedal; `earheart --pause` pauses and resumes. Prefer a
+  hands-free double-tap? See [docs/double-tap.md](docs/double-tap.md).
 - **Speech-to-text with NVIDIA Parakeet** — Parakeet TDT 0.6B v3 (multilingual,
   25 languages, full precision) runs in-process via sherpa-onnx / ONNX Runtime, faster than
   realtime on CPU. Or use any OpenAI-compatible transcription API or the
@@ -707,7 +708,8 @@ checksum-verified. Only add models from repos you trust.
   `~/Applications/Earheart-<version>.AppImage --toggle`. The same works for
   pause/resume with `earheart --pause`, for discarding the dictation in
   progress with `earheart --discard`, and for retrying a failed transcription
-  with `earheart --retry`.
+  with `earheart --retry`. With double-tap activation enabled, bind
+  `earheart --tap` instead of `--toggle` (see [docs/double-tap.md](docs/double-tap.md)).
 
 ### macOS
 

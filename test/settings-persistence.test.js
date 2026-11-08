@@ -586,3 +586,20 @@ test("switching manual → auto → manual keeps the saved microphone; junk valu
   audio = loadSettings(dir).get().audio;
   assert.deepStrictEqual([audio.micMode, audio.micIncludeBluetooth, audio.micIncludeVirtual], ["manual", true, true]);
 });
+
+test("activation settings default to toggle and are normalised on load and save", (t) => {
+  const dir = makeSettingsDir(t);
+  const settings = loadSettings(dir);
+  assert.strictEqual(DEFAULTS.activationMode, "toggle");
+  assert.strictEqual(DEFAULTS.doubleTapWindowMs, 500);
+  fs.writeFileSync(
+    path.join(dir, "settings.json"),
+    JSON.stringify({ activationMode: "bogus", doubleTapWindowMs: 5 })
+  );
+  const loaded = settings.get();
+  assert.strictEqual(loaded.activationMode, "toggle");
+  assert.strictEqual(loaded.doubleTapWindowMs, 250);
+  const saved = settings.save({ ...loaded, activationMode: "double-tap", doubleTapWindowMs: 99999 });
+  assert.strictEqual(saved.activationMode, "double-tap");
+  assert.strictEqual(saved.doubleTapWindowMs, 1000);
+});

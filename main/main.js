@@ -14,6 +14,7 @@ const pipeline = require("./pipeline");
 const commands = require("./commands");
 const usage = require("./usage");
 const hotkeys = require("./hotkeys");
+const { createDoubleTap } = require("./double-tap");
 const tray = require("./tray");
 const ipc = require("./ipc");
 const engines = require("./engines");
@@ -49,6 +50,11 @@ if (!gotLock) {
   app.on("second-instance", (event, argv) => {
     if (argv.includes("--toggle")) {
       pipeline.toggle();
+    } else if (argv.includes("--tap")) {
+      // Wayland: bind a system shortcut to `earheart --tap` to get the same
+      // activation as the built-in hotkey, double-tap included. The press is
+      // timestamped on arrival here, so process-spawn time is not in the gap.
+      recordPress();
     } else if (argv.includes("--pause")) {
       pipeline.pauseToggle();
     } else if (argv.includes("--discard")) {
@@ -67,6 +73,21 @@ if (!gotLock) {
     }
   });
   main();
+}
+
+// Double-tap activation (main/double-tap.js). Only the record hotkey and
+// `--tap` go through it; the tray and `--toggle` always toggle. Stopping works
+// in either mode, so switching mode mid-dictation never strands a recording.
+const doubleTap = createDoubleTap({
+  getState: () => pipeline.getState(),
+  start: () => pipeline.toggle(),
+  stop: () => pipeline.toggle(),
+  windowMs: () => settings.get().doubleTapWindowMs,
+});
+
+function recordPress() {
+  if (settings.get().activationMode === "double-tap") doubleTap.press();
+  else pipeline.toggle();
 }
 
 // The result of the last applyHotkeys() call — launch, save, or a save's
@@ -92,7 +113,7 @@ function applyHotkeys(cfg) {
     palette: cfg.paletteHotkey,
     onPalette: () => palette?.open(),
     onCorrect: openLastCorrection,
-    onRecord: () => pipeline.toggle(),
+    onRecord: recordPress,
     onPause: () => pipeline.pauseToggle(),
     onDiscard: () => pipeline.discard(),
   });
@@ -218,6 +239,8 @@ function main() {
     pipeline.onStateChange((state) => {
       hotkeys.armDiscard(state !== "idle");
       syncEnterToStop();
+      // A pending first tap or settle check belongs to the state it saw.
+      doubleTap.reset();
     });
     // Lower other apps' playback while the microphone is capturing (opt-in);
     // settles a lowering a crash left behind first.
@@ -260,6 +283,7 @@ function main() {
       getHotkeyStatus: () => (lastHotkeyStatus ? { ...lastHotkeyStatus, commandsHotkey: commands.getHotkeyStatus() } : lastHotkeyStatus),
       onSettingsChanged: () => {
         pipeline.onSettingsChanged();
+        doubleTap.reset();
         updates.onSettingsChanged();
         // New limits apply at once (#343), and History redraws so a
         // recording they removed (even one playing) leaves the page.
@@ -431,6 +455,7 @@ function main() {
   app.on("will-quit", () => {
     agentApi.shutdown();
     hotkeys.unregisterAll();
+    doubleTap.dispose();
     engines.stop();
     updates.dispose();
     ducking.close();

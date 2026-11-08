@@ -69,6 +69,15 @@ jobs:
       - name: Settings panel smoke
         if: runner.os != 'Linux'
         run: npx electron scripts/settings-smoke.js --no-sandbox
+      # Drive the Tools settings card, the real approval window and a fixture
+      # MCP server over stdio (it spawns `node` from PATH).
+      # make approval-smoke
+      - name: Tool approval smoke (headless)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npx electron scripts/approval-smoke.js --no-sandbox
+      - name: Tool approval smoke
+        if: runner.os != 'Linux'
+        run: npx electron scripts/approval-smoke.js --no-sandbox
 
   # `.nvmrc` floats to the newest Node 22, so the job above never sees the
   # oldest Node that package.json's engines field promises. Install and unit-test

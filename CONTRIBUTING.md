@@ -28,6 +28,7 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | `make engine-smoke` | Boot the engine worker, round-trip a ping, and load both native addons |
 | `make overlay-smoke` | Drive the overlay with a fake mic and check capture/UI sync |
 | `make settings-smoke` | Drive the settings window and check its UI, microphone picker, and live settings sync |
+| `make approval-smoke` | Drive the Tools settings, the approval window and a fixture MCP server end to end |
 | `make icons` | Regenerate app/tray icons into `assets/` |
 | `make screenshots` | Regenerate README screenshots into `docs/screenshots/` |
 | `make dist` | Build installers for the current platform |
@@ -62,6 +63,7 @@ make smoke                     # boots the full app with --smoke-test and exits
 make engine-smoke              # boot the engine worker, round-trip a ping
 make overlay-smoke             # drive the overlay with a fake mic, check capture/UI sync
 make settings-smoke            # drive the settings window, check the index/scroll-spy contract
+make approval-smoke            # tool servers: settings card, approval window, fixture MCP server
 ```
 
 The engine-smoke step forks the in-process engine `utilityProcess` worker and
@@ -76,7 +78,7 @@ scroll, the index's scroll-spy highlight and focus handoff work, the roving
 tabindex is seated at load, a setting saved from the tray reaches an open
 Settings window or wizard without discarding unsaved edits, and a microphone
 chosen while device enumeration is pending survives it and Save writes that
-choice to disk. CI runs all five on every platform.
+choice to disk. CI runs all six on every platform.
 Built-in models download to Electron's `userData/models` on first use; the
 smoke checks don't need them present.
 

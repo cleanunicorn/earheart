@@ -730,6 +730,38 @@
           <svg class="legend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="14" cy="6" r="2.2" fill="currentColor" stroke="none"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="8" cy="12" r="2.2" fill="currentColor" stroke="none"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="16" cy="18" r="2.2" fill="currentColor" stroke="none"/></svg>
           Advanced
         </h2>
+        <div class="card" id="tools-card">
+          <div class="card-title">Tools (local MCP servers, experimental)</div>
+          <p class="hint">Run programs you trust as tool servers. Earheart starts one only when you press Discover or a tool is called, never at launch, and asks you before each call unless you set a tool to Allow. Voice command mode (#344) is not available yet, so nothing calls these tools from your voice today.</p>
+          <p id="tools-storage" class="hint"></p>
+          <div id="tools-list"></div>
+          <div class="field">
+            <label for="tools-name">Server name</label>
+            <input id="tools-name" type="text" maxlength="60" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="field">
+            <label for="tools-command">Command</label>
+            <input id="tools-command" type="text" autocomplete="off" spellcheck="false" placeholder="node" />
+            <p class="hint">An executable, not a shell line. On Windows use the real .exe (node, python), not npx.cmd.</p>
+          </div>
+          <div class="field">
+            <label for="tools-args">Arguments (one per line)</label>
+            <textarea id="tools-args" rows="3" spellcheck="false"></textarea>
+          </div>
+          <div class="field">
+            <label for="tools-cwd">Working directory (optional, absolute)</label>
+            <input id="tools-cwd" type="text" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="field">
+            <label for="tools-env">Environment (KEY=value per line; start a line with ! to keep its value secret)</label>
+            <textarea id="tools-env" rows="3" spellcheck="false"></textarea>
+          </div>
+          <div class="row">
+            <button id="tools-save" class="ghost" type="button">Add server</button>
+            <button id="tools-cancel-edit" class="ghost" type="button" hidden>Cancel edit</button>
+            <span id="tools-status" class="status" role="status" aria-live="polite"></span>
+          </div>
+        </div>
         <div class="card">
           <div class="card-title">Performance</div>
           <div class="grid-2">
@@ -836,6 +868,7 @@
     <script src="ducking-status.js"></script>
     <script src="record-cues.js"></script>
     <script src="usage-stats.js"></script>
+    <script src="tools-settings.js"></script>
     <script src="settings.js"></script>
   </body>
 </html>

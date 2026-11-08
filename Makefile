@@ -42,6 +42,10 @@ overlay-smoke: ## Drive the overlay with a fake mic and check capture/UI sync
 settings-smoke: ## Drive the settings window and check its UI, microphone picker, and live settings sync
 	xvfb-run -a npx electron scripts/settings-smoke.js --no-sandbox
 
+.PHONY: approval-smoke
+approval-smoke: ## Drive the Tools settings, the approval window and a fixture MCP server end to end
+	xvfb-run -a npx electron scripts/approval-smoke.js --no-sandbox
+
 .PHONY: icons
 icons: ## Regenerate app/tray icons into assets/
 	node scripts/gen-icons.js

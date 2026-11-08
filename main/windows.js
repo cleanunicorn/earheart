@@ -1,5 +1,6 @@
 // Window management: the recording overlay (a small always-on-top card that
-// also owns the microphone), Settings, the first-run wizard and correction editor.
+// also owns the microphone), Settings, the first-run wizard, correction editor
+// and the tool-approval prompt.
 
 const { BrowserWindow, ipcMain, screen, dialog, nativeTheme } = require("electron");
 const path = require("node:path");
@@ -38,6 +39,8 @@ let overlayWindow = null;
 let settingsWindow = null;
 let wizardWindow = null;
 let correctionWindow = null;
+let approvalWindow = null;
+let approvalClosedHandler = () => {};
 let correctionText = "";
 let correctionDirty = false;
 let overlayCustomPosition = null; // set when the user drags the card
@@ -573,6 +576,50 @@ function confirmCorrectionClose() {
 function getCorrectionText() { return correctionText; }
 function closeCorrection() { if (alive(correctionWindow)) correctionWindow.close(); }
 
+// The tool-approval prompt (#346): a small always-on-top window that shows the
+// broker's current request. It is the only window whose bridge can resolve an
+// approval. A user closing it denies whatever is pending (approvalClosedHandler);
+// main closing it because nothing is pending does not (see closeApproval).
+function openApproval() {
+  if (alive(approvalWindow)) {
+    approvalWindow.showInactive?.();
+    return approvalWindow;
+  }
+  approvalWindow = createFormWindow("approval", {
+    width: 520,
+    height: 520,
+    minWidth: 420,
+    minHeight: 360,
+    alwaysOnTop: true,
+    minimizable: false,
+    title: "Tool approval · Earheart",
+  });
+  const win = approvalWindow;
+  win.loadFile(path.join(RENDERER, "approval.html"));
+  win.on("closed", () => {
+    if (approvalWindow !== win) return; // main closed it (closeApproval)
+    approvalWindow = null;
+    approvalClosedHandler();
+  });
+  return win;
+}
+
+function closeApproval() {
+  if (!alive(approvalWindow)) return;
+  const win = approvalWindow;
+  approvalWindow = null; // detach first: a programmatic close must not read as "the user closed it"
+  win.destroy();
+}
+
+function getApprovalWindow() { return alive(approvalWindow) ? approvalWindow : null; }
+function onApprovalClosed(fn) { approvalClosedHandler = typeof fn === "function" ? fn : () => {}; }
+function sendToApproval(channel, payload) {
+  if (alive(approvalWindow)) approvalWindow.webContents.send(channel, payload);
+}
+// Sender identity for IPC handlers: the web contents of that role's window.
+function isApprovalSender(sender) { return alive(approvalWindow) && sender === approvalWindow.webContents; }
+function isSettingsSender(sender) { return alive(settingsWindow) && sender === settingsWindow.webContents; }
+
 function openWizard() {
   if (alive(wizardWindow)) return bringForward(wizardWindow);
   wizardWindow = createFormWindow("wizard", {
@@ -622,7 +669,7 @@ function broadcast(channel, payload) {
 // behind them — visible while resizing — from showing the old ink.
 function refreshInk() {
   const ink = inkColor();
-  for (const win of [settingsWindow, wizardWindow, correctionWindow]) {
+  for (const win of [settingsWindow, wizardWindow, correctionWindow, approvalWindow]) {
     if (win && !win.isDestroyed()) win.setBackgroundColor(ink);
   }
 }
@@ -646,6 +693,13 @@ module.exports = {
   setCorrectionDirty,
   confirmCorrectionClose,
   closeCorrection,
+  openApproval,
+  closeApproval,
+  onApprovalClosed,
+  getApprovalWindow,
+  sendToApproval,
+  isApprovalSender,
+  isSettingsSender,
   sendToSettings,
   sendToForms,
   broadcast,

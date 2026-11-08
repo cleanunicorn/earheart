@@ -1,0 +1,17 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ink); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+main { padding: 20px 24px; max-width: 640px; margin: auto; }
+h1 { margin: 0 0 12px; font-size: 20px; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0 0 8px; }
+dt { color: var(--text-dim); }
+dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+label { display: block; margin: 12px 0 6px; font-weight: 600; }
+pre { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--field); border: 1px solid var(--field-edge); border-radius: 6px; padding: 10px; font: 13px/1.4 ui-monospace, monospace; }
+#description { overflow-wrap: anywhere; margin: 6px 0; }
+.hint { color: var(--text-dim); font-size: 13px; }
+footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; border-top: 1px solid var(--field-edge); padding-top: 14px; }
+button { border: 1px solid var(--field-edge); border-radius: 6px; background: var(--field); color: var(--text); padding: 9px 14px; font: inherit; cursor: pointer; }
+button.primary { background: var(--text); color: var(--ink); border-color: var(--text); font-weight: 600; }
+button:disabled { opacity: .45; cursor: default; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+#status { min-height: 22px; font-size: 13px; }

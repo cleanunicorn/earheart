@@ -101,7 +101,18 @@ const ROLES = {
       "updates:cancel",
       "updates:skip",
       "logs:open",
+      "tools:list",
+      "tools:save-server",
+      "tools:remove-server",
+      "tools:discover",
+      "tools:set-policy",
     ],
+  },
+  // The tool-approval prompt (#346): shows one request, answers allow/deny.
+  approval: {
+    LISTEN: ["approval:request"],
+    SEND: [],
+    INVOKE: ["approval:get", "approval:decide"],
   },
   correction: {
     LISTEN: ["correction:notice"], SEND: ["correction:dirty"],

@@ -51,6 +51,7 @@ async function loadMain(
     canCloseCorrection = true,
     pruned = () => [], // ids a kept-recordings prune (#343) removes
     ducking = {},
+    tools = {},
   } = {}
 ) {
   const events = [];
@@ -173,6 +174,8 @@ async function loadMain(
       stop: () => events.push("engines.stop"),
     },
     "./autostart": { apply: () => events.push("autostart.apply") },
+    // Tool servers (#346): wired in main.js, covered by test/tools-*.test.js.
+    "./tools": { init: () => {}, running: () => 0, shutdown: async () => {}, ...tools },
     "./ducking": {
       init: () => events.push("ducking.init"),
       setCapturing: (owner, live) => events.push(`ducking.capture:${owner}:${live}`),
@@ -428,6 +431,29 @@ test("quitting while other audio is lowered waits for the restore, then quits ag
   prevented = false;
   appHandlers["before-quit"]({ preventDefault: () => { prevented = true; } });
   assert.strictEqual(prevented, false);
+});
+
+test("quitting with a tool server running stops it (bounded), then quits again", async () => {
+  let running = 1;
+  let finish;
+  const { events, appHandlers } = await loadMain({
+    tools: {
+      running: () => running,
+      shutdown: (ms) => { events.push(`tools.shutdown:${ms}`); return new Promise((resolve) => { finish = resolve; }); },
+    },
+  });
+  events.length = 0;
+  let prevented = false;
+  appHandlers["before-quit"]({ preventDefault: () => { prevented = true; } });
+  assert.strictEqual(prevented, true, "the first quit waits for the servers");
+  assert.deepStrictEqual(events, ["destroyOverlay", "tools.shutdown:2500"]);
+  running = 0;
+  finish();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepStrictEqual(events.slice(-1), ["app.quit"]);
+  prevented = false;
+  appHandlers["before-quit"]({ preventDefault: () => { prevented = true; } });
+  assert.strictEqual(prevented, false, "the second pass lets the quit through");
 });
 
 test("correction hotkey and desktop command open the latest saved transcript only when idle", async () => {

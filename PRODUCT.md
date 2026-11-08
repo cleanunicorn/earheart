@@ -121,6 +121,12 @@ shipped.
   or clipboard-only. Local JSON history of recent transcriptions (can be
   disabled). Local usage stats (counts only, never text; can be disabled
   and reset). Editable cleanup prompt. Optional start-on-login.
+- Optional local tool servers (#346): Earheart is an MCP *client* for stdio
+  servers the user configures (`main/tools/`, hand-rolled, no SDK dependency).
+  Per-tool enablement, ask/allow/deny policy, and a per-call approval window.
+  Servers start only on explicit Discover or a call, never at launch, and a
+  failing tool must never stall dictation. Command mode (#344) is the only
+  intended caller (`tools.host`); until it ships nothing invokes tools by voice.
 - **Core engineering constraint: never lose the user's words.** If cleanup
   fails, the raw transcript is delivered. Any pipeline change must preserve
   the raw-transcript fallbacks.

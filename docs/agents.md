@@ -33,7 +33,8 @@ wrong or a prompt gets reworded, these three fields in Settings → Cleanup help
 
 1. **Cleanup style → Clean.** The default, and the right one for prompts: it
    drops the *ums* and false starts but keeps your wording. **Verbatim** when
-   you're dictating exact strings or commands. Not **Polished** — rephrasing an
+   you're dictating exact strings or commands. Not **Polished** — it rewrites
+   freely, restructuring sentences and changing words, and rewording an
    instruction changes what the agent does.
 2. **Dictionary.** Add the words you say fifty times a day: your repo and
    service names, `pnpm`, `kubectl`, `useEffect`, teammates' names.

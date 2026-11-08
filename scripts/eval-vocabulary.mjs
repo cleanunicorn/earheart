@@ -69,7 +69,7 @@ async function main(modelPath, out) {
     const started = performance.now();
     const result = await session.promptWithMeta(cleanupUserTurn(cfg.systemPrompt, input), {
       ...cleanupSamplingOptions(cfg.sampling), seed: 17,
-      maxTokens: cleanMaxTokens(model.tokenize(input).length),
+      maxTokens: cleanMaxTokens(model.tokenize(input).length, cfg.outputRatio),
     });
     if (result.stopReason === "maxTokens") throw new Error("Evaluation exhausted output budget");
     return { output: stripStumbles(stripThinking(result.responseText)), ms: performance.now() - started };

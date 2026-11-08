@@ -4,7 +4,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
-const { CLEAN_RUNAWAY_MESSAGE } = require("../main/util/clean-budget");
+const { CLEAN_RUNAWAY_MESSAGE, CLEAN_CONTEXT_SLACK_TOKENS } = require("../main/util/clean-budget");
 const { createRequire } = require("node:module");
 
 function deferred() {
@@ -26,6 +26,8 @@ function worker({
   // Kept apart from `events`, whose exact sequence the older tests pin.
   const contextEvents = [];
   const getLlamaCalls = [];
+  // The options each generation ran with, apart from the pinned `events`.
+  const promptOptions = [];
   const runtime = {
     async getLlama(options) {
       // Normalized: the worker builds this object in its own vm realm.
@@ -59,8 +61,9 @@ function worker({
       constructor({ contextSequence }) { this.modelPath = contextSequence.modelPath; }
       resetChatHistory() {}
       dispose() { events.push(`dispose-session:${this.modelPath}`); }
-      async promptWithMeta(text, { signal }) {
+      async promptWithMeta(text, { signal, maxTokens }) {
         events.push(`prompt:${this.modelPath}`);
+        promptOptions.push({ maxTokens });
         promptStarted?.resolve();
         if (promptGate) await promptGate.promise;
         if (signal.aborted) throw new Error("cleanup cancelled");
@@ -113,7 +116,7 @@ function worker({
       onMessage({ data: { id, type, ...args } });
     });
   }
-  return { send, events, contextEvents, getLlamaCalls };
+  return { send, events, contextEvents, getLlamaCalls, promptOptions };
 }
 const model = (modelPath) => ({ modelPath, contextSize: 4096, cpuOnly: true });
 const turn = (modelPath) => ({ model: model(modelPath), transcript: "hello", systemPrompt: "rules" });
@@ -254,6 +257,21 @@ test("cleanup worker: a generation that hits its token cap is refused, not retur
   assert.equal(reply.error, CLEAN_RUNAWAY_MESSAGE);
 });
 
+test("cleanup worker: a style's output ratio raises the generation cap, clamped at 2x", async () => {
+  const w = worker();
+  // The fake tokenizer counts words: a 10-word transcript is 10 tokens.
+  const transcript = words(10, "word");
+  for (const outputRatio of [undefined, 1, 2, 9]) {
+    assert.equal((await w.send("clean", { ...turn("A"), transcript, outputRatio })).ok, true);
+  }
+  assert.deepEqual(w.promptOptions.map((o) => o.maxTokens), [
+    10 + CLEAN_CONTEXT_SLACK_TOKENS,
+    10 + CLEAN_CONTEXT_SLACK_TOKENS,
+    20 + CLEAN_CONTEXT_SLACK_TOKENS,
+    20 + CLEAN_CONTEXT_SLACK_TOKENS,
+  ]);
+});
+
 test("cleanup worker: a turn that can't fit the context is refused before generating", async () => {
   const w = worker();
   const tiny = { modelPath: "A", contextSize: 10, cpuOnly: true };
@@ -357,6 +375,22 @@ test("cleanup worker: a prime sizes the context as the clean will, so the clean 
   // ...so the clean neither rebuilds nor drops the primed session.
   assert.deepEqual(w.contextEvents, ["context:A:4096", "context:A:8192"]);
   assert.deepEqual(w.events.slice(afterPrime).filter((event) => event.startsWith("dispose-")), []);
+});
+
+test("cleanup worker: a 2x output ratio sizes the context for the doubled output, prime and clean alike", async () => {
+  const w = worker();
+  // 1,000 instruction tokens + a 1,200-token transcript budget: a 1x turn
+  // needs ~1,000 + 1,200 + 1,200 + 64 and fits 4096; doubling the output
+  // (~1,000 + 1,200 + 2,400 + 64) needs the next step, 8192.
+  const model = { ...budgeted("A"), transcriptTokens: 1200 };
+  const systemPrompt = words(1000);
+  assert.equal((await w.send("clean", { model, transcript: "hello", systemPrompt })).ok, true);
+  assert.deepEqual(w.contextEvents, ["context:A:4096"], "1x fits main's size");
+  const primed = await w.send("prime-cleanup", { model, systemPrompt, outputRatio: 2, text: `${systemPrompt}\n\nTranscript:\n` });
+  assert.equal(primed.ok, true, primed.error);
+  assert.deepEqual(w.contextEvents, ["context:A:4096", "context:A:8192"]);
+  assert.equal((await w.send("clean", { model, transcript: "hello", systemPrompt, outputRatio: 2 })).ok, true);
+  assert.deepEqual(w.contextEvents, ["context:A:4096", "context:A:8192"], "the clean keeps the primed size");
 });
 
 test("cleanup worker: after the ceiling fails, the next turn settles one step down and stays there", async () => {

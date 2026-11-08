@@ -179,6 +179,7 @@ async function loadMain(
       refresh: () => events.push("ducking.refresh"),
       holding: () => false,
       shutdown: async () => events.push("ducking.shutdown"),
+      close: () => events.push("ducking.close"),
       ...ducking,
     },
     "./updates": {
@@ -377,7 +378,7 @@ test("a smoke-test launch skips updates and notices, then quits", async (t) => {
   assert.ok(logged.includes("[earheart] smoke test OK"), logged.join("\n"));
 });
 
-test("quitting destroys the overlay, then releases hotkeys, engines and updates", async () => {
+test("quitting destroys the overlay, then releases hotkeys, engines, updates and the volume tool", async () => {
   const { events, appHandlers } = await loadMain();
 
   // A tray app stays alive with every window closed.
@@ -387,7 +388,7 @@ test("quitting destroys the overlay, then releases hotkeys, engines and updates"
 
   appHandlers["before-quit"]();
   appHandlers["will-quit"]();
-  assert.deepStrictEqual(events, ["destroyOverlay", "unregisterAll", "engines.stop", "updates.dispose"]);
+  assert.deepStrictEqual(events, ["destroyOverlay", "unregisterAll", "engines.stop", "updates.dispose", "ducking.close"]);
 });
 
 

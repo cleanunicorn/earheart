@@ -385,6 +385,13 @@ async function deliver(text, cfg, signal) {
 
 module.exports = {
   deliver,
+  // For voice commands (main/commands/): the same clipboard snapshot/restore
+  // and platform checks delivery uses, so a selection capture can leave the
+  // user's clipboard exactly as it found it.
+  snapshotClipboard,
+  restoreSnapshot,
+  commandExists,
+  isWayland,
   accessibilityTrusted,
   automationStatus,
   resetMacPermission,

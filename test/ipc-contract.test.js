@@ -83,7 +83,7 @@ function probe(bridge, universe) {
   return { LISTEN: allowed("on"), SEND: allowed("send"), INVOKE: allowed("invoke") };
 }
 
-const ROLE_NAMES = ["overlay", "settings", "wizard", "correction", "palette", "approval"];
+const ROLE_NAMES = ["overlay", "settings", "wizard", "correction", "palette", "approval", "command"];
 
 const renderer = readAll(path.join(ROOT, "renderer"), ".js");
 const main = readAll(path.join(ROOT, "main"), ".js");
@@ -128,7 +128,7 @@ const handled = channels(main, /ipcMain\.handle\(\s*"([a-z:-]+)"/g);
 // Main → renderer pushes: every send helper and raw webContents.send that
 // names its channel as a literal. The helper bodies in main/windows.js pass a
 // variable, so they are (correctly) not collected here.
-const PUSHED_RE = /(?:sendToForms|sendToSettings|sendToOverlay|sendToApproval|broadcast|webContents\.send)\(\s*"([a-z:-]+)"/g;
+const PUSHED_RE = /(?:sendToForms|sendToSettings|sendToOverlay|sendToApproval|sendToCommand|broadcast|webContents\.send)\(\s*"([a-z:-]+)"/g;
 const pushed = channels(main, PUSHED_RE);
 const listened = listenedBy(renderer);
 
@@ -382,7 +382,7 @@ for (const { channel, mustCarry } of PAYLOAD_CHANNELS) {
 // to save settings or read history), and nothing missing (a channel its page
 // uses but its role lacks is a dead button in that one window — which the
 // union checks above can't see). A page's scripts are the ones its HTML loads.
-const PAGES = { palette: "palette.html", overlay: "overlay.html", settings: "settings.html", wizard: "wizard.html", correction: "correction.html", approval: "approval.html" };
+const PAGES = { palette: "palette.html", overlay: "overlay.html", settings: "settings.html", wizard: "wizard.html", correction: "correction.html", approval: "approval.html", command: "command.html" };
 
 function pageScripts(page) {
   const html = fs.readFileSync(path.join(ROOT, "renderer", page), "utf8");
@@ -427,6 +427,7 @@ test("channels main pushes to one window are in that window's LISTEN", () => {
     ["sendToSettings", ["settings"]],
     ["sendToForms", ["settings", "wizard"]],
     ["sendToApproval", ["approval"]],
+    ["sendToCommand", ["command"]],
   ];
   for (const [helper, roles] of targets) {
     const pushedBy = channels(main, new RegExp(`${helper}\\(\\s*"([a-z:-]+)"`, "g"));

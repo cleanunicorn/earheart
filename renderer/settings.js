@@ -204,6 +204,41 @@ $("correct-hotkey-clear").addEventListener("click", () => {
   correctHotkeyInput.value = "";
 });
 
+// The voice command hotkey (#344) is optional like the others.
+const commandsHotkeyInput = $("commands-hotkey");
+wireHotkeyCapture(commandsHotkeyInput, {
+  apply: (accelerator) => {
+    current.commands = { ...current.commands, hotkey: accelerator };
+    commandsHotkeyInput.value = accelerator;
+  },
+  restore: () => current?.commands?.hotkey || "",
+});
+$("commands-hotkey-clear").addEventListener("click", () => {
+  current.commands = { ...current.commands, hotkey: "" };
+  commandsHotkeyInput.value = "";
+});
+
+// Remote fields show only for the remote engine; the engine hint says where
+// the text goes either way.
+function renderCommandsEngine() {
+  const remote = $("commands-engine").value === "remote";
+  $("commands-remote").hidden = !remote;
+  $("commands-engine-hint").textContent = remote
+    ? ""
+    : "Runs on this computer with the Cleanup model, so nothing leaves it. Download the model in Cleanup.";
+}
+$("commands-engine").addEventListener("change", renderCommandsEngine);
+
+// What this OS can do, from main (settings:get commandCapabilities).
+function renderCommandCapabilities(caps) {
+  if (!caps) return;
+  const parts = [];
+  if (!caps.capture?.ok) parts.push(`Reading a selection isn't available: ${caps.capture?.reason || "unsupported"}.`);
+  if (!caps.apply?.ok) parts.push(`${caps.apply?.reason || "Replacing the selection isn't available."}`);
+  if (platform !== "darwin") parts.push("Password fields can't be detected on this system: don't run a command with one focused.");
+  $("commands-capabilities").textContent = parts.join(" ");
+}
+
 /* ---------- background audio ---------- */
 
 const DUCK_STATUS_REFRESH_MS = 2000;
@@ -305,6 +340,13 @@ function populate() {
   correctHotkeyInput.value = current.correctHotkey || "";
   paletteHotkeyInput.value = current.paletteHotkey || "";
   $("commands-shortcut").textContent = displayHotkey("CommandOrControl+K");
+  commandsHotkeyInput.value = current.commands?.hotkey || "";
+  $("commands-engine").value = current.commands?.engine === "remote" ? "remote" : "builtin";
+  $("commands-url").value = current.commands?.baseUrl || "";
+  $("commands-key").value = current.commands?.apiKey || "";
+  $("commands-model").value = current.commands?.model || "";
+  $("commands-allow-apply").checked = current.commands?.allowApply !== false;
+  renderCommandsEngine();
   showOutputMode(current.output);
 
   $("stt-url").value = current.stt.baseUrl;
@@ -385,6 +427,15 @@ function collect() {
     discardHotkey: current.discardHotkey || "",
     correctHotkey: current.correctHotkey || "",
     paletteHotkey: current.paletteHotkey || "",
+    commands: {
+      ...current.commands,
+      hotkey: current.commands?.hotkey || "",
+      engine: $("commands-engine").value === "remote" ? "remote" : "builtin",
+      baseUrl: $("commands-url").value.trim(),
+      apiKey: $("commands-key").value.trim(),
+      model: $("commands-model").value.trim(),
+      allowApply: $("commands-allow-apply").checked,
+    },
     startOnBoot: $("start-on-boot").checked,
     appearance: $("appearance").value,
     uiLanguage: $("ui-language").value,
@@ -1119,8 +1170,10 @@ function keyStorageNote(section, value) {
 function renderKeyStorage() {
   $("stt-key-storage").textContent = keyStorageNote("stt", $("stt-key").value.trim());
   $("cleanup-key-storage").textContent = keyStorageNote("cleanup", $("cleanup-key").value.trim());
+  $("commands-key-storage").textContent = keyStorageNote("commands", $("commands-key").value.trim());
 }
 
+$("commands-key").addEventListener("input", renderKeyStorage);
 $("stt-key").addEventListener("input", renderKeyStorage);
 $("cleanup-key").addEventListener("input", renderKeyStorage);
 
@@ -1133,6 +1186,7 @@ $("cleanup-key").addEventListener("input", renderKeyStorage);
 // `unbound` one — a failed restore left the saved hotkey itself unregistered.
 function renderHotkeyStatus(status) {
   const rows = [
+    [$("commands-hotkey-status"), status?.commandsHotkey, current.commands?.hotkey],
     [$("hotkey-status"), status?.hotkey, current.hotkey],
     [$("pause-hotkey-status"), status?.pauseHotkey, current.pauseHotkey],
     [$("discard-hotkey-status"), status?.discardHotkey, current.discardHotkey],
@@ -1338,7 +1392,7 @@ async function saveSettings() {
     discardResult = result.discardHotkey ?? { ok: true };
     correctResult = result.correctHotkey ?? { ok: true };
     const hotkeysOk = result.hotkey.ok && pauseResult.ok && discardResult.ok && correctResult.ok && (result.paletteHotkey?.ok !== false);
-    const hotkeyStatus = { hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult, paletteHotkey: result.paletteHotkey };
+    const hotkeyStatus = { hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult, paletteHotkey: result.paletteHotkey, commandsHotkey: result.commandsHotkey };
     if (hotkeysOk) {
       // Save never closes the window (#298): a window that vanished on its own
       // read as a crash. "Saved" stays until the form is edited again; Close
@@ -1374,7 +1428,7 @@ async function saveSettings() {
   saveButton.disabled = false;
   save.textContent = hotkeySaveMessage(result.hotkey, pauseResult, discardResult, correctResult, result.paletteHotkey);
   save.className = "status err";
-  renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult, paletteHotkey: result.paletteHotkey });
+  renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult, paletteHotkey: result.paletteHotkey, commandsHotkey: result.commandsHotkey });
   saveStatusTimer = setTimeout(() => {
     save.textContent = "";
   }, 4000);
@@ -2550,6 +2604,7 @@ earheart.on("updates:state", renderUpdateState);
   // A hotkey that failed at launch shows now, not after a Save — and before
   // the update and model round-trips below.
   renderHotkeyStatus(data.hotkeyStatus);
+  renderCommandCapabilities(data.commandCapabilities);
   // The Accessibility permission only exists on macOS.
   if (platform === "darwin") $("accessibility-field").hidden = false;
   $("version").textContent = `v${data.version}`;

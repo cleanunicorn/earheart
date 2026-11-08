@@ -46,6 +46,10 @@ settings-smoke: ## Drive the settings window and check its UI, microphone picker
 approval-smoke: ## Drive the Tools settings, the approval window and a fixture MCP server end to end
 	xvfb-run -a npx electron scripts/approval-smoke.js --no-sandbox
 
+.PHONY: command-smoke
+command-smoke: ## Drive the voice command card and check rendering, Apply/Copy rules, cancellation and sender checks
+	xvfb-run -a npx electron scripts/command-smoke.js --no-sandbox
+
 .PHONY: icons
 icons: ## Regenerate app/tray icons into assets/
 	node scripts/gen-icons.js

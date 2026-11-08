@@ -135,6 +135,24 @@ const ROLES = {
     LISTEN: ["correction:notice", "i18n:changed"], SEND: ["correction:dirty"],
     INVOKE: ["i18n:get", "correction:get", "correction:remember", "transcript:copy", "correction:close"],
   },
+  // The voice command card (#344): it renders the selected text, the spoken
+  // instruction and the result, so it gets only its own session's controls and
+  // nothing about settings, history or models. Each handler in
+  // main/commands/ipc.js also checks that the sender IS this window.
+  command: {
+    LISTEN: ["command:state"],
+    SEND: [],
+    INVOKE: [
+      "command:get",
+      "command:stop",
+      "command:cancel",
+      "command:retry",
+      "command:restart",
+      "command:apply",
+      "command:copy",
+      "command:close",
+    ],
+  },
   wizard: {
     LISTEN: ["models:progress", "models:done", "settings:changed", "i18n:changed"],
     SEND: ["hotkeys:capture"],

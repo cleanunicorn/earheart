@@ -3,6 +3,7 @@
 const { Tray, Menu, Notification, nativeImage } = require("electron");
 const path = require("node:path");
 const windows = require("./windows");
+const commands = require("./commands");
 const settings = require("./settings");
 const updates = require("./updates");
 const history = require("./history");
@@ -77,6 +78,13 @@ function buildMenu(app) {
             : t("tray.start"),
       enabled: state !== "processing",
       click: () => pipeline.toggle(),
+    },
+    {
+      // Voice command (#344): an explicit rewrite/draft by voice, separate
+      // from dictation. While a command records, the same item finishes it.
+      label: commands.isRecording() ? "Finish voice command" : "Voice command…",
+      enabled: state === "idle" || commands.isRecording(),
+      click: () => commands.begin(),
     },
     {
       label: t("tray.cancel"),

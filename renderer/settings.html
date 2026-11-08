@@ -269,6 +269,63 @@
             </p>
           </div>
         </div>
+
+        <div class="card">
+          <div class="card-title">Voice commands</div>
+          <p class="hint">
+            A separate mode for writing or rewriting by voice: say what to do, then review the
+            result before it is used. Select text first to rewrite it, or select nothing to write
+            something new. Ordinary dictation is never treated as a command.
+          </p>
+          <div class="field">
+            <label for="commands-hotkey">Voice command hotkey</label>
+            <div class="row">
+              <input id="commands-hotkey" readonly placeholder="Not set — click, then press a key combination" />
+              <button id="commands-hotkey-clear" class="ghost">Clear</button>
+            </div>
+            <p class="hint">Optional. Also in the tray menu. On Wayland, bind <code>earheart --command</code> in your desktop settings.</p>
+            <p id="commands-hotkey-status" class="status" aria-live="polite"></p>
+          </div>
+          <div class="field">
+            <label for="commands-engine">Writing model</label>
+            <select id="commands-engine">
+              <option value="builtin">On this computer (uses the Cleanup model)</option>
+              <option value="remote">A remote service I name here</option>
+            </select>
+            <p id="commands-engine-hint" class="hint"></p>
+          </div>
+          <div id="commands-remote" hidden>
+            <p class="hint">
+              <strong>Your selected text and what you say are sent to this service.</strong>
+              It is never used for anything but voice commands: the Cleanup service is not a fallback.
+              What you say is still transcribed by your Speech-to-text setting.
+            </p>
+            <div class="field">
+              <label for="commands-url">Base URL</label>
+              <input id="commands-url" placeholder="https://api.example.com/v1" />
+            </div>
+            <div class="field">
+              <label for="commands-key">API key <span class="muted">(optional for local servers)</span></label>
+              <input id="commands-key" type="password" autocomplete="off" />
+              <p id="commands-key-storage" class="hint" aria-live="polite"></p>
+            </div>
+            <div class="field">
+              <label for="commands-model">Model</label>
+              <input id="commands-model" placeholder="llama3.2" />
+            </div>
+          </div>
+          <div class="field">
+            <label class="check" for="commands-allow-apply">
+              <input id="commands-allow-apply" type="checkbox" />
+              Let me replace the selection from the result card
+            </label>
+            <p class="hint">
+              Replacing only happens when you press the button, and only if the same window and
+              selection are still there. Otherwise the result is just copied.
+            </p>
+            <p id="commands-capabilities" class="hint"></p>
+          </div>
+        </div>
       </section>
 
       <!-- Live transcript -->

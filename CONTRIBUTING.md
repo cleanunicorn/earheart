@@ -29,6 +29,7 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | `make overlay-smoke` | Drive the overlay with a fake mic and check capture/UI sync |
 | `make settings-smoke` | Drive the settings window and check its UI, microphone picker, and live settings sync |
 | `make approval-smoke` | Drive the Tools settings, the approval window and a fixture MCP server end to end |
+| `make command-smoke` | Drive the voice command card and check rendering, Apply/Copy rules, cancellation and sender checks |
 | `make icons` | Regenerate app/tray icons into `assets/` |
 | `make screenshots` | Regenerate README screenshots into `docs/screenshots/` |
 | `make dist` | Build installers for the current platform |
@@ -70,6 +71,7 @@ make engine-smoke              # boot the engine worker, round-trip a ping
 make overlay-smoke             # drive the overlay with a fake mic, check capture/UI sync
 make settings-smoke            # drive the settings window, check the index/scroll-spy contract
 make approval-smoke            # tool servers: settings card, approval window, fixture MCP server
+make command-smoke             # drive the voice command card, check Apply/Copy/cancel rules
 ```
 
 The engine-smoke step forks the in-process engine `utilityProcess` worker and
@@ -91,7 +93,13 @@ selected-card navigation and preservation of unsaved Settings fields. Commands
 uses a dedicated preload role and the pipeline's central start/retry guard;
 see [Commands](docs/command-palette.md) for shortcuts and native acceptance that
 headless tests cannot establish.
-
+The command-smoke step drives the real voice command card (#344)
+with the session's edges faked and asserts that it never takes focus, renders
+the selection, instruction and result as text, applies only a valid result to
+an unchanged target (otherwise Copy only), drops a late result after Cancel, and
+answers only its own window. CI runs all seven on every platform; it cannot prove
+native selection capture or paste, which are checked by hand per OS
+([docs/commands.md](docs/commands.md)).
 Built-in models download to Electron's `userData/models` on first use; the
 smoke checks don't need them present.
 

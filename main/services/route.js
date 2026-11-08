@@ -8,6 +8,7 @@
 
 const stt = require("./stt");
 const cleanup = require("./cleanup");
+const transformClient = require("./transform");
 const engines = require("../engines");
 const { stripStumbles } = require("../util/stumble-strip");
 const registry = require("../engines/registry");
@@ -52,4 +53,14 @@ async function clean(raw, cfg, signal, opts) {
   return needsBackstop(cfg) ? stripStumbles(cleaned) : cleaned;
 }
 
-module.exports = { transcribe, clean, needsBackstop };
+// A voice command (#344). `cfg` is settings.commands; `opts` carries what the
+// in-process engine needs from elsewhere in the settings (the cleanup model it
+// borrows, the context sizing). "remote" goes only to the service named in
+// cfg: it never falls back to the cleanup or STT endpoints, because the text
+// sent is the user's selection. Any engine value but "remote" runs locally.
+function transform(request, cfg, signal, opts) {
+  const impl = cfg.engine === "remote" ? transformClient.transform : engines.transform;
+  return impl(request, cfg, signal, opts);
+}
+
+module.exports = { transcribe, clean, transform, needsBackstop };

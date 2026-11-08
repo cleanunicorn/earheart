@@ -358,7 +358,7 @@ async function openLog() {
   }
 }
 
-function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {}, onHistoryEntryDeleted = () => {}, agentApi = INERT_AGENT_API, retranscribe = async () => ({ ok: false, error: "unavailable" }) }) {
+function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, getCommandCapabilities, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {}, onHistoryEntryDeleted = () => {}, agentApi = INERT_AGENT_API, retranscribe = async () => ({ ok: false, error: "unavailable" }) }) {
   onCleanupDownloaded = completed;
   // Custom models reach the registry through the settings themselves
   // (engines/catalog.js, bound in main.js), not through this layer: the saves
@@ -403,6 +403,9 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
       // shortcut that failed at launch as soon as it opens. Read-only: asking
       // never re-registers anything.
       hotkeyStatus: getHotkeyStatus?.() ?? null,
+      // What voice commands can do on this OS (main/commands): reading the
+      // selection and applying a result. Static facts for the Commands section.
+      commandCapabilities: getCommandCapabilities?.() ?? null,
       // Whether API keys are encrypted at rest (or why not), for the note
       // under the API key fields. Status only — never a key or ciphertext.
       keyStorage: settings.keyStorage(),
@@ -466,7 +469,7 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     // the user can see each error and correct the field without re-entering it.
     const responseSettings = withFields(saved, candidate, rejectedFields);
     applyAutostart(saved);
-    onSettingsChanged?.();
+    const afterSave = onSettingsChanged?.();
     return {
       hotkeyResults,
       response: {
@@ -476,6 +479,10 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
         discardHotkey: hotkeyResults.discardHotkey,
         correctHotkey: hotkeyResults.correctHotkey,
         paletteHotkey: hotkeyResults.paletteHotkey,
+        // The voice command hotkey (#344) is bound by main/commands after the
+        // save lands, so its result comes back from onSettingsChanged. A key
+        // that fails to register stays saved, as one that fails at launch does.
+        commandsHotkey: afterSave?.commandsHotkey,
       },
     };
   };

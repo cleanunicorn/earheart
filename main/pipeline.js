@@ -54,6 +54,15 @@ const commandsNotifier = createNotifier({
 
 let session = 0; // current dictation session id
 let abortController = null;
+// What the current take is for. "dictation" is everything the user normally
+// does; "command" (#344) is a voice command, whose recording and speech-to-text
+// run here but whose transcript is HANDED to the command session instead of
+// being cleaned up, aliased, saved or delivered. Set per take in
+// startRecording and never inferred from the audio or the words. The handlers
+// are the command session's { onTranscript, onEnd }; each take reports exactly
+// one of them (endCommand).
+let sessionPurpose = "dictation";
+let commandHandlers = null;
 const stateListeners = new Set();
 
 // The last take whose transcription failed, held in memory so it can be
@@ -630,8 +639,11 @@ function onFailedTakeChange(listener) {
   failedTakeListeners.add(listener);
 }
 
-function startRecording() {
-  if (paletteBlocksDictation()) return;
+// `command` (a voice command's { onTranscript, onEnd }) makes this take a
+// command take; without it the take is an ordinary dictation. Returns the
+// session id, or false when nothing started.
+function startRecording(command = null) {
+  if (paletteBlocksDictation()) return false;
   const cfg = settings.get();
   // A built-in model that isn't on disk can't transcribe this dictation: say
   // so now, before the microphone opens, instead of after the user has spoken
@@ -642,12 +654,14 @@ function startRecording() {
   if (!readiness.ok) {
     logger.warn(`not recording: speech model ${readiness.modelId} is ${readiness.reason}`);
     setupNotifier.show(sttNotReadyNotice(readiness), { critical: true });
-    return;
+    return false;
   }
   // The dictation wins the engines: a History retranscription still running
   // (#343) stops and is marked cancelled, to be tried again later.
   retranscriber.cancel();
   const sid = ++session;
+  sessionPurpose = command ? "command" : "dictation";
+  commandHandlers = command;
   setState("recording");
   const liveOn = cfg.stt.engine === "builtin" && cfg.stt.livePreview?.enabled;
   // Warm the built-in models as recording begins, so their load time is hidden
@@ -701,6 +715,7 @@ function startRecording() {
   } else {
     begin();
   }
+  return sid;
 }
 
 function stopRecording() {
@@ -710,8 +725,18 @@ function stopRecording() {
   windows.sendToOverlay("record:stop");
 }
 
+// Report the end of a command take that produced no transcript (cancelled,
+// failed, heard nothing). Once only: the handlers are released as they fire.
+function endCommand(sid, reason, message) {
+  if (sessionPurpose !== "command" || !commandHandlers) return;
+  const handlers = commandHandlers;
+  commandHandlers = null;
+  handlers.onEnd(sid, reason, message);
+}
+
 function onOverlayRendererGone() {
   if (state !== "recording") return;
+  endCommand(session, "error", "Recording lost because the overlay stopped unexpectedly");
   session++; // invalidate any capture event from the dead renderer
   livePreview.cancel();
   setState("idle");
@@ -719,6 +744,7 @@ function onOverlayRendererGone() {
 }
 
 function cancel() {
+  endCommand(session, "cancelled");
   session++; // invalidate in-flight session events
   livePreview.cancel();
   if (state === "recording") {
@@ -733,7 +759,7 @@ function cancel() {
   windows.hideOverlay();
 }
 
-async function process(sid, wavArrayBuffer, { retry = false } = {}) {
+async function process(sid, wavArrayBuffer, { retry = false, purpose = "dictation" } = {}) {
   const cfg = settings.get();
   // Snapshot the committed chunk decodes BEFORE cancelling the live preview
   // (cancel resets them): they are the final transcript's prefix, so the
@@ -783,6 +809,25 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
     );
     transcribed = true;
     if (stale()) return;
+
+    // A voice command (#344) ends here: the transcript is the spoken
+    // instruction, handed to the command session. It is not cleaned up (the
+    // cleanup prompt would treat it as dictation), not aliased, not saved to
+    // History, not counted in usage and above all never delivered — the
+    // instruction must not reach the app the user is working in.
+    if (purpose === "command") {
+      if (!raw) {
+        overlayStatus("empty");
+        hideOverlaySoon(sid, 1800);
+        endCommand(sid, "empty");
+        return;
+      }
+      const handlers = commandHandlers;
+      commandHandlers = null;
+      windows.hideOverlay();
+      handlers?.onTranscript(sid, raw);
+      return;
+    }
 
     if (!raw) {
       overlayStatus("empty");
@@ -887,6 +932,15 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
   } catch (err) {
     if (stale()) return;
     logger.error("pipeline failed:", err);
+    if (purpose === "command") {
+      // No failed-take hold: a retry would run the take as a dictation and
+      // type the instruction into the user's app. The command session keeps
+      // the card and offers "Speak again" instead.
+      overlayStatus("error", { message: String(err.message).slice(0, 200) });
+      hideOverlaySoon(sid, 5000);
+      endCommand(sid, "error", String(err.message).slice(0, 200));
+      return;
+    }
     if (delivered) {
       hideOverlaySoon(sid, 1600);
       return;
@@ -991,7 +1045,7 @@ function init({ isDownloading = () => false } = {}) {
   isModelDownloading = isDownloading;
   ipcMain.on("audio:captured", (event, { sid, wav } = {}) => {
     if (sid !== session || state !== "recording") return;
-    process(sid, wav);
+    process(sid, wav, { purpose: sessionPurpose });
   });
 
   // `fromSample` must be forwarded: it is the contiguity check that lets the
@@ -1013,6 +1067,7 @@ function init({ isDownloading = () => false } = {}) {
 
   ipcMain.on("record:cancelled", (event, { sid } = {}) => {
     if (sid !== session) return;
+    endCommand(sid, "cancelled");
     livePreview.cancel();
     if (state === "recording") setState("idle");
     windows.hideOverlay();
@@ -1020,6 +1075,7 @@ function init({ isDownloading = () => false } = {}) {
 
   ipcMain.on("record:error", (event, { sid, message } = {}) => {
     if (sid !== session) return;
+    endCommand(sid, "error", typeof message === "string" ? message.slice(0, 200) : undefined);
     livePreview.cancel();
     if (state === "recording") setState("idle");
     overlayStatus("error", { message });
@@ -1057,6 +1113,8 @@ module.exports = {
   toggle,
   pauseToggle,
   discard,
+  startCommandRecording: startRecording,
+  stopRecording,
   retryFailedTake,
   retranscribe,
   discardFailedTake,

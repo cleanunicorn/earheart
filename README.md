@@ -549,6 +549,16 @@ Settings. Commands refuses to open during a take; pressing record or retry
 while it is open only closes it. Focus your destination before pressing the
 dictation key again. [Commands and focus behavior](docs/command-palette.md).
 
+### Voice commands
+
+Dictation never treats your words as instructions. When you *do* want to give
+one, use the separate **voice command** mode (tray ▸ Voice command…, or the
+optional hotkey in Settings → General): say "make this friendlier" over a
+selection, or "write a two-line thank-you note" with nothing selected, review
+the result on the card, then **Replace selection** or **Copy**. It runs on your
+Cleanup model by default; a remote service is used only if you name one. See
+[docs/commands.md](docs/commands.md).
+
 ### Always replace
 
 Settings → Cleanup → **Always replace** holds exact rules, one canonical
@@ -748,6 +758,10 @@ checksum-verified. Only add models from repos you trust.
   explicitly send go to the Codex or Claude Code you chose, and its provider
   processes them. Tasks are kept in `agent-tasks.json` (user-only) and are
   deleted with Clear history.
+- Voice commands send your selected text and spoken instruction only to the
+  writing model you chose: the built-in Cleanup model on your machine (the
+  default) or a remote service you name for them. They are never saved to
+  History or logged ([docs/commands.md](docs/commands.md)).
 - No telemetry, no accounts, no cloud.
 
 ## Star history

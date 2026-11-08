@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.52.0 — 2026-11-08
+
+- Improve audio ducking and Polished cleanup (#380)
+
 ## v0.51.0 — 2026-11-05
 
 - Add light theme, recording sounds, usage stats and audio lowering (#376)

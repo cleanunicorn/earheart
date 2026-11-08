@@ -240,6 +240,10 @@ app.whenReady().then(async () => {
       enabled: false,
     };
     ipcMain.handle("ducking:status", async () => duckingStatus);
+    // Handlers main.js registers beside ipc.init (mic-probe #339, tool servers
+    // #346); the smoke boots only ipc, so stand in with their empty answers.
+    ipcMain.handle("mics:classes", async () => ({ records: [], available: false }));
+    ipcMain.handle("tools:list", () => ({ ok: true, servers: [], secureStorage: false }));
     const downloads = new Map();
     // Every transfer the engine was asked for, in order (check 16 counts them).
     const downloadCalls = [];
@@ -2697,6 +2701,11 @@ app.whenReady().then(async () => {
     await require("./theme-smoke").checkTheme({ waitFor, check, savedThenClose });
     await require("./i18n-smoke").checkI18n({ waitFor, check });
 
+    // The i18n check closes Settings without waiting; Commands needs a fresh one.
+    await waitFor(
+      async () => require("electron").BrowserWindow.getAllWindows().every((w) => w.isDestroyed() || !w.webContents.getURL().includes("settings.html")),
+      "the Settings window did not finish closing"
+    );
     await require("./palette-smoke").checkPalette({ waitFor, check, invokeHandlers });
 
     const failed = checks.filter((c) => !c.ok);

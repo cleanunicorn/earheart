@@ -740,6 +740,36 @@
                 exact spelling listed here. Keep the list short and specific —
                 a handful of terms works better than hundreds.
               </p>
+              <p id="vocab-count" class="hint" aria-live="polite"></p>
+            </div>
+            <div class="field">
+              <span class="field-label" id="vocab-packs-label">Starter packs</span>
+              <div id="vocab-packs" role="group" aria-labelledby="vocab-packs-label"></div>
+              <p class="hint">
+                Curated lists for common stacks, added to the cleanup prompt
+                after your own terms. Switching a pack off removes exactly its
+                words; your list above is never changed.
+              </p>
+            </div>
+            <div class="field">
+              <div class="row">
+                <button id="vocab-learn" class="ghost" type="button">Learn from a folder…</button>
+                <span id="vocab-learn-status" class="status" role="status"></span>
+              </div>
+              <div id="vocab-review" role="group" aria-labelledby="vocab-review-title" hidden>
+                <p id="vocab-review-title" class="hint"></p>
+                <div id="vocab-review-list"></div>
+                <div class="row">
+                  <button id="vocab-review-add" class="ghost" type="button">Add selected to the list</button>
+                  <button id="vocab-review-dismiss" class="ghost" type="button">Dismiss</button>
+                </div>
+              </div>
+              <p class="hint">
+                Pick a project folder and Earheart reads its manifest, top-level
+                names and exported symbols (a bounded scan, only when you click
+                this) and suggests the words you are likely to say. Nothing is
+                added until you review it here and press Save.
+              </p>
             </div>
           </div>
 
@@ -1072,6 +1102,7 @@
     <script src="i18n-client.js"></script>
     <script src="hotkey-capture.js"></script>
     <script src="vocabulary.js"></script>
+    <script src="vocab-packs.js"></script>
     <script src="aliases.js"></script>
     <script src="prompt-diff.js"></script>
     <script src="settings-sync.js"></script>

@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const settings = require("./settings");
 const { mergeVocabulary, rememberVocabulary } = require("../renderer/vocabulary");
+const { learnVocabulary } = require("./vocab-learn");
 const { mergeAliases, rememberAlias, normalizeAliases } = require("../renderer/aliases");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
@@ -777,6 +778,20 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     settings.save({ ...cfg, cleanup: { ...cfg.cleanup, dictionary, aliases } });
     onSettingsChanged?.();
     return { ok: true, cleanupEnabled: cfg.cleanup.enabled, alias: heard !== undefined };
+  }));
+  // "Learn from a folder…" (#72): the user picks a folder in a native dialog
+  // (nothing is scanned that they did not choose, and no path crosses IPC from
+  // the renderer), main extracts bounded candidate words from it, and only
+  // those strings come back for the review panel. Nothing is saved here.
+  ipcMain.handle("vocab:learn-folder", wrap(async (event) => {
+    const choice = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+      title: "Learn vocabulary from a project folder",
+      buttonLabel: "Learn from folder",
+      properties: ["openDirectory"],
+    });
+    if (choice.canceled || !choice.filePaths?.[0]) return { ok: false, cancelled: true };
+    const { terms, truncated } = await learnVocabulary(choice.filePaths[0]);
+    return { ok: true, terms: terms.filter((term) => typeof term === "string"), truncated };
   }));
   ipcMain.handle("transcript:copy", wrap(async (event, text) => {
     if (!canCopy()) throw new Error("Wait for the current dictation to finish processing before copying a transcript.");

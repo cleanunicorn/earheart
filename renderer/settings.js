@@ -431,6 +431,7 @@ function populate() {
   $("cleanup-dictionary").value = (current.cleanup.dictionary || []).join("\n");
   $("cleanup-aliases").value = formatAliases(current.cleanup.aliases);
   renderFormatting(current.formatting);
+  renderVocabPacks(current.cleanup.vocabPacks);
   $("cleanup-prompt").value = current.cleanup.systemPrompt;
   selectEngine("cleanup", current.cleanup.engine);
   renderKeyStorage();
@@ -564,6 +565,7 @@ function collect() {
         .map((t) => t.trim())
         .filter(Boolean),
       aliases: collectAliases(),
+      vocabPacks: collectVocabPacks(),
       systemPrompt: $("cleanup-prompt").value,
     },
     audio: {
@@ -1118,6 +1120,105 @@ async function answerPromptOffer(decision) {
 $("prompt-offer-use").addEventListener("click", () => answerPromptOffer("use"));
 $("prompt-offer-keep").addEventListener("click", () => answerPromptOffer("keep"));
 
+// ---- Dictionary: starter packs and "Learn from a folder…" (#72) ----
+
+function renderVocabPacks(enabled) {
+  const box = $("vocab-packs");
+  const on = new Set(enabled || []);
+  box.textContent = "";
+  for (const pack of VOCAB_PACKS) {
+    const label = document.createElement("label");
+    label.className = "choice";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = pack.id;
+    input.checked = on.has(pack.id);
+    input.addEventListener("change", updateVocabCount);
+    label.append(input, ` ${pack.label} (${Math.min(pack.terms.length, PACK_TERMS_MAX)} terms)`);
+    box.append(label);
+  }
+  updateVocabCount();
+}
+
+function collectVocabPacks() {
+  return [...$("vocab-packs").querySelectorAll("input:checked")].map((input) => input.value);
+}
+
+// What the cleanup prompt will carry: the user's terms plus the pack terms that
+// fit under the prompt cap, against the dictionary's own limits.
+function updateVocabCount() {
+  const user = vocabularyTerms($("cleanup-dictionary").value.split("\n"));
+  const total = mergePromptTerms(user, collectVocabPacks()).length;
+  const problem = dictionaryProblem(user);
+  $("vocab-count").textContent = problem ||
+    `${user.length} of ${VOCAB_LIMITS.terms} terms in your list; ${total} in the cleanup prompt` +
+    ` (up to ${PROMPT_TERMS_MAX}).`;
+  $("vocab-count").classList.toggle("err", Boolean(problem));
+}
+$("cleanup-dictionary").addEventListener("input", updateVocabCount);
+
+function closeVocabReview() {
+  $("vocab-review").hidden = true;
+  $("vocab-review-list").textContent = "";
+}
+
+$("vocab-learn").addEventListener("click", async () => {
+  const status = $("vocab-learn-status");
+  const button = $("vocab-learn");
+  button.disabled = true;
+  status.className = "status";
+  status.textContent = "Scanning…";
+  try {
+    const result = await earheart.invoke("vocab:learn-folder");
+    if (result.cancelled) { status.textContent = ""; return; }
+    if (!result.ok) throw new Error(result.error || "Could not read that folder.");
+    const have = new Set(vocabularyTerms($("cleanup-dictionary").value.split("\n")));
+    const terms = result.terms.filter((term) => typeof term === "string" && !have.has(term));
+    if (!terms.length) {
+      closeVocabReview();
+      status.textContent = "No new words found in that folder.";
+      return;
+    }
+    const list = $("vocab-review-list");
+    list.textContent = "";
+    for (const term of terms) {
+      const label = document.createElement("label");
+      label.className = "choice";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.value = term;
+      input.checked = true;
+      label.append(input, ` ${term}`);
+      list.append(label);
+    }
+    $("vocab-review-title").textContent = `${terms.length} suggested words, best first.` +
+      (result.truncated ? " The folder was large, so only part of it was scanned." : "") +
+      " Untick any you would not say.";
+    $("vocab-review").hidden = false;
+    status.textContent = "";
+  } catch (err) {
+    status.className = "status err";
+    status.textContent = err.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("vocab-review-add").addEventListener("click", () => {
+  const picked = [...$("vocab-review-list").querySelectorAll("input:checked")].map((input) => input.value);
+  const field = $("cleanup-dictionary");
+  const { terms, added, skipped } = addVocabulary(field.value.split("\n"), picked);
+  field.value = terms.join("\n");
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+  closeVocabReview();
+  const status = $("vocab-learn-status");
+  status.className = skipped.length ? "status err" : "status ok";
+  status.textContent = `Added ${added.length} words; press Save to keep them.` +
+    (skipped.length ? ` ${skipped.length} left out: the list is full.` : "");
+});
+
+$("vocab-review-dismiss").addEventListener("click", closeVocabReview);
+
 /* ---------- changes saved elsewhere ---------- */
 
 // Main saved the settings (tray radio, update prompt, overlay drag, custom
@@ -1414,6 +1515,8 @@ async function saveSettings() {
   save.className = "status";
   try {
     parseAliases($("cleanup-aliases").value);
+    const problem = dictionaryProblem(vocabularyTerms($("cleanup-dictionary").value.split("\n")));
+    if (problem) throw new Error(problem);
   } catch (err) {
     save.textContent = i18n.t("rt.notSavedMessage", { message: err.message });
     save.className = "status err";

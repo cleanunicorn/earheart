@@ -78,6 +78,7 @@ const ROLES = {
       "settings:get",
       "settings:save",
       "settings:close",
+      "vocab:learn-folder",
       "ducking:status",
       "mics:classes",
       "wizard:open",

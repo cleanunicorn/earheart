@@ -50,3 +50,8 @@ test("the never-force-in guard still ships with the biggest prompt", () => {
   const prompt = resolveCleanup({ systemPrompt: "B.", style: "clean", dictionary: [], vocabPacks: PACK_IDS }).systemPrompt;
   assert.match(prompt, /Never force a term in where the speaker clearly said something else\./);
 });
+
+test("a user's term hides the pack's differently cased twin", () => {
+  const merged = mergePromptTerms(["cursor"], ["coding-agents"]);
+  assert.ok(merged.includes("cursor") && !merged.includes("Cursor"));
+});

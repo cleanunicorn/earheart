@@ -1,6 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { rememberVocabulary, mergeVocabulary, addVocabulary, VOCAB_LIMITS } = require("../renderer/vocabulary");
+const { rememberVocabulary, mergeVocabulary, addVocabulary, dictionaryProblem, VOCAB_LIMITS } = require("../renderer/vocabulary");
 
 test("remember trims and deduplicates exact spellings without conflating identifiers", () => {
   assert.deepEqual(rememberVocabulary(["kubectl", "getUser"], " kubectl "), ["kubectl", "getUser"]);
@@ -37,4 +37,11 @@ test("addVocabulary merges a batch up to the term and character limits and repor
   const wide = addVocabulary(Array.from({ length: 72 }, (_, i) => "a".repeat(110) + i), ["a".repeat(110) + "x", "a".repeat(110) + "y"]);
   assert.ok(wide.terms.join("\n").length <= VOCAB_LIMITS.chars);
   assert.ok(wide.skipped.length >= 1);
+});
+
+test("dictionaryProblem names an over-limit list so Save can refuse it", () => {
+  assert.equal(dictionaryProblem(["kubectl", "pnpm"]), "");
+  assert.match(dictionaryProblem(Array.from({ length: VOCAB_LIMITS.terms + 5 }, (_, i) => `w${i}`)), /limit is 256\. Remove 5/);
+  assert.match(dictionaryProblem(Array.from({ length: 80 }, (_, i) => "a".repeat(110) + i)), /8192/);
+  assert.match(dictionaryProblem(["a".repeat(121)]), /not a valid term/);
 });

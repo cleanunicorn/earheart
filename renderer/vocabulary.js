@@ -32,6 +32,21 @@ function validTerm(term) {
     !/[\r\n\x00-\x1f\x7f]/.test(term);
 }
 
+// Why a dictionary cannot be saved as it stands, or "" when it is within
+// VOCAB_LIMITS. Settings blocks Save on this rather than dropping terms, so a
+// big paste is never silently truncated.
+function dictionaryProblem(terms) {
+  const list = vocabularyTerms(terms);
+  const long = list.find((term) => !validTerm(term));
+  if (long) return `"${long.slice(0, 24)}…" is not a valid term: use up to ${VOCAB_LIMITS.termChars} characters on one line.`;
+  if (list.length > VOCAB_LIMITS.terms) {
+    return `The dictionary has ${list.length} terms; the limit is ${VOCAB_LIMITS.terms}. Remove ${list.length - VOCAB_LIMITS.terms}.`;
+  }
+  const chars = list.join("\n").length;
+  if (chars > VOCAB_LIMITS.chars) return `The dictionary is ${chars} characters; the limit is ${VOCAB_LIMITS.chars}.`;
+  return "";
+}
+
 // Add `additions` to `terms` until a limit would be crossed. Returns the new
 // list, the terms that went in and the ones left out (invalid, duplicate or
 // over a limit), so a review UI can say what it skipped.
@@ -73,6 +88,6 @@ function rememberVocabulary(terms, spelling) {
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
-    vocabularyTerms, mergeVocabulary, mergeVocabularyText, rememberVocabulary, addVocabulary, VOCAB_LIMITS,
+    vocabularyTerms, mergeVocabulary, mergeVocabularyText, rememberVocabulary, addVocabulary, dictionaryProblem, VOCAB_LIMITS,
   };
 }

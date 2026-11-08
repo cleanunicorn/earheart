@@ -554,7 +554,12 @@ that say pack words in an ordinary sense ("move the cursor…"); it exits non-ze
 if any control gets a term forced in, and the report records SHA-256 hashes of
 the model and of each arm's prompt so a rerun is comparable. It needs a local
 cleanup model, so CI only tests the evaluation logic, and the result is a small
-synthetic text check on one model, not a guarantee. Not yet shipped: an
+synthetic text check on one model, not a guarantee, and **the large-dictionary
+arm has not been run yet**. Some pack words are also ordinary words ("Cursor",
+"Claude", "Lambda", "Prettier"); packs are off by default for that reason, and
+if one misfires, switch the pack off or use the dictionary directly. Settings
+refuses to save a dictionary over the 256-term / 8,192-character limits rather
+than truncating it. Not yet shipped: an
 `earheart --learn-vocab <path>` command and an MCP tool for agents to call.
 
 ### Always replace

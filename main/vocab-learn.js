@@ -37,7 +37,7 @@ const GENERIC = new Set(["src", "lib", "libs", "app", "apps", "main", "index", "
   "util", "helpers", "common", "shared", "types", "config", "configs", "core", "components", "pages",
   "readme", "license", "licence", "changelog", "contributing", "makefile", "dockerfile", "package",
   "package-lock", "tsconfig", "setup", "default", "name", "version", "data", "test", "mod", "build",
-  "fixtures", "examples", "example", "packages", "modules", "services", "models", "views", "styles"]);
+  "dist", "out", "target", "venv", "env", "vendor", "coverage", "fixtures", "examples", "example", "packages", "modules", "services", "models", "views", "styles"]);
 
 const NAME_RE = /^[A-Za-z][A-Za-z0-9_.-]{1,59}$/;
 
@@ -178,8 +178,8 @@ async function learnVocabulary(root) {
       // matches them: nothing outside the chosen folder is ever reached.
       const name = entry.name;
       if (entry.isDirectory()) {
-        if (depth === 0 && !name.startsWith(".")) tally.add(name, WEIGHT.topDir);
         if (name.startsWith(".") || SKIP_DIRS.has(name)) continue;
+        if (depth === 0) tally.add(name, WEIGHT.topDir);
         if (depth + 1 < LIMITS.depth) await walk(path.join(dir, name), depth + 1);
         else truncated = true;
       } else if (entry.isFile()) {

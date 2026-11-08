@@ -933,12 +933,6 @@ async function answerPromptOffer(decision) {
 $("prompt-offer-use").addEventListener("click", () => answerPromptOffer("use"));
 $("prompt-offer-keep").addEventListener("click", () => answerPromptOffer("keep"));
 
-/* ---------- changes saved elsewhere ---------- */
-
-// Main saved the settings (tray radio, update prompt, overlay drag, custom
-// models, or this window's own save). Take the values only main writes, and
-// show a shared field only when this save changed it — never repopulate the
-// whole form, which would throw away edits the user hasn't saved yet.
 // ---- Dictionary: starter packs and "Learn from a folder…" (#72) ----
 
 function renderVocabPacks(enabled) {
@@ -968,9 +962,11 @@ function collectVocabPacks() {
 function updateVocabCount() {
   const user = vocabularyTerms($("cleanup-dictionary").value.split("\n"));
   const total = mergePromptTerms(user, collectVocabPacks()).length;
-  $("vocab-count").textContent =
+  const problem = dictionaryProblem(user);
+  $("vocab-count").textContent = problem ||
     `${user.length} of ${VOCAB_LIMITS.terms} terms in your list; ${total} in the cleanup prompt` +
     ` (up to ${PROMPT_TERMS_MAX}).`;
+  $("vocab-count").classList.toggle("err", Boolean(problem));
 }
 $("cleanup-dictionary").addEventListener("input", updateVocabCount);
 
@@ -1036,6 +1032,12 @@ $("vocab-review-add").addEventListener("click", () => {
 
 $("vocab-review-dismiss").addEventListener("click", closeVocabReview);
 
+/* ---------- changes saved elsewhere ---------- */
+
+// Main saved the settings (tray radio, update prompt, overlay drag, custom
+// models, or this window's own save). Take the values only main writes, and
+// show a shared field only when this save changed it — never repopulate the
+// whole form, which would throw away edits the user hasn't saved yet.
 let pendingSaveSnapshot = null;
 function unchangedSinceSave(el) {
   if (!pendingSaveSnapshot) return true;
@@ -1321,6 +1323,8 @@ async function saveSettings() {
   save.className = "status";
   try {
     parseAliases($("cleanup-aliases").value);
+    const problem = dictionaryProblem(vocabularyTerms($("cleanup-dictionary").value.split("\n")));
+    if (problem) throw new Error(problem);
   } catch (err) {
     save.textContent = `Not saved — ${err.message}`;
     save.className = "status err";

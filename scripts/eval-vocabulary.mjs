@@ -43,7 +43,7 @@ export const cases = [
 // plus the dictionary must leave every one of these alone.
 export const packControls = [
   ["Move the cursor to the end of the line before typing.", null],
-  ["Open the window and let some fresh air in.", null],
+  ["Make the layout prettier and easier to read.", null],
   ["Write a lambda expression that sorts the list by length.", null],
   ["The claude of the old clock needs a new spring.", null],
   ["Keep the opus number in the file name of the score.", null],

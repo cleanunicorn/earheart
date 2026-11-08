@@ -1424,3 +1424,7 @@ footer {
     scroll-behavior: auto;
   }
 }
+
+.hint.err {
+  color: var(--err);
+}

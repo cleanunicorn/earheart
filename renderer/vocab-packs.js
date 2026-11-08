@@ -16,17 +16,17 @@ const VOCAB_PACKS = [
   {
     id: "coding-agents",
     label: "Coding agents",
-    terms: ["Claude Code", "Codex", "Cursor", "Copilot", "Windsurf", "Aider", "OpenCode", "Gemini CLI",
-      "MCP", "LLM", "LLMs", "RAG", "Anthropic", "OpenAI", "Claude", "Sonnet", "Opus", "Haiku",
+    terms: ["Claude Code", "Codex", "Cursor", "Copilot", "OpenCode", "Gemini CLI",
+      "MCP", "LLM", "LLMs", "RAG", "Anthropic", "OpenAI", "Claude", "Haiku",
       "AGENTS.md", "CLAUDE.md", "subagent", "worktree", "GitHub", "pull request", "CI", "SDK", "CLI",
       "API", "JSON", "YAML", "regex", "README", "monorepo", "Ollama", "llama.cpp"],
   },
   {
     id: "js-web",
     label: "JS / Web",
-    terms: ["JavaScript", "TypeScript", "Node.js", "npm", "pnpm", "Yarn", "Bun", "Deno", "Vite", "Vitest",
+    terms: ["JavaScript", "TypeScript", "Node.js", "npm", "pnpm", "Deno", "Vite", "Vitest",
       "Webpack", "esbuild", "ESLint", "Prettier", "React", "Next.js", "Vue", "Svelte", "Tailwind",
-      "Express", "Fastify", "Prisma", "Zod", "useEffect", "useState", "useRef", "useMemo", "useCallback",
+      "Fastify", "Prisma", "Zod", "useEffect", "useState", "useRef", "useMemo", "useCallback",
       "JSX", "TSX", "CSS", "HTML", "DOM", "Electron", "Playwright", "tsconfig"],
   },
   {
@@ -35,14 +35,14 @@ const VOCAB_PACKS = [
     terms: ["kubectl", "Kubernetes", "Helm", "Terraform", "Docker", "Dockerfile", "docker-compose",
       "Kustomize", "Argo CD", "Istio", "Prometheus", "Grafana", "AWS", "GCP", "Azure", "S3", "EC2",
       "EKS", "GKE", "IAM", "VPC", "Lambda", "CloudFormation", "Pulumi", "Ansible", "nginx", "Envoy",
-      "etcd", "kubeconfig", "StatefulSet", "DaemonSet", "Ingress", "YAML", "k9s"],
+      "etcd", "kubeconfig", "StatefulSet", "DaemonSet", "YAML", "k9s"],
   },
   {
     id: "python-data",
     label: "Python / Data",
-    terms: ["Python", "uv", "pip", "pipx", "Poetry", "pyproject.toml", "pytest", "Ruff", "mypy",
+    terms: ["Python", "uv", "pip", "pipx", "pyproject.toml", "pytest", "Ruff", "mypy",
       "pandas", "NumPy", "SciPy", "Jupyter", "PyTorch", "TensorFlow", "scikit-learn", "Hugging Face",
-      "Transformers", "FastAPI", "Flask", "Django", "Pydantic", "SQLAlchemy", "Polars", "DuckDB",
+      "FastAPI", "Flask", "Django", "Pydantic", "SQLAlchemy", "Polars", "DuckDB",
       "Matplotlib", "asyncio", "ONNX", "CUDA", "venv", "conda"],
   },
 ];
@@ -73,11 +73,12 @@ function packTerms(ids) {
 // are new, only while the whole list stays within PROMPT_TERMS_MAX. A prompt
 // that is already over the cap from the user's own list gets no pack terms.
 function mergePromptTerms(userTerms, ids) {
-  const seen = new Set(userTerms);
+  // Case-insensitive: the user's "cursor" beats the pack's "Cursor".
+  const seen = new Set(userTerms.map((term) => term.toLowerCase()));
   const out = [...userTerms];
   for (const term of packTerms(ids)) {
     if (out.length >= PROMPT_TERMS_MAX) break;
-    if (!seen.has(term)) { seen.add(term); out.push(term); }
+    if (!seen.has(term.toLowerCase())) { seen.add(term.toLowerCase()); out.push(term); }
   }
   return out;
 }

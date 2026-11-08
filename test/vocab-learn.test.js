@@ -86,3 +86,13 @@ test("a file is never a root", async () => {
   const root = project({ "a.js": "" });
   await assert.rejects(learnVocabulary(path.join(root, "a.js")));
 });
+
+test("skipped top-level directories are never suggested", async () => {
+  const root = project({
+    "node_modules/a/index.js": "", "dist/x.js": "", "vendor/y.js": "", "coverage/z.js": "", ".cache/q.js": "",
+    "mylib/core.js": "export function realName() {}\n",
+  });
+  const { terms } = await learnVocabulary(root);
+  assert.ok(terms.includes("mylib"));
+  for (const bad of ["node_modules", "dist", "vendor", "coverage", ".cache"]) assert.ok(!terms.includes(bad), bad);
+});

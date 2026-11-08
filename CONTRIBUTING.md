@@ -367,8 +367,9 @@ Design constraints worth keeping:
   `onCaptureChange`. The controller never blocks the pipeline: OS tools run
   serialized in the background with timeouts, and a restore writes the prior
   volume only to the device it lowered, and only while that device still
-  reads exactly the lowered level. See
-  [docs/audio-ducking.md](docs/audio-ducking.md).
+  reads exactly the lowered level. The tool is started at launch (Windows
+  keeps one PowerShell helper running), so a take only reads and then sets
+  the volume. See [docs/audio-ducking.md](docs/audio-ducking.md).
 - **Never lose the user's words.** If cleanup fails, deliver the raw
   transcript; paste-tool failure leaves text on the clipboard. If another app
   replaced the clipboard, leave its copy alone and retain the transcript for

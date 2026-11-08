@@ -26,6 +26,13 @@ test("describes the take: lowered, skipped, or not restored yet", () => {
   assert.strictEqual(DuckingStatus.text({ ...idle, state: "pending", detail: "device is gone" }), "Not restored yet: device is gone.");
 });
 
+test("a notice from the last take is said as advice, not as a failure", () => {
+  const notice = "The output switched while it was being lowered, so the new output may be quieter now. Set its volume back by hand if so.";
+  assert.strictEqual(DuckingStatus.text({ ...idle, state: "lowered", notice }), notice);
+  assert.strictEqual(DuckingStatus.text({ ...idle, state: "idle", notice }), notice, "still there after the restore");
+  assert.match(DuckingStatus.text({ ...idle, lastError: "pactl exited 1", notice }), /^Last attempt failed/, "a failure still outranks it");
+});
+
 test("otherwise names the mechanism, and says nothing without an answer", () => {
   assert.strictEqual(DuckingStatus.text(idle), "Uses pactl to change the output volume.");
   assert.strictEqual(DuckingStatus.text({ ...idle, mechanism: null }), "");

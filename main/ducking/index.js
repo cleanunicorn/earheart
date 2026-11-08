@@ -12,8 +12,9 @@ const { execFileAsync } = require("../util/exec-file");
 const { candidates } = require("./backends");
 const { createDucker, createFileStore } = require("./controller");
 
-// Per call. PowerShell compiles the Core Audio shim on every call (~1–2 s);
-// system_profiler can take a second or two; the Linux tools answer at once.
+// Per call. The Windows helper's first answer includes starting PowerShell and
+// compiling the Core Audio shim (~1–2 s); system_profiler can take a second
+// or two; the Linux tools answer at once.
 const TIMEOUT_MS = { win32: 15000, darwin: 10000 };
 const MARKER_FILE = "audio-duck.json";
 
@@ -23,7 +24,7 @@ function init() {
   const timeout = TIMEOUT_MS[process.platform] ?? 3000;
   const run = (cmd, args, opts = {}) => execFileAsync(cmd, args, { timeout, ...opts });
   ducker = createDucker({
-    backends: candidates(process.platform, run),
+    backends: candidates(process.platform, run, { timeoutMs: timeout }),
     store: createFileStore(path.join(app.getPath("userData"), MARKER_FILE)),
     getConfig: () => {
       const audio = settings.get().audio || {};
@@ -33,6 +34,8 @@ function init() {
   });
   ipcMain.handle("ducking:status", () => ducker.getStatus());
   ducker.recover();
+  // Probe the tool (and start the Windows helper) now, not at the first take.
+  ducker.prepare();
   return ducker;
 }
 
@@ -44,4 +47,5 @@ module.exports = {
   refresh: () => live()?.refresh(),
   holding: () => !!live()?.holding(),
   shutdown: (ms) => live()?.shutdown(ms) ?? Promise.resolve(),
+  close: () => live()?.close(),
 };

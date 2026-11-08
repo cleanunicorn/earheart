@@ -306,5 +306,6 @@ function main() {
     hotkeys.unregisterAll();
     engines.stop();
     updates.dispose();
+    ducking.close();
   });
 }

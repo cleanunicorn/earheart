@@ -17,6 +17,12 @@
 // what is wanted with what is held, so a burst of events collapses into the
 // last one.
 //
+// Speed (#369): the lowering starts when the first samples arrive — the
+// moment the overlay says "Listening…" — so only read() and write() may stand
+// between that and the quieter output. The tool is probed (and on Windows its
+// helper started) by prepare(), at launch and when the setting is turned on,
+// never at the first take.
+//
 // Ownership: the restore writes the prior volume only when the device still
 // reads exactly the level we set (in the tool's own units, see `same` in
 // backends.js). A user who moved the volume during the take keeps their
@@ -32,10 +38,16 @@
 // device is the default, and recovers it once the lowered device is back.
 
 const MARKER_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+// A probe that failed for a reason that can pass (the audio server not up yet
+// at login, a PowerShell start that timed out under load) is tried again by the
+// next pick() — a take, getStatus, prepare — once this long has passed; a
+// missing tool or an unsupported platform is final.
+const PROBE_RETRY_MS = 30 * 1000;
 
 function createDucker({ backends, store, getConfig, logger = console, now = Date.now }) {
   const owners = new Set();
   let backendPromise = null;
+  let retryAt = null; // when a passing probe failure may be tried again
   let backend = null;
   let held = null; // { device, prior, target } while the output is lowered
   let skipped = false; // decided not to lower for the current capture span
@@ -49,13 +61,25 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
     state: "idle", // idle | lowered | skipped | pending (a restore waits for its device)
     detail: "",
     lastError: "",
+    // Advice that outlives the take (not a failure): set when a macOS output
+    // switch landed mid-lowering, kept through the restore — when the user
+    // needs it — and cleared when the next lowering starts.
+    notice: "",
   };
 
-  // The first backend whose tool answers. Cached, including "none".
+  // The first backend whose tool answers. Cached, including "none" — but a
+  // failure that can pass is probed again after PROBE_RETRY_MS (#369: the probe
+  // now runs at launch, which with start-on-login can be before the audio
+  // server is up).
   function pick() {
+    if (backendPromise && retryAt !== null && now() >= retryAt) {
+      backendPromise = null;
+      retryAt = null;
+    }
     if (!backendPromise) {
       backendPromise = (async () => {
         let reason = backends.length ? "" : "not supported on this platform";
+        let final = true; // every candidate missing, or none at all
         for (const candidate of backends) {
           try {
             await candidate.probe();
@@ -65,11 +89,12 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
             status.reason = "";
             return candidate;
           } catch (err) {
-            reason = err?.code === "ENOENT" || /ENOENT/.test(err?.message || "")
-              ? `${candidate.name} not found`
-              : `${candidate.name}: ${err?.message || err}`;
+            const missing = err?.code === "ENOENT" || /ENOENT/.test(err?.message || "");
+            if (!missing) final = false;
+            reason = missing ? `${candidate.name} not found` : `${candidate.name}: ${err?.message || err}`;
           }
         }
+        if (!final) retryAt = now() + PROBE_RETRY_MS;
         status.available = false;
         status.reason = reason;
         logger.warn?.(`audio ducking unavailable: ${reason}`);
@@ -125,7 +150,10 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
     if (cur.device !== device) return "elsewhere";
     if (!backend.same(cur.raw, target)) return "changed";
     const after = await backend.write(device, prior);
-    return after ? "restored" : "gone";
+    if (!after) return "gone";
+    // macOS: the default moved between the read and the set. The marker stays
+    // and the lowered device is settled again once it is back.
+    return after.device === device ? "restored" : "elsewhere";
   }
 
   // A marker left by a crash, a failed restore, or a device switch on a
@@ -154,6 +182,7 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
   }
 
   async function lower() {
+    status.notice = "";
     const b = await pick();
     if (!b) {
       skip(status.reason);
@@ -227,19 +256,25 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
       return;
     }
     if (!after) {
-      // Nothing was written: the device is gone, or (macOS) another device
-      // became the default before the set.
+      // Nothing was written: the device is gone.
       clearMarker();
       return skip("the output device changed");
     }
     if (after.device !== cur.device) {
-      // The set landed, then the default moved on before the readback
-      // (macOS). Hold what was asked for and keep the marker: the restore
-      // finds the device "elsewhere" and leaves it to be recovered when back.
+      // macOS: the default moved between the read and the readback. If it
+      // moved after the set, the lowered device is ours and comes back when
+      // it is the default again (the marker stays; the restore finds it
+      // "elsewhere"). If it moved before the set, the NEW output took the
+      // lowered level, and its own level before was never read, so nothing
+      // can put it back safely (writing the old output's level onto, say,
+      // headphones could be far too loud). Hold the original either way, and
+      // say so: a quieter new output is Earheart's doing, not a fault.
       held = { device: cur.device, prior: cur.raw, target: targetRaw };
       status.state = "lowered";
       status.detail = "";
       status.lastError = "";
+      status.notice = "The output switched while it was being lowered, so the new output may be quieter now. Set its volume back by hand if so.";
+      logger.warn?.(`audio ducking: ${status.notice}`);
       return;
     }
     if (!b.matches(after.raw, targetRaw)) {
@@ -304,6 +339,24 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
     return chain;
   }
 
+  // Off with nothing left to restore: let a long-lived tool go (Windows).
+  function release() {
+    if (!wanted() && !held && !config().enabled) backend?.close?.();
+  }
+
+  // Have the tool ready before the first take (#369). Off: let it go once
+  // whatever is queued has settled.
+  function prepare() {
+    if (closed) return chain;
+    if (!config().enabled) {
+      chain = chain.then(release).catch((err) => fail("unexpected", err));
+      return chain;
+    }
+    return pick()
+      .then((b) => b?.warm?.())
+      .catch((err) => logger.info?.(`audio ducking: could not start ${backend?.name || "the volume tool"} ahead of time: ${err?.message || err}`));
+  }
+
   return {
     // Synchronous for the caller; returns the settled work for tests.
     setCapturing(owner, live) {
@@ -313,7 +366,9 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
       return kick();
     },
     // Settings changed (turned off mid-take restores; on mid-take lowers).
-    refresh: () => kick(),
+    refresh: () => Promise.all([kick(), prepare()]),
+    // Launch: start the tool now, when the feature is on.
+    prepare,
     // Launch: settle what a crash or a failed restore left behind.
     recover() {
       pending++;
@@ -323,11 +378,13 @@ function createDucker({ backends, store, getConfig, logger = console, now = Date
     // Quit: release everything and wait (bounded) for the restore.
     shutdown(timeoutMs = 2000) {
       owners.clear();
-      const done = kick();
+      const done = kick().finally(() => backend?.close?.());
       closed = true;
       let timer;
       return Promise.race([done, new Promise((r) => { timer = setTimeout(r, timeoutMs); })]).finally(() => clearTimeout(timer));
     },
+    // Exit: stop a long-lived tool (the Windows helper) now.
+    close: () => backend?.close?.(),
     // Whether quitting now would leave the output lowered.
     holding: () => !closed && (!!held || pending > 0),
     async getStatus() {
@@ -361,4 +418,4 @@ function createFileStore(file, fs = require("node:fs")) {
   };
 }
 
-module.exports = { createDucker, createFileStore, MARKER_MAX_AGE_MS };
+module.exports = { createDucker, createFileStore, MARKER_MAX_AGE_MS, PROBE_RETRY_MS };

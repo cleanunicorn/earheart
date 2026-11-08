@@ -416,6 +416,13 @@ Design constraints worth keeping:
   successful save fires `settings.onChanged`, which rebuilds the tray and
   sends `settings:changed` to the open forms; they apply only the fields that
   changed, so unsaved edits survive.
+  Wizard completion first projects only the leaves it edits onto live settings:
+  the record hotkey, output mode/clipboard restoration, STT engine, cleanup
+  enabled/engine/built-in model/style, and microphone/other-audio choices.
+  Settings-only values (including nested siblings, credentials, and future
+  properties) stay live even when the wizard carries an older full snapshot.
+  This projection precedes shared-field reconciliation so an unseen output
+  change still wins; wizard vocabulary comes from live settings too.
 - **Settings on disk are crash-safe and keys are encrypted where that's real.**
   `settings.json` is written to a temp file, fsynced, and renamed over the old
   one (owner-only `0600`); a file that isn't a JSON object is renamed to

@@ -138,11 +138,20 @@ function createCommandSession(deps) {
       if (cmd !== c || signal.aborted) return { ok: false, cancelled: true };
       if (captured.ok) c.selection = captured.text;
       else if (captured.reason === "cancelled") return { ok: false, cancelled: true };
-      else c.captureNote = captured.message;
+      else {
+        c.captureNote = captured.message;
+        // Only a genuinely empty selection makes this a draft that may be
+        // pasted. If the selection (or a secure field) exists but couldn't be
+        // read, a draft pasted there would overwrite it: Copy only.
+        if (captured.reason === "empty") c.draftAtCursor = true;
+        else c.unreadable = captured.message;
+      }
       log.info(`command ${c.id}: selection ${captured.ok ? "captured" : `unavailable (${captured.reason})`}`);
 
       // 2. Who is focused right now: the only place Apply may paste later.
-      if (fp.ok) {
+      if (c.unreadable) {
+        c.targetNote = `${c.unreadable}. The result can only be copied, not pasted over it.`;
+      } else if (fp.ok) {
         const found = await deps.platform.fingerprint(signal);
         if (cmd !== c || signal.aborted) return { ok: false, cancelled: true };
         if (found) c.target = found;
@@ -318,6 +327,13 @@ function createCommandSession(deps) {
         const again = await deps.selection.capture(signal);
         if (cmd !== c || signal.aborted) return { ok: false, cancelled: true };
         if (!again.ok || again.text !== c.selection) return blocked(DRIFT);
+      }
+      if (c.draftAtCursor) {
+        // A draft goes in at the cursor; make sure nothing has been selected
+        // there since, which the paste would replace.
+        const again = await deps.selection.capture(signal);
+        if (cmd !== c || signal.aborted) return { ok: false, cancelled: true };
+        if (again.ok || again.reason !== "empty") return blocked(DRIFT);
       }
       const result = await deps.paste(c.output, signal);
       if (cmd !== c || signal.aborted || result.method === "cancelled") return { ok: false, cancelled: true };

@@ -82,7 +82,11 @@ function init({ pipeline: pipelineModule }) {
     writeClipboard: (text) => clipboard.writeText(text),
     paste,
     onView: (view) => {
+      // A null view means the command ended without the card's own Cancel
+      // (the overlay's cancel, the discard hotkey): close the card, or it
+      // would keep showing a dead command.
       if (view) windows.sendToCommand("command:state", view);
+      else windows.closeCommand();
     },
     logger,
   });

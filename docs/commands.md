@@ -45,7 +45,8 @@ unchanged target.
 
 | Situation | Result |
 | --- | --- |
-| Nothing selected, selection unreadable, app refuses Copy | Drafts from the brief; the card says why |
+| Nothing selected | Drafts from the brief; Replace pastes at the cursor, after re-checking at Apply time that nothing has been selected since |
+| Selection exists but can't be read (secure field, copy timeout, app refuses), or the app can't be asked | Drafts from the brief, **Copy only**: Replace is never offered, so a draft can't overwrite it |
 | Hotkey keys still held when Copy would be sent | Capture refused ("release the hotkey's keys"), nothing is sent |
 | macOS secure input active | Capture refused; nothing is read |
 | Selection longer than 20,000 characters | Refused (never cut) |

@@ -83,7 +83,7 @@ app.whenReady().then(async () => {
       cancelRecording: () => { state.cancels++; },
       writeClipboard: (text) => state.copied.push(text),
       paste: async (text) => { state.pasted.push(text); return { method: "paste" }; },
-      onView: (view) => { if (view) windows.sendToCommand("command:state", view); },
+      onView: (view) => { if (view) windows.sendToCommand("command:state", view); else windows.closeCommand(); },
     });
     const handlers = new Map();
     registerCommandIpc({
@@ -161,6 +161,13 @@ app.whenReady().then(async () => {
     release(OUTPUT);
     await sleep(50);
     check("a result that arrives after Cancel is dropped", state.pasted.length === 0 && session.peek() === null);
+
+    // A cancel that starts outside the card (overlay Esc, discard hotkey).
+    win = await open();
+    await session.begin();
+    state.handlers.onEnd(7, "cancelled");
+    await waitFor(() => win.isDestroyed(), "an outside cancel left the card open");
+    check("a cancel from the overlay closes the card", session.peek() === null);
 
     // Closing the card while recording cancels the take.
     win = await open();

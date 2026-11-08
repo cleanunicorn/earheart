@@ -12,7 +12,7 @@ const resolveFrom = (spec) => require.resolve(spec, { paths: [path.join(path.dir
 const FRESH = ["../main/commands/index", "../main/commands/platform", "../main/commands/ipc", "../main/commands/session", "../main/commands/selection"]
   .map((p) => require.resolve(p));
 
-function load({ commands = {}, cleanup = {}, occupied = [], readiness = { ok: true }, pipelineState = "idle" } = {}) {
+function load({ commands = {}, cleanup = {}, occupied = [], fakeEdges = false, readiness = { ok: true }, pipelineState = "idle" } = {}) {
   const log = { registered: new Map(), unregistered: [], routed: [], deliveries: [], opened: 0, closed: 0, handlers: {}, started: [], sent: [] };
   const cfg = {
     commands: { hotkey: "", engine: "builtin", baseUrl: "", apiKey: "", model: "", timeoutMs: 5000, maxOutputTokens: 512, allowApply: true, ...commands },
@@ -63,6 +63,18 @@ function load({ commands = {}, cleanup = {}, occupied = [], readiness = { ok: tr
     },
     [resolveFrom("./util/logger")]: { info() {}, warn() {}, error() {} },
   };
+  if (fakeEdges) {
+    stubs[require.resolve("../main/commands/platform")] = {
+      createPlatform: () => ({
+        captureSupport: () => ({ ok: true }),
+        fingerprintSupport: () => ({ ok: true }),
+        fingerprint: async () => ({ id: "w:1" }),
+      }),
+    };
+    stubs[require.resolve("../main/commands/selection")] = {
+      createSelectionCapture: () => ({ capture: async () => ({ ok: false, reason: "empty", message: "Nothing is selected" }) }),
+    };
+  }
   const commandsModule = withStubs(stubs, FRESH, () => require(indexPath));
   return { commandsModule, pipeline, log, cfg, setState: (s) => { state = s; listeners.forEach((fn) => fn(s)); } };
 }
@@ -159,6 +171,16 @@ test("Apply pastes in paste mode with the clipboard restored, whatever the dicta
   const signal = new AbortController().signal;
   await t.commandsModule.paste("final text", signal);
   assert.deepStrictEqual(t.log.deliveries, [{ text: "final text", config: { mode: "paste", restoreClipboard: true, pasteDelayMs: 77 } }]);
+});
+
+test("a command that ends outside the card (overlay cancel) closes the card", async () => {
+  const t = load({ fakeEdges: true });
+  t.commandsModule.init({ pipeline: t.pipeline });
+  await t.commandsModule.begin();
+  assert.strictEqual(t.log.started.length, 1, "recording started");
+  const closedBefore = t.log.closed;
+  t.log.started[0].onEnd(5, "cancelled"); // the pipeline reports the overlay's cancel
+  assert.strictEqual(t.log.closed, closedBefore + 1, "the card is closed, not left showing a dead command");
 });
 
 test("commandConfig runs anything but an explicit remote engine locally", () => {

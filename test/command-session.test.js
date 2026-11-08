@@ -545,3 +545,38 @@ test("a remote config marks the card so the UI can say text leaves the machine",
   await local.session.begin();
   assert.strictEqual(local.last().remote, false);
 });
+
+/* ---- a failed capture never leaves a paste target ---- */
+
+for (const reason of ["secure", "unavailable", "timeout", "modifiers-held"]) {
+  test(`after a ${reason} capture failure the draft is Copy-only and Apply never pastes`, async () => {
+    const r = rig({ selection: async () => ({ ok: false, reason, message: `capture failed: ${reason}` }) });
+    const id = await toReady(r);
+    const view = r.last();
+    assert.strictEqual(view.mode, "draft");
+    assert.strictEqual(view.canApply, false);
+    assert.match(view.applyNote, /can only be copied/);
+    assert.strictEqual(view.canCopy, true);
+    const result = await r.session.apply(id);
+    assert.strictEqual(result.blocked, true);
+    assert.deepStrictEqual(r.calls.pasted, []);
+  });
+}
+
+test("a draft over a truly empty selection may be applied, after re-checking nothing is selected now", async () => {
+  const r = rig({ selection: async () => ({ ok: false, reason: "empty", message: "Nothing is selected" }) });
+  const id = await toReady(r);
+  assert.strictEqual(r.last().canApply, true);
+  assert.strictEqual((await r.session.apply(id)).ok, true);
+  assert.deepStrictEqual(r.calls.pasted, [OUTPUT]);
+});
+
+test("a draft is refused if text got selected, or the cursor became unreadable, before Apply", async () => {
+  for (const later of [{ ok: true, text: "newly selected" }, { ok: false, reason: "secure", message: "secure" }]) {
+    let reads = 0;
+    const r = rig({ selection: async () => (reads++ === 0 ? { ok: false, reason: "empty", message: "Nothing is selected" } : later) });
+    const id = await toReady(r);
+    assert.strictEqual((await r.session.apply(id)).blocked, true);
+    assert.deepStrictEqual(r.calls.pasted, []);
+  }
+});

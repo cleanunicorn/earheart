@@ -52,13 +52,29 @@ function fakeParam() {
   return { value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {} };
 }
 
-function createOverlayVm({ outputLatency = 0.04, baseLatency = 0.01, inputLatency = 0.02, trackLatency = inputLatency, now = () => performance.now(), loadWorklet = async () => {} } = {}) {
+// Options beyond the latencies (all optional):
+//   getUserMedia(constraints, calls)  replaces the default (always the first
+//                                     stream); `calls` are the constraints so far
+//   enumerateDevices()                absent → the page sees no such function
+//   invoke(channel, payload)          the IPC invoke bridge (mics:classes …)
+function createOverlayVm({
+  outputLatency = 0.04,
+  baseLatency = 0.01,
+  inputLatency = 0.02,
+  trackLatency = inputLatency,
+  now = () => performance.now(),
+  loadWorklet = async () => {},
+  getUserMedia = null,
+  enumerateDevices = null,
+  invoke = async () => {},
+} = {}) {
   const sent = [];
   const handlers = {};
   const oscillators = []; // { ctx, startAt, stops: [], disconnected }
   const contexts = [];
   const queue = []; // { owner, data }: posts not yet delivered to the page
   let node = null;
+  let deviceChange = null;
 
   // ---- the real worklet, in its own scope ----
   function processorFor(owner) {
@@ -147,21 +163,32 @@ function createOverlayVm({ outputLatency = 0.04, baseLatency = 0.01, inputLatenc
     disconnect() {}
   }
 
-  let track = null;
-  function grantStream() {
-    const grantedTrack = {
+  // A fake mic: a track that can end (readyState + its "ended" listeners) and
+  // records stop(). `onended()` ends it, as the old single-listener rig did.
+  const makeStream = () => {
+    const listeners = [];
+    const track = {
       enabled: true,
       muted: false,
       readyState: "live",
-      stop() { this.readyState = "ended"; },
+      stopped: false,
+      stop() {
+        track.stopped = true;
+      },
       addEventListener(type, fn) {
-        if (type === "ended") this.onended = fn;
+        if (type === "ended") listeners.push(fn);
+      },
+      onended() {
+        track.readyState = "ended";
+        for (const fn of listeners.slice()) fn();
       },
       getSettings: () => ({ latency: trackLatency }),
     };
-    track = grantedTrack;
-    return { getTracks: () => [grantedTrack], getAudioTracks: () => [grantedTrack] };
-  }
+    return { track, stream: { getTracks: () => [track], getAudioTracks: () => [track] } };
+  };
+  const { track, stream } = makeStream();
+  const mediaCalls = []; // the audio constraints of every getUserMedia call
+  const streams = [{ track, stream }];
 
   const context = {
     console,
@@ -199,11 +226,27 @@ function createOverlayVm({ outputLatency = 0.04, baseLatency = 0.01, inputLatenc
       const tokens = element === context.document.documentElement ? rootTokens() : {};
       return { getPropertyValue: (name) => tokens[name] ?? "" };
     },
-    navigator: { mediaDevices: { getUserMedia: async () => grantStream() } },
+    navigator: {
+      mediaDevices: {
+        getUserMedia: async (constraints) => {
+          mediaCalls.push(constraints.audio);
+          if (getUserMedia) {
+            const made = await getUserMedia(constraints, mediaCalls, makeStream);
+            if (!streams.some((s) => s.stream === made)) streams.push({ stream: made, track: made.getAudioTracks()[0] });
+            return made;
+          }
+          return stream;
+        },
+        ...(enumerateDevices ? { enumerateDevices: async () => enumerateDevices() } : {}),
+        addEventListener: (type, fn) => {
+          if (type === "devicechange") deviceChange = fn;
+        },
+      },
+    },
     earheart: {
       on: (channel, fn) => (handlers[channel] = fn),
       send: (channel, payload) => sent.push({ channel, payload }),
-      invoke: async () => {},
+      invoke: (channel, payload) => invoke(channel, payload),
     },
   };
   context.window = { matchMedia: () => ({ matches: false, addEventListener() {} }), devicePixelRatio: 1 };
@@ -214,7 +257,7 @@ function createOverlayVm({ outputLatency = 0.04, baseLatency = 0.01, inputLatenc
     const translator = core.createTranslator({ locale: "en", catalogs: require("../../renderer/locales") });
     context.i18n = { t: translator.t, locale: "en", onChange: () => () => {} };
   }
-  for (const file of ["chunk-boundary.js", "microphone.js", "record-cues.js", "speech-probe.js", "transcript.js", "overlay.js"]) {
+  for (const file of ["chunk-boundary.js", "microphone.js", "mic-policy.js", "record-cues.js", "speech-probe.js", "transcript.js", "overlay.js"]) {
     vm.runInContext(fs.readFileSync(path.join(RENDERER, file), "utf8"), context, { filename: file });
   }
 
@@ -227,7 +270,11 @@ function createOverlayVm({ outputLatency = 0.04, baseLatency = 0.01, inputLatenc
     oscillators,
     contexts,
     queue,
-    get track() { return track; },
+    track,
+    mediaCalls,
+    streams,
+    makeStream,
+    fireDeviceChange: () => deviceChange?.(),
     // A sample value that survives encodeWav's 16-bit conversion as exactly
     // `marker(frame)`: every captured frame is identifiable in the WAV.
     marker: (f) => (f % 30000) + 1,

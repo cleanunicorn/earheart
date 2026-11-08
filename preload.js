@@ -51,6 +51,7 @@ const ROLES = {
       "updates:skip",
       "updates:dismiss",
       "updates:remind-off",
+      "mics:classes",
     ],
   },
   palette: {
@@ -77,6 +78,7 @@ const ROLES = {
       "settings:save",
       "settings:close",
       "ducking:status",
+      "mics:classes",
       "wizard:open",
       "permissions:accessibility-check",
       "permissions:accessibility-fix",

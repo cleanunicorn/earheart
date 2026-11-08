@@ -139,13 +139,47 @@
         <div class="card">
           <div class="card-title" data-i18n="settings.microphone">Microphone</div>
           <div class="field">
+            <label for="mic-mode">How to choose</label>
+            <select id="mic-mode">
+              <option value="manual">Use the microphone below</option>
+              <option value="auto">Choose automatically</option>
+            </select>
+            <p class="hint">
+              Automatic picks the system default when it is allowed below,
+              otherwise the first allowed microphone. If none is allowed it
+              uses the system default and says so on the card.
+            </p>
+          </div>
+          <div id="mic-auto-options" hidden>
+            <label class="toggle">
+              <span class="toggle-text">
+                <span class="t">Allow Bluetooth microphones</span>
+                <span class="d">Off keeps a headset out of automatic selection, so it stays on its high-quality playback profile.</span>
+              </span>
+              <input type="checkbox" id="mic-bluetooth" class="switch" role="switch" />
+            </label>
+            <label class="toggle">
+              <span class="toggle-text">
+                <span class="t">Allow virtual microphones</span>
+                <span class="d">Loopbacks and audio-routing devices. A microphone this system can't classify is never hidden by these two options.</span>
+              </span>
+              <input type="checkbox" id="mic-virtual" class="switch" role="switch" />
+            </label>
+            <p id="mic-class-hint" class="hint" aria-live="polite" hidden>
+              This system doesn't report which microphones are Bluetooth or
+              virtual, so these two options may not change anything here.
+            </p>
+            <p id="mic-auto-status" class="hint" aria-live="polite"></p>
+          </div>
+          <div class="field">
             <label for="mic-device" class="sr-only" data-i18n="settings.microphone2">Microphone</label>
             <select id="mic-device">
               <option value="" data-i18n="settings.systemDefault">System default</option>
             </select>
-            <p class="hint" data-i18n="settings.theInputDictationRecordsFrom">
-              The input dictation records from. System default follows
-              whatever your OS has selected.
+            <p class="hint">
+              The input dictation records from when the choice above is the
+              microphone below. System default follows whatever your OS has
+              selected. Your pick stays saved while automatic is on.
             </p>
             <p id="mic-device-status" class="hint" aria-live="polite"></p>
           </div>
@@ -987,6 +1021,7 @@
     <script src="model-progress.js"></script>
     <script src="model-save.js"></script>
     <script src="ducking-status.js"></script>
+    <script src="mic-policy.js"></script>
     <script src="record-cues.js"></script>
     <script src="usage-stats.js"></script>
     <script src="tools-settings.js"></script>

@@ -317,10 +317,72 @@ async function loadMicrophones() {
       }
     }
     if (!selectionChanged) select.value = current.audio.deviceId || "";
+    if (typeof onMicrophonesListed === "function") onMicrophonesListed(devices);
   } catch {
     // No microphone permission/device; leave "System default".
   }
   if (!selectionChanged) formBaseline.set(select, { value: select.value, checked: select.checked });
+}
+
+// ---- Automatic selection (#339) ----
+// The three controls are written ONLY by populate()/showMicPolicy() and the
+// post-save sync above, never by device enumeration: loadMicrophones() reports
+// what it found through onMicrophonesListed(), and renderMicPolicy() reads the
+// controls to draw the preview. So a choice made while enumeration runs can't
+// be overwritten by it.
+let micDevices = [];
+let micClasses = null; // { records, available } once the probe answered
+
+function showMicPolicy(audio) {
+  $("mic-mode").value = audio.micMode === "auto" ? "auto" : "manual";
+  $("mic-bluetooth").checked = audio.micIncludeBluetooth !== false;
+  $("mic-virtual").checked = audio.micIncludeVirtual !== false;
+  renderMicPolicy();
+}
+
+function onMicrophonesListed(devices) {
+  micDevices = devices.filter((d) => d.kind === "audioinput");
+  renderMicPolicy();
+}
+
+function renderMicPolicy() {
+  const auto = $("mic-mode").value === "auto";
+  $("mic-auto-options").hidden = !auto;
+  // The probe answered with nothing: say the toggles may be inert here.
+  $("mic-class-hint").hidden = !(auto && micClasses && !micClasses.available);
+  const status = $("mic-auto-status");
+  if (!auto) {
+    status.textContent = "";
+    return;
+  }
+  if (!micDevices.some((d) => d.label)) {
+    status.textContent = "Currently: decided when you start dictating.";
+    return;
+  }
+  const picked = resolveMicrophone({
+    mode: "auto",
+    savedId: $("mic-device").value,
+    includeBluetooth: $("mic-bluetooth").checked,
+    includeVirtual: $("mic-virtual").checked,
+    devices: micDevices,
+    records: micClasses?.records || [],
+  });
+  status.textContent = picked.notice
+    ? `Currently: ${picked.notice.replace(/^./, (c) => c.toLowerCase())}.`
+    : `Currently: ${picked.label || "system default"}.`;
+}
+
+async function initMicrophonePolicy() {
+  for (const id of ["mic-mode", "mic-bluetooth", "mic-virtual", "mic-device"]) {
+    $(id).addEventListener("change", renderMicPolicy);
+  }
+  try {
+    // Settings may wait for the OS tool; a take never does.
+    micClasses = await earheart.invoke("mics:classes", { wait: 5000 });
+  } catch {
+    micClasses = { records: [], available: false };
+  }
+  renderMicPolicy();
 }
 
 /* ---------- populate / collect ---------- */
@@ -394,6 +456,7 @@ function populate() {
   $("updates-remind").checked = current.updates?.remind !== false;
   $("max-seconds").value = current.audio.maxRecordingSeconds;
   $("duck-other-audio").checked = current.audio.duckOtherAudio === true;
+  showMicPolicy(current.audio);
   $("duck-level").value = current.audio.duckLevelPercent ?? defaults.audio.duckLevelPercent;
   $("record-sounds").checked = current.audio.recordSounds === true;
   $("record-sound-volume").value = current.audio.recordSoundVolumePercent ?? defaults.audio.recordSoundVolumePercent;
@@ -489,6 +552,11 @@ function collect() {
     audio: {
       ...current.audio,
       deviceId: $("mic-device").value,
+      // Automatic selection (#339). deviceId above is kept whatever the mode:
+      // it is the manual choice and the fallback, never rewritten by auto.
+      micMode: $("mic-mode").value === "auto" ? "auto" : "manual",
+      micIncludeBluetooth: $("mic-bluetooth").checked !== false,
+      micIncludeVirtual: $("mic-virtual").checked !== false,
       // Clamped to the field's own min/max: the markup's limits bind nothing
       // on their own, and a tiny or negative cap ends every dictation at once.
       maxRecordingSeconds: Math.round(
@@ -1375,6 +1443,11 @@ async function saveSettings() {
     const adjusted = limitAdjustments(current, sent);
     if (unchanged($("max-seconds"))) $("max-seconds").value = current.audio.maxRecordingSeconds;
     if (unchanged($("duck-other-audio"))) $("duck-other-audio").checked = current.audio.duckOtherAudio === true;
+    // Each control on its own: one the user touched while saving keeps their value.
+    if (unchanged($("mic-mode"))) $("mic-mode").value = current.audio.micMode === "auto" ? "auto" : "manual";
+    if (unchanged($("mic-bluetooth"))) $("mic-bluetooth").checked = current.audio.micIncludeBluetooth !== false;
+    if (unchanged($("mic-virtual"))) $("mic-virtual").checked = current.audio.micIncludeVirtual !== false;
+    renderMicPolicy();
     if (unchanged($("duck-level"))) $("duck-level").value = current.audio.duckLevelPercent;
     if (unchanged($("record-sounds"))) $("record-sounds").checked = current.audio.recordSounds === true;
     if (unchanged($("record-sound-volume"))) $("record-sound-volume").value = current.audio.recordSoundVolumePercent;
@@ -2634,6 +2707,7 @@ earheart.on("updates:state", renderUpdateState);
   if (destination.section !== "history" || typeof destination.query !== "string") renderHistory();
   refreshAgents();
   loadMicrophones();
+  initMicrophonePolicy();
   refreshDuckStatus();
   // The line says what is happening now (lowered, skipped, failed), which
   // changes with every take: keep it current while the window is shown.

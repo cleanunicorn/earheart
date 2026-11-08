@@ -192,6 +192,15 @@ const DEFAULTS = {
   },
   audio: {
     deviceId: "", // empty = system default microphone
+    // How a take picks its microphone (#339). "manual" (default, as before):
+    // deviceId above, or the system default when empty. "auto": rank the
+    // present devices by the two preferences below (renderer/mic-policy.js).
+    // Auto never rewrites deviceId, so going back to manual restores it.
+    micMode: "manual",
+    // In auto mode: whether Bluetooth / virtual inputs may be chosen. A device
+    // whose class can't be established is never excluded by either.
+    micIncludeBluetooth: true,
+    micIncludeVirtual: true,
     // Ten minutes. The built-in cleanup context is sized from this (see
     // cleanContextFor in util/clean-budget.js), so raising it costs memory; a
     // large dictionary or custom prompt grows it too, up to CLEAN_CONTEXT_MAX.
@@ -477,6 +486,30 @@ function clampLimits(merged) {
   return out;
 }
 
+// An unknown micMode reads as "manual" and a non-boolean preference as its
+// default (a hand-edited file). Not rewritten until the next save.
+function normalizeMic(merged) {
+  const audio = merged.audio;
+  const mode = audio.micMode === "auto" ? "auto" : "manual";
+  const flag = (value) => (typeof value === "boolean" ? value : true);
+  if (
+    audio.micMode === mode &&
+    audio.micIncludeBluetooth === flag(audio.micIncludeBluetooth) &&
+    audio.micIncludeVirtual === flag(audio.micIncludeVirtual)
+  ) {
+    return merged;
+  }
+  return {
+    ...merged,
+    audio: {
+      ...audio,
+      micMode: mode,
+      micIncludeBluetooth: flag(audio.micIncludeBluetooth),
+      micIncludeVirtual: flag(audio.micIncludeVirtual),
+    },
+  };
+}
+
 // An unknown or missing appearance reads as "system". Not rewritten on disk
 // until the next save, like clampLimits.
 const APPEARANCES = ["system", "light", "dark"];
@@ -559,7 +592,7 @@ function load() {
     ? secretStore.storageStatus(safeStorage, process.platform)
     : { secure: false, backend: null };
   const decoded = secretStore.decodeSecrets(stored, ready ? safeStorage : null);
-  const merged = normalizeAppearance(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored)))));
+  const merged = normalizeMic(normalizeAppearance(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored))))));
   // Before `ready` encrypted keys read as "", so the result is not cached:
   // the first load after `ready` decrypts them. Nothing saves before then
   // (save() refuses).
@@ -629,7 +662,7 @@ function writeFile(merged) {
 function save(next) {
   if (!appReady()) throw new Error("settings cannot be saved before the app is ready");
   const previous = load();
-  const merged = normalizeAppearance(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, next))));
+  const merged = normalizeMic(normalizeAppearance(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, next)))));
   // Fail closed (#343): recordings are only ever kept encrypted, so keeping
   // them can't be turned on without OS-backed secure storage.
   if (merged.recordings.keep === true && !keyStorageStatus.secure) {

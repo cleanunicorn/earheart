@@ -21,6 +21,7 @@ const autostart = require("./autostart");
 const updates = require("./updates");
 const ducking = require("./ducking");
 const tools = require("./tools");
+const micProbe = require("./mic-probe");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { createHost, LOADCHECK_TIMEOUT_MS } = require("./engines/host");
@@ -202,6 +203,8 @@ function main() {
     // Lower other apps' playback while the microphone is capturing (opt-in);
     // settles a lowering a crash left behind first.
     ducking.init();
+    // Which inputs are Bluetooth/virtual (#339), cached; never blocks a take.
+    micProbe.init(ipcMain);
     pipeline.onCaptureChange((live) => ducking.setCapturing("dictation", live));
     // Optional local MCP tool servers (#346). Nothing is started here: servers
     // run only on an explicit Discover or a call, and no part of the app calls

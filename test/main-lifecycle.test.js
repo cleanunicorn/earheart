@@ -207,6 +207,7 @@ async function loadMain(
     "./autostart": { apply: () => events.push("autostart.apply") },
     // Tool servers (#346): wired in main.js, covered by test/tools-*.test.js.
     "./tools": { init: () => {}, running: () => 0, shutdown: async () => {}, ...tools },
+    "./mic-probe": { init: () => events.push("micProbe.init") },
     "./ducking": {
       init: () => events.push("ducking.init"),
       setCapturing: (owner, live) => events.push(`ducking.capture:${owner}:${live}`),

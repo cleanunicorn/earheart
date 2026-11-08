@@ -747,7 +747,68 @@ function recordingCapSeconds(value) {
   return seconds >= 10 && seconds <= 3600 ? seconds : 600;
 }
 
-async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, discardHotkey, sounds }) {
+// ---- Automatic microphone selection (#339) ----
+// renderer/mic-policy.js ranks the devices; this gathers its inputs at take
+// start without ever delaying the take or opening a throwaway stream (which
+// could be a Bluetooth mic and flip a headset into its call profile).
+//
+// enumerateDevices() hides labels until this page has had a stream, so the
+// labels from the last enumeration made while one was open are kept by id and
+// lent to a label-less one. The first take after launch may therefore see no
+// labels: every device is then "unknown" and the policy falls back to the saved
+// choice or the system default — the same as manual mode, never worse.
+const MIC_LOOKUP_BUDGET_MS = 300;
+const micLabels = new Map(); // deviceId → label, from the latest labelled enumeration
+
+function withinBudget(promise, fallback) {
+  return Promise.race([
+    Promise.resolve(promise).catch(() => fallback),
+    new Promise((resolve) => setTimeout(() => resolve(fallback), MIC_LOOKUP_BUDGET_MS)),
+  ]);
+}
+
+async function listMicrophones() {
+  try {
+    const all = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
+    if (all.some((d) => d.label)) {
+      micLabels.clear();
+      for (const d of all) if (d.label) micLabels.set(d.deviceId, d.label);
+    }
+    return all.map((d) => (d.label ? d : { ...d, label: micLabels.get(d.deviceId) || "" }));
+  } catch {
+    return [];
+  }
+}
+
+async function pickMicrophone(mic, savedId) {
+  const [devices, classes] = await Promise.all([
+    withinBudget(listMicrophones(), []),
+    withinBudget(earheart.invoke("mics:classes"), null),
+  ]);
+  return resolveMicrophone({
+    mode: mic?.mode,
+    savedId,
+    includeBluetooth: mic?.includeBluetooth,
+    includeVirtual: mic?.includeVirtual,
+    devices,
+    records: classes?.records || [],
+  });
+}
+
+// Refresh the cached labels now that a stream is open, and whenever the set of
+// devices changes (plug/unplug) so the next take ranks what is really there.
+function rememberMicrophoneLabels() {
+  listMicrophones().catch(() => {});
+}
+try {
+  navigator.mediaDevices.addEventListener?.("devicechange", () => {
+    rememberMicrophoneLabels();
+    // A track that died without its "ended" event reaching us: recover now.
+    if (recording?.stream.getAudioTracks()[0]?.readyState === "ended") recording.onTrackLost?.();
+  });
+} catch {}
+
+async function startRecording({ sid, deviceId, mic, maxSeconds, livePreview: live, discardHotkey, sounds }) {
   // A new session always supersedes whatever was running.
   teardown();
   const myGeneration = ++generation;
@@ -787,9 +848,18 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
     // The two independent waits overlap: opening the mic and readying the
     // shared context. getUserMedia dominates; the context is usually warm.
     streamPromise = (async () => {
+      // Auto mode picks a device now; the saved deviceId is only the fallback
+      // and is never rewritten. Manual mode is the saved deviceId, as before.
+      let wanted = deviceId;
+      if (mic?.mode === "auto") {
+        const picked = await pickMicrophone(mic, deviceId);
+        if (!isCurrent()) return null;
+        wanted = picked.deviceId;
+        microphoneNotice = picked.notice;
+      }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          audio: microphoneConstraints(deviceId),
+          audio: microphoneConstraints(wanted),
         });
         if (!isCurrent()) {
           stopStream(stream);
@@ -800,8 +870,9 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
         if (!isCurrent()) return null;
         // A saved USB/Bluetooth device can disappear between sessions. Retry
         // once with the system default instead of making every dictation fail.
-        if (!deviceId || !isMissingMicrophone(err)) throw err;
-        microphoneNotice = tr("overlay.micMissing");
+        if (!wanted || !isMissingMicrophone(err)) throw err;
+        microphoneNotice =
+          mic?.mode === "auto" ? "Chosen mic unavailable — using system default" : tr("overlay.micMissing");
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: microphoneConstraints(),
         });
@@ -861,7 +932,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
         recorder.port.onmessage = (event) => {
           // The node is disconnected on teardown, but a message can already be in
           // flight; never let a stale session's samples leak into the current one.
-          if (!recording || recording.recovering || recording.recorder !== recorder) return;
+          if (!recording || recording.recovering === true || recording.recorder !== recorder) return;
           if (event.data.samples?.length) {
             clearTimeout(recording.clockProbeId);
             recording.clockProbeId = null;
@@ -902,17 +973,35 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
           levels.push(event.data.rms);
           levels.shift();
           micLive(); // no-op after the first chunk
+          // The replacement microphone delivered: the take is capturing again.
+          if (recording.recovering === "swapped") {
+            recording.recovering = false;
+            recording.trackEnded = false;
+            if (!recording.pausedAt) {
+              setStatus("recording", listeningTitle(recording), recording.microphoneNotice || "");
+              reportCapture(true);
+            }
+          }
         };
         source.connect(recorder);
-        // A device unplugged mid-take ends its track: the take goes on (stop still
-        // delivers what was captured), but nothing is being captured any more.
+        // A device unplugged (or a route changed away from) mid-take ends its
+        // track. The take goes on either way — stop still delivers what was
+        // captured — but first we try once to re-acquire a microphone (#339).
         const [track] = stream.getAudioTracks();
-        track?.addEventListener("ended", () => {
-          if (recording?.recorder !== recorder) return;
+        const onTrackEnded = (ended) => {
+          // Stale: another session, a stop/cancel that already tore the take down,
+          // or a track we already replaced. A second "ended" for the same loss
+          // (the event and a devicechange both fire) is absorbed by trackEnded.
+          if (recording?.recorder !== recorder || recording.stream.getAudioTracks()[0] !== ended) return;
+          // A replacement that dies before delivering anything counts as a new
+          // loss; otherwise the flag already says this one is being handled.
+          if (recording.trackEnded && recording.recovering !== "swapped") return;
+          recording.recovering = false;
           recording.trackEnded = true;
           reportCapture(false);
-          stepCue({ type: "trackEnded", sid });
-        });
+          recoverCapture(recording, recorder, context, { sid, deviceId, mic, isCurrent });
+        };
+        track?.addEventListener("ended", () => onTrackEnded(track));
 
         return { source, recorder, chunks, resumedAt };
       } catch (err) {
@@ -956,11 +1045,15 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
     recording = {
       sid,
       microphoneNotice,
+      // Mid-take recovery (#339): how many re-acquires this take has used, and
+      // whether one is in flight / its new stream has not delivered yet.
+      recoveries: 0,
+      recovering: false,
+      onTrackLost: (ended) => onTrackEnded(ended ?? recording?.stream.getAudioTracks()[0]),
       stream,
       ...graph,
       clockProbeId: null,
       clockRetried: false,
-      recovering: false,
       // The start-cue guard: the capture frame the take begins at (0 = no
       // cue, nothing dropped), set on the first samples; guardSpent once
       // samples past it arrive. "Listening…" waits for guardSpent.
@@ -1001,6 +1094,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
     const rec = recording;
     watchMicClock(rec, context, graph.resumedAt, () => recoverClock(rec));
     startMeter(); // rAF loop runs for the whole session (recording is now set)
+    rememberMicrophoneLabels(); // a stream is open: labels are readable now
     if (stopWhenReady) {
       stopWhenReady = false;
       stopRecording();
@@ -1025,6 +1119,81 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
         message: microphoneErrorMessage(err),
       });
     }
+  }
+}
+
+// One attempt to keep a take alive after its microphone's track ended (a
+// device unplugged, a Bluetooth route dropped). Everything captured so far is
+// already in rec.chunks and stays there: the worklet and its recorder node are
+// untouched, only the source feeding them is swapped, so the WAV is contiguous
+// up to the loss and continues after it. A different sample rate on the new
+// device is resampled by the AudioContext itself, which is fixed at 16 kHz.
+//
+// Deliberately conservative, since a regression here touches every take:
+//  - at most MAX_RECOVERIES per take, one attempt per loss;
+//  - trackEnded stays true (capture reported not-live) until the new stream's
+//    first samples arrive, and the error cue is only played if recovery fails;
+//  - every await re-checks that this same take is still the current one, so a
+//    stop/cancel/new session racing the attempt just releases the new stream.
+const MAX_RECOVERIES = 2;
+
+async function recoverCapture(rec, recorder, context, { sid, deviceId, mic, isCurrent }) {
+  const stillCurrent = () => recording === rec && recording.recorder === recorder && isCurrent();
+  const fail = (notice) => {
+    if (!stillCurrent()) return;
+    rec.recovering = false;
+    rec.microphoneNotice = notice;
+    if (!rec.pausedAt && rec.startedAt) setStatus("recording", listeningTitle(rec), notice);
+    stepCue({ type: "trackEnded", sid });
+  };
+  if (rec.recoveries >= MAX_RECOVERIES) return fail("Microphone lost — audio captured so far is kept");
+  rec.recoveries++;
+  rec.recovering = true;
+  rec.microphoneNotice = "Microphone lost — switching…";
+  if (!rec.pausedAt && rec.startedAt) setStatus("recording", listeningTitle(rec), rec.microphoneNotice);
+  let next = null;
+  try {
+    let wanted = deviceId;
+    let notice = "";
+    if (mic?.mode === "auto") {
+      const picked = await pickMicrophone(mic, deviceId);
+      wanted = picked.deviceId;
+      notice = picked.notice;
+    }
+    if (!stillCurrent()) return;
+    try {
+      next = await navigator.mediaDevices.getUserMedia({ audio: microphoneConstraints(wanted) });
+    } catch (err) {
+      // The device we wanted is the one that just went away: the system
+      // default is the one choice that can still be there.
+      if (!wanted || !isMissingMicrophone(err)) throw err;
+      next = await navigator.mediaDevices.getUserMedia({ audio: microphoneConstraints() });
+    }
+    if (!stillCurrent()) {
+      next.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    const [track] = next.getAudioTracks();
+    if (!track) throw new Error("no audio track");
+    // Same pause state as the take: a muted take stays muted.
+    track.enabled = !rec.pausedAt;
+    const source = context.createMediaStreamSource(next);
+    source.connect(recorder);
+    try {
+      rec.source.disconnect();
+    } catch {}
+    rec.stream.getTracks().forEach((t) => t.stop());
+    rec.source = source;
+    rec.stream = next;
+    rec.inputLatency = track.getSettings?.().latency;
+    rec.microphoneNotice = notice || "Microphone changed — kept recording";
+    rec.recovering = "swapped"; // trackEnded clears when this stream delivers
+    track.addEventListener("ended", () => rec.onTrackLost?.(track));
+    next = null;
+    rememberMicrophoneLabels();
+  } catch (err) {
+    next?.getTracks().forEach((t) => t.stop());
+    fail(`Microphone lost — audio captured so far is kept`);
   }
 }
 

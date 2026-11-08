@@ -226,6 +226,10 @@ function collect() {
     audio: {
       ...current.audio,
       deviceId: $("mic-device").value,
+      // Kept in step with Settings → Microphone (#339).
+      micMode: $("mic-auto").checked === true ? "auto" : "manual",
+      micIncludeBluetooth: $("mic-bluetooth").checked !== false,
+      micIncludeVirtual: $("mic-virtual").checked !== false,
       duckOtherAudio: $("duck-other-audio").checked,
       duckLevelPercent: duckLevel(),
     },
@@ -561,6 +565,9 @@ async function finish() {
   $("cleanup-enabled").checked = current.cleanup.enabled;
   // An earlier choice stands when setup is run again (#365).
   $("duck-other-audio").checked = current.audio.duckOtherAudio === true;
+  $("mic-auto").checked = current.audio.micMode === "auto";
+  $("mic-bluetooth").checked = current.audio.micIncludeBluetooth !== false;
+  $("mic-virtual").checked = current.audio.micIncludeVirtual !== false;
   $("duck-level").value = current.audio.duckLevelPercent ?? defaults.audio.duckLevelPercent;
   document.querySelector(
     `input[name="output-mode"][value="${displayedOutputMode(current.output)}"]`

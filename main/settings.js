@@ -71,6 +71,11 @@ const DEFAULTS = {
   discardHotkey: "",
   // Open the last saved transcript for explicit spelling corrections.
   correctHotkey: "",
+  // Opt-in (#338): while a take is recording, Enter stops it and delivers the
+  // transcript like the toggle hotkey. A global grab, so Enter is swallowed
+  // in every app for that window (including IME composition); never forwarded
+  // and never synthesized after delivery.
+  enterToStop: false,
   // Launch Earheart automatically at login (it lands in the tray, ready for
   // the hotkey). Pushed to the OS by main/autostart.js — a native login item
   // on Windows/macOS, an XDG autostart .desktop file on Linux — on save, and

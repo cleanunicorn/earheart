@@ -552,6 +552,57 @@ function armDiscard(live) {
   }
 }
 
+// The optional Enter-to-stop grab (#338). Held only while the caller says a
+// take is capturing and the preference is on, and released before the stop is
+// requested: the OS consumes the key (RegisterHotKey / Carbon / XGrabKey), so
+// Enter never reaches the destination app, and a held key cannot repeat into
+// a second stop. Nothing is synthesized.
+const enter = { want: false, onTrigger: null, armed: false };
+
+function isEnterKey(accelerator) {
+  return /^(Enter|Return)$/i.test(accelerator || "");
+}
+
+// Whether the user's own hotkeys already use plain Enter.
+function enterTaken() {
+  return [...registered.values(), discard].some((entry) => isEnterKey(entry.accelerator));
+}
+
+function releaseEnter() {
+  if (enter.armed) globalShortcut.unregister("Enter");
+  enter.armed = false;
+}
+
+/**
+ * Hold plain Enter globally (true) or release it (false). Idempotent. A
+ * failure (Wayland, another app holding Enter) is logged, not thrown: the
+ * toggle hotkey, the overlay and the tray still stop the take.
+ *
+ * @param {boolean} want
+ * @param {() => void} [onTrigger] called once per grab, after the grab is released
+ * @returns {boolean} whether Enter is held now
+ */
+function armEnter(want, onTrigger) {
+  enter.want = want;
+  if (onTrigger) enter.onTrigger = onTrigger;
+  if (suspended) return false;
+  if (want && !enter.armed) {
+    if (enterTaken()) {
+      logger.warn("enter-to-stop: skipped, Enter is already a configured hotkey");
+      return false;
+    }
+    const attempt = attemptRegister("Enter", () => {
+      releaseEnter();
+      enter.onTrigger?.();
+    });
+    if (attempt.ok) enter.armed = true;
+    else logger.warn(`enter-to-stop: ${registrationFailure("Enter", attempt)}`);
+  } else if (!want) {
+    releaseEnter();
+  }
+  return enter.armed;
+}
+
 // While Settings or the wizard captures a new combination, the global
 // shortcuts must not hold the keys: the OS would swallow the press — the
 // field never sees it, and the record hotkey starts a dictation instead of
@@ -575,6 +626,7 @@ function suspend(on) {
     for (const entry of registered.values()) globalShortcut.unregister(entry.accelerator);
     if (discard.armed) globalShortcut.unregister(discard.accelerator);
     discard.armed = false;
+    releaseEnter();
     return [];
   }
   const lost = [];
@@ -587,6 +639,7 @@ function suspend(on) {
     }
   }
   armDiscard(discard.live);
+  armEnter(enter.want);
   return lost;
 }
 
@@ -594,6 +647,7 @@ function unregisterAll() {
   globalShortcut.unregisterAll();
   registered.clear();
   discard.armed = false;
+  enter.armed = false;
   suspended = false;
 }
 
@@ -631,4 +685,4 @@ function toHotkeyResults(pair, accelerators) {
   return withAccelerators;
 }
 
-module.exports = { applyPair, applyAll, armDiscard, suspend, toHotkeyResults, unregisterAll };
+module.exports = { applyPair, applyAll, armDiscard, armEnter, suspend, toHotkeyResults, unregisterAll };

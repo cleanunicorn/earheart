@@ -81,6 +81,22 @@ function applyHotkeys(cfg) {
   return lastHotkeyStatus;
 }
 
+// Enter-to-stop (#338): Enter is held only while the preference is on, the
+// state is recording and the microphone is really capturing (so never before
+// it is ready, and released while paused). The grab releases itself before
+// the stop fires.
+let capturing = false;
+let enterSpent = false; // this take's Enter was used; stays released until capture ends
+function syncEnterToStop() {
+  const recording = capturing && pipeline.getState() === "recording";
+  if (!recording) enterSpent = false;
+  const want = !!settings.get().enterToStop && recording && !enterSpent;
+  hotkeys.armEnter(want, () => {
+    enterSpent = true;
+    pipeline.stopFromEnter();
+  });
+}
+
 // Startup notices; clicking one opens Settings (see setup-notices.js).
 const notifier = createNotifier({
   Notification,
@@ -131,11 +147,18 @@ function main() {
     usage.init();
     // The discard hotkey is held only while there is a dictation to discard
     // (recording or processing); idle, the combination is the user's again.
-    pipeline.onStateChange((state) => hotkeys.armDiscard(state !== "idle"));
+    pipeline.onStateChange((state) => {
+      hotkeys.armDiscard(state !== "idle");
+      syncEnterToStop();
+    });
     // Lower other apps' playback while the microphone is capturing (opt-in);
     // settles a lowering a crash left behind first.
     ducking.init();
-    pipeline.onCaptureChange((live) => ducking.setCapturing("dictation", live));
+    pipeline.onCaptureChange((live) => {
+      ducking.setCapturing("dictation", live);
+      capturing = live;
+      syncEnterToStop();
+    });
     ipc.init({
       onCleanupDownloaded: pipeline.onCleanupDownloaded,
       onHistoryCleared: () => pipeline.clearUndelivered(),
@@ -158,6 +181,7 @@ function main() {
         // recording they removed (even one playing) leaves the page.
         if (recordings.prune(settings.get()).length) windows.sendToSettings("history:changed", { updated: true });
         ducking.refresh();
+        syncEnterToStop();
       },
     });
     // Kept recordings (#343) past their limits, or whose History entry is

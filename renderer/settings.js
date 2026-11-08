@@ -311,6 +311,7 @@ function populate() {
   syncEngine("cleanup");
 
   $("start-on-boot").checked = !!current.startOnBoot;
+  $("enter-to-stop").checked = !!current.enterToStop;
   $("appearance").value = current.appearance || "system";
 
   $("history-enabled").checked = current.history.enabled;
@@ -359,6 +360,7 @@ function collect() {
     discardHotkey: current.discardHotkey || "",
     correctHotkey: current.correctHotkey || "",
     startOnBoot: $("start-on-boot").checked,
+    enterToStop: $("enter-to-stop").checked,
     appearance: $("appearance").value,
     updates: {
       ...current.updates,

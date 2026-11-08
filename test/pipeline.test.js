@@ -2479,3 +2479,19 @@ test("pipeline: only a delivered dictation counts — retranscribe and the live 
   const recordAt = processBody.indexOf("usage.record(");
   assert.ok(recordAt > processBody.indexOf("await deliver("), "counted after delivery");
 });
+
+test("pipeline: stopFromEnter stops a live take once per session (#338)", () => {
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "x" });
+  const stops = () => rig.log.overlaySent.filter((c) => c === "record:stop").length;
+
+  assert.strictEqual(rig.pipeline.stopFromEnter(), false, "idle: nothing to stop");
+  rig.pipeline.toggle();
+  assert.strictEqual(rig.pipeline.stopFromEnter(), true);
+  assert.strictEqual(rig.pipeline.stopFromEnter(), false, "autorepeat / second press");
+  assert.strictEqual(stops(), 1);
+
+  rig.pipeline.cancel();
+  rig.pipeline.toggle();
+  assert.strictEqual(rig.pipeline.stopFromEnter(), true, "a new take gets its own stop");
+  assert.strictEqual(stops(), 2);
+});

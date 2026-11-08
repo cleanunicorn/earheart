@@ -682,6 +682,17 @@ function startRecording() {
   }
 }
 
+// Enter-to-stop (#338): stop the take once per session, even if the grab fires
+// twice (autorepeat, a second press before the state change lands). The
+// session id changes on every new take and on cancel, so the guard resets.
+let enterStopSid = 0;
+function stopFromEnter() {
+  if (state !== "recording" || enterStopSid === session) return false;
+  enterStopSid = session;
+  stopRecording();
+  return true;
+}
+
 function stopRecording() {
   // The overlay answers with `audio:captured` — or `record:cancelled` when
   // the mic never went live (nothing captured, nothing to transcribe), or
@@ -1035,6 +1046,7 @@ module.exports = {
   init,
   toggle,
   pauseToggle,
+  stopFromEnter,
   discard,
   retryFailedTake,
   retranscribe,

@@ -155,6 +155,7 @@ async function loadMain(
       toggle: () => events.push("pipeline.toggle"),
       pauseToggle: () => events.push("pipeline.pauseToggle"),
       discard: () => events.push("pipeline.discard"),
+      stopFromEnter: () => events.push("pipeline.stopFromEnter"),
       onStateChange: (listener) => { stateListener = listener; },
       onCaptureChange: (listener) => { captureListener = listener; },
       onSettingsChanged: () => {},
@@ -230,6 +231,7 @@ async function loadMain(
     permissionHandler: () => permissionHandler,
     changeState: (state) => stateListener(state),
     changeCapture: (live) => captureListener(live),
+    cfg,
     powerHandlers,
     setPipelineState: (next) => { state = next; },
   };
@@ -522,3 +524,65 @@ for (const platform of ["linux", "win32"]) {
     assert.deepStrictEqual(Object.keys(powerHandlers), []);
   });
 }
+
+test("enter-to-stop holds Enter only for a live capture and stops once (#338)", async () => {
+  const { events, shortcuts, changeState, changeCapture, setPipelineState } = await loadMain({
+    cfg: makeCfg({ enterToStop: true }),
+  });
+  assert.ok(!shortcuts.has("Enter"), "idle: Enter is the user's");
+
+  setPipelineState("recording");
+  changeState("recording");
+  assert.ok(!shortcuts.has("Enter"), "recording but the mic is not live yet (early Enter)");
+
+  changeCapture(true);
+  assert.ok(shortcuts.has("Enter"), "capturing");
+  changeCapture(false);
+  assert.ok(!shortcuts.has("Enter"), "paused: normal Enter");
+  changeCapture(true);
+
+  events.length = 0;
+  shortcuts.get("Enter")();
+  assert.ok(!shortcuts.has("Enter"), "released as the stop is requested");
+  assert.deepStrictEqual(events.filter((e) => e.startsWith("pipeline.stop")), ["pipeline.stopFromEnter"]);
+
+  changeCapture(true); // a settings save or resume must not re-arm a spent take
+  assert.ok(!shortcuts.has("Enter"));
+
+  setPipelineState("idle");
+  changeCapture(false);
+  changeState("idle");
+  setPipelineState("recording");
+  changeState("recording");
+  changeCapture(true);
+  assert.ok(shortcuts.has("Enter"), "the next take gets its own Enter");
+  setPipelineState("idle");
+  changeState("idle");
+  assert.ok(!shortcuts.has("Enter"), "every terminal state releases it");
+});
+
+test("enter-to-stop stays off by default and follows the setting while a take is live (#338)", async () => {
+  const { shortcuts, changeState, changeCapture, setPipelineState, cfg, ipcInit } = await loadMain();
+  setPipelineState("recording");
+  changeState("recording");
+  changeCapture(true);
+  assert.ok(!shortcuts.has("Enter"), "default off");
+
+  cfg.enterToStop = true;
+  ipcInit.onSettingsChanged();
+  assert.ok(shortcuts.has("Enter"), "turned on mid-take");
+  cfg.enterToStop = false;
+  ipcInit.onSettingsChanged();
+  assert.ok(!shortcuts.has("Enter"), "turned off mid-take");
+});
+
+test("enter-to-stop yields when Enter is a configured hotkey (#338)", async () => {
+  const { shortcuts, changeState, changeCapture, setPipelineState } = await loadMain({
+    cfg: makeCfg({ enterToStop: true, pauseHotkey: "Enter" }),
+  });
+  setPipelineState("recording");
+  changeState("recording");
+  changeCapture(true);
+  assert.notStrictEqual(shortcuts.get("Enter"), undefined, "the pause hotkey holds it");
+  assert.strictEqual(shortcuts.size >= 1, true);
+});

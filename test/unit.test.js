@@ -934,3 +934,8 @@ test("route.clean keeps literals intact on both tidied styles and both engines (
     }
   }
 });
+
+test("enter-to-stop defaults to off and survives the merge both ways", () => {
+  assert.strictEqual(DEFAULTS.enterToStop, false);
+  assert.strictEqual(deepMerge(DEFAULTS, { enterToStop: true }).enterToStop, true);
+});

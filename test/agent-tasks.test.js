@@ -103,7 +103,7 @@ test("the same key after a restart finds the interrupted task instead of duplica
 
 test("a crash between the write and the spawn leaves an interrupted task, not a lost brief", (t) => {
   const env = setup(t);
-  const store = env.make({ resolveBinary: () => { throw new Error("crash"); } });
+  const store = env.make({ adapters: [{ ...fake, start: () => { throw new Error("crash"); } }] });
   assert.throws(() => store.submit({ key: "key-00000002", agent: "fake", project: env.project, brief: "important words" }));
   const reopened = env.make();
   const [task] = reopened.list();
@@ -151,7 +151,7 @@ test("a task that never confirms its session times out, fails and is killed", as
   const res = send(env, { brief: "nosession" });
   const done = await settled(env.store, res.task.id);
   assert.strictEqual(done.status, "failed");
-  assert.match(done.error, /did not start/);
+  assert.match(done.error, /did not report a session/);
   assert.strictEqual(env.store.hasLive(), false);
 });
 
@@ -282,7 +282,7 @@ test("clear removes finished tasks and their briefs from disk; remove refuses an
   env.store.removeForHistory("h1");
   assert.strictEqual(env.store.get(done.task.id), null);
   assert.ok(env.store.clear().ok);
-  await settled(env.store, active.task.id);
+  for (let i = 0; i < 100 && env.store.hasLive(); i++) await new Promise((r) => setTimeout(r, 20));
   assert.ok(!fs.readFileSync(env.file, "utf8").includes("hello agent"));
   assert.strictEqual(fs.statSync(env.file).mode & 0o777, process.platform === "win32" ? fs.statSync(env.file).mode & 0o777 : 0o600);
 });
@@ -291,4 +291,38 @@ test("saved output is capped and a corrupt file starts empty", (t) => {
   const env = setup(t);
   fs.writeFileSync(env.file, "{not json");
   assert.deepStrictEqual(env.make().list(), []);
+});
+
+test("Clear history cancels a running task and its brief leaves the disk once it settles", async (t) => {
+  const env = setup(t);
+  const res = send(env, { brief: "hang secret-brief" });
+  await settled(env.store, res.task.id, ["running"]);
+  assert.ok(env.store.clear().ok);
+  for (let i = 0; i < 100 && env.store.hasLive(); i++) await new Promise((r) => setTimeout(r, 20));
+  assert.strictEqual(env.store.get(res.task.id), null);
+  assert.deepStrictEqual(env.store.list(), []);
+  assert.ok(!fs.readFileSync(env.file, "utf8").includes("secret-brief"));
+});
+
+test("a resolver that throws fails the task instead of stranding it in starting", async (t) => {
+  const env = setup(t);
+  const store = env.make({ resolveBinary: () => { throw new TypeError("bad path"); } });
+  const res = store.submit({ key: "key-00000005", agent: "fake", project: env.project, brief: "keep" });
+  assert.strictEqual(res.task.status, "failed");
+  assert.strictEqual(res.task.brief, "keep");
+});
+
+test("an agent with a pre-chosen session id still times out if it never starts", async (t) => {
+  const env = setup(t, { startTimeoutMs: 150 });
+  const res = send(env, { agent: "upfront", brief: "nosession" });
+  const done = await settled(env.store, res.task.id);
+  assert.strictEqual(done.status, "failed");
+  assert.match(done.error, /did not report a session/);
+});
+
+test("multi-byte output split across chunks is decoded intact", async (t) => {
+  const env = setup(t);
+  const res = send(env, { brief: "ok 日本語🙂" });
+  const done = await settled(env.store, res.task.id);
+  assert.match(done.output, /日本語🙂/);
 });

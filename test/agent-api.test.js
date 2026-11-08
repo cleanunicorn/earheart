@@ -36,14 +36,44 @@ function setup(t, agents = { enabled: true }) {
 test("with the setting off every handler is inert: no store, no detection, no process", async (t) => {
   const { api, calls, project } = setup(t, { enabled: false });
   for (const result of [
-    await api.state(), await api.send({}, { key: "k".repeat(10), project }), await api.cancel({}, "t1"),
-    await api.reply({}, { id: "t1", text: "x" }), await api.remove({}, "t1"), await api.copyResume({}, "t1"), await api.pickProject(),
+    await api.state(), await api.send({}, { key: "k".repeat(10), project }),
+    await api.reply({}, { id: "t1", text: "x" }), await api.copyResume({}, "t1"), await api.pickProject(),
   ]) assert.deepStrictEqual(result, DISABLED);
   assert.strictEqual(calls.stores, 0);
   assert.strictEqual(calls.detect, 0);
   assert.strictEqual(api.started(), false);
-  assert.deepStrictEqual(api.clearTasks(), { ok: true });
-  assert.strictEqual(calls.stores, 0, "clearing history doesn't create a store when the feature is off");
+});
+
+test("clearing History and deleting an entry reach saved tasks even when the feature is off", (t) => {
+  const { api, calls } = setup(t, { enabled: false });
+  const seen = [];
+  const stub = createAgentApi({
+    getSettings: () => ({ agents: { enabled: false } }),
+    createStore: () => ({ clear: () => { seen.push("clear"); return { ok: true }; }, removeForHistory: (id) => seen.push(id) }),
+    detectAll: async () => [], pickFolder: async () => null, copyText() {}, validateProject,
+  });
+  assert.deepStrictEqual(stub.clearTasks(), { ok: true });
+  stub.removeForHistory("h1");
+  assert.deepStrictEqual(seen, ["clear", "h1"]);
+  assert.strictEqual(calls.detect, 0);
+  assert.ok(api);
+});
+
+test("a running task can still be cancelled or removed after the setting is turned off", async (t) => {
+  const { api } = setup(t, { enabled: false });
+  assert.deepStrictEqual(await api.cancel({}, "t1"), { ok: true, id: "t1" });
+  assert.deepStrictEqual(await api.remove({}, "t1"), { ok: true });
+});
+
+test("a non-string binary path in settings is ignored, not thrown", async (t) => {
+  const seen = [];
+  const api = createAgentApi({
+    getSettings: () => ({ agents: { enabled: true, binaries: { codex: 5, claude: "/x/claude" } } }),
+    createStore: ({ getConfig }) => { seen.push(getConfig().binaries); return { list: () => [] }; },
+    detectAll: async (b) => { seen.push(b); return []; }, pickFolder: async () => null, copyText() {}, validateProject,
+  });
+  await api.state();
+  assert.deepStrictEqual(seen, [{ claude: "/x/claude" }, { claude: "/x/claude" }]);
 });
 
 test("state lazily detects once (cached) and reports tasks and the permission", async (t) => {

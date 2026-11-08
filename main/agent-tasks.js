@@ -158,12 +158,24 @@ function createTaskStore({
     const entry = live.get(task.id);
     clearTimer(entry);
     live.delete(task.id);
+    if (entry?.discard) {
+      // Clear history asked for this task to go once it settled.
+      tasks = tasks.filter((t) => t !== task);
+      persist();
+      onChange(null);
+      return;
+    }
     touch(task, { status, error, progress: status === "completed" ? "" : task.progress });
     onFinished(view(task));
   }
 
   function launch(task, adapter, plan, cwdForSpawn) {
-    const bin = resolveBinary(adapter, task);
+    let bin;
+    try {
+      bin = resolveBinary(adapter, task);
+    } catch {
+      bin = null;
+    }
     if (!bin?.ok) {
       finish(task, "failed", bin?.reason || `${adapter.label} was not found.`);
       return;
@@ -187,17 +199,19 @@ function createTaskStore({
 
     // A turn that never confirms its session (Codex waits on thread.started)
     // must not sit in "starting" forever.
-    if (!task.externalId) {
+    {
       entry.timer = setTimeout(() => {
-        if (live.get(task.id) !== entry || task.externalId) return;
+        if (live.get(task.id) !== entry) return;
         entry.timedOut = true;
         killTree(child, "SIGTERM");
         setTimeout(() => killTree(child, "SIGKILL"), killGraceMs).unref?.();
-        finish(task, "failed", `${adapter.label} did not start within ${Math.round(startTimeoutMs / 1000)} seconds.`);
+        finish(task, "failed", `${adapter.label} did not report a session within ${Math.round(startTimeoutMs / 1000)} seconds.`);
       }, startTimeoutMs);
       entry.timer.unref?.();
     }
 
+    child.stdout.setEncoding("utf8"); // a multi-byte character may span chunks
+    child.stderr.setEncoding("utf8");
     child.stdin.on("error", () => { /* the process may exit before reading */ });
     if (plan.stdin) child.stdin.end(plan.input);
 
@@ -358,8 +372,13 @@ function createTaskStore({
   // Clear history also clears finished tasks (their briefs are transcript
   // text). Active tasks are cancelled and removed once they settle.
   function clear() {
-    for (const task of tasks) if (ACTIVE.has(task.status)) cancel(task.id);
-    tasks = tasks.filter((t) => ACTIVE.has(t.status));
+    for (const task of tasks) {
+      if (!ACTIVE.has(task.status)) continue;
+      const entry = live.get(task.id);
+      if (entry) entry.discard = true;
+      cancel(task.id);
+    }
+    tasks = tasks.filter((t) => ACTIVE.has(t.status) && live.has(t.id));
     const ok = persist();
     onChange(null);
     return ok ? { ok: true } : { ok: false, error: "EIO" };

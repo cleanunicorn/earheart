@@ -22,7 +22,9 @@ function createAgentApi({ getSettings, createStore, detectAll, pickFolder, copyT
     return {
       enabled: agents.enabled === true,
       permission: PERMISSIONS.has(agents.permission) ? agents.permission : "edit",
-      binaries: agents.binaries && typeof agents.binaries === "object" ? agents.binaries : {},
+      binaries: Object.fromEntries(
+        Object.entries(agents.binaries && typeof agents.binaries === "object" ? agents.binaries : {}).filter(([, v]) => typeof v === "string")
+      ),
     };
   };
 
@@ -49,6 +51,14 @@ function createAgentApi({ getSettings, createStore, detectAll, pickFolder, copyT
     }
   };
 
+  const ownedAlways = (fn) => async (...args) => {
+    try {
+      return await fn(...args);
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  };
+
   function recentProjects(tasks) {
     const seen = new Set();
     const out = [];
@@ -65,8 +75,10 @@ function createAgentApi({ getSettings, createStore, detectAll, pickFolder, copyT
     enabled: () => config().enabled,
     started: () => store !== null,
     shutdown: () => store?.shutdown(),
-    clearTasks: () => (store || config().enabled ? getStore().clear() : { ok: true }),
-    removeForHistory: (id) => { if (store) store.removeForHistory(id); },
+    // Briefs are transcript text: clearing History or deleting an entry reaches
+    // the saved tasks whether or not the feature is on right now.
+    clearTasks: () => getStore().clear(),
+    removeForHistory: (id) => getStore().removeForHistory(id),
 
     state: guard(async () => {
       const tasks = getStore().list();
@@ -89,9 +101,11 @@ function createAgentApi({ getSettings, createStore, detectAll, pickFolder, copyT
         historyId: request.historyId,
       });
     }),
-    cancel: guard((event, id) => getStore().cancel(id)),
+    // Cancel and remove stay available after the setting is turned off, so a
+    // task that is still running can always be stopped.
+    cancel: ownedAlways((event, id) => getStore().cancel(id)),
     reply: guard((event, request) => getStore().reply(request?.id, request?.text)),
-    remove: guard((event, id) => getStore().remove(id)),
+    remove: ownedAlways((event, id) => getStore().remove(id)),
     copyResume: guard((event, id) => {
       const task = getStore().get(id);
       if (!task?.resumeCommand) return { ok: false, error: "This task has no session to resume yet." };

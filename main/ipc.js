@@ -10,7 +10,7 @@ const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { deliverText } = require("./output/single-line");
 const history = require("./history");
-const { createAgentApi } = require("./agent-api");
+const { DISABLED } = require("./agent-api");
 const recordings = require("./recordings");
 const windows = require("./windows");
 const route = require("./services/route");
@@ -274,6 +274,13 @@ function staleDefinitions(existing, model) {
 
 // Wrap a handler whose failures are answers, not exceptions: whatever it
 // throws reaches the renderer as { ok: false, error }, worded by `describe`.
+// Used when init() is given no agent API (tests): every call is refused.
+const INERT_AGENT_API = {
+  ...Object.fromEntries(["state", "send", "cancel", "reply", "remove", "copyResume", "pickProject"].map((name) => [name, async () => DISABLED])),
+  clearTasks: () => ({ ok: true }),
+  removeForHistory() {},
+};
+
 function wrap(fn, describe = (err) => err.message) {
   return async (...args) => {
     try {
@@ -284,7 +291,7 @@ function wrap(fn, describe = (err) => err.message) {
   };
 }
 
-function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {}, onHistoryEntryDeleted = () => {}, agentApi = createAgentApi({ getSettings: () => ({}), createStore() {}, detectAll: async () => [], pickFolder: async () => null, copyText() {}, validateProject: () => ({ ok: false }) }), retranscribe = async () => ({ ok: false, error: "unavailable" }) }) {
+function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {}, onHistoryEntryDeleted = () => {}, agentApi = INERT_AGENT_API, retranscribe = async () => ({ ok: false, error: "unavailable" }) }) {
   onCleanupDownloaded = completed;
   // Custom models reach the registry through the settings themselves
   // (engines/catalog.js, bound in main.js), not through this layer: the saves

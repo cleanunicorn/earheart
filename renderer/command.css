@@ -2,7 +2,7 @@
 html, body { height: 100%; }
 body { margin: 0; background: var(--ink); color: var(--text); font: 14px/1.45 system-ui, sans-serif; -webkit-user-select: none; user-select: none; }
 main { display: flex; flex-direction: column; height: 100%; padding: 16px 18px 14px; gap: 10px; overflow: hidden; border: 1px solid var(--field-edge); }
-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+header { -webkit-app-region: drag; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 h1 { margin: 0; font-size: 16px; }
 h2 { margin: 0 0 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); }
 h2 .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
@@ -20,3 +20,4 @@ button { border: 1px solid var(--field-edge); border-radius: 6px; background: va
 button.primary { background: var(--text); color: var(--ink); border-color: var(--text); font-weight: 600; }
 button:disabled { opacity: .45; cursor: default; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button { -webkit-app-region: no-drag; }

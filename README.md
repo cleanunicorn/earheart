@@ -522,6 +522,16 @@ cases. Reproduce with `node scripts/eval-vocabulary.mjs /path/to/model.gguf
 The script uses the shipped cleanup prompt and scores the final postprocessed
 text. A missing exact spelling remains possible even after remembering it.
 
+### Voice commands
+
+Dictation never treats your words as instructions. When you *do* want to give
+one, use the separate **voice command** mode (tray ▸ Voice command…, or the
+optional hotkey in Settings → General): say "make this friendlier" over a
+selection, or "write a two-line thank-you note" with nothing selected, review
+the result on the card, then **Replace selection** or **Copy**. It runs on your
+Cleanup model by default; a remote service is used only if you name one. See
+[docs/commands.md](docs/commands.md).
+
 ### Always replace
 
 Settings → Cleanup → **Always replace** holds exact rules, one canonical
@@ -712,6 +722,10 @@ checksum-verified. Only add models from repos you trust.
 - A settings file damaged by a crash or a bad hand-edit is kept as
   `settings.json.corrupt-<timestamp>` next to the fresh one, so nothing is
   silently thrown away.
+- Voice commands send your selected text and spoken instruction only to the
+  writing model you chose: the built-in Cleanup model on your machine (the
+  default) or a remote service you name for them. They are never saved to
+  History or logged ([docs/commands.md](docs/commands.md)).
 - No telemetry, no accounts, no cloud.
 
 ## Star history

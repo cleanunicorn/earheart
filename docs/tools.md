@@ -6,10 +6,11 @@ Earheart MCP server: Earheart calls your tools, it does not expose itself to
 agents.
 
 > **Status.** The client, policy, approval window and Settings card ship now.
-> **Nothing calls these tools from your voice yet:** that needs voice command
-> mode (#344), which is not merged. Until then the only way to run a tool is the
-> internal `tools.host` seam (`main/tools/index.js`), used by tests and the
-> smoke check. The Settings card says so too.
+> **Nothing calls these tools from your voice yet:** voice commands
+> ([commands.md](commands.md)) exist but do not use tool servers. Until they do,
+> the only way to run a tool is the internal `tools.host` seam
+> (`main/tools/index.js`), used by tests and the smoke check. The Settings card
+> says so too.
 
 ## Add a server
 

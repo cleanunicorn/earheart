@@ -134,6 +134,28 @@ label, and opinions are welcome.
 
 ## Features
 
+### New features at a glance
+
+Most of these are off by default or live in a menu you may not have opened.
+Each row says where to turn it on and where the details are.
+
+| Feature | How to use it | Details |
+| --- | --- | --- |
+| **Commands** (keyboard search) | `Ctrl+Shift+K` / `Cmd+Shift+K`, tray ▸ Commands…, or `Ctrl/Cmd+K` in Settings. Jump to a setting, copy or correct the last dictation, search History. | [command-palette.md](docs/command-palette.md) |
+| **Voice commands** | Tray ▸ Voice command… (or set a hotkey in Settings → General). Say "make this friendlier" over a selection, or "write a thank-you note" with nothing selected; review, then Replace or Copy. | [commands.md](docs/commands.md) |
+| **Spoken snippets** | Settings → Snippets. Save text under a trigger phrase, then say the phrase while dictating. | [snippets.md](docs/snippets.md) |
+| **Formatting by destination** | Settings → Cleanup → Formatting by destination. Per-website and per-app capitalization and punctuation. | [formatting-profiles.md](docs/formatting-profiles.md) |
+| **Starter packs / Learn from a folder** | Settings → Cleanup → Dictionary. Add vocabulary packs, or pick a project folder and review the suggested terms. | [Starter packs](#starter-packs-and-learning-from-a-project) |
+| **Send to coding agents** | Settings → History → turn on *Send transcripts to coding agents*, then **Send to agent…** on a History entry. | [agent-tasks.md](docs/agent-tasks.md) |
+| **Local tool servers (MCP)** | Settings → Advanced → Tools. Experimental. | [tools.md](docs/tools.md) |
+| **Double-tap to start** | Settings → General → Hotkey activation. | [double-tap.md](docs/double-tap.md) |
+| **Press Enter to stop and paste** | Settings → General. | [Using Earheart](#using-earheart) |
+| **Automatic microphone choice** | Settings → General → Microphone ▸ *Choose automatically*, with Bluetooth and virtual-device switches. | [microphone-selection.md](docs/microphone-selection.md) |
+| **Interface language** | Settings → General → Language. Independent of the language you dictate in. | [localization.md](docs/localization.md) |
+| **Quieter background audio** | Settings → General → Background audio. | [audio-ducking.md](docs/audio-ducking.md) |
+
+### All features
+
 - **Live transcript while you speak (on by default)** — with the built-in
   engine the overlay fills in the text as you talk, with a cleaned-up version
   settling in behind the raw words on pauses. The live chunks also build the
@@ -221,9 +243,9 @@ label, and opinions are welcome.
 - **Local tool servers (optional, experimental)** — connect MCP servers you
   run yourself over stdio (Settings → Advanced → Tools), see the tools they
   offer, and choose per tool: off, ask each time, always allow or deny. Servers
-  start only when you press Discover or a tool is called. Voice command mode
-  (#344) isn't available yet, so nothing calls these tools from your voice
-  today. See [docs/tools.md](docs/tools.md).
+  start only when you press Discover or a tool is called. Voice commands do not
+  call these tools yet, so nothing runs them from your voice today. See
+  [docs/tools.md](docs/tools.md).
 - **Start on login (optional)** — have Earheart launch into the tray
   automatically when you sign in, so the hotkey is always ready. Off by
   default; toggle it under Settings → General. Works on Windows, macOS and

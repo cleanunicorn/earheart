@@ -1,7 +1,8 @@
 // Earheart entry point: app lifecycle, single-instance handling, and wiring
 // between the hotkey, tray, windows and the dictation pipeline.
 
-const { app, session, Notification, powerMonitor } = require("electron");
+const path = require("node:path");
+const { app, session, Notification, powerMonitor, dialog, clipboard } = require("electron");
 const settings = require("./settings");
 const history = require("./history");
 const recordings = require("./recordings");
@@ -23,6 +24,10 @@ const { createHost, LOADCHECK_TIMEOUT_MS } = require("./engines/host");
 const { bindCustomModels } = require("./engines/catalog");
 const { createNotifier, announceStartup, announcePromptOffer } = require("./setup-notices");
 const { installPermissionHandler } = require("./window-guard");
+const { createAgentApi } = require("./agent-api");
+const { createTaskStore } = require("./agent-tasks");
+const agents = require("./agents");
+const agentCommon = require("./agents/common");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
 const startHidden = process.argv.includes("--hidden");
@@ -98,6 +103,39 @@ const promptNotifier = createNotifier({
   settingsWhenUnsupported: false,
 });
 
+// Send to agents (#345). Nothing here runs until the setting is on and the
+// user uses it: the store, the detection and every process are created lazily.
+const agentApi = createAgentApi({
+  getSettings: () => settings.get(),
+  detectAll: (binaries) => agents.detectAll(binaries),
+  validateProject: agentCommon.validateProject,
+  copyText: (text) => clipboard.writeText(text),
+  pickFolder: async () => {
+    const result = await dialog.showOpenDialog({ title: "Choose the project folder", properties: ["openDirectory"] });
+    return result.canceled ? null : result.filePaths[0];
+  },
+  createStore: ({ getConfig }) =>
+    createTaskStore({
+      file: path.join(app.getPath("userData"), "agent-tasks.json"),
+      adapters: agents.ADAPTERS,
+      resolveBinary: (adapter) => agentCommon.resolveBinary(adapter.binary, getConfig().binaries[adapter.id] || ""),
+      getPermission: () => getConfig().permission,
+      logger,
+      onChange: () => windows.sendToSettings("agent:changed"),
+      onFinished: (task) => {
+        windows.sendToSettings("agent:changed");
+        if (task.status === "cancelled" || !Notification.isSupported()) return;
+        // Names the agent and project only: the brief and its output stay in the app.
+        const note = new Notification({
+          title: `${task.agentLabel} ${task.status === "completed" ? "finished" : "stopped"}`,
+          body: `${path.basename(task.project)} — open Earheart to see the result.`,
+        });
+        note.on("click", () => windows.openSettings({ section: "history" }));
+        note.show();
+      },
+    }),
+});
+
 function main() {
   app.whenReady().then(() => {
     // Open the log file and start capturing uncaught errors before anything
@@ -141,6 +179,7 @@ function main() {
       onHistoryCleared: () => pipeline.clearUndelivered(),
       onHistoryEntryDeleted: (id) => pipeline.clearUndelivered(id),
       retranscribe: (id) => pipeline.retranscribe(id),
+      agentApi,
       applyHotkeys,
       canCorrect: () => pipeline.getState() === "idle",
       canCopy: () => pipeline.getState() !== "processing",
@@ -303,6 +342,7 @@ function main() {
   });
 
   app.on("will-quit", () => {
+    agentApi.shutdown();
     hotkeys.unregisterAll();
     engines.stop();
     updates.dispose();

@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"6f1d2c0e-1111-4222-8333-444455556666","tools":[]}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{}}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Done: added the test."}]}}
+{"type":"result","subtype":"success","is_error":false,"result":"Done: added the test."}

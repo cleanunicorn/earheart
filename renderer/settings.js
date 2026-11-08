@@ -314,6 +314,10 @@ function populate() {
   $("appearance").value = current.appearance || "system";
 
   $("history-enabled").checked = current.history.enabled;
+  $("agents-enabled").checked = current.agents?.enabled === true;
+  $("agents-permission").value = current.agents?.permission === "read" ? "read" : "edit";
+  $("agents-codex-path").value = current.agents?.binaries?.codex || "";
+  $("agents-claude-path").value = current.agents?.binaries?.claude || "";
   $("recordings-keep").checked = current.recordings?.keep === true;
   $("recordings-days").value = current.recordings?.maxAgeDays ?? defaults.recordings.maxAgeDays;
   $("recordings-mb").value = current.recordings?.maxMegabytes ?? defaults.recordings.maxMegabytes;
@@ -441,6 +445,16 @@ function collect() {
     history: {
       ...current.history,
       enabled: $("history-enabled").checked,
+    },
+    // Send to agents (#345): off unless turned on; no full-access mode exists.
+    agents: {
+      ...current.agents,
+      enabled: $("agents-enabled").checked,
+      permission: $("agents-permission").value === "read" ? "read" : "edit",
+      binaries: {
+        codex: $("agents-codex-path").value.trim(),
+        claude: $("agents-claude-path").value.trim(),
+      },
     },
     // Kept recordings (#343). Main refuses `keep` without secure storage.
     recordings: {
@@ -1279,6 +1293,7 @@ async function saveSettings() {
     // Main turns "keep" back off without secure storage: show what was saved.
     $("recordings-keep").checked = current.recordings.keep === true;
     renderRecordingsStatus();
+    refreshAgents();
     // Older mains don't report a pause result; treat that as fine.
     pauseResult = result.pauseHotkey ?? { ok: true };
     discardResult = result.discardHotkey ?? { ok: true };
@@ -1620,6 +1635,7 @@ async function renderHistory() {
       } catch (err) { report(err.message); }
     });
     actions.append(correct);
+    if (agentState.enabled) actions.append(agentSendButton(item, li, report));
     if (item.cleaned && typeof item.raw === "string" && item.raw !== item.text) {
       const copyOriginal = historyCopyButton("Copy original", item.raw, report);
       copyOriginal.title = "Copy the transcript before cleanup";
@@ -1993,6 +2009,231 @@ earheart.on("history:changed", (change) => {
   renderRecordingsStatus();
 });
 
+/* ---------- agents (#345) ---------- */
+
+// Send a reviewed transcript to an installed coding agent and follow the task.
+// Everything here is built with textContent: briefs and agent output are the
+// user's words and an agent's, and may look like markup. Nothing is sent until
+// the user presses Send in the review form; the idempotency key below makes a
+// repeated press (or a replayed request) start one task, not two.
+let agentState = { enabled: false, agents: [], tasks: [], projects: [], permission: "edit" };
+let agentRequest = 0;
+const agentReplyDrafts = new Map(); // task id -> reply text kept across redraws
+let agentOpenReview = null; // { id, remove } — one review form at a time
+
+function agentNewKey() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function agentButton(label, onClick, title) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost";
+  button.textContent = label;
+  if (title) button.title = title;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+async function refreshAgents() {
+  const request = ++agentRequest;
+  let res;
+  try {
+    res = await earheart.invoke("agent:state");
+  } catch {
+    res = { ok: false };
+  }
+  if (request !== agentRequest) return;
+  const wasEnabled = agentState.enabled;
+  agentState = res?.ok ? { enabled: true, ...res } : { enabled: false, agents: [], tasks: [], projects: [], permission: "edit" };
+  $("agent-tasks").hidden = !agentState.enabled;
+  const detected = $("agents-detected");
+  detected.textContent = agentState.enabled
+    ? agentState.agents
+        .map((a) => `${a.label}: ${a.available ? `found${a.version ? ` (${a.version})` : ""}` : a.reason || "not found"}`)
+        .join(" · ")
+    : "";
+  renderAgentTasks();
+  if (wasEnabled !== agentState.enabled) renderHistory();
+}
+
+function agentStatusText(task) {
+  const base = { starting: "Starting…", running: "Running", completed: "Completed", failed: "Failed", cancelled: "Cancelled", interrupted: "Interrupted" }[task.status] || task.status;
+  return task.status === "running" && task.progress ? `${base} — ${task.progress}` : base;
+}
+
+function renderAgentTasks() {
+  const list = $("agent-task-list");
+  if (!agentState.enabled) { list.replaceChildren(); return; }
+  if (!agentState.tasks.length) {
+    const li = document.createElement("li");
+    li.className = "hint";
+    li.textContent = "No agent tasks yet.";
+    list.replaceChildren(li);
+    return;
+  }
+  list.replaceChildren(...agentState.tasks.map(agentTaskItem));
+}
+
+function agentTaskItem(task) {
+  const li = document.createElement("li");
+  li.dataset.id = task.id;
+  const title = document.createElement("div");
+  title.className = "agent-title";
+  title.textContent = `${task.agentLabel} · ${task.project}`;
+  const status = document.createElement("div");
+  status.className = `agent-status ${task.status}`;
+  status.setAttribute("role", "status");
+  status.textContent = `${agentStatusText(task)}${task.turns > 1 ? ` · ${task.turns} messages` : ""}${task.error ? ` — ${task.error}` : ""}`;
+  const brief = document.createElement("div");
+  brief.className = "agent-brief";
+  brief.textContent = task.brief;
+  li.append(title, status, brief);
+  if (task.output) {
+    const output = document.createElement("div");
+    output.className = "agent-output";
+    output.textContent = task.output;
+    li.append(output);
+  }
+  const feedback = document.createElement("span");
+  feedback.className = "status err";
+  feedback.setAttribute("role", "status");
+  const report = (message) => { feedback.textContent = message; };
+  const actions = document.createElement("div");
+  actions.className = "agent-row";
+  // Each action invokes a literal channel (the IPC contract test reads them).
+  const act = (call) => async () => {
+    report("");
+    try {
+      const res = await call();
+      if (!res?.ok) report(res?.error || "That didn't work.");
+    } catch (err) { report(err.message); }
+    refreshAgents();
+  };
+  const active = task.status === "starting" || task.status === "running";
+  if (active) actions.append(agentButton("Cancel", act(() => earheart.invoke("agent:cancel", task.id))));
+  if (task.resumeCommand) actions.append(agentButton("Copy resume command", act(() => earheart.invoke("agent:copy-resume", task.id)), "Copies a command that opens this session in the agent's own terminal UI"));
+  if (!active) actions.append(agentButton("Remove", act(() => earheart.invoke("agent:remove", task.id))));
+  li.append(actions);
+  if (!active && task.externalId) {
+    const row = document.createElement("div");
+    row.className = "agent-row";
+    const input = document.createElement("textarea");
+    input.rows = 2;
+    input.placeholder = "Reply to continue this task…";
+    input.setAttribute("aria-label", "Reply to this task");
+    input.value = agentReplyDrafts.get(task.id) || "";
+    input.addEventListener("input", () => agentReplyDrafts.set(task.id, input.value));
+    const send = agentButton("Send reply", async () => {
+      report("");
+      send.disabled = true; // one press, one reply
+      try {
+        const res = await earheart.invoke("agent:reply", { id: task.id, text: input.value });
+        if (res?.ok) agentReplyDrafts.delete(task.id);
+        else report(res?.error || "The reply wasn't sent."); // the text stays for a retry
+      } catch (err) { report(err.message); }
+      send.disabled = false;
+      refreshAgents();
+    });
+    row.append(input, send);
+    li.append(row);
+  }
+  li.append(feedback);
+  return li;
+}
+
+earheart.on("agent:changed", () => refreshAgents());
+
+function agentSendButton(item, li, report) {
+  return agentButton("Send to agent…", () => openAgentReview(item, li, report));
+}
+
+function openAgentReview(item, li, report) {
+  if (agentOpenReview) agentOpenReview.remove();
+  const usable = agentState.agents.filter((a) => a.available);
+  const form = document.createElement("div");
+  form.className = "agent-review";
+  const close = () => { form.remove(); if (agentOpenReview?.form === form) agentOpenReview = null; };
+  agentOpenReview = { form, remove: close };
+  if (!usable.length) {
+    const none = document.createElement("p");
+    none.className = "hint";
+    none.textContent = "No supported agent was found. Install Codex or Claude Code, or set its path above.";
+    form.append(none, agentButton("Close", close));
+    li.append(form);
+    return;
+  }
+  const brief = document.createElement("textarea");
+  brief.value = item.text;
+  brief.setAttribute("aria-label", "Brief to send — review and edit it");
+  const agentSelect = document.createElement("select");
+  agentSelect.setAttribute("aria-label", "Agent");
+  for (const a of usable) agentSelect.append(new Option(a.label, a.id));
+  const modelSelect = document.createElement("select");
+  modelSelect.setAttribute("aria-label", "Model");
+  const syncModels = () => {
+    const models = usable.find((a) => a.id === agentSelect.value)?.models || [];
+    modelSelect.replaceChildren(new Option("Agent's default model", ""), ...models.map((m) => new Option(m, m)));
+    modelSelect.hidden = !models.length; // shown only where the agent supports a choice
+  };
+  agentSelect.addEventListener("change", syncModels);
+  syncModels();
+  const projectSelect = document.createElement("select");
+  projectSelect.setAttribute("aria-label", "Project folder");
+  projectSelect.append(new Option("Choose a project folder…", ""));
+  for (const p of agentState.projects) projectSelect.append(new Option(p, p));
+  const choose = agentButton("Browse…", async () => {
+    const res = await earheart.invoke("agent:pick-project");
+    if (res?.ok && res.path) {
+      if (![...projectSelect.options].some((o) => o.value === res.path)) projectSelect.append(new Option(res.path, res.path));
+      projectSelect.value = res.path;
+    } else if (res && !res.ok) feedback.textContent = res.error;
+  });
+  const disclosure = document.createElement("p");
+  disclosure.className = "hint";
+  disclosure.textContent = "This brief goes to the agent and its provider, which may process it off-device. Nothing is sent until you press Send.";
+  const feedback = document.createElement("span");
+  feedback.className = "status err";
+  feedback.setAttribute("role", "status");
+  const key = agentNewKey(); // one review, one send
+  let sent = false;
+  const send = agentButton("Send", async () => {
+    feedback.textContent = "";
+    if (sent) return;
+    if (!projectSelect.value) { feedback.textContent = "Choose a project folder first."; return; }
+    sent = true;
+    send.disabled = true;
+    let res;
+    try {
+      res = await earheart.invoke("agent:send", {
+        key, agent: agentSelect.value, model: modelSelect.value, project: projectSelect.value,
+        brief: brief.value, historyId: item.id,
+      });
+    } catch (err) { res = { ok: false, error: err.message }; }
+    if (res?.ok) {
+      close();
+      report("");
+      refreshAgents();
+      return;
+    }
+    // A refusal keeps the form and the brief; the same key is safe to retry.
+    sent = false;
+    send.disabled = false;
+    feedback.textContent = res?.error || "The brief wasn't sent.";
+  });
+  send.className = "";
+  const row = document.createElement("div");
+  row.className = "agent-row";
+  row.append(agentSelect, modelSelect, projectSelect, choose);
+  const buttons = document.createElement("div");
+  buttons.className = "agent-row";
+  buttons.append(send, agentButton("Cancel", close), feedback);
+  form.append(brief, row, disclosure, buttons);
+  li.append(form);
+  brief.focus();
+}
+
 /* ---------- setup wizard ---------- */
 
 $("open-wizard").addEventListener("click", () => {
@@ -2268,6 +2509,7 @@ earheart.on("updates:state", renderUpdateState);
   });
   settingsChangesReady();
   renderHistory();
+  refreshAgents();
   loadMicrophones();
   refreshDuckStatus();
   // The line says what is happening now (lowered, skipped, failed), which

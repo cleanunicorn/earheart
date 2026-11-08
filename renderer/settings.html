@@ -662,6 +662,42 @@
           </div>
           <p id="recordings-status" class="status err" role="status" hidden></p>
         </div>
+        <div class="card" id="agents-card">
+          <label class="toggle">
+            <span class="toggle-text">
+              <span class="t">Send transcripts to coding agents</span>
+              <span class="d">Adds a “Send to agent…” button to each History entry, to review a brief and start a task in Codex or Claude Code in a project you pick. Nothing is sent without that review. Save to apply.</span>
+            </span>
+            <input type="checkbox" id="agents-enabled" class="switch" role="switch" />
+          </label>
+          <p class="hint">Your speech is still recognised on this computer, but the brief you send goes to the agent, and the agent’s provider processes it off-device under that agent’s own terms and sign-in. Ordinary dictation is unaffected.</p>
+          <div id="agents-options">
+            <div class="field">
+              <label for="agents-permission">What an agent may do</label>
+              <select id="agents-permission">
+                <option value="edit">Edit files in the project (sandboxed)</option>
+                <option value="read">Read only</option>
+              </select>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="agents-codex-path">Codex path (optional)</label>
+                <input id="agents-codex-path" type="text" placeholder="Found on PATH" autocomplete="off" spellcheck="false" />
+              </div>
+              <div class="field">
+                <label for="agents-claude-path">Claude Code path (optional)</label>
+                <input id="agents-claude-path" type="text" placeholder="Found on PATH" autocomplete="off" spellcheck="false" />
+              </div>
+            </div>
+            <p id="agents-detected" class="hint" role="status"></p>
+          </div>
+        </div>
+        <div id="agent-tasks" hidden>
+          <div class="row space-between history-head">
+            <h3 class="subhead">Agent tasks</h3>
+          </div>
+          <ul id="agent-task-list"></ul>
+        </div>
         <div class="row space-between history-head">
           <span class="muted">Recent transcriptions</span>
           <button id="history-clear" class="ghost danger">Clear history</button>

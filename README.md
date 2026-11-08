@@ -71,6 +71,12 @@ Earheart works with any agent you can type into — no integration, plugin, API
 key, or account required. It pastes into the focused window and leaves the
 prompt for you to review and submit.
 
+If you want Earheart to start the task itself, opt in under Settings → History:
+review a transcript, pick a project, and send it to an installed Codex or
+Claude Code, then follow, cancel or reply to it. See
+[docs/agent-tasks.md](docs/agent-tasks.md). The brief then goes to that
+agent's provider, so it is off by default.
+
 ### Quick start for agents
 
 1. [Install Earheart](#install) and finish the first-run wizard.
@@ -712,6 +718,10 @@ checksum-verified. Only add models from repos you trust.
 - A settings file damaged by a crash or a bad hand-edit is kept as
   `settings.json.corrupt-<timestamp>` next to the fresh one, so nothing is
   silently thrown away.
+- If you turn on "Send transcripts to coding agents", the briefs you
+  explicitly send go to the Codex or Claude Code you chose, and its provider
+  processes them. Tasks are kept in `agent-tasks.json` (user-only) and are
+  deleted with Clear history.
 - No telemetry, no accounts, no cloud.
 
 ## Star history

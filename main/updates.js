@@ -276,10 +276,13 @@ function dispose() {
   if (downloadController) downloadController.abort();
 }
 
+// Return the authoritative outcome even when the check catches a transport
+// error or an in-progress update prevents a new check. Manual callers present
+// this snapshot where the user asked, without opening another window.
 async function check({ manual = false } = {}) {
   // "ready" is also off-limits: a background poll must not clobber an update
   // that's downloaded and waiting for the user to restart.
-  if (["checking", "downloading", "ready", "installing"].includes(state.status)) return;
+  if (["checking", "downloading", "ready", "installing"].includes(state.status)) return getState();
   setState({ status: "checking", error: null });
   try {
     const url = `${feedBase().replace(/\/$/, "")}/${feed.feedFileFor(process.platform, process.arch)}`;
@@ -287,14 +290,14 @@ async function check({ manual = false } = {}) {
     if (feed.compareVersions(info.version, state.current) <= 0) {
       pendingInfo = null;
       setState({ status: "idle", latest: null, progress: null, notes: [] });
-      return;
+      return getState();
     }
     const skipped = settings.get().updates.skippedVersion;
     if (!manual && skipped && feed.compareVersions(info.version, skipped) === 0) {
       logger.info(`update ${info.version} available but skipped by user`);
       pendingInfo = null;
       setState({ status: "idle", latest: null, notes: [] });
-      return;
+      return getState();
     }
     pendingInfo = info;
     // Fetched before the state lands so the prompt and Settings can say what
@@ -305,7 +308,7 @@ async function check({ manual = false } = {}) {
     // A manual check is answered where it was asked (Settings shows the update
     // inline) — no toast, and no card popping up over the window the user is
     // already looking at.
-    if (manual) return;
+    if (manual) return getState();
     if (notifiedVersion !== info.version) {
       notifiedVersion = info.version;
       notifyAvailable(info.version);
@@ -319,6 +322,7 @@ async function check({ manual = false } = {}) {
     if (manual) setState({ status: "error", error: err.message });
     else setState({ status: "idle" });
   }
+  return getState();
 }
 
 /**

@@ -20,7 +20,11 @@ same window forward.
 Navigation opens General, Live preview, Speech-to-text, Cleanup, History or
 Advanced in the existing Settings window, preserving unsaved fields. Actions
 reuse Copy last transcription, Correct last transcription, Check for updates
-and Open error log. Copy includes a newer undelivered transcript even when
+and Open error log. Check for updates keeps Commands open with the actual
+result: up to date, an available version, in-progress status, or the check's
+error. Close it before opening Settings → General to download or install. If
+you switch apps while checking, completion closes Commands without restoring
+the former caller. Copy includes a newer undelivered transcript even when
 History is disabled, respects Deliver as one line and settles pending
 clipboard restoration. Copy never pastes into another app.
 
@@ -56,7 +60,8 @@ the overlay gets no new Settings or History capabilities.
 
 `make test` covers dispatch, sender rejection, loading/busy/retry races,
 fixed commands, deletion, duplicate activation, every hotkey collision and
-save rollback. `make settings-smoke` drives the real palette with Chromium
+save rollback. Real-updater regressions cover offline, up-to-date and available
+results; all update states are covered after an app switch. `make settings-smoke` drives the real palette with Chromium
 keyboard events and checks focus, selected History cards, unsaved edits,
 markup-shaped text, delayed search replies and both themes. `make screenshots`
 regenerates the illustrations from an isolated demo profile.
@@ -68,3 +73,21 @@ dictation reaches the selected editor once. Headless Chromium tests do not
 prove OS foreground restoration or paste delivery. These native environments
 remain unverified by this implementation session; three-platform PR CI also
 runs after the build step.
+
+### Native acceptance availability (2026-11-08)
+
+The Build host is Linux with no active desktop session (`DISPLAY`,
+`WAYLAND_DISPLAY` and `XDG_SESSION_TYPE` are unset; no Xorg, Xwayland or
+Wayland compositor process is running). Xvfb supplies the automated smoke
+checks, without a desktop window manager or an external editor target.
+
+| Environment | Native editor focus and delivery evidence |
+| --- | --- |
+| macOS | Unavailable on this Linux host; not verified. |
+| Windows | Unavailable on this Linux host; not verified. |
+| Linux X11 desktop | No active desktop session; Xvfb smoke is not native acceptance. |
+| Linux Wayland desktop | No active compositor/session; not verified. |
+
+Native acceptance remains pending. The unavailable environments require a
+maintainer decision or access to test hosts before release readiness can be
+claimed; passing automated checks alone does not resolve this gate.

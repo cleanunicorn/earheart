@@ -150,3 +150,18 @@ test("an action failing after blur releases its reservation without restoring fo
   assert.equal(f.palette.isOpen(), false);
   assert.deepEqual(f.restored, []);
 });
+
+for (const status of ["idle", "available", "checking", "downloading", "ready", "installing", "error"]) {
+  test(`update outcome after an app switch cannot reclaim focus: ${status}`, async () => {
+    const f = fixture(); f.palette.open(); await f.loaded();
+    let finish;
+    f.actions.checkUpdates = () => new Promise(resolve => { finish = resolve; });
+    const pending = f.palette.execute(f.win.webContents, { id: "updates" });
+    f.win.emit("blur");
+    finish({ status, latest: "99.0.0", error: "offline" });
+    if (status === "error") await assert.rejects(pending, /offline/);
+    else assert.equal((await pending).ok, true);
+    assert.equal(f.palette.isOpen(), false);
+    assert.deepEqual(f.restored, []);
+  });
+}

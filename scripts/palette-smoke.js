@@ -15,7 +15,7 @@ async function checkPalette({ waitFor, check, invokeHandlers }) {
     actions: { lastTranscript: () => "recoverable", copyLast: async () => { copies++; }, correctLast: () => windows.openCorrection(history.list()[0]), checkUpdates: () => checkUpdates(), openLog: async () => ({ ok: true }) },
   });
   palette.install(ipcMain);
-  const form = windows.openSettings();
+  let form = windows.openSettings();
   if (form.webContents.isLoadingMainFrame()) await waitForLoad(form.webContents);
   const formRun = code => form.webContents.executeJavaScript(code, true);
   const run = code => win.webContents.executeJavaScript(code, true);
@@ -71,6 +71,28 @@ async function checkPalette({ waitFor, check, invokeHandlers }) {
     await waitFor(() => Promise.resolve(!palette.isOpen()), "copy did not close Commands");
     check("repeated Enter executes one copy", copies === 1);
 
+    // Manual update checks answer in Commands, including when Settings is
+    // closed. Real-updater transport/state coverage lives in updates-init.test.
+    windows.closeSettings();
+    await waitFor(() => Promise.resolve(form.isDestroyed()), "Settings did not close before update check");
+    for (const outcome of [
+      { status: "idle" },
+      { status: "available", latest: "99.0.0" },
+      { status: "error", error: '<img src=x onerror="window.injected=true"> offline' },
+    ]) {
+      checkUpdates = async () => outcome;
+      palette.open(); await opened(); await search("Check for updates");
+      await waitFor(() => run('document.querySelector("[role=option]").textContent === "Check for updates"'), "update command missing");
+      key(win, "Enter");
+      const expected = outcome.status === "idle" ? "up to date" : outcome.status === "available" ? "99.0.0" : "offline";
+      await waitFor(() => run(`status.textContent.includes(${JSON.stringify(expected)}) && document.activeElement.id === "close"`), "update outcome not presented");
+      check(`Commands visibly answers an update check: ${outcome.status}`, palette.isOpen() && await run('!document.querySelector("img") && !window.injected && search.disabled'));
+      key(win, "Escape");
+      await waitFor(() => Promise.resolve(!palette.isOpen()), "update answer did not close");
+    }
+    form = windows.openSettings();
+    if (form.webContents.isLoadingMainFrame()) await waitForLoad(form.webContents);
+
     // Switch to another real Electron window while an action is pending.
     // Completion must not restore Settings over that newly chosen window.
     let finishUpdate;
@@ -85,7 +107,7 @@ async function checkPalette({ waitFor, check, invokeHandlers }) {
     if (other.webContents.isLoadingMainFrame()) await waitForLoad(other.webContents);
     other.focus();
     await waitFor(() => Promise.resolve(other.isFocused() && !win.isFocused()), "pending Commands did not lose focus");
-    finishUpdate();
+    finishUpdate({ status: "available", latest: "99.0.0" });
     await waitFor(() => Promise.resolve(!palette.isOpen()), "completed update did not close Commands");
     check("a delayed command preserves the newly focused window", restores === restoresBeforeBlur && other.isFocused());
     windows.closeCorrection();

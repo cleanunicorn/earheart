@@ -55,6 +55,10 @@ async function activate() {
   try {
     const response = await earheart.invoke("palette:execute", { id: item.id, entryId: item.entryId, query: search.value });
     if (!response.ok) throw new Error(response.error);
+    if (response.message) {
+      status.textContent = response.message;
+      document.getElementById("close").focus();
+    }
   } catch (error) {
     status.textContent = `${error.message} Close Commands and reopen to retry.`;
     document.getElementById("close").focus();

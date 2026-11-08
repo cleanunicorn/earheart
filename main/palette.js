@@ -94,6 +94,20 @@ function createPalette({ windows, pipeline, history, settings, actions }) {
     current.dispatching = true;
     try {
       const result = await run();
+      // The updater catches transport failures and returns its state. Manual
+      // Commands checks have no Settings window to present that state for us.
+      if (request.id === "updates" && result?.status) {
+        if (result.status === "error") throw new Error(result.error || "The update check failed.");
+        const messages = {
+          idle: "Earheart is up to date.",
+          available: `Earheart ${result.latest} is available. Open Settings → General to update.`,
+          ready: "An update is ready. Open Settings → General to restart and install.",
+          checking: "An update check is already running. Open Settings → General for its result.",
+          downloading: "An update is downloading. Open Settings → General for progress.",
+          installing: "An update is installing.",
+        };
+        return { ok: true, message: messages[result.status] || "Open Settings → General for update status." };
+      }
       if (result?.ok === false) throw new Error(result.error || "The command failed.");
       if (session === current) close(!nav && ["copy", "updates"].includes(request.id));
       return { ok: true };

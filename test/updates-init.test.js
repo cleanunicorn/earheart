@@ -25,7 +25,7 @@ function feedWith(latest) {
   };
 }
 
-function loadUpdates(t, { stored, latest = "0.0.1" } = {}) {
+function loadUpdates(t, { stored, latest = "0.0.1", fetchText = async () => "" } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-updates-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const userData = path.join(root, "userData");
@@ -56,7 +56,7 @@ function loadUpdates(t, { stored, latest = "0.0.1" } = {}) {
     },
     [resolveFrom("./services/update-feed")]: feedWith(latest),
     [resolveFrom("./pipeline")]: { onStateChange() {}, getState: () => "idle" },
-    [resolveFrom("./services/update-fetch")]: { fetchUpdateText: async () => "" },
+    [resolveFrom("./services/update-fetch")]: { fetchUpdateText: fetchText },
     [resolveFrom("./util/mac-signature")]: { ensureMacSignature() {} },
     [resolveFrom("./engines/registry")]: {
       DEFAULT_STT_MODEL: "stt-default",
@@ -181,3 +181,46 @@ test("skipVersion with nothing on offer leaves the file alone", (t) => {
 
   assert.deepStrictEqual(readFile(), before);
 });
+
+// Exercise the real updater, whose manual check catches transport errors rather
+// than rejecting. Commands must keep its only visible answer on screen.
+for (const outcome of ["offline", "current", "available"]) {
+  test(`Commands presents the actual manual update outcome: ${outcome}`, async (t) => {
+    const { EventEmitter } = require("node:events");
+    const { createPalette } = require("../main/palette");
+    const { updates } = loadUpdates(t, {
+      latest: outcome === "available" ? "0.36.0" : "0.35.1",
+      fetchText: async () => {
+        if (outcome === "offline") throw new Error("offline repro");
+        return "";
+      },
+    });
+    updates.init({});
+    const win = new EventEmitter();
+    win.webContents = new EventEmitter();
+    win.isDestroyed = () => false;
+    win.show = win.focus = () => {};
+    win.destroy = () => win.emit("closed");
+    let restores = 0;
+    const palette = createPalette({
+      windows: { createPaletteWindow: () => win, loadPalette: async () => {}, restorePaletteCaller: () => restores++ },
+      pipeline: { isPaletteIdle: () => true },
+      actions: { checkUpdates: () => updates.check({ manual: true }) },
+    });
+    t.after(() => palette.close());
+    palette.open();
+    await new Promise(resolve => setImmediate(resolve));
+    if (outcome === "offline") {
+      await assert.rejects(palette.execute(win.webContents, { id: "updates" }), /offline repro/);
+      assert.strictEqual(updates.getState().status, "error");
+    } else {
+      const result = await palette.execute(win.webContents, { id: "updates" });
+      assert.strictEqual(result.ok, true);
+      assert.match(result.message, outcome === "current" ? /up to date/i : /0\.36\.0.*Settings/i);
+      assert.strictEqual(updates.getState().status, outcome === "current" ? "idle" : "available");
+    }
+    assert.strictEqual(palette.isOpen(), true, "keep the result visible until Close");
+    assert.strictEqual(restores, 0);
+    await assert.rejects(palette.execute(win.webContents, { id: "updates" }), /already/);
+  });
+}

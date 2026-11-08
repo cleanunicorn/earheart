@@ -1,7 +1,7 @@
 // Earheart entry point: app lifecycle, single-instance handling, and wiring
 // between the hotkey, tray, windows and the dictation pipeline.
 
-const { app, session, Notification, powerMonitor } = require("electron");
+const { app, session, Notification, powerMonitor, ipcMain } = require("electron");
 const settings = require("./settings");
 const history = require("./history");
 const recordings = require("./recordings");
@@ -17,6 +17,7 @@ const engines = require("./engines");
 const autostart = require("./autostart");
 const updates = require("./updates");
 const ducking = require("./ducking");
+const micProbe = require("./mic-probe");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { createHost, LOADCHECK_TIMEOUT_MS } = require("./engines/host");
@@ -135,6 +136,8 @@ function main() {
     // Lower other apps' playback while the microphone is capturing (opt-in);
     // settles a lowering a crash left behind first.
     ducking.init();
+    // Which inputs are Bluetooth/virtual (#339), cached; never blocks a take.
+    micProbe.init(ipcMain);
     pipeline.onCaptureChange((live) => ducking.setCapturing("dictation", live));
     ipc.init({
       onCleanupDownloaded: pipeline.onCleanupDownloaded,

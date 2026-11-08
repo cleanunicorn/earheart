@@ -116,6 +116,23 @@
           </select>
           <p class="hint" id="mic-hint"></p>
         </div>
+        <!-- Same settings as Settings → General → Microphone (audio.micMode,
+             micIncludeBluetooth, micIncludeVirtual). -->
+        <div class="field">
+          <label class="choice">
+            <input type="checkbox" id="mic-auto" />
+            Choose automatically
+          </label>
+          <label class="choice">
+            <input type="checkbox" id="mic-bluetooth" />
+            Allow Bluetooth microphones
+          </label>
+          <label class="choice">
+            <input type="checkbox" id="mic-virtual" />
+            Allow virtual microphones
+          </label>
+          <p class="hint">Automatic uses the system default when it is allowed, otherwise another allowed microphone, and falls back to the system default if none is.</p>
+        </div>
         <!-- The same two settings as Settings → General → Background audio
              (audio.duckOtherAudio / audio.duckLevelPercent), off unless chosen. -->
         <div class="field">
@@ -275,6 +292,7 @@
     <script src="settings-sync.js"></script>
     <script src="model-progress.js"></script>
     <script src="ducking-status.js"></script>
+    <script src="mic-policy.js"></script>
     <script src="wizard.js"></script>
   </body>
 </html>

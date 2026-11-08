@@ -419,6 +419,11 @@ function microphonePage(source, page) {
     // Background audio: chosen on in this form, at a level other than the
     // default, so the save proves both fields are read from the form.
     "duck-other-audio": { checked: true },
+    // Automatic microphone selection (#339), as the user left the form.
+    "mic-mode": { value: "auto" },
+    "mic-auto": { checked: true },
+    "mic-bluetooth": { checked: false },
+    "mic-virtual": { checked: true },
     "duck-level": { value: "35", ...inputRange("duck-level", page === "wizard" ? wizardHtml : html) },
     "finish-status": { textContent: "", className: "" },
   };
@@ -534,6 +539,17 @@ for (const [page, source] of [["settings", js], ["wizard", wizardJs]]) {
       assert.strictEqual(result.saved.cleanup.style, "verbatim");
       assert.strictEqual(result.saved.hotkey, "CommandOrControl+Shift+Space");
     }
+  });
+
+  // #339: enumeration only reports devices; it never writes the auto-selection
+  // controls, and the saved explicit device survives while auto is on.
+  test(`${page} saves the automatic-selection choices made while enumeration ran, keeping the saved device`, async () => {
+    const fixture = microphonePage(source, page);
+    const result = await fixture.reproduce();
+    assert.strictEqual(result.saved.audio.micMode, "auto");
+    assert.strictEqual(result.saved.audio.micIncludeBluetooth, false);
+    assert.strictEqual(result.saved.audio.micIncludeVirtual, true);
+    assert.strictEqual(result.saved.audio.deviceId, "saved-id");
   });
 
   test(`${page} restores the saved microphone when the user leaves it untouched`, async () => {

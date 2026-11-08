@@ -173,6 +173,7 @@ async function loadMain(
       stop: () => events.push("engines.stop"),
     },
     "./autostart": { apply: () => events.push("autostart.apply") },
+    "./mic-probe": { init: () => events.push("micProbe.init") },
     "./ducking": {
       init: () => events.push("ducking.init"),
       setCapturing: (owner, live) => events.push(`ducking.capture:${owner}:${live}`),

@@ -167,6 +167,11 @@ label, and opinions are welcome.
   short tone once the microphone is really capturing, another when you stop, and
   a low one if the microphone fails. Speak after the start tone: it is kept out
   of the recording. Off by default. See [docs/record-sounds.md](docs/record-sounds.md).
+- **Automatic microphone choice.** Settings → General → Microphone can pick for
+  you, with Bluetooth and virtual devices allowed or not, and falls back to the
+  system default (and says so) when nothing allowed is plugged in. A microphone
+  lost mid-dictation is replaced without losing what you already said. Your
+  saved microphone is kept. See [docs/microphone-selection.md](docs/microphone-selection.md).
 - **Private by default** — speech and cleanup run in-process, with no account,
   telemetry, cloud requirement, or network hop.
 - **Works anywhere without an integration** — the global hotkey (default

@@ -59,6 +59,7 @@ test("overlay.html loads every sibling script overlay.js calls into", () => {
   for (const { file, fn } of [
     { file: "chunk-boundary.js", fn: "quietestOffset" },
     { file: "microphone.js", fn: "microphoneConstraints" },
+    { file: "mic-policy.js", fn: "resolveMicrophone" },
     { file: "record-cues.js", fn: "cueStep" },
     { file: "record-cues.js", fn: "ingestPost" },
     { file: "transcript.js", fn: "reconcileTranscript" },

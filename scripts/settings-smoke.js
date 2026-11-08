@@ -1932,7 +1932,7 @@ app.whenReady().then(async () => {
       { kind: "audioinput", deviceId: ALT_MIC, label: "Desk Mic" },
       { kind: "videoinput", deviceId: "camera", label: "Camera" },
     ];
-    async function micRace({ hold, choose, reject = false, save = false, seedAlt = false }) {
+    async function micRace({ hold, choose, reject = false, save = false, seedAlt = false, auto = false }) {
       settings.save({ ...settings.get(), audio: { ...settings.get().audio, deviceId: SAVED_MIC } });
       const raceWin = windows.openSettings();
       await waitForLoad(raceWin.webContents);
@@ -1982,6 +1982,17 @@ app.whenReady().then(async () => {
             select.dispatchEvent(new Event("change", { bubbles: true }));
           })()`);
         }
+        if (auto) {
+          // Automatic selection chosen while the enumeration is pending (#339).
+          await run(`(() => {
+            const mode = document.getElementById("mic-mode");
+            mode.value = "auto";
+            mode.dispatchEvent(new Event("change", { bubbles: true }));
+            const bt = document.getElementById("mic-bluetooth");
+            bt.checked = false;
+            bt.dispatchEvent(new Event("change", { bubbles: true }));
+          })()`);
+        }
         if (hold === "permission") {
           await run(reject
             ? `window.__micProbe.permission.reject(new DOMException("denied", "NotAllowedError"))`
@@ -2002,6 +2013,9 @@ app.whenReady().then(async () => {
             status: document.getElementById("mic-device-status").textContent,
             stopped: window.__micProbe.stopped,
             error: window.__micProbe.error,
+            mode: document.getElementById("mic-mode").value,
+            bluetooth: document.getElementById("mic-bluetooth").checked,
+            optionsHidden: document.getElementById("mic-auto-options").hidden,
           });
           delete navigator.mediaDevices.getUserMedia;
           delete navigator.mediaDevices.enumerateDevices;
@@ -2010,9 +2024,9 @@ app.whenReady().then(async () => {
         if (save) {
           await run(`document.getElementById("save").click()`);
           await savedThenClose(raceWin, "Save never reported Saved");
-          state.persisted = JSON.parse(
-            fs.readFileSync(path.join(userData, "settings.json"), "utf8")
-          ).audio.deviceId;
+          const savedAudio = JSON.parse(fs.readFileSync(path.join(userData, "settings.json"), "utf8")).audio;
+          state.persisted = savedAudio.deviceId;
+          state.persistedAudio = savedAudio;
         }
         return state;
       } finally {
@@ -2062,6 +2076,17 @@ app.whenReady().then(async () => {
       "an untouched saved microphone stays selected with its refreshed label",
       untouched.value === SAVED_MIC && refreshed(untouched) && untouched.status === "",
       JSON.stringify(untouched)
+    );
+    const autoDuring = await micRace({ hold: "enumerate", auto: true, save: true });
+    check(
+      "automatic selection chosen while enumeration is pending survives it and Save writes it, keeping the saved device",
+      autoDuring.mode === "auto" &&
+        autoDuring.bluetooth === false &&
+        autoDuring.optionsHidden === false &&
+        autoDuring.persistedAudio?.micMode === "auto" &&
+        autoDuring.persistedAudio?.micIncludeBluetooth === false &&
+        autoDuring.persisted === SAVED_MIC,
+      JSON.stringify(autoDuring)
     );
     const denied = await micRace({ hold: "permission", choose: "", reject: true });
     check(

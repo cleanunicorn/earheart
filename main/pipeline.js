@@ -655,6 +655,13 @@ function startRecording() {
     windows.sendToOverlay("record:start", {
       sid,
       deviceId: cfg.audio.deviceId,
+      // Automatic selection (#339): resolved in the overlay, which can see
+      // the devices; "manual" is the saved deviceId above, as ever.
+      mic: {
+        mode: cfg.audio.micMode,
+        includeBluetooth: cfg.audio.micIncludeBluetooth,
+        includeVirtual: cfg.audio.micIncludeVirtual,
+      },
       maxSeconds: cfg.audio.maxRecordingSeconds,
       // Start/stop/error cues (#341), read per take like the cap; null = off.
       sounds: cfg.audio.recordSounds

@@ -525,3 +525,34 @@ test("a saved light or dark appearance survives a restart (#348)", (t) => {
     assert.strictEqual(loadSettings(dir).get().appearance, value, "read back by a fresh load");
   }
 });
+
+test("automatic microphone selection defaults to manual and old files load with the new keys (#339)", (t) => {
+  const dir = makeSettingsDir(t);
+  // A settings file from before #339: audio has no mic* keys at all.
+  fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ audio: { deviceId: "usb-1", maxRecordingSeconds: 300 } }));
+  const audio = loadSettings(dir).get().audio;
+  assert.strictEqual(audio.micMode, "manual");
+  assert.strictEqual(audio.micIncludeBluetooth, true);
+  assert.strictEqual(audio.micIncludeVirtual, true);
+  assert.strictEqual(audio.deviceId, "usb-1");
+});
+
+test("switching manual → auto → manual keeps the saved microphone; junk values normalize (#339)", (t) => {
+  const dir = makeSettingsDir(t);
+  const settings = loadSettings(dir);
+  const withAudio = (patch) => ({ ...settings.get(), audio: { ...settings.get().audio, ...patch } });
+  settings.save(withAudio({ deviceId: "usb-1" }));
+  settings.save(withAudio({ micMode: "auto", micIncludeBluetooth: false, micIncludeVirtual: false }));
+  let audio = settings.get().audio;
+  assert.deepStrictEqual([audio.micMode, audio.micIncludeBluetooth, audio.micIncludeVirtual, audio.deviceId], ["auto", false, false, "usb-1"]);
+  settings.save(withAudio({ micMode: "manual" }));
+  assert.strictEqual(settings.get().audio.deviceId, "usb-1");
+  // The file on disk round-trips through a fresh load.
+  settings.save(withAudio({ micMode: "auto" }));
+  audio = loadSettings(dir).get().audio;
+  assert.deepStrictEqual([audio.micMode, audio.micIncludeBluetooth, audio.deviceId], ["auto", false, "usb-1"]);
+  // A hand-edited file with nonsense falls back to the defaults.
+  fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ audio: { micMode: "robot", micIncludeBluetooth: "no", micIncludeVirtual: 3 } }));
+  audio = loadSettings(dir).get().audio;
+  assert.deepStrictEqual([audio.micMode, audio.micIncludeBluetooth, audio.micIncludeVirtual], ["manual", true, true]);
+});

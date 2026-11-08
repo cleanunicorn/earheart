@@ -71,6 +71,7 @@ const DEFAULTS = {
   discardHotkey: "",
   // Open the last saved transcript for explicit spelling corrections.
   correctHotkey: "",
+  paletteHotkey: "CommandOrControl+Shift+K",
   // Launch Earheart automatically at login (it lands in the tray, ready for
   // the hotkey). Pushed to the OS by main/autostart.js — a native login item
   // on Windows/macOS, an XDG autostart .desktop file on Linux — on save, and

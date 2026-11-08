@@ -534,3 +534,23 @@ test("settings save keeps a rejected correction hotkey off disk but in the reply
   assert.strictEqual(reply.settings.correctHotkey, attempt.correctHotkey);
   assert.strictEqual(reply.correctHotkey.error, "correction rejected");
 });
+
+test("rejected palette shortcut stays off disk and reports beside its attempted value", () => {
+  const previous = { ...working, paletteHotkey: "Control+Shift+K" };
+  const attempted = submitted({ paletteHotkey: working.hotkey });
+  const { handlers, calls } = loadIpcHandlers({ previous, hotkeyResults: {
+    hotkey: { ok: true }, pauseHotkey: { ok: true }, paletteHotkey: { ok: false, error: "already used by record" },
+  } });
+  const reply = handlers["settings:save"]({}, request(attempted));
+  assert.equal(calls.saved[0].paletteHotkey, previous.paletteHotkey);
+  assert.equal(reply.settings.paletteHotkey, attempted.paletteHotkey);
+  assert.equal(reply.paletteHotkey.ok, false);
+});
+test("palette shortcut is restored when saving settings fails", () => {
+  const previous = { ...working, paletteHotkey: "Control+Shift+K" };
+  const { handlers, calls } = loadIpcHandlers({ previous, saveError: new Error("read-only"), hotkeyResults: {
+    hotkey: { ok: true }, pauseHotkey: { ok: true }, paletteHotkey: { ok: true },
+  } });
+  assert.throws(() => handlers["settings:save"]({}, request(submitted({ paletteHotkey: "Control+Alt+K" }))), /read-only/);
+  assert.equal(calls.applied.at(-1).paletteHotkey, previous.paletteHotkey);
+});

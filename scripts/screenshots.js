@@ -5,7 +5,7 @@
 //
 // (or: xvfb-run -a npx electron scripts/screenshots.js --no-sandbox)
 
-const { app, session, nativeTheme } = require("electron");
+const { app, session, nativeTheme, ipcMain } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const { isolateProfile, assertIsolated } = require("./demo-profile");
@@ -79,6 +79,20 @@ async function shootCorrection(name) {
   correction.close();
 }
 
+let paletteController;
+let paletteWindow;
+async function shootPalette(name) {
+  paletteController.open();
+  await waitForLoad(paletteWindow.webContents);
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (await paletteWindow.webContents.executeJavaScript('document.querySelectorAll("[role=option]").length > 0')) break;
+    if (attempt === 99) throw new Error("Commands did not initialize");
+    await sleep(25);
+  }
+  await shot(paletteWindow, name);
+  paletteController.close();
+}
+
 async function main() {
   assertIsolated(app, profile);
   // The README's shots are the dark palette whatever this desktop prefers;
@@ -101,6 +115,13 @@ async function main() {
     applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
     onSettingsChanged: () => {},
   });
+
+  paletteController = require("../main/palette").createPalette({
+    windows: { ...windows, createPaletteWindow: () => { paletteWindow = windows.createPaletteWindow(); return paletteWindow; } },
+    pipeline: { isPaletteIdle: () => true }, history: require("../main/history"), settings: require("../main/settings"),
+    actions: { lastTranscript: () => null, copyLast() {}, correctLast() {}, checkUpdates() {}, openLog() {} },
+  });
+  paletteController.install(ipcMain);
 
   // Setup wizard, welcome step (the demo animation needs a beat to settle).
   const wizard = windows.openWizard();
@@ -140,6 +161,7 @@ async function main() {
 
   // Correction: synthetic transcript, no dictionary/history writes.
   await shootCorrection("correction");
+  await shootPalette("palette-dark");
 
   // Overlay: staged recording and done states. setStatus/waveHistory/
   // drawMeter/timerEl are top-level bindings in overlay.js, reachable from
@@ -235,6 +257,7 @@ async function main() {
   lightSettings.close();
 
   await shootCorrection("correction-light");
+  await shootPalette("palette-light");
 
   const lightOverlay = windows.createOverlay();
   await waitForLoad(lightOverlay.webContents);

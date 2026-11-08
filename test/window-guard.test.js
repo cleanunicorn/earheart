@@ -18,7 +18,7 @@ const RENDERER = path.join(__dirname, "..", "renderer");
 const page = (name) => pathToFileURL(path.join(RENDERER, name)).href;
 
 test("isAppPage accepts the three renderer pages, with or without a query", () => {
-  for (const name of ["overlay.html", "settings.html", "wizard.html", "correction.html"]) {
+  for (const name of ["overlay.html", "settings.html", "wizard.html", "correction.html", "palette.html"]) {
     assert.ok(isAppPage(page(name)), name);
   }
   assert.ok(isAppPage(`${page("settings.html")}?wizard=1`));

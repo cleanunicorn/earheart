@@ -9,6 +9,7 @@
 // test sees the actual registration and the actual startup-notice policy, with
 // only Electron's globalShortcut and Notification faked underneath them.
 
+const { EventEmitter } = require("node:events");
 const { test } = require("node:test");
 const assert = require("node:assert");
 const path = require("node:path");
@@ -27,6 +28,7 @@ function makeCfg(overrides = {}) {
   return {
     hotkey: RECORD,
     pauseHotkey: PAUSE,
+    paletteHotkey: "CommandOrControl+Shift+K",
     startOnBoot: false,
     output: { mode: "paste" },
     stt: { engine: "builtin" },
@@ -64,6 +66,8 @@ async function loadMain(
   let captureListener = null;
   const powerHandlers = {};
   let state = pipelineState;
+  let wizardOpen = false;
+  let openCommands;
 
   class FakeNotification {
     static isSupported() {
@@ -100,6 +104,7 @@ async function loadMain(
           },
         },
       },
+      ipcMain: { handle() {} },
       Notification: FakeNotification,
       powerMonitor: {
         on: (event, handler) => {
@@ -127,13 +132,26 @@ async function loadMain(
     "./settings": { isFirstRun: () => firstRun, get: () => cfg, onChanged: () => () => {}, cleanupPromptOffer: () => null },
     "./windows": {
       init: () => events.push("windows.init"),
+      isWizardOpen: () => wizardOpen,
+      createPaletteWindow: () => {
+        events.push("palette.create");
+        const win = new EventEmitter();
+        win.webContents = new EventEmitter();
+        let destroyed = false;
+        win.isDestroyed = () => destroyed;
+        win.destroy = () => { destroyed = true; win.emit("closed"); };
+        win.show = () => events.push("palette.show");
+        win.focus = () => {};
+        return win;
+      },
+      loadPalette: async () => {},
       createOverlay: () => events.push("createOverlay"),
       rejoinOverlayAfterWake: (reason, opts) => events.push(`rejoin:${reason}:${JSON.stringify(opts)}`),
       destroyOverlay: () => events.push("destroyOverlay"),
       openSettings: () => events.push("openSettings"),
       confirmCorrectionClose: () => canCloseCorrection,
       closeCorrection: () => events.push("closeCorrection"),
-      openWizard: () => events.push("openWizard"),
+      openWizard: () => { wizardOpen = true; events.push("openWizard"); },
       openCorrection: (entry) => events.push(`correct:${entry.text}`),
       sendToSettings: (channel, payload) => events.push(`settings:${channel}:${JSON.stringify(payload ?? null)}`),
     },
@@ -151,6 +169,8 @@ async function loadMain(
     "./history": { list: () => [{ text: "last transcript" }] },
     "./pipeline": {
       getState: () => state,
+      isPaletteIdle: () => state === "idle",
+      setPaletteGuard() {},
       init: () => events.push("pipeline.init"),
       toggle: () => events.push("pipeline.toggle"),
       pauseToggle: () => events.push("pipeline.pauseToggle"),
@@ -161,7 +181,9 @@ async function loadMain(
       onOverlayRendererGone: () => {},
     },
     "./usage": { init: () => {} },
-    "./tray": { init: () => events.push("tray.init"), refresh: () => {} },
+    "./tray": { init: () => events.push("tray.init"), refresh: () => {}, setOpenCommands: open => { openCommands = open; },
+      correctLast: () => { if (state === "idle") events.push("correct:last transcript"); },
+    },
     "./ipc": {
       init: (opts) => {
         Object.assign(ipcInit, opts);
@@ -225,6 +247,7 @@ async function loadMain(
     appHandlers,
     shortcuts,
     ipcInit,
+    openCommands: () => openCommands(),
     recordingsHooks,
     notices,
     permissionHandler: () => permissionHandler,
@@ -289,6 +312,7 @@ test("a healthy launch registers both hotkeys and announces ready", async () => 
     pauseHotkey: { ok: true, accelerator: PAUSE },
     discardHotkey: { ok: true, empty: true, accelerator: "" },
     correctHotkey: { ok: true, empty: true, accelerator: "" },
+    paletteHotkey: { ok: true, accelerator: "CommandOrControl+Shift+K" },
   });
 
   // Only the microphone and clipboard writes from app pages are granted.
@@ -522,3 +546,27 @@ for (const platform of ["linux", "win32"]) {
     assert.deepStrictEqual(Object.keys(powerHandlers), []);
   });
 }
+
+test("palette hotkey, tray and second instance share the singleton and busy gate", async () => {
+  for (const pipelineState of ["idle", "recording", "processing"]) {
+    const rig = await loadMain({ pipelineState });
+    rig.events.length = 0;
+    rig.shortcuts.get("CommandOrControl+Shift+K")();
+    rig.openCommands();
+    rig.appHandlers["second-instance"]({}, ["earheart", "--palette"]);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(rig.events.filter(e => e === "palette.create").length, pipelineState === "idle" ? 1 : 0);
+    assert.equal(rig.events.filter(e => e === "palette.show").length, pipelineState === "idle" ? 1 : 0);
+    assert.ok(!rig.events.includes("pipeline.toggle"));
+  }
+});
+test("cold --palette opens Commands for a returning user; first-run setup wins", async () => {
+  for (const firstRun of [false, true]) {
+    const rig = await loadMain({ argv: ["--palette"], firstRun });
+    assert.equal(rig.events.includes("palette.show"), !firstRun);
+    if (firstRun) {
+      rig.appHandlers["second-instance"]({}, ["earheart", "--palette"]);
+      assert.ok(!rig.events.includes("palette.create"));
+    }
+  }
+});

@@ -1,7 +1,7 @@
 // Earheart entry point: app lifecycle, single-instance handling, and wiring
 // between the hotkey, tray, windows and the dictation pipeline.
 
-const { app, session, Notification, powerMonitor } = require("electron");
+const { app, session, Notification, powerMonitor, ipcMain } = require("electron");
 const settings = require("./settings");
 const history = require("./history");
 const recordings = require("./recordings");
@@ -25,7 +25,9 @@ const { createNotifier, announceStartup, announcePromptOffer } = require("./setu
 const { installPermissionHandler } = require("./window-guard");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
+let palette = null;
 const startHidden = process.argv.includes("--hidden");
+const startPalette = process.argv.includes("--palette");
 
 // Single instance: a second `earheart --toggle` invocation forwards the
 // toggle to the running app and exits. This is the recommended way to bind a
@@ -44,6 +46,8 @@ if (!gotLock) {
       pipeline.discard();
     } else if (argv.includes("--retry")) {
       pipeline.retryFailedTake();
+    } else if (argv.includes("--palette")) {
+      palette?.open();
     } else if (argv.includes("--correct-last")) {
       openLastCorrection();
     } else {
@@ -59,7 +63,7 @@ let lastHotkeyStatus = null;
 
 function openLastCorrection() {
   // A focusable editor must never steal the pending dictation's paste target.
-  if (pipeline.getState() === "idle") windows.openCorrection(history.list()[0]);
+  if (pipeline.isPaletteIdle()) tray.correctLast();
 }
 
 // Register the global hotkeys from settings. The record hotkey is required
@@ -72,6 +76,8 @@ function applyHotkeys(cfg) {
     pause: cfg.pauseHotkey,
     discard: cfg.discardHotkey,
     correct: cfg.correctHotkey,
+    palette: cfg.paletteHotkey,
+    onPalette: () => palette?.open(),
     onCorrect: openLastCorrection,
     onRecord: () => pipeline.toggle(),
     onPause: () => pipeline.pauseToggle(),
@@ -173,6 +179,12 @@ function main() {
       rejoin: windows.rejoinOverlayAfterWake,
     });
     tray.init(app, pipeline);
+    palette = require("./palette").createPalette({ windows, pipeline, history, settings,
+      actions: { notice: body => notifier.show({ title: "Commands unavailable", body }), lastTranscript: tray.lastTranscript, copyLast: tray.copyLast,
+        correctLast: openLastCorrection, checkUpdates: () => updates.check({ manual: true }), openLog: ipc.openLog } });
+    palette.install(ipcMain);
+    pipeline.setPaletteGuard(palette.dismissForDictation);
+    tray.setOpenCommands(palette.open);
     // macOS: an update leaves auto-paste's permission grants stale; repair
     // them before the first dictation rather than during it.
     if (
@@ -216,6 +228,8 @@ function main() {
       logger.warn(hotkeyResults.discardHotkey.error);
     }
 
+    if (hotkeyResults.paletteHotkey && !hotkeyResults.paletteHotkey.ok) logger.warn(hotkeyResults.paletteHotkey.error);
+
     if (hotkeyResults.correctHotkey && !hotkeyResults.correctHotkey.ok) {
       logger.warn(hotkeyResults.correctHotkey.error);
     }
@@ -236,6 +250,7 @@ function main() {
       openSettings: () => windows.openSettings(),
       notify: notifier.show,
     });
+    if (!isSmokeTest && !firstRun && startPalette) palette.open();
     // A new default cleanup prompt is announced once (setup-notices.js).
     if (!isSmokeTest && !firstRun) {
       announcePromptOffer({
@@ -293,6 +308,7 @@ function main() {
       event.preventDefault();
       return;
     }
+    palette?.close();
     windows.destroyOverlay();
     // Put lowered output back before exiting (bounded, best effort; a marker
     // covers the rest on the next launch), then quit again.

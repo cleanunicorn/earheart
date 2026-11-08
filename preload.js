@@ -51,6 +51,10 @@ const ROLES = {
       "updates:remind-off",
     ],
   },
+  palette: {
+    LISTEN: [], SEND: [],
+    INVOKE: ["palette:query", "palette:execute", "palette:close"],
+  },
   settings: {
     LISTEN: [
       "settings:navigate",
@@ -63,6 +67,7 @@ const ROLES = {
     ],
     SEND: ["hotkeys:capture"],
     INVOKE: [
+      "palette:open",
       "settings:get",
       "settings:save",
       "settings:close",

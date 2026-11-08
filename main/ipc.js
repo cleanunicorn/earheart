@@ -231,7 +231,7 @@ function formSyncFields(cfg) {
 
 // The settings fields applyHotkeys registers. One that fails to register is
 // not saved: disk keeps the working value, the form keeps the attempt.
-const HOTKEY_FIELDS = ["hotkey", "pauseHotkey", "discardHotkey", "correctHotkey"];
+const HOTKEY_FIELDS = ["hotkey", "pauseHotkey", "discardHotkey", "correctHotkey", "paletteHotkey"];
 
 function withFields(base, source, fields) {
   const result = { ...base };
@@ -281,6 +281,30 @@ function wrap(fn, describe = (err) => err.message) {
       return { ok: false, error: describe(err) };
     }
   };
+}
+
+async function openLog() {
+  const logPath = logger.getLogPath();
+  if (!logPath) return { ok: false, error: "No log file yet." };
+  // The logger resolves the path at startup but only creates the file on the
+  // first write, so a clean install that has never faulted has no file to
+  // open or reveal — open the logs folder instead.
+  if (!fs.existsSync(logPath)) {
+    const error = await shell.openPath(path.dirname(logPath)); // "" on success
+    return error
+      ? { ok: false, error, path: logPath }
+      : { ok: true, path: logPath, action: "folder" };
+  }
+  const error = await shell.openPath(logPath);
+  if (!error) return { ok: true, path: logPath, action: "opened" };
+  // Opening fails when .log has no default app (common on Windows); reveal
+  // the file in the OS file manager instead, which needs no association.
+  try {
+    shell.showItemInFolder(logPath);
+    return { ok: true, path: logPath, action: "revealed" };
+  } catch {
+    return { ok: false, error, path: logPath };
+  }
 }
 
 function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {}, onHistoryEntryDeleted = () => {}, retranscribe = async () => ({ ok: false, error: "unavailable" }) }) {
@@ -387,6 +411,7 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
         pauseHotkey: hotkeyResults.pauseHotkey,
         discardHotkey: hotkeyResults.discardHotkey,
         correctHotkey: hotkeyResults.correctHotkey,
+        paletteHotkey: hotkeyResults.paletteHotkey,
       },
     };
   };
@@ -438,29 +463,7 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   // can read or attach it when something goes wrong. `action` names which of
   // the three outcomes happened so the UI can describe it; the path comes back
   // either way, so even total failure still tells the user where to look.
-  ipcMain.handle("logs:open", async () => {
-    const logPath = logger.getLogPath();
-    if (!logPath) return { ok: false, error: "No log file yet." };
-    // The logger resolves the path at startup but only creates the file on the
-    // first write, so a clean install that has never faulted has no file to
-    // open or reveal — open the logs folder instead.
-    if (!fs.existsSync(logPath)) {
-      const error = await shell.openPath(path.dirname(logPath)); // "" on success
-      return error
-        ? { ok: false, error, path: logPath }
-        : { ok: true, path: logPath, action: "folder" };
-    }
-    const error = await shell.openPath(logPath);
-    if (!error) return { ok: true, path: logPath, action: "opened" };
-    // Opening fails when .log has no default app (common on Windows); reveal
-    // the file in the OS file manager instead, which needs no association.
-    try {
-      shell.showItemInFolder(logPath);
-      return { ok: true, path: logPath, action: "revealed" };
-    } catch {
-      return { ok: false, error, path: logPath };
-    }
-  });
+  ipcMain.handle("logs:open", openLog);
 
   // Settings → Advanced: re-run the setup wizard on demand. The wizard
   // itself doesn't change anything until it is completed.
@@ -848,4 +851,4 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   });
 }
 
-module.exports = { init, isDownloading };
+module.exports = { init, isDownloading, openLog };

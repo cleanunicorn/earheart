@@ -12,7 +12,7 @@ const path = require("node:path");
 const { fileURLToPath } = require("node:url");
 
 const RENDERER = path.join(__dirname, "..", "renderer");
-const APP_PAGES = new Set(["overlay.html", "settings.html", "wizard.html", "correction.html"]);
+const APP_PAGES = new Set(["overlay.html", "settings.html", "wizard.html", "correction.html", "palette.html"]);
 
 // True when `url` is one of the app's own renderer pages (a query such as
 // settings.html?wizard=1 is fine). Anything else — another file, another

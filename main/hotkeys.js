@@ -258,10 +258,52 @@ function applyAll(next) {
   const wasSuspended = suspended;
   suspend(false);
   try {
-    return applyWithCorrection(next);
+    return applyWithPalette(next);
   } finally {
     if (wasSuspended) suspend(true);
   }
+}
+
+// The optional palette slot shares capture, resume and shutdown with all
+// registered slots. Reserve configured discard even while it is unarmed.
+// Transfers involving this slot require clearing the old binding first; this
+// keeps a rejected convenience shortcut from changing any dictation binding.
+function sameAccelerator(a, b) {
+  if (typeof a !== "string" || typeof b !== "string" || !a || !b) return false;
+  // Match aliases, modifier order and case before an idle discard key is
+  // actually registered; the OS cannot detect that configured-only collision.
+  const key = value => prettyHotkey(value).toLowerCase().split("+").sort().join("+");
+  return key(a) === key(b);
+}
+
+function applyWithPalette(next) {
+  if (next.palette === undefined && next.onPalette === undefined) return applyWithCorrection(next);
+  const before = { ...dictationAccelerators(), correct: registered.get("correct")?.accelerator || "" };
+  const held = registered.get("palette")?.accelerator || "";
+  const desired = next.palette || "";
+  const adjusted = { ...next };
+  const charged = {};
+  for (const name of Object.keys(before)) {
+    if (sameAccelerator(held, next[name])) {
+      adjusted[name] = before[name];
+      charged[name] = { ok: false, error: usedBy("palette", held) };
+    }
+  }
+  const blocker = Object.keys(before).find(name => desired && (sameAccelerator(before[name], desired) || sameAccelerator(next[name], desired)));
+  let result;
+  if (blocker) result = { ok: false, error: usedBy(blocker, desired) };
+  else if (desired === held || sameAccelerator(desired, held)) result = desired ? { ok: true } : { ok: true, empty: true };
+  else {
+    const attempt = desired ? attemptRegister(desired, next.onPalette) : { ok: true };
+    if (!attempt.ok) result = { ok: false, error: registrationFailure(desired, attempt) };
+    else {
+      if (held) globalShortcut.unregister(held);
+      if (desired) registered.set("palette", { accelerator: desired, onTrigger: next.onPalette });
+      else registered.delete("palette");
+      result = desired ? { ok: true } : { ok: true, empty: true };
+    }
+  }
+  return { ...applyWithCorrection(adjusted), ...charged, palette: result };
 }
 
 // The correction shortcut is always available, unlike the live-only discard
@@ -612,6 +654,7 @@ function toHotkeyResults(pair, accelerators) {
   // Only applyAll reports a discard slot; a bare pair result keeps two keys.
   if (pair.discard) results.discardHotkey = pair.discard;
   if (pair.correct) results.correctHotkey = pair.correct;
+  if (pair.palette) results.paletteHotkey = pair.palette;
   if (!accelerators) return results;
   const withAccelerators = {
     hotkey: { ...results.hotkey, accelerator: accelerators.hotkey || "" },
@@ -628,6 +671,7 @@ function toHotkeyResults(pair, accelerators) {
       ...results.correctHotkey, accelerator: accelerators.correctHotkey || "",
     };
   }
+  if (results.paletteHotkey) withAccelerators.paletteHotkey = { ...results.paletteHotkey, accelerator: accelerators.paletteHotkey || "" };
   return withAccelerators;
 }
 

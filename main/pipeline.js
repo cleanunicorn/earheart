@@ -569,7 +569,16 @@ function discard() {
 // waiting for a reloading overlay, or being superseded by a new dictation
 // meanwhile, must not cost the recording.
 let retryPending = null; // session id of a retry waiting for the overlay
+let dismissPalette = () => false;
+function setPaletteGuard(guard) { dismissPalette = guard; }
+function isPaletteIdle() { return state === "idle" && retryPending !== session; }
+function paletteBlocksDictation() {
+  if (!dismissPalette()) return false;
+  setupNotifier.show({ title: "Commands closed", body: "Focus your destination and press the dictation shortcut again." });
+  return true;
+}
 function retryFailedTake() {
+  if (paletteBlocksDictation()) return false;
   if (state !== "idle" || !failedTake.info() || retryPending === session) return false;
   retranscriber.cancel();
   const sid = ++session;
@@ -611,6 +620,7 @@ function onFailedTakeChange(listener) {
 }
 
 function startRecording() {
+  if (paletteBlocksDictation()) return;
   const cfg = settings.get();
   // A built-in model that isn't on disk can't transcribe this dictation: say
   // so now, before the microphone opens, instead of after the user has spoken
@@ -1033,6 +1043,8 @@ function onSettingsChanged() {
 
 module.exports = {
   init,
+  setPaletteGuard,
+  isPaletteIdle,
   toggle,
   pauseToggle,
   discard,

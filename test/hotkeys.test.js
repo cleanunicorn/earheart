@@ -1367,3 +1367,44 @@ test("onboarding hotkey prose names the platform key and preserves edited shortc
     assert.strictEqual(displayHotkey("F8"), "F8");
   } finally { global.platform = previous; }
 });
+
+test("palette cannot take any configured slot, including idle discard", () => {
+  for (const slot of ["record", "pause", "discard", "correct"]) {
+    const { hotkeys, bindings } = loadHotkeys();
+    const cfg = { record: A, pause: B, discard: C, correct: "Control+Alt+E", palette: "Control+Alt+K", onRecord() {}, onPause() {}, onDiscard() {}, onCorrect() {}, onPalette() {} };
+    hotkeys.applyAll(cfg);
+    const result = hotkeys.applyAll({ ...cfg, palette: cfg[slot] });
+    assert.equal(result.palette.ok, false, slot);
+    assert.equal(bindings.has(cfg.palette), true);
+    assert.equal(bindings.has(A), true);
+  }
+});
+test("palette failure preserves dictation, capture suspends it, disable releases it", () => {
+  const { hotkeys, bindings } = loadHotkeys({ occupied: [C] });
+  const cfg = { record: A, pause: B, correct: "", discard: "", palette: C, onRecord() {}, onPause() {}, onPalette() {} };
+  assert.equal(hotkeys.applyAll(cfg).palette.ok, false);
+  assert.equal(bindings.has(A), true);
+  hotkeys.applyAll({ ...cfg, palette: "Control+K" });
+  hotkeys.suspend(true); assert.equal(bindings.size, 0);
+  hotkeys.suspend(false); assert.equal(bindings.has("Control+K"), true);
+  hotkeys.applyAll({ ...cfg, palette: "" }); assert.equal(bindings.has("Control+K"), false);
+});
+test("other slots cannot displace a retained palette binding", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  const cfg = { record: A, pause: "", discard: "", correct: "", palette: C, onRecord() {}, onPalette() {} };
+  hotkeys.applyAll(cfg);
+  const result = hotkeys.applyAll({ ...cfg, discard: C });
+  assert.equal(result.discard.ok, false);
+  hotkeys.armDiscard(true);
+  assert.equal(bindings.has(C), true);
+  assert.equal(bindings.has(A), true);
+});
+
+test("palette reserves equivalent spellings of an unarmed discard key", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  const cfg = { record: A, pause: "", discard: "CommandOrControl+Alt+Q", correct: "", palette: "", onRecord() {}, onDiscard() {}, onPalette() {} };
+  hotkeys.applyAll(cfg);
+  const alias = process.platform === "darwin" ? "Option+Cmd+Q" : "Alt+Ctrl+Q";
+  assert.equal(hotkeys.applyAll({ ...cfg, palette: alias }).palette.ok, false);
+  assert.equal(bindings.has(alias), false);
+});

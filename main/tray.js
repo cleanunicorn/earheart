@@ -39,6 +39,25 @@ function lastTranscript() {
   return entry?.text;
 }
 
+async function copyLast() {
+  if (pipeline.getState() === "processing") return { ok: false, error: "Wait for processing to finish." };
+  const text = lastTranscript();
+  if (!text) return { ok: false, error: "No transcription to copy." };
+  try { await deliver(deliverText(text, settings.get().output), { mode: "clipboard" }); return { ok: true }; }
+  catch (err) {
+    logger.warn(`could not copy transcript: ${err.message}`);
+    try {
+      new Notification({ title: "Could not copy transcript", body: "Your transcript is still in History. Try copying it again." }).show();
+    } catch (notifyErr) { logger.warn(`copy notification failed: ${notifyErr.message}`); }
+    return { ok: false, error: err.message };
+  }
+}
+function correctLast() {
+  if (pipeline.getState() === "idle") windows.openCorrection(history.list()[0]);
+}
+let openCommands = () => {};
+function setOpenCommands(open) { openCommands = open; }
+
 function buildMenu(app) {
   const cfg = settings.get();
   // Check the radio for what delivery does, legacy encoding included.
@@ -89,26 +108,16 @@ function buildMenu(app) {
       enabled: !!lastText && state !== "processing",
       // Re-read at click time so we copy the freshest entry even if the menu
       // was built a moment before the dictation landed.
-      click: async () => {
-        if (pipeline.getState() === "processing") return;
-        const text = lastTranscript();
-        if (!text) return;
-        try { await deliver(deliverText(text, settings.get().output), { mode: "clipboard" }); }
-        catch (err) {
-          logger.warn(`could not copy transcript: ${err.message}`);
-          try {
-            new Notification({ title: "Could not copy transcript", body: "Your transcript is still in History. Try copying it again." }).show();
-          } catch (notifyErr) { logger.warn(`copy notification failed: ${notifyErr.message}`); }
-        }
-      },
+      click: copyLast,
     },
     { type: "separator" },
     {
       label: "Correct last transcription…",
       enabled: !!lastEntry && state === "idle",
-      click: () => { if (pipeline.getState() === "idle") windows.openCorrection(history.list()[0]); },
+      click: correctLast,
     },
     ...updateItems(),
+    { label: "Commands…", accelerator: cfg.paletteHotkey || undefined, click: () => openCommands() },
     { label: "Settings…", click: () => windows.openSettings() },
     { type: "separator" },
     { label: "Quit Earheart", click: () => app.quit() },
@@ -199,4 +208,4 @@ function init(app, pipelineModule) {
   return tray;
 }
 
-module.exports = { init, refresh };
+module.exports = { init, refresh, lastTranscript, copyLast, correctLast, setOpenCommands };

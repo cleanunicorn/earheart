@@ -844,3 +844,18 @@ transcription** and a quiet **Discard**.
   biggest thing in the system.
 - **Don't** hide sections behind tabs on the settings page; the page is one
   scrolling column and the index is a map, not a shuffle.
+
+
+## Commands window
+
+Commands is a singleton framed window using the shared ink, field, edge,
+text and dim-text tokens in both themes. It opens only while dictation is
+idle, so its focused search cannot replace an active take's delivery target.
+A labelled combobox owns an active descendant in a listbox; visible Navigation,
+Actions and History labels group the results. Up/Down and Home/End move the
+selection, Enter accepts once, Tab cycles search and Close, and Escape closes.
+The selected row uses text on ink reversed, with a text-colored focus outline;
+no animation is needed. Disabled rows remain labelled and skipped by selection.
+Search counts, empty states and errors share a persistent polite live region.
+Transcript previews, query text and errors are text nodes. History results
+navigate to the existing card and retain its confirmed destructive controls.

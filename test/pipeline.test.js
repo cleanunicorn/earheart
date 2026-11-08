@@ -2479,3 +2479,46 @@ test("pipeline: only a delivered dictation counts — retranscribe and the live 
   const recordAt = processBody.indexOf("usage.record(");
   assert.ok(recordAt > processBody.indexOf("await deliver("), "counted after delivery");
 });
+
+test("pipeline: record and retry dismiss Commands without beginning a take", async () => {
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "safe" });
+  for (const trigger of [() => rig.pipeline.toggle(), () => rig.pipeline.retryFailedTake(), () => rig.handlers["pipeline:retry"]({})]) {
+    let open = true;
+    rig.pipeline.setPaletteGuard(() => { const was = open; open = false; return was; });
+    trigger();
+    assert.equal(open, false);
+    assert.equal(rig.pipeline.getState(), "idle");
+    assert.equal(rig.log.overlaysCreated, 0);
+    assert.equal(rig.log.transcribe.length, 0);
+  }
+  rig.pipeline.toggle();
+  assert.equal(rig.pipeline.getState(), "recording", "a deliberate second press starts after dismissal");
+  assert.equal(rig.pipeline.isPaletteIdle(), false);
+  rig.pipeline.cancel();
+});
+test("pipeline: a pending retry excludes the palette even while state is idle", async () => {
+  const stt = flakyStt();
+  const rig = dictationRig({ engine: "remote", transcribe: stt.transcribe });
+  await rig.dictate(speechWav(5));
+  assert.equal(rig.pipeline.isPaletteIdle(), true);
+  let finishLoad;
+  rig.overlayLoading(fn => { finishLoad = fn; });
+  rig.pipeline.retryFailedTake();
+  assert.equal(rig.pipeline.getState(), "idle");
+  assert.equal(rig.pipeline.isPaletteIdle(), false);
+  rig.pipeline.discardFailedTake();
+  finishLoad();
+  assert.equal(rig.pipeline.isPaletteIdle(), true);
+});
+
+test("pipeline: a superseded retry reservation cannot block Commands forever", async () => {
+  const rig = dictationRig({ engine: "remote", transcribe: flakyStt().transcribe });
+  await rig.dictate(speechWav(2));
+  rig.overlayLoading(() => {}); // this old load will never finish
+  rig.pipeline.retryFailedTake();
+  assert.equal(rig.pipeline.isPaletteIdle(), false);
+  rig.overlayLoading(null);
+  rig.pipeline.toggle();
+  rig.pipeline.cancel();
+  assert.equal(rig.pipeline.isPaletteIdle(), true);
+});

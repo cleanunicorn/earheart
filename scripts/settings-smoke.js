@@ -2556,6 +2556,8 @@ app.whenReady().then(async () => {
     await require("./correction-smoke").checkCorrection({ waitFor, check, savedThenClose });
     await require("./theme-smoke").checkTheme({ waitFor, check, savedThenClose });
 
+    await require("./palette-smoke").checkPalette({ waitFor, check, invokeHandlers });
+
     const failed = checks.filter((c) => !c.ok);
     console.log(
       `[settings-smoke] ${checks.length - failed.length}/${checks.length} checks passed`

@@ -522,6 +522,21 @@ cases. Reproduce with `node scripts/eval-vocabulary.mjs /path/to/model.gguf
 The script uses the shipped cleanup prompt and scores the final postprocessed
 text. A missing exact spelling remains possible even after remembering it.
 
+### Commands
+
+Press **Ctrl+Shift+K** (**Cmd+Shift+K** on macOS) for keyboard-searchable
+Settings navigation, Copy/Correct last transcription, update checks, the
+error log and recent saved dictations. Settings also offers **Commands…**
+and **Ctrl/Cmd+K**; the tray keeps its existing controls and adds Commands.
+Change or disable the global binding in Settings → General, or bind your
+desktop to `earheart --palette`.
+
+Use arrows and Enter to select, Tab to reach Close, and Escape to dismiss.
+History searches saved and original text and opens the selected card in
+Settings. Commands refuses to open during a take; pressing record or retry
+while it is open only closes it. Focus your destination before pressing the
+dictation key again. [Commands and focus behavior](docs/command-palette.md).
+
 ### Always replace
 
 Settings → Cleanup → **Always replace** holds exact rules, one canonical

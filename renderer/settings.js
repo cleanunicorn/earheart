@@ -173,6 +173,24 @@ $("discard-hotkey-clear").addEventListener("click", () => {
   discardHotkeyInput.value = "";
 });
 
+const paletteHotkeyInput = $("palette-hotkey");
+wireHotkeyCapture(paletteHotkeyInput, {
+  apply: accelerator => { current.paletteHotkey = accelerator; paletteHotkeyInput.value = accelerator; },
+  restore: () => current?.paletteHotkey || "",
+});
+$("palette-hotkey-clear").addEventListener("click", () => { current.paletteHotkey = ""; paletteHotkeyInput.value = ""; });
+async function openCommands() {
+  const result = await earheart.invoke("palette:open");
+  $("commands-status").textContent = result.ok ? "" : result.error;
+}
+$("commands").addEventListener("click", openCommands);
+document.addEventListener("keydown", event => {
+  if (event.isComposing || event.repeat || document.querySelector(".capturing")) return;
+  if ((platform === "darwin" ? event.metaKey : event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "k") {
+    event.preventDefault(); openCommands();
+  }
+});
+
 const correctHotkeyInput = $("correct-hotkey");
 wireHotkeyCapture(correctHotkeyInput, {
   apply: (accelerator) => {
@@ -285,6 +303,8 @@ function populate() {
   pauseHotkeyInput.value = current.pauseHotkey || "";
   discardHotkeyInput.value = current.discardHotkey || "";
   correctHotkeyInput.value = current.correctHotkey || "";
+  paletteHotkeyInput.value = current.paletteHotkey || "";
+  $("commands-shortcut").textContent = displayHotkey("CommandOrControl+K");
   showOutputMode(current.output);
 
   $("stt-url").value = current.stt.baseUrl;
@@ -358,6 +378,7 @@ function collect() {
     pauseHotkey: current.pauseHotkey || "",
     discardHotkey: current.discardHotkey || "",
     correctHotkey: current.correctHotkey || "",
+    paletteHotkey: current.paletteHotkey || "",
     startOnBoot: $("start-on-boot").checked,
     appearance: $("appearance").value,
     updates: {
@@ -1086,6 +1107,7 @@ function renderHotkeyStatus(status) {
     [$("pause-hotkey-status"), status?.pauseHotkey, current.pauseHotkey],
     [$("discard-hotkey-status"), status?.discardHotkey, current.discardHotkey],
     [$("correct-hotkey-status"), status?.correctHotkey, current.correctHotkey],
+    [$("palette-hotkey-status"), status?.paletteHotkey, current.paletteHotkey],
   ];
   for (const [row, result, shown] of rows) {
     const stale =
@@ -1095,12 +1117,13 @@ function renderHotkeyStatus(status) {
   }
 }
 
-function hotkeySaveMessage(hotkeyResult, pauseResult, discardResult, correctResult) {
+function hotkeySaveMessage(hotkeyResult, pauseResult, discardResult, correctResult, paletteResult) {
   const failed = [
     [hotkeyResult, "hotkey"],
     [pauseResult, "pause hotkey"],
     [discardResult, "discard hotkey"],
     [correctResult, "correction hotkey"],
+    [paletteResult, "Commands hotkey"],
   ].filter(([result]) => result && !result.ok);
   // More than one slot failing is usually one coupled rollback; blaming a
   // single field would be wrong.
@@ -1283,8 +1306,8 @@ async function saveSettings() {
     pauseResult = result.pauseHotkey ?? { ok: true };
     discardResult = result.discardHotkey ?? { ok: true };
     correctResult = result.correctHotkey ?? { ok: true };
-    const hotkeysOk = result.hotkey.ok && pauseResult.ok && discardResult.ok && correctResult.ok;
-    const hotkeyStatus = { hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult };
+    const hotkeysOk = result.hotkey.ok && pauseResult.ok && discardResult.ok && correctResult.ok && (result.paletteHotkey?.ok !== false);
+    const hotkeyStatus = { hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult, paletteHotkey: result.paletteHotkey };
     if (hotkeysOk) {
       // Save never closes the window (#298): a window that vanished on its own
       // read as a crash. "Saved" stays until the form is edited again; Close
@@ -1318,9 +1341,9 @@ async function saveSettings() {
   // A hotkey couldn't be registered: keep the window open so the error is
   // visible and the user can pick a combination that works.
   saveButton.disabled = false;
-  save.textContent = hotkeySaveMessage(result.hotkey, pauseResult, discardResult, correctResult);
+  save.textContent = hotkeySaveMessage(result.hotkey, pauseResult, discardResult, correctResult, result.paletteHotkey);
   save.className = "status err";
-  renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult });
+  renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult, paletteHotkey: result.paletteHotkey });
   saveStatusTimer = setTimeout(() => {
     save.textContent = "";
   }, 4000);
@@ -2091,7 +2114,9 @@ function renderSetupBanner() {
         : " Cleanup isn't downloaded. Dictations use raw transcripts; download it in Settings → Cleanup."
       : "";
 }
+let settingsNavigation = 0;
 async function navigateSettings(destination) {
+  const navigationVersion = ++settingsNavigation;
   if (!formReady) { pendingNavigation = destination; return; }
   if (destination.fromWizard) {
     const before = formSnapshot();
@@ -2115,6 +2140,31 @@ async function navigateSettings(destination) {
   renderSetupBanner();
   if (!["general", "live", "stt", "cleanup", "history", "advanced"].includes(destination.section)) return;
   activateTab(destination.section, { focusSection: true });
+  if (destination.section === "history" && typeof destination.query === "string") {
+    historyQuery = destination.query.slice(0, 200);
+    $("history-search").value = historyQuery;
+    historyPage = 0;
+    if (destination.entryId) {
+      const page = await earheart.invoke("history:search", { query: historyQuery, limit: 50 });
+      if (navigationVersion !== settingsNavigation) return;
+      const index = page.ok ? page.entries.findIndex(item => item.id === destination.entryId) : -1;
+      if (index >= 0) historyPage = Math.floor(index / HISTORY_PAGE_SIZE);
+    }
+    await renderHistory();
+    if (navigationVersion !== settingsNavigation) return;
+    const card = [...$("history-list").children].find(item => item.dataset.id === destination.entryId);
+    if (card) {
+      card.tabIndex = -1;
+      card.focus();
+      card.scrollIntoView({ block: "center" });
+    } else {
+      $("history-search").focus();
+      if (destination.entryId) {
+        $("history-clear-status").hidden = false;
+        $("history-clear-status").textContent = "This transcript is no longer in the matching History results.";
+      }
+    }
+  }
   if (destination.model && ["stt", "cleanup"].includes(destination.section)) {
     const target = $(destination.section + "-model-manage");
     target?.scrollIntoView({ block: "center" });
@@ -2263,11 +2313,13 @@ earheart.on("updates:state", renderUpdateState);
   savedSetup = current;
   formReady = true;
   const query = new URLSearchParams(location.search);
-  await navigateSettings(pendingNavigation || {
+  const destination = pendingNavigation || {
     fromWizard: query.has("wizard"), section: query.get("section"), model: query.has("model"),
-  });
+    ...(query.has("query") ? { query: query.get("query"), entryId: query.get("entryId") } : {}),
+  };
+  await navigateSettings(destination);
   settingsChangesReady();
-  renderHistory();
+  if (destination.section !== "history" || typeof destination.query !== "string") renderHistory();
   loadMicrophones();
   refreshDuckStatus();
   // The line says what is happening now (lowered, skipped, failed), which

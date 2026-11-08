@@ -191,10 +191,10 @@ function plan(opts) {
     const styles = corpus === "fluent" && !opts.gpu ? ["clean", "polished"] : ["clean"];
     if (opts.gpu && corpus !== "fluent") continue;
     for (const style of styles) {
-      const { systemPrompt, sampling } = resolveCleanup({ ...DEFAULTS.cleanup, style });
+      const { systemPrompt, sampling, outputRatio } = resolveCleanup({ ...DEFAULTS.cleanup, style });
       CORPORA[corpus].forEach((item, index) => {
         const { text: input, literals } = metrics.corpusItem(item);
-        for (const seed of opts.seeds) turns.push({ corpus, style, index, seed, input, literals, systemPrompt, sampling });
+        for (const seed of opts.seeds) turns.push({ corpus, style, index, seed, input, literals, systemPrompt, sampling, outputRatio });
       });
     }
   }
@@ -264,7 +264,7 @@ async function benchModel(modelPath, opts, mod, now = () => performance.now()) {
     session.resetChatHistory();
     await sequence.clearHistory();
     const userTurn = cleanupUserTurn(t.systemPrompt, t.input);
-    const need = cleanContextNeed(model.tokenize(userTurn).length, model.tokenize(t.input).length);
+    const need = cleanContextNeed(model.tokenize(userTurn).length, model.tokenize(t.input).length, t.outputRatio);
     if (need > CONTEXT_SIZE) throw new Error(`turn needs ${need} tokens > context ${CONTEXT_SIZE}`);
     let genTokens = 0;
     let firstBatch = 0;
@@ -274,7 +274,7 @@ async function benchModel(modelPath, opts, mod, now = () => performance.now()) {
     const { responseText, stopReason } = await session.promptWithMeta(userTurn, {
       ...cleanupSamplingOptions(t.sampling),
       seed: t.seed,
-      maxTokens: cleanMaxTokens(model.tokenize(t.input).length),
+      maxTokens: cleanMaxTokens(model.tokenize(t.input).length, t.outputRatio),
       onToken: (tokens) => {
         const at = now() - t0;
         if (firstMs === null) {

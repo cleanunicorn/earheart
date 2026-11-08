@@ -315,12 +315,12 @@ function instructionTokens(systemPrompt) {
 // turn goes on: assertCleanBudget then judges the turn actually being run, so
 // a short dictation that fits main's size still cleans, as it did before.
 // Only losing the context altogether throws.
-async function fitCleanupContext(model, systemPrompt) {
+async function fitCleanupContext(model, systemPrompt, outputRatio) {
   if (!llamaModel || !llamaContext || !Number.isFinite(model?.transcriptTokens)) return;
   const instructions = instructionTokens(systemPrompt);
   if (instructions === null) return;
   const floor = cleanupContextSize;
-  let wanted = cleanContextSize(instructions, model.transcriptTokens);
+  let wanted = cleanContextSize(instructions, model.transcriptTokens, outputRatio);
   // Not past what the model was trained on (unless main's floor already is):
   // a custom GGUF with a short training context degrades when stretched. The
   // cap is rounded down to a power of two, so every size stays on the doubling
@@ -356,13 +356,14 @@ async function fitCleanupContext(model, systemPrompt) {
 // Both soft cases return rather than throw: nothing loaded is the caller's
 // existing error to raise, and a tokenizer that won't count is no reason to
 // refuse a turn that may well fit.
-function assertCleanBudget(userTurn, transcript, systemPrompt) {
+function assertCleanBudget(userTurn, transcript, systemPrompt, outputRatio) {
   if (!llamaModel || !llamaContext) return;
   let needed;
   try {
     needed = cleanContextNeed(
       llamaModel.tokenize(userTurn).length,
-      llamaModel.tokenize(transcript).length
+      llamaModel.tokenize(transcript).length,
+      outputRatio
     );
   } catch {
     return; // tokenizer unavailable: let the generation try anyway
@@ -384,10 +385,10 @@ function transcriptTokens(transcript) {
   }
 }
 
-async function clean({ model, operationId, transcript, systemPrompt, sampling }, emitProgress) {
+async function clean({ model, operationId, transcript, systemPrompt, sampling, outputRatio }, emitProgress) {
   return queuedCleanupOp(async (signal) => {
     await loadCleanup(model);
-    await fitCleanupContext(model, systemPrompt);
+    await fitCleanupContext(model, systemPrompt, outputRatio);
     if (signal.aborted) throw new Error("cleanup cancelled");
     const mod = await import("node-llama-cpp");
     const session = freshSession(mod);
@@ -395,7 +396,7 @@ async function clean({ model, operationId, transcript, systemPrompt, sampling },
     // state (llama.cpp skips the shared token prefix), which is what makes the
     // prefill-ahead of "prime-cleanup" pay off here.
     const userTurn = cleanupUserTurn(systemPrompt, transcript);
-    assertCleanBudget(userTurn, transcript, systemPrompt);
+    assertCleanBudget(userTurn, transcript, systemPrompt, outputRatio);
     // Cleaned output tracks the input's length closely (punctuation in, fillers
     // out), so generated-chars / transcript-chars is an honest progress ratio.
     const total = Math.max(1, transcript.length);
@@ -403,7 +404,7 @@ async function clean({ model, operationId, transcript, systemPrompt, sampling },
     const { responseText, stopReason } = await session.promptWithMeta(userTurn, {
       ...cleanupSamplingOptions(sampling),
       signal,
-      maxTokens: cleanMaxTokens(transcriptTokens(transcript)),
+      maxTokens: cleanMaxTokens(transcriptTokens(transcript), outputRatio),
       onTextChunk: (text) => {
         generated += text.length;
         if (emitProgress) emitProgress(Math.min(CLEAN_PROGRESS_CAP, generated / total));
@@ -422,11 +423,11 @@ async function clean({ model, operationId, transcript, systemPrompt, sampling },
 // already-committed transcript when available) into the context without
 // generating anything, so the next clean() starts generating almost
 // immediately. Cancellable and best-effort like the live-preview cleans.
-async function primeCleanup({ model, text, systemPrompt }) {
+async function primeCleanup({ model, text, systemPrompt, outputRatio }) {
   return queuedCleanupOp(async (signal) => {
     await loadCleanup(model);
     // Sized as clean() will size it, so the primed state survives to the turn.
-    if (systemPrompt !== undefined) await fitCleanupContext(model, systemPrompt);
+    if (systemPrompt !== undefined) await fitCleanupContext(model, systemPrompt, outputRatio);
     if (signal.aborted) throw new Error("cleanup cancelled");
     const mod = await import("node-llama-cpp");
     const session = freshSession(mod);

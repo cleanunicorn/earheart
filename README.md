@@ -94,8 +94,9 @@ Three settings are worth a minute for agent work:
 
 - **Cleanup style** (Settings → Cleanup). **Clean** — the default — removes
   *ums* and restarts but keeps your wording and intent. Switch to **Verbatim**
-  for exact strings, commands, or code. Avoid **Polished** for prompts; smoothing
-  prose is not what you want done to an instruction.
+  for exact strings, commands, or code. Avoid **Polished** for prompts: it
+  rewrites freely, restructuring sentences and changing words, which is not
+  what you want done to an instruction.
 - **Dictionary** (Settings → Cleanup). Add the repo, service, tool, and teammate
   names you say every day — `pnpm`, `kubectl`, `PostgreSQL`, `useEffect` — so
   the cleanup model corrects near-misses to the exact spelling. It works through

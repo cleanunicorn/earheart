@@ -301,6 +301,7 @@ function settingsCollectSource() {
     // page loads before settings.js.
     fs.readFileSync(path.join(RENDERER, "aliases.js"), "utf8"),
     extractFunction(js, "collectAliases"),
+    extractFunction(js, "collectFormatting"),
     extractFunction(js, "collect"),
     "this.collect = collect;",
   ].join("\n");
@@ -445,6 +446,7 @@ function microphonePage(source, page) {
         return elements[id] || baseDocument.getElementById(id);
       },
       createElement: () => baseDocument.createElement(),
+      querySelectorAll: () => [],
       querySelector(selector) {
         // finish() re-checks the radio for the saved mode afterwards.
         if (selector.startsWith('input[name="output-mode"][value=')) return { checked: false };
@@ -855,7 +857,7 @@ function collectLimits({ maxSeconds = "", idle = "", saved = {} }) {
     defaults: DEFAULTS,
     cleanupStyles: [{ id: "clean" }],
     $: (id) => elements[id] || { value: "", checked: false },
-    document: { querySelector: () => ({ value: "builtin" }) },
+    document: { querySelector: () => ({ value: "builtin" }), querySelectorAll: () => [] },
   };
   require("node:vm").runInNewContext(settingsCollectSource(), context);
   const out = context.collect();

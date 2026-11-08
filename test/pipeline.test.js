@@ -243,6 +243,9 @@ function dictationRig({
   safeStorage = null,
   // Replaces usage.record (#347); every call is still logged in log.usage.
   usageRecord = () => true,
+  // The destination detector (#336). Default: unsupported platform, so the
+  // take's formatting settles synchronously on the default style.
+  detector = { supported: false, detect: async () => ({ supported: false, app: null, host: null }) },
 } = {}) {
   const saved = []; // the History list, newest first, with the ids add() returned
   const log = {
@@ -303,6 +306,7 @@ function dictationRig({
     },
     settings: { get: () => cfg },
     overrides: {
+      "./context-detector": { createContextDetector: () => detector },
       electron: {
         app: { getPath: () => userData, isReady: () => true },
         safeStorage,
@@ -352,6 +356,7 @@ function dictationRig({
         },
         sendToOverlay(channel, payload) {
           log.overlaySent.push(channel);
+          if (channel === "record:destination") log.destination = payload;
           if (channel === "record:start") {
             lastStart = payload;
             log.lastStart = payload;
@@ -2668,4 +2673,164 @@ test("pipeline: stopFromEnter stops a live take once per session (#338)", () => 
   rig.pipeline.toggle();
   assert.strictEqual(rig.pipeline.stopFromEnter(), true, "a new take gets its own stop");
   assert.strictEqual(stops(), 2);
+});
+
+// ---- destination-aware formatting (#336) ----
+
+const SITE_RULES = {
+  defaultStyle: "standard",
+  rules: [
+    { id: "gh", scope: { type: "host", value: "github.com" }, style: "code-safe" },
+    { id: "mail", scope: { type: "host", value: "mail.example.com" }, style: "email" },
+    { id: "term", scope: { type: "app", value: "com.apple.terminal" }, style: "code-safe" },
+  ],
+};
+
+// A macOS-like detector whose answer a test can change or hold back.
+function fakeDetector(initial) {
+  const d = {
+    supported: true,
+    answer: initial,
+    gate: null,
+    calls: 0,
+    async detect() {
+      d.calls++;
+      if (d.gate) await d.gate;
+      if (d.answer instanceof Error) throw d.answer;
+      return d.answer;
+    },
+  };
+  return d;
+}
+
+const inBrowser = (host) => ({ supported: true, app: { id: "com.google.Chrome", name: "Chrome" }, host });
+
+function formattingRig(over = {}) {
+  const seen = [];
+  const rig = dictationRig({
+    cleanup: true,
+    transcribe: async () => "run it with --verbose in src/main.js",
+    clean: async (raw, cfg) => {
+      seen.push(cfg.formattingStyle);
+      return raw;
+    },
+    ...over,
+  });
+  rig.cfg.formatting = structuredClone(SITE_RULES);
+  return { rig, seen };
+}
+
+test("pipeline formatting: two sites in one browser get different styles, unmatched sites the default", async () => {
+  const detector = fakeDetector(inBrowser("github.com"));
+  const { rig, seen } = formattingRig({ detector });
+  await rig.dictate(speechWav(1));
+  detector.answer = inBrowser("mail.example.com");
+  await rig.dictate(speechWav(1));
+  detector.answer = inBrowser("github.com.evil.example");
+  await rig.dictate(speechWav(1));
+  detector.answer = inBrowser(null);
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(seen, ["code-safe", "email", "standard", "standard"]);
+});
+
+test("pipeline formatting: a host rule beats the application rule", async () => {
+  const detector = fakeDetector({ supported: true, app: { id: "com.apple.Terminal", name: "Terminal" }, host: "mail.example.com" });
+  const { rig, seen } = formattingRig({ detector });
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(seen, ["email"]);
+});
+
+test("pipeline formatting: changing the destination or the rules mid-take changes nothing", async () => {
+  const detector = fakeDetector(inBrowser("github.com"));
+  const { rig, seen } = formattingRig({ detector });
+  rig.pipeline.toggle();
+  await new Promise((resolve) => setImmediate(resolve)); // detection settled
+  // The user switches tab and edits the rules while still speaking.
+  detector.answer = inBrowser("mail.example.com");
+  rig.cfg.formatting = { defaultStyle: "chat", rules: [] };
+  const idle = new Promise((resolve) => rig.pipeline.onStateChange((s) => s === "idle" && resolve()));
+  rig.handlers["audio:captured"]({}, { sid: rig.log.lastStart.sid, wav: speechWav(1) });
+  await rig.liveCleanup("live words", rig.cfg.cleanup, new AbortController().signal);
+  await idle;
+  assert.deepStrictEqual(seen, ["code-safe", "code-safe"], "live preview and the final pass use the frozen style");
+  assert.strictEqual(detector.calls, 1, "the destination is read once per take");
+});
+
+test("pipeline formatting: a slow or hung detector never delays capture", async () => {
+  const detector = fakeDetector(inBrowser("github.com"));
+  detector.gate = new Promise(() => {}); // never answers
+  const { rig } = formattingRig({ detector });
+  rig.pipeline.toggle();
+  assert.strictEqual(rig.pipeline.getState(), "recording");
+  assert.ok(rig.log.lastStart, "record:start was sent without waiting for detection");
+  rig.pipeline.cancel();
+});
+
+test("pipeline formatting: unavailable context never blocks dictation", async () => {
+  const detector = fakeDetector(new Error("not authorized"));
+  const { rig, seen } = formattingRig({ detector });
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(seen, ["standard"]);
+  assert.deepStrictEqual(rig.log.delivered, ["run it with --verbose in src/main.js"]);
+});
+
+test("pipeline formatting: warm-up waits for the destination, not the recording", async () => {
+  const detector = fakeDetector(inBrowser("github.com"));
+  let release;
+  detector.gate = new Promise((resolve) => (release = resolve));
+  const primed = [];
+  const { rig } = formattingRig({ detector, primeCleanup: async (cfg) => { primed.push(cfg.formattingStyle); } });
+  rig.pipeline.toggle();
+  assert.ok(rig.log.lastStart, "recording started");
+  assert.deepStrictEqual(primed, [], "not primed before the destination is known");
+  release();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepStrictEqual(primed, ["code-safe"]);
+  rig.pipeline.cancel();
+});
+
+test("pipeline formatting: the overlay is told the destination and style, never text", async () => {
+  const detector = fakeDetector(inBrowser("github.com"));
+  const { rig } = formattingRig({ detector });
+  rig.pipeline.toggle();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(rig.log.overlaySent.includes("record:destination"));
+  assert.deepStrictEqual(rig.log.destination, { sid: rig.log.lastStart.sid, label: "github.com · Code-safe" });
+  rig.pipeline.cancel();
+});
+
+test("pipeline formatting: a retry keeps the failed take's own formatting", async () => {
+  const stt = flakyStt();
+  const detector = fakeDetector(inBrowser("github.com"));
+  const seen = [];
+  const rig = dictationRig({
+    cleanup: true,
+    detector,
+    transcribe: stt.transcribe,
+    clean: async (raw, cfg) => { seen.push(cfg.formattingStyle); return raw; },
+  });
+  rig.cfg.formatting = structuredClone(SITE_RULES);
+  await rig.dictate(speechWav(5));
+  assert.ok(rig.pipeline.getFailedTake());
+  // Rules, default and focus all change before the retry.
+  rig.cfg.formatting = { defaultStyle: "chat", rules: [] };
+  detector.answer = inBrowser("mail.example.com");
+  stt.down = false;
+  await retried(rig);
+  assert.deepStrictEqual(seen, ["code-safe"]);
+});
+
+test("pipeline formatting: code-safe falls back to the raw words when cleanup drops a token", async () => {
+  const detector = fakeDetector(inBrowser("github.com"));
+  const { rig } = formattingRig({ detector, clean: async () => "Run it with verbose in the main file." });
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(rig.log.delivered, ["run it with --verbose in src/main.js"]);
+});
+
+test("pipeline formatting: cleanup off leaves the words untouched", async () => {
+  const detector = fakeDetector(inBrowser("github.com"));
+  const { rig, seen } = formattingRig({ detector, cleanup: false });
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(seen, []);
+  assert.deepStrictEqual(rig.log.delivered, ["run it with --verbose in src/main.js"]);
 });

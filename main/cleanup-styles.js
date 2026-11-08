@@ -15,6 +15,7 @@
 // only ever set a bare temperature.
 
 const { aliasTerms } = require("../renderer/aliases");
+const { formattingDirective } = require("./formatting-profiles");
 
 const STYLES = [
   {
@@ -121,7 +122,11 @@ function promptTerms(cfg) {
 // The dictionary applies in every mode — preferring the user's spellings is
 // orthogonal to how aggressively the model is allowed to edit.
 function resolveCleanup(cfg) {
-  const base = (cfg.systemPrompt || "") + dictionaryDirective(promptTerms(cfg));
+  // Formatting (#336) is its own block, independent of the intensity style —
+  // it applies under custom too. `formattingStyle` is the take's frozen
+  // choice (main/formatting-profiles.js); standard/absent adds nothing.
+  const base =
+    (cfg.systemPrompt || "") + dictionaryDirective(promptTerms(cfg)) + formattingDirective(cfg.formattingStyle);
   if (cfg.style === "custom") {
     return { systemPrompt: base, sampling: { ...(cfg.custom || {}) }, outputRatio: 1 };
   }

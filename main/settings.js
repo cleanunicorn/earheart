@@ -13,6 +13,7 @@ const secretStore = require("./secret-store");
 const { DEFAULT_STYLE, styleById, NEUTRAL_SAMPLING } = require("./cleanup-styles");
 const { normalizeAliases } = require("../renderer/aliases");
 const i18nCore = require("../renderer/i18n");
+const { sanitizeFormatting, DEFAULT_FORMATTING_STYLE } = require("./formatting-profiles");
 
 // The invariant core of the cleanup instructions, inlined into the model's user
 // turn (not used as a chat system prompt) — see main/engines/engine-worker.js
@@ -201,6 +202,14 @@ const DEFAULTS = {
     // until decided.
     promptOfferDecided: "",
     promptOfferNotified: "",
+  },
+  // Destination-aware formatting (#336, main/formatting-profiles.js): the
+  // capitalization/punctuation style used when no rule matches, and exact
+  // website-host / application rules `{ id, scope: { type, value }, style }`.
+  // Separate from cleanup.style (how much the cleanup edits).
+  formatting: {
+    defaultStyle: DEFAULT_FORMATTING_STYLE,
+    rules: [],
   },
   audio: {
     deviceId: "", // empty = system default microphone
@@ -556,6 +565,15 @@ function normalizeStoredAliases(merged) {
   return { ...merged, cleanup: { ...merged.cleanup, aliases } };
 }
 
+// Make `formatting` valid whatever the file held (older versions have none;
+// hand edits): bad rules dropped, duplicates collapsed, capped. Logs reasons,
+// never rule text. Idempotent; nothing is rewritten until the next save.
+function normalizeStoredFormatting(merged) {
+  const formatting = sanitizeFormatting(merged.formatting, (reason) =>
+    logger.warn(`dropped a saved formatting rule: ${reason}`));
+  return { ...merged, formatting };
+}
+
 // safeStorage answers only after app `ready` (before it, Linux reports no
 // encryption at all). A stub without isReady (unit tests) counts as ready.
 function appReady() {
@@ -618,7 +636,7 @@ function load() {
     ? secretStore.storageStatus(safeStorage, process.platform)
     : { secure: false, backend: null };
   const decoded = secretStore.decodeSecrets(stored, ready ? safeStorage : null);
-  const merged = normalizeActivation(normalizeMic(normalizeAppearance(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored)))))));
+  const merged = normalizeActivation(normalizeMic(normalizeAppearance(normalizeStoredFormatting(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored))))))));
   // Before `ready` encrypted keys read as "", so the result is not cached:
   // the first load after `ready` decrypts them. Nothing saves before then
   // (save() refuses).
@@ -688,7 +706,7 @@ function writeFile(merged) {
 function save(next) {
   if (!appReady()) throw new Error("settings cannot be saved before the app is ready");
   const previous = load();
-  const merged = normalizeActivation(normalizeMic(normalizeAppearance(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, next))))));
+  const merged = normalizeActivation(normalizeMic(normalizeAppearance(normalizeStoredFormatting(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, next)))))));
   // Fail closed (#343): recordings are only ever kept encrypted, so keeping
   // them can't be turned on without OS-backed secure storage.
   if (merged.recordings.keep === true && !keyStorageStatus.secure) {

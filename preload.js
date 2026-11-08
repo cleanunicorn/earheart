@@ -21,6 +21,7 @@ const ROLES = {
       "record:cancel",
       "record:pause-toggle",
       "record:discard",
+      "record:destination",
       "pipeline:status",
       "pipeline:partial",
       "pipeline:progress",

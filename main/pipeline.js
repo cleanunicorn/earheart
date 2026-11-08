@@ -35,6 +35,10 @@ const { createNotifier, sttNotReadyNotice, BODY_MAX } = require("./setup-notices
 const { createFailedTake } = require("./failed-take");
 const recordings = require("./recordings");
 const { applyAliases } = require("../renderer/aliases");
+const { createContextDetector } = require("./context-detector");
+const {
+  resolveFormatting, freezeFormatting, guardCleaned, formattingStyleById,
+} = require("./formatting-profiles");
 
 let state = "idle"; // idle | recording | processing
 // Shows the "model not downloaded" notice; its click opens Settings.
@@ -53,6 +57,63 @@ const commandsNotifier = createNotifier({
 });
 
 let session = 0; // current dictation session id
+
+// Destination-aware formatting (#336). Each take decides its formatting style
+// once, from the destination seen as recording starts and the rules as they
+// were then, and keeps it: live preview, the final pass and priming read that
+// frozen decision, never the live settings or the current focus. (Engine and
+// model settings still follow the live settings, as they always did.)
+// `heldFormatting` is the decision of the failed take held for retry.
+const contextDetector = createContextDetector();
+const DEFAULT_FORMATTING = freezeFormatting({ styleId: "standard", source: "default" });
+let takeContext = null; // { sid, frozen, promise } of the newest recording
+let heldFormatting = null;
+
+// Start looking at the destination WITHOUT delaying capture: the mic and
+// overlay start now; this resolves on its own (bounded by the detector's
+// timeout, and any failure is "unavailable" → the default style). Cleanup
+// work — live passes, priming, the final clean — waits on `promise`, never
+// the recording.
+function beginTakeContext(sid, formattingCfg) {
+  const rules = structuredClone(formattingCfg ?? {});
+  const take = { sid, frozen: null, promise: null };
+  if (!contextDetector.supported) {
+    take.frozen = freezeFormatting(resolveFormatting(rules, null));
+    take.promise = Promise.resolve(take.frozen);
+    takeContext = take;
+    return take;
+  }
+  take.promise = Promise.resolve()
+    .then(() => contextDetector.detect())
+    .catch(() => null)
+    .then((ctx) => {
+      take.frozen = freezeFormatting(resolveFormatting(rules, ctx));
+      if (take.frozen.source !== "default" && session === sid && state === "recording") {
+        // The destination and style only (never text or the full URL).
+        try {
+          windows.sendToOverlay("record:destination", {
+            sid,
+            label: `${take.frozen.label} · ${formattingStyleById(take.frozen.styleId).label}`,
+          });
+        } catch {
+          // Feedback only; never let it break the take.
+        }
+      }
+      return take.frozen;
+    });
+  takeContext = take;
+  return take;
+}
+
+function formattingForSession(sid) {
+  if (!takeContext || takeContext.sid !== sid) return Promise.resolve(DEFAULT_FORMATTING);
+  return takeContext.frozen ? Promise.resolve(takeContext.frozen) : takeContext.promise;
+}
+
+// The cleanup config for one take: live settings, plus its frozen formatting.
+function withFormatting(cleanupCfg, formatting) {
+  return { ...cleanupCfg, formattingStyle: formatting.styleId };
+}
 let abortController = null;
 // What the current take is for. "dictation" is everything the user normally
 // does; "command" (#344) is a voice command, whose recording and speech-to-text
@@ -72,6 +133,7 @@ const stateListeners = new Set();
 const failedTakeListeners = new Set();
 const failedTake = createFailedTake({
   onChange: (info) => {
+    if (!info) heldFormatting = null;
     // A card still offering Retry (an update prompt can pin it past the
     // expiry) must stop offering what's gone.
     if (!info) windows.sendToOverlay("pipeline:take-released");
@@ -187,7 +249,11 @@ async function transcribeLive(wav, sttCfg, signal) {
 
 const livePreview = createLivePreview({
   runTranscribe: transcribeLive,
-  runCleanup: (raw, cleanupCfg, signal) => route.clean(raw, cleanupCfg, signal, cleanupLimits()),
+  runCleanup: async (raw, cleanupCfg, signal) => {
+    const formatting = await formattingForSession(session);
+    const text = await route.clean(raw, withFormatting(cleanupCfg, formatting), signal, cleanupLimits());
+    return guardCleaned(formatting.styleId, raw, text);
+  },
   canCleanup: (cfg) => cleanupAvailability(cfg).ok,
   sendToOverlay: windows.sendToOverlay,
   getSettings: settings.get,
@@ -487,12 +553,12 @@ function withAliases(text, aliases) {
 // flash there would be noise. The raw-transcript fallback lives one level up,
 // in cleanWithFallback — that's dictation policy, not progress plumbing.
 async function cleanWithProgress(raw, cleanupCfg, signal, stale) {
-  const text = await route.clean(raw, cleanupCfg, signal, {
+  const text = guardCleaned(cleanupCfg.formattingStyle, raw, await route.clean(raw, cleanupCfg, signal, {
     ...cleanupLimits(),
     onProgress: (fraction) => {
       if (!stale()) sendProgress("cleaning", fraction);
     },
-  });
+  }));
   if (cleanupCfg.engine === "builtin" && !stale()) {
     sendProgress("cleaning", 1);
   }
@@ -607,10 +673,11 @@ function retryFailedTake() {
   const begin = () => {
     if (retryPending === sid) retryPending = null;
     if (session !== sid || state !== "idle") return;
+    const formatting = heldFormatting; // before take() releases it
     const wav = failedTake.take();
     if (!wav) return;
     windows.showOverlay();
-    process(sid, wav, { retry: true });
+    process(sid, wav, { retry: true, formatting });
   };
   if (win.webContents.isLoading()) {
     win.webContents.once("did-finish-load", begin);
@@ -663,6 +730,7 @@ function startRecording(command = null) {
   sessionPurpose = command ? "command" : "dictation";
   commandHandlers = command;
   setState("recording");
+  const take = beginTakeContext(sid, cfg.formatting);
   const liveOn = cfg.stt.engine === "builtin" && cfg.stt.livePreview?.enabled;
   // Warm the built-in models as recording begins, so their load time is hidden
   // under the time the user spends speaking instead of being paid after stop.
@@ -681,7 +749,13 @@ function startRecording(command = null) {
   const cleanupReady = cleanupAvailability(cfg.cleanup);
   if (cleanupReady.reason === "missing" && !isModelDownloading("cleanup", cleanupReady.modelId)) missingCleanupNotice(cleanupReady);
   if (cfg.cleanup.enabled && cfg.cleanup.engine === "builtin" && cleanupReady.ok) {
-    primeCleanupLogged(cfg.cleanup, sid);
+    // Waits for the destination (bounded), not for the recording: the prompt
+    // prefix includes the take's formatting block.
+    const prime = (formatting) => {
+      if (session === sid && state === "recording") primeCleanupLogged(withFormatting(cfg.cleanup, formatting), sid);
+    };
+    if (take.frozen) prime(take.frozen);
+    else take.promise.then(prime);
   }
   const win = windows.createOverlay();
   const begin = () => {
@@ -777,7 +851,7 @@ function cancel() {
   windows.hideOverlay();
 }
 
-async function process(sid, wavArrayBuffer, { retry = false, purpose = "dictation" } = {}) {
+async function process(sid, wavArrayBuffer, { retry = false, purpose = "dictation", formatting: retryFormatting } = {}) {
   const cfg = settings.get();
   // Snapshot the committed chunk decodes BEFORE cancelling the live preview
   // (cancel resets them): they are the final transcript's prefix, so the
@@ -801,6 +875,9 @@ async function process(sid, wavArrayBuffer, { retry = false, purpose = "dictatio
   // cleanup fails, History when delivery does); before it, only the audio.
   let transcribed = false;
   const stale = () => session !== sid || signal.aborted;
+  // The take's frozen formatting: a retry reuses the failed take's own.
+  const formatting = retry ? retryFormatting || DEFAULT_FORMATTING : await formattingForSession(sid);
+  const cleanupCfg = withFormatting(cfg.cleanup, formatting);
 
   const builtinCleanup = cfg.cleanup.enabled && cfg.cleanup.engine === "builtin" && cleanupAvailability(cfg.cleanup).ok;
   if (builtinCleanup) {
@@ -812,7 +889,7 @@ async function process(sid, wavArrayBuffer, { retry = false, purpose = "dictatio
     // WHILE the tail decodes on the STT worker. The final clean then only
     // prefills the tail's words before generating. Best effort.
     if (assembly && !assembly.broken && assembly.committedRaw) {
-      primeCleanupLogged(cfg.cleanup, sid, assembly.committedRaw);
+      primeCleanupLogged(cleanupCfg, sid, assembly.committedRaw);
     }
   }
 
@@ -869,7 +946,7 @@ async function process(sid, wavArrayBuffer, { retry = false, purpose = "dictatio
     const rawReason = cfg.cleanup.enabled && !cleanupReady.ok && isModelDownloading("cleanup", cleanupReady.modelId) ? "cleanup-downloading" : null;
     if (cfg.cleanup.enabled && cleanupReady.ok) {
       overlayStatus("cleaning");
-      ({ text, cleaned } = await cleanWithFallback(raw, cfg.cleanup, signal, stale));
+      ({ text, cleaned } = await cleanWithFallback(raw, cleanupCfg, signal, stale));
       if (stale()) return;
     }
     // Explicit aliases (#335) run on what is delivered — the cleaned text or
@@ -973,6 +1050,7 @@ async function process(sid, wavArrayBuffer, { retry = false, purpose = "dictatio
     const held = transcribed ? null : failedTake.info();
     const earlier = !!held && held.bytes > wav.length;
     const kept = transcribed ? null : earlier ? held : failedTake.keep(wav);
+    if (kept && !earlier) heldFormatting = formatting;
     overlayStatus("error", {
       message: describeError(err),
       ...(kept ? { failedTake: { expiresInSec: kept.expiresInSec, ...(earlier ? { earlier: true } : {}) } } : {}),

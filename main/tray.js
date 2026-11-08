@@ -9,6 +9,7 @@ const history = require("./history");
 const { deliver } = require("./output/deliver");
 const { deliverText } = require("./output/single-line");
 const logger = require("./util/logger");
+const { t } = require("./i18n");
 
 let tray = null;
 let pipeline = null;
@@ -17,9 +18,9 @@ let appRef = null;
 const ASSETS = path.join(__dirname, "..", "assets");
 
 const OUTPUT_MODES = [
-  { label: "Paste into active app", mode: "paste" },
-  { label: "Paste and keep on clipboard", mode: "paste-copy" },
-  { label: "Copy to clipboard only", mode: "clipboard" },
+  { labelKey: "tray.output.paste", mode: "paste" },
+  { labelKey: "tray.output.pasteCopy", mode: "paste-copy" },
+  { labelKey: "tray.output.clipboard", mode: "clipboard" },
 ];
 
 function icon(name) {
@@ -47,7 +48,7 @@ async function copyLast() {
   catch (err) {
     logger.warn(`could not copy transcript: ${err.message}`);
     try {
-      new Notification({ title: "Could not copy transcript", body: "Your transcript is still in History. Try copying it again." }).show();
+      new Notification({ title: t("tray.copyFailed.title"), body: t("tray.copyFailed.body") }).show();
     } catch (notifyErr) { logger.warn(`copy notification failed: ${notifyErr.message}`); }
     return { ok: false, error: err.message };
   }
@@ -70,41 +71,41 @@ function buildMenu(app) {
     {
       label:
         state === "recording"
-          ? "Stop & transcribe"
+          ? t("tray.stop")
           : state === "processing"
-            ? "Processing…"
-            : "Start dictation",
+            ? t("tray.processing")
+            : t("tray.start"),
       enabled: state !== "processing",
       click: () => pipeline.toggle(),
     },
     {
-      label: "Cancel",
+      label: t("tray.cancel"),
       visible: state !== "idle",
       click: () => pipeline.cancel(),
     },
     // A failed transcription's recording, held for a retry (#293).
     {
-      label: "Retry failed transcription",
+      label: t("tray.retryFailed"),
       visible: !!failedTake,
       enabled: state === "idle",
       click: () => pipeline.retryFailedTake(),
     },
     {
-      label: "Discard failed recording",
+      label: t("tray.discardFailed"),
       visible: !!failedTake,
       enabled: state === "idle",
       click: () => pipeline.discardFailedTake(),
     },
     { type: "separator" },
-    ...OUTPUT_MODES.map(({ label, mode }) => ({
-      label,
+    ...OUTPUT_MODES.map(({ labelKey, mode }) => ({
+      label: t(labelKey),
       type: "radio",
       checked: shownMode === mode,
       click: () => setOutputMode(mode),
     })),
     { type: "separator" },
     {
-      label: "Copy last transcription",
+      label: t("tray.copyLast"),
       enabled: !!lastText && state !== "processing",
       // Re-read at click time so we copy the freshest entry even if the menu
       // was built a moment before the dictation landed.
@@ -112,15 +113,15 @@ function buildMenu(app) {
     },
     { type: "separator" },
     {
-      label: "Correct last transcription…",
+      label: t("tray.correctLast"),
       enabled: !!lastEntry && state === "idle",
       click: correctLast,
     },
     ...updateItems(),
     { label: "Commands…", accelerator: cfg.paletteHotkey || undefined, click: () => openCommands() },
-    { label: "Settings…", click: () => windows.openSettings() },
+    { label: t("tray.settings"), click: () => windows.openSettings() },
     { type: "separator" },
-    { label: "Quit Earheart", click: () => app.quit() },
+    { label: t("tray.quit"), click: () => app.quit() },
   ]);
 }
 
@@ -143,8 +144,8 @@ function setOutputMode(mode) {
     // believing the mode changed. Best-effort, like every notification here.
     try {
       new Notification({
-        title: "Could not change the output mode",
-        body: `Earheart couldn't save the setting (${err.message}). It is unchanged.`,
+        title: t("tray.outputModeFailed.title"),
+        body: t("tray.outputModeFailed.body"),
       }).show();
     } catch (notifyErr) {
       logger.warn(`output-mode notification failed: ${notifyErr.message}`);
@@ -159,20 +160,22 @@ function updateItems() {
   const u = updates.getState();
   if (u.status === "available" && u.method === "install") {
     return [
-      { label: `Update to v${u.latest}…`, click: () => updates.startUpdate() },
+      { label: t("tray.updateTo", { version: u.latest }), click: () => updates.startUpdate() },
       { type: "separator" },
     ];
   }
   if (u.status === "downloading") {
-    const pct = u.progress ? ` ${Math.round((u.progress.fraction || 0) * 100)}%` : "";
+    const label = u.progress
+      ? t("tray.downloadingUpdatePct", { percent: Math.round((u.progress.fraction || 0) * 100) })
+      : t("tray.downloadingUpdate");
     return [
-      { label: `Downloading update…${pct}`, enabled: false },
+      { label, enabled: false },
       { type: "separator" },
     ];
   }
   if (u.status === "ready") {
     return [
-      { label: `Restart to update to v${u.latest}`, click: () => updates.installNow() },
+      { label: t("tray.restartToUpdate", { version: u.latest }), click: () => updates.installNow() },
       { type: "separator" },
     ];
   }
@@ -185,10 +188,10 @@ function refresh(app = appRef) {
   tray.setImage(icon(state === "recording" ? "tray-recording.png" : "tray.png"));
   tray.setToolTip(
     state === "recording"
-      ? "Earheart — recording"
+      ? t("tray.tooltip.recording")
       : state === "processing"
-        ? "Earheart — processing"
-        : "Earheart — ready"
+        ? t("tray.tooltip.processing")
+        : t("tray.tooltip.ready")
   );
   tray.setContextMenu(buildMenu(app));
 }

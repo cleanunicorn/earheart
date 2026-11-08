@@ -8,6 +8,7 @@
 // scope and cannot be required from a test.
 
 const { prettyHotkey } = require("./util/hotkey-label");
+const { t } = require("./i18n");
 
 // Matches the other notifications' limit (pipeline.js), so a long native error
 // can't push the fix path out of view.
@@ -16,8 +17,8 @@ const BODY_MAX = 180;
 function readyNotice(hotkey) {
   const combo = prettyHotkey(hotkey);
   return {
-    title: "Earheart is ready",
-    body: combo ? `Press ${combo} to dictate.` : "Open the tray menu to get started.",
+    title: t("notice.ready.title"),
+    body: combo ? t("notice.ready.pressHotkey", { hotkey: combo }) : t("notice.ready.openTray"),
   };
 }
 
@@ -27,18 +28,11 @@ function readyNotice(hotkey) {
  */
 function sttNotReadyNotice(readiness) {
   if (readiness.reason === "unknown") {
-    return {
-      title: "Earheart: no speech model available",
-      body:
-        "The selected speech model isn't available. Choose one in Settings → " +
-        "Speech-to-text. Click to open Settings.",
-    };
+    return { title: t("notice.sttUnknown.title"), body: t("notice.sttUnknown.body") };
   }
   return {
-    title: "Earheart: speech model not downloaded",
-    body:
-      `Download “${readiness.label}” in Settings → Speech-to-text before ` +
-      "dictating. Click to open Settings.",
+    title: t("notice.sttMissing.title"),
+    body: t("notice.sttMissing.body", { model: readiness.label }),
   };
 }
 
@@ -48,19 +42,16 @@ function sttNotReadyNotice(readiness) {
  */
 function promptOfferNotice(offer) {
   return {
-    title: "Earheart: a new cleanup prompt",
-    body:
-      offer.kind === "custom"
-        ? "The default prompt is now tuned for code dictation. Yours is edited, so it wasn't changed. Click to compare."
-        : "The default prompt is now tuned for code dictation. Click to switch to it in Settings → Cleanup.",
+    title: t("notice.promptOffer.title"),
+    body: t(offer.kind === "custom" ? "notice.promptOffer.custom" : "notice.promptOffer.default"),
   };
 }
 
 /** The notice for a record hotkey that failed to register at launch. */
 function hotkeyFailureNotice(result) {
-  const suffix = " Click to open Settings.";
+  const suffix = ` ${t("notice.hotkey.clickToOpen")}`;
   return {
-    title: "Earheart: hotkey not working",
+    title: t("notice.hotkey.title"),
     body: `${String(result.error).slice(0, BODY_MAX - suffix.length)}${suffix}`,
   };
 }

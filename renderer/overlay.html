@@ -29,7 +29,7 @@
       <div id="update" hidden role="alert">
         <div id="update-head">
           <span id="update-title"></span>
-          <button id="update-close" title="Later" aria-label="Later">
+          <button id="update-close" title="Later" aria-label="Later" data-i18n-attr="aria-label:overlay.updateCloseAriaLabel; title:overlay.updateCloseTitle">
             <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
               <path
                 d="M4.2 4.2 L11.8 11.8 M11.8 4.2 L4.2 11.8"
@@ -54,8 +54,8 @@
           <!-- Grouped so the two ways of saying no wrap to the next line
                together, instead of one of them dangling under the primary. -->
           <div id="update-outs">
-            <button id="update-skip" class="pill quiet">Skip this version</button>
-            <button id="update-never" class="pill quiet">Don't remind me</button>
+            <button id="update-skip" class="pill quiet" data-i18n="overlay.updateSkip">Skip this version</button>
+            <button id="update-never" class="pill quiet" data-i18n="overlay.updateNever">Don't remind me</button>
           </div>
         </div>
       </div>
@@ -77,8 +77,8 @@
            so, and offer to transcribe it again or let it go. -->
       <div id="take-actions" hidden>
         <span id="take-note" aria-live="polite"></span>
-        <button id="take-retry" class="pill primary">Retry transcription</button>
-        <button id="take-discard" class="pill quiet">Discard</button>
+        <button id="take-retry" class="pill primary" data-i18n="overlay.takeRetry">Retry transcription</button>
+        <button id="take-discard" class="pill quiet" data-i18n="overlay.takeDiscard">Discard</button>
       </div>
       <div id="controls">
         <!-- The state, said in one word next to its dot: Listening / Paused /
@@ -131,7 +131,7 @@
         </button>
         <!-- Done: the one filled key — finish the dictation and let Earheart
              transcribe and deliver the text. -->
-        <button id="stop" title="Done — transcribe and insert" aria-label="Done — transcribe and insert">
+        <button id="stop" title="Done — transcribe and insert" aria-label="Done — transcribe and insert" data-i18n-attr="aria-label:overlay.stopAriaLabel; title:overlay.stopTitle">
           <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
             <path
               d="M3.4 8.6 L6.7 11.8 L12.6 4.6"
@@ -157,6 +157,9 @@
         </button>
       </div>
     </div>
+    <script src="i18n.js"></script>
+    <script src="locales/en.js"></script>
+    <script src="i18n-client.js"></script>
     <script src="chunk-boundary.js"></script>
     <script src="microphone.js"></script>
     <script src="record-cues.js"></script>

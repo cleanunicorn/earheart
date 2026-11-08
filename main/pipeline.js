@@ -29,6 +29,8 @@ const { transcribeChunked } = require("./chunked-decode");
 const { withRetry } = require("./util/retry");
 const logger = require("./util/logger");
 const { prettyHotkey } = require("./util/hotkey-label");
+const { t } = require("./i18n");
+const { describeError } = require("./error-text");
 const { createNotifier, sttNotReadyNotice, BODY_MAX } = require("./setup-notices");
 const { createFailedTake } = require("./failed-take");
 const recordings = require("./recordings");
@@ -110,8 +112,8 @@ function missingCleanupNotice(readiness) {
   if (missingCleanupNotified) return;
   missingCleanupNotified = true;
   cleanupNotifier.show({
-    title: "Earheart: cleanup model not downloaded",
-    body: (readiness.label || readiness.modelId) + " is not downloaded — raw transcripts work. Click to download it in Settings → Cleanup.",
+    title: t("pipeline.cleanupMissing.title"),
+    body: t("pipeline.cleanupMissing.body", { model: readiness.label || readiness.modelId }),
   });
 }
 // The builtin cleanup context is sized from Max dictation length, which the
@@ -127,7 +129,7 @@ function reconcileCompletedCleanup() {
   if (!cfg?.enabled || cfg.engine !== "builtin" || !completedCleanup.has(id) || !cleanupAvailability(cfg).ok) return;
   if (!announcedCleanup.has(id)) {
     announcedCleanup.add(id);
-    cleanupNotifier.show({ title: "Earheart: cleanup is ready", body: "Your next dictation can be cleaned automatically." });
+    cleanupNotifier.show({ title: t("pipeline.cleanupReady.title"), body: t("pipeline.cleanupReady.body") });
   }
   if (state !== "idle") return;
   completedCleanup.delete(id);
@@ -793,8 +795,8 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
       // like any dictation; this says it is not the whole thing.
       logger.warn("transcription incomplete: delivering the recovered text");
       notify({
-        title: "Earheart: transcription interrupted",
-        body: "The speech engine stopped part-way; delivered the text recovered so far.",
+        title: t("pipeline.interrupted.title"),
+        body: t("pipeline.interrupted.body"),
       });
     }
 
@@ -862,13 +864,13 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
 
     if (result.method === "clipboard-changed") {
       // Nothing was pasted or copied: the newer clipboard is the user's.
-      notify({ title: "Earheart: not pasted, the clipboard changed", body: result.hint });
+      notify({ title: t("pipeline.clipboardChanged.title"), body: result.hint });
     } else if (result.hint) {
       // The overlay's detail row clips after a couple of dozen characters and
       // hides itself seconds later; the full instruction needs somewhere to
       // stay, same as a cleanup failure does.
       notify({
-        title: "Earheart: auto-paste failed, copied to clipboard",
+        title: t("pipeline.pasteFailed.title"),
         body: result.hint,
       });
     }
@@ -900,21 +902,19 @@ async function process(sid, wavArrayBuffer, { retry = false } = {}) {
     const earlier = !!held && held.bytes > wav.length;
     const kept = transcribed ? null : earlier ? held : failedTake.keep(wav);
     overlayStatus("error", {
-      message: String(err.message).slice(0, 200),
+      message: describeError(err),
       ...(kept ? { failedTake: { expiresInSec: kept.expiresInSec, ...(earlier ? { earlier: true } : {}) } } : {}),
     });
     if (kept) {
       // Never "0 minutes", never more time than is left.
       const minutes = Math.floor(kept.expiresInSec / 60);
-      const remaining = minutes < 1 ? "less than a minute" : `${minutes} minute${minutes === 1 ? "" : "s"}`;
+      const remaining = minutes < 1 ? t("pipeline.lessThanMinute") : t("pipeline.minutes", { count: minutes });
       notify({
-        title: earlier
-          ? "Earheart: transcription failed, earlier recording still kept"
-          : "Earheart: transcription failed, recording kept",
-        body: `Retry it from the tray menu or the overlay, or run earheart --retry, within ${remaining}. ${err.message}`,
+        title: earlier ? t("pipeline.failedEarlierKept.title") : t("pipeline.failedKept.title"),
+        body: t("pipeline.failedKept.body", { remaining, reason: describeError(err) }),
       });
     } else {
-      notify({ title: "Earheart: dictation failed, nothing was delivered", body: err.message });
+      notify({ title: t("pipeline.failedNothing.title"), body: describeError(err) });
     }
     hideOverlaySoon(sid, kept ? FAILED_TAKE_CARD_MS : 5000);
   } finally {

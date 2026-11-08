@@ -225,8 +225,8 @@ const KEYBOARD_ROUTES = {
 // every other app); each reaches the same pipeline entry through IPC and a CLI
 // flag a desktop shortcut can bind, and through the tray.
 const PANEL_ROUTES = {
-  "take-retry": { channel: "pipeline:retry", entry: "retryFailedTake", flag: "--retry", tray: "Retry failed transcription" },
-  "take-discard": { channel: "pipeline:discard-take", entry: "discardFailedTake", flag: "--discard", tray: "Discard failed recording" },
+  "take-retry": { channel: "pipeline:retry", entry: "retryFailedTake", flag: "--retry", tray: "tray.retryFailed" },
+  "take-discard": { channel: "pipeline:discard-take", entry: "discardFailedTake", flag: "--discard", tray: "tray.discardFailed" },
 };
 
 function functionBody(source, name) {
@@ -332,7 +332,7 @@ test("a failed take's Retry and Discard have a keyboard route to the same pipeli
     }
     assert.match(
       trayJs,
-      new RegExp(`label: "${route.tray}",[\\s\\S]{0,200}?click: \\(\\) => pipeline\\.${route.entry}\\(\\)`),
+      new RegExp(`label: t\\("${route.tray}"\\),[\\s\\S]{0,200}?click: \\(\\) => pipeline\\.${route.entry}\\(\\)`),
       `the tray must offer ${route.tray}`
     );
   }
@@ -343,12 +343,15 @@ test("a failed take's Retry and Discard have a keyboard route to the same pipeli
 test("the failed-take card does not promise a minute when less remains", () => {
   const branch = js.match(/case "error":([\s\S]*?)\n\s*break;/);
   assert.ok(branch, "the error-card branch exists");
-  const render = new Function("detail", "setStatus", "takeNote", "takeActions", "cancelBtn", "syncOverlayHeight", branch[1]);
+  const core = require("../renderer/i18n");
+  const translator = core.createTranslator({ locale: "en", catalogs: require("../renderer/locales") });
+  const tr = translator.t;
+  const render = new Function("detail", "setStatus", "takeNote", "takeActions", "cancelBtn", "syncOverlayHeight", "tr", branch[1]);
   for (const [seconds, duration] of [[5, "less than a minute"], [59, "less than a minute"], [60, "1 min"], [120, "2 min"]]) {
     for (const earlier of [false, true]) {
       const note = {};
       const actions = { hidden: true };
-      render({ failedTake: { expiresInSec: seconds, earlier } }, () => {}, note, actions, {}, () => {});
+      render({ failedTake: { expiresInSec: seconds, earlier } }, () => {}, note, actions, {}, () => {}, tr);
       assert.strictEqual(note.textContent, `${earlier ? "Earlier recording" : "Recording"} kept for ${duration}`);
       assert.strictEqual(actions.hidden, false);
     }

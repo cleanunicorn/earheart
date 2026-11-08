@@ -6,6 +6,7 @@ const path = require("node:path");
 const settings = require("./settings");
 const logger = require("./util/logger");
 const { guardNavigation } = require("./window-guard");
+const { t } = require("./i18n");
 
 const PRELOAD = path.join(__dirname, "..", "preload.js");
 const RENDERER = path.join(__dirname, "..", "renderer");
@@ -543,7 +544,7 @@ function openSettings({ fromWizard = false, section, model = false, query: histo
     height: 780,
     minWidth: 560,
     minHeight: 480,
-    title: "Earheart",
+    title: t("window.settings.title"),
   });
   load(settingsWindow);
   settingsWindow.on("closed", () => {
@@ -556,7 +557,7 @@ function openSettings({ fromWizard = false, section, model = false, query: histo
 function openCorrection(entry = null) {
   if (alive(correctionWindow)) {
     if (entry?.text && entry.text !== correctionText) {
-      correctionWindow.webContents.send("correction:notice", "Your current correction is still open. Copy or close it before opening another transcript.");
+      correctionWindow.webContents.send("correction:notice", t("correction.busy"));
     }
     return bringForward(correctionWindow);
   }
@@ -564,7 +565,7 @@ function openCorrection(entry = null) {
   correctionDirty = false;
   correctionWindow = createFormWindow("correction", {
     width: 720, height: 780, minWidth: 520, minHeight: 600,
-    title: "Correct transcript · Earheart",
+    title: t("window.correction.title"),
   });
   correctionWindow.loadFile(path.join(RENDERER, "correction.html"));
   correctionWindow.on("close", (event) => {
@@ -588,11 +589,11 @@ function confirmCorrectionClose() {
   try {
     const choice = dialog.showMessageBoxSync(correctionWindow, {
       type: "question",
-      buttons: ["Keep editing", "Discard draft"],
+      buttons: [t("correction.discard.keep"), t("correction.discard.discard")],
       defaultId: 0,
       cancelId: 0,
-      message: "Discard your uncopied corrections?",
-      detail: "Your original transcript stays in History. Remembered spellings have already been saved.",
+      message: t("correction.discard.message"),
+      detail: t("correction.discard.detail"),
     });
     if (choice !== 1) return false;
     correctionDirty = false;
@@ -613,7 +614,7 @@ function openWizard() {
     height: 680,
     minWidth: 560,
     minHeight: 560,
-    title: "Welcome to Earheart",
+    title: t("window.wizard.title"),
   });
   wizardWindow.loadFile(path.join(RENDERER, "wizard.html"));
   wizardWindow.on("closed", () => {
@@ -647,6 +648,19 @@ function sendToForms(channel, payload) {
 function broadcast(channel, payload) {
   for (const win of BrowserWindow.getAllWindows()) {
     if (alive(win)) win.webContents.send(channel, payload);
+  }
+}
+
+// Re-title the open framed windows after a UI-language change (#349). The
+// pages translate themselves; only the native title bar is main's.
+function retitle() {
+  const titles = [
+    [settingsWindow, "window.settings.title"],
+    [wizardWindow, "window.wizard.title"],
+    [correctionWindow, "window.correction.title"],
+  ];
+  for (const [win, key] of titles) {
+    if (alive(win)) win.setTitle(t(key));
   }
 }
 
@@ -687,6 +701,7 @@ module.exports = {
   closeCorrection,
   sendToSettings,
   sendToForms,
+  retitle,
   broadcast,
   openWizard,
   closeWizard,

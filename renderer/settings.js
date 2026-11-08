@@ -247,7 +247,7 @@ async function loadMicrophones() {
   if (current.audio.deviceId) {
     const saved = document.createElement("option");
     saved.value = current.audio.deviceId;
-    saved.textContent = "Configured microphone";
+    saved.textContent = i18n.t("rt.configuredMicrophone");
     select.appendChild(saved);
     select.value = current.audio.deviceId;
   }
@@ -276,7 +276,7 @@ async function loadMicrophones() {
     ) {
       const configured = select.querySelector(`option[value="${CSS.escape(current.audio.deviceId)}"]`);
       if (configured) {
-        configured.textContent = "Configured microphone (not connected)";
+        configured.textContent = i18n.t("rt.configuredMicrophoneNotConnected");
         status.textContent =
           "Saved microphone not found. Dictation can temporarily use the system default; this selection stays saved.";
       }
@@ -332,6 +332,8 @@ function populate() {
 
   $("start-on-boot").checked = !!current.startOnBoot;
   $("appearance").value = current.appearance || "system";
+  populateUiLanguages();
+  $("ui-language").value = EarheartI18n.normalizePreference(current.uiLanguage);
 
   $("history-enabled").checked = current.history.enabled;
   $("recordings-keep").checked = current.recordings?.keep === true;
@@ -381,6 +383,7 @@ function collect() {
     paletteHotkey: current.paletteHotkey || "",
     startOnBoot: $("start-on-boot").checked,
     appearance: $("appearance").value,
+    uiLanguage: $("ui-language").value,
     updates: {
       ...current.updates,
       autoCheck: $("updates-autocheck").checked,
@@ -506,6 +509,19 @@ function setStyleMode(mode) {
   if (el) el.checked = true;
 }
 
+// One option per shipped catalog, named in its own language so a user can find
+// theirs whatever the current UI language is (#349). Idempotent.
+function populateUiLanguages() {
+  const select = $("ui-language");
+  for (const tag of Object.keys(EarheartLocales)) {
+    if (select.querySelector(`option[value="${tag}"]`)) continue;
+    const option = document.createElement("option");
+    option.value = tag;
+    option.textContent = EarheartLocales[tag]["meta.name"] || tag;
+    select.append(option);
+  }
+}
+
 function populateCleanupStyle() {
   const c = current.cleanup;
   setStyleMode(c.style === "custom" ? "custom" : "preset");
@@ -535,7 +551,7 @@ function renderStyleLabel() {
   $("cleanup-style").setAttribute("aria-valuetext", `${style.label} — ${style.hint}`);
   // The custom pane's seed button tracks the slider's last position, which
   // persists while the preset pane is hidden.
-  $("cleanup-custom-from-preset").textContent = `Start from preset: ${style.label}`;
+  $("cleanup-custom-from-preset").textContent = i18n.t("rt.startFromPresetLabel", { label: style.label });
 }
 
 // Show only the active mode's controls; `hidden` also removes the inactive
@@ -686,9 +702,9 @@ function renderManage(kind) {
   const download = modelDownloads.get(modelDownloadKey(kind, modelId));
 
   if (info.installed) {
-    status.textContent = "Downloaded ✓";
+    status.textContent = i18n.t("rt.downloaded");
     status.className = "status ok";
-    btn.textContent = "Remove";
+    btn.textContent = i18n.t("rt.remove");
     btn.className = "ghost danger";
     // For a custom model "Remove" also forgets its definition, since there's no
     // curated reason to keep an un-downloaded custom entry around.
@@ -699,7 +715,7 @@ function renderManage(kind) {
       bar.hidden = false;
       fill.style.width = `${Math.round(download.fraction * 100)}%`;
       status.textContent = download.message || "Downloading…";
-      btn.textContent = "Cancel";
+      btn.textContent = i18n.t("rt.cancel");
       btn.className = "ghost";
       btn.onclick = () => earheart.invoke("models:cancel", { kind, modelId });
     } else {
@@ -716,7 +732,7 @@ function renderManage(kind) {
   // A custom model that isn't downloaded still needs a way off the list.
   if (info.custom && !info.installed) {
     const forget = document.createElement("button");
-    forget.textContent = "Remove from list";
+    forget.textContent = i18n.t("rt.removeFromList");
     forget.className = "ghost danger";
     forget.onclick = () => removeCustomModel(modelId);
     row.append(forget);
@@ -788,7 +804,7 @@ function setRowRemoving(modelId, removing) {
       button.disabled = removing;
     }
     if (removing && ui.status) {
-      ui.status.textContent = "Removing…";
+      ui.status.textContent = i18n.t("rt.removing");
       ui.status.className = "status";
     }
   }
@@ -1025,7 +1041,7 @@ function applySettingsChange({ previous, current: saved }) {
     baseline.outputMode = sharedBaseline(saved).outputMode;
     // Only main's tray radios change the mode while this window is open.
     if (!preserveEdit && shownBefore !== displayedOutputMode(saved.output)) {
-      flipped.push("Output mode changed from the tray menu.");
+      flipped.push(i18n.t("rt.outputModeChangedFromThe"));
     }
   }
   const remind = saved.updates.remind !== false;
@@ -1184,7 +1200,7 @@ async function downloadSelectedModels(save) {
     if (!needed) return next;
     const key = modelDownloadKey(needed.kind, needed.modelId);
     if (finished.has(key)) throw new Error(`${needed.label}: downloaded, but still not available`);
-    save.textContent = `Downloading ${needed.label} before saving…`;
+    save.textContent = i18n.t("rt.downloadingLabelBeforeSaving", { label: needed.label });
     save.className = "status";
     const result = await saveDownload(needed.kind, needed.modelId);
     if (!result?.ok) {
@@ -1241,12 +1257,12 @@ async function saveSettings() {
   // Acknowledge the click immediately and block a duplicate save while the
   // round-trip is in flight.
   saveButton.disabled = true;
-  save.textContent = "Saving…";
+  save.textContent = i18n.t("rt.saving");
   save.className = "status";
   try {
     parseAliases($("cleanup-aliases").value);
   } catch (err) {
-    save.textContent = `Not saved — ${err.message}`;
+    save.textContent = i18n.t("rt.notSavedMessage", { message: err.message });
     save.className = "status err";
     saveButton.disabled = false;
     return;
@@ -1256,12 +1272,12 @@ async function saveSettings() {
     next = await downloadSelectedModels(save);
   } catch (err) {
     // Nothing was saved: say so, and leave the form as the user set it.
-    save.textContent = `Not saved — ${err.message}`;
+    save.textContent = i18n.t("rt.notSavedMessage", { message: err.message });
     save.className = "status err";
     saveButton.disabled = false;
     return;
   }
-  save.textContent = "Saving…";
+  save.textContent = i18n.t("rt.saving");
   save.className = "status";
   try {
     current = next;
@@ -1316,7 +1332,7 @@ async function saveSettings() {
       if (editedWhileSaving) {
         // What was sent is saved; the edits since are not. Say so, and take no
         // snapshot that would vouch for them.
-        save.textContent = `${saved}. Changes made while saving aren't saved yet.`;
+        save.textContent = i18n.t("rt.savedChangesMadeWhileSaving", { saved });
         save.className = "status";
         savedForm = null;
       } else {
@@ -1331,7 +1347,7 @@ async function saveSettings() {
   } catch (err) {
     // Covers a rejected save AND a resolved-but-malformed result, so the button
     // never stays stuck disabled on "Saving…".
-    save.textContent = `Could not save: ${err.message}`;
+    save.textContent = i18n.t("rt.couldNotSaveMessage", { message: err.message });
     save.className = "status err";
     saveButton.disabled = false;
     return;
@@ -1358,7 +1374,7 @@ function bindTest(buttonId, resultId, channel, getCfg) {
     // Disable while the test is in flight so a second click can't race a stale
     // response over the result (mirrors bindFetchModels).
     btn.disabled = true;
-    el.textContent = "Testing…";
+    el.textContent = i18n.t("rt.testing");
     el.className = "status";
     try {
       const result = await earheart.invoke(channel, getCfg());
@@ -1391,7 +1407,7 @@ function bindFetchModels(buttonId, resultId, datalistId, getCfg) {
     // Guard against a second click firing a concurrent fetch while one is
     // in flight.
     btn.disabled = true;
-    el.textContent = "Fetching…";
+    el.textContent = i18n.t("rt.fetching");
     el.className = "status";
     try {
       const result = await earheart.invoke("models:list-remote", getCfg());
@@ -1475,7 +1491,7 @@ function bindAddCustomModel(kind) {
     if (!url) return;
     findBtn.disabled = true;
     pick.hidden = true;
-    result.textContent = "Looking up versions…";
+    result.textContent = i18n.t("rt.lookingUpVersions");
     result.className = "status";
     try {
       const res = await earheart.invoke("models:hf-variants", { kind, url });
@@ -1498,7 +1514,7 @@ function bindAddCustomModel(kind) {
       );
       if (res.recommended) variantSelect.value = res.recommended;
       pick.hidden = false;
-      result.textContent = `${res.repo} — ${res.variants.length} version${res.variants.length === 1 ? "" : "s"}`;
+      result.textContent = i18n.t("rt.repoVersions", { repo: res.repo, count: res.variants.length });
       result.className = "status ok";
     } finally {
       findBtn.disabled = false;
@@ -1510,7 +1526,7 @@ function bindAddCustomModel(kind) {
     const variant = variantSelect.value;
     if (!url || !variant) return;
     addBtn.disabled = true;
-    result.textContent = "Adding…";
+    result.textContent = i18n.t("rt.adding");
     result.className = "status";
     try {
       const res = await earheart.invoke("models:add-custom", { kind, url, variant });
@@ -1524,7 +1540,7 @@ function bindAddCustomModel(kind) {
       await refreshModels({ [kind]: res.modelId });
       urlInput.value = "";
       pick.hidden = true;
-      result.textContent = "Added — click Download to fetch it";
+      result.textContent = i18n.t("rt.addedClickDownloadToFetch");
       result.className = "status ok";
     } finally {
       addBtn.disabled = false;
@@ -1552,7 +1568,7 @@ function historyCopyButton(label, value, report) {
     try {
       const result = await earheart.invoke("transcript:copy", value);
       if (!result.ok) throw new Error(result.error);
-      button.textContent = "Copied";
+      button.textContent = i18n.t("rt.copied");
       setTimeout(() => (button.textContent = label), 1200);
     } catch (err) { report(`Could not copy: ${err.message}`); }
   });
@@ -1609,7 +1625,7 @@ async function renderHistory() {
 
   const start = res.offset;
   const slice = res.entries;
-  $("history-range").textContent = `${start + 1}–${start + slice.length} of ${res.total}${query.trim() ? " matching" : ""}`;
+  $("history-range").textContent = i18n.t(query.trim() ? "rt.historyRangeMatching" : "rt.historyRange", { from: start + 1, to: start + slice.length, total: res.total });
   $("history-newer").disabled = historyPage === 0;
   $("history-older").disabled = historyPage >= pages - 1;
 
@@ -1623,9 +1639,9 @@ async function renderHistory() {
     const when = document.createElement("span");
     // `incomplete` means the engine stopped part-way and this is what was
     // recovered — the entry has to say so long after the notification went.
-    when.textContent = `${new Date(item.at).toLocaleString()}${item.cleaned ? " · cleaned" : ""}${
-      item.incomplete ? " · incomplete" : ""
-    }${item.audio === "unreadable" ? " · recording unreadable" : ""}`;
+    when.textContent = `${new Date(item.at).toLocaleString(i18n.locale)}${item.cleaned ? i18n.t("rt.tagCleaned") : ""}${
+      item.incomplete ? i18n.t("rt.tagIncomplete") : ""
+    }${item.audio === "unreadable" ? i18n.t("rt.tagRecordingUnreadable") : ""}`;
     const feedback = document.createElement("span");
     feedback.className = "status err";
     feedback.setAttribute("role", "status");
@@ -1634,7 +1650,7 @@ async function renderHistory() {
     actions.className = "actions";
     actions.append(historyCopyButton("Copy", item.text, report));
     const correct = document.createElement("button");
-    correct.textContent = "Correct…";
+    correct.textContent = i18n.t("rt.correct");
     correct.addEventListener("click", async () => {
       report("");
       try {
@@ -1645,7 +1661,7 @@ async function renderHistory() {
     actions.append(correct);
     if (item.cleaned && typeof item.raw === "string" && item.raw !== item.text) {
       const copyOriginal = historyCopyButton("Copy original", item.raw, report);
-      copyOriginal.title = "Copy the transcript before cleanup";
+      copyOriginal.title = i18n.t("rt.copyTheTranscriptBeforeCleanup");
       actions.append(copyOriginal);
     }
     if (item.audio === "kept") actions.append(...recordingButtons(item, li, report));
@@ -1664,7 +1680,7 @@ async function renderHistory() {
     if (text.scrollHeight > text.clientHeight + 1) {
       const more = document.createElement("button");
       more.className = "more";
-      more.textContent = "Show more";
+      more.textContent = i18n.t("rt.showMore");
       more.setAttribute("aria-expanded", "false");
       more.addEventListener("click", () => {
         const open = li.classList.toggle("expanded");
@@ -1715,8 +1731,8 @@ function recordingButtons(item, li, report) {
   const play = document.createElement("button");
   play.className = "play";
   play.type = "button";
-  play.textContent = "Play";
-  play.title = "Play the recording";
+  play.textContent = i18n.t("rt.play");
+  play.title = i18n.t("rt.playTheRecording");
   play.addEventListener("click", async () => {
     report("");
     if (activePlayer?.id === item.id) {
@@ -1755,8 +1771,8 @@ function recordingButtons(item, li, report) {
   const exportButton = document.createElement("button");
   exportButton.className = "export";
   exportButton.type = "button";
-  exportButton.textContent = "Export…";
-  exportButton.title = "Save the recording as a WAV file";
+  exportButton.textContent = i18n.t("rt.export");
+  exportButton.title = i18n.t("rt.saveTheRecordingAsA");
   exportButton.addEventListener("click", async () => {
     report("");
     exportButton.disabled = true;
@@ -1776,12 +1792,12 @@ function recordingButtons(item, li, report) {
   const again = document.createElement("button");
   again.className = "retranscribe";
   again.type = "button";
-  again.textContent = "Retranscribe";
-  again.title = "Transcribe the recording again with the current settings. Nothing is pasted; the original stays.";
+  again.textContent = i18n.t("rt.retranscribe");
+  again.title = i18n.t("rt.transcribeTheRecordingAgainWith");
   again.addEventListener("click", async () => {
     report("");
     again.disabled = true;
-    again.textContent = "Retranscribing…";
+    again.textContent = i18n.t("rt.retranscribing");
     let res;
     try {
       res = await earheart.invoke("history:retranscribe", item.id);
@@ -1791,11 +1807,11 @@ function recordingButtons(item, li, report) {
     // A stored result redraws the page (history:changed); otherwise say why.
     if (!res?.ok && !res?.retry) {
       again.disabled = false;
-      again.textContent = "Retranscribe";
+      again.textContent = i18n.t("rt.retranscribe");
       report(recordingError(res?.error || "unknown error"));
     } else if (res?.ok === false) {
       again.disabled = false;
-      again.textContent = "Retranscribe";
+      again.textContent = i18n.t("rt.retranscribe");
       report(`Couldn't save the retranscription (${res.error}).`);
     }
   });
@@ -1813,7 +1829,7 @@ function retryBlock(item, report) {
   head.className = "retry-head";
   const when = retry.at ? new Date(retry.at).toLocaleString() : "";
   if (retry.status === "done") {
-    head.textContent = `Retranscribed ${when}${retry.cleaned ? " · cleaned" : ""}${retry.incomplete ? " · incomplete" : ""}`;
+    head.textContent = `${i18n.t("rt.retranscribedWhen", { when })}${retry.cleaned ? i18n.t("rt.tagCleaned") : ""}${retry.incomplete ? i18n.t("rt.tagIncomplete") : ""}`;
     const text = document.createElement("div");
     text.className = "retry-text";
     text.textContent = retry.text || "(no speech found)";
@@ -1824,7 +1840,7 @@ function retryBlock(item, report) {
       box.append(copy);
     }
   } else if (retry.status === "cancelled") {
-    head.textContent = `Retranscription ${when} was cancelled by a new dictation. Try again any time.`;
+    head.textContent = i18n.t("rt.retranscriptionWhenWasCancelledBy", { when });
     box.append(head);
   } else {
     head.textContent = `Retranscription ${when} failed: ${retry.error || "unknown error"}`;
@@ -1901,7 +1917,7 @@ $("recordings-clear").addEventListener("click", async () => {
   if (!res?.ok) {
     const line = $("recordings-status");
     line.hidden = false;
-    line.textContent = `Some recordings couldn't be deleted (${res?.error || "unknown error"}). Close anything that might be using them and try again.`;
+    line.textContent = i18n.t("rt.someRecordingsCouldntBeDeleted", { error: res?.error || i18n.t("rt.unknownError") });
   }
   renderHistory();
 });
@@ -1914,8 +1930,8 @@ $("history-enabled").addEventListener("change", () => renderRecordingsStatus());
 function historyDeleteButton(item, report) {
   const button = document.createElement("button");
   button.className = "delete danger";
-  button.textContent = "Delete";
-  button.title = "Delete this transcription";
+  button.textContent = i18n.t("rt.delete");
+  button.title = i18n.t("rt.deleteThisTranscription");
   button.addEventListener("click", async () => {
     report("");
     // Its kept recording goes with it (main/ipc.js history:delete): say so.
@@ -1999,7 +2015,7 @@ $("history-clear").addEventListener("click", async () => {
   if (!status.hidden) status.textContent = historyClearError(res.error);
   else if (res?.audioError) {
     status.hidden = false;
-    status.textContent = `Cleared the transcriptions, but some recordings couldn't be deleted (${res.audioError}). Use Delete all recordings to try again.`;
+    status.textContent = i18n.t("rt.clearedTheTranscriptionsButSome", { audioError: res.audioError });
   }
   releasePlayer();
   renderHistory();
@@ -2047,7 +2063,7 @@ $("open-logs").addEventListener("click", async () => {
   } catch (err) {
     // A bridge-level throw (e.g. a channel missing from the preload allowlist)
     // must surface here, not die as an unhandled rejection.
-    el.textContent = `Couldn't open the log: ${err.message}`;
+    el.textContent = i18n.t("rt.couldntOpenTheLogMessage", { message: err.message });
     el.className = "status err";
   }
 });
@@ -2218,33 +2234,33 @@ function renderUpdateState(u) {
 
   switch (u.status) {
     case "checking":
-      action.textContent = "Checking…";
+      action.textContent = i18n.t("rt.checking");
       status.textContent = "";
       break;
     case "available":
       if (u.method === "install") {
-        action.textContent = `Update to v${u.latest}`;
+        action.textContent = i18n.t("rt.updateToVlatest", { latest: u.latest });
       } else {
-        action.textContent = "Open download page";
+        action.textContent = i18n.t("rt.openDownloadPage");
         if (u.hint) $("update-hint").textContent = u.hint;
       }
-      status.textContent = `Version ${u.latest} is available`;
+      status.textContent = i18n.t("rt.versionLatestIsAvailable", { latest: u.latest });
       status.className = "status ok";
       break;
     case "downloading": {
       const pct = Math.round(((u.progress && u.progress.fraction) || 0) * 100);
       $("update-fill").style.width = `${pct}%`;
-      action.textContent = "Cancel";
-      status.textContent = `Downloading… ${pct}%`;
+      action.textContent = i18n.t("rt.cancel");
+      status.textContent = i18n.t("rt.downloadingPct", { pct });
       break;
     }
     case "ready":
-      action.textContent = `Restart to update to v${u.latest}`;
-      status.textContent = "Downloaded ✓";
+      action.textContent = i18n.t("rt.restartToUpdateToVlatest", { latest: u.latest });
+      status.textContent = i18n.t("rt.downloaded");
       status.className = "status ok";
       break;
     case "installing":
-      action.textContent = "Restarting…";
+      action.textContent = i18n.t("rt.restarting");
       status.textContent = "";
       break;
     case "error":
@@ -2254,7 +2270,7 @@ function renderUpdateState(u) {
       break;
     default:
       // idle — leave any "Up to date ✓" set by a manual check in place
-      action.textContent = "Check for updates";
+      action.textContent = i18n.t("rt.checkForUpdates");
   }
 }
 
@@ -2269,7 +2285,7 @@ $("update-action").addEventListener("click", async () => {
   } else {
     const res = await earheart.invoke("updates:check");
     if (res.status === "idle") {
-      $("update-status").textContent = "Up to date ✓";
+      $("update-status").textContent = i18n.t("rt.upToDate");
       $("update-status").className = "status ok";
     }
   }

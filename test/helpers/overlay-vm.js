@@ -208,6 +208,12 @@ function createOverlayVm({ outputLatency = 0.04, baseLatency = 0.01, inputLatenc
   };
   context.window = { matchMedia: () => ({ matches: false, addEventListener() {} }), devicePixelRatio: 1 };
   vm.createContext(context);
+  // The window's i18n client (renderer/i18n-client.js) in English.
+  {
+    const core = require("../../renderer/i18n");
+    const translator = core.createTranslator({ locale: "en", catalogs: require("../../renderer/locales") });
+    context.i18n = { t: translator.t, locale: "en", onChange: () => () => {} };
+  }
   for (const file of ["chunk-boundary.js", "microphone.js", "record-cues.js", "speech-probe.js", "transcript.js", "overlay.js"]) {
     vm.runInContext(fs.readFileSync(path.join(RENDERER, file), "utf8"), context, { filename: file });
   }

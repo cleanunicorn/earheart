@@ -54,6 +54,12 @@ The first run downloads the Parakeet model (≈ 2.4 GB; pass
 [stt-server/README.md](stt-server/README.md) for options, GPU providers and
 other models.
 
+## Localization
+
+The interface language is a setting separate from the dictation language. Catalogs,
+placeholders, plurals and the review rules for adding a language are in
+[docs/localization.md](docs/localization.md).
+
 ## Tests
 
 ```bash

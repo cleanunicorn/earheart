@@ -8,6 +8,7 @@ const recordings = require("./recordings");
 const windows = require("./windows");
 const wake = require("./wake");
 const appearance = require("./appearance");
+const i18n = require("./i18n");
 const pipeline = require("./pipeline");
 const usage = require("./usage");
 const hotkeys = require("./hotkeys");
@@ -141,6 +142,12 @@ function main() {
 
     // The palette before the first window, so nothing paints in the wrong one.
     appearance.init();
+    // The UI language, resolved from the saved choice and the OS language
+    // list, before anything app-authored (tray, titles, notices) is shown.
+    i18n.bind({
+      settings,
+      systemLanguages: () => i18n.systemLanguagesOf(app),
+    });
     windows.init();
     pipeline.init({ isDownloading: ipc.isDownloading });
     usage.init();

@@ -27,6 +27,7 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | `make smoke` | Boot the app headlessly and exit (CI-style sanity check) |
 | `make engine-smoke` | Boot the engine worker, round-trip a ping, and load both native addons |
 | `make overlay-smoke` | Drive the overlay with a fake mic and check capture/UI sync |
+| `make double-tap-check` | Drive a real global shortcut with xdotool key events through the double-tap recognizer (Linux/X11, needs `xdotool`) |
 | `make settings-smoke` | Drive the settings window and check its UI, microphone picker, and live settings sync |
 | `make icons` | Regenerate app/tray icons into `assets/` |
 | `make screenshots` | Regenerate README screenshots into `docs/screenshots/` |

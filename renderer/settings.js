@@ -282,6 +282,9 @@ function showOutputMode(output) {
 
 function populate() {
   hotkeyInput.value = current.hotkey;
+  $("activation-mode").value = current.activationMode || "toggle";
+  $("double-tap-window").value = current.doubleTapWindowMs ?? 500;
+  $("double-tap-window-field").hidden = $("activation-mode").value !== "double-tap";
   pauseHotkeyInput.value = current.pauseHotkey || "";
   discardHotkeyInput.value = current.discardHotkey || "";
   correctHotkeyInput.value = current.correctHotkey || "";
@@ -351,10 +354,19 @@ function collectAliases() {
   }
 }
 
+$("activation-mode").addEventListener("change", () => {
+  $("double-tap-window-field").hidden = $("activation-mode").value !== "double-tap";
+});
+
 function collect() {
   return {
     ...current,
     hotkey: current.hotkey,
+    activationMode: $("activation-mode").value === "double-tap" ? "double-tap" : "toggle",
+    // Clamped as main clamps it; blank or junk keeps the stored value.
+    doubleTapWindowMs: Number.isFinite(parseFloat($("double-tap-window").value))
+      ? Math.round(Math.min(1000, Math.max(250, parseFloat($("double-tap-window").value))))
+      : current.doubleTapWindowMs ?? 500,
     pauseHotkey: current.pauseHotkey || "",
     discardHotkey: current.discardHotkey || "",
     correctHotkey: current.correctHotkey || "",

@@ -34,6 +34,10 @@ smoke: ## Boot the app headlessly and exit (CI-style sanity check)
 engine-smoke: ## Boot the engine worker, round-trip a ping, and load both native addons
 	xvfb-run -a npx electron scripts/engine-smoke.js --no-sandbox
 
+.PHONY: double-tap-check
+double-tap-check: ## Drive a real global shortcut with xdotool key events (Linux/X11)
+	xvfb-run -a npx electron scripts/double-tap-check.js --no-sandbox
+
 .PHONY: overlay-smoke
 overlay-smoke: ## Drive the overlay with a fake mic and check capture/UI sync
 	xvfb-run -a npx electron scripts/overlay-smoke.js --no-sandbox

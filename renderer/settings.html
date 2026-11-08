@@ -85,6 +85,31 @@
           </div>
 
           <div class="field">
+            <label for="activation-mode">Hotkey activation</label>
+            <select id="activation-mode">
+              <option value="toggle">Press once to start</option>
+              <option value="double-tap">Double-tap to start</option>
+            </select>
+            <p class="hint">
+              Double-tap starts hands-free dictation with two quick presses;
+              a single press while dictating stops it at once. A lone tap does
+              nothing. The start is held back about 0.12&nbsp;s to tell a tap
+              from a held key. The tray and <code>earheart --toggle</code>
+              always toggle. On Wayland, bind a system shortcut to
+              <code>earheart --tap</code> instead.
+            </p>
+          </div>
+
+          <div class="field" id="double-tap-window-field">
+            <label for="double-tap-window">Double-tap window (ms)</label>
+            <input id="double-tap-window" type="number" min="250" max="1000" step="50" />
+            <p class="hint">
+              Longest gap between the two taps, 250–1000. Raise it if double
+              taps are missed.
+            </p>
+          </div>
+
+          <div class="field">
             <label for="pause-hotkey">Pause hotkey</label>
             <div class="row">
               <input id="pause-hotkey" readonly placeholder="Not set — click, then press a key combination" />

@@ -59,6 +59,14 @@ jobs:
       - name: Overlay capture sync
         if: runner.os != 'Linux'
         run: npx electron scripts/overlay-smoke.js --no-sandbox
+      # Real OS key events (xdotool on Xvfb) through a real globalShortcut into
+      # the double-tap recognizer: double tap, single tap, held-key auto-repeat.
+      # make double-tap-check
+      - name: Double-tap real key events (Linux/X11)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y xdotool
+          xvfb-run -a npx electron scripts/double-tap-check.js --no-sandbox
       # Drive the real settings window and verify the settings-page contract:
       # one continuous scroll, the scroll-spy index, and the seated roving
       # tabindex.

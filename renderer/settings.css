@@ -278,7 +278,8 @@ main {
   margin-bottom: 0;
 }
 
-.field > label:first-child {
+.field > label:first-child,
+.field > .field-label:first-child {
   display: block;
   font-weight: 550;
   font-size: 13px;

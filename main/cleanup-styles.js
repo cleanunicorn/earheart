@@ -15,6 +15,7 @@
 // only ever set a bare temperature.
 
 const { aliasTerms } = require("../renderer/aliases");
+const { mergePromptTerms } = require("../renderer/vocab-packs");
 
 const STYLES = [
   {
@@ -105,12 +106,14 @@ function dictionaryDirective(terms) {
 }
 
 // The dictionary's terms plus the canonical term of every alias (#335), once
-// each: an alias's spelling is vocabulary the model should prefer too, and
+// each, then the enabled starter packs' terms (cleanup.vocabPacks): an alias's spelling is vocabulary the model should prefer too, and
 // the deterministic replacement after cleanup only catches the exact heard
 // forms.
 function promptTerms(cfg) {
   const terms = (cfg.dictionary || []).map((t) => String(t).trim()).filter(Boolean);
-  return [...new Set([...terms, ...aliasTerms(cfg.aliases)])];
+  // Enabled starter packs (#72) go last and only while the prompt stays under
+  // PROMPT_TERMS_MAX; the user's own terms and aliases are never dropped.
+  return mergePromptTerms([...new Set([...terms, ...aliasTerms(cfg.aliases)])], cfg.vocabPacks);
 }
 
 // Resolve a cleanup config slice into the prompt + sampling actually used,

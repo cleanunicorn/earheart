@@ -14,6 +14,7 @@ const { cleanupUserTurn, cleanupSamplingOptions, cleanupChatWrapper } = require(
 const { cleanMaxTokens } = require("../main/util/clean-budget");
 const { stripThinking } = require("../main/services/cleanup");
 const { stripStumbles } = require("../main/util/stumble-strip");
+const { PACK_IDS, packTerms } = require("../renderer/vocab-packs");
 
 export const dictionary = ["kubectl", "pnpm", "useEffect", "getUserById", "Earheart", "Vitest"];
 // The remembered words come from different utterances than these test prompts.
@@ -37,18 +38,35 @@ export const cases = [
   ["Keep the heart icon aligned with the heading.", null],
   ["Install dependencies and rebuild the application.", null],
 ];
+// Never-force-in controls for the starter packs (#72): each says an ordinary
+// word that is also a pack term in another casing or sense. All packs enabled
+// plus the dictionary must leave every one of these alone.
+export const packControls = [
+  ["Move the cursor to the end of the line before typing.", null],
+  ["Open the window and let some fresh air in.", null],
+  ["Write a lambda expression that sorts the list by length.", null],
+  ["The claude of the old clock needs a new spring.", null],
+  ["Keep the opus number in the file name of the score.", null],
+  ["Put the ingress door on the left side of the building.", null],
+];
+// Every arm's dictionary: "packs" is the user's list plus every starter pack.
+export function armTerms(arm) {
+  if (arm === "packs") return [...new Set([...dictionary, ...packTerms(PACK_IDS)])];
+  return arm === "remembered" ? dictionary : [];
+}
 function hasTerm(text, term) {
   const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "u").test(text);
 }
-export function summarize(rows) {
+function sha256(text) { return createHash("sha256").update(text).digest("hex"); }
+export function summarize(rows, terms = dictionary) {
   const targets = rows.filter((row) => row.expected);
   const controls = rows.filter((row) => !row.expected);
   const times = rows.map((row) => row.ms).sort((a, b) => a - b);
   return {
     exactTerms: targets.filter((row) => hasTerm(row.output, row.expected)).length,
     targetCases: targets.length,
-    falseSubstitutions: controls.filter((row) => dictionary.some((term) => hasTerm(row.output, term))).length,
+    falseSubstitutions: controls.filter((row) => terms.some((term) => hasTerm(row.output, term))).length,
     controlCases: controls.length,
     medianMs: Math.round((times[Math.floor((times.length - 1) / 2)] + times[Math.floor(times.length / 2)]) / 2),
   };
@@ -77,11 +95,13 @@ async function main(modelPath, out) {
   try {
     await clean("Check the parser and run the tests.", []);
     // Alternate order to avoid consistently charging one arm for machine drift.
-    for (const [index, [input, expected]] of cases.entries()) {
-      for (const arm of index % 2 ? ["remembered", "baseline"] : ["baseline", "remembered"]) {
-        const result = await clean(input, arm === "remembered" ? dictionary : []);
-        rows.push({ index, input, expected, arm, ...result });
-        console.error(`${rows.length}/${cases.length * 2} ${arm}: ${result.output}`);
+    const everything = [...cases.map((c) => [...c, "core"]), ...packControls.map((c) => [...c, "pack"])];
+    const orders = [["baseline", "remembered", "packs"], ["remembered", "packs", "baseline"], ["packs", "baseline", "remembered"]];
+    for (const [index, [input, expected, set]] of everything.entries()) {
+      for (const arm of orders[index % 3]) {
+        const result = await clean(input, armTerms(arm));
+        rows.push({ index, input, expected, set, arm, ...result });
+        console.error(`${rows.length}/${everything.length * 3} ${arm}: ${result.output}`);
       }
     }
     const hash = createHash("sha256");
@@ -89,11 +109,21 @@ async function main(modelPath, out) {
     const report = {
       modelSha256: hash.digest("hex"), cpu: os.cpus()[0].model, backend: "cpu", seed: 17,
       style: "clean", dictionary,
-      baseline: summarize(rows.filter((row) => row.arm === "baseline")),
-      remembered: summarize(rows.filter((row) => row.arm === "remembered")), rows,
+      // What a rerun must match to be comparable: the exact prompt each arm sent.
+      promptSha256: Object.fromEntries(["baseline", "remembered", "packs"].map((arm) => [arm,
+        sha256(resolveCleanup({ ...DEFAULTS.cleanup, style: "clean", dictionary: armTerms(arm) }).systemPrompt)])),
+      packsTermCount: armTerms("packs").length,
+      // baseline and remembered cover the original 18 prompts, as before.
+      baseline: summarize(rows.filter((row) => row.arm === "baseline" && row.set === "core"), armTerms("remembered")),
+      remembered: summarize(rows.filter((row) => row.arm === "remembered" && row.set === "core")),
+      // The large-dictionary arm over the 18 prompts and the pack controls.
+      packs: summarize(rows.filter((row) => row.arm === "packs"), armTerms("packs")),
+      packsOnCore: summarize(rows.filter((row) => row.arm === "packs" && row.set === "core"), armTerms("packs")),
+      rows,
     };
     fs.writeFileSync(out, JSON.stringify(report, null, 2) + "\n");
-    console.log(JSON.stringify({ baseline: report.baseline, remembered: report.remembered }));
+    console.log(JSON.stringify({ baseline: report.baseline, remembered: report.remembered, packs: report.packs }));
+    if (report.packs.falseSubstitutions > 0) { console.error("Large dictionary forced a term in: lower the caps or tighten the directive."); process.exitCode = 2; }
   } finally { session.dispose(); await context.dispose(); await model.dispose(); await llama.dispose(); }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

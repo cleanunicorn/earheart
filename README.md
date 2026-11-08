@@ -522,6 +522,41 @@ cases. Reproduce with `node scripts/eval-vocabulary.mjs /path/to/model.gguf
 The script uses the shipped cleanup prompt and scores the final postprocessed
 text. A missing exact spelling remains possible even after remembering it.
 
+### Starter packs and learning from a project
+
+Settings → Cleanup → Dictionary has two ways to fill the dictionary without
+typing every identifier:
+
+- **Starter packs** — toggleable lists for Coding agents, JS / Web, Cloud /
+  Kubernetes and Python / Data (at most 40 terms each). Enabled packs are added
+  to the cleanup prompt *after* your own terms and are never copied into your
+  list, so switching one off removes exactly its words. The prompt carries at
+  most 400 terms in total; your own terms are never dropped, packs only fill
+  what room is left.
+- **Learn from a folder…** — you pick a project folder, and Earheart suggests
+  words from its manifest (`package.json`, `pyproject.toml`, `Cargo.toml`
+  names and dependencies), top-level directory and file names, and exported
+  symbols. It runs only when you click the button, reads only inside the folder
+  you chose, never follows symlinks, skips `node_modules`, build output and
+  hidden directories, and is bounded (300 source files, 3 levels deep, the
+  first 64 KiB of each file). Only identifier-shaped words come back — no paths
+  or file contents — ranked (manifest name, then top-level directories,
+  dependencies, exports, file names) and cut to 40. You review the list,
+  untick what you would not say, and the words join the dictionary only when
+  you press **Add selected** and then **Save**. Additions respect the
+  dictionary's 256-term / 8,192-character limits.
+
+The cleanup directive still tells the model to never force a term in where the
+speaker clearly said something else. `node scripts/eval-vocabulary.mjs
+/path/to/model.gguf /tmp/vocabulary.json` now also runs a large-dictionary arm
+(your list plus every pack) over the original prompts and six extra controls
+that say pack words in an ordinary sense ("move the cursor…"); it exits non-zero
+if any control gets a term forced in, and the report records SHA-256 hashes of
+the model and of each arm's prompt so a rerun is comparable. It needs a local
+cleanup model, so CI only tests the evaluation logic, and the result is a small
+synthetic text check on one model, not a guarantee. Not yet shipped: an
+`earheart --learn-vocab <path>` command and an MCP tool for agents to call.
+
 ### Always replace
 
 Settings → Cleanup → **Always replace** holds exact rules, one canonical

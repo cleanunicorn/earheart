@@ -301,6 +301,7 @@ function settingsCollectSource() {
     // page loads before settings.js.
     fs.readFileSync(path.join(RENDERER, "aliases.js"), "utf8"),
     extractFunction(js, "collectAliases"),
+    extractFunction(js, "collectVocabPacks"),
     extractFunction(js, "collect"),
     "this.collect = collect;",
   ].join("\n");
@@ -403,6 +404,7 @@ function microphonePage(source, page) {
     "cleanup-key": { value: "" },
     "cleanup-model": { value: "" },
     "cleanup-dictionary": { value: "" },
+    "vocab-packs": { querySelectorAll: () => [] },
     "cleanup-prompt": { value: "" },
     "cleanup-style-mode": { value: "custom" },
     "stt-url": { value: "" },
@@ -814,6 +816,7 @@ function collectLimits({ maxSeconds = "", idle = "", saved = {} }) {
   const elements = {
     "max-seconds": { value: maxSeconds, ...inputRange("max-seconds") },
     "idle-unload": { value: idle, ...inputRange("idle-unload") },
+    "vocab-packs": { querySelectorAll: () => [] },
   };
   const context = {
     current: {

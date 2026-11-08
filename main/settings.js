@@ -12,6 +12,7 @@ const logger = require("./util/logger");
 const secretStore = require("./secret-store");
 const { DEFAULT_STYLE, styleById, NEUTRAL_SAMPLING } = require("./cleanup-styles");
 const { normalizeAliases } = require("../renderer/aliases");
+const { normalizePackIds } = require("../renderer/vocab-packs");
 
 // The invariant core of the cleanup instructions, inlined into the model's user
 // turn (not used as a chat system prompt) — see main/engines/engine-worker.js
@@ -155,6 +156,10 @@ const DEFAULTS = {
     // see applyAliases in renderer/aliases.js. A separate key, so the flat
     // dictionary above stays as older versions wrote and read it.
     aliases: [],
+    // Enabled starter vocabulary packs (#72): ids from renderer/vocab-packs.js.
+    // Their terms are added to the cleanup prompt after the dictionary's, and
+    // never copied into it. A separate key, so older versions ignore it.
+    vocabPacks: [],
     // The new-default-prompt offer (cleanupPromptOffer): the default's id the
     // user decided on (took it or kept theirs), and the one a launch notice
     // already announced, so each new default is announced once and offered
@@ -450,7 +455,7 @@ function normalizeAppearance(merged) {
 function normalizeStoredAliases(merged) {
   const aliases = normalizeAliases(merged.cleanup.aliases, (reason) =>
     logger.warn(`dropped a saved dictionary alias: ${reason}`));
-  return { ...merged, cleanup: { ...merged.cleanup, aliases } };
+  return { ...merged, cleanup: { ...merged.cleanup, aliases, vocabPacks: normalizePackIds(merged.cleanup.vocabPacks) } };
 }
 
 // safeStorage answers only after app `ready` (before it, Linux reports no

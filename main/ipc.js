@@ -193,6 +193,41 @@ const SHARED_FIELDS = [
   },
 ];
 
+// The wizard carries a full snapshot but edits only these leaves (collect()
+// and hotkey capture in renderer/wizard.js). Start from live settings so every
+// other value, including future settings and siblings inside these sections,
+// survives a Settings save made while the wizard was open.
+const WIZARD_FIELDS = [
+  ["hotkey"],
+  ["output", "mode"],
+  ["output", "restoreClipboard"],
+  ["stt", "engine"],
+  ["cleanup", "enabled"],
+  ["cleanup", "engine"],
+  ["cleanup", "builtin", "model"],
+  ["cleanup", "style"],
+  ["audio", "deviceId"],
+  ["audio", "duckOtherAudio"],
+  ["audio", "duckLevelPercent"],
+];
+
+function withWizardOwned(next, live) {
+  const out = { ...live };
+  for (const path of WIZARD_FIELDS) {
+    let source = next;
+    for (const key of path.slice(0, -1)) source = isPlainObject(source) ? source[key] : undefined;
+    const leaf = path.at(-1);
+    if (!isPlainObject(source) || !Object.hasOwn(source, leaf) || source[leaf] === undefined) continue;
+    let target = out;
+    for (const key of path.slice(0, -1)) {
+      target[key] = { ...target[key] };
+      target = target[key];
+    }
+    target[leaf] = source[leaf];
+  }
+  return out;
+}
+
 // Settings only main writes, which no form edits: the dragged overlay position
 // (main/windows.js), custom model definitions (models:add/remove-custom) and
 // the updater's bookkeeping. A form's copy of them can only be stale, so the
@@ -340,10 +375,13 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   // is open, so the form's payload is merged with the live settings first
   // (withMainOwned), then hotkeys are applied before persisting so a rejected
   // shortcut never reaches disk.
-  const commitSettings = (request) => {
+  const commitSettings = (request, { wizard = false } = {}) => {
     const { next, baseline } = parseCommitRequest(request);
     const previous = settings.get();
-    const candidate = withMainOwned(next, previous, baseline);
+    // Project before reconciliation: an unseen output-mode change must still
+    // win, and vocabulary must reconcile from live values, not the snapshot.
+    const prepared = wizard ? withWizardOwned(next, previous) : next;
+    const candidate = withMainOwned(prepared, previous, baseline);
     const hotkeyResults = applyHotkeys(candidate);
     const rejectedFields = HOTKEY_FIELDS.filter((field) => {
       const result = hotkeyResults[field];
@@ -420,7 +458,7 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   // window so the user can review what was pre-configured. If the chosen
   // hotkey can't be registered, the wizard stays open to let them fix it.
   ipcMain.handle("wizard:complete", (event, request) => {
-    const { response, hotkeyResults } = commitSettings(request);
+    const { response, hotkeyResults } = commitSettings(request, { wizard: true });
     if (hotkeyResults.hotkey.ok) {
       windows.openSettings({ fromWizard: true });
       windows.closeWizard();

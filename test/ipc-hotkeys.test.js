@@ -308,13 +308,13 @@ test("wizard completion reconciles a record failure and stays open", () => {
   const reply = handlers["wizard:complete"]({}, request(attempt));
 
   assert.strictEqual(calls.saved[0].hotkey, working.hotkey);
-  assert.strictEqual(calls.saved[0].pauseHotkey, attempt.pauseHotkey);
+  assert.strictEqual(calls.saved[0].pauseHotkey, working.pauseHotkey);
   assert.strictEqual(reply.settings.hotkey, attempt.hotkey);
   assert.deepStrictEqual(calls.opened, []);
   assert.strictEqual(calls.closed, 0);
 });
 
-test("successful wizard completion persists both hotkeys and hands off", () => {
+test("successful wizard completion persists its hotkey, keeps Settings hotkeys and hands off", () => {
   const attempt = submitted();
   const results = { hotkey: { ok: true }, pauseHotkey: { ok: true } };
   const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: results });
@@ -322,29 +322,33 @@ test("successful wizard completion persists both hotkeys and hands off", () => {
   const reply = handlers["wizard:complete"]({}, request(attempt));
 
   assert.strictEqual(calls.saved[0].hotkey, attempt.hotkey);
-  assert.strictEqual(calls.saved[0].pauseHotkey, attempt.pauseHotkey);
+  assert.strictEqual(calls.saved[0].pauseHotkey, working.pauseHotkey);
   assert.strictEqual(reply.settings.hotkey, attempt.hotkey);
   assert.deepStrictEqual(calls.opened, [{ fromWizard: true }]);
   assert.strictEqual(calls.closed, 1);
 });
 
-test("a settings write failure restores the pair that remains on disk", () => {
-  const attempt = submitted();
-  const writeError = new Error("disk full");
-  const results = { hotkey: { ok: true }, pauseHotkey: { ok: true } };
-  const { handlers, calls } = loadIpcHandlers({
-    previous: working,
-    hotkeyResults: results,
-    saveError: writeError,
-  });
+for (const channel of ["settings:save", "wizard:complete"]) {
+  test(`${channel} write failure restores the hotkeys that remain on disk`, () => {
+    const attempt = submitted();
+    const writeError = new Error("disk full");
+    const results = { hotkey: { ok: true }, pauseHotkey: { ok: true } };
+    const { handlers, calls } = loadIpcHandlers({
+      previous: working,
+      hotkeyResults: results,
+      saveError: writeError,
+    });
 
-  assert.throws(() => handlers["settings:save"]({}, request(attempt)), /disk full/);
-  assert.strictEqual(calls.applied.length, 2);
-  assert.deepStrictEqual(calls.applied[0].overlay, working.overlay);
-  assert.deepStrictEqual(calls.applied[1], working);
-  assert.deepStrictEqual(calls.autostart, []);
-  assert.strictEqual(calls.settingsChanged, 0);
-});
+    assert.throws(() => handlers[channel]({}, request(attempt)), /disk full/);
+    assert.strictEqual(calls.applied.length, 2);
+    assert.deepStrictEqual(calls.applied[0].overlay, working.overlay);
+    assert.deepStrictEqual(calls.applied[1], working);
+    assert.deepStrictEqual(calls.autostart, []);
+    assert.strictEqual(calls.settingsChanged, 0);
+    assert.deepStrictEqual(calls.opened, []);
+    assert.strictEqual(calls.closed, 0);
+  });
+}
 
 test("a failed write keeps its error when hotkey rollback reports a failure", () => {
   const attempt = submitted();

@@ -104,8 +104,8 @@ function stepCue(event, startContext = null) {
 
 // Persistent audio engine. Opening the audio stack is the latency-critical path
 // of every dictation — whatever the user says before samples flow is lost — so
-// the 16 kHz AudioContext and the worklet module are created ONCE (warmed at
-// page load, i.e. app startup) and reused across sessions: suspended while
+// the 16 kHz AudioContext and worklet module are warmed at page load and
+// normally reused across sessions (a stalled engine can be replaced): suspended while
 // idle, resumed per dictation. That leaves getUserMedia as the only real cost
 // between the hotkey and a live microphone.
 let audioContext = null; // set once the warm-up below resolves
@@ -113,31 +113,33 @@ let audioEngineReady = null; // Promise<AudioContext>
 
 function ensureAudioEngine() {
   if (!audioEngineReady) {
-    audioEngineReady = (async () => {
+    const ready = (async () => {
       const context = new AudioContext({ sampleRate: SAMPLE_RATE });
+      // Publish the pending context too: timeout/reset must close it even if
+      // addModule is still pending. A retired warm-up may never replace a
+      // newer engine or clear that engine's cached promise.
+      audioContext = context;
       try {
         await context.audioWorklet.addModule("recorder-worklet.js");
+        if (audioContext !== context) throw new Error("Audio engine superseded");
+        await context.suspend().catch(() => {});
+        return context;
       } catch (err) {
         await context.close().catch(() => {});
+        if (audioContext === context) audioContext = null;
         throw err;
       }
-      audioContext = context;
-      // Park it until a session resumes it — no point ticking the audio
-      // thread while nothing records.
-      await context.suspend().catch(() => {});
-      return context;
     })();
-    // A failed warm-up (worklet fetch hiccup, audio stack not up yet) must not
-    // poison every future dictation: drop the cache so the next start retries.
-    audioEngineReady.catch(() => {
-      audioEngineReady = null;
+    audioEngineReady = ready;
+    ready.catch(() => {
+      if (audioEngineReady === ready) audioEngineReady = null;
     });
   }
   return audioEngineReady;
 }
 ensureAudioEngine();
 
-// Drop (and close) the cached engine so the next session rebuilds it from
+// Drop (and close) the cached engine so a retry or next session rebuilds it from
 // scratch. The escape hatch for a context that died AFTER a successful
 // warm-up — an audio backend restart (PipeWire/PulseAudio), a wedged device
 // stack — which the resolve-once cache above would otherwise pin until the
@@ -149,9 +151,8 @@ function resetAudioEngine() {
   context?.close().catch(() => {});
 }
 
-// Watchdog for the whole mic start (getUserMedia through first samples): a
-// stream that opens but never delivers audio, or a getUserMedia that hangs,
-// must not leave the card saying "Starting mic…" forever.
+// Once permission and engine readiness resolve, bound the wait for first
+// samples. Permission prompts themselves may remain open indefinitely.
 const MIC_START_TIMEOUT_MS = 10000;
 let startWatchdogId = null;
 
@@ -160,6 +161,41 @@ function clearStartWatchdog() {
     clearTimeout(startWatchdogId);
     startWatchdogId = null;
   }
+}
+
+// A running state alone does not prove the render clock is ticking (#371).
+// Observe a full second after resume resolves, using measured monotonic time.
+// Stop probing on ANY first sample post, including one inside the cue guard.
+const MIC_CLOCK_PROBE_MS = 250;
+const MIC_CLOCK_STALL_MS = 1000;
+function watchMicClock(rec, context, resumedAt, recover) {
+  let resumed = false;
+  let lastTime = context.currentTime;
+  let stillSince = null;
+  resumedAt.then((at) => {
+    if (at === null) return;
+    resumed = true;
+    lastTime = context.currentTime;
+    stillSince = at;
+  });
+  const probe = () => {
+    rec.clockProbeId = null;
+    if (recording !== rec || rec.guardUntil !== null) return;
+    const [track] = rec.stream.getAudioTracks();
+    const now = performance.now();
+    const time = context.currentTime;
+    if (!resumed || context.state !== "running" || track?.readyState !== "live" || track.muted || !track.enabled) {
+      stillSince = null;
+    } else if (time !== lastTime || stillSince === null) {
+      stillSince = now;
+    } else if (now - stillSince >= MIC_CLOCK_STALL_MS) {
+      recover();
+      return;
+    }
+    lastTime = time;
+    rec.clockProbeId = setTimeout(probe, MIC_CLOCK_PROBE_MS);
+  };
+  rec.clockProbeId = setTimeout(probe, MIC_CLOCK_PROBE_MS);
 }
 
 // Live preview state: the latest raw and cleaned partial transcripts. The
@@ -808,80 +844,126 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
         message: "Microphone did not deliver audio in time — check the input device in Settings",
       });
     }, MIC_START_TIMEOUT_MS);
-    // Safe ordering without awaiting: Web Audio applies state changes in call
-    // order, this resume() is called strictly after any prior teardown's
-    // suspend(), and any LATER teardown's suspend() lands after it — so the
-    // context is always running exactly while a session is current.
-    context.resume().catch(() => {});
-    const source = context.createMediaStreamSource(stream);
-    const recorder = new AudioWorkletNode(context, "recorder");
-    const chunks = [];
-    recorder.port.onmessage = (event) => {
-      // The node is disconnected on teardown, but a message can already be in
-      // flight; never let a stale session's samples leak into the current one.
-      if (!recording || recording.recorder !== recorder) return;
-      // Pause handshake: {drained} confirms the worklet flushed its partial
-      // batch — everything captured before the pause has now arrived, and
-      // from here on paused-era messages are pure muted silence.
-      if (event.data.drained) {
-        recording.draining = false;
-        return;
-      }
-      // Paused: the track is muted at the source, and whatever still arrives
-      // is discarded — the capture stays contiguous and the meter freezes.
-      // Until the drain confirm, though, keep accepting: the batch in flight
-      // holds the last pre-pause syllable, not pause silence.
-      if (recording.pausedAt && !recording.draining) return;
-      // First samples: capture is proven live. With sounds on the start cue
-      // plays now, on this context's clock, and every frame it can reach (cue
-      // end + output and input latency + a tail) is dropped — by capture
-      // position, not arrival, so late or bunched posts are cut exactly where
-      // the cue ends. With no cue everything passes.
-      const { kept: samples, guardDone } = ingestPost(recording, event.data, () => {
-        const cue = stepCue({ type: "samples", sid }, context);
-        return cue
-          ? guardEndFrame({
-              cueEnd: cue.endTime,
-              outputLatency: context.outputLatency,
-              baseLatency: context.baseLatency,
-              inputLatency: recording.inputLatency,
-              sampleRate: context.sampleRate,
-            })
-          : 0;
-      });
-      if (guardDone) stepCue({ type: "guardDone", sid });
-      if (samples.length === 0) return;
-      chunks.push(samples);
-      // Just record the level; the rAF meter loop reads `levels` each frame.
-      levels.push(event.data.rms);
-      levels.shift();
-      micLive(); // no-op after the first chunk
-    };
-    source.connect(recorder);
-    // A device unplugged mid-take ends its track: the take goes on (stop still
-    // delivers what was captured), but nothing is being captured any more.
-    const [track] = stream.getAudioTracks();
-    track?.addEventListener("ended", () => {
-      if (recording?.recorder !== recorder) return;
-      recording.trackEnded = true;
-      reportCapture(false);
-      stepCue({ type: "trackEnded", sid });
-    });
+    function connect(context) {
+      // Keep the normal resume/graph setup overlap. Probe only after the
+      // resume promise resolves; its rejection still uses the main watchdog.
+      const resumedAt = context.resume().then(() => performance.now(), () => null);
+      let source;
+      let recorder;
+      try {
+        source = context.createMediaStreamSource(stream);
+        recorder = new AudioWorkletNode(context, "recorder");
+        const chunks = [];
+        recorder.port.onmessage = (event) => {
+          // The node is disconnected on teardown, but a message can already be in
+          // flight; never let a stale session's samples leak into the current one.
+          if (!recording || recording.recovering || recording.recorder !== recorder) return;
+          if (event.data.samples?.length) {
+            clearTimeout(recording.clockProbeId);
+            recording.clockProbeId = null;
+          }
+          // Pause handshake: {drained} confirms the worklet flushed its partial
+          // batch — everything captured before the pause has now arrived, and
+          // from here on paused-era messages are pure muted silence.
+          if (event.data.drained) {
+            recording.draining = false;
+            return;
+          }
+          // Paused: the track is muted at the source, and whatever still arrives
+          // is discarded — the capture stays contiguous and the meter freezes.
+          // Until the drain confirm, though, keep accepting: the batch in flight
+          // holds the last pre-pause syllable, not pause silence.
+          if (recording.pausedAt && !recording.draining) return;
+          // First samples: capture is proven live. With sounds on the start cue
+          // plays now, on this context's clock, and every frame it can reach (cue
+          // end + output and input latency + a tail) is dropped — by capture
+          // position, not arrival, so late or bunched posts are cut exactly where
+          // the cue ends. With no cue everything passes.
+          const { kept: samples, guardDone } = ingestPost(recording, event.data, () => {
+            const cue = stepCue({ type: "samples", sid }, context);
+            return cue
+              ? guardEndFrame({
+                  cueEnd: cue.endTime,
+                  outputLatency: context.outputLatency,
+                  baseLatency: context.baseLatency,
+                  inputLatency: recording.inputLatency,
+                  sampleRate: context.sampleRate,
+                })
+              : 0;
+          });
+          if (guardDone) stepCue({ type: "guardDone", sid });
+          if (samples.length === 0) return;
+          chunks.push(samples);
+          // Just record the level; the rAF meter loop reads `levels` each frame.
+          levels.push(event.data.rms);
+          levels.shift();
+          micLive(); // no-op after the first chunk
+        };
+        source.connect(recorder);
+        // A device unplugged mid-take ends its track: the take goes on (stop still
+        // delivers what was captured), but nothing is being captured any more.
+        const [track] = stream.getAudioTracks();
+        track?.addEventListener("ended", () => {
+          if (recording?.recorder !== recorder) return;
+          recording.trackEnded = true;
+          reportCapture(false);
+          stepCue({ type: "trackEnded", sid });
+        });
 
+        return { source, recorder, chunks, resumedAt };
+      } catch (err) {
+        if (recorder) {
+          recorder.port.onmessage = null;
+          recorder.port.postMessage("stop");
+          recorder.disconnect();
+        }
+        source?.disconnect();
+        throw err;
+      }
+    }
+
+    async function recoverClock(rec) {
+      if (!isCurrent() || recording !== rec || rec.clockRetried) return;
+      rec.clockRetried = true;
+      rec.recovering = true;
+      try {
+        // Retire only the graph. Keep the selected stream, SID, timers and
+        // original startup watchdog while its replacement warms up.
+        rec.recorder.port.onmessage = null;
+        rec.recorder.port.postMessage("stop");
+        rec.source.disconnect();
+        rec.recorder.disconnect();
+        resetAudioEngine();
+        const replacement = await ensureAudioEngine();
+        if (!isCurrent() || recording !== rec) return;
+        Object.assign(rec, connect(replacement));
+        rec.recovering = false;
+        // No second clock probe: another stall reaches the original deadline.
+      } catch (err) {
+        if (!isCurrent() || recording !== rec) return;
+        teardown();
+        resetAudioEngine();
+        stepCue({ type: "error", sid });
+        earheart.send("record:error", { sid, message: microphoneErrorMessage(err) });
+      }
+    }
+
+    const graph = connect(context);
     recording = {
       sid,
       microphoneNotice,
       stream,
-      source,
-      recorder,
-      chunks,
+      ...graph,
+      clockProbeId: null,
+      clockRetried: false,
+      recovering: false,
       // The start-cue guard: the capture frame the take begins at (0 = no
       // cue, nothing dropped), set on the first samples; guardSpent once
       // samples past it arrive. "Listening…" waits for guardSpent.
       guardUntil: null,
       guardSpent: false,
       // The mic path's own latency when Chromium reports it (seconds).
-      inputLatency: track?.getSettings?.().latency,
+      inputLatency: stream.getAudioTracks()[0]?.getSettings?.().latency,
       // Set by micLive() on the first samples; "Listening…" and the timer wait
       // for it. Until then the card still shows "Starting mic…".
       startedAt: null,
@@ -912,6 +994,8 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
         ? setInterval(sendPartial, livePreview.intervalMs || 1200)
         : null,
     };
+    const rec = recording;
+    watchMicClock(rec, context, graph.resumedAt, () => recoverClock(rec));
     startMeter(); // rAF loop runs for the whole session (recording is now set)
     if (stopWhenReady) {
       stopWhenReady = false;
@@ -947,9 +1031,9 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
 const STOP_FLUSH_TIMEOUT_MS = 150;
 
 // Synchronous on purpose: the suspend() of the shared context must be CALLED
-// before a superseding session's resume() (see the ordering note in
-// startRecording), which is guaranteed because every start calls teardown()
-// in the same synchronous turn before touching the context.
+// before a superseding session's resume(), which is guaranteed because
+// every start calls teardown() in the same synchronous turn before touching
+// the context.
 //
 // With `collectTail`, samples the worklet posted but the main thread hasn't
 // received yet keep being collected into rec.chunks until the processor's
@@ -965,6 +1049,7 @@ function teardown({ collectTail = false } = {}) {
   if (!recording) return null;
   const rec = recording;
   recording = null;
+  clearTimeout(rec.clockProbeId);
   clearInterval(rec.timerId);
   if (rec.maxTimerId) clearTimeout(rec.maxTimerId);
   if (rec.partialTimerId) clearInterval(rec.partialTimerId);

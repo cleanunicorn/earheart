@@ -809,9 +809,9 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     if (!audio.ok) return audio;
     const stamp = String(entry.at || new Date().toISOString()).slice(0, 19).replace(/[:T]/g, "-");
     const choice = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
-      title: "Export recording",
+      title: i18n.t("export.title"),
       defaultPath: path.join(app.getPath("downloads"), `earheart-${stamp}.wav`),
-      filters: [{ name: "WAV audio", extensions: ["wav"] }],
+      filters: [{ name: i18n.t("export.filter"), extensions: ["wav"] }],
     });
     if (choice.canceled || !choice.filePath) return { ok: false, cancelled: true };
     return recordings.exportWav(audio.wav, choice.filePath);

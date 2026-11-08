@@ -1,6 +1,5 @@
 // UI language across the real windows (#349), driven from settings-smoke on
-// its throwaway profile. A synthetic catalog stands in for a translation (it is
-// registered in main and injected into each page, never shipped) and proves,
+// its throwaway profile. The draft Romanian catalog is used, and this proves,
 // against the real renderer:
 //
 // - Settings, the wizard and the correction window all start in the same
@@ -16,16 +15,7 @@ const { app } = require("electron");
 const windows = require("../main/windows");
 const settings = require("../main/settings");
 const i18n = require("../main/i18n");
-const locales = require("../renderer/locales");
 const { waitForLoad } = require("./wait-for-load");
-
-const SYNTHETIC = {
-  "meta.name": "Test language",
-  "correction.heading": "[xx] Correct transcript",
-  "window.wizard.title": "[xx] Welcome",
-  "window.correction.title": "[xx] Correct",
-  "settings.language.title": "[xx] Language",
-};
 
 const read = (win, expr) =>
   Promise.race([
@@ -35,7 +25,6 @@ const read = (win, expr) =>
 const saved = () => JSON.parse(fs.readFileSync(path.join(app.getPath("userData"), "settings.json"), "utf8"));
 
 async function checkI18n({ waitFor, check }) {
-  locales.xx = SYNTHETIC;
   i18n.bind({ settings, systemLanguages: () => ["de-DE"] });
   const before = settings.get();
   let correctionWin = null;
@@ -48,7 +37,7 @@ async function checkI18n({ waitFor, check }) {
     await Promise.all(Object.values(wins).map((w) => waitForLoad(w.webContents)));
     for (const w of Object.values(wins)) {
       await waitFor(() => read(w, `typeof i18n === "object" && i18n.locale`), "i18n client did not start");
-      await read(w, `EarheartLocales.xx = ${JSON.stringify(SYNTHETIC)}; window.__marker = "same page"; true`);
+      await read(w, `window.__marker = "same page"; true`);
     }
     const langs = await Promise.all(Object.values(wins).map((w) => read(w, `document.documentElement.lang`)));
     check("every window starts in the same effective locale", langs.every((l) => l === "en"), JSON.stringify(langs));
@@ -59,20 +48,20 @@ async function checkI18n({ waitFor, check }) {
 
     await read(correction, `(() => { const t = document.getElementById("transcript"); t.value = "unsaved draft"; t.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
     const sttBefore = JSON.stringify(settings.get().stt);
-    settings.save({ ...settings.get(), uiLanguage: "xx" });
+    settings.save({ ...settings.get(), uiLanguage: "ro" });
 
-    await waitFor(async () => (await Promise.all(Object.values(wins).map((w) => read(w, `document.documentElement.lang`)))).every((l) => l === "xx"),
+    await waitFor(async () => (await Promise.all(Object.values(wins).map((w) => read(w, `document.documentElement.lang`)))).every((l) => l === "ro"),
       "open windows did not follow the language change");
     const heading = await read(correction, `document.querySelector("h1").textContent`);
     const draft = await read(correction, `document.getElementById("transcript").value`);
     const marker = await Promise.all(Object.values(wins).map((w) => read(w, `window.__marker`)));
-    check("saving a language retexts an open window", heading === "[xx] Correct transcript", heading);
-    check("native window titles follow", wizard.getTitle() === "[xx] Welcome" && correction.getTitle() === "[xx] Correct",
+    check("saving a language retexts an open window", heading === "Corectează transcrierea", heading);
+    check("native window titles follow", wizard.getTitle() === "Bine ai venit la Earheart" && correction.getTitle() === "Corectează transcrierea · Earheart",
       `${wizard.getTitle()} / ${correction.getTitle()}`);
     check("no window reloaded and the unsaved draft survived", marker.every((m) => m === "same page") && draft === "unsaved draft",
       JSON.stringify({ marker, draft }));
     check("the language persists and dictation settings are untouched",
-      saved().uiLanguage === "xx" && JSON.stringify(settings.get().stt) === sttBefore, JSON.stringify(saved().uiLanguage));
+      saved().uiLanguage === "ro" && JSON.stringify(settings.get().stt) === sttBefore, JSON.stringify(saved().uiLanguage));
 
     // A later window starts in the effective locale, not English.
     windows.closeWizard();
@@ -82,15 +71,13 @@ async function checkI18n({ waitFor, check }) {
     // The page only knows the shipped catalogs, so ask main what it tells a new
     // window: the saved locale, not English.
     const told = await read(again, `earheart.invoke("i18n:get")`);
-    check("a window opened later is told the saved locale", told.locale === "xx", JSON.stringify(told));
+    check("a window opened later is told the saved locale", told.locale === "ro", JSON.stringify(told));
 
     // An unsupported stored value reads as the system choice.
-    delete locales.xx;
     settings.save({ ...settings.get(), uiLanguage: "klingon" });
     check("an unsupported saved language falls back readably", settings.get().uiLanguage === "system" && i18n.getLocale() === "en",
       `${settings.get().uiLanguage} / ${i18n.getLocale()}`);
   } finally {
-    delete locales.xx;
     settings.save({ ...settings.get(), uiLanguage: before.uiLanguage });
     // The draft above marked the correction dirty; closing it would ask.
     windows.setCorrectionDirty(correctionWin?.webContents, false);

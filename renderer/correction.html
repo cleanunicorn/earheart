@@ -11,33 +11,34 @@
 <body>
   <main>
     <h1 data-i18n="correction.heading">Correct transcript</h1>
-    <p class="hint">Select a word or phrase, then enter its correct spelling. Your original stays in History.</p>
+    <p class="hint" data-i18n="correction.selectAWordOrPhrase">Select a word or phrase, then enter its correct spelling. Your original stays in History.</p>
     <label for="transcript" data-i18n="correction.transcriptLabel">Transcript</label>
     <textarea id="transcript" spellcheck="false" aria-describedby="selection-hint"></textarea>
-    <p id="selection-hint" class="hint" data-i18n="correction.selectionHint">Select text, then press Tab to correct it. You can also edit the transcript directly.</p>
-    <label for="spelling">Correct spelling</label>
+    <p id="selection-hint" class="hint">Select text, then press Tab to correct it. You can also edit the transcript directly.</p>
+    <label for="spelling" data-i18n="correction.correctSpelling">Correct spelling</label>
     <input id="spelling" type="text" autocomplete="off" spellcheck="false" maxlength="120" />
     <label class="check" for="always-replace">
       <input id="always-replace" type="checkbox" aria-describedby="always-replace-hint" />
       Always replace the selected words with this spelling
     </label>
-    <p id="always-replace-hint" class="hint">With Replace &amp; remember, future dictations get this spelling wherever these exact words appear, even with cleanup off.</p>
+    <p id="always-replace-hint" class="hint" data-i18n="correction.alwaysReplaceHint">With Replace &amp; remember, future dictations get this spelling wherever these exact words appear, even with cleanup off.</p>
     <div class="actions">
-      <button id="remember" class="primary" disabled>Replace &amp; remember</button>
-      <button id="replace" disabled>Replace only</button>
-      <button id="undo" disabled aria-describedby="undo-hint">Undo replacement</button>
+      <button id="remember" class="primary" disabled data-i18n="correction.remember">Replace &amp; remember</button>
+      <button id="replace" disabled data-i18n="correction.replace">Replace only</button>
+      <button id="undo" disabled aria-describedby="undo-hint" data-i18n="correction.undo">Undo replacement</button>
     </div>
-    <p id="undo-hint" class="hint">Undo reverses replacements since your last direct edit. Already remembered spellings stay in your dictionary.</p>
+    <p id="undo-hint" class="hint" data-i18n="correction.undoHint">Undo reverses replacements since your last direct edit. Already remembered spellings stay in your dictionary.</p>
     <p id="dictionary-note" class="hint"></p>
     <p id="status" role="status" aria-live="polite"></p>
     <footer>
       <button id="cancel">Close</button>
-      <button id="copy" class="primary" disabled>Copy corrected prompt &amp; close</button>
+      <button id="copy" class="primary" disabled data-i18n="correction.copy">Copy corrected prompt &amp; close</button>
     </footer>
-    <p class="hint">Ctrl/⌘+Enter copies the full prompt. Return to your agent and select the text you want to replace before pasting.</p>
+    <p class="hint" data-i18n="correction.ctrlenterCopiesTheFullPrompt">Ctrl/⌘+Enter copies the full prompt. Return to your agent and select the text you want to replace before pasting.</p>
   </main>
   <script src="i18n.js"></script>
   <script src="locales/en.js"></script>
+  <script src="locales/ro.js"></script>
   <script src="i18n-client.js"></script>
   <script src="correction.js"></script>
 </body>

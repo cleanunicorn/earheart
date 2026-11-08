@@ -215,3 +215,56 @@ test("a locale change reaches notices and listeners; missing entries fall back t
   i18n.setLocale("zz-unsupported");
   assert.equal(i18n.getLocale(), "en", "an unknown locale resolves to English");
 });
+
+test("service errors carry a key and clipped scalar params, never a response body (#349)", async () => {
+  const { requestJson } = require("../main/services/transport-error");
+  const { describeError } = require("../main/error-text");
+  const SECRET = "sk-sentinel-secret";
+  const realFetch = global.fetch;
+  try {
+    for (const [make, expectKey, pattern] of [
+      [async () => ({ ok: false, status: 401, json: async () => ({ error: SECRET }) }), "error.serviceAuth", /401.*API key/],
+      [async () => ({ ok: false, status: 500, text: async () => SECRET }), "error.serviceStatus", /Speech error 500$/],
+      [async () => ({ ok: true, json: async () => { throw new SyntaxError(`Unexpected token ${SECRET}`); } }), "error.serviceBadReply", /isn't JSON/],
+      [async () => { throw new TypeError(`fetch failed ${SECRET}`); }, "error.serviceUnreachable", /Couldn't reach api\.example\.test/],
+    ]) {
+      global.fetch = make;
+      const err = await requestJson("https://api.example.test/v1/x", {}, { service: "Speech", timeoutMs: 1000 }).catch((e) => e);
+      assert.equal(err.i18n.key, expectKey);
+      const text = describeError(err);
+      assert.match(text, pattern);
+      assert.ok(!text.includes(SECRET) && !JSON.stringify(err.i18n).includes(SECRET));
+    }
+  } finally {
+    global.fetch = realFetch;
+  }
+  assert.equal(describeError(new Error(`leak ${SECRET}`)), catalogs.en["error.generic"]);
+  assert.equal(describeError({ i18n: { key: "error.notAllowlisted", params: {} } }), catalogs.en["error.generic"]);
+  assert.equal(describeError(null), catalogs.en["error.generic"]);
+});
+
+test("Romanian (draft catalog): system and override selection, plurals and fallback (#349)", (t) => {
+  const i18n = require("../main/i18n");
+  const notices = require("../main/setup-notices");
+  t.after(() => i18n.setLocale("en"));
+  const r = (o) => core.resolveLocale(o);
+  assert.equal(r({ system: ["ro-RO", "en-US"] }), "ro");
+  assert.equal(r({ system: ["de", "ro_MD"] }), "ro");
+  assert.equal(r({ system: ["fr-FR"] }), "en");
+  assert.equal(r({ override: "ro", system: ["en-US"] }), "ro");
+  assert.equal(r({ override: "en", system: ["ro"] }), "en", "an explicit English override wins over a Romanian OS");
+
+  const ro = core.createTranslator({ locale: "ro", catalogs });
+  assert.equal(ro.t("pipeline.minutes", { count: 1 }), "1 minut");
+  assert.equal(ro.t("pipeline.minutes", { count: 3 }), "3 minute");
+  assert.equal(ro.t("pipeline.minutes", { count: 20 }), "20 de minute");
+  assert.equal(ro.t("overlay.retrying", { attempt: 2, of: 3 }), "Se reîncearcă (încercarea 2 din 3)…");
+  // Literal content is never translated: the model name passes through as given.
+  assert.match(ro.t("notice.sttMissing.body", { model: "Parakeet <b>" }), /„Parakeet <b>”/);
+
+  i18n.setLocale("ro");
+  assert.equal(i18n.t("tray.quit"), "Închide Earheart");
+  assert.equal(notices.readyNotice("").body, "Deschide meniul din bara de sistem pentru a începe.");
+  // Dictation settings are not part of the UI catalog.
+  assert.ok(!Object.keys(catalogs.ro).some((k) => /^(stt|cleanup)\./.test(k)));
+});

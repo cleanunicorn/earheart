@@ -752,7 +752,7 @@ test("the cleanup Test connection row lives inside the external-engine fields", 
   // fields instead of needing its own toggle in syncEngine.
   const start = html.indexOf('<div id="cleanup-external-fields">');
   const row = html.indexOf('id="cleanup-test-row"');
-  const builtinCardEnd = html.indexOf('<div class="card-title">Cleanup style</div>');
+  const builtinCardEnd = html.indexOf('>Cleanup style</div>');
   assert.ok(start !== -1 && row > start && row < builtinCardEnd);
 });
 
@@ -786,7 +786,7 @@ test("Save never closes Settings; the footer's Close button does", () => {
   assert.ok(save.length > 0, "saveSettings must exist");
   assert.doesNotMatch(save, /settings:close/, "Save must not close the window");
   const footer = html.match(/<footer>[\s\S]*?<\/footer>/)?.[0] ?? "";
-  assert.match(footer, /<button id="close">Close<\/button>\s*<button id="save" class="primary">Save<\/button>/);
+  assert.match(footer, /<button id="close"[^>]*>Close<\/button>\s*<button id="save" class="primary"[^>]*>Save<\/button>/);
   assert.match(js, /\$\("close"\)\.addEventListener\("click", \(\) => earheart\.invoke\("settings:close"\)\)/);
   assert.equal(js.match(/settings:close/g).length, 1, "only the Close button closes Settings");
   // With the window staying open, a failed Save's clear-timer must not wipe
@@ -1049,6 +1049,6 @@ test("the Usage figures say the time saved is an estimate against the stated bas
   assert.strictEqual(empty.streak, "1 day");
   assert.match(usageView({ ...summary, readOnly: "newer" }).readOnly, /newer version/);
   // The markup labels the figure and discloses the baseline beside it.
-  assert.match(html, /<dt>Time saved \(estimate\)<\/dt>/);
+  assert.match(html, /<dt[^>]*>Time saved \(estimate\)<\/dt>/);
   assert.match(html, /Estimate: typing these words at <span id="usage-baseline">40<\/span> WPM, minus the time you spent speaking them\. Not measured\./);
 });

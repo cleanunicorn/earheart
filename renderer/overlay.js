@@ -267,12 +267,16 @@ let progressHideTimer = null;
 const PROGRESS_HOLD_STATUSES = new Set(["transcribing", "cleaning", "delivering"]);
 
 // Title of the done card by how the text was delivered.
-const DONE_TITLE = {
-  clipboard: "Copied to clipboard",
-  "paste-copy": "Pasted & copied",
-  paste: "Pasted",
+// UI text goes through the catalog (#349): `tr` formats in the window's
+// current language, English until main reports another.
+const tr = (key, params) => i18n.t(key, params);
+
+const DONE_TITLE_KEY = {
+  clipboard: "overlay.done.clipboard",
+  "paste-copy": "overlay.done.pasteCopy",
+  paste: "overlay.done.paste",
   // Another app took the clipboard over first: nothing pasted, nothing copied.
-  "clipboard-changed": "Not pasted — the clipboard changed",
+  "clipboard-changed": "overlay.done.clipboardChanged",
 };
 
 function setStatus(status, title, detail) {
@@ -288,7 +292,7 @@ function setStatus(status, title, detail) {
   // The pause key latches a live take and releases it; anywhere else it is
   // inert. Its label follows the action it would perform.
   pauseBtn.disabled = status !== "recording" && status !== "paused";
-  const pauseLabel = status === "paused" ? "Resume" : "Pause";
+  const pauseLabel = status === "paused" ? tr("overlay.resume") : tr("overlay.pause");
   pauseBtn.title = pauseLabel;
   pauseBtn.setAttribute("aria-label", pauseLabel);
   // Pause latches, so it is a toggle: sighted users see the key sitting
@@ -310,9 +314,9 @@ function setStatus(status, title, detail) {
     status === "empty" ||
     status === "error";
   cancelBtn.title = settled
-    ? "Dismiss"
-    : `Discard — nothing is typed${discardHotkeyLabel ? ` (${discardHotkeyLabel})` : ""}`;
-  cancelBtn.setAttribute("aria-label", settled ? "Dismiss" : "Discard dictation");
+    ? tr("overlay.dismiss")
+    : tr(discardHotkeyLabel ? "overlay.discardTitleHotkey" : "overlay.discardTitle", { hotkey: discardHotkeyLabel });
+  cancelBtn.setAttribute("aria-label", settled ? tr("overlay.dismiss") : tr("overlay.discardLabel"));
   statusText.textContent = title;
   // The wave area steps back when a detail line (paste preview, error message,
   // hint) needs its space — see #card[data-detail] in overlay.css.
@@ -427,7 +431,7 @@ function capCountdown(capturedMs, capSeconds, warnMs = 60000) {
 // The status title while capturing: in the last minute before the cap it
 // says the take is about to stop, so the user can wrap up their thought.
 function listeningTitle(rec) {
-  return rec.capWarned ? "Stopping soon…" : "Listening…";
+  return rec.capWarned ? tr("overlay.stoppingSoon") : tr("overlay.listening");
 }
 
 function updateTimer() {
@@ -729,7 +733,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
   // Honest status: the mic is NOT live yet. "Listening…" appears only when
   // the first samples arrive (micLive), so the user is never invited to talk
   // into a microphone that isn't capturing.
-  setStatus("starting", "Starting mic…");
+  setStatus("starting", tr("overlay.startingMic"));
   clearTranscript();
   levels.fill(0);
   displayLevels.fill(0);
@@ -761,7 +765,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
         // A saved USB/Bluetooth device can disappear between sessions. Retry
         // once with the system default instead of making every dictation fail.
         if (!deviceId || !isMissingMicrophone(err)) throw err;
-        microphoneNotice = "Saved mic missing — using system default";
+        microphoneNotice = tr("overlay.micMissing");
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: microphoneConstraints(),
         });
@@ -805,7 +809,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
       stepCue({ type: "error", sid });
       earheart.send("record:error", {
         sid,
-        message: "Microphone did not deliver audio in time — check the input device in Settings",
+        message: tr("overlay.micTimeout"),
       });
     }, MIC_START_TIMEOUT_MS);
     // Safe ordering without awaiting: Web Audio applies state changes in call
@@ -1082,7 +1086,7 @@ function togglePause() {
     // Mute at the track so nothing is even delivered; the onmessage guard
     // discards any chunk already in flight.
     recording.stream.getAudioTracks().forEach((track) => (track.enabled = false));
-    setStatus("paused", "Paused", recording.microphoneNotice || "Press play to resume");
+    setStatus("paused", tr("overlay.paused"), recording.microphoneNotice || tr("overlay.pressPlay"));
     reportCapture(false);
   } else {
     recording.pausedMs += Date.now() - recording.pausedAt;
@@ -1155,10 +1159,15 @@ earheart.on("pipeline:progress", ({ phase, fraction }) => {
 
 function retryDetail(detail) {
   const retry = detail?.retry;
-  return retry ? `Retrying (try ${retry.attempt} of ${retry.of})…` : "";
+  return retry ? tr("overlay.retrying", { attempt: retry.attempt, of: retry.of }) : "";
 }
 
-earheart.on("pipeline:status", ({ status, detail }) => {
+// The last post-recording status, so a language change can repaint it in place.
+let lastPipelineStatus = null;
+const SETTLED_PIPELINE = new Set(["transcribing", "cleaning", "delivering", "done", "empty", "error"]);
+
+function onPipelineStatus({ status, detail }) {
+  lastPipelineStatus = SETTLED_PIPELINE.has(status) ? { status, detail } : null;
   // The live preview belongs to the recording phase; the moment the pipeline
   // reports a post-recording status, retire the transcript so it doesn't linger
   // alongside the control row's own status/preview.
@@ -1167,56 +1176,57 @@ earheart.on("pipeline:status", ({ status, detail }) => {
     // A stage that failed for a reason that can pass is tried again; the
     // title stays, the detail line counts the tries.
     case "transcribing":
-      setStatus("transcribing", "Transcribing…", retryDetail(detail));
+      setStatus("transcribing", tr("overlay.transcribing"), retryDetail(detail));
       break;
     case "cleaning":
-      setStatus("cleaning", "Cleaning up…", retryDetail(detail));
+      setStatus("cleaning", tr("overlay.cleaning"), retryDetail(detail));
       break;
     case "delivering":
-      setStatus("delivering", "Typing…");
+      setStatus("delivering", tr("overlay.typing"));
       break;
     case "done": {
       // A note means auto-paste was attempted and failed: say so in the
       // title, and put the reason or what to do where the preview would go —
       // the text is on the clipboard either way.
       const delivered = detail?.method === "clipboard-changed"
-        ? DONE_TITLE["clipboard-changed"]
+        ? tr(DONE_TITLE_KEY["clipboard-changed"])
         : detail?.note
-          ? "Copied — auto-paste failed"
-          : DONE_TITLE[detail?.method] ?? "Pasted";
+          ? tr("overlay.done.pasteFailed")
+          : tr(DONE_TITLE_KEY[detail?.method] ?? "overlay.done.paste");
       // Some of the speech never made it into the transcript (the engine
       // stopped part-way). The OS notification that said so is gone in
       // seconds; the card is what the user is still looking at, so the title
       // carries it — and, being the live region, says it to assistive tech.
       setStatus(
         "done",
-        detail?.incomplete ? `${delivered} — incomplete` : delivered,
+        detail?.incomplete ? tr("overlay.done.incomplete", { title: delivered }) : delivered,
         detail?.note || detail?.preview
       );
       const rawReason = document.getElementById("raw-reason");
       rawReason.hidden = detail?.rawReason !== "cleanup-downloading";
-      rawReason.textContent = rawReason.hidden ? "" : "Raw transcript — cleanup model still downloading";
+      rawReason.textContent = rawReason.hidden ? "" : tr("overlay.rawReason");
       syncOverlayHeight();
       break;
     }
     case "empty":
-      setStatus("empty", "Nothing heard", "Try again closer to the mic");
+      setStatus("empty", tr("overlay.empty"), tr("overlay.emptyHint"));
       break;
     case "error":
-      setStatus("error", "Failed", detail?.message);
+      setStatus("error", tr("overlay.failed"), detail?.message);
       // The recording survived the failure: offer it back (#293).
       if (detail?.failedTake) {
         const minutes = Math.floor(detail.failedTake.expiresInSec / 60);
-        const remaining = minutes < 1 ? "less than a minute" : `${minutes} min`;
-        takeNote.textContent = `${detail.failedTake.earlier ? "Earlier recording" : "Recording"} kept for ${remaining}`;
+        const remaining = minutes < 1 ? tr("overlay.lessThanMinute") : tr("overlay.minutes", { count: minutes });
+        takeNote.textContent = tr(detail.failedTake.earlier ? "overlay.earlierKept" : "overlay.recordingKept", { remaining });
         takeActions.hidden = false;
         // ✕ only dismisses the card; next to a Discard pill, say what stays.
-        cancelBtn.title = "Dismiss — the recording stays in the tray menu";
+        cancelBtn.title = tr("overlay.dismissKeep");
         syncOverlayHeight();
       }
       break;
   }
-});
+}
+earheart.on("pipeline:status", onPipelineStatus);
 
 // Main ignores a retry with nothing held or a dictation running, so a double
 // click can't transcribe the take twice; hiding the row just says it landed.
@@ -1232,7 +1242,7 @@ takeDiscard.addEventListener("click", () => {
 earheart.on("pipeline:take-released", () => {
   if (takeActions.hidden) return;
   takeActions.hidden = true;
-  cancelBtn.title = "Dismiss";
+  cancelBtn.title = tr("overlay.dismiss");
   syncOverlayHeight();
 });
 
@@ -1251,16 +1261,16 @@ let updatePrompt = null;
 // exits still make sense — they don't once the update is already downloading.
 const UPDATE_ACTIONS = {
   available: { channel: "updates:apply", primary: true, outs: true },
-  downloading: { label: "Cancel", channel: "updates:cancel", primary: false, outs: false },
-  ready: { label: "Restart now", channel: "updates:install", primary: true, outs: false },
-  installing: { label: "", channel: null, primary: false, outs: false },
-  error: { label: "Try again", channel: "updates:apply", primary: true, outs: true },
+  downloading: { labelKey: "overlay.update.cancel", channel: "updates:cancel", primary: false, outs: false },
+  ready: { labelKey: "overlay.update.restart", channel: "updates:install", primary: true, outs: false },
+  installing: { labelKey: "", channel: null, primary: false, outs: false },
+  error: { labelKey: "overlay.update.retry", channel: "updates:apply", primary: true, outs: true },
 };
 
 // The what's-new card asks for nothing, so it gets one way out and no
 // "stop bothering me" exits — there's nothing left to bother anyone about.
 const WHATSNEW_ACTION = {
-  label: "Got it",
+  labelKey: "overlay.update.gotIt",
   channel: "updates:dismiss",
   primary: true,
   outs: false,
@@ -1276,23 +1286,23 @@ function updateText(p) {
   if (p.kind === "whatsnew") {
     // No second line: the bullets below are the whole message, and a card that
     // interrupts nothing should be as short as it can be.
-    return [`What's new in Earheart ${p.version}`, ""];
+    return [tr("overlay.update.whatsNew", { version: p.version }), ""];
   }
   switch (p.status) {
     case "downloading":
-      return [`Downloading ${p.version}…`, `${pct}% of the update`];
+      return [tr("overlay.update.downloading", { version: p.version }), tr("overlay.update.percent", { percent: pct })];
     case "ready":
-      return [`Earheart ${p.version} is ready`, "Restart to finish the update."];
+      return [tr("overlay.update.ready", { version: p.version }), tr("overlay.update.readyNote")];
     case "installing":
-      return ["Installing the update…", "Earheart will restart."];
+      return [tr("overlay.update.installing"), tr("overlay.update.installingNote")];
     case "error":
-      return ["Update failed", p.error || "Something went wrong."];
+      return [tr("overlay.update.failed"), p.error || tr("error.generic")];
     default:
       return [
-        `Earheart ${p.version} is available`,
+        tr("overlay.update.available", { version: p.version }),
         p.method === "install"
-          ? `You're on ${p.current}. It takes a few seconds.`
-          : "Open the releases page to download it.",
+          ? tr("overlay.update.availableInstall", { current: p.current })
+          : tr("overlay.update.availableOpen"),
       ];
   }
 }
@@ -1314,7 +1324,7 @@ function renderUpdateNotes(p) {
   if (items.length && p.notesMore > 0) {
     const li = document.createElement("li");
     li.className = "more";
-    li.textContent = `and ${p.notesMore} more change${p.notesMore === 1 ? "" : "s"} — see Settings`;
+    li.textContent = tr("overlay.update.more", { count: p.notesMore });
     updateNotes.append(li);
   }
   updateNotes.hidden = !items.length;
@@ -1337,7 +1347,8 @@ function renderUpdatePrompt() {
 
   const action = actionFor(p);
   updateNow.textContent =
-    action.label || (p.method === "install" ? "Update now" : "Open releases page");
+    (action.labelKey && tr(action.labelKey)) ||
+    tr(p.method === "install" ? "overlay.update.now" : "overlay.update.openReleases");
   updateNow.hidden = !action.channel;
   updateNow.classList.toggle("primary", action.primary);
   updateNow.classList.toggle("quiet", !action.primary);
@@ -1359,6 +1370,14 @@ function renderUpdatePrompt() {
 earheart.on("updates:prompt", (payload) => {
   updatePrompt = payload || null;
   renderUpdatePrompt();
+});
+
+// A language change repaints what is on the card in place: the settled
+// pipeline status and the update prompt. An active capture keeps running and
+// its status line is refreshed by its next state change.
+i18n.onChange(() => {
+  if (lastPipelineStatus && card.dataset.status === lastPipelineStatus.status) onPipelineStatus(lastPipelineStatus);
+  if (updatePrompt) renderUpdatePrompt();
 });
 
 updateNow.addEventListener("click", () => {

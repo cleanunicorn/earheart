@@ -3,4 +3,5 @@
 // Adding a language: docs/localization.md.
 module.exports = {
   en: require("./en.js"),
+  ro: require("./ro.js"),
 };

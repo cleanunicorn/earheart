@@ -1043,7 +1043,9 @@ test("pipeline: a failed transcription notifies, and the click opens Settings", 
   const rig = dictationRig({
     engine: "remote",
     transcribe: async () => {
-      throw new Error("Couldn't reach api.example.test");
+      throw Object.assign(new Error("Couldn't reach api.example.test"), {
+        i18n: { key: "error.serviceUnreachable", params: { host: "api.example.test" } },
+      });
     },
   });
   await rig.dictate(speechWav(1));
@@ -1206,19 +1208,37 @@ test("pipeline: a history failure never costs the user's words or says they were
   assert.ok(rig.log.logs.some(([level, label]) => level === "error" && label === "history add failed:"));
 });
 
-test("pipeline: a long error is clipped to the notification limit", async () => {
+test("pipeline: an arbitrary error never reaches the notification text (#349)", async () => {
   const { BODY_MAX } = require("../main/setup-notices");
+  const SECRET = "sk-sentinel-secret-body";
   const rig = dictationRig({
     engine: "remote",
     transcribe: async () => {
-      throw new Error("x".repeat(400));
+      throw new Error(`${SECRET} ${"x".repeat(400)}`);
+    },
+  });
+  await rig.dictate(speechWav(1));
+  const { title, body } = rig.log.notifications[0];
+  assert.ok(body.length <= BODY_MAX);
+  // The retry route leads, then the generic text — never the raw exception.
+  assert.ok(body.startsWith("Retry it from the tray menu"), body);
+  assert.ok(body.endsWith(GENERIC_ERROR), body);
+  assert.ok(!(title + body).includes(SECRET));
+});
+
+test("pipeline: a coded service error is formatted from its key and clipped parameters (#349)", async () => {
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => {
+      throw Object.assign(new Error("raw body: sk-sentinel"), {
+        i18n: { key: "error.serviceAuth", params: { service: "Speech service", status: 401, body: "sk-sentinel" } },
+      });
     },
   });
   await rig.dictate(speechWav(1));
   const { body } = rig.log.notifications[0];
-  assert.strictEqual(body.length, BODY_MAX);
-  // The retry route leads, so clipping a long error never cuts it off.
-  assert.ok(body.startsWith("Retry it from the tray menu"), body);
+  assert.match(body, /Speech service error 401 — check the API key in Settings$/);
+  assert.ok(!body.includes("sk-sentinel"));
 });
 
 /* ---------------- never lose the words: cancel, stale and empty paths (#196) ---------------- */
@@ -1974,6 +1994,8 @@ test("pipeline: cancelling delivery keeps the earlier failed take retryable", as
   assert.strictEqual(rig.pipeline.getFailedTake(), null);
 });
 
+const GENERIC_ERROR = require("../renderer/locales").en["error.generic"];
+
 for (const [seconds, duration] of [[5, "less than a minute"], [59, "less than a minute"], [60, "1 minute"], [120, "2 minutes"]]) {
   test(`pipeline: an earlier take with ${seconds}s left has an honest retry notice`, async (t) => {
     let now = Date.now();
@@ -1986,7 +2008,7 @@ for (const [seconds, duration] of [[5, "less than a minute"], [59, "less than a 
     await rig.dictate(speechWav(1));
     assert.deepStrictEqual(rig.log.failedTakeCards.at(-1), { expiresInSec: seconds, earlier: true });
     assert.strictEqual(rig.log.notifications.at(-1).body,
-      `Retry it from the tray menu or the overlay, or run earheart --retry, within ${duration}. STT request timed out`);
+      `Retry it from the tray menu or the overlay, or run earheart --retry, within ${duration}. ${GENERIC_ERROR}`);
     assert.strictEqual(rig.pipeline.getFailedTake().expiresAt, expiresAt, "the copy must not renew retention");
     rig.pipeline.discardFailedTake();
   });

@@ -83,8 +83,26 @@ shows a generic readable message. In development a one-time
 
 ## Status
 
-English is complete for the surfaces already routed through the catalog (tray,
-startup and setup notifications, window titles, the correction-close dialog,
-the correction window heading, and Settings → General → Language/Appearance).
-The remaining Settings, wizard and overlay copy is extracted incrementally; see
-the tracking issue (#349).
+- **English** is complete for: the tray, startup/setup and pipeline
+  notifications, window titles, the correction-close and export dialogs, the
+  overlay (statuses, accessible names, update card), safe service-error text,
+  and all *static* page copy in Settings, the wizard, the overlay and the
+  correction window (tagged with `data-i18n` / `data-i18n-attr`).
+- **Romanian (`ro`)** covers every English key. It is a **draft pending review**
+  by the task owner (see the header of `renderer/locales/ro.js`); fill in its
+  `Reviewed:` line once the catalog and the rendered screens are signed off.
+- **Not yet extracted** (still English in every locale): strings that
+  `settings.js` / `wizard.js` and the status helpers build at runtime — save and
+  test feedback, validation messages, model download progress, permission and
+  ducking status, History and Usage formatting, and cleanup preset labels.
+  Elements whose text a script rewrites carry no `data-i18n`, so a language
+  change never overwrites them. Convert them to `i18n.t(...)` with
+  `i18n.onChange(...)` to re-render.
+- Native macOS/Windows acceptance (system-locale selection, tray labels, OS
+  notifications, dialogs) is still to be recorded; only Linux/xvfb checks ran.
+
+### Error text
+
+`main/error-text.js` formats an error from its `i18n: { key, params }` (set by
+`main/services/transport-error.js`); any other error shows the generic message.
+Raw response bodies, exception strings and credentials are never interpolated.

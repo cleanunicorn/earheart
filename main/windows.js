@@ -497,7 +497,7 @@ function sendToOverlay(channel, payload) {
 // may show it after checking the pipeline again.
 function createPaletteWindow() {
   paletteWindow = createFormWindow("palette", { width: 620, height: 600, minWidth: 420,
-    minHeight: 360, title: "Commands · Earheart", show: false });
+    minHeight: 360, title: t("window.palette.title"), show: false });
   const win = paletteWindow;
   win.on("closed", () => { if (paletteWindow === win) paletteWindow = null; });
   return win;
@@ -627,7 +627,7 @@ function openApproval() {
     minHeight: 360,
     alwaysOnTop: true,
     minimizable: false,
-    title: "Tool approval · Earheart",
+    title: t("window.approval.title"),
   });
   const win = approvalWindow;
   win.loadFile(path.join(RENDERER, "approval.html"));
@@ -774,6 +774,8 @@ function retitle() {
     [settingsWindow, "window.settings.title"],
     [wizardWindow, "window.wizard.title"],
     [correctionWindow, "window.correction.title"],
+    [paletteWindow, "window.palette.title"],
+    [approvalWindow, "window.approval.title"],
   ];
   for (const [win, key] of titles) {
     if (alive(win)) win.setTitle(t(key));

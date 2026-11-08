@@ -174,6 +174,7 @@ function createOverlayVm({
       stopped: false,
       stop() {
         track.stopped = true;
+        track.readyState = "ended"; // a stopped track reports ended, as in Chromium
       },
       addEventListener(type, fn) {
         if (type === "ended") listeners.push(fn);
@@ -229,13 +230,18 @@ function createOverlayVm({
     navigator: {
       mediaDevices: {
         getUserMedia: async (constraints) => {
-          mediaCalls.push(constraints.audio);
+          mediaCalls.push(constraints?.audio);
           if (getUserMedia) {
             const made = await getUserMedia(constraints, mediaCalls, makeStream);
             if (!streams.some((s) => s.stream === made)) streams.push({ stream: made, track: made.getAudioTracks()[0] });
             return made;
           }
-          return stream;
+          // Default mic: the first call gets the initial stream; every later
+          // call a fresh live track, as a real getUserMedia hands out.
+          if (mediaCalls.length === 1) return stream;
+          const fresh = makeStream();
+          streams.push(fresh);
+          return fresh.stream;
         },
         ...(enumerateDevices ? { enumerateDevices: async () => enumerateDevices() } : {}),
         addEventListener: (type, fn) => {
@@ -270,7 +276,7 @@ function createOverlayVm({
     oscillators,
     contexts,
     queue,
-    track,
+    get track() { return streams[streams.length - 1].track; },
     mediaCalls,
     streams,
     makeStream,

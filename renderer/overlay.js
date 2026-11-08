@@ -874,7 +874,7 @@ async function startRecording({ sid, deviceId, mic, maxSeconds, livePreview: liv
         // once with the system default instead of making every dictation fail.
         if (!wanted || !isMissingMicrophone(err)) throw err;
         microphoneNotice =
-          mic?.mode === "auto" ? "Chosen mic unavailable — using system default" : tr("overlay.micMissing");
+          mic?.mode === "auto" ? tr("overlay.micAutoUnavailable") : tr("overlay.micMissing");
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: microphoneConstraints(),
         });
@@ -921,20 +921,20 @@ async function startRecording({ sid, deviceId, mic, maxSeconds, livePreview: liv
         message: tr("overlay.micTimeout"),
       });
     }, MIC_START_TIMEOUT_MS);
-    function connect(context) {
+    function connect(context, activeStream = stream) {
       // Keep the normal resume/graph setup overlap. Probe only after the
       // resume promise resolves; its rejection still uses the main watchdog.
       const resumedAt = context.resume().then(() => performance.now(), () => null);
       let source;
       let recorder;
       try {
-        source = context.createMediaStreamSource(stream);
+        source = context.createMediaStreamSource(activeStream);
         recorder = new AudioWorkletNode(context, "recorder");
         const chunks = [];
         recorder.port.onmessage = (event) => {
           // The node is disconnected on teardown, but a message can already be in
           // flight; never let a stale session's samples leak into the current one.
-          if (!recording || recording.recovering === true || recording.recorder !== recorder) return;
+          if (!recording || recording.clockSwapping || recording.recorder !== recorder) return;
           if (event.data.samples?.length) {
             clearTimeout(recording.clockProbeId);
             recording.clockProbeId = null;
@@ -989,12 +989,15 @@ async function startRecording({ sid, deviceId, mic, maxSeconds, livePreview: liv
         // A device unplugged (or a route changed away from) mid-take ends its
         // track. The take goes on either way — stop still delivers what was
         // captured — but first we try once to re-acquire a microphone (#339).
-        const [track] = stream.getAudioTracks();
+        const [track] = activeStream.getAudioTracks();
         const onTrackEnded = (ended) => {
           // Stale: another session, a stop/cancel that already tore the take down,
           // or a track we already replaced. A second "ended" for the same loss
           // (the event and a devicechange both fire) is absorbed by trackEnded.
           if (recording?.recorder !== recorder || recording.stream.getAudioTracks()[0] !== ended) return;
+          // A clock rebuild is swapping the graph: recoverClock re-checks the
+          // track when the new graph is in place, so recover once, on that graph.
+          if (recording.clockSwapping) return;
           // A replacement that dies before delivering anything counts as a new
           // loss; otherwise the flag already says this one is being handled.
           if (recording.trackEnded && recording.recovering !== "swapped") return;
@@ -1005,7 +1008,11 @@ async function startRecording({ sid, deviceId, mic, maxSeconds, livePreview: liv
         };
         track?.addEventListener("ended", () => onTrackEnded(track));
 
-        return { source, recorder, chunks, resumedAt };
+        return {
+          source, recorder, chunks, resumedAt,
+          // Bound to this graph's recorder, so a clock rebuild swaps it too.
+          onTrackLost: (ended) => onTrackEnded(ended ?? recording?.stream.getAudioTracks()[0]),
+        };
       } catch (err) {
         if (recorder) {
           recorder.port.onmessage = null;
@@ -1018,9 +1025,10 @@ async function startRecording({ sid, deviceId, mic, maxSeconds, livePreview: liv
     }
 
     async function recoverClock(rec) {
-      if (!isCurrent() || recording !== rec || rec.clockRetried) return;
+      if (!isCurrent() || recording !== rec || rec.clockRetried || rec.recovering) return;
       rec.clockRetried = true;
       rec.recovering = true;
+      rec.clockSwapping = true;
       try {
         // Retire only the graph. Keep the selected stream, SID, timers and
         // original startup watchdog while its replacement warms up.
@@ -1031,10 +1039,15 @@ async function startRecording({ sid, deviceId, mic, maxSeconds, livePreview: liv
         resetAudioEngine();
         const replacement = await ensureAudioEngine();
         if (!isCurrent() || recording !== rec) return;
-        Object.assign(rec, connect(replacement));
+        Object.assign(rec, connect(replacement, rec.stream));
         rec.recovering = false;
+        rec.clockSwapping = false;
+        // The mic may have been lost during the swap; the new graph never saw
+        // that "ended" event, so recover now if the track is already dead.
+        if (rec.stream.getAudioTracks()[0]?.readyState === "ended") rec.onTrackLost();
         // No second clock probe: another stall reaches the original deadline.
       } catch (err) {
+        rec.clockSwapping = false;
         if (!isCurrent() || recording !== rec) return;
         teardown();
         resetAudioEngine();
@@ -1051,11 +1064,11 @@ async function startRecording({ sid, deviceId, mic, maxSeconds, livePreview: liv
       // whether one is in flight / its new stream has not delivered yet.
       recoveries: 0,
       recovering: false,
-      onTrackLost: (ended) => onTrackEnded(ended ?? recording?.stream.getAudioTracks()[0]),
       stream,
       ...graph,
       clockProbeId: null,
       clockRetried: false,
+      clockSwapping: false,
       // The start-cue guard: the capture frame the take begins at (0 = no
       // cue, nothing dropped), set on the first samples; guardSpent once
       // samples past it arrive. "Listening…" waits for guardSpent.
@@ -1148,10 +1161,10 @@ async function recoverCapture(rec, recorder, context, { sid, deviceId, mic, isCu
     if (!rec.pausedAt && rec.startedAt) setStatus("recording", listeningTitle(rec), notice);
     stepCue({ type: "trackEnded", sid });
   };
-  if (rec.recoveries >= MAX_RECOVERIES) return fail("Microphone lost — audio captured so far is kept");
+  if (rec.recoveries >= MAX_RECOVERIES) return fail(tr("overlay.micLostKept"));
   rec.recoveries++;
   rec.recovering = true;
-  rec.microphoneNotice = "Microphone lost — switching…";
+  rec.microphoneNotice = tr("overlay.micLostSwitching");
   if (!rec.pausedAt && rec.startedAt) setStatus("recording", listeningTitle(rec), rec.microphoneNotice);
   let next = null;
   try {
@@ -1188,14 +1201,14 @@ async function recoverCapture(rec, recorder, context, { sid, deviceId, mic, isCu
     rec.source = source;
     rec.stream = next;
     rec.inputLatency = track.getSettings?.().latency;
-    rec.microphoneNotice = notice || "Microphone changed — kept recording";
+    rec.microphoneNotice = notice || tr("overlay.micChanged");
     rec.recovering = "swapped"; // trackEnded clears when this stream delivers
     track.addEventListener("ended", () => rec.onTrackLost?.(track));
     next = null;
     rememberMicrophoneLabels();
   } catch (err) {
     next?.getTracks().forEach((t) => t.stop());
-    fail(`Microphone lost — audio captured so far is kept`);
+    fail(tr("overlay.micLostKept"));
   }
 }
 

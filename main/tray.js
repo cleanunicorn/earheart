@@ -82,7 +82,7 @@ function buildMenu(app) {
     {
       // Voice command (#344): an explicit rewrite/draft by voice, separate
       // from dictation. While a command records, the same item finishes it.
-      label: commands.isRecording() ? "Finish voice command" : "Voice command…",
+      label: commands.isRecording() ? t("tray.finishVoiceCommand") : t("tray.voiceCommand"),
       enabled: state === "idle" || commands.isRecording(),
       click: () => commands.begin(),
     },
@@ -126,7 +126,7 @@ function buildMenu(app) {
       click: correctLast,
     },
     ...updateItems(),
-    { label: "Commands…", accelerator: cfg.paletteHotkey || undefined, click: () => openCommands() },
+    { label: t("tray.commands"), accelerator: cfg.paletteHotkey || undefined, click: () => openCommands() },
     { label: t("tray.settings"), click: () => windows.openSettings() },
     { type: "separator" },
     { label: t("tray.quit"), click: () => app.quit() },

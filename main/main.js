@@ -100,6 +100,22 @@ function applyHotkeys(cfg) {
   return lastHotkeyStatus;
 }
 
+// Enter-to-stop (#338): Enter is held only while the preference is on, the
+// state is recording and the microphone is really capturing (so never before
+// it is ready, and released while paused). The grab releases itself before
+// the stop fires.
+let capturing = false;
+let enterSpent = false; // this take's Enter was used; stays released until capture ends
+function syncEnterToStop() {
+  const recording = capturing && pipeline.getState() === "recording";
+  if (!recording) enterSpent = false;
+  const want = !!settings.get().enterToStop && recording && !enterSpent;
+  hotkeys.armEnter(want, () => {
+    enterSpent = true;
+    pipeline.stopFromEnter();
+  });
+}
+
 // Startup notices; clicking one opens Settings (see setup-notices.js).
 const notifier = createNotifier({
   Notification,
@@ -199,13 +215,20 @@ function main() {
     usage.init();
     // The discard hotkey is held only while there is a dictation to discard
     // (recording or processing); idle, the combination is the user's again.
-    pipeline.onStateChange((state) => hotkeys.armDiscard(state !== "idle"));
+    pipeline.onStateChange((state) => {
+      hotkeys.armDiscard(state !== "idle");
+      syncEnterToStop();
+    });
     // Lower other apps' playback while the microphone is capturing (opt-in);
     // settles a lowering a crash left behind first.
     ducking.init();
     // Which inputs are Bluetooth/virtual (#339), cached; never blocks a take.
     micProbe.init(ipcMain);
-    pipeline.onCaptureChange((live) => ducking.setCapturing("dictation", live));
+    pipeline.onCaptureChange((live) => {
+      ducking.setCapturing("dictation", live);
+      capturing = live;
+      syncEnterToStop();
+    });
     // Optional local MCP tool servers (#346). Nothing is started here: servers
     // run only on an explicit Discover or a call, and no part of the app calls
     // tools from voice until command mode (#344) uses tools.host.
@@ -242,6 +265,7 @@ function main() {
         // recording they removed (even one playing) leaves the page.
         if (recordings.prune(settings.get()).length) windows.sendToSettings("history:changed", { updated: true });
         ducking.refresh();
+        syncEnterToStop();
         return { commandsHotkey: commands.applyHotkey(settings.get().commands?.hotkey) };
       },
     });

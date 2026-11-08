@@ -444,6 +444,17 @@ transcribing, only dismisses the bar once the paste is under way — and is
 held only while a dictation is running, so the combination is free the rest of
 the time. When set, ✕'s tooltip names it.
 
+**Press Enter to stop and paste** (Settings → General, off by default) makes
+Enter finish the dictation like the record hotkey: it stops, transcribes,
+cleans and delivers as usual. Enter is held globally only while the microphone
+is capturing — never idle, before the mic is ready, or while paused — and is
+consumed, so the app you are dictating into never sees it, and Earheart never
+sends an Enter after pasting. Because the grab is global, Enter is also
+swallowed in every other app during that window, including while you compose
+text with an input method (IME). If the system refuses the grab (for example
+Wayland) or Enter is already one of your hotkeys, it is left off with a note in
+the log and the hotkey, overlay and tray still stop the take.
+
 Earheart lives in your system tray. From the tray menu you can start a
 dictation, open the transcription history, or change any choice you made in
 the wizard:

@@ -1408,3 +1408,44 @@ test("palette reserves equivalent spellings of an unarmed discard key", () => {
   assert.equal(hotkeys.applyAll({ ...cfg, palette: alias }).palette.ok, false);
   assert.equal(bindings.has(alias), false);
 });
+
+/* ---------------- enter-to-stop (#338) ---------------- */
+
+test("enter is held only while wanted and released before the stop callback runs", () => {
+  const { hotkeys, calls, bindings } = loadHotkeys();
+  const order = [];
+  hotkeys.armEnter(true, () => order.push(bindings.has("Enter") ? "held" : "released"));
+  assert.ok(bindings.has("Enter"));
+  hotkeys.armEnter(true); // idempotent
+  assert.strictEqual(calls.registered.filter((c) => c.accelerator === "Enter").length, 1);
+  bindings.get("Enter")();
+  assert.deepStrictEqual(order, ["released"]);
+  assert.ok(!bindings.has("Enter"));
+  hotkeys.armEnter(false);
+  assert.ok(!bindings.has("Enter"));
+});
+
+test("enter is released while a shortcut field captures and restored after", () => {
+  const { hotkeys, bindings } = loadHotkeys();
+  hotkeys.armEnter(true, () => {});
+  hotkeys.suspend(true);
+  assert.ok(!bindings.has("Enter"));
+  hotkeys.armEnter(true); // still wanted, but suspended
+  assert.ok(!bindings.has("Enter"));
+  hotkeys.suspend(false);
+  assert.ok(bindings.has("Enter"));
+  hotkeys.armEnter(false);
+  assert.ok(!bindings.has("Enter"));
+});
+
+test("enter is not grabbed when it is a configured hotkey or the OS refuses", () => {
+  const taken = loadHotkeys();
+  taken.hotkeys.applyAll({ ...pair("Enter", ""), discard: "", onDiscard: () => {} });
+  assert.strictEqual(taken.hotkeys.armEnter(true, () => {}), false);
+  assert.ok(taken.calls.warnings.some((w) => /already a configured hotkey/.test(w)));
+
+  const refused = loadHotkeys({ occupied: ["Enter"] });
+  assert.strictEqual(refused.hotkeys.armEnter(true, () => {}), false);
+  assert.ok(refused.calls.warnings.some((w) => /enter-to-stop/.test(w)));
+  assert.doesNotThrow(() => refused.hotkeys.armEnter(false));
+});

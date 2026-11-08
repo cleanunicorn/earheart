@@ -435,6 +435,7 @@ function populate() {
   syncEngine("cleanup");
 
   $("start-on-boot").checked = !!current.startOnBoot;
+  $("enter-to-stop").checked = !!current.enterToStop;
   $("appearance").value = current.appearance || "system";
   populateUiLanguages();
   $("ui-language").value = EarheartI18n.normalizePreference(current.uiLanguage);
@@ -500,6 +501,7 @@ function collect() {
       allowApply: $("commands-allow-apply").checked,
     },
     startOnBoot: $("start-on-boot").checked,
+    enterToStop: $("enter-to-stop").checked,
     appearance: $("appearance").value,
     uiLanguage: $("ui-language").value,
     updates: {

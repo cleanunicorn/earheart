@@ -79,6 +79,28 @@ const DEFAULTS = {
   // "system" (follow the OS), "light" or "dark" — every window's palette,
   // applied by main/appearance.js. Anything else reads as "system".
   appearance: "system",
+  // Voice commands (#344): an explicit, separate mode that turns a spoken
+  // instruction into text (draft from a brief, or rewrite the selection). It
+  // never runs from ordinary dictation. Off the hotkey nothing here is active;
+  // the tray item and `earheart --command` also start one.
+  commands: {
+    // Optional global hotkey, unset by default like the other optional keys.
+    hotkey: "",
+    // "builtin" = the cleanup GGUF model runs the transform in-process (no
+    // setup, nothing leaves the machine); "remote" = an OpenAI-compatible chat
+    // API the user names HERE. There is no fallback to the cleanup service:
+    // selected text is only sent where the user said it may go.
+    engine: "builtin",
+    baseUrl: "",
+    apiKey: "",
+    model: "",
+    timeoutMs: 120000,
+    // Output budget in tokens: its own, never the cleanup ratio (a draft from
+    // a ten-word brief is far longer than its transcript).
+    maxOutputTokens: 1024,
+    // Apply (paste over the selection) can be turned off, leaving Copy only.
+    allowApply: true,
+  },
   output: {
     // "paste" = type into focused app (restores clipboard afterwards),
     // "paste-copy" = paste AND keep the transcript on the clipboard,
@@ -417,6 +439,9 @@ const LIMITS = [
   { section: "recordings", key: "maxMegabytes", min: 50, max: 10240 },
   // Settings → Usage's typing-speed baseline (#typing-wpm).
   { section: "usage", key: "typingWpm", min: 10, max: 200 },
+  // Settings → Commands: the transform's timeout and output budget.
+  { section: "commands", key: "timeoutMs", min: 5000, max: 600000 },
+  { section: "commands", key: "maxOutputTokens", min: 64, max: 8192 },
 ];
 
 // Clamp each limit into its range (rounded to whole units); a non-finite value

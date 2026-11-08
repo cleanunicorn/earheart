@@ -40,6 +40,7 @@ let wizardWindow = null;
 let correctionWindow = null;
 let correctionText = "";
 let correctionDirty = false;
+let commandWindow = null; // the voice command card (#344)
 let overlayCustomPosition = null; // set when the user drags the card
 let overlayDragOrigin = null; // { winX, winY, pointerX, pointerY }
 let overlayHideTimer = null;
@@ -573,6 +574,68 @@ function confirmCorrectionClose() {
 function getCorrectionText() { return correctionText; }
 function closeCorrection() { if (alive(correctionWindow)) correctionWindow.close(); }
 
+// The voice command card (#344): input, spoken instruction, result and the
+// Apply / Copy / Cancel controls. Like the overlay it never takes keyboard
+// focus (focusable: false, shown inactive), because Apply pastes into whatever
+// window has the keyboard — if the card held it, the paste would land in the
+// card. The command session also checks the focused window right before it
+// pastes, so a card that did end up focused fails safe to Copy.
+const COMMAND_WIDTH = 540;
+const COMMAND_HEIGHT = 520;
+
+function openCommand({ onClosed } = {}) {
+  if (alive(commandWindow)) {
+    if (!commandWindow.isVisible()) commandWindow.showInactive();
+    return commandWindow;
+  }
+  const { workArea } = screen.getPrimaryDisplay();
+  commandWindow = createAppWindow("command", {
+    width: COMMAND_WIDTH,
+    height: COMMAND_HEIGHT,
+    x: Math.round(workArea.x + (workArea.width - COMMAND_WIDTH) / 2),
+    y: Math.round(workArea.y + Math.max(40, (workArea.height - COMMAND_HEIGHT) / 3)),
+    show: false,
+    frame: false,
+    resizable: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    acceptFirstMouse: true,
+    backgroundColor: inkColor(),
+    webPreferences: { backgroundThrottling: false },
+  });
+  commandWindow.setAlwaysOnTop(true, "screen-saver");
+  commandWindow.loadFile(path.join(RENDERER, "command.html"));
+  commandWindow.once("ready-to-show", () => {
+    if (alive(commandWindow)) commandWindow.showInactive();
+  });
+  const win = commandWindow;
+  win.on("closed", () => {
+    if (commandWindow === win) commandWindow = null;
+    onClosed?.();
+  });
+  return win;
+}
+
+function closeCommand() {
+  if (alive(commandWindow)) commandWindow.destroy();
+  commandWindow = null;
+}
+
+function sendToCommand(channel, payload) {
+  if (alive(commandWindow)) commandWindow.webContents.send(channel, payload);
+}
+
+// True when `sender` (an IPC event's webContents) is the command card's own
+// page: the role check every command:* handler makes (main/commands/ipc.js).
+function isCommandSender(sender) {
+  return alive(commandWindow) && sender === commandWindow.webContents;
+}
+
 function openWizard() {
   if (alive(wizardWindow)) return bringForward(wizardWindow);
   wizardWindow = createFormWindow("wizard", {
@@ -622,7 +685,7 @@ function broadcast(channel, payload) {
 // behind them — visible while resizing — from showing the old ink.
 function refreshInk() {
   const ink = inkColor();
-  for (const win of [settingsWindow, wizardWindow, correctionWindow]) {
+  for (const win of [settingsWindow, wizardWindow, correctionWindow, commandWindow]) {
     if (win && !win.isDestroyed()) win.setBackgroundColor(ink);
   }
 }
@@ -646,6 +709,10 @@ module.exports = {
   setCorrectionDirty,
   confirmCorrectionClose,
   closeCorrection,
+  openCommand,
+  closeCommand,
+  sendToCommand,
+  isCommandSender,
   sendToSettings,
   sendToForms,
   broadcast,

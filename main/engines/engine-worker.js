@@ -27,7 +27,13 @@ const {
   cleanMaxTokens,
   cleanBudgetMessage,
   CLEAN_RUNAWAY_MESSAGE,
+  CLEAN_CONTEXT_MAX,
 } = require("../util/clean-budget");
+const {
+  transformContextNeed,
+  TRANSFORM_TRUNCATED_MESSAGE,
+  TRANSFORM_EMPTY_MESSAGE,
+} = require("../util/transform-turn");
 const { cleanupUserTurn, cleanupTurnPrefix, cleanupSamplingOptions, cleanupChatWrapper } = require("../util/cleanup-turn");
 
 const port = process.parentPort;
@@ -419,6 +425,69 @@ async function clean({ model, operationId, transcript, systemPrompt, sampling, o
   }, operationId);
 }
 
+// Voice commands (#344). A draft or rewrite is not bounded by its input, so it
+// has its own request type and budget: the caller states the output cap
+// (maxTokens) and the context is grown to hold the whole turn plus that cap,
+// or the turn is refused. A cap hit or an empty reply is an error here, never
+// a partial result: half a rewrite is not something to paste over a selection.
+// The grown context stays until the next clean, whose loadCleanup/
+// fitCleanupContext brings it back to the size dictation wants.
+async function fitTransformContext(turnTokens, maxTokens) {
+  if (!llamaModel || !llamaContext) return;
+  const need = transformContextNeed(turnTokens, maxTokens);
+  const available = llamaContext.contextSize;
+  if (need <= available) return;
+  let wanted = Math.max(CLEAN_CONTEXT_MIN, 2 ** Math.ceil(Math.log2(need)));
+  const trained = llamaModel.trainContextSize;
+  const ceiling = Number.isFinite(trained) && trained > 0
+    ? Math.min(CLEAN_CONTEXT_MAX, 2 ** Math.floor(Math.log2(trained)))
+    : CLEAN_CONTEXT_MAX;
+  wanted = Math.min(wanted, Math.max(ceiling, available));
+  if (need > wanted) {
+    throw new Error(
+      `This text is too long for the local model to handle in one pass (needs ~${need} tokens of context, have ${wanted})`
+    );
+  }
+  const floor = cleanupContextSize;
+  try {
+    await rebuildCleanupContext(wanted);
+  } catch (err) {
+    console.error(`[engine-worker] command context of ${wanted} tokens failed (${err.message}); keeping ${floor}`);
+    try {
+      await rebuildCleanupContext(floor);
+    } catch (floorErr) {
+      await disposeCleanup();
+      throw new Error(`Could not rebuild the model context (${floorErr.message})`);
+    }
+    throw new Error("Not enough memory for the local model to handle this much text");
+  }
+}
+
+async function transform({ model, operationId, turn, maxTokens, sampling }) {
+  return queuedCleanupOp(async (signal) => {
+    await loadCleanup(model);
+    let turnTokens;
+    try {
+      turnTokens = llamaModel.tokenize(turn).length;
+    } catch {
+      turnTokens = Math.ceil(turn.length / 2);
+    }
+    await fitTransformContext(turnTokens, maxTokens);
+    if (signal.aborted) throw new Error("cleanup cancelled");
+    const mod = await import("node-llama-cpp");
+    const session = freshSession(mod);
+    const { responseText, stopReason } = await session.promptWithMeta(turn, {
+      ...cleanupSamplingOptions(sampling),
+      signal,
+      maxTokens,
+    });
+    if (stopReason === "maxTokens") throw new Error(TRANSFORM_TRUNCATED_MESSAGE);
+    const text = (responseText || "").trim();
+    if (!text) throw new Error(TRANSFORM_EMPTY_MESSAGE);
+    return text;
+  }, operationId);
+}
+
 // Prefill-ahead: evaluate a known prompt prefix (static instructions, plus the
 // already-committed transcript when available) into the context without
 // generating anything, so the next clean() starts generating almost
@@ -504,6 +573,7 @@ const HANDLERS = {
   transcribe,
   "load-cleanup": (args) => queuedCleanupOp(() => loadCleanup(args), undefined, false),
   clean,
+  transform,
   "prime-cleanup": primeCleanup,
   "cancel-clean": cancelClean,
 };

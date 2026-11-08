@@ -9,6 +9,7 @@ const windows = require("./windows");
 const wake = require("./wake");
 const appearance = require("./appearance");
 const pipeline = require("./pipeline");
+const commands = require("./commands");
 const usage = require("./usage");
 const hotkeys = require("./hotkeys");
 const tray = require("./tray");
@@ -44,6 +45,9 @@ if (!gotLock) {
       pipeline.discard();
     } else if (argv.includes("--retry")) {
       pipeline.retryFailedTake();
+    } else if (argv.includes("--command")) {
+      // A voice command (#344) for desktops where global hotkeys are blocked.
+      commands.begin();
     } else if (argv.includes("--correct-last")) {
       openLastCorrection();
     } else {
@@ -128,6 +132,7 @@ function main() {
     appearance.init();
     windows.init();
     pipeline.init({ isDownloading: ipc.isDownloading });
+    commands.init({ pipeline });
     usage.init();
     // The discard hotkey is held only while there is a dictation to discard
     // (recording or processing); idle, the combination is the user's again.
@@ -148,9 +153,11 @@ function main() {
       // saved settings, so the status Settings shows names the failure.
       suspendHotkeys: (on) => {
         if (hotkeys.suspend(on).length) applyHotkeys(settings.get());
+        commands.suspend(on);
       },
+      getCommandCapabilities: commands.capabilities,
       // The tray rebuilds itself on every settings save (main/ipc.js).
-      getHotkeyStatus: () => lastHotkeyStatus,
+      getHotkeyStatus: () => (lastHotkeyStatus ? { ...lastHotkeyStatus, commandsHotkey: commands.getHotkeyStatus() } : lastHotkeyStatus),
       onSettingsChanged: () => {
         pipeline.onSettingsChanged();
         updates.onSettingsChanged();
@@ -158,6 +165,7 @@ function main() {
         // recording they removed (even one playing) leaves the page.
         if (recordings.prune(settings.get()).length) windows.sendToSettings("history:changed", { updated: true });
         ducking.refresh();
+        return { commandsHotkey: commands.applyHotkey(settings.get().commands?.hotkey) };
       },
     });
     // Kept recordings (#343) past their limits, or whose History entry is

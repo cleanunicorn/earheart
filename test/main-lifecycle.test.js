@@ -138,6 +138,15 @@ async function loadMain(
       sendToSettings: (channel, payload) => events.push(`settings:${channel}:${JSON.stringify(payload ?? null)}`),
     },
     "./appearance": { init: () => events.push("appearance.init") },
+    "./commands": {
+      init: () => events.push("commands.init"),
+      begin: () => events.push("commands.begin"),
+      suspend: () => {},
+      applyHotkey: () => ({ ok: true, empty: true }),
+      capabilities: () => ({}),
+      getHotkeyStatus: () => ({ ok: true, empty: true }),
+      isRecording: () => false,
+    },
     "./recordings": {
       startPruning: (getCfg, onPruned) => {
         events.push("recordings.startPruning");
@@ -289,6 +298,7 @@ test("a healthy launch registers both hotkeys and announces ready", async () => 
     pauseHotkey: { ok: true, accelerator: PAUSE },
     discardHotkey: { ok: true, empty: true, accelerator: "" },
     correctHotkey: { ok: true, empty: true, accelerator: "" },
+    commandsHotkey: { ok: true, empty: true },
   });
 
   // Only the microphone and clipboard writes from app pages are granted.

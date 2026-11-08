@@ -692,3 +692,29 @@ test("a stale wizard does not overwrite an appearance saved in Settings", (t) =>
   handlers["settings:save"]({}, { settings: { ...again, appearance: "dark" }, baseline: sharedBaseline(again) });
   assert.strictEqual(readFile().appearance, "dark");
 });
+
+// #349: like appearance, the UI language is edited only in Settings.
+test("a stale wizard does not overwrite a UI language saved in Settings", (t) => {
+  const locales = require("../renderer/locales");
+  locales.ro = { "meta.name": "Română" };
+  t.after(() => { delete locales.ro; });
+  const { sharedBaseline } = require("../renderer/settings-sync");
+  const { handlers, settings, readFile } = loadIpc(t);
+  settings.save(settings.get());
+  const wizard = settings.get();
+  const wizardBaseline = sharedBaseline(wizard);
+  const editor = settings.get();
+  assert.strictEqual(wizardBaseline.uiLanguage, "system");
+
+  handlers["settings:save"]({}, { settings: { ...editor, uiLanguage: "ro" }, baseline: sharedBaseline(editor) });
+  assert.strictEqual(readFile().uiLanguage, "ro");
+
+  const reply = handlers["wizard:complete"]({}, { settings: { ...wizard, hotkey: "F9" }, baseline: wizardBaseline });
+  assert.strictEqual(readFile().uiLanguage, "ro", "the live language wins over the wizard's stale copy");
+  assert.strictEqual(reply.settings.uiLanguage, "ro");
+  assert.strictEqual(readFile().hotkey, "F9");
+
+  const again = settings.get();
+  handlers["settings:save"]({}, { settings: { ...again, uiLanguage: "system" }, baseline: sharedBaseline(again) });
+  assert.strictEqual(readFile().uiLanguage, "system");
+});

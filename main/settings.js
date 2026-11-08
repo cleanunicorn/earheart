@@ -12,6 +12,7 @@ const logger = require("./util/logger");
 const secretStore = require("./secret-store");
 const { DEFAULT_STYLE, styleById, NEUTRAL_SAMPLING } = require("./cleanup-styles");
 const { normalizeAliases } = require("../renderer/aliases");
+const i18nCore = require("../renderer/i18n");
 
 // The invariant core of the cleanup instructions, inlined into the model's user
 // turn (not used as a chat system prompt) — see main/engines/engine-worker.js
@@ -79,6 +80,10 @@ const DEFAULTS = {
   // "system" (follow the OS), "light" or "dark" — every window's palette,
   // applied by main/appearance.js. Anything else reads as "system".
   appearance: "system",
+  // The language of menus, settings and notifications (#349): "system" (follow
+  // the OS) or a supported locale tag. Independent of stt.language. Resolved by
+  // main/i18n.js; an unsupported value reads as "system".
+  uiLanguage: "system",
   output: {
     // "paste" = type into focused app (restores clipboard afterwards),
     // "paste-copy" = paste AND keep the transcript on the clipboard,
@@ -440,7 +445,10 @@ function clampLimits(merged) {
 // until the next save, like clampLimits.
 const APPEARANCES = ["system", "light", "dark"];
 function normalizeAppearance(merged) {
-  return APPEARANCES.includes(merged.appearance) ? merged : { ...merged, appearance: "system" };
+  const out = APPEARANCES.includes(merged.appearance) ? merged : { ...merged, appearance: "system" };
+  // Same rule for the UI language (#349).
+  const language = i18nCore.normalizePreference(out.uiLanguage);
+  return language === out.uiLanguage ? out : { ...out, uiLanguage: language };
 }
 
 // Make cleanup.aliases valid whatever the file held (hand edits, another

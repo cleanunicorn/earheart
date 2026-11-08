@@ -6,7 +6,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; media-src blob:"
     />
-    <title>Earheart</title>
+    <title data-i18n="window.settings.title">Earheart</title>
     <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="settings.css" />
   </head>
@@ -231,16 +231,30 @@
         </div>
 
         <div class="card">
-          <div class="card-title">Appearance</div>
+          <div class="card-title" data-i18n="settings.appearance.title">Appearance</div>
           <div class="field">
-            <label for="appearance" class="sr-only">Appearance</label>
+            <label for="appearance" class="sr-only" data-i18n="settings.appearance.title">Appearance</label>
             <select id="appearance">
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
+              <option value="system" data-i18n="settings.appearance.system">System</option>
+              <option value="light" data-i18n="settings.appearance.light">Light</option>
+              <option value="dark" data-i18n="settings.appearance.dark">Dark</option>
             </select>
-            <p class="hint">
+            <p class="hint" data-i18n="settings.appearance.hint">
               Light or dark for the overlay and every window. System follows your OS.
+            </p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" data-i18n="settings.language.title">Language</div>
+          <div class="field">
+            <label for="ui-language" class="sr-only" data-i18n="settings.language.label">Interface language</label>
+            <select id="ui-language">
+              <option value="system" data-i18n="settings.language.system">System default</option>
+              <!-- One option per shipped locale, named in its own language; filled by settings.js -->
+            </select>
+            <p class="hint" data-i18n="settings.language.hint">
+              The language of menus, settings and notifications. It does not change the language you dictate in.
             </p>
           </div>
         </div>
@@ -825,6 +839,9 @@
       <button id="save" class="primary">Save</button>
     </footer>
 
+    <script src="i18n.js"></script>
+    <script src="locales/en.js"></script>
+    <script src="i18n-client.js"></script>
     <script src="hotkey-capture.js"></script>
     <script src="vocabulary.js"></script>
     <script src="aliases.js"></script>

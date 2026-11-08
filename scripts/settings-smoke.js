@@ -2555,6 +2555,7 @@ app.whenReady().then(async () => {
     await require("./wizard-smoke").checkWizard({ waitFor, check, setDuckingStatus: (status) => { duckingStatus = status; } });
     await require("./correction-smoke").checkCorrection({ waitFor, check, savedThenClose });
     await require("./theme-smoke").checkTheme({ waitFor, check, savedThenClose });
+    await require("./i18n-smoke").checkI18n({ waitFor, check });
 
     const failed = checks.filter((c) => !c.ok);
     console.log(

@@ -15,6 +15,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 const ROLES = {
   overlay: {
     LISTEN: [
+      "i18n:changed",
       "record:start",
       "record:stop",
       "record:cancel",
@@ -43,6 +44,7 @@ const ROLES = {
       "overlay:resize",
     ],
     INVOKE: [
+      "i18n:get",
       "updates:apply",
       "updates:install",
       "updates:cancel",
@@ -53,6 +55,7 @@ const ROLES = {
   },
   settings: {
     LISTEN: [
+      "i18n:changed",
       "settings:navigate",
       "history:changed",
       "models:progress",
@@ -63,6 +66,7 @@ const ROLES = {
     ],
     SEND: ["hotkeys:capture"],
     INVOKE: [
+      "i18n:get",
       "settings:get",
       "settings:save",
       "settings:close",
@@ -104,13 +108,14 @@ const ROLES = {
     ],
   },
   correction: {
-    LISTEN: ["correction:notice"], SEND: ["correction:dirty"],
-    INVOKE: ["correction:get", "correction:remember", "transcript:copy", "correction:close"],
+    LISTEN: ["correction:notice", "i18n:changed"], SEND: ["correction:dirty"],
+    INVOKE: ["i18n:get", "correction:get", "correction:remember", "transcript:copy", "correction:close"],
   },
   wizard: {
-    LISTEN: ["models:progress", "models:done", "settings:changed"],
+    LISTEN: ["models:progress", "models:done", "settings:changed", "i18n:changed"],
     SEND: ["hotkeys:capture"],
     INVOKE: [
+      "i18n:get",
       "settings:get",
       "wizard:complete",
       "wizard:skip",

@@ -44,7 +44,7 @@ test("changes that arrive before the form loads are applied in order on ready()"
 test("sharedBaseline reads the displayed mode and normalizes remind", () => {
   assert.deepStrictEqual(
     sharedBaseline({ output: { mode: "clipboard", restoreClipboard: true }, updates: { remind: false }, appearance: "light" }),
-    { outputMode: "clipboard", remind: false, dictionary: [], aliases: [], appearance: "light" }
+    { outputMode: "clipboard", remind: false, dictionary: [], aliases: [], appearance: "light", uiLanguage: undefined }
   );
   assert.deepStrictEqual(sharedBaseline({ output: { mode: "paste", restoreClipboard: true }, updates: {} }), {
     outputMode: "paste",
@@ -53,6 +53,7 @@ test("sharedBaseline reads the displayed mode and normalizes remind", () => {
     aliases: [],
     // No appearance in the snapshot: main skips the field (wrong type).
     appearance: undefined,
+    uiLanguage: undefined,
   });
   assert.strictEqual(
     sharedBaseline({ output: { mode: "paste", restoreClipboard: false }, updates: {} }).outputMode,

@@ -225,8 +225,8 @@ const KEYBOARD_ROUTES = {
 // every other app); each reaches the same pipeline entry through IPC and a CLI
 // flag a desktop shortcut can bind, and through the tray.
 const PANEL_ROUTES = {
-  "take-retry": { channel: "pipeline:retry", entry: "retryFailedTake", flag: "--retry", tray: "Retry failed transcription" },
-  "take-discard": { channel: "pipeline:discard-take", entry: "discardFailedTake", flag: "--discard", tray: "Discard failed recording" },
+  "take-retry": { channel: "pipeline:retry", entry: "retryFailedTake", flag: "--retry", tray: "tray.retryFailed" },
+  "take-discard": { channel: "pipeline:discard-take", entry: "discardFailedTake", flag: "--discard", tray: "tray.discardFailed" },
 };
 
 function functionBody(source, name) {
@@ -332,7 +332,7 @@ test("a failed take's Retry and Discard have a keyboard route to the same pipeli
     }
     assert.match(
       trayJs,
-      new RegExp(`label: "${route.tray}",[\\s\\S]{0,200}?click: \\(\\) => pipeline\\.${route.entry}\\(\\)`),
+      new RegExp(`label: t\\("${route.tray}"\\),[\\s\\S]{0,200}?click: \\(\\) => pipeline\\.${route.entry}\\(\\)`),
       `the tray must offer ${route.tray}`
     );
   }

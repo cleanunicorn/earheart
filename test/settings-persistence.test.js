@@ -525,3 +525,33 @@ test("a saved light or dark appearance survives a restart (#348)", (t) => {
     assert.strictEqual(loadSettings(dir).get().appearance, value, "read back by a fresh load");
   }
 });
+
+// #349: the UI language is a top-level preference, independent of dictation.
+function withSyntheticLocale(t) {
+  const locales = require("../renderer/locales");
+  locales.ro = { "meta.name": "Română" };
+  t.after(() => { delete locales.ro; });
+}
+
+test("uiLanguage defaults to system, keeps a shipped tag and reads anything else as system (#349)", (t) => {
+  withSyntheticLocale(t);
+  assert.strictEqual(loadSettings(makeSettingsDir(t)).get().uiLanguage, "system");
+  for (const [stored, expected] of [["ro", "ro"], ["system", "system"], ["klingon", "system"], ["", "system"], [null, "system"], [5, "system"]]) {
+    const dir = makeSettingsDir(t);
+    fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ uiLanguage: stored }));
+    assert.strictEqual(loadSettings(dir).get().uiLanguage, expected, `stored ${JSON.stringify(stored)}`);
+  }
+});
+
+test("a saved UI language survives a restart and never touches dictation settings (#349)", (t) => {
+  withSyntheticLocale(t);
+  const dir = makeSettingsDir(t);
+  const settings = loadSettings(dir);
+  const before = settings.get();
+  settings.save({ ...before, uiLanguage: "ro" });
+  const after = loadSettings(dir).get();
+  assert.strictEqual(after.uiLanguage, "ro");
+  assert.strictEqual(after.stt.language, before.stt.language);
+  assert.deepStrictEqual(after.stt, before.stt);
+  assert.deepStrictEqual(after.cleanup, before.cleanup);
+});

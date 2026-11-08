@@ -12,6 +12,7 @@ const { deliverText } = require("./output/single-line");
 const history = require("./history");
 const recordings = require("./recordings");
 const windows = require("./windows");
+const i18n = require("./i18n");
 const route = require("./services/route");
 const engines = require("./engines");
 const autostart = require("./autostart");
@@ -173,6 +174,13 @@ const SHARED_FIELDS = [
     write: (cfg, live) => ({ ...cfg, appearance: live.appearance }),
   },
   {
+    // UI language (#349): edited only in Settings, carried by the wizard.
+    name: "uiLanguage",
+    type: "string",
+    read: (cfg) => cfg.uiLanguage,
+    write: (cfg, live) => ({ ...cfg, uiLanguage: live.uiLanguage }),
+  },
+  {
     name: "outputMode",
     type: "string",
     // Compared as the mode delivery performs, so retiring the legacy
@@ -299,6 +307,16 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     });
     tray.refresh();
   });
+
+  // The effective UI locale reaches every window, forms and overlay alike,
+  // through this narrow channel — never through settings, which carry keys.
+  // Only a locale that actually changed after a successful save is pushed.
+  i18n.onChange((state) => {
+    windows.broadcast("i18n:changed", state);
+    windows.retitle();
+    tray.refresh();
+  });
+  ipcMain.handle("i18n:get", () => i18n.snapshot());
 
   ipcMain.handle("settings:get", () => {
     const cfg = settings.get();

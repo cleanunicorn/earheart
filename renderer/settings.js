@@ -312,6 +312,8 @@ function populate() {
 
   $("start-on-boot").checked = !!current.startOnBoot;
   $("appearance").value = current.appearance || "system";
+  populateUiLanguages();
+  $("ui-language").value = EarheartI18n.normalizePreference(current.uiLanguage);
 
   $("history-enabled").checked = current.history.enabled;
   $("recordings-keep").checked = current.recordings?.keep === true;
@@ -360,6 +362,7 @@ function collect() {
     correctHotkey: current.correctHotkey || "",
     startOnBoot: $("start-on-boot").checked,
     appearance: $("appearance").value,
+    uiLanguage: $("ui-language").value,
     updates: {
       ...current.updates,
       autoCheck: $("updates-autocheck").checked,
@@ -483,6 +486,19 @@ function styleMode() {
 function setStyleMode(mode) {
   const el = document.querySelector(`input[name="cleanup-style-mode"][value="${mode}"]`);
   if (el) el.checked = true;
+}
+
+// One option per shipped catalog, named in its own language so a user can find
+// theirs whatever the current UI language is (#349). Idempotent.
+function populateUiLanguages() {
+  const select = $("ui-language");
+  for (const tag of Object.keys(EarheartLocales)) {
+    if (select.querySelector(`option[value="${tag}"]`)) continue;
+    const option = document.createElement("option");
+    option.value = tag;
+    option.textContent = EarheartLocales[tag]["meta.name"] || tag;
+    select.append(option);
+  }
 }
 
 function populateCleanupStyle() {

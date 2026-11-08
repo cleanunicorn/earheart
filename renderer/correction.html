@@ -4,17 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:" />
-  <title>Correct transcript · Earheart</title>
+  <title data-i18n="window.correction.title">Correct transcript · Earheart</title>
   <link rel="stylesheet" href="tokens.css" />
   <link rel="stylesheet" href="correction.css" />
 </head>
 <body>
   <main>
-    <h1>Correct transcript</h1>
+    <h1 data-i18n="correction.heading">Correct transcript</h1>
     <p class="hint">Select a word or phrase, then enter its correct spelling. Your original stays in History.</p>
-    <label for="transcript">Transcript</label>
+    <label for="transcript" data-i18n="correction.transcriptLabel">Transcript</label>
     <textarea id="transcript" spellcheck="false" aria-describedby="selection-hint"></textarea>
-    <p id="selection-hint" class="hint">Select text, then press Tab to correct it. You can also edit the transcript directly.</p>
+    <p id="selection-hint" class="hint" data-i18n="correction.selectionHint">Select text, then press Tab to correct it. You can also edit the transcript directly.</p>
     <label for="spelling">Correct spelling</label>
     <input id="spelling" type="text" autocomplete="off" spellcheck="false" maxlength="120" />
     <label class="check" for="always-replace">
@@ -36,6 +36,9 @@
     </footer>
     <p class="hint">Ctrl/⌘+Enter copies the full prompt. Return to your agent and select the text you want to replace before pasting.</p>
   </main>
+  <script src="i18n.js"></script>
+  <script src="locales/en.js"></script>
+  <script src="i18n-client.js"></script>
   <script src="correction.js"></script>
 </body>
 </html>

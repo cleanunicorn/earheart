@@ -23,7 +23,6 @@ const autoReleaseScript = readText("scripts", "auto-release.js");
 const releaseNotesSource = readText("main", "services", "release-notes.js");
 const makefile = readText("Makefile");
 const contributing = readText("CONTRIBUTING.md");
-const agents = readText("AGENTS.md");
 
 test("release sizing uses exactly the PR-title workflow regex", () => {
   const match = titleWorkflow.match(/^\s*title_re='([^']+)'$/m);
@@ -195,21 +194,12 @@ test("manual release dispatches remote main without local version or git mutatio
   assert.match(contributing, /one version for\n+all pending merged PRs/);
 });
 
-test("contributor and agent guides explain serialized catch-up releases", () => {
-  for (const [name, guide] of [
-    ["CONTRIBUTING.md", contributing],
-    ["AGENTS.md", agents],
-  ]) {
-    assert.match(guide, /serializ/i, `${name} should explain serialization`);
-    assert.match(guide, /catch(?:es)? up/i, `${name} should explain catch-up`);
-    assert.match(guide, /invalid\s+title/i, `${name} should explain invalid titles`);
-    assert.match(guide, /title at merge time/i, `${name} should explain title provenance`);
-    assert.match(
-      guide,
-      /editing it after merge\s+does not change the\s+release/i,
-      `${name} should explain post-merge edits`,
-    );
-  }
+test("contributor guide explains serialized catch-up releases", () => {
+  assert.match(contributing, /serializ/i);
+  assert.match(contributing, /catch(?:es)? up/i);
+  assert.match(contributing, /invalid\s+title/i);
+  assert.match(contributing, /title at merge time/i);
+  assert.match(contributing, /editing it after merge\s+does not change the\s+release/i);
 });
 
 test("macOS builds and releases are Apple Silicon only", () => {

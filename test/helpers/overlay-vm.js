@@ -209,9 +209,19 @@ function createOverlayVm({
     String,
     Error,
     Symbol,
-    setTimeout,
+    // The page's timers must not keep the test process alive when a test ends
+    // with a take still recording (its timer interval, startup watchdog).
+    setTimeout: (...args) => {
+      const handle = setTimeout(...args);
+      handle?.unref?.();
+      return handle;
+    },
     clearTimeout,
-    setInterval,
+    setInterval: (...args) => {
+      const handle = setInterval(...args);
+      handle?.unref?.();
+      return handle;
+    },
     clearInterval,
     queueMicrotask,
     requestAnimationFrame: () => 0,

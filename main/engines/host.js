@@ -78,6 +78,15 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
     });
     child = proc;
     proc.on("message", (msg) => {
+      // An error that escaped the worker, sent just before it exits (the
+      // worker has no file logger of its own). Log it even from a superseded
+      // worker: it is the only record of why that process died.
+      if (msg && msg.fatal) {
+        logger.error("engine worker fatal error:", {
+          serviceName, kind: msg.fatal.kind, message: msg.fatal.message,
+        }, msg.fatal.stack || "");
+        return;
+      }
       if (child !== proc) return; // superseded worker: ignore its late messages
       const entry = msg && pending.get(msg.id);
       if (!entry) return; // late progress/reply for a finished request: drop

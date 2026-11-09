@@ -32,6 +32,27 @@ const { cleanupUserTurn, cleanupTurnPrefix, cleanupSamplingOptions, cleanupChatW
 
 const port = process.parentPort;
 
+// The worker has no file logger (that needs Electron's app object), and its
+// stderr is only inherited to a console a packaged app doesn't have. So an
+// escaped error would otherwise exit the process with code 1 and leave no
+// trace. Send it to the parent, which writes it to the log, then exit as Node
+// would have: after this the worker's state is unknown.
+const FATAL_EXIT_DELAY_MS = 200; // let the message flush before exiting
+function reportFatal(kind, err) {
+  const e = err instanceof Error ? err : new Error(String(err));
+  try {
+    port.postMessage({ fatal: { kind, message: e.message, stack: e.stack } });
+  } catch {
+    // parent already gone
+  }
+  setTimeout(() => process.exit(1), FATAL_EXIT_DELAY_MS);
+}
+// Unit tests load this file against a stub `process` that has no event API.
+if (typeof process.on === "function") {
+  process.on("uncaughtException", (err) => reportFatal("uncaughtException", err));
+  process.on("unhandledRejection", (err) => reportFatal("unhandledRejection", err));
+}
+
 // Parakeet's mel-feature dimension, fixed by the model.
 const FEATURE_DIM = 80;
 let recognizer = null; // sherpa-onnx OfflineRecognizer

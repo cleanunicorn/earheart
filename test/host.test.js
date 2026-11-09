@@ -350,3 +350,22 @@ test("host: crash and timeout diagnostics contain engine identity but no request
   worker.emit("exit", 0);
   assert.strictEqual(diagnostics.length, count, "intentional stops are quiet");
 });
+
+test("host: an error the worker reports before dying is written to the log", () => {
+  const { child, host } = setup();
+  const errors = [];
+  const original = logger.error;
+  logger.error = (...args) => errors.push(args);
+  try {
+    host.request("ping").catch(() => {});
+    child.emit("message", {
+      fatal: { kind: "uncaughtException", message: "boom", stack: "Error: boom\n    at x" },
+    });
+  } finally {
+    logger.error = original;
+  }
+  assert.strictEqual(errors.length, 1);
+  assert.match(JSON.stringify(errors[0]), /boom/);
+  assert.match(JSON.stringify(errors[0]), /uncaughtException/);
+  host.stop();
+});

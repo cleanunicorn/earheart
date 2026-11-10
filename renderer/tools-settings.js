@@ -170,8 +170,9 @@
     });
     if (!res.ok) { say(errText(res), true); return; }
     servers = res.servers;
+    const wasEditing = editing !== null;
     endEdit();
-    say(editing ? "Saved." : "Added. Press Discover tools to list its tools.");
+    say(wasEditing ? "Saved." : "Added. Press Discover tools to list its tools.");
     draw();
   });
 

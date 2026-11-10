@@ -96,7 +96,7 @@ do not collide with your editor — live in **[docs/agents.md](docs/agents.md)**
 | **claude.ai, ChatGPT, agent web UIs** | Same. The overlay never steals focus, so the composer keeps it. |
 | **Anywhere via a shortcut** | Bind a system shortcut, mouse button or foot pedal to `earheart --toggle` instead of using the built-in hotkey (Earheart must already be running). |
 
-Three settings are worth a minute for agent work:
+A few settings are worth a minute for agent work:
 
 - **Cleanup style** (Settings → Cleanup). **Clean** — the default — removes
   *ums* and restarts but keeps your wording and intent. Switch to **Verbatim**

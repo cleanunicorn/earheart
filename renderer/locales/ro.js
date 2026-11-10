@@ -185,7 +185,6 @@
     "settings.microphone": "Microfon",
     "settings.microphone2": "Microfon",
     "settings.systemDefault": "Implicit al sistemului",
-    "settings.theInputDictationRecordsFrom": "Intrarea de pe care înregistrează dictarea. Implicit al sistemului urmează ce ai ales în sistemul de operare.",
     "settings.playSoundsWhenRecordingStarts": "Redă sunete când începe și când se oprește înregistrarea",
     "settings.aShortToneOnceThe": "Un ton scurt când microfonul captează cu adevărat — vorbește după el — altul când te oprești și unul grav dacă microfonul eșuează. Tonul de început nu apare în înregistrare.",
     "settings.soundVolume": "Volumul sunetelor (%)",

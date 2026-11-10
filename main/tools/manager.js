@@ -11,7 +11,7 @@
 // Servers start lazily (first discovery or call), never at app boot.
 
 const { createClient: realCreateClient } = require("./client");
-const { validateServer, validateServers, publicServer, redact, MAX_SERVERS } = require("./config");
+const { validateServer, publicServer, redact, MAX_SERVERS } = require("./config");
 const { validateArgs, unsupportedReason, hashSchema, hashArgs } = require("./schema");
 const { createPolicyStore, decide } = require("./policy");
 const { createBroker } = require("./broker");

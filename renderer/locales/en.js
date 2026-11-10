@@ -248,7 +248,6 @@
     "settings.microphone": "Microphone",
     "settings.microphone2": "Microphone",
     "settings.systemDefault": "System default",
-    "settings.theInputDictationRecordsFrom": "The input dictation records from. System default follows whatever your OS has selected.",
     "settings.playSoundsWhenRecordingStarts": "Play sounds when recording starts and stops",
     "settings.aShortToneOnceThe": "A short tone once the microphone is really capturing — speak after it — another when you stop, and a low one if the microphone fails. The start tone is kept out of the recording.",
     "settings.soundVolume": "Sound volume (%)",

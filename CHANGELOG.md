@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.52.1 — 2026-11-10
+
+- Log engine worker failures (#397)
+
 ## v0.52.0 — 2026-11-08
 
 - Improve audio ducking and Polished cleanup (#380)

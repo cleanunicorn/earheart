@@ -33,6 +33,9 @@ function classify(err, { timedOut, timeoutMs }) {
   if (timedOut) {
     return { kind: "timeout", message: `The command took longer than ${Math.round(timeoutMs / 1000)} s` };
   }
+  if (isAbort(err)) {
+    return { kind: "failed", message: "The command was interrupted. Retry when dictation has finished." };
+  }
   const message = String(err?.message || "The command failed");
   if (message === TRANSFORM_TRUNCATED_MESSAGE) return { kind: "truncated", message };
   if (message === TRANSFORM_EMPTY_MESSAGE) return { kind: "empty", message: "The model returned no text" };
@@ -236,7 +239,9 @@ function createCommandSession(deps) {
     } catch (err) {
       if (cmd !== c || c.run !== token) return;
       const timedOut = timeout.aborted && !c.abort.signal.aborted && !control.signal.aborted;
-      if (!timedOut && (signal.aborted || isAbort(err))) return; // cancelled
+      // Only our own cancellation ends the command silently. Other work can
+      // interrupt the shared worker while this command is still active.
+      if (!timedOut && signal.aborted) return;
       const { kind, message } = classify(err, { timedOut, timeoutMs });
       log.warn(`command ${c.id}: transform failed (${kind})`);
       set({ phase: "failed", output: null, error: { kind, message } });

@@ -274,6 +274,38 @@ test("Retry runs the transform again with the same instruction and selection", a
   ]);
 });
 
+for (const error of [
+  new Error("cleanup cancelled"),
+  Object.assign(new Error("operation interrupted"), { name: "AbortError" }),
+]) {
+  test(`external transform interruption (${error.name}: ${error.message}) preserves input and allows Retry`, async () => {
+    let attempt = 0;
+    const r = rig({ transform: async (_request, signal) => {
+      assert.strictEqual(signal.aborted, false);
+      if (attempt++ === 0) throw error;
+      return OUTPUT;
+    } });
+    await r.session.begin();
+    r.speak();
+    await tick();
+    const view = r.last();
+    assert.strictEqual(view.phase, "failed");
+    assert.match(view.error.message, /interrupted.*retry/i);
+    assert.strictEqual(view.selection, SELECTION);
+    assert.strictEqual(view.instruction, INSTRUCTION);
+    assert.strictEqual(view.output, null);
+    assert.strictEqual(view.canApply, false);
+    assert.strictEqual(view.canRetry, true);
+    assert.deepStrictEqual(r.calls.pasted, []);
+    assert.strictEqual(r.session.retry(view.id).ok, true);
+    await tick();
+    assert.strictEqual(r.last().phase, "ready");
+    assert.strictEqual(r.last().output, OUTPUT);
+    assert.deepStrictEqual(r.calls.transform[1], r.calls.transform[0]);
+    r.session.dispose();
+  });
+}
+
 /* ---- cancellation at every stage ---- */
 
 test("cancel while reading the selection stops there: no recording, no transform, no paste", async () => {

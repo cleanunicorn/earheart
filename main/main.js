@@ -14,6 +14,7 @@ const hotkeys = require("./hotkeys");
 const tray = require("./tray");
 const ipc = require("./ipc");
 const engines = require("./engines");
+const engineChildGone = require("./engines/child-gone");
 const autostart = require("./autostart");
 const updates = require("./updates");
 const ducking = require("./ducking");
@@ -103,6 +104,7 @@ function main() {
     // Open the log file and start capturing uncaught errors before anything
     // else can fail.
     logger.init();
+    engineChildGone.install(app, logger);
 
     // Check before anything can write the settings file: no file yet means
     // this is a fresh install and the user gets the setup wizard.

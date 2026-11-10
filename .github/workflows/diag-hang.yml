@@ -1,0 +1,52 @@
+# TEMPORARY diagnostic for PR #396: find the unit-test file that hangs on
+# Windows and the smoke step that hangs on Linux. Delete before merging.
+name: diag-hang
+on:
+  push:
+    branches: [batch/20261108-2013]
+jobs:
+  windows-tests:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with: { node-version: 24 }
+      - run: npm ci
+      - run: npx --no install-electron
+      - name: Run each test file with a kill timeout
+        shell: node {0}
+        run: |
+          const { spawn, spawnSync } = require("node:child_process");
+          const fs = require("node:fs");
+          const files = fs.readdirSync("test").filter((f) => f.endsWith(".test.js")).sort().map((f) => "test/" + f);
+          const hung = [];
+          (async () => {
+            for (const file of files) {
+              const started = Date.now();
+              const status = await new Promise((resolve) => {
+                const child = spawn(process.execPath, ["--test", "--test-timeout=30000", file], { stdio: "ignore" });
+                const timer = setTimeout(() => {
+                  spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"]);
+                  resolve("HUNG");
+                }, 90000);
+                child.on("exit", (code) => { clearTimeout(timer); resolve(code === 0 ? "ok" : "FAIL " + code); });
+              });
+              const secs = ((Date.now() - started) / 1000).toFixed(1);
+              console.log(`${status.padEnd(8)} ${secs.padStart(6)}s ${file}`);
+              if (status === "HUNG") hung.push(file);
+            }
+            console.log("HUNG FILES:", JSON.stringify(hung));
+            process.exit(0);
+          })();
+  linux-approval-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with: { node-version: 24 }
+      - run: npm ci
+      - run: npx --no install-electron
+      - name: Tool approval smoke with a 3 minute limit
+        run: timeout 180 xvfb-run -a npx electron scripts/approval-smoke.js --no-sandbox; echo "exit=$?"

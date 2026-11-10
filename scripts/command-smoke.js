@@ -122,10 +122,15 @@ app.whenReady().then(async () => {
     await run('document.getElementById("copy").click()');
     await waitFor(() => state.copied.length === 1, "Copy did not reach the session");
     check("Copy puts the result, not the instruction, on the clipboard", state.copied[0] === OUTPUT);
+    // The main-side effect can precede the invoke reply. Wait until the
+    // renderer releases its pending-action guard before clicking Apply.
+    await waitFor(() => run('!document.getElementById("copy").disabled && !document.getElementById("apply").disabled'), "Copy never finished in the card");
 
     state.focus = { id: "x11:2" }; // the user switched windows
     await run('document.getElementById("apply").click()');
-    await waitFor(() => run('document.getElementById("apply").disabled'), "a drifted target still offered Apply");
+    // A pending Apply also disables the button; only the drift notice proves
+    // the request finished and the target check actually rejected it.
+    await waitFor(() => run('document.getElementById("apply").disabled && document.getElementById("notice").textContent.includes("changed") && !document.getElementById("copy").disabled'), "a drifted target was not rejected by the card");
     check("a drifted target is never pasted into", state.pasted.length === 0);
     check("the card says why and keeps Copy", await run('document.getElementById("notice").textContent.includes("changed") && !document.getElementById("copy").hidden'));
 

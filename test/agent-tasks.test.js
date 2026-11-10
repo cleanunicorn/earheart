@@ -32,8 +32,10 @@ function setup(t, options = {}) {
   const project = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-proj-"));
   t.after(() => {
     store?.shutdown();
-    fs.rmSync(dir, { recursive: true, force: true });
-    fs.rmSync(project, { recursive: true, force: true });
+    // Windows keeps a killed agent's working directory locked for a moment.
+    const retry = { recursive: true, force: true, maxRetries: 20, retryDelay: 100 };
+    fs.rmSync(dir, retry);
+    fs.rmSync(project, retry);
   });
   const file = path.join(dir, "agent-tasks.json");
   const events = [];

@@ -17,23 +17,34 @@ jobs:
       - name: Run each test file with a kill timeout
         shell: node {0}
         run: |
-          const { spawn, spawnSync } = require("node:child_process");
+          const { spawn } = require("node:child_process");
           const fs = require("node:fs");
           const files = fs.readdirSync("test").filter((f) => f.endsWith(".test.js")).sort().map((f) => "test/" + f);
           const hung = [];
+          // Never let this step run into the job limit: stop reporting at 14 minutes.
+          setTimeout(() => { console.log("DEADLINE reached; hung so far:", JSON.stringify(hung)); process.exit(0); }, 14 * 60 * 1000).unref();
           (async () => {
             for (const file of files) {
               const started = Date.now();
+              let output = "";
               const status = await new Promise((resolve) => {
-                const child = spawn(process.execPath, ["--test", "--test-timeout=30000", file], { stdio: "ignore" });
+                const child = spawn(process.execPath, ["--test", "--test-timeout=30000", file], { stdio: ["ignore", "pipe", "pipe"] });
+                child.stdout.on("data", (d) => { output += d; });
+                child.stderr.on("data", (d) => { output += d; });
                 const timer = setTimeout(() => {
-                  spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"]);
+                  // Fire and forget: do not wait on taskkill or the child.
+                  spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" }).on("error", () => {});
                   resolve("HUNG");
                 }, 90000);
                 child.on("exit", (code) => { clearTimeout(timer); resolve(code === 0 ? "ok" : "FAIL " + code); });
               });
               const secs = ((Date.now() - started) / 1000).toFixed(1);
               console.log(`${status.padEnd(8)} ${secs.padStart(6)}s ${file}`);
+              if (status !== "ok") {
+                const notOk = output.split("\n").filter((l) => /^\s*(not ok|error:|code:|failureType|# Subtest)/.test(l) || /Error|ENOENT|EBUSY|EPERM|spawn/.test(l)).slice(-25);
+                console.log(notOk.map((l) => "      | " + l.slice(0, 220)).join("\n"));
+                console.log("      | last output:", JSON.stringify(output.slice(-600)));
+              }
               if (status === "HUNG") hung.push(file);
             }
             console.log("HUNG FILES:", JSON.stringify(hung));

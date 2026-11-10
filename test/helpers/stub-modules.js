@@ -34,11 +34,14 @@ function stubModules(stubs) {
 // and every stubbed path is restored.
 function withStubs(stubs, fresh, load) {
   const restore = stubModules(stubs);
-  for (const p of fresh) delete require.cache[p];
+  // A path that is both stubbed and "fresh" would have its stub thrown away
+  // and the real module loaded (on Windows, real PowerShell). The stub wins.
+  const dropped = fresh.filter((p) => !Object.prototype.hasOwnProperty.call(stubs, p));
+  for (const p of dropped) delete require.cache[p];
   try {
     return load();
   } finally {
-    for (const p of fresh) delete require.cache[p];
+    for (const p of dropped) delete require.cache[p];
     restore();
   }
 }

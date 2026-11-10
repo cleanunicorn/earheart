@@ -13,7 +13,7 @@ const FRESH = ["../main/commands/index", "../main/commands/platform", "../main/c
   .map((p) => require.resolve(p));
 
 function load({ commands = {}, cleanup = {}, occupied = [], fakeEdges = false, readiness = { ok: true }, pipelineState = "idle" } = {}) {
-  const log = { registered: new Map(), unregistered: [], routed: [], deliveries: [], opened: 0, closed: 0, handlers: {}, started: [], sent: [] };
+  const log = { registered: new Map(), unregistered: [], routed: [], deliveries: [], opened: 0, closed: 0, fakePlatform: 0, handlers: {}, started: [], sent: [] };
   const cfg = {
     commands: { hotkey: "", engine: "builtin", baseUrl: "", apiKey: "", model: "", timeoutMs: 5000, maxOutputTokens: 512, allowApply: true, ...commands },
     cleanup: { builtin: { model: "cleanup-model" }, baseUrl: "https://cleanup.example/v1", apiKey: "cleanup-key", engine: "remote", ...cleanup },
@@ -65,7 +65,7 @@ function load({ commands = {}, cleanup = {}, occupied = [], fakeEdges = false, r
   };
   if (fakeEdges) {
     stubs[require.resolve("../main/commands/platform")] = {
-      createPlatform: () => ({
+      createPlatform: () => (log.fakePlatform++, {
         captureSupport: () => ({ ok: true }),
         fingerprintSupport: () => ({ ok: true }),
         fingerprint: async () => ({ id: "w:1" }),
@@ -176,6 +176,7 @@ test("Apply pastes in paste mode with the clipboard restored, whatever the dicta
 test("a command that ends outside the card (overlay cancel) closes the card", async () => {
   const t = load({ fakeEdges: true });
   t.commandsModule.init({ pipeline: t.pipeline });
+  assert.strictEqual(t.log.fakePlatform, 1, "the fake platform is in use, never the real PowerShell/xdotool one");
   await t.commandsModule.begin();
   assert.strictEqual(t.log.started.length, 1, "recording started");
   const closedBefore = t.log.closed;

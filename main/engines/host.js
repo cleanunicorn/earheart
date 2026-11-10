@@ -35,8 +35,21 @@ function engineError(message, code, extra) {
   return Object.assign(new Error(message), { code }, extra);
 }
 
-function createHost({ serviceName = "earheart-engines" } = {}) {
+// A native crash on Windows exits with an NTSTATUS value (0xC0000005 is an
+// access violation), which reads as a meaningless 3221225477 in decimal.
+function hexExitCode(code) {
+  return Number.isInteger(code) ? `0x${(code >>> 0).toString(16).toUpperCase()}` : undefined;
+}
+
+// `describe` is an optional callback returning a small, payload-free object
+// (which model the engine had loaded) that is added to the exit log. It runs
+// when the worker dies, so it must not throw or touch the worker.
+function createHost({ serviceName = "earheart-engines", describe } = {}) {
   let child = null;
+  let startedAt = 0;
+  // The most recent request, kept for the exit log only: a worker that dies
+  // between requests is usually dying from the last one it ran.
+  let lastRequest = null;
   let nextId = 1;
   const pending = new Map();
   // Notified whenever the worker process goes away, so callers can drop any
@@ -77,6 +90,7 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
       stdio: "inherit",
     });
     child = proc;
+    startedAt = Date.now();
     proc.on("message", (msg) => {
       // An error that escaped the worker, sent just before it exits (the
       // worker has no file logger of its own). Log it even from a superseded
@@ -107,9 +121,18 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
     });
     proc.on("exit", (code) => {
       if (child !== proc) return; // stop() already handled this one
-      logger.warn("engine worker exited:", {
-        serviceName, exitCode: code,
+      let context;
+      try {
+        context = describe?.();
+      } catch {
+        // diagnostics only; never let them mask the exit
+      }
+      logger.error("engine worker exited:", {
+        serviceName, exitCode: code, exitCodeHex: hexExitCode(code),
+        uptimeMs: Date.now() - startedAt,
+        lastRequest: lastRequest && { type: lastRequest.type, ageMs: Date.now() - lastRequest.at },
         requests: [...pending.values()].map((entry) => entry.type),
+        ...context,
       });
       child = null;
       handleGone(code);
@@ -137,6 +160,7 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
     const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, onProgress } = opts;
     const child = spawn();
     const id = nextId++;
+    lastRequest = { type, at: Date.now() };
     return new Promise((resolve, reject) => {
       let timer = null;
       const arm = () => {

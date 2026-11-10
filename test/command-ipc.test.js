@@ -122,7 +122,8 @@ test("no handler is added without the sender check (source pin)", () => {
 });
 
 test("the preload gives the command card exactly the command channels and nothing of the other windows'", () => {
-  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+  // Windows checks files out with CRLF; the patterns below match LF.
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8").replace(/\r\n/g, "\n");
   const block = preload.match(/\n  command: \{([\s\S]*?)\n  \},\n/)[1];
   const invoked = [...block.matchAll(/"(command:[a-z]+)"/g)].map((m) => m[1]);
   assert.deepStrictEqual(invoked.sort(), ["command:state", ...CHANNELS].sort());

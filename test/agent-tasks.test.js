@@ -32,10 +32,17 @@ function setup(t, options = {}) {
   const project = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-proj-"));
   t.after(() => {
     store?.shutdown();
-    // Windows keeps a killed agent's working directory locked for a moment.
-    const retry = { recursive: true, force: true, maxRetries: 20, retryDelay: 100 };
-    fs.rmSync(dir, retry);
-    fs.rmSync(project, retry);
+    // Windows keeps a killed agent's working directory locked for a moment, and
+    // sometimes past the retries; a leftover temp directory is harmless there.
+    const remove = (target) => {
+      try {
+        fs.rmSync(target, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+      } catch (err) {
+        if (process.platform !== "win32" || err.code !== "EBUSY") throw err;
+      }
+    };
+    remove(dir);
+    remove(project);
   });
   const file = path.join(dir, "agent-tasks.json");
   const events = [];

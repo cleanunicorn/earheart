@@ -2639,6 +2639,36 @@ test("pipeline: a command take that hears nothing, is cancelled or errors ends e
   assert.deepStrictEqual(events, [["end", sid, "error", "no microphone"]]);
 });
 
+for (const phase of ["recording", "processing"]) {
+  test(`pipeline: a command arriving after selection capture preserves a ${phase} dictation`, async () => {
+    let finishTranscription;
+    const pending = new Promise((resolve) => { finishTranscription = resolve; });
+    const { rig, events, handlers } = commandRig({ transcribe: () => pending });
+    rig.pipeline.toggle();
+    const sid = rig.log.lastStart.sid;
+    const idle = new Promise((resolve) => rig.pipeline.onStateChange((s) => s === "idle" && resolve()));
+    if (phase === "processing") {
+      rig.handlers["audio:captured"]({}, { sid, wav: speechWav(1) });
+    }
+    assert.strictEqual(rig.pipeline.getState(), phase);
+    const result = rig.pipeline.startCommandRecording(handlers);
+    const stateAfter = rig.pipeline.getState();
+    const sidAfter = rig.log.lastStart.sid;
+    if (phase === "recording") {
+      rig.handlers["audio:captured"]({}, { sid, wav: speechWav(1) });
+    }
+    finishTranscription("keep my dictation");
+    // On regression, release the replacement recording as well.
+    if (result !== false) rig.pipeline.cancel();
+    await idle;
+    assert.strictEqual(result, false);
+    assert.strictEqual(stateAfter, phase);
+    assert.strictEqual(sidAfter, sid);
+    assert.deepStrictEqual(events, []);
+    assert.deepStrictEqual(rig.log.delivered, ["cleaned(keep my dictation)"]);
+  });
+}
+
 test("pipeline: a command take is refused when the speech model isn't ready", () => {
   const { rig, events, handlers } = commandRig({
     sttReadiness: () => ({ ok: false, reason: "missing", modelId: "stt-model", label: "Speech" }),

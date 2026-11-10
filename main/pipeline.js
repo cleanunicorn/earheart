@@ -727,6 +727,9 @@ function onFailedTakeChange(listener) {
 // command take; without it the take is an ordinary dictation. Returns the
 // session id, or false when nothing started.
 function startRecording(command = null) {
+  // Selection capture is asynchronous: a dictation may have started since
+  // the command checked availability. Never replace a live take here.
+  if (state !== "idle") return false;
   if (paletteBlocksDictation()) return false;
   const cfg = settings.get();
   // A built-in model that isn't on disk can't transcribe this dictation: say

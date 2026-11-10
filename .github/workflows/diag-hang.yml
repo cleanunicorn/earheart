@@ -1,38 +1,32 @@
-# TEMPORARY diagnostic for PR #396: find the unit-test file that hangs on
-# Windows. Delete before merging.
+# TEMPORARY diagnostic for PR #396: one Windows runner per suspect test file,
+# so a file that freezes its machine only times out its own job. The job
+# statuses alone identify it. Delete before merging.
 name: diag-hang
 on:
   push:
     branches: [batch/20261108-2013]
 jobs:
-  windows-tests:
+  one-file:
     runs-on: windows-latest
-    timeout-minutes: 12
+    timeout-minutes: 6
+    strategy:
+      fail-fast: false
+      matrix:
+        file:
+          - test/ducking.test.js
+          - test/command-wiring.test.js
+          - test/command-platform.test.js
+          - test/command-session.test.js
+          - test/command-selection.test.js
+          - test/deliver.test.js
+          - test/double-tap.test.js
+          - test/overlay-mic.test.js
+    name: ${{ matrix.file }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with: { node-version-file: .nvmrc }
       - run: npm ci
       - run: npx --no install-electron
-      - name: Run suspect files one at a time, killing any that hang
-        shell: pwsh
-        run: |
-          foreach ($file in @("test/ducking.test.js", "test/command-wiring.test.js", "test/deliver.test.js")) {
-            $out = "$env:RUNNER_TEMP\out.txt"; $err = "$env:RUNNER_TEMP\err.txt"
-            Remove-Item $out, $err -ErrorAction SilentlyContinue
-            $sw = [Diagnostics.Stopwatch]::StartNew()
-            $p = Start-Process node -ArgumentList "--test", "--test-timeout=60000", $file -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
-            $done = $p.WaitForExit(120000)
-            if (-not $done) {
-              Write-Host "HUNG after $($sw.Elapsed.TotalSeconds)s: $file"
-              Write-Host "Child processes still alive:"
-              Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $p.Id -or $_.CommandLine -match "powershell" } |
-                Select-Object ProcessId, ParentProcessId, Name, @{n="Cmd";e={($_.CommandLine -replace "\s+", " ").Substring(0, [Math]::Min(160, $_.CommandLine.Length))}} | Format-Table -AutoSize | Out-String | Write-Host
-              taskkill /T /F /PID $p.Id | Out-Host
-            } else {
-              Write-Host "exit=$($p.ExitCode) after $($sw.Elapsed.TotalSeconds)s: $file"
-            }
-            Write-Host "---- last output of $file"
-            Get-Content $out -Tail 40 -ErrorAction SilentlyContinue | Write-Host
-            Get-Content $err -Tail 10 -ErrorAction SilentlyContinue | Write-Host
-          }
+      - name: Run the file alone
+        run: node --test --test-timeout=60000 ${{ matrix.file }}

@@ -35,8 +35,27 @@ function engineError(message, code, extra) {
   return Object.assign(new Error(message), { code }, extra);
 }
 
-function createHost({ serviceName = "earheart-engines" } = {}) {
+// How much of the worker's stderr to keep for the exit log. Native runtimes
+// print their last words there (llama.cpp and ONNX Runtime errors), and a
+// packaged app has no console to read them from.
+const STDERR_TAIL_BYTES = 4096;
+
+// A native crash on Windows exits with an NTSTATUS value (0xC0000005 is an
+// access violation), which reads as a meaningless 3221225477 in decimal.
+function hexExitCode(code) {
+  return Number.isInteger(code) ? `0x${(code >>> 0).toString(16).toUpperCase()}` : undefined;
+}
+
+// `describe` is an optional callback returning a small, payload-free object
+// (which model the engine had loaded) that is added to the exit log. It runs
+// when the worker dies, so it must not throw or touch the worker.
+function createHost({ serviceName = "earheart-engines", describe } = {}) {
   let child = null;
+  let startedAt = 0;
+  // The most recent request, kept for the exit log only: a worker that dies
+  // between requests is usually dying from the last one it ran.
+  let lastRequest = null;
+  let stderrTail = "";
   let nextId = 1;
   const pending = new Map();
   // Notified whenever the worker process goes away, so callers can drop any
@@ -74,10 +93,29 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
     // so a dying process can never clear the successor's state.
     const proc = utilityProcess.fork(path.join(__dirname, "engine-worker.js"), [], {
       serviceName,
-      stdio: "inherit",
+      stdio: "pipe",
     });
     child = proc;
+    startedAt = Date.now();
+    stderrTail = "";
+    // Piped rather than inherited so the tail can be logged on a crash. Both
+    // streams are still forwarded, so `npm start` shows the same output, and
+    // both must be drained or a chatty worker would block on a full pipe.
+    proc.stdout?.on("data", (chunk) => process.stdout.write(chunk));
+    proc.stderr?.on("data", (chunk) => {
+      process.stderr.write(chunk);
+      if (child === proc) stderrTail = (stderrTail + chunk).slice(-STDERR_TAIL_BYTES);
+    });
     proc.on("message", (msg) => {
+      // An error that escaped the worker, sent just before it exits (the
+      // worker has no file logger of its own). Log it even from a superseded
+      // worker: it is the only record of why that process died.
+      if (msg && msg.fatal) {
+        logger.error("engine worker fatal error:", {
+          serviceName, kind: msg.fatal.kind, message: msg.fatal.message,
+        }, msg.fatal.stack || "");
+        return;
+      }
       if (child !== proc) return; // superseded worker: ignore its late messages
       const entry = msg && pending.get(msg.id);
       if (!entry) return; // late progress/reply for a finished request: drop
@@ -98,9 +136,19 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
     });
     proc.on("exit", (code) => {
       if (child !== proc) return; // stop() already handled this one
-      logger.warn("engine worker exited:", {
-        serviceName, exitCode: code,
+      let context;
+      try {
+        context = describe?.();
+      } catch {
+        // diagnostics only; never let them mask the exit
+      }
+      logger.error("engine worker exited:", {
+        serviceName, exitCode: code, exitCodeHex: hexExitCode(code),
+        uptimeMs: Date.now() - startedAt,
+        lastRequest: lastRequest && { type: lastRequest.type, ageMs: Date.now() - lastRequest.at },
         requests: [...pending.values()].map((entry) => entry.type),
+        stderrTail: stderrTail.trim() || undefined,
+        ...context,
       });
       child = null;
       handleGone(code);
@@ -128,6 +176,7 @@ function createHost({ serviceName = "earheart-engines" } = {}) {
     const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, onProgress } = opts;
     const child = spawn();
     const id = nextId++;
+    lastRequest = { type, at: Date.now() };
     return new Promise((resolve, reject) => {
       let timer = null;
       const arm = () => {

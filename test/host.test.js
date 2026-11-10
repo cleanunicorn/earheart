@@ -10,6 +10,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 const path = require("node:path");
+const { EventEmitter } = require("node:events");
 const { stubModules } = require("./helpers/stub-modules");
 
 // A minimal utilityProcess child: records postMessage calls and lets the test
@@ -17,6 +18,8 @@ const { stubModules } = require("./helpers/stub-modules");
 function createFakeChild() {
   const listeners = { message: [], exit: [] };
   return {
+    stdout: new EventEmitter(),
+    stderr: new EventEmitter(),
     sent: [],
     postMessage(msg) {
       this.sent.push(msg);
@@ -328,25 +331,142 @@ test("the loadcheck deadline covers Metal init on the macOS CI runner with headr
 
 test("host: crash and timeout diagnostics contain engine identity but no request payload", async () => {
   diagnostics.length = 0;
-  const { child } = setup();
-  const host = createHost({ serviceName: "earheart-cleanup" });
-  const request = host.request("prime-cleanup", { text: "private dictation" });
-  child.emit("exit", 134);
-  await assert.rejects(request);
-  assert.deepStrictEqual(diagnostics[0], ["engine worker exited:", {
-    serviceName: "earheart-cleanup", exitCode: 134, requests: ["prime-cleanup"],
-  }]);
-  const { host: silent } = setup();
-  await assert.rejects(silent.request("clean", { transcript: "private dictation" }, { timeoutMs: 5 }));
-  assert.strictEqual(diagnostics[1][0], "engine worker timed out:");
-  assert.strictEqual(diagnostics[1][1].type, "clean");
-  assert.doesNotMatch(JSON.stringify(diagnostics), /private dictation/);
-  const count = diagnostics.length;
-  const { host: idle, child: worker } = setup();
-  const ping = idle.request("ping");
-  worker.emit("message", { id: worker.sent[0].id, ok: true });
-  await ping;
-  idle.stop();
-  worker.emit("exit", 0);
-  assert.strictEqual(diagnostics.length, count, "intentional stops are quiet");
+  const errors = [];
+  const originalError = logger.error;
+  logger.error = (...args) => errors.push(args);
+  try {
+    const { child } = setup();
+    const host = createHost({
+      serviceName: "earheart-cleanup",
+      describe: () => ({ cleanupResident: true }),
+    });
+    const request = host.request("prime-cleanup", { text: "private dictation" });
+    child.emit("exit", 134);
+    await assert.rejects(request);
+    // An unexpected exit is an error, with enough context to tell a crash from
+    // a wedge: how long it ran, what it ran last, and the code in hex.
+    const [message, fields] = errors[0];
+    assert.strictEqual(message, "engine worker exited:");
+    assert.deepStrictEqual(
+      { ...fields, uptimeMs: undefined, lastRequest: fields.lastRequest.type },
+      {
+        serviceName: "earheart-cleanup", exitCode: 134, exitCodeHex: "0x86",
+        uptimeMs: undefined, lastRequest: "prime-cleanup",
+        requests: ["prime-cleanup"], stderrTail: undefined, cleanupResident: true,
+      },
+    );
+    assert.ok(fields.uptimeMs >= 0);
+    const { host: silent } = setup();
+    await assert.rejects(silent.request("clean", { transcript: "private dictation" }, { timeoutMs: 5 }));
+    assert.strictEqual(diagnostics[0][0], "engine worker timed out:");
+    assert.strictEqual(diagnostics[0][1].type, "clean");
+    assert.doesNotMatch(JSON.stringify([diagnostics, errors]), /private dictation/);
+    const count = errors.length + diagnostics.length;
+    const { host: idle, child: worker } = setup();
+    const ping = idle.request("ping");
+    worker.emit("message", { id: worker.sent[0].id, ok: true });
+    await ping;
+    idle.stop();
+    worker.emit("exit", 0);
+    assert.strictEqual(errors.length + diagnostics.length, count, "intentional stops are quiet");
+  } finally {
+    logger.error = originalError;
+  }
+});
+
+test("host: a native-crash exit code is logged in hex as well as decimal", async () => {
+  const errors = [];
+  const originalError = logger.error;
+  logger.error = (...args) => errors.push(args);
+  try {
+    const { child, host } = setup();
+    const request = host.request("transcribe", {});
+    child.emit("exit", 3221225477); // 0xC0000005, a Windows access violation
+    await assert.rejects(request);
+    assert.strictEqual(errors[0][1].exitCodeHex, "0xC0000005");
+    assert.ok(errors[0][1].uptimeMs >= 0);
+  } finally {
+    logger.error = originalError;
+  }
+});
+
+test("host: a failing describe callback never masks the exit", async () => {
+  const errors = [];
+  const originalError = logger.error;
+  logger.error = (...args) => errors.push(args);
+  try {
+    currentChild = createFakeChild();
+    const host = createHost({ describe: () => { throw new Error("nope"); } });
+    const request = host.request("ping");
+    currentChild.emit("exit", 1);
+    await assert.rejects(request, /engine process exited/);
+    assert.strictEqual(errors.length, 1);
+  } finally {
+    logger.error = originalError;
+  }
+});
+
+test("host: an error the worker reports before dying is written to the log", () => {
+  const { child, host } = setup();
+  const errors = [];
+  const original = logger.error;
+  logger.error = (...args) => errors.push(args);
+  try {
+    host.request("ping").catch(() => {});
+    child.emit("message", {
+      fatal: { kind: "uncaughtException", message: "boom", stack: "Error: boom\n    at x" },
+    });
+  } finally {
+    logger.error = original;
+  }
+  assert.strictEqual(errors.length, 1);
+  assert.match(JSON.stringify(errors[0]), /boom/);
+  assert.match(JSON.stringify(errors[0]), /uncaughtException/);
+  host.stop();
+});
+
+test("host: the tail of the worker's stderr is logged when it dies", async () => {
+  const errors = [];
+  const originalError = logger.error;
+  const originalWrite = process.stderr.write;
+  logger.error = (...args) => errors.push(args);
+  process.stderr.write = () => true; // the host forwards worker output; keep the run quiet
+  try {
+    const { child, host } = setup();
+    const request = host.request("clean", {});
+    child.stderr.emit("data", Buffer.from("x".repeat(10000)));
+    child.stderr.emit("data", Buffer.from("llama_decode: failed to allocate\n"));
+    child.emit("exit", 1);
+    await assert.rejects(request);
+    const tail = errors[0][1].stderrTail;
+    assert.match(tail, /llama_decode: failed to allocate$/);
+    assert.ok(tail.length <= 4096, `tail is bounded (${tail.length})`);
+  } finally {
+    logger.error = originalError;
+    process.stderr.write = originalWrite;
+  }
+});
+
+test("host: a worker's stderr never leaks into its successor's exit log", async () => {
+  const errors = [];
+  const originalError = logger.error;
+  const originalWrite = process.stderr.write;
+  logger.error = (...args) => errors.push(args);
+  process.stderr.write = () => true;
+  try {
+    const { child: first, host } = setup();
+    const p1 = host.request("ping");
+    first.stderr.emit("data", "old worker noise");
+    host.stop();
+    await assert.rejects(p1);
+    const second = createFakeChild();
+    currentChild = second;
+    const p2 = host.request("ping");
+    second.emit("exit", 1);
+    await assert.rejects(p2);
+    assert.strictEqual(errors[0][1].stderrTail, undefined);
+  } finally {
+    logger.error = originalError;
+    process.stderr.write = originalWrite;
+  }
 });

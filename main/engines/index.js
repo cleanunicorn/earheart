@@ -17,8 +17,16 @@ const { unsupportedSttFamily } = require("../services/hf-models");
 // a crash in one engine can't take down the other (see host.js). Each lazily
 // forks on the first request, so a transcribe-only user never spawns the cleanup
 // worker, and vice versa.
-const sttHost = hostModule.createHost({ serviceName: "earheart-stt" });
-const cleanupHost = hostModule.createHost({ serviceName: "earheart-cleanup" });
+// `describe` adds what each worker had loaded to its exit log (host.js). Ids
+// only, never text or audio.
+const sttHost = hostModule.createHost({
+  serviceName: "earheart-stt",
+  describe: () => ({ loadedModel: loadedStt }),
+});
+const cleanupHost = hostModule.createHost({
+  serviceName: "earheart-cleanup",
+  describe: () => ({ cleanupResident }),
+});
 
 function modelsDir() {
   return path.join(app.getPath("userData"), "models");

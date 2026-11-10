@@ -35,6 +35,11 @@ function engineError(message, code, extra) {
   return Object.assign(new Error(message), { code }, extra);
 }
 
+// How much of the worker's stderr to keep for the exit log. Native runtimes
+// print their last words there (llama.cpp and ONNX Runtime errors), and a
+// packaged app has no console to read them from.
+const STDERR_TAIL_BYTES = 4096;
+
 // A native crash on Windows exits with an NTSTATUS value (0xC0000005 is an
 // access violation), which reads as a meaningless 3221225477 in decimal.
 function hexExitCode(code) {
@@ -50,6 +55,7 @@ function createHost({ serviceName = "earheart-engines", describe } = {}) {
   // The most recent request, kept for the exit log only: a worker that dies
   // between requests is usually dying from the last one it ran.
   let lastRequest = null;
+  let stderrTail = "";
   let nextId = 1;
   const pending = new Map();
   // Notified whenever the worker process goes away, so callers can drop any
@@ -87,10 +93,19 @@ function createHost({ serviceName = "earheart-engines", describe } = {}) {
     // so a dying process can never clear the successor's state.
     const proc = utilityProcess.fork(path.join(__dirname, "engine-worker.js"), [], {
       serviceName,
-      stdio: "inherit",
+      stdio: "pipe",
     });
     child = proc;
     startedAt = Date.now();
+    stderrTail = "";
+    // Piped rather than inherited so the tail can be logged on a crash. Both
+    // streams are still forwarded, so `npm start` shows the same output, and
+    // both must be drained or a chatty worker would block on a full pipe.
+    proc.stdout?.on("data", (chunk) => process.stdout.write(chunk));
+    proc.stderr?.on("data", (chunk) => {
+      process.stderr.write(chunk);
+      if (child === proc) stderrTail = (stderrTail + chunk).slice(-STDERR_TAIL_BYTES);
+    });
     proc.on("message", (msg) => {
       // An error that escaped the worker, sent just before it exits (the
       // worker has no file logger of its own). Log it even from a superseded
@@ -132,6 +147,7 @@ function createHost({ serviceName = "earheart-engines", describe } = {}) {
         uptimeMs: Date.now() - startedAt,
         lastRequest: lastRequest && { type: lastRequest.type, ageMs: Date.now() - lastRequest.at },
         requests: [...pending.values()].map((entry) => entry.type),
+        stderrTail: stderrTail.trim() || undefined,
         ...context,
       });
       child = null;

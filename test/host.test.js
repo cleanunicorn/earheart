@@ -10,6 +10,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 const path = require("node:path");
+const { EventEmitter } = require("node:events");
 const { stubModules } = require("./helpers/stub-modules");
 
 // A minimal utilityProcess child: records postMessage calls and lets the test
@@ -17,6 +18,8 @@ const { stubModules } = require("./helpers/stub-modules");
 function createFakeChild() {
   const listeners = { message: [], exit: [] };
   return {
+    stdout: new EventEmitter(),
+    stderr: new EventEmitter(),
     sent: [],
     postMessage(msg) {
       this.sent.push(msg);
@@ -349,7 +352,7 @@ test("host: crash and timeout diagnostics contain engine identity but no request
       {
         serviceName: "earheart-cleanup", exitCode: 134, exitCodeHex: "0x86",
         uptimeMs: undefined, lastRequest: "prime-cleanup",
-        requests: ["prime-cleanup"], cleanupResident: true,
+        requests: ["prime-cleanup"], stderrTail: undefined, cleanupResident: true,
       },
     );
     assert.ok(fields.uptimeMs >= 0);
@@ -420,4 +423,50 @@ test("host: an error the worker reports before dying is written to the log", () 
   assert.match(JSON.stringify(errors[0]), /boom/);
   assert.match(JSON.stringify(errors[0]), /uncaughtException/);
   host.stop();
+});
+
+test("host: the tail of the worker's stderr is logged when it dies", async () => {
+  const errors = [];
+  const originalError = logger.error;
+  const originalWrite = process.stderr.write;
+  logger.error = (...args) => errors.push(args);
+  process.stderr.write = () => true; // the host forwards worker output; keep the run quiet
+  try {
+    const { child, host } = setup();
+    const request = host.request("clean", {});
+    child.stderr.emit("data", Buffer.from("x".repeat(10000)));
+    child.stderr.emit("data", Buffer.from("llama_decode: failed to allocate\n"));
+    child.emit("exit", 1);
+    await assert.rejects(request);
+    const tail = errors[0][1].stderrTail;
+    assert.match(tail, /llama_decode: failed to allocate$/);
+    assert.ok(tail.length <= 4096, `tail is bounded (${tail.length})`);
+  } finally {
+    logger.error = originalError;
+    process.stderr.write = originalWrite;
+  }
+});
+
+test("host: a worker's stderr never leaks into its successor's exit log", async () => {
+  const errors = [];
+  const originalError = logger.error;
+  const originalWrite = process.stderr.write;
+  logger.error = (...args) => errors.push(args);
+  process.stderr.write = () => true;
+  try {
+    const { child: first, host } = setup();
+    const p1 = host.request("ping");
+    first.stderr.emit("data", "old worker noise");
+    host.stop();
+    await assert.rejects(p1);
+    const second = createFakeChild();
+    currentChild = second;
+    const p2 = host.request("ping");
+    second.emit("exit", 1);
+    await assert.rejects(p2);
+    assert.strictEqual(errors[0][1].stderrTail, undefined);
+  } finally {
+    logger.error = originalError;
+    process.stderr.write = originalWrite;
+  }
 });

@@ -57,6 +57,7 @@ test("each check target runs the same command as its CI step", () => {
     "engine-smoke",
     "overlay-smoke",
     "settings-smoke",
+    "approval-smoke",
     "test-stt",
   ];
   for (const target of targets) {

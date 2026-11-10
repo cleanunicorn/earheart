@@ -24,6 +24,7 @@ colors:
   section-live: "#9cae65"
   section-stt: "#48b7c2"
   section-cleanup: "#b49ce1"
+  section-snippets: "#e0916a"
   section-history: "#d389ba"
   section-usage: "#75b683"
   section-advanced: "#c49f4d"
@@ -53,6 +54,7 @@ colors:
   section-live-light: "#5d6b2b"
   section-stt-light: "#14707a"
   section-cleanup-light: "#6a578f"
+  section-snippets-light: "#9a4a25"
   section-history-light: "#854e73"
   section-usage-light: "#3e6e48"
   section-advanced-light: "#7b5f1b"
@@ -358,6 +360,7 @@ They name a place, never a state.
 - **Section Live transcript** (`section-live`, #9cae65): lime — waveform glyph.
 - **Section Speech-to-text** (`section-stt`, #48b7c2): cyan — captions glyph.
 - **Section Cleanup** (`section-cleanup`, #b49ce1): violet — sparkle glyph.
+- **Section Snippets** (`section-snippets`, #e0916a): coral — text-lines glyph.
 - **Section History** (`section-history`, #d389ba): magenta — clock glyph.
 - **Section Usage** (`section-usage`, #75b683): sage — bar-chart glyph.
 - **Section Advanced** (`section-advanced`, #c49f4d): gold — sliders glyph.
@@ -844,3 +847,18 @@ transcription** and a quiet **Discard**.
   biggest thing in the system.
 - **Don't** hide sections behind tabs on the settings page; the page is one
   scrolling column and the index is a map, not a shuffle.
+
+
+## Commands window
+
+Commands is a singleton framed window using the shared ink, field, edge,
+text and dim-text tokens in both themes. It opens only while dictation is
+idle, so its focused search cannot replace an active take's delivery target.
+A labelled combobox owns an active descendant in a listbox; visible Navigation,
+Actions and History labels group the results. Up/Down and Home/End move the
+selection, Enter accepts once, Tab cycles search and Close, and Escape closes.
+The selected row uses text on ink reversed, with a text-colored focus outline;
+no animation is needed. Disabled rows remain labelled and skipped by selection.
+Search counts, empty states and errors share a persistent polite live region.
+Transcript previews, query text and errors are text nodes. History results
+navigate to the existing card and retain its confirmed destructive controls.

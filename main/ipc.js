@@ -5,13 +5,17 @@ const fs = require("node:fs");
 const path = require("node:path");
 const settings = require("./settings");
 const { mergeVocabulary, rememberVocabulary } = require("../renderer/vocabulary");
+const { learnVocabulary } = require("./vocab-learn");
 const { mergeAliases, rememberAlias, normalizeAliases } = require("../renderer/aliases");
+const { mergeSnippets, validateSnippets } = require("../renderer/snippets");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { deliverText } = require("./output/single-line");
 const history = require("./history");
+const { DISABLED } = require("./agent-api");
 const recordings = require("./recordings");
 const windows = require("./windows");
+const i18n = require("./i18n");
 const route = require("./services/route");
 const engines = require("./engines");
 const autostart = require("./autostart");
@@ -27,6 +31,7 @@ const {
   searchUrl,
 } = require("./services/hf-models");
 const { STYLES: CLEANUP_STYLES } = require("./cleanup-styles");
+const { FORMATTING_STYLES } = require("./formatting-profiles");
 const { encodeSilenceWav } = require("./util/wav");
 
 // One model's key in `downloads` and `busyModels` (the renderer's
@@ -165,12 +170,28 @@ const SHARED_FIELDS = [
     }),
   },
   {
+    // Text snippets (#334), merged per snippet id: Settings and the wizard
+    // each hold a copy, and a trigger clash between two windows' additions
+    // throws, so that save fails whole and the live snippets stay.
+    name: "snippets",
+    type: "array",
+    read: (cfg) => cfg.snippets || [],
+    write: (cfg, live, seen) => ({ ...cfg, snippets: mergeSnippets(seen, cfg.snippets, live.snippets) }),
+  },
+  {
     // Appearance (#348) is edited only in Settings; the wizard carries the
     // value it opened with. A save elsewhere since then wins over that copy.
     name: "appearance",
     type: "string",
     read: (cfg) => cfg.appearance,
     write: (cfg, live) => ({ ...cfg, appearance: live.appearance }),
+  },
+  {
+    // UI language (#349): edited only in Settings, carried by the wizard.
+    name: "uiLanguage",
+    type: "string",
+    read: (cfg) => cfg.uiLanguage,
+    write: (cfg, live) => ({ ...cfg, uiLanguage: live.uiLanguage }),
   },
   {
     name: "outputMode",
@@ -192,6 +213,41 @@ const SHARED_FIELDS = [
     write: (cfg, live) => ({ ...cfg, updates: { ...cfg.updates, remind: live.updates.remind } }),
   },
 ];
+
+// The wizard carries a full snapshot but edits only these leaves (collect()
+// and hotkey capture in renderer/wizard.js). Start from live settings so every
+// other value, including future settings and siblings inside these sections,
+// survives a Settings save made while the wizard was open.
+const WIZARD_FIELDS = [
+  ["hotkey"],
+  ["output", "mode"],
+  ["output", "restoreClipboard"],
+  ["stt", "engine"],
+  ["cleanup", "enabled"],
+  ["cleanup", "engine"],
+  ["cleanup", "builtin", "model"],
+  ["cleanup", "style"],
+  ["audio", "deviceId"],
+  ["audio", "duckOtherAudio"],
+  ["audio", "duckLevelPercent"],
+];
+
+function withWizardOwned(next, live) {
+  const out = { ...live };
+  for (const path of WIZARD_FIELDS) {
+    let source = next;
+    for (const key of path.slice(0, -1)) source = isPlainObject(source) ? source[key] : undefined;
+    const leaf = path.at(-1);
+    if (!isPlainObject(source) || !Object.hasOwn(source, leaf) || source[leaf] === undefined) continue;
+    let target = out;
+    for (const key of path.slice(0, -1)) {
+      target[key] = { ...target[key] };
+      target = target[key];
+    }
+    target[leaf] = source[leaf];
+  }
+  return out;
+}
 
 // Settings only main writes, which no form edits: the dragged overlay position
 // (main/windows.js), custom model definitions (models:add/remove-custom) and
@@ -226,12 +282,13 @@ function formSyncFields(cfg) {
     ...Object.fromEntries(FORM_SYNC_KEYS.map((key) => [key, cfg[key]])),
     dictionary: cfg.cleanup?.dictionary || [],
     aliases: cfg.cleanup?.aliases || [],
+    snippets: cfg.snippets || [],
   };
 }
 
 // The settings fields applyHotkeys registers. One that fails to register is
 // not saved: disk keeps the working value, the form keeps the attempt.
-const HOTKEY_FIELDS = ["hotkey", "pauseHotkey", "discardHotkey", "correctHotkey"];
+const HOTKEY_FIELDS = ["hotkey", "pauseHotkey", "discardHotkey", "correctHotkey", "paletteHotkey"];
 
 function withFields(base, source, fields) {
   const result = { ...base };
@@ -273,6 +330,13 @@ function staleDefinitions(existing, model) {
 
 // Wrap a handler whose failures are answers, not exceptions: whatever it
 // throws reaches the renderer as { ok: false, error }, worded by `describe`.
+// Used when init() is given no agent API (tests): every call is refused.
+const INERT_AGENT_API = {
+  ...Object.fromEntries(["state", "send", "cancel", "reply", "remove", "copyResume", "pickProject"].map((name) => [name, async () => DISABLED])),
+  clearTasks: () => ({ ok: true }),
+  removeForHistory() {},
+};
+
 function wrap(fn, describe = (err) => err.message) {
   return async (...args) => {
     try {
@@ -283,7 +347,31 @@ function wrap(fn, describe = (err) => err.message) {
   };
 }
 
-function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {}, onHistoryEntryDeleted = () => {}, retranscribe = async () => ({ ok: false, error: "unavailable" }) }) {
+async function openLog() {
+  const logPath = logger.getLogPath();
+  if (!logPath) return { ok: false, error: "No log file yet." };
+  // The logger resolves the path at startup but only creates the file on the
+  // first write, so a clean install that has never faulted has no file to
+  // open or reveal — open the logs folder instead.
+  if (!fs.existsSync(logPath)) {
+    const error = await shell.openPath(path.dirname(logPath)); // "" on success
+    return error
+      ? { ok: false, error, path: logPath }
+      : { ok: true, path: logPath, action: "folder" };
+  }
+  const error = await shell.openPath(logPath);
+  if (!error) return { ok: true, path: logPath, action: "opened" };
+  // Opening fails when .log has no default app (common on Windows); reveal
+  // the file in the OS file manager instead, which needs no association.
+  try {
+    shell.showItemInFolder(logPath);
+    return { ok: true, path: logPath, action: "revealed" };
+  } catch {
+    return { ok: false, error, path: logPath };
+  }
+}
+
+function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, getCommandCapabilities, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {}, onHistoryEntryDeleted = () => {}, agentApi = INERT_AGENT_API, retranscribe = async () => ({ ok: false, error: "unavailable" }) }) {
   onCleanupDownloaded = completed;
   // Custom models reach the registry through the settings themselves
   // (engines/catalog.js, bound in main.js), not through this layer: the saves
@@ -299,6 +387,16 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     });
     tray.refresh();
   });
+
+  // The effective UI locale reaches every window, forms and overlay alike,
+  // through this narrow channel — never through settings, which carry keys.
+  // Only a locale that actually changed after a successful save is pushed.
+  i18n.onChange((state) => {
+    windows.broadcast("i18n:changed", state);
+    windows.retitle();
+    tray.refresh();
+  });
+  ipcMain.handle("i18n:get", () => i18n.snapshot());
 
   ipcMain.handle("settings:get", () => {
     const cfg = settings.get();
@@ -318,6 +416,9 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
       // shortcut that failed at launch as soon as it opens. Read-only: asking
       // never re-registers anything.
       hotkeyStatus: getHotkeyStatus?.() ?? null,
+      // What voice commands can do on this OS (main/commands): reading the
+      // selection and applying a result. Static facts for the Commands section.
+      commandCapabilities: getCommandCapabilities?.() ?? null,
       // Whether API keys are encrypted at rest (or why not), for the note
       // under the API key fields. Status only — never a key or ciphertext.
       keyStorage: settings.keyStorage(),
@@ -327,6 +428,8 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
       // A new default system prompt this user hasn't decided on yet, if any
       // (settings.cleanupPromptOffer): Settings → Cleanup offers it.
       promptOffer: settings.cleanupPromptOffer(cfg),
+      // Formatting styles for the destination rules (#336): id/label/hint.
+      formattingStyles: FORMATTING_STYLES.map(({ id, label, hint }) => ({ id, label, hint })),
       cleanupStyles: CLEANUP_STYLES.map(({ id, label, hint, sampling }) => ({
         id,
         label,
@@ -340,10 +443,19 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   // is open, so the form's payload is merged with the live settings first
   // (withMainOwned), then hotkeys are applied before persisting so a rejected
   // shortcut never reaches disk.
-  const commitSettings = (request) => {
+  const commitSettings = (request, { wizard = false } = {}) => {
     const { next, baseline } = parseCommitRequest(request);
     const previous = settings.get();
-    const candidate = withMainOwned(next, previous, baseline);
+    // Project before reconciliation: an unseen output-mode change must still
+    // win, and vocabulary must reconcile from live values, not the snapshot.
+    const prepared = wizard ? withWizardOwned(next, previous) : next;
+    const candidate = withMainOwned(prepared, previous, baseline);
+    // Snippets (#334) are checked before anything else happens: a rejected
+    // list throws here, with no hotkey changed and nothing written. A request
+    // without the key (an older form) keeps what is saved.
+    candidate.snippets = Array.isArray(candidate.snippets)
+      ? validateSnippets(candidate.snippets, { trusted: previous.snippets })
+      : previous.snippets;
     const hotkeyResults = applyHotkeys(candidate);
     const rejectedFields = HOTKEY_FIELDS.filter((field) => {
       const result = hotkeyResults[field];
@@ -378,7 +490,7 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     // the user can see each error and correct the field without re-entering it.
     const responseSettings = withFields(saved, candidate, rejectedFields);
     applyAutostart(saved);
-    onSettingsChanged?.();
+    const afterSave = onSettingsChanged?.();
     return {
       hotkeyResults,
       response: {
@@ -387,6 +499,11 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
         pauseHotkey: hotkeyResults.pauseHotkey,
         discardHotkey: hotkeyResults.discardHotkey,
         correctHotkey: hotkeyResults.correctHotkey,
+        paletteHotkey: hotkeyResults.paletteHotkey,
+        // The voice command hotkey (#344) is bound by main/commands after the
+        // save lands, so its result comes back from onSettingsChanged. A key
+        // that fails to register stays saved, as one that fails at launch does.
+        commandsHotkey: afterSave?.commandsHotkey,
       },
     };
   };
@@ -420,7 +537,7 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   // window so the user can review what was pre-configured. If the chosen
   // hotkey can't be registered, the wizard stays open to let them fix it.
   ipcMain.handle("wizard:complete", (event, request) => {
-    const { response, hotkeyResults } = commitSettings(request);
+    const { response, hotkeyResults } = commitSettings(request, { wizard: true });
     if (hotkeyResults.hotkey.ok) {
       windows.openSettings({ fromWizard: true });
       windows.closeWizard();
@@ -438,29 +555,7 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   // can read or attach it when something goes wrong. `action` names which of
   // the three outcomes happened so the UI can describe it; the path comes back
   // either way, so even total failure still tells the user where to look.
-  ipcMain.handle("logs:open", async () => {
-    const logPath = logger.getLogPath();
-    if (!logPath) return { ok: false, error: "No log file yet." };
-    // The logger resolves the path at startup but only creates the file on the
-    // first write, so a clean install that has never faulted has no file to
-    // open or reveal — open the logs folder instead.
-    if (!fs.existsSync(logPath)) {
-      const error = await shell.openPath(path.dirname(logPath)); // "" on success
-      return error
-        ? { ok: false, error, path: logPath }
-        : { ok: true, path: logPath, action: "folder" };
-    }
-    const error = await shell.openPath(logPath);
-    if (!error) return { ok: true, path: logPath, action: "opened" };
-    // Opening fails when .log has no default app (common on Windows); reveal
-    // the file in the OS file manager instead, which needs no association.
-    try {
-      shell.showItemInFolder(logPath);
-      return { ok: true, path: logPath, action: "revealed" };
-    } catch {
-      return { ok: false, error, path: logPath };
-    }
-  });
+  ipcMain.handle("logs:open", openLog);
 
   // Settings → Advanced: re-run the setup wizard on demand. The wizard
   // itself doesn't change anything until it is completed.
@@ -701,6 +796,20 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     onSettingsChanged?.();
     return { ok: true, cleanupEnabled: cfg.cleanup.enabled, alias: heard !== undefined };
   }));
+  // "Learn from a folder…" (#72): the user picks a folder in a native dialog
+  // (nothing is scanned that they did not choose, and no path crosses IPC from
+  // the renderer), main extracts bounded candidate words from it, and only
+  // those strings come back for the review panel. Nothing is saved here.
+  ipcMain.handle("vocab:learn-folder", wrap(async (event) => {
+    const choice = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+      title: "Learn vocabulary from a project folder",
+      buttonLabel: "Learn from folder",
+      properties: ["openDirectory"],
+    });
+    if (choice.canceled || !choice.filePaths?.[0]) return { ok: false, cancelled: true };
+    const { terms, truncated } = await learnVocabulary(choice.filePaths[0]);
+    return { ok: true, terms: terms.filter((term) => typeof term === "string"), truncated };
+  }));
   ipcMain.handle("transcript:copy", wrap(async (event, text) => {
     if (!canCopy()) throw new Error("Wait for the current dictation to finish processing before copying a transcript.");
     if (typeof text !== "string" || !text.trim() || text.length > 1000000) {
@@ -743,6 +852,8 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     if (!history.isValidId(id)) return { ok: false, error: "EINVAL" };
     const result = history.remove(id);
     if (result.ok && result.removed) {
+      // A brief sent from this entry is its transcript text too (#345).
+      agentApi.removeForHistory(id);
       // A transcript held back from a paste (#291) saved as this entry goes too.
       onHistoryEntryDeleted(id);
       // "Copy last transcription" must not offer the deleted words.
@@ -759,6 +870,8 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   // transcripts on disk, and Settings must say so instead of showing none.
   ipcMain.handle("history:clear", () => {
     const result = history.clear();
+    // Briefs sent to agents are transcript text: they go with it (#345).
+    if (result.ok) agentApi.clearTasks();
     // A transcript held back from a paste (#291) is history too.
     if (result.ok) onHistoryCleared();
     // "Copy last transcription" must go disabled with nothing left to copy.
@@ -791,15 +904,27 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     if (!audio.ok) return audio;
     const stamp = String(entry.at || new Date().toISOString()).slice(0, 19).replace(/[:T]/g, "-");
     const choice = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
-      title: "Export recording",
+      title: i18n.t("export.title"),
       defaultPath: path.join(app.getPath("downloads"), `earheart-${stamp}.wav`),
-      filters: [{ name: "WAV audio", extensions: ["wav"] }],
+      filters: [{ name: i18n.t("export.filter"), extensions: ["wav"] }],
     });
     if (choice.canceled || !choice.filePath) return { ok: false, cancelled: true };
     return recordings.exportWav(audio.wav, choice.filePath);
   });
   // Transcribe entry `id`'s recording again (pipeline.retranscribe): never
   // pastes; the result is stored beside the original as entry.retry.
+  // Send to agents (#345). Only the Settings window may ask; every handler
+  // is inert until the setting is on (main/agent-api.js).
+  const fromSettings = (fn) => (event, ...args) =>
+    windows.isSettingsContents(event.sender) ? fn(event, ...args) : { ok: false, error: "Not available here." };
+  ipcMain.handle("agent:state", fromSettings(agentApi.state));
+  ipcMain.handle("agent:send", fromSettings(agentApi.send));
+  ipcMain.handle("agent:cancel", fromSettings(agentApi.cancel));
+  ipcMain.handle("agent:reply", fromSettings(agentApi.reply));
+  ipcMain.handle("agent:remove", fromSettings(agentApi.remove));
+  ipcMain.handle("agent:copy-resume", fromSettings(agentApi.copyResume));
+  ipcMain.handle("agent:pick-project", fromSettings(agentApi.pickProject));
+
   ipcMain.handle("history:retranscribe", async (event, id) => {
     if (!history.isValidId(id)) return { ok: false, error: "missing" };
     return retranscribe(id);
@@ -848,4 +973,4 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   });
 }
 
-module.exports = { init, isDownloading };
+module.exports = { init, isDownloading, openLog };

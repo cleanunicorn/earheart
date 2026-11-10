@@ -11,8 +11,12 @@
 // Each failure carries a `code` (or, for an HTTP error, its `status`) so the
 // pipeline can tell a passing failure it should retry (util/retry.js) from one
 // a retry would only repeat; the message stays the user-facing copy.
-function coded(err, code) {
+function coded(err, code, i18n) {
   err.code = code;
+  // A stable key plus allowlisted parameters, so the message can be formatted
+  // in the UI language where it is shown (main/error-text.js). The English
+  // `message` stays for logs and tests; neither carries a response body.
+  if (i18n) err.i18n = i18n;
   return err;
 }
 
@@ -27,9 +31,16 @@ function transportError(err, url, { service, timeoutS }) {
   // tells a cancel apart by its name.
   if (err?.name === "AbortError") return err;
   if (err?.name === "TimeoutError") {
-    return coded(new Error(`${service} didn't answer within ${timeoutS} s`, { cause: err }), "SERVICE_TIMEOUT");
+    return coded(new Error(`${service} didn't answer within ${timeoutS} s`, { cause: err }), "SERVICE_TIMEOUT", {
+      key: "error.serviceTimeout",
+      params: { service, seconds: timeoutS },
+    });
   }
-  return coded(new Error(`Couldn't reach ${new URL(url).host}`, { cause: err }), "SERVICE_UNREACHABLE");
+  const host = new URL(url).host;
+  return coded(new Error(`Couldn't reach ${host}`, { cause: err }), "SERVICE_UNREACHABLE", {
+    key: "error.serviceUnreachable",
+    params: { host },
+  });
 }
 
 // The deadline covers the body too: a server that sends headers and then stalls
@@ -46,11 +57,15 @@ async function readJson(res, url, opts) {
       throw transportError(err, url, opts);
     }
     if (err?.name === "SyntaxError") {
-      throw coded(new Error(`${opts.service} returned a response that isn't JSON`), "SERVICE_BAD_REPLY");
+      throw coded(new Error(`${opts.service} returned a response that isn't JSON`), "SERVICE_BAD_REPLY", {
+        key: "error.serviceBadReply",
+        params: { service: opts.service },
+      });
     }
     throw coded(
       new Error(`${opts.service} dropped the connection before finishing its reply`, { cause: err }),
-      "SERVICE_DROPPED"
+      "SERVICE_DROPPED",
+      { key: "error.serviceDropped", params: { service: opts.service } }
     );
   }
 }
@@ -58,7 +73,11 @@ async function readJson(res, url, opts) {
 // Unauthorized and forbidden almost always mean the key, so say where it lives.
 function statusError(service, status) {
   const hint = status === 401 || status === 403 ? " — check the API key in Settings" : "";
-  return Object.assign(new Error(`${service} error ${status}${hint}`), { status });
+  const keyIssue = status === 401 || status === 403;
+  return Object.assign(new Error(`${service} error ${status}${hint}`), {
+    status,
+    i18n: { key: keyIssue ? "error.serviceAuth" : "error.serviceStatus", params: { service, status } },
+  });
 }
 
 /**

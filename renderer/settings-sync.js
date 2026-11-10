@@ -14,7 +14,9 @@ function sharedBaseline(cfg) {
     remind: cfg.updates?.remind !== false,
     dictionary: [...(cfg.cleanup?.dictionary || [])],
     aliases: (cfg.cleanup?.aliases || []).map((r) => ({ term: r.term, heard: [...r.heard] })),
+    snippets: (cfg.snippets || []).map((r) => ({ id: r.id, triggers: [...r.triggers], content: r.content })),
     appearance: cfg.appearance,
+    uiLanguage: cfg.uiLanguage,
   };
 }
 

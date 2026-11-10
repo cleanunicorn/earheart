@@ -72,10 +72,17 @@ Supporting truths (real, but not the lead):
 - **Cross-platform equal citizen** — first-class Linux support (X11 and
   Wayland) alongside Windows and macOS, which desktop dictation rarely offers.
 
-**Not claimed (yet):** Earheart does not submit the prompt for you, does not
-speak the agent's replies, and has no MCP or agent-side integration. These are
-tracked as roadmap issues under the `agents` label — never describe them as
-shipped.
+**Opt-in task sending:** with "Send transcripts to coding agents" on, a
+History entry can be reviewed and explicitly sent to an installed Codex or
+Claude Code, with tracked status, cancel, replies and a finish notification
+([docs/agent-tasks.md](docs/agent-tasks.md)). It is off by default, never
+sends without that review step, and the brief is processed off-device by the
+agent's provider. Ordinary dictation still only pastes.
+
+**Not claimed (yet):** Earheart does not auto-submit dictation into other
+apps, does not speak the agent's replies, and has no MCP or agent-side
+integration. These are tracked as roadmap issues under the `agents` label —
+never describe them as shipped.
 
 ## Operating Context
 
@@ -121,6 +128,12 @@ shipped.
   or clipboard-only. Local JSON history of recent transcriptions (can be
   disabled). Local usage stats (counts only, never text; can be disabled
   and reset). Editable cleanup prompt. Optional start-on-login.
+- Optional local tool servers (#346): Earheart is an MCP *client* for stdio
+  servers the user configures (`main/tools/`, hand-rolled, no SDK dependency).
+  Per-tool enablement, ask/allow/deny policy, and a per-call approval window.
+  Servers start only on explicit Discover or a call, never at launch, and a
+  failing tool must never stall dictation. Command mode (#344) is the only
+  intended caller (`tools.host`); until it ships nothing invokes tools by voice.
 - **Core engineering constraint: never lose the user's words.** If cleanup
   fails, the raw transcript is delivered. Any pipeline change must preserve
   the raw-transcript fallbacks.

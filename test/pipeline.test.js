@@ -243,7 +243,13 @@ function dictationRig({
   safeStorage = null,
   // Replaces usage.record (#347); every call is still logged in log.usage.
   usageRecord = () => true,
+  // The destination detector (#336). Default: unsupported platform, so the
+  // take's formatting settles synchronously on the default style.
+  detector = { supported: false, detect: async () => ({ supported: false, app: null, host: null }) },
+  // The system clipboard a snippet's {{clipboard}} tag reads (#334).
+  clipboardText = "",
 } = {}) {
+  const clipboardState = { text: clipboardText, reads: 0 };
   const saved = []; // the History list, newest first, with the ids add() returned
   const log = {
     warmups: [],
@@ -303,9 +309,11 @@ function dictationRig({
     },
     settings: { get: () => cfg },
     overrides: {
+      "./context-detector": { createContextDetector: () => detector },
       electron: {
         app: { getPath: () => userData, isReady: () => true },
         safeStorage,
+        clipboard: { readText: () => { clipboardState.reads += 1; return clipboardState.text; } },
         ipcMain: { on: (channel, fn) => (handlers[channel] = fn) },
         Notification: class {
           static isSupported() {
@@ -352,6 +360,7 @@ function dictationRig({
         },
         sendToOverlay(channel, payload) {
           log.overlaySent.push(channel);
+          if (channel === "record:destination") log.destination = payload;
           if (channel === "record:start") {
             lastStart = payload;
             log.lastStart = payload;
@@ -435,6 +444,7 @@ function dictationRig({
     dictate,
     pipeline,
     cfg,
+    clipboard: clipboardState,
     handlers,
     // Delete one saved History entry, as Settings → History does.
     deleteHistory: (id) => saved.splice(saved.findIndex((entry) => entry.id === id), 1),
@@ -1043,7 +1053,9 @@ test("pipeline: a failed transcription notifies, and the click opens Settings", 
   const rig = dictationRig({
     engine: "remote",
     transcribe: async () => {
-      throw new Error("Couldn't reach api.example.test");
+      throw Object.assign(new Error("Couldn't reach api.example.test"), {
+        i18n: { key: "error.serviceUnreachable", params: { host: "api.example.test" } },
+      });
     },
   });
   await rig.dictate(speechWav(1));
@@ -1206,19 +1218,37 @@ test("pipeline: a history failure never costs the user's words or says they were
   assert.ok(rig.log.logs.some(([level, label]) => level === "error" && label === "history add failed:"));
 });
 
-test("pipeline: a long error is clipped to the notification limit", async () => {
+test("pipeline: an arbitrary error never reaches the notification text (#349)", async () => {
   const { BODY_MAX } = require("../main/setup-notices");
+  const SECRET = "sk-sentinel-secret-body";
   const rig = dictationRig({
     engine: "remote",
     transcribe: async () => {
-      throw new Error("x".repeat(400));
+      throw new Error(`${SECRET} ${"x".repeat(400)}`);
+    },
+  });
+  await rig.dictate(speechWav(1));
+  const { title, body } = rig.log.notifications[0];
+  assert.ok(body.length <= BODY_MAX);
+  // The retry route leads, then the generic text — never the raw exception.
+  assert.ok(body.startsWith("Retry it from the tray menu"), body);
+  assert.ok(body.endsWith(GENERIC_ERROR), body);
+  assert.ok(!(title + body).includes(SECRET));
+});
+
+test("pipeline: a coded service error is formatted from its key and clipped parameters (#349)", async () => {
+  const rig = dictationRig({
+    engine: "remote",
+    transcribe: async () => {
+      throw Object.assign(new Error("raw body: sk-sentinel"), {
+        i18n: { key: "error.serviceAuth", params: { service: "Speech service", status: 401, body: "sk-sentinel" } },
+      });
     },
   });
   await rig.dictate(speechWav(1));
   const { body } = rig.log.notifications[0];
-  assert.strictEqual(body.length, BODY_MAX);
-  // The retry route leads, so clipping a long error never cuts it off.
-  assert.ok(body.startsWith("Retry it from the tray menu"), body);
+  assert.match(body, /Speech service error 401 — check the API key in Settings$/);
+  assert.ok(!body.includes("sk-sentinel"));
 });
 
 /* ---------------- never lose the words: cancel, stale and empty paths (#196) ---------------- */
@@ -1974,6 +2004,8 @@ test("pipeline: cancelling delivery keeps the earlier failed take retryable", as
   assert.strictEqual(rig.pipeline.getFailedTake(), null);
 });
 
+const GENERIC_ERROR = require("../renderer/locales").en["error.generic"];
+
 for (const [seconds, duration] of [[5, "less than a minute"], [59, "less than a minute"], [60, "1 minute"], [120, "2 minutes"]]) {
   test(`pipeline: an earlier take with ${seconds}s left has an honest retry notice`, async (t) => {
     let now = Date.now();
@@ -1986,7 +2018,7 @@ for (const [seconds, duration] of [[5, "less than a minute"], [59, "less than a 
     await rig.dictate(speechWav(1));
     assert.deepStrictEqual(rig.log.failedTakeCards.at(-1), { expiresInSec: seconds, earlier: true });
     assert.strictEqual(rig.log.notifications.at(-1).body,
-      `Retry it from the tray menu or the overlay, or run earheart --retry, within ${duration}. STT request timed out`);
+      `Retry it from the tray menu or the overlay, or run earheart --retry, within ${duration}. ${GENERIC_ERROR}`);
     assert.strictEqual(rig.pipeline.getFailedTake().expiresAt, expiresAt, "the copy must not renew retention");
     rig.pipeline.discardFailedTake();
   });
@@ -2478,4 +2510,484 @@ test("pipeline: only a delivered dictation counts — retranscribe and the live 
   const processBody = source.slice(source.indexOf("async function process("), source.indexOf("function retranscribe("));
   const recordAt = processBody.indexOf("usage.record(");
   assert.ok(recordAt > processBody.indexOf("await deliver("), "counted after delivery");
+});
+
+test("pipeline: record and retry dismiss Commands without beginning a take", async () => {
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "safe" });
+  for (const trigger of [() => rig.pipeline.toggle(), () => rig.pipeline.retryFailedTake(), () => rig.handlers["pipeline:retry"]({})]) {
+    let open = true;
+    rig.pipeline.setPaletteGuard(() => { const was = open; open = false; return was; });
+    trigger();
+    assert.equal(open, false);
+    assert.equal(rig.pipeline.getState(), "idle");
+    assert.equal(rig.log.overlaysCreated, 0);
+    assert.equal(rig.log.transcribe.length, 0);
+  }
+  rig.pipeline.toggle();
+  assert.equal(rig.pipeline.getState(), "recording", "a deliberate second press starts after dismissal");
+  assert.equal(rig.pipeline.isPaletteIdle(), false);
+  rig.pipeline.cancel();
+});
+test("pipeline: a pending retry excludes the palette even while state is idle", async () => {
+  const stt = flakyStt();
+  const rig = dictationRig({ engine: "remote", transcribe: stt.transcribe });
+  await rig.dictate(speechWav(5));
+  assert.equal(rig.pipeline.isPaletteIdle(), true);
+  let finishLoad;
+  rig.overlayLoading(fn => { finishLoad = fn; });
+  rig.pipeline.retryFailedTake();
+  assert.equal(rig.pipeline.getState(), "idle");
+  assert.equal(rig.pipeline.isPaletteIdle(), false);
+  rig.pipeline.discardFailedTake();
+  finishLoad();
+  assert.equal(rig.pipeline.isPaletteIdle(), true);
+});
+
+test("pipeline: a superseded retry reservation cannot block Commands forever", async () => {
+  const rig = dictationRig({ engine: "remote", transcribe: flakyStt().transcribe });
+  await rig.dictate(speechWav(2));
+  rig.overlayLoading(() => {}); // this old load will never finish
+  rig.pipeline.retryFailedTake();
+  assert.equal(rig.pipeline.isPaletteIdle(), false);
+  rig.overlayLoading(null);
+  rig.pipeline.toggle();
+  rig.pipeline.cancel();
+  assert.equal(rig.pipeline.isPaletteIdle(), true);
+});
+
+test("pipeline: Commands dismissal guidance never opens Settings without notifications", () => {
+  const rig = dictationRig({ notificationsSupported: false });
+  rig.pipeline.setPaletteGuard(() => true);
+  rig.pipeline.toggle();
+  rig.pipeline.retryFailedTake();
+  assert.equal(rig.pipeline.getState(), "idle");
+  assert.equal(rig.log.overlaysCreated, 0);
+  assert.equal(rig.log.settingsOpened, 0);
+});
+
+/* ---------- voice command takes (#344) ---------- */
+
+// A command take uses the recorder and STT, then hands the transcript to the
+// command session. These pin what it must NOT do: clean it up, alias it, save
+// it, count it or deliver it — the spoken instruction must never reach the
+// user's app — and that ordinary dictation still never takes this path.
+function commandRig(options = {}) {
+  const rig = dictationRig({ cleanup: true, ...options });
+  const events = [];
+  const handlers = {
+    onTranscript: (sid, text) => events.push(["transcript", sid, text]),
+    onEnd: (sid, reason, message) => events.push(["end", sid, reason, message]),
+  };
+  return { rig, events, handlers };
+}
+
+test("pipeline: a command take hands its transcript over and delivers nothing", async () => {
+  let cleaned = 0;
+  const { rig, events, handlers } = commandRig({
+    transcribe: async () => "rewrite this more politely",
+    clean: async (raw) => { cleaned++; return `cleaned(${raw})`; },
+  });
+  const sid = rig.pipeline.startCommandRecording(handlers);
+  assert.strictEqual(sid, rig.log.lastStart.sid);
+  const idle = new Promise((resolve) => rig.pipeline.onStateChange((s) => s === "idle" && resolve()));
+  rig.handlers["audio:captured"]({}, { sid, wav: speechWav(1) });
+  await idle;
+
+  assert.deepStrictEqual(events, [["transcript", sid, "rewrite this more politely"]]);
+  assert.deepStrictEqual(rig.log.delivered, [], "the instruction is never pasted");
+  assert.deepStrictEqual(rig.log.history, [], "no History entry");
+  assert.deepStrictEqual(rig.log.usage, [], "no usage count");
+  assert.strictEqual(cleaned, 0, "the instruction is not run through dictation cleanup");
+  assert.strictEqual(rig.pipeline.getFailedTake(), null);
+});
+
+test("pipeline: a failed command transcription is reported and never held for a dictation retry", async () => {
+  const { rig, events, handlers } = commandRig({
+    transcribe: async () => { throw new Error("speech service is down"); },
+  });
+  const sid = rig.pipeline.startCommandRecording(handlers);
+  const idle = new Promise((resolve) => rig.pipeline.onStateChange((s) => s === "idle" && resolve()));
+  rig.handlers["audio:captured"]({}, { sid, wav: speechWav(1) });
+  await idle;
+
+  assert.deepStrictEqual(events, [["end", sid, "error", "speech service is down"]]);
+  assert.strictEqual(rig.pipeline.getFailedTake(), null, "a retry would type the instruction as a dictation");
+  assert.strictEqual(rig.pipeline.retryFailedTake(), false);
+  assert.deepStrictEqual(rig.log.delivered, []);
+});
+
+test("pipeline: a command take that hears nothing, is cancelled or errors ends exactly once", async () => {
+  // Heard nothing: the STT path reports it as a failure with its own words.
+  let { rig, events, handlers } = commandRig({ transcribe: async () => "" });
+  let sid = rig.pipeline.startCommandRecording(handlers);
+  let idle = new Promise((resolve) => rig.pipeline.onStateChange((s) => s === "idle" && resolve()));
+  rig.handlers["audio:captured"]({}, { sid, wav: speechWav(1) });
+  await idle;
+  assert.deepStrictEqual(events, [["end", sid, "error", "speech decoded to no text"]]);
+
+  // Cancelled while recording; a second cancel reports nothing more.
+  ({ rig, events, handlers } = commandRig({ transcribe: async () => "never" }));
+  sid = rig.pipeline.startCommandRecording(handlers);
+  rig.pipeline.cancel();
+  rig.pipeline.cancel();
+  assert.deepStrictEqual(events, [["end", sid, "cancelled", undefined]]);
+
+  // The recorder reports an error.
+  ({ rig, events, handlers } = commandRig({ transcribe: async () => "never" }));
+  sid = rig.pipeline.startCommandRecording(handlers);
+  rig.handlers["record:error"]({}, { sid, message: "no microphone" });
+  assert.deepStrictEqual(events, [["end", sid, "error", "no microphone"]]);
+});
+
+for (const phase of ["recording", "processing"]) {
+  test(`pipeline: a command arriving after selection capture preserves a ${phase} dictation`, async () => {
+    let finishTranscription;
+    const pending = new Promise((resolve) => { finishTranscription = resolve; });
+    const { rig, events, handlers } = commandRig({ transcribe: () => pending });
+    rig.pipeline.toggle();
+    const sid = rig.log.lastStart.sid;
+    const idle = new Promise((resolve) => rig.pipeline.onStateChange((s) => s === "idle" && resolve()));
+    if (phase === "processing") {
+      rig.handlers["audio:captured"]({}, { sid, wav: speechWav(1) });
+    }
+    assert.strictEqual(rig.pipeline.getState(), phase);
+    const result = rig.pipeline.startCommandRecording(handlers);
+    const stateAfter = rig.pipeline.getState();
+    const sidAfter = rig.log.lastStart.sid;
+    if (phase === "recording") {
+      rig.handlers["audio:captured"]({}, { sid, wav: speechWav(1) });
+    }
+    finishTranscription("keep my dictation");
+    // On regression, release the replacement recording as well.
+    if (result !== false) rig.pipeline.cancel();
+    await idle;
+    assert.strictEqual(result, false);
+    assert.strictEqual(stateAfter, phase);
+    assert.strictEqual(sidAfter, sid);
+    assert.deepStrictEqual(events, []);
+    assert.deepStrictEqual(rig.log.delivered, ["cleaned(keep my dictation)"]);
+  });
+}
+
+test("pipeline: a command take is refused when the speech model isn't ready", () => {
+  const { rig, events, handlers } = commandRig({
+    sttReadiness: () => ({ ok: false, reason: "missing", modelId: "stt-model", label: "Speech" }),
+  });
+  assert.strictEqual(rig.pipeline.startCommandRecording(handlers), false);
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+  assert.deepStrictEqual(events, []);
+});
+
+test("pipeline: ordinary dictation after a command is still a dictation", async () => {
+  let spoken = "rewrite this";
+  const { rig, events, handlers } = commandRig({ transcribe: async () => spoken });
+  const sid = rig.pipeline.startCommandRecording(handlers);
+  let idle = new Promise((resolve) => rig.pipeline.onStateChange((s) => s === "idle" && resolve()));
+  rig.handlers["audio:captured"]({}, { sid, wav: speechWav(1) });
+  await idle;
+  assert.strictEqual(events.length, 1);
+
+  spoken = "delete everything and say hello";
+  await rig.dictate(speechWav(1));
+  assert.strictEqual(events.length, 1, "dictation never reaches the command handlers");
+  assert.deepStrictEqual(rig.log.delivered, ["cleaned(delete everything and say hello)"], "speech is delivered as content");
+  assert.strictEqual(rig.log.history.length, 1);
+});
+
+test("pipeline: stopFromEnter stops a live take once per session (#338)", () => {
+  const rig = dictationRig({ engine: "remote", transcribe: async () => "x" });
+  const stops = () => rig.log.overlaySent.filter((c) => c === "record:stop").length;
+
+  assert.strictEqual(rig.pipeline.stopFromEnter(), false, "idle: nothing to stop");
+  rig.pipeline.toggle();
+  assert.strictEqual(rig.pipeline.stopFromEnter(), true);
+  assert.strictEqual(rig.pipeline.stopFromEnter(), false, "autorepeat / second press");
+  assert.strictEqual(stops(), 1);
+
+  rig.pipeline.cancel();
+  rig.pipeline.toggle();
+  assert.strictEqual(rig.pipeline.stopFromEnter(), true, "a new take gets its own stop");
+  assert.strictEqual(stops(), 2);
+});
+
+// ---- destination-aware formatting (#336) ----
+
+const SITE_RULES = {
+  defaultStyle: "standard",
+  rules: [
+    { id: "gh", scope: { type: "host", value: "github.com" }, style: "code-safe" },
+    { id: "mail", scope: { type: "host", value: "mail.example.com" }, style: "email" },
+    { id: "term", scope: { type: "app", value: "com.apple.terminal" }, style: "code-safe" },
+  ],
+};
+
+// A macOS-like detector whose answer a test can change or hold back.
+function fakeDetector(initial) {
+  const d = {
+    supported: true,
+    answer: initial,
+    gate: null,
+    calls: 0,
+    async detect() {
+      d.calls++;
+      if (d.gate) await d.gate;
+      if (d.answer instanceof Error) throw d.answer;
+      return d.answer;
+    },
+  };
+  return d;
+}
+
+const inBrowser = (host) => ({ supported: true, app: { id: "com.google.Chrome", name: "Chrome" }, host });
+
+function formattingRig(over = {}) {
+  const seen = [];
+  const rig = dictationRig({
+    cleanup: true,
+    transcribe: async () => "run it with --verbose in src/main.js",
+    clean: async (raw, cfg) => {
+      seen.push(cfg.formattingStyle);
+      return raw;
+    },
+    ...over,
+  });
+  rig.cfg.formatting = structuredClone(SITE_RULES);
+  return { rig, seen };
+}
+
+test("pipeline formatting: two sites in one browser get different styles, unmatched sites the default", async () => {
+  const detector = fakeDetector(inBrowser("github.com"));
+  const { rig, seen } = formattingRig({ detector });
+  await rig.dictate(speechWav(1));
+  detector.answer = inBrowser("mail.example.com");
+  await rig.dictate(speechWav(1));
+  detector.answer = inBrowser("github.com.evil.example");
+  await rig.dictate(speechWav(1));
+  detector.answer = inBrowser(null);
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(seen, ["code-safe", "email", "standard", "standard"]);
+});
+
+test("pipeline formatting: a host rule beats the application rule", async () => {
+  const detector = fakeDetector({ supported: true, app: { id: "com.apple.Terminal", name: "Terminal" }, host: "mail.example.com" });
+  const { rig, seen } = formattingRig({ detector });
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(seen, ["email"]);
+});
+
+test("pipeline formatting: changing the destination or the rules mid-take changes nothing", async () => {
+  const detector = fakeDetector(inBrowser("github.com"));
+  const { rig, seen } = formattingRig({ detector });
+  rig.pipeline.toggle();
+  await new Promise((resolve) => setImmediate(resolve)); // detection settled
+  // The user switches tab and edits the rules while still speaking.
+  detector.answer = inBrowser("mail.example.com");
+  rig.cfg.formatting = { defaultStyle: "chat", rules: [] };
+  const idle = new Promise((resolve) => rig.pipeline.onStateChange((s) => s === "idle" && resolve()));
+  rig.handlers["audio:captured"]({}, { sid: rig.log.lastStart.sid, wav: speechWav(1) });
+  await rig.liveCleanup("live words", rig.cfg.cleanup, new AbortController().signal);
+  await idle;
+  assert.deepStrictEqual(seen, ["code-safe", "code-safe"], "live preview and the final pass use the frozen style");
+  assert.strictEqual(detector.calls, 1, "the destination is read once per take");
+});
+
+test("pipeline formatting: a slow or hung detector never delays capture", async () => {
+  const detector = fakeDetector(inBrowser("github.com"));
+  detector.gate = new Promise(() => {}); // never answers
+  const { rig } = formattingRig({ detector });
+  rig.pipeline.toggle();
+  assert.strictEqual(rig.pipeline.getState(), "recording");
+  assert.ok(rig.log.lastStart, "record:start was sent without waiting for detection");
+  rig.pipeline.cancel();
+});
+
+test("pipeline formatting: unavailable context never blocks dictation", async () => {
+  const detector = fakeDetector(new Error("not authorized"));
+  const { rig, seen } = formattingRig({ detector });
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(seen, ["standard"]);
+  assert.deepStrictEqual(rig.log.delivered, ["run it with --verbose in src/main.js"]);
+});
+
+test("pipeline formatting: warm-up waits for the destination, not the recording", async () => {
+  const detector = fakeDetector(inBrowser("github.com"));
+  let release;
+  detector.gate = new Promise((resolve) => (release = resolve));
+  const primed = [];
+  const { rig } = formattingRig({ detector, primeCleanup: async (cfg) => { primed.push(cfg.formattingStyle); } });
+  rig.pipeline.toggle();
+  assert.ok(rig.log.lastStart, "recording started");
+  assert.deepStrictEqual(primed, [], "not primed before the destination is known");
+  release();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepStrictEqual(primed, ["code-safe"]);
+  rig.pipeline.cancel();
+});
+
+test("pipeline formatting: the overlay is told the destination and style, never text", async () => {
+  const detector = fakeDetector(inBrowser("github.com"));
+  const { rig } = formattingRig({ detector });
+  rig.pipeline.toggle();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(rig.log.overlaySent.includes("record:destination"));
+  assert.deepStrictEqual(rig.log.destination, { sid: rig.log.lastStart.sid, label: "github.com · Code-safe" });
+  rig.pipeline.cancel();
+});
+
+test("pipeline formatting: a retry keeps the failed take's own formatting", async () => {
+  const stt = flakyStt();
+  const detector = fakeDetector(inBrowser("github.com"));
+  const seen = [];
+  const rig = dictationRig({
+    cleanup: true,
+    detector,
+    transcribe: stt.transcribe,
+    clean: async (raw, cfg) => { seen.push(cfg.formattingStyle); return raw; },
+  });
+  rig.cfg.formatting = structuredClone(SITE_RULES);
+  await rig.dictate(speechWav(5));
+  assert.ok(rig.pipeline.getFailedTake());
+  // Rules, default and focus all change before the retry.
+  rig.cfg.formatting = { defaultStyle: "chat", rules: [] };
+  detector.answer = inBrowser("mail.example.com");
+  stt.down = false;
+  await retried(rig);
+  assert.deepStrictEqual(seen, ["code-safe"]);
+});
+
+test("pipeline formatting: code-safe falls back to the raw words when cleanup drops a token", async () => {
+  const detector = fakeDetector(inBrowser("github.com"));
+  const { rig } = formattingRig({ detector, clean: async () => "Run it with verbose in the main file." });
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(rig.log.delivered, ["run it with --verbose in src/main.js"]);
+});
+
+test("pipeline formatting: cleanup off leaves the words untouched", async () => {
+  const detector = fakeDetector(inBrowser("github.com"));
+  const { rig, seen } = formattingRig({ detector, cleanup: false });
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(seen, []);
+  assert.deepStrictEqual(rig.log.delivered, ["run it with --verbose in src/main.js"]);
+});
+
+// #334: a spoken trigger becomes its saved text. The multiline body must come
+// through byte for byte with cleanup on or off; only the words around it are
+// cleaned; History keeps what was said.
+const SNIPPETS = [
+  { id: "snp_addr", triggers: ["my address"], content: "Ada Lovelace\n  12 Analytical Way\n\nLondon  " },
+  { id: "snp_sig", triggers: ["sign off"], content: "Best,\nAda — air heart" },
+];
+
+test("pipeline: a snippet inserts its exact multiline text with cleanup off and on (#334)", async () => {
+  const off = dictationRig({ engine: "remote", transcribe: async () => "My Address." });
+  off.cfg.snippets = SNIPPETS;
+  await off.dictate(speechWav(1));
+  assert.deepStrictEqual(off.log.delivered, [SNIPPETS[0].content]);
+  assert.strictEqual(off.log.history[0].raw, "My Address.", "History keeps the recognized speech");
+  assert.strictEqual(off.log.history[0].text, SNIPPETS[0].content);
+  assert.strictEqual(off.log.history[0].cleaned, false);
+
+  const on = dictationRig({ cleanup: true, transcribe: async () => "my address" });
+  on.cfg.snippets = SNIPPETS;
+  await on.dictate(speechWav(1));
+  assert.deepStrictEqual(on.log.delivered, [SNIPPETS[0].content], "a whole-utterance trigger skips cleanup");
+});
+
+test("pipeline: cleanup and aliases only touch the words between snippets (#334)", async () => {
+  const seen = [];
+  const rig = dictationRig({
+    cleanup: true,
+    transcribe: async () => "please send my address air heart then sign off",
+    clean: async (words) => { seen.push(words); return `<${words}>`; },
+  });
+  rig.cfg.snippets = SNIPPETS;
+  rig.cfg.cleanup.aliases = ALIASES;
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(seen, ["please send", "air heart then"]);
+  // The alias rewrote "air heart" outside the snippet and left the one inside
+  // the sign-off body alone.
+  assert.deepStrictEqual(rig.log.delivered, [
+    `<please send> ${SNIPPETS[0].content} <Earheart then> ${SNIPPETS[1].content}`,
+  ]);
+  assert.strictEqual(rig.log.history[0].raw, "please send my address air heart then sign off");
+  assert.strictEqual(rig.log.history[0].cleaned, true);
+});
+
+test("pipeline: speech without a trigger takes the unchanged path (#334)", async () => {
+  const rig = dictationRig({ cleanup: true, transcribe: async () => "hello there" });
+  rig.cfg.snippets = SNIPPETS;
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(rig.log.delivered, ["cleaned(hello there)"]);
+});
+
+test("pipeline: a failing cleanup falls back to raw words around a snippet, notifying once (#334)", async () => {
+  let calls = 0;
+  const rig = dictationRig({
+    cleanup: true,
+    transcribe: async () => "hi my address and my address thanks",
+    clean: async () => { calls += 1; throw new Error("Cleanup returned no usable text"); },
+  });
+  rig.cfg.snippets = SNIPPETS;
+  await rig.dictate(speechWav(1));
+  const body = SNIPPETS[0].content;
+  assert.deepStrictEqual(rig.log.delivered, [`hi ${body} and ${body} thanks`]);
+  assert.strictEqual(rig.log.history[0].cleaned, false);
+  assert.strictEqual(calls, 1, "after one failure the rest stay raw");
+  assert.strictEqual(rig.log.notifications.filter((n) => /cleanup failed/.test(n.title)).length, 1);
+});
+
+test("pipeline: {{clipboard}} is read once before delivery and never expanded again (#334)", async () => {
+  const rig = dictationRig({
+    engine: "remote",
+    clipboardText: "copied {{date}} and my address",
+    transcribe: async () => "quote",
+    deliver: async (text) => {
+      rig.log.delivered.push(text);
+      rig.clipboard.text = text; // delivery replaces the clipboard
+      return { method: "paste" };
+    },
+  });
+  rig.cfg.snippets = [{ id: "snp_q", triggers: ["quote"], content: "> {{clipboard}} <" }, ...SNIPPETS];
+  await rig.dictate(speechWav(1));
+  assert.deepStrictEqual(rig.log.delivered, ["> copied {{date}} and my address <"]);
+  assert.strictEqual(rig.clipboard.reads, 1);
+
+  const none = dictationRig({ engine: "remote", transcribe: async () => "hello" });
+  none.cfg.snippets = SNIPPETS;
+  await none.dictate(speechWav(1));
+  assert.strictEqual(none.clipboard.reads, 0, "the clipboard is not touched unless a snippet asks");
+});
+
+test("pipeline: a cancel while snippet words are being cleaned delivers and records nothing (#334)", async () => {
+  let release;
+  const rig = dictationRig({
+    cleanup: true,
+    transcribe: async () => "hello my address",
+    clean: () => new Promise((resolve) => { release = () => resolve("cleaned"); }),
+  });
+  rig.cfg.snippets = SNIPPETS;
+  const done = rig.dictate(speechWav(1));
+  await settle();
+  rig.pipeline.cancel();
+  release();
+  await done;
+  await settle();
+  assert.deepStrictEqual(rig.log.delivered, []);
+  assert.deepStrictEqual(rig.log.history, []);
+});
+
+test("pipeline: a retranscription expands snippets exactly as a dictation does (#334)", async (t) => {
+  const dictated = dictationRig({
+    cleanup: true, userData: audioDir(t), safeStorage: keyringStub(), engine: "remote",
+    transcribe: async () => "please send my address air heart",
+  });
+  dictated.cfg.snippets = SNIPPETS;
+  dictated.cfg.cleanup.aliases = ALIASES;
+  dictated.cfg.recordings = { keep: true, maxAgeDays: 30, maxMegabytes: 1024 };
+  await dictated.dictate(speechWav(1));
+  await settle();
+  const res = await dictated.pipeline.retranscribe(dictated.savedHistory()[0].id);
+  assert.strictEqual(res.ok, true, JSON.stringify(res));
+  assert.strictEqual(res.retry.text, dictated.log.delivered[0]);
+  assert.strictEqual(res.retry.raw, "please send my address air heart");
 });

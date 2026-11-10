@@ -27,7 +27,10 @@ Common tasks are wrapped in a Makefile — run `make help` to list them:
 | `make smoke` | Boot the app headlessly and exit (CI-style sanity check) |
 | `make engine-smoke` | Boot the engine worker, round-trip a ping, and load both native addons |
 | `make overlay-smoke` | Drive the overlay with a fake mic and check capture/UI sync |
+| `make double-tap-check` | Drive a real global shortcut with xdotool key events through the double-tap recognizer (Linux/X11, needs `xdotool`) |
 | `make settings-smoke` | Drive the settings window and check its UI, microphone picker, and live settings sync |
+| `make approval-smoke` | Drive the Tools settings, the approval window and a fixture MCP server end to end |
+| `make command-smoke` | Drive the voice command card and check rendering, Apply/Copy rules, cancellation and sender checks |
 | `make icons` | Regenerate app/tray icons into `assets/` |
 | `make screenshots` | Regenerate README screenshots into `docs/screenshots/` |
 | `make dist` | Build installers for the current platform |
@@ -54,6 +57,12 @@ The first run downloads the Parakeet model (≈ 2.4 GB; pass
 [stt-server/README.md](stt-server/README.md) for options, GPU providers and
 other models.
 
+## Localization
+
+The interface language is a setting separate from the dictation language. Catalogs,
+placeholders, plurals and the review rules for adding a language are in
+[docs/localization.md](docs/localization.md).
+
 ## Tests
 
 ```bash
@@ -61,7 +70,10 @@ npm test                       # unit tests (node --test, 30 s per-test timeout,
 make smoke                     # boots the full app with --smoke-test and exits
 make engine-smoke              # boot the engine worker, round-trip a ping
 make overlay-smoke             # drive the overlay with a fake mic, check capture/UI sync
+make double-tap-check          # real global shortcut via xdotool through the double-tap recognizer (Linux/X11)
 make settings-smoke            # drive the settings window, check the index/scroll-spy contract
+make approval-smoke            # tool servers: settings card, approval window, fixture MCP server
+make command-smoke             # drive the voice command card, check Apply/Copy/cancel rules
 ```
 
 The engine-smoke step forks the in-process engine `utilityProcess` worker and
@@ -76,7 +88,21 @@ scroll, the index's scroll-spy highlight and focus handoff work, the roving
 tabindex is seated at load, a setting saved from the tray reaches an open
 Settings window or wizard without discarding unsaved edits, and a microphone
 chosen while device enumeration is pending survives it and Save writes that
-choice to disk. CI runs all five on every platform.
+choice to disk.
+The settings smoke also drives Commands with real keyboard events: search,
+selection, Escape/Tab focus, singleton opening, safe History text, stale replies,
+selected-card navigation and preservation of unsaved Settings fields. Commands
+uses a dedicated preload role and the pipeline's central start/retry guard;
+see [Commands](docs/command-palette.md) for shortcuts and native acceptance that
+headless tests cannot establish.
+The command-smoke step drives the real voice command card (#344)
+with the session's edges faked and asserts that it never takes focus, renders
+the selection, instruction and result as text, applies only a valid result to
+an unchanged target (otherwise Copy only), drops a late result after Cancel, and
+answers only its own window. The double-tap-check step drives a real global
+shortcut through xdotool and runs on Linux only. CI runs all seven checks
+(everything else on every platform); it cannot prove native selection capture
+or paste, which are checked by hand per OS ([docs/commands.md](docs/commands.md)).
 Built-in models download to Electron's `userData/models` on first use; the
 smoke checks don't need them present.
 
@@ -218,6 +244,17 @@ main/                    Electron main process
   cleanup-styles.js      cleanup style presets (Verbatim / Clean / Polished)
   autostart.js           start-on-login per OS
   hotkeys.js             global shortcut registration (released while a field captures)
+  double-tap.js          double-tap-to-start recognizer for the record hotkey (docs/double-tap.md)
+  i18n.js                effective UI language: tray, notices, window titles (docs/localization.md)
+  text-expansions.js     spoken trigger → saved snippet matcher (docs/snippets.md)
+  formatting-profiles.js destination-aware formatting styles and rules (docs/formatting-profiles.md)
+  context-detector.js    frontmost app / browser host for those rules
+  vocab-learn.js         "Learn from a folder": bounded, symlink-safe term suggestions
+  mic-probe.js           which inputs are Bluetooth/virtual, for automatic mic choice (docs/microphone-selection.md)
+  agent-tasks.js, agent-api.js, agents/   send a reviewed brief to Codex/Claude Code and track it (docs/agent-tasks.md)
+  commands/              voice command mode: session, selection capture, platform edges (docs/commands.md)
+  tools/                 local MCP tool servers: client, policy, approvals, store (docs/tools.md)
+  palette.js             Commands (keyboard search) (docs/command-palette.md)
   setup-notices.js       launch policy + "fix your setup" notices (→ Settings)
   settings.js            JSON settings with deep-merged defaults, atomic 0600 writes
   secret-store.js        remote API keys at rest: safeStorage encryption + status
@@ -275,6 +312,11 @@ renderer/                overlay (mic capture → 16 kHz WAV, live transcript
   aliases.js             Always replace: alias records, deterministic replacement,
                          remember/merge/parse (shared with main and the pipeline)
   permission-status.js   status copy after "Fix auto-paste permission"
+  i18n.js, i18n-client.js, locales/   UI-language catalogs and the window-side translator
+  snippets.js, vocab-packs.js         snippet records and starter vocabulary packs (shared with main)
+  mic-policy.js          automatic microphone choice (Bluetooth/virtual rules)
+  palette.*, command.*, approval.*    the Commands, voice-command and tool-approval windows
+  tools-settings.js      Settings → Advanced → Tools card
   ducking-status.js      "Lower other audio" status line (settings + wizard)
 stt-server/              Python: FastAPI + onnx-asr Parakeet server (optional)
 ```
@@ -416,6 +458,13 @@ Design constraints worth keeping:
   successful save fires `settings.onChanged`, which rebuilds the tray and
   sends `settings:changed` to the open forms; they apply only the fields that
   changed, so unsaved edits survive.
+  Wizard completion first projects only the leaves it edits onto live settings:
+  the record hotkey, output mode/clipboard restoration, STT engine, cleanup
+  enabled/engine/built-in model/style, and microphone/other-audio choices.
+  Settings-only values (including nested siblings, credentials, and future
+  properties) stay live even when the wizard carries an older full snapshot.
+  This projection precedes shared-field reconciliation so an unseen output
+  change still wins; wizard vocabulary comes from live settings too.
 - **Settings on disk are crash-safe and keys are encrypted where that's real.**
   `settings.json` is written to a temp file, fsynced, and renamed over the old
   one (owner-only `0600`); a file that isn't a JSON object is renamed to

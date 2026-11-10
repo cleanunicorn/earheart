@@ -35,7 +35,7 @@ function showStep(index) {
     dot.classList.toggle("active", i === stepIndex)
   );
   // The step-dot row is visual; this is what it says, for keyboard/AT users.
-  $("step-position").textContent = `Step ${stepIndex + 1} of ${steps.length}`;
+  $("step-position").textContent = i18n.t("rt.stepPosition", { current: stepIndex + 1, total: steps.length });
   $("back").hidden = stepIndex === 0;
   $("next").textContent =
     stepIndex === 0
@@ -105,7 +105,7 @@ async function loadMicrophones() {
   if (current.audio.deviceId) {
     const saved = document.createElement("option");
     saved.value = current.audio.deviceId;
-    saved.textContent = "Configured microphone";
+    saved.textContent = i18n.t("rt.configuredMicrophone");
     select.appendChild(saved);
     select.value = current.audio.deviceId;
   }
@@ -226,6 +226,10 @@ function collect() {
     audio: {
       ...current.audio,
       deviceId: $("mic-device").value,
+      // Kept in step with Settings → Microphone (#339).
+      micMode: $("mic-auto").checked === true ? "auto" : "manual",
+      micIncludeBluetooth: $("mic-bluetooth").checked !== false,
+      micIncludeVirtual: $("mic-virtual").checked !== false,
       duckOtherAudio: $("duck-other-audio").checked,
       duckLevelPercent: duckLevel(),
     },
@@ -422,7 +426,7 @@ function buildRow(t) {
   const status = document.createElement("span"); head.append(name, status);
   const bar = document.createElement("div"); bar.className = "dl-bar";
   const fill = document.createElement("div"); fill.className = "dl-fill"; bar.append(fill);
-  const retry = document.createElement("button"); retry.className = "ghost"; retry.textContent = "Retry";
+  const retry = document.createElement("button"); retry.className = "ghost"; retry.textContent = i18n.t("rt.retry");
   retry.addEventListener("click", () => {
     if (t.kind === "cleanup") cleanupConsent = t.modelId;
     if (t.kind === "cleanup" && !speechReady()) { t.phase = "idle"; later = false; updateDownloadCopy(); }
@@ -445,7 +449,7 @@ earheart.on("models:done", (p) => { const t = transfers.get(p.kind + ":" + p.mod
 $("download-later").addEventListener("click", () => {
   later = true; cleanupConsent = null;
   for (const n of neededModels()) { const t = transfer(n.kind, n.modelId); if (t.phase === "ready") continue; cancelOwned(t); t.phase = "skipped"; }
-  $("dl-announce").textContent = "Downloads skipped. Speech is required for dictation; cleanup is optional. Download later in Settings.";
+  $("dl-announce").textContent = i18n.t("rt.downloadsSkippedSpeechIsRequired");
   updateDownloadCopy();
 });
 
@@ -462,6 +466,11 @@ function applySettingsChange({ previous, current: saved }) {
   if (Array.isArray(saved.aliases)) {
     current.cleanup.aliases = saved.aliases.map((r) => ({ term: r.term, heard: [...r.heard] }));
     baseline.aliases = saved.aliases.map((r) => ({ term: r.term, heard: [...r.heard] }));
+  }
+  if (Array.isArray(saved.snippets)) {
+    // The wizard never edits snippets: it carries the saved list unchanged.
+    current.snippets = saved.snippets.map((r) => ({ id: r.id, triggers: [...r.triggers], content: r.content }));
+    baseline.snippets = saved.snippets.map((r) => ({ id: r.id, triggers: [...r.triggers], content: r.content }));
   }
   current.overlay = saved.overlay;
   current.customModels = saved.customModels;
@@ -481,7 +490,7 @@ function applySettingsChange({ previous, current: saved }) {
     renderSummary();
     if (shownBefore !== displayedOutputMode(saved.output)) {
       // Say why the choice just changed under the user.
-      $("sync-announce").textContent = "Output mode changed from the tray menu.";
+      $("sync-announce").textContent = i18n.t("rt.outputModeChangedFromThe");
     }
   }
 }
@@ -517,13 +526,13 @@ async function finishSetup() {
 
 async function finish() {
   const status = $("finish-status");
-  status.textContent = "Saving…";
+  status.textContent = i18n.t("rt.saving");
   status.className = "status";
   let result;
   try {
     result = await earheart.invoke("wizard:complete", { settings: collect(), baseline });
   } catch (err) {
-    status.textContent = `Could not save: ${err.message}`;
+    status.textContent = i18n.t("rt.couldNotSaveMessage", { message: err.message });
     status.className = "status err";
     return;
   }
@@ -540,7 +549,7 @@ async function finish() {
     status.textContent = "";
     showStep(steps.findIndex((s) => s.id === "step-hotkey"));
     const hotkeyStatus = $("hotkey-status");
-    hotkeyStatus.textContent = `${result.hotkey.error} — choose a different combination, then finish setup again.`;
+    hotkeyStatus.textContent = i18n.t("rt.errorChooseADifferentCombination", { error: result.hotkey.error });
     hotkeyStatus.className = "status err";
   }
   // On success the main process opens Settings and closes this window.
@@ -561,6 +570,9 @@ async function finish() {
   $("cleanup-enabled").checked = current.cleanup.enabled;
   // An earlier choice stands when setup is run again (#365).
   $("duck-other-audio").checked = current.audio.duckOtherAudio === true;
+  $("mic-auto").checked = current.audio.micMode === "auto";
+  $("mic-bluetooth").checked = current.audio.micIncludeBluetooth !== false;
+  $("mic-virtual").checked = current.audio.micIncludeVirtual !== false;
   $("duck-level").value = current.audio.duckLevelPercent ?? defaults.audio.duckLevelPercent;
   document.querySelector(
     `input[name="output-mode"][value="${displayedOutputMode(current.output)}"]`

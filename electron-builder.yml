@@ -77,7 +77,8 @@ mac:
     # of showing the "Earheart wants to control System Events" prompt.
     NSAppleEventsUsageDescription: >-
       Earheart presses Cmd+V in the app you are working in to paste what you
-      dictated.
+      dictated, and reads the website name (never the page) of your browser's
+      front tab to pick the matching formatting rule.
 
 # electron-builder notarizes and staples the .app only. Sign the dmg too, so
 # release.yml can notarize and staple it after the build. Stapling rewrites

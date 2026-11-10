@@ -258,10 +258,52 @@ function applyAll(next) {
   const wasSuspended = suspended;
   suspend(false);
   try {
-    return applyWithCorrection(next);
+    return applyWithPalette(next);
   } finally {
     if (wasSuspended) suspend(true);
   }
+}
+
+// The optional palette slot shares capture, resume and shutdown with all
+// registered slots. Reserve configured discard even while it is unarmed.
+// Transfers involving this slot require clearing the old binding first; this
+// keeps a rejected convenience shortcut from changing any dictation binding.
+function sameAccelerator(a, b) {
+  if (typeof a !== "string" || typeof b !== "string" || !a || !b) return false;
+  // Match aliases, modifier order and case before an idle discard key is
+  // actually registered; the OS cannot detect that configured-only collision.
+  const key = value => prettyHotkey(value).toLowerCase().split("+").sort().join("+");
+  return key(a) === key(b);
+}
+
+function applyWithPalette(next) {
+  if (next.palette === undefined && next.onPalette === undefined) return applyWithCorrection(next);
+  const before = { ...dictationAccelerators(), correct: registered.get("correct")?.accelerator || "" };
+  const held = registered.get("palette")?.accelerator || "";
+  const desired = next.palette || "";
+  const adjusted = { ...next };
+  const charged = {};
+  for (const name of Object.keys(before)) {
+    if (sameAccelerator(held, next[name])) {
+      adjusted[name] = before[name];
+      charged[name] = { ok: false, error: usedBy("palette", held) };
+    }
+  }
+  const blocker = Object.keys(before).find(name => desired && (sameAccelerator(before[name], desired) || sameAccelerator(next[name], desired)));
+  let result;
+  if (blocker) result = { ok: false, error: usedBy(blocker, desired) };
+  else if (desired === held || sameAccelerator(desired, held)) result = desired ? { ok: true } : { ok: true, empty: true };
+  else {
+    const attempt = desired ? attemptRegister(desired, next.onPalette) : { ok: true };
+    if (!attempt.ok) result = { ok: false, error: registrationFailure(desired, attempt) };
+    else {
+      if (held) globalShortcut.unregister(held);
+      if (desired) registered.set("palette", { accelerator: desired, onTrigger: next.onPalette });
+      else registered.delete("palette");
+      result = desired ? { ok: true } : { ok: true, empty: true };
+    }
+  }
+  return { ...applyWithCorrection(adjusted), ...charged, palette: result };
 }
 
 // The correction shortcut is always available, unlike the live-only discard
@@ -552,6 +594,57 @@ function armDiscard(live) {
   }
 }
 
+// The optional Enter-to-stop grab (#338). Held only while the caller says a
+// take is capturing and the preference is on, and released before the stop is
+// requested: the OS consumes the key (RegisterHotKey / Carbon / XGrabKey), so
+// Enter never reaches the destination app, and a held key cannot repeat into
+// a second stop. Nothing is synthesized.
+const enter = { want: false, onTrigger: null, armed: false };
+
+function isEnterKey(accelerator) {
+  return /^(Enter|Return)$/i.test(accelerator || "");
+}
+
+// Whether the user's own hotkeys already use plain Enter.
+function enterTaken() {
+  return [...registered.values(), discard].some((entry) => isEnterKey(entry.accelerator));
+}
+
+function releaseEnter() {
+  if (enter.armed) globalShortcut.unregister("Enter");
+  enter.armed = false;
+}
+
+/**
+ * Hold plain Enter globally (true) or release it (false). Idempotent. A
+ * failure (Wayland, another app holding Enter) is logged, not thrown: the
+ * toggle hotkey, the overlay and the tray still stop the take.
+ *
+ * @param {boolean} want
+ * @param {() => void} [onTrigger] called once per grab, after the grab is released
+ * @returns {boolean} whether Enter is held now
+ */
+function armEnter(want, onTrigger) {
+  enter.want = want;
+  if (onTrigger) enter.onTrigger = onTrigger;
+  if (suspended) return false;
+  if (want && !enter.armed) {
+    if (enterTaken()) {
+      logger.warn("enter-to-stop: skipped, Enter is already a configured hotkey");
+      return false;
+    }
+    const attempt = attemptRegister("Enter", () => {
+      releaseEnter();
+      enter.onTrigger?.();
+    });
+    if (attempt.ok) enter.armed = true;
+    else logger.warn(`enter-to-stop: ${registrationFailure("Enter", attempt)}`);
+  } else if (!want) {
+    releaseEnter();
+  }
+  return enter.armed;
+}
+
 // While Settings or the wizard captures a new combination, the global
 // shortcuts must not hold the keys: the OS would swallow the press — the
 // field never sees it, and the record hotkey starts a dictation instead of
@@ -575,6 +668,7 @@ function suspend(on) {
     for (const entry of registered.values()) globalShortcut.unregister(entry.accelerator);
     if (discard.armed) globalShortcut.unregister(discard.accelerator);
     discard.armed = false;
+    releaseEnter();
     return [];
   }
   const lost = [];
@@ -587,6 +681,7 @@ function suspend(on) {
     }
   }
   armDiscard(discard.live);
+  armEnter(enter.want);
   return lost;
 }
 
@@ -594,6 +689,7 @@ function unregisterAll() {
   globalShortcut.unregisterAll();
   registered.clear();
   discard.armed = false;
+  enter.armed = false;
   suspended = false;
 }
 
@@ -612,6 +708,7 @@ function toHotkeyResults(pair, accelerators) {
   // Only applyAll reports a discard slot; a bare pair result keeps two keys.
   if (pair.discard) results.discardHotkey = pair.discard;
   if (pair.correct) results.correctHotkey = pair.correct;
+  if (pair.palette) results.paletteHotkey = pair.palette;
   if (!accelerators) return results;
   const withAccelerators = {
     hotkey: { ...results.hotkey, accelerator: accelerators.hotkey || "" },
@@ -628,7 +725,8 @@ function toHotkeyResults(pair, accelerators) {
       ...results.correctHotkey, accelerator: accelerators.correctHotkey || "",
     };
   }
+  if (results.paletteHotkey) withAccelerators.paletteHotkey = { ...results.paletteHotkey, accelerator: accelerators.paletteHotkey || "" };
   return withAccelerators;
 }
 
-module.exports = { applyPair, applyAll, armDiscard, suspend, toHotkeyResults, unregisterAll };
+module.exports = { applyPair, applyAll, armDiscard, armEnter, suspend, toHotkeyResults, unregisterAll };

@@ -1,5 +1,5 @@
 // Remote API keys at rest. settings.json holds each remote service's key
-// (`stt.apiKey`, `cleanup.apiKey`); where the OS offers real secret storage,
+// (`stt.apiKey`, `cleanup.apiKey`, `commands.apiKey`); where the OS offers real secret storage,
 // the file holds an Electron safeStorage ciphertext instead (`apiKeyEncrypted`,
 // base64) and the plaintext only ever lives in memory.
 //
@@ -14,7 +14,7 @@
 // that timing and passes `null` before it.
 
 // The settings sections that carry a remote API key.
-const SECRET_SECTIONS = ["stt", "cleanup"];
+const SECRET_SECTIONS = ["stt", "cleanup", "commands"];
 const ENCRYPTED_FIELD = "apiKeyEncrypted";
 
 // Linux backends that are not OS-backed secret storage. "unknown" is what

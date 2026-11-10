@@ -1,16 +1,20 @@
 // Earheart entry point: app lifecycle, single-instance handling, and wiring
 // between the hotkey, tray, windows and the dictation pipeline.
 
-const { app, session, Notification, powerMonitor } = require("electron");
+const path = require("node:path");
+const { app, session, Notification, powerMonitor, ipcMain, dialog, clipboard, safeStorage } = require("electron");
 const settings = require("./settings");
 const history = require("./history");
 const recordings = require("./recordings");
 const windows = require("./windows");
 const wake = require("./wake");
 const appearance = require("./appearance");
+const i18n = require("./i18n");
 const pipeline = require("./pipeline");
+const commands = require("./commands");
 const usage = require("./usage");
 const hotkeys = require("./hotkeys");
+const { createDoubleTap } = require("./double-tap");
 const tray = require("./tray");
 const ipc = require("./ipc");
 const engines = require("./engines");
@@ -18,15 +22,23 @@ const engineChildGone = require("./engines/child-gone");
 const autostart = require("./autostart");
 const updates = require("./updates");
 const ducking = require("./ducking");
+const tools = require("./tools");
+const micProbe = require("./mic-probe");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { createHost, LOADCHECK_TIMEOUT_MS } = require("./engines/host");
 const { bindCustomModels } = require("./engines/catalog");
 const { createNotifier, announceStartup, announcePromptOffer } = require("./setup-notices");
 const { installPermissionHandler } = require("./window-guard");
+const { createAgentApi } = require("./agent-api");
+const { createTaskStore } = require("./agent-tasks");
+const agents = require("./agents");
+const agentCommon = require("./agents/common");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
+let palette = null;
 const startHidden = process.argv.includes("--hidden");
+const startPalette = process.argv.includes("--palette");
 
 // Single instance: a second `earheart --toggle` invocation forwards the
 // toggle to the running app and exits. This is the recommended way to bind a
@@ -39,12 +51,22 @@ if (!gotLock) {
   app.on("second-instance", (event, argv) => {
     if (argv.includes("--toggle")) {
       pipeline.toggle();
+    } else if (argv.includes("--tap")) {
+      // Wayland: bind a system shortcut to `earheart --tap` to get the same
+      // activation as the built-in hotkey, double-tap included. The press is
+      // timestamped on arrival here, so process-spawn time is not in the gap.
+      recordPress();
     } else if (argv.includes("--pause")) {
       pipeline.pauseToggle();
     } else if (argv.includes("--discard")) {
       pipeline.discard();
     } else if (argv.includes("--retry")) {
       pipeline.retryFailedTake();
+    } else if (argv.includes("--palette")) {
+      palette?.open();
+    } else if (argv.includes("--command")) {
+      // A voice command (#344) for desktops where global hotkeys are blocked.
+      commands.begin();
     } else if (argv.includes("--correct-last")) {
       openLastCorrection();
     } else {
@@ -54,13 +76,29 @@ if (!gotLock) {
   main();
 }
 
+// Double-tap activation (main/double-tap.js). Only the record hotkey and
+// `--tap` go through it; the tray and `--toggle` always toggle. Stopping works
+// in either mode, so switching mode mid-dictation never strands a recording.
+const doubleTap = createDoubleTap({
+  getState: () => pipeline.getState(),
+  start: () => pipeline.toggle(),
+  stop: () => pipeline.toggle(),
+  windowMs: () => settings.get().doubleTapWindowMs,
+});
+
+function recordPress() {
+  if (settings.get().activationMode === "double-tap") doubleTap.press();
+  else pipeline.toggle();
+}
+
 // The result of the last applyHotkeys() call — launch, save, or a save's
 // rollback — kept so Settings can show it when it opens (settings:get).
 let lastHotkeyStatus = null;
+let toolsStopped = false;
 
 function openLastCorrection() {
   // A focusable editor must never steal the pending dictation's paste target.
-  if (pipeline.getState() === "idle") windows.openCorrection(history.list()[0]);
+  if (pipeline.isPaletteIdle()) tray.correctLast();
 }
 
 // Register the global hotkeys from settings. The record hotkey is required
@@ -73,8 +111,10 @@ function applyHotkeys(cfg) {
     pause: cfg.pauseHotkey,
     discard: cfg.discardHotkey,
     correct: cfg.correctHotkey,
+    palette: cfg.paletteHotkey,
+    onPalette: () => palette?.open(),
     onCorrect: openLastCorrection,
-    onRecord: () => pipeline.toggle(),
+    onRecord: recordPress,
     onPause: () => pipeline.pauseToggle(),
     onDiscard: () => pipeline.discard(),
   });
@@ -82,11 +122,36 @@ function applyHotkeys(cfg) {
   return lastHotkeyStatus;
 }
 
+// Enter-to-stop (#338): Enter is held only while the preference is on, the
+// state is recording and the microphone is really capturing (so never before
+// it is ready, and released while paused). The grab releases itself before
+// the stop fires.
+let capturing = false;
+let enterSpent = false; // this take's Enter was used; stays released until capture ends
+function syncEnterToStop() {
+  const recording = capturing && pipeline.getState() === "recording";
+  if (!recording) enterSpent = false;
+  const want = !!settings.get().enterToStop && recording && !enterSpent;
+  hotkeys.armEnter(want, () => {
+    enterSpent = true;
+    pipeline.stopFromEnter();
+  });
+}
+
 // Startup notices; clicking one opens Settings (see setup-notices.js).
 const notifier = createNotifier({
   Notification,
   openSettings: () => windows.openSettings(),
   logger,
+});
+
+// Commands guidance must never bring a focusable window forward, including
+// when the notification service is unavailable or a stale notice is clicked.
+const commandsNotifier = createNotifier({
+  Notification,
+  openSettings: () => {},
+  logger,
+  settingsWhenUnsupported: false,
 });
 
 // The new-default-prompt notice opens Settings at the offer. Not news worth a
@@ -97,6 +162,39 @@ const promptNotifier = createNotifier({
   openSettings: () => windows.openSettings({ section: "cleanup" }),
   logger,
   settingsWhenUnsupported: false,
+});
+
+// Send to agents (#345). Nothing here runs until the setting is on and the
+// user uses it: the store, the detection and every process are created lazily.
+const agentApi = createAgentApi({
+  getSettings: () => settings.get(),
+  detectAll: (binaries) => agents.detectAll(binaries),
+  validateProject: agentCommon.validateProject,
+  copyText: (text) => clipboard.writeText(text),
+  pickFolder: async () => {
+    const result = await dialog.showOpenDialog({ title: "Choose the project folder", properties: ["openDirectory"] });
+    return result.canceled ? null : result.filePaths[0];
+  },
+  createStore: ({ getConfig }) =>
+    createTaskStore({
+      file: path.join(app.getPath("userData"), "agent-tasks.json"),
+      adapters: agents.ADAPTERS,
+      resolveBinary: (adapter) => agentCommon.resolveBinary(adapter.binary, getConfig().binaries[adapter.id] || ""),
+      getPermission: () => getConfig().permission,
+      logger,
+      onChange: () => windows.sendToSettings("agent:changed"),
+      onFinished: (task) => {
+        windows.sendToSettings("agent:changed");
+        if (task.status === "cancelled" || !Notification.isSupported()) return;
+        // Names the agent and project only: the brief and its output stay in the app.
+        const note = new Notification({
+          title: `${task.agentLabel} ${task.status === "completed" ? "finished" : "stopped"}`,
+          body: `${path.basename(task.project)} — open Earheart to see the result.`,
+        });
+        note.on("click", () => windows.openSettings({ section: "history" }));
+        note.show();
+      },
+    }),
 });
 
 function main() {
@@ -128,21 +226,51 @@ function main() {
 
     // The palette before the first window, so nothing paints in the wrong one.
     appearance.init();
+    // The UI language, resolved from the saved choice and the OS language
+    // list, before anything app-authored (tray, titles, notices) is shown.
+    i18n.bind({
+      settings,
+      systemLanguages: () => i18n.systemLanguagesOf(app),
+    });
     windows.init();
     pipeline.init({ isDownloading: ipc.isDownloading });
+    commands.init({ pipeline });
     usage.init();
     // The discard hotkey is held only while there is a dictation to discard
     // (recording or processing); idle, the combination is the user's again.
-    pipeline.onStateChange((state) => hotkeys.armDiscard(state !== "idle"));
+    pipeline.onStateChange((state) => {
+      hotkeys.armDiscard(state !== "idle");
+      syncEnterToStop();
+      // A pending first tap or settle check belongs to the state it saw.
+      doubleTap.reset();
+    });
     // Lower other apps' playback while the microphone is capturing (opt-in);
     // settles a lowering a crash left behind first.
     ducking.init();
-    pipeline.onCaptureChange((live) => ducking.setCapturing("dictation", live));
+    // Which inputs are Bluetooth/virtual (#339), cached; never blocks a take.
+    micProbe.init(ipcMain);
+    pipeline.onCaptureChange((live) => {
+      ducking.setCapturing("dictation", live);
+      capturing = live;
+      syncEnterToStop();
+    });
+    // Optional local MCP tool servers (#346). Nothing is started here: servers
+    // run only on an explicit Discover or a call, and no part of the app calls
+    // tools from voice until command mode (#344) uses tools.host.
+    tools.init({
+      ipcMain,
+      app,
+      safeStorage,
+      secretStorageSecure: () => settings.keyStorage().secure,
+      windows,
+      logger,
+    });
     ipc.init({
       onCleanupDownloaded: pipeline.onCleanupDownloaded,
       onHistoryCleared: () => pipeline.clearUndelivered(),
       onHistoryEntryDeleted: (id) => pipeline.clearUndelivered(id),
       retranscribe: (id) => pipeline.retranscribe(id),
+      agentApi,
       applyHotkeys,
       canCorrect: () => pipeline.getState() === "idle",
       canCopy: () => pipeline.getState() !== "processing",
@@ -150,16 +278,21 @@ function main() {
       // saved settings, so the status Settings shows names the failure.
       suspendHotkeys: (on) => {
         if (hotkeys.suspend(on).length) applyHotkeys(settings.get());
+        commands.suspend(on);
       },
+      getCommandCapabilities: commands.capabilities,
       // The tray rebuilds itself on every settings save (main/ipc.js).
-      getHotkeyStatus: () => lastHotkeyStatus,
+      getHotkeyStatus: () => (lastHotkeyStatus ? { ...lastHotkeyStatus, commandsHotkey: commands.getHotkeyStatus() } : lastHotkeyStatus),
       onSettingsChanged: () => {
         pipeline.onSettingsChanged();
+        doubleTap.reset();
         updates.onSettingsChanged();
         // New limits apply at once (#343), and History redraws so a
         // recording they removed (even one playing) leaves the page.
         if (recordings.prune(settings.get()).length) windows.sendToSettings("history:changed", { updated: true });
         ducking.refresh();
+        syncEnterToStop();
+        return { commandsHotkey: commands.applyHotkey(settings.get().commands?.hotkey) };
       },
     });
     // Kept recordings (#343) past their limits, or whose History entry is
@@ -175,6 +308,12 @@ function main() {
       rejoin: windows.rejoinOverlayAfterWake,
     });
     tray.init(app, pipeline);
+    palette = require("./palette").createPalette({ windows, pipeline, history, settings,
+      actions: { notice: body => commandsNotifier.show({ title: "Commands unavailable", body }), lastTranscript: tray.lastTranscript, copyLast: tray.copyLast,
+        correctLast: openLastCorrection, checkUpdates: () => updates.check({ manual: true }), openLog: ipc.openLog } });
+    palette.install(ipcMain);
+    pipeline.setPaletteGuard(palette.dismissForDictation);
+    tray.setOpenCommands(palette.open);
     // macOS: an update leaves auto-paste's permission grants stale; repair
     // them before the first dictation rather than during it.
     if (
@@ -218,6 +357,8 @@ function main() {
       logger.warn(hotkeyResults.discardHotkey.error);
     }
 
+    if (hotkeyResults.paletteHotkey && !hotkeyResults.paletteHotkey.ok) logger.warn(hotkeyResults.paletteHotkey.error);
+
     if (hotkeyResults.correctHotkey && !hotkeyResults.correctHotkey.ok) {
       logger.warn(hotkeyResults.correctHotkey.error);
     }
@@ -238,6 +379,7 @@ function main() {
       openSettings: () => windows.openSettings(),
       notify: notifier.show,
     });
+    if (!isSmokeTest && !firstRun && startPalette) palette.open();
     // A new default cleanup prompt is announced once (setup-notices.js).
     if (!isSmokeTest && !firstRun) {
       announcePromptOffer({
@@ -295,7 +437,15 @@ function main() {
       event.preventDefault();
       return;
     }
+    palette?.close();
     windows.destroyOverlay();
+    // Stop owned tool servers (bounded) and deny pending approvals first.
+    if (!toolsStopped && tools.running() > 0) {
+      event.preventDefault();
+      toolsStopped = true;
+      tools.shutdown(2500).finally(() => app.quit());
+      return;
+    }
     // Put lowered output back before exiting (bounded, best effort; a marker
     // covers the rest on the next launch), then quit again.
     if (ducking.holding()) {
@@ -305,9 +455,12 @@ function main() {
   });
 
   app.on("will-quit", () => {
+    agentApi.shutdown();
     hotkeys.unregisterAll();
+    doubleTap.dispose();
     engines.stop();
     updates.dispose();
     ducking.close();
+    tools.shutdown(0);
   });
 }

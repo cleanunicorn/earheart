@@ -62,6 +62,7 @@
   --section-live: #9cae65; /* lime */
   --section-stt: #48b7c2; /* cyan */
   --section-cleanup: #b49ce1; /* violet */
+  --section-snippets: #e0916a; /* coral */
   --section-history: #d389ba; /* magenta */
   --section-usage: #75b683; /* sage */
   --section-advanced: #c49f4d; /* gold */
@@ -107,6 +108,7 @@
     --section-live: #5d6b2b;
     --section-stt: #14707a;
     --section-cleanup: #6a578f;
+    --section-snippets: #9a4a25;
     --section-history: #854e73;
     --section-usage: #3e6e48;
     --section-advanced: #7b5f1b;

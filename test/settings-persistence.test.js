@@ -525,3 +525,131 @@ test("a saved light or dark appearance survives a restart (#348)", (t) => {
     assert.strictEqual(loadSettings(dir).get().appearance, value, "read back by a fresh load");
   }
 });
+
+// #349: the UI language is a top-level preference, independent of dictation.
+function withSyntheticLocale(t) {
+  const locales = require("../renderer/locales");
+  locales.ro = { "meta.name": "Română" };
+  t.after(() => { delete locales.ro; });
+}
+
+test("uiLanguage defaults to system, keeps a shipped tag and reads anything else as system (#349)", (t) => {
+  withSyntheticLocale(t);
+  assert.strictEqual(loadSettings(makeSettingsDir(t)).get().uiLanguage, "system");
+  for (const [stored, expected] of [["ro", "ro"], ["system", "system"], ["klingon", "system"], ["", "system"], [null, "system"], [5, "system"]]) {
+    const dir = makeSettingsDir(t);
+    fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ uiLanguage: stored }));
+    assert.strictEqual(loadSettings(dir).get().uiLanguage, expected, `stored ${JSON.stringify(stored)}`);
+  }
+});
+
+test("a saved UI language survives a restart and never touches dictation settings (#349)", (t) => {
+  withSyntheticLocale(t);
+  const dir = makeSettingsDir(t);
+  const settings = loadSettings(dir);
+  const before = settings.get();
+  settings.save({ ...before, uiLanguage: "ro" });
+  const after = loadSettings(dir).get();
+  assert.strictEqual(after.uiLanguage, "ro");
+  assert.strictEqual(after.stt.language, before.stt.language);
+  assert.deepStrictEqual(after.stt, before.stt);
+  assert.deepStrictEqual(after.cleanup, before.cleanup);
+});
+
+test("automatic microphone selection defaults to manual and old files load with the new keys (#339)", (t) => {
+  const dir = makeSettingsDir(t);
+  // A settings file from before #339: audio has no mic* keys at all.
+  fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ audio: { deviceId: "usb-1", maxRecordingSeconds: 300 } }));
+  const audio = loadSettings(dir).get().audio;
+  assert.strictEqual(audio.micMode, "manual");
+  assert.strictEqual(audio.micIncludeBluetooth, true);
+  assert.strictEqual(audio.micIncludeVirtual, true);
+  assert.strictEqual(audio.deviceId, "usb-1");
+});
+
+test("switching manual → auto → manual keeps the saved microphone; junk values normalize (#339)", (t) => {
+  const dir = makeSettingsDir(t);
+  const settings = loadSettings(dir);
+  const withAudio = (patch) => ({ ...settings.get(), audio: { ...settings.get().audio, ...patch } });
+  settings.save(withAudio({ deviceId: "usb-1" }));
+  settings.save(withAudio({ micMode: "auto", micIncludeBluetooth: false, micIncludeVirtual: false }));
+  let audio = settings.get().audio;
+  assert.deepStrictEqual([audio.micMode, audio.micIncludeBluetooth, audio.micIncludeVirtual, audio.deviceId], ["auto", false, false, "usb-1"]);
+  settings.save(withAudio({ micMode: "manual" }));
+  assert.strictEqual(settings.get().audio.deviceId, "usb-1");
+  // The file on disk round-trips through a fresh load.
+  settings.save(withAudio({ micMode: "auto" }));
+  audio = loadSettings(dir).get().audio;
+  assert.deepStrictEqual([audio.micMode, audio.micIncludeBluetooth, audio.deviceId], ["auto", false, "usb-1"]);
+  // A hand-edited file with nonsense falls back to the defaults.
+  fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ audio: { micMode: "robot", micIncludeBluetooth: "no", micIncludeVirtual: 3 } }));
+  audio = loadSettings(dir).get().audio;
+  assert.deepStrictEqual([audio.micMode, audio.micIncludeBluetooth, audio.micIncludeVirtual], ["manual", true, true]);
+});
+
+test("activation settings default to toggle and are normalised on load and save", (t) => {
+  const dir = makeSettingsDir(t);
+  const settings = loadSettings(dir);
+  assert.strictEqual(DEFAULTS.activationMode, "toggle");
+  assert.strictEqual(DEFAULTS.doubleTapWindowMs, 500);
+  fs.writeFileSync(
+    path.join(dir, "settings.json"),
+    JSON.stringify({ activationMode: "bogus", doubleTapWindowMs: 5 })
+  );
+  const loaded = settings.get();
+  assert.strictEqual(loaded.activationMode, "toggle");
+  assert.strictEqual(loaded.doubleTapWindowMs, 250);
+  const saved = settings.save({ ...loaded, activationMode: "double-tap", doubleTapWindowMs: 99999 });
+  assert.strictEqual(saved.activationMode, "double-tap");
+  assert.strictEqual(saved.doubleTapWindowMs, 1000);
+});
+
+test("formatting rules (#336): an older file gets the default, bad rules are dropped on load and save", (t) => {
+  const dir = makeSettingsDir(t);
+  const file = path.join(dir, "settings.json");
+  fs.writeFileSync(file, JSON.stringify({ hotkey: "Old" }));
+  assert.deepStrictEqual(loadSettings(dir).get().formatting, { defaultStyle: "standard", rules: [] });
+
+  fs.writeFileSync(file, JSON.stringify({
+    formatting: {
+      defaultStyle: "chat",
+      rules: [
+        { id: "a", scope: { type: "host", value: "https://www.GitHub.com/x" }, style: "code-safe" },
+        { id: "b", scope: { type: "host", value: "github.com" }, style: "email" },
+        { id: "c", scope: { type: "host", value: "*.evil.com" }, style: "email" },
+        "junk",
+      ],
+    },
+  }));
+  const settings = loadSettings(dir);
+  assert.deepStrictEqual(settings.get().formatting, {
+    defaultStyle: "chat",
+    rules: [{ id: "a", scope: { type: "host", value: "github.com" }, style: "code-safe" }],
+  });
+  settings.save({ ...settings.get(), formatting: { defaultStyle: "nope", rules: new Array(500).fill(null) } });
+  assert.deepStrictEqual(settings.get().formatting, { defaultStyle: "standard", rules: [] });
+});
+
+// #334: snippets are a top-level key. Files from before it load with none; a
+// hand-edited list is made valid deterministically and survives save/restart.
+test("snippets default to none, normalize on load and survive a save and restart", (t) => {
+  const dir = makeSettingsDir(t);
+  fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ cleanup: { dictionary: ["x"] } }));
+  assert.deepStrictEqual(loadSettings(dir).get().snippets, []);
+
+  warnings.length = 0;
+  fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({
+    snippets: [
+      { id: "snp_a", triggers: ["My Address", "home"], content: "1 Main St\r\nTown\n" },
+      { id: "snp_b", triggers: ["my  address"], content: "dup trigger" },
+      { id: "snp_c", triggers: ["x"], content: "" },
+    ],
+  }));
+  const settings = loadSettings(dir);
+  const expected = [{ id: "snp_a", triggers: ["My Address", "home"], content: "1 Main St\nTown\n" }];
+  assert.deepStrictEqual(settings.get().snippets, expected);
+  assert.ok(warnings.some((w) => /dropped a saved snippet/.test(w)), warnings.join("\n"));
+  settings.save(settings.get());
+  assert.deepStrictEqual(readFile(dir).snippets, expected);
+  assert.deepStrictEqual(loadSettings(dir).get().snippets, expected);
+});

@@ -6,7 +6,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; media-src blob:"
     />
-    <title>Earheart</title>
+    <title data-i18n="window.settings.title">Earheart</title>
     <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="settings.css" />
   </head>
@@ -15,40 +15,46 @@
     <header>
       <img src="../assets/icon.png" alt="" width="34" height="34" />
       <div>
-        <h1>Earheart</h1>
-        <p>Press the hotkey, speak, press it again — your words appear where you type.</p>
+        <h1 data-i18n="settings.earheart">Earheart</h1>
+        <p data-i18n="settings.pressTheHotkeySpeakPress">Press the hotkey, speak, press it again — your words appear where you type.</p>
       </div>
+      <p id="commands-status" class="status" role="status"></p>
+      <button id="commands" class="ghost">Commands… <span id="commands-shortcut"></span></button>
     </header>
 
     <div class="deck">
-      <nav id="tabs" aria-label="Settings sections">
+      <nav id="tabs" aria-label="Settings sections" data-i18n-attr="aria-label:settings.tabsAriaLabel">
         <button class="tab active" id="tabbtn-general" data-tab="general" aria-current="true">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/></svg>
-          <span class="tab-label">General</span>
+          <span class="tab-label" data-i18n="settings.general">General</span>
         </button>
         <button class="tab" data-tab="live">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="10" x2="4" y2="14"/><line x1="8" y1="7" x2="8" y2="17"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="16" y1="8" x2="16" y2="16"/><line x1="20" y1="10" x2="20" y2="14"/></svg>
-          <span class="tab-label">Live transcript</span>
+          <span class="tab-label" data-i18n="settings.liveTranscript">Live transcript</span>
         </button>
         <button class="tab" data-tab="stt">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="10" x2="17" y2="10"/><line x1="7" y1="14" x2="13" y2="14"/></svg>
-          <span class="tab-label">Speech-to-text</span>
+          <span class="tab-label" data-i18n="settings.speechtotext">Speech-to-text</span>
         </button>
         <button class="tab" data-tab="cleanup">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6z"/></svg>
-          <span class="tab-label">Cleanup</span>
+          <span class="tab-label" data-i18n="settings.cleanup">Cleanup</span>
+        </button>
+        <button class="tab" data-tab="snippets">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="11" x2="20" y2="11"/><line x1="4" y1="16" x2="14" y2="16"/></svg>
+          <span class="tab-label">Snippets</span>
         </button>
         <button class="tab" data-tab="history">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg>
-          <span class="tab-label">History</span>
+          <span class="tab-label" data-i18n="settings.history">History</span>
         </button>
         <button class="tab" data-tab="usage">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><path d="M7 16v-4"/><path d="M12 16V5"/><path d="M17 16V9"/></svg>
-          <span class="tab-label">Usage</span>
+          <span class="tab-label" data-i18n="settings.usage">Usage</span>
         </button>
         <button class="tab" data-tab="advanced">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="14" cy="6" r="2.2" fill="currentColor" stroke="none"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="8" cy="12" r="2.2" fill="currentColor" stroke="none"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="16" cy="18" r="2.2" fill="currentColor" stroke="none"/></svg>
-          <span class="tab-label">Advanced</span>
+          <span class="tab-label" data-i18n="settings.advanced">Advanced</span>
         </button>
       </nav>
 
@@ -58,7 +64,7 @@
           <strong id="wizard-banner-title">You're set.</strong> <span id="wizard-saved-message"></span>
           <span id="wizard-cleanup-progress" class="hint"></span>
         </span>
-        <button id="wizard-banner-dismiss" class="ghost">Dismiss</button>
+        <button id="wizard-banner-dismiss" class="ghost" data-i18n="settings.wizardBannerDismiss">Dismiss</button>
       </div>
 
       <!-- General -->
@@ -68,12 +74,12 @@
           General
         </h2>
         <div class="card">
-          <div class="card-title">Hotkeys</div>
+          <div class="card-title" data-i18n="settings.hotkeys">Hotkeys</div>
           <div class="field">
-            <label for="hotkey">Global hotkey</label>
+            <label for="hotkey" data-i18n="settings.globalHotkey">Global hotkey</label>
             <div class="row">
-              <input id="hotkey" readonly placeholder="Click, then press a key combination" />
-              <button id="hotkey-clear" class="ghost">Reset</button>
+              <input id="hotkey" readonly placeholder="Click, then press a key combination" data-i18n-attr="placeholder:settings.hotkeyPlaceholder" />
+              <button id="hotkey-clear" class="ghost" data-i18n="settings.hotkeyClear">Reset</button>
             </div>
             <p class="hint">
               Press once to start dictating, again to stop and transcribe.
@@ -85,10 +91,35 @@
           </div>
 
           <div class="field">
-            <label for="pause-hotkey">Pause hotkey</label>
+            <label for="activation-mode">Hotkey activation</label>
+            <select id="activation-mode">
+              <option value="toggle">Press once to start</option>
+              <option value="double-tap">Double-tap to start</option>
+            </select>
+            <p class="hint">
+              Double-tap starts hands-free dictation with two quick presses;
+              a single press while dictating stops it at once. A lone tap does
+              nothing. The start is held back about 0.12&nbsp;s to tell a tap
+              from a held key. The tray and <code>earheart --toggle</code>
+              always toggle. On Wayland, bind a system shortcut to
+              <code>earheart --tap</code> instead.
+            </p>
+          </div>
+
+          <div class="field" id="double-tap-window-field">
+            <label for="double-tap-window">Double-tap window (ms)</label>
+            <input id="double-tap-window" type="number" min="250" max="1000" step="50" />
+            <p class="hint">
+              Longest gap between the two taps, 250–1000. Raise it if double
+              taps are missed.
+            </p>
+          </div>
+
+          <div class="field">
+            <label for="pause-hotkey" data-i18n="settings.pauseHotkey">Pause hotkey</label>
             <div class="row">
-              <input id="pause-hotkey" readonly placeholder="Not set — click, then press a key combination" />
-              <button id="pause-hotkey-clear" class="ghost">Clear</button>
+              <input id="pause-hotkey" readonly placeholder="Not set — click, then press a key combination" data-i18n-attr="placeholder:settings.pauseHotkeyPlaceholder" />
+              <button id="pause-hotkey-clear" class="ghost" data-i18n="settings.pauseHotkeyClear">Clear</button>
             </div>
             <p class="hint">
               Optional. While dictating, pauses and resumes the take without
@@ -100,10 +131,10 @@
           </div>
 
           <div class="field">
-            <label for="discard-hotkey">Discard hotkey</label>
+            <label for="discard-hotkey" data-i18n="settings.discardHotkey">Discard hotkey</label>
             <div class="row">
-              <input id="discard-hotkey" readonly placeholder="Not set — click, then press a key combination" />
-              <button id="discard-hotkey-clear" class="ghost">Clear</button>
+              <input id="discard-hotkey" readonly placeholder="Not set — click, then press a key combination" data-i18n-attr="placeholder:settings.discardHotkeyPlaceholder" />
+              <button id="discard-hotkey-clear" class="ghost" data-i18n="settings.discardHotkeyClear">Clear</button>
             </div>
             <p class="hint">
               Optional. Throws away the dictation in progress — same as the
@@ -114,83 +145,126 @@
             <p id="discard-hotkey-status" class="status" aria-live="polite"></p>
           </div>
           <div class="field">
-            <label for="correct-hotkey">Correct last transcript hotkey</label>
+            <label for="correct-hotkey" data-i18n="settings.correctLastTranscriptHotkey">Correct last transcript hotkey</label>
             <div class="row">
-              <input id="correct-hotkey" readonly placeholder="Not set — click, then press a key combination" />
-              <button id="correct-hotkey-clear" class="ghost">Clear</button>
+              <input id="correct-hotkey" readonly placeholder="Not set — click, then press a key combination" data-i18n-attr="placeholder:settings.correctHotkeyPlaceholder" />
+              <button id="correct-hotkey-clear" class="ghost" data-i18n="settings.correctHotkeyClear">Clear</button>
             </div>
             <p class="hint">Open your last saved transcript, correct a spelling and remember it. Optional. On Wayland, bind <code>earheart --correct-last</code> in your desktop settings.</p>
             <p id="correct-hotkey-status" class="status" aria-live="polite"></p>
+          </div>
+          <div class="field">
+            <label for="palette-hotkey">Commands hotkey</label>
+            <div class="row">
+              <input id="palette-hotkey" readonly placeholder="Not set — click, then press a key combination" />
+              <button id="palette-hotkey-clear" class="ghost">Clear</button>
+            </div>
+            <p class="hint">Open navigation, common actions and saved dictations. Leave empty to disable the global shortcut. Desktop bindings can run <code>earheart --palette</code>.</p>
+            <p id="palette-hotkey-status" class="status" aria-live="polite"></p>
           </div>
 
         </div>
 
         <div class="card">
-          <div class="card-title">Microphone</div>
+          <div class="card-title" data-i18n="settings.microphone">Microphone</div>
           <div class="field">
-            <label for="mic-device" class="sr-only">Microphone</label>
-            <select id="mic-device">
-              <option value="">System default</option>
+            <label for="mic-mode">How to choose</label>
+            <select id="mic-mode">
+              <option value="manual">Use the microphone below</option>
+              <option value="auto">Choose automatically</option>
             </select>
             <p class="hint">
-              The input dictation records from. System default follows
-              whatever your OS has selected.
+              Automatic picks the system default when it is allowed below,
+              otherwise the first allowed microphone. If none is allowed it
+              uses the system default and says so on the card.
+            </p>
+          </div>
+          <div id="mic-auto-options" hidden>
+            <label class="toggle">
+              <span class="toggle-text">
+                <span class="t">Allow Bluetooth microphones</span>
+                <span class="d">Off keeps a headset out of automatic selection, so it stays on its high-quality playback profile.</span>
+              </span>
+              <input type="checkbox" id="mic-bluetooth" class="switch" role="switch" />
+            </label>
+            <label class="toggle">
+              <span class="toggle-text">
+                <span class="t">Allow virtual microphones</span>
+                <span class="d">Loopbacks and audio-routing devices. A microphone this system can't classify is never hidden by these two options.</span>
+              </span>
+              <input type="checkbox" id="mic-virtual" class="switch" role="switch" />
+            </label>
+            <p id="mic-class-hint" class="hint" aria-live="polite" hidden>
+              This system doesn't report which microphones are Bluetooth or
+              virtual, so these two options may not change anything here.
+            </p>
+            <p id="mic-auto-status" class="hint" aria-live="polite"></p>
+          </div>
+          <div class="field">
+            <label for="mic-device" class="sr-only" data-i18n="settings.microphone2">Microphone</label>
+            <select id="mic-device">
+              <option value="" data-i18n="settings.systemDefault">System default</option>
+            </select>
+            <p class="hint">
+              The input dictation records from when the choice above is the
+              microphone below. System default follows whatever your OS has
+              selected. Your pick stays saved while automatic is on.
             </p>
             <p id="mic-device-status" class="hint" aria-live="polite"></p>
           </div>
           <label class="toggle">
             <span class="toggle-text">
-              <span class="t">Play sounds when recording starts and stops</span>
-              <span class="d">A short tone once the microphone is really capturing — speak after it — another when you stop, and a low one if the microphone fails. The start tone is kept out of the recording.</span>
+              <span class="t" data-i18n="settings.playSoundsWhenRecordingStarts">Play sounds when recording starts and stops</span>
+              <span class="d" data-i18n="settings.aShortToneOnceThe">A short tone once the microphone is really capturing — speak after it — another when you stop, and a low one if the microphone fails. The start tone is kept out of the recording.</span>
             </span>
             <input type="checkbox" id="record-sounds" class="switch" role="switch" />
           </label>
           <div class="field">
-            <label for="record-sound-volume">Sound volume (%)</label>
+            <label for="record-sound-volume" data-i18n="settings.soundVolume">Sound volume (%)</label>
             <div class="row">
               <input id="record-sound-volume" type="number" min="5" max="100" step="5" />
-              <button id="record-sound-test" class="ghost" type="button" aria-label="Play the start and stop sounds">Play</button>
+              <button id="record-sound-test" class="ghost" type="button" aria-label="Play the start and stop sounds" data-i18n="settings.recordSoundTest" data-i18n-attr="aria-label:settings.recordSoundTestAriaLabel">Play</button>
             </div>
           </div>
         </div>
 
         <div class="card" id="background-audio-card">
-          <div class="card-title">Background audio</div>
+          <div class="card-title" data-i18n="settings.backgroundAudio">Background audio</div>
           <label class="toggle">
             <span class="toggle-text">
-              <span class="t">Lower other audio while recording</span>
-              <span class="d">Music, videos and calls get quieter while the microphone is capturing, and come back when you stop, pause or cancel. A volume you change during the take is kept, and muted output stays muted.</span>
+              <span class="t" data-i18n="settings.lowerOtherAudioWhileRecording">Lower other audio while recording</span>
+              <span class="d" data-i18n="settings.musicVideosAndCallsGet">Music, videos and calls get quieter while the microphone is capturing, and come back when you stop, pause or cancel. A volume you change during the take is kept, and muted output stays muted.</span>
             </span>
             <input type="checkbox" id="duck-other-audio" class="switch" role="switch" />
           </label>
           <div class="field">
-            <label for="duck-level">Lowered volume (% of the volume before)</label>
+            <label for="duck-level" data-i18n="settings.loweredVolumeOfTheVolume">Lowered volume (% of the volume before)</label>
             <input id="duck-level" type="number" min="0" max="80" step="5" />
             <p id="duck-status" class="hint" aria-live="polite">Checking this system's volume controls…</p>
           </div>
         </div>
 
         <div class="card">
-          <div class="card-title">Where the text goes</div>
+          <div class="card-title" data-i18n="settings.whereTheTextGoes">Where the text goes</div>
           <div class="field">
             <div class="options">
               <label class="option">
                 <input type="radio" name="output-mode" value="paste" />
                 <svg class="option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/></svg>
-                <span class="option-text">Paste into the active app</span>
+                <span class="option-text" data-i18n="settings.pasteIntoTheActiveApp">Paste into the active app</span>
               </label>
               <label class="option">
                 <input type="radio" name="output-mode" value="paste-copy" />
                 <svg class="option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="11" height="14" rx="2"/><rect x="9" y="2" width="11" height="14" rx="2"/></svg>
-                <span class="option-text">Paste and keep the transcript on the clipboard</span>
+                <span class="option-text" data-i18n="settings.pasteAndKeepTheTranscript">Paste and keep the transcript on the clipboard</span>
               </label>
               <label class="option">
                 <input type="radio" name="output-mode" value="clipboard" />
                 <svg class="option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1z"/><rect x="5" y="6" width="14" height="15" rx="2"/></svg>
-                <span class="option-text">Copy to clipboard only — I'll paste myself</span>
+                <span class="option-text" data-i18n="settings.copyToClipboardOnlyIll">Copy to clipboard only — I'll paste myself</span>
               </label>
             </div>
-            <p class="hint">
+            <p class="hint" data-i18n="settings.pastingInsertsTheTranscriptAt">
               Pasting inserts the transcript at your cursor by briefly using
               the clipboard — plain paste puts your previous clipboard back
               afterwards.
@@ -198,20 +272,20 @@
           </div>
           <label class="toggle">
             <span class="toggle-text">
-              <span class="t">Deliver as one line</span>
-              <span class="d">For agents in a terminal (Claude Code, Codex CLI), where a pasted line break can send the prompt before you're done. Applies to everything Earheart pastes or copies, code blocks included; History keeps the original.</span>
+              <span class="t" data-i18n="settings.deliverAsOneLine">Deliver as one line</span>
+              <span class="d" data-i18n="settings.forAgentsInATerminal">For agents in a terminal (Claude Code, Codex CLI), where a pasted line break can send the prompt before you're done. Applies to everything Earheart pastes or copies, code blocks included; History keeps the original.</span>
             </span>
             <input type="checkbox" id="output-single-line" class="switch" role="switch" />
           </label>
         </div>
 
         <div class="card" id="accessibility-field" hidden>
-          <div class="card-title">Auto-paste permission</div>
+          <div class="card-title" data-i18n="settings.autopastePermission">Auto-paste permission</div>
           <div class="row">
             <button id="accessibility-fix" class="ghost">Fix auto-paste permission…</button>
             <span id="accessibility-status" class="status" aria-live="polite"></span>
           </div>
-          <p class="hint">
+          <p class="hint" data-i18n="settings.autopasteTypesIntoTheFocused">
             Auto-paste types into the focused app, which macOS allows only with two
             permissions: Accessibility and Automation (controlling System Events). If
             pasting stopped working — for example, a permission still listed as on but no longer
@@ -223,25 +297,103 @@
         <div class="card">
           <label class="toggle">
             <span class="toggle-text">
-              <span class="t">Start Earheart when I log in</span>
-              <span class="d">Launches in the background (system tray) after you sign in.</span>
+              <span class="t" data-i18n="settings.startEarheartWhenILog">Start Earheart when I log in</span>
+              <span class="d" data-i18n="settings.launchesInTheBackgroundSystem">Launches in the background (system tray) after you sign in.</span>
             </span>
             <input type="checkbox" id="start-on-boot" class="switch" role="switch" />
+          </label>
+          <label class="toggle">
+            <span class="toggle-text">
+              <span class="t">Press Enter to stop and paste</span>
+              <span class="d">While you are recording, Enter finishes the dictation like the hotkey does. Enter is not sent to the app you are typing in, and is captured in every app (including while composing text with an input method) until the take ends. If your system does not allow this, use the hotkey or the overlay to stop.</span>
+            </span>
+            <input type="checkbox" id="enter-to-stop" class="switch" role="switch" />
           </label>
         </div>
 
         <div class="card">
-          <div class="card-title">Appearance</div>
+          <div class="card-title" data-i18n="settings.appearance.title">Appearance</div>
           <div class="field">
-            <label for="appearance" class="sr-only">Appearance</label>
+            <label for="appearance" class="sr-only" data-i18n="settings.appearance.title">Appearance</label>
             <select id="appearance">
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
+              <option value="system" data-i18n="settings.appearance.system">System</option>
+              <option value="light" data-i18n="settings.appearance.light">Light</option>
+              <option value="dark" data-i18n="settings.appearance.dark">Dark</option>
             </select>
-            <p class="hint">
+            <p class="hint" data-i18n="settings.appearance.hint">
               Light or dark for the overlay and every window. System follows your OS.
             </p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" data-i18n="settings.language.title">Language</div>
+          <div class="field">
+            <label for="ui-language" class="sr-only" data-i18n="settings.language.label">Interface language</label>
+            <select id="ui-language">
+              <option value="system" data-i18n="settings.language.system">System default</option>
+              <!-- One option per shipped locale, named in its own language; filled by settings.js -->
+            </select>
+            <p class="hint" data-i18n="settings.language.hint">
+              The language of menus, settings and notifications. It does not change the language you dictate in.
+            </p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Voice commands</div>
+          <p class="hint">
+            A separate mode for writing or rewriting by voice: say what to do, then review the
+            result before it is used. Select text first to rewrite it, or select nothing to write
+            something new. Ordinary dictation is never treated as a command.
+          </p>
+          <div class="field">
+            <label for="commands-hotkey">Voice command hotkey</label>
+            <div class="row">
+              <input id="commands-hotkey" readonly placeholder="Not set — click, then press a key combination" />
+              <button id="commands-hotkey-clear" class="ghost">Clear</button>
+            </div>
+            <p class="hint">Optional. Also in the tray menu. On Wayland, bind <code>earheart --command</code> in your desktop settings.</p>
+            <p id="commands-hotkey-status" class="status" aria-live="polite"></p>
+          </div>
+          <div class="field">
+            <label for="commands-engine">Writing model</label>
+            <select id="commands-engine">
+              <option value="builtin">On this computer (uses the Cleanup model)</option>
+              <option value="remote">A remote service I name here</option>
+            </select>
+            <p id="commands-engine-hint" class="hint"></p>
+          </div>
+          <div id="commands-remote" hidden>
+            <p class="hint">
+              <strong>Your selected text and what you say are sent to this service.</strong>
+              It is never used for anything but voice commands: the Cleanup service is not a fallback.
+              What you say is still transcribed by your Speech-to-text setting.
+            </p>
+            <div class="field">
+              <label for="commands-url">Base URL</label>
+              <input id="commands-url" placeholder="https://api.example.com/v1" />
+            </div>
+            <div class="field">
+              <label for="commands-key">API key <span class="muted">(optional for local servers)</span></label>
+              <input id="commands-key" type="password" autocomplete="off" />
+              <p id="commands-key-storage" class="hint" aria-live="polite"></p>
+            </div>
+            <div class="field">
+              <label for="commands-model">Model</label>
+              <input id="commands-model" placeholder="llama3.2" />
+            </div>
+          </div>
+          <div class="field">
+            <label class="check" for="commands-allow-apply">
+              <input id="commands-allow-apply" type="checkbox" />
+              Let me replace the selection from the result card
+            </label>
+            <p class="hint">
+              Replacing only happens when you press the button, and only if the same window and
+              selection are still there. Otherwise the result is just copied.
+            </p>
+            <p id="commands-capabilities" class="hint"></p>
           </div>
         </div>
       </section>
@@ -255,8 +407,8 @@
         <div class="card">
           <label class="toggle">
             <span class="toggle-text">
-              <span class="t">Show a live transcript while you speak</span>
-              <span class="d">
+              <span class="t" data-i18n="settings.showALiveTranscriptWhile">Show a live transcript while you speak</span>
+              <span class="d" data-i18n="settings.fillsInTheOverlayAs">
                 Fills in the overlay as you talk, with a cleaned version settling in on
                 pauses. Adds some CPU load while recording. Turned off, built-in
                 speech-to-text still decodes as you talk, so the final transcript is ready sooner.
@@ -274,7 +426,7 @@
           Speech-to-text
         </h2>
         <div class="card">
-          <div class="card-title">Transcription engine</div>
+          <div class="card-title" data-i18n="settings.transcriptionEngine">Transcription engine</div>
           <div class="field">
             <div class="segmented">
               <label>
@@ -286,7 +438,7 @@
                 OpenAI-compatible
               </label>
             </div>
-            <p class="hint">
+            <p class="hint" data-i18n="settings.builtinRunsNvidiaParakeetPrivately">
               Built-in runs NVIDIA Parakeet privately, with nothing to install.
               OpenAI-compatible points at a local server, OpenAI, Groq, and the like.
             </p>
@@ -309,23 +461,23 @@
 
           <div id="stt-builtin-fields">
             <div class="field">
-              <label for="stt-builtin-model">Model</label>
+              <label for="stt-builtin-model" data-i18n="settings.model">Model</label>
               <select id="stt-builtin-model"></select>
             </div>
             <div id="stt-model-manage" class="model-manage"></div>
 
             <div class="field">
-              <label for="stt-hf-url">Add a model from Hugging Face</label>
+              <label for="stt-hf-url" data-i18n="settings.addAModelFromHugging">Add a model from Hugging Face</label>
               <input id="stt-hf-url"
-                placeholder="csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2" />
+                placeholder="csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2" data-i18n-attr="placeholder:settings.sttHfUrlPlaceholder" />
               <div class="row">
-                <button id="stt-hf-find" class="ghost" type="button">Find versions</button>
-                <button id="stt-hf-browse" class="ghost" type="button">Browse Hugging Face</button>
+                <button id="stt-hf-find" class="ghost" type="button" data-i18n="settings.sttHfFind">Find versions</button>
+                <button id="stt-hf-browse" class="ghost" type="button" data-i18n="settings.sttHfBrowse">Browse Hugging Face</button>
                 <span id="stt-hf-result" class="status" aria-live="polite"></span>
               </div>
               <div class="row" id="stt-hf-pick" hidden>
-                <select id="stt-hf-variant" aria-label="Model version"></select>
-                <button id="stt-hf-add" type="button">Add</button>
+                <select id="stt-hf-variant" aria-label="Model version" data-i18n-attr="aria-label:settings.sttHfVariantAriaLabel"></select>
+                <button id="stt-hf-add" type="button" data-i18n="settings.sttHfAdd">Add</button>
               </div>
               <p class="hint">
                 Paste a Hugging Face URL or owner/model of a sherpa-onnx transducer
@@ -342,32 +494,32 @@
 
           <div id="stt-external-fields">
             <div class="field">
-              <label for="stt-url">Base URL</label>
-              <input id="stt-url" placeholder="http://127.0.0.1:8484/v1" />
+              <label for="stt-url" data-i18n="settings.baseUrl">Base URL</label>
+              <input id="stt-url" placeholder="http://127.0.0.1:8484/v1" data-i18n-attr="placeholder:settings.sttUrlPlaceholder" />
               <p class="hint">The app calls <code>{base URL}/audio/transcriptions</code>.</p>
             </div>
             <div class="field">
-              <label for="stt-key">API key <span class="muted">(optional for local servers)</span></label>
+              <label for="stt-key">API key <span class="muted" data-i18n="settings.optionalForLocalServers">(optional for local servers)</span></label>
               <input id="stt-key" type="password" autocomplete="off" />
               <p id="stt-key-storage" class="hint" aria-live="polite"></p>
             </div>
             <div class="grid-2">
               <div class="field">
-                <label for="stt-model">Model</label>
-                <input id="stt-model" placeholder="parakeet" list="stt-model-list" />
+                <label for="stt-model" data-i18n="settings.model2">Model</label>
+                <input id="stt-model" placeholder="parakeet" list="stt-model-list" data-i18n-attr="placeholder:settings.sttModelPlaceholder" />
                 <datalist id="stt-model-list"></datalist>
               </div>
               <div class="field">
-                <label for="stt-language">Language <span class="muted">(optional, e.g. en)</span></label>
-                <input id="stt-language" placeholder="auto" />
+                <label for="stt-language">Language <span class="muted" data-i18n="settings.optionalEgEn">(optional, e.g. en)</span></label>
+                <input id="stt-language" placeholder="auto" data-i18n-attr="placeholder:settings.sttLanguagePlaceholder" />
               </div>
             </div>
             <div class="row">
-              <button id="stt-fetch-models" class="ghost" type="button">Fetch models</button>
+              <button id="stt-fetch-models" class="ghost" type="button" data-i18n="settings.sttFetchModels">Fetch models</button>
               <span id="stt-fetch-result" class="status" aria-live="polite"></span>
             </div>
             <div class="row">
-              <button id="stt-test">Test connection</button>
+              <button id="stt-test" data-i18n="settings.sttTest">Test connection</button>
               <span id="stt-test-result" class="status" aria-live="polite"></span>
             </div>
           </div>
@@ -383,8 +535,8 @@
         <div class="card">
           <label class="toggle">
             <span class="toggle-text">
-              <span class="t">Clean up transcripts automatically</span>
-              <span class="d">
+              <span class="t" data-i18n="settings.cleanUpTranscriptsAutomatically">Clean up transcripts automatically</span>
+              <span class="d" data-i18n="settings.afterTranscriptionALanguageModel">
                 After transcription, a language model fixes punctuation and removes filler
                 words and false starts.
               </span>
@@ -394,12 +546,12 @@
         </div>
 
         <div class="card">
-          <div class="card-title">Always replace</div>
+          <div class="card-title" data-i18n="settings.alwaysReplace">Always replace</div>
           <div class="field">
-            <label for="cleanup-aliases">Heard words → spelling <span class="muted">(one term per line)</span></label>
+            <label for="cleanup-aliases">Heard words → spelling <span class="muted" data-i18n="settings.oneTermPerLine">(one term per line)</span></label>
             <textarea id="cleanup-aliases" rows="4" spellcheck="false" aria-describedby="cleanup-aliases-hint"
               placeholder="air heart, ear heart -> Earheart&#10;cooper netties -> Kubernetes"></textarea>
-            <p id="cleanup-aliases-hint" class="hint">
+            <p id="cleanup-aliases-hint" class="hint" data-i18n="settings.cleanupAliasesHint">
               Exact replacements for words the speech engine keeps mishearing,
               applied to every dictation even with cleanup off. Whole words
               only, any capitalization; code in backticks, paths and URLs are
@@ -410,7 +562,7 @@
 
         <div id="cleanup-fields">
           <div class="card">
-            <div class="card-title">Cleanup engine</div>
+            <div class="card-title" data-i18n="settings.cleanupEngine">Cleanup engine</div>
             <div class="field">
               <div class="segmented">
                 <label>
@@ -422,7 +574,7 @@
                   OpenAI-compatible
                 </label>
               </div>
-              <p class="hint">
+              <p class="hint" data-i18n="settings.builtinRunsAModelOn">
                 Built-in runs a model on this computer, with nothing to install.
                 OpenAI-compatible points at Ollama, LM Studio, OpenAI, and the like.
               </p>
@@ -445,25 +597,25 @@
 
             <div id="cleanup-builtin-fields">
               <div class="field">
-                <label for="cleanup-builtin-model">Model</label>
+                <label for="cleanup-builtin-model" data-i18n="settings.model3">Model</label>
                 <select id="cleanup-builtin-model"></select>
               </div>
               <div id="cleanup-model-manage" class="model-manage"></div>
 
               <div class="field" id="cleanup-custom">
-                <label for="cleanup-hf-url">Add a model from Hugging Face</label>
+                <label for="cleanup-hf-url" data-i18n="settings.addAModelFromHugging2">Add a model from Hugging Face</label>
                 <input id="cleanup-hf-url"
-                  placeholder="unsloth/gemma-3-1b-it-GGUF" />
+                  placeholder="unsloth/gemma-3-1b-it-GGUF" data-i18n-attr="placeholder:settings.cleanupHfUrlPlaceholder" />
                 <div class="row">
-                  <button id="cleanup-hf-find" class="ghost" type="button">Find versions</button>
-                  <button id="cleanup-hf-browse" class="ghost" type="button">Browse Hugging Face</button>
+                  <button id="cleanup-hf-find" class="ghost" type="button" data-i18n="settings.cleanupHfFind">Find versions</button>
+                  <button id="cleanup-hf-browse" class="ghost" type="button" data-i18n="settings.cleanupHfBrowse">Browse Hugging Face</button>
                   <span id="cleanup-hf-result" class="status" aria-live="polite"></span>
                 </div>
                 <div class="row" id="cleanup-hf-pick" hidden>
-                  <select id="cleanup-hf-variant" aria-label="Model version"></select>
-                  <button id="cleanup-hf-add" type="button">Add</button>
+                  <select id="cleanup-hf-variant" aria-label="Model version" data-i18n-attr="aria-label:settings.cleanupHfVariantAriaLabel"></select>
+                  <button id="cleanup-hf-add" type="button" data-i18n="settings.cleanupHfAdd">Add</button>
                 </div>
-                <p class="hint">
+                <p class="hint" data-i18n="settings.pasteAHuggingFaceGguf">
                   Paste a Hugging Face GGUF model URL or owner/model. Earheart lists its
                   versions and downloads the one you pick. Files with a published
                   Hugging Face LFS SHA-256 are verified on download. Browse Hugging Face opens your browser on chat
@@ -474,33 +626,33 @@
 
             <div id="cleanup-external-fields">
               <div class="field">
-                <label for="cleanup-url">Base URL</label>
-                <input id="cleanup-url" placeholder="http://127.0.0.1:11434/v1" />
+                <label for="cleanup-url" data-i18n="settings.baseUrl2">Base URL</label>
+                <input id="cleanup-url" placeholder="http://127.0.0.1:11434/v1" data-i18n-attr="placeholder:settings.cleanupUrlPlaceholder" />
                 <p class="hint">The app calls <code>{base URL}/chat/completions</code>.</p>
               </div>
               <div class="field">
-                <label for="cleanup-key">API key <span class="muted">(optional for local servers)</span></label>
+                <label for="cleanup-key">API key <span class="muted" data-i18n="settings.optionalForLocalServers2">(optional for local servers)</span></label>
                 <input id="cleanup-key" type="password" autocomplete="off" />
                 <p id="cleanup-key-storage" class="hint" aria-live="polite"></p>
               </div>
               <div class="field">
-                <label for="cleanup-model">Model</label>
-                <input id="cleanup-model" placeholder="llama3.2" list="cleanup-model-list" />
+                <label for="cleanup-model" data-i18n="settings.model4">Model</label>
+                <input id="cleanup-model" placeholder="llama3.2" list="cleanup-model-list" data-i18n-attr="placeholder:settings.cleanupModelPlaceholder" />
                 <datalist id="cleanup-model-list"></datalist>
                 <div class="row">
-                  <button id="cleanup-fetch-models" class="ghost" type="button">Fetch models</button>
+                  <button id="cleanup-fetch-models" class="ghost" type="button" data-i18n="settings.cleanupFetchModels">Fetch models</button>
                   <span id="cleanup-fetch-result" class="status" aria-live="polite"></span>
                 </div>
               </div>
               <div class="row" id="cleanup-test-row">
-                <button id="cleanup-test">Test connection</button>
+                <button id="cleanup-test" data-i18n="settings.cleanupTest">Test connection</button>
                 <span id="cleanup-test-result" class="status" aria-live="polite"></span>
               </div>
             </div>
           </div>
 
           <div class="card">
-            <div class="card-title">Cleanup style</div>
+            <div class="card-title" data-i18n="settings.cleanupStyle">Cleanup style</div>
             <div class="field">
               <div class="segmented">
                 <label>
@@ -512,7 +664,7 @@
                   Custom values
                 </label>
               </div>
-              <p class="hint">
+              <p class="hint" data-i18n="settings.presetsPairEditingInstructionsWith">
                 Presets pair editing instructions with matched sampling
                 values. Custom sends only your system prompt, using the raw
                 sampling values below — no preset instructions.
@@ -522,8 +674,8 @@
                 <input id="cleanup-style" type="range" min="0" max="2" step="1"
                   aria-label="Cleanup style preset" />
                 <div class="row space-between" id="cleanup-style-labels">
-                  <span class="muted">Closer to your words</span>
-                  <span class="muted">More polished</span>
+                  <span class="muted" data-i18n="settings.closerToYourWords">Closer to your words</span>
+                  <span class="muted" data-i18n="settings.morePolished">More polished</span>
                 </div>
                 <p class="hint"><strong id="cleanup-style-label"></strong> — <span id="cleanup-style-hint"></span></p>
               </div>
@@ -540,7 +692,7 @@
                   <div class="field">
                     <label for="cleanup-temperature">Temperature <span class="muted">(0–2)</span></label>
                     <input id="cleanup-temperature" type="number" min="0" max="2" step="0.05" />
-                    <p class="hint">
+                    <p class="hint" data-i18n="settings.howMuchRandomnessEachWord">
                       How much randomness each word choice gets. 0 always picks
                       the most likely word; higher values vary the wording
                       more. Cleanup works best low (0–0.4).
@@ -549,24 +701,24 @@
                   <div class="field">
                     <label for="cleanup-top-p">top-p <span class="muted">(0–1)</span></label>
                     <input id="cleanup-top-p" type="number" min="0" max="1" step="0.05" />
-                    <p class="hint">
+                    <p class="hint" data-i18n="settings.samplesOnlyFromTheMost">
                       Samples only from the most likely words whose combined
                       probability reaches this value. 1 = off; lower values cut
                       the long tail of unlikely words.
                     </p>
                   </div>
                   <div class="field">
-                    <label for="cleanup-top-k">top-k <span class="muted">(0 = off)</span></label>
+                    <label for="cleanup-top-k">top-k <span class="muted" data-i18n="settings.0Off">(0 = off)</span></label>
                     <input id="cleanup-top-k" type="number" min="0" max="200" step="1" />
-                    <p class="hint">
+                    <p class="hint" data-i18n="settings.keepsOnlyTheKMost">
                       Keeps only the K most likely words at each step. Lower is
                       stricter — 20–40 is typical; 0 turns it off.
                     </p>
                   </div>
                   <div class="field">
-                    <label for="cleanup-min-p">min-p <span class="muted">(0 = off)</span></label>
+                    <label for="cleanup-min-p">min-p <span class="muted" data-i18n="settings.0Off2">(0 = off)</span></label>
                     <input id="cleanup-min-p" type="number" min="0" max="1" step="0.01" />
-                    <p class="hint">
+                    <p class="hint" data-i18n="settings.dropsWordsLessLikelyThan">
                       Drops words less likely than this fraction of the most
                       likely word's probability. Higher is stricter — 0.05 is a
                       light filter; 0 turns it off.
@@ -581,43 +733,165 @@
           </div>
 
           <div class="card">
-            <div class="card-title">Dictionary</div>
+            <div class="card-title" data-i18n="settings.dictionary">Dictionary</div>
             <div class="field">
-              <label for="cleanup-dictionary">Preferred terms <span class="muted">(one per line)</span></label>
+              <label for="cleanup-dictionary">Preferred terms <span class="muted" data-i18n="settings.onePerLine">(one per line)</span></label>
               <textarea id="cleanup-dictionary" rows="6" spellcheck="false"
-                placeholder="Earheart&#10;sherpa-onnx&#10;Kubernetes"></textarea>
-              <p class="hint">
+                placeholder="Earheart&#10;sherpa-onnx&#10;Kubernetes" data-i18n-attr="placeholder:settings.cleanupDictionaryPlaceholder"></textarea>
+              <p class="hint" data-i18n="settings.namesJargonAndProductTerms">
                 Names, jargon and product terms that often get misheard. When
                 the transcript comes close to one, cleanup corrects it to the
                 exact spelling listed here. Keep the list short and specific —
                 a handful of terms works better than hundreds.
               </p>
+              <p id="vocab-count" class="hint" aria-live="polite"></p>
+            </div>
+            <div class="field">
+              <span class="field-label" id="vocab-packs-label">Starter packs</span>
+              <div id="vocab-packs" role="group" aria-labelledby="vocab-packs-label"></div>
+              <p class="hint">
+                Curated lists for common stacks, added to the cleanup prompt
+                after your own terms. Switching a pack off removes exactly its
+                words; your list above is never changed.
+              </p>
+            </div>
+            <div class="field">
+              <div class="row">
+                <button id="vocab-learn" class="ghost" type="button">Learn from a folder…</button>
+                <span id="vocab-learn-status" class="status" role="status"></span>
+              </div>
+              <div id="vocab-review" role="group" aria-labelledby="vocab-review-title" hidden>
+                <p id="vocab-review-title" class="hint"></p>
+                <div id="vocab-review-list"></div>
+                <div class="row">
+                  <button id="vocab-review-add" class="ghost" type="button">Add selected to the list</button>
+                  <button id="vocab-review-dismiss" class="ghost" type="button">Dismiss</button>
+                </div>
+              </div>
+              <p class="hint">
+                Pick a project folder and Earheart reads its manifest, top-level
+                names and exported symbols (a bounded scan, only when you click
+                this) and suggests the words you are likely to say. Nothing is
+                added until you review it here and press Save.
+              </p>
             </div>
           </div>
 
           <div class="card">
-            <div class="card-title">System prompt</div>
+            <div class="card-title">Formatting by destination</div>
+            <div class="field">
+              <label for="format-default">Default formatting</label>
+              <select id="format-default" aria-describedby="format-hint"></select>
+            </div>
+            <div class="field">
+              <span class="field-label" id="format-rules-label">Rules</span>
+              <div id="format-rules" role="list" aria-labelledby="format-rules-label"></div>
+              <div class="row">
+                <button id="format-add" class="ghost" type="button">Add rule</button>
+              </div>
+              <p id="format-hint" class="hint">
+                Capitalization and punctuation, chosen by where the text goes —
+                separate from how much the cleanup edits. A website rule
+                matches that exact site (<code>github.com</code>, not its
+                subdomains or look-alikes) and beats an application rule
+                (macOS bundle id, e.g. <code>com.apple.Terminal</code>), which
+                beats the default. Website names are read from Safari and
+                Chromium-based browsers on macOS only; elsewhere, or if
+                detection fails, the default is used. It applies when cleanup
+                is on. Only the site name is read, never the page.
+              </p>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title" data-i18n="settings.systemPrompt">System prompt</div>
             <div id="prompt-offer" class="prompt-offer" role="region" aria-labelledby="prompt-offer-title" hidden>
               <p>
-                <strong id="prompt-offer-title">A new default prompt is available.</strong>
+                <strong id="prompt-offer-title" data-i18n="settings.promptOfferTitle">A new default prompt is available.</strong>
                 <span id="prompt-offer-text"></span>
               </p>
-              <pre id="prompt-offer-diff" class="prompt-diff" tabindex="0" aria-label="Changes from your prompt to the new default" hidden></pre>
+              <pre id="prompt-offer-diff" class="prompt-diff" tabindex="0" aria-label="Changes from your prompt to the new default" hidden data-i18n-attr="aria-label:settings.promptOfferDiffAriaLabel"></pre>
               <div class="row">
-                <button id="prompt-offer-use" class="ghost">Use the new prompt</button>
+                <button id="prompt-offer-use" class="ghost" data-i18n="settings.promptOfferUse">Use the new prompt</button>
                 <button id="prompt-offer-keep" class="ghost">Keep mine</button>
               </div>
               <p id="prompt-offer-status" class="hint" role="status"></p>
             </div>
             <div class="field">
-              <textarea id="cleanup-prompt" rows="8" spellcheck="false" aria-label="System prompt"></textarea>
-              <p class="hint">
+              <textarea id="cleanup-prompt" rows="8" spellcheck="false" aria-label="System prompt" data-i18n-attr="aria-label:settings.cleanupPromptAriaLabel"></textarea>
+              <p class="hint" data-i18n="settings.baseInstructionsSentWithEvery">
                 Base instructions sent with every transcript. Preset editing
                 instructions and dictionary terms are appended to this; Custom
                 mode sends it as written.
               </p>
-              <button id="cleanup-prompt-reset" class="ghost">Reset to default</button>
+              <button id="cleanup-prompt-reset" class="ghost" data-i18n="settings.cleanupPromptReset">Reset to default</button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Snippets (#334): spoken trigger -> saved text; renderer/snippets.js -->
+      <section id="tab-snippets" class="panel" aria-labelledby="legend-snippets">
+        <h2 class="legend" tabindex="-1" id="legend-snippets">
+          <svg class="legend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="11" x2="20" y2="11"/><line x1="4" y1="16" x2="14" y2="16"/></svg>
+          Snippets
+        </h2>
+        <div class="card">
+          <div class="card-title">Saved snippets</div>
+          <p class="hint">
+            Say a trigger phrase and Earheart types the saved text instead,
+            exactly as written, with cleanup on or off. Matching ignores
+            capitalization and needs whole words; when two triggers overlap,
+            the longer one wins. A snippet never triggers another. History
+            keeps what you said.
+          </p>
+          <div class="snippet-search">
+            <label for="snippet-search" class="sr-only">Search snippets</label>
+            <input type="search" id="snippet-search" placeholder="Search snippets" maxlength="200" autocomplete="off" spellcheck="false" />
+          </div>
+          <ul id="snippet-list"></ul>
+          <p id="snippet-empty" class="hint" role="status"></p>
+          <div class="row space-between">
+            <span id="snippet-count" class="muted"></span>
+            <button id="snippet-new" class="ghost" type="button">New snippet</button>
+          </div>
+          <p class="hint">
+            Changes to the list are saved with Save at the bottom of this window.
+          </p>
+        </div>
+        <div class="card" id="snippet-editor" hidden>
+          <div class="card-title" id="snippet-editor-title">New snippet</div>
+          <div class="field">
+            <label for="snippet-triggers">When I say <span class="muted">(one phrase per line)</span></label>
+            <textarea id="snippet-triggers" rows="2" spellcheck="false" placeholder="my address&#10;home address"></textarea>
+          </div>
+          <div class="field">
+            <label for="snippet-content">Type this</label>
+            <textarea id="snippet-content" rows="6" spellcheck="false" aria-describedby="snippet-content-hint"></textarea>
+            <div class="snippet-tags row" role="group" aria-label="Insert a tag">
+              <button type="button" class="ghost" data-snippet-tag="clipboard">{{clipboard}}</button>
+              <button type="button" class="ghost" data-snippet-tag="date">{{date}}</button>
+              <button type="button" class="ghost" data-snippet-tag="time">{{time}}</button>
+              <button type="button" class="ghost" data-snippet-tag="timezone">{{timezone}}</button>
+            </div>
+            <p id="snippet-content-hint" class="hint">
+              Tags are filled in when you dictate: the clipboard as it was
+              when you stopped recording, today's date (2026-11-08), the time
+              (14:05) and your time zone. Text a tag inserts is never read for
+              tags again. Anything else in double braces is refused.
+            </p>
+          </div>
+          <div class="field">
+            <span class="label" id="snippet-preview-label">Preview</span>
+            <pre id="snippet-preview" aria-labelledby="snippet-preview-label"></pre>
+          </div>
+          <p id="snippet-error" class="status err" role="alert" hidden></p>
+          <div class="row space-between">
+            <span class="row">
+              <button id="snippet-apply" class="ghost" type="button">Add snippet</button>
+              <button id="snippet-cancel" class="ghost" type="button">Cancel</button>
+            </span>
+            <button id="snippet-delete" class="ghost danger" type="button" hidden>Delete snippet</button>
           </div>
         </div>
       </section>
@@ -631,8 +905,8 @@
         <div class="card">
           <label class="toggle">
             <span class="toggle-text">
-              <span class="t">Keep a local history of transcriptions</span>
-              <span class="d">Stored on this computer only. Never uploaded anywhere.</span>
+              <span class="t" data-i18n="settings.keepALocalHistoryOf">Keep a local history of transcriptions</span>
+              <span class="d" data-i18n="settings.storedOnThisComputerOnly">Stored on this computer only. Never uploaded anywhere.</span>
             </span>
             <input type="checkbox" id="history-enabled" class="switch" role="switch" />
           </label>
@@ -640,42 +914,78 @@
         <div class="card" id="recordings-card">
           <label class="toggle">
             <span class="toggle-text">
-              <span class="t">Keep recordings</span>
-              <span class="d">Saves each dictation's audio, encrypted on this computer, so you can play, export or retranscribe it from History. Needs History on.</span>
+              <span class="t" data-i18n="settings.keepRecordings">Keep recordings</span>
+              <span class="d" data-i18n="settings.savesEachDictationsAudioEncrypted">Saves each dictation's audio, encrypted on this computer, so you can play, export or retranscribe it from History. Needs History on.</span>
             </span>
             <input type="checkbox" id="recordings-keep" class="switch" role="switch" />
           </label>
           <p id="recordings-reason" class="hint" hidden></p>
           <div class="grid-2">
             <div class="field">
-              <label for="recordings-days">Delete recordings after (days)</label>
+              <label for="recordings-days" data-i18n="settings.deleteRecordingsAfterDays">Delete recordings after (days)</label>
               <input id="recordings-days" type="number" min="1" max="365" step="1" />
             </div>
             <div class="field">
-              <label for="recordings-mb">Keep at most (MB)</label>
+              <label for="recordings-mb" data-i18n="settings.keepAtMostMb">Keep at most (MB)</label>
               <input id="recordings-mb" type="number" min="50" max="10240" step="50" />
             </div>
           </div>
           <div class="row space-between recordings-foot">
             <span id="recordings-usage" class="muted"></span>
-            <button id="recordings-clear" class="ghost danger" type="button">Delete all recordings</button>
+            <button id="recordings-clear" class="ghost danger" type="button" data-i18n="settings.recordingsClear">Delete all recordings</button>
           </div>
           <p id="recordings-status" class="status err" role="status" hidden></p>
         </div>
+        <div class="card" id="agents-card">
+          <label class="toggle">
+            <span class="toggle-text">
+              <span class="t">Send transcripts to coding agents</span>
+              <span class="d">Adds a “Send to agent…” button to each History entry, to review a brief and start a task in Codex or Claude Code in a project you pick. Nothing is sent without that review. Save to apply.</span>
+            </span>
+            <input type="checkbox" id="agents-enabled" class="switch" role="switch" />
+          </label>
+          <p class="hint">Your speech is still recognised on this computer, but the brief you send goes to the agent, and the agent’s provider processes it off-device under that agent’s own terms and sign-in. Ordinary dictation is unaffected.</p>
+          <div id="agents-options">
+            <div class="field">
+              <label for="agents-permission">What an agent may do</label>
+              <select id="agents-permission">
+                <option value="edit">Edit files in the project (sandboxed)</option>
+                <option value="read">Read only</option>
+              </select>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="agents-codex-path">Codex path (optional)</label>
+                <input id="agents-codex-path" type="text" placeholder="Found on PATH" autocomplete="off" spellcheck="false" />
+              </div>
+              <div class="field">
+                <label for="agents-claude-path">Claude Code path (optional)</label>
+                <input id="agents-claude-path" type="text" placeholder="Found on PATH" autocomplete="off" spellcheck="false" />
+              </div>
+            </div>
+            <p id="agents-detected" class="hint" role="status"></p>
+          </div>
+        </div>
+        <div id="agent-tasks" hidden>
+          <div class="row space-between history-head">
+            <h3 class="subhead">Agent tasks</h3>
+          </div>
+          <ul id="agent-task-list"></ul>
+        </div>
         <div class="row space-between history-head">
-          <span class="muted">Recent transcriptions</span>
-          <button id="history-clear" class="ghost danger">Clear history</button>
+          <span class="muted" data-i18n="settings.recentTranscriptions">Recent transcriptions</span>
+          <button id="history-clear" class="ghost danger" data-i18n="settings.historyClear">Clear history</button>
         </div>
         <p id="history-clear-status" class="status err" role="alert" hidden></p>
         <div class="history-search">
-          <label for="history-search" class="sr-only">Search transcriptions</label>
-          <input type="search" id="history-search" placeholder="Search transcriptions" maxlength="200" autocomplete="off" spellcheck="false" />
+          <label for="history-search" class="sr-only" data-i18n="settings.searchTranscriptions">Search transcriptions</label>
+          <input type="search" id="history-search" placeholder="Search transcriptions" maxlength="200" autocomplete="off" spellcheck="false" data-i18n-attr="placeholder:settings.historySearchPlaceholder" />
         </div>
         <ul id="history-list"></ul>
         <div class="row space-between history-pager" id="history-pager" hidden>
-          <button id="history-newer" class="ghost" type="button">Newer</button>
+          <button id="history-newer" class="ghost" type="button" data-i18n="settings.historyNewer">Newer</button>
           <span id="history-range" class="muted" aria-live="polite"></span>
-          <button id="history-older" class="ghost" type="button">Older</button>
+          <button id="history-older" class="ghost" type="button" data-i18n="settings.historyOlder">Older</button>
         </div>
       </section>
 
@@ -688,38 +998,38 @@
         <div class="card">
           <label class="toggle">
             <span class="toggle-text">
-              <span class="t">Count my dictations</span>
-              <span class="d">Counts takes, words and speaking time on this computer. Never the words themselves, never uploaded.</span>
+              <span class="t" data-i18n="settings.countMyDictations">Count my dictations</span>
+              <span class="d" data-i18n="settings.countsTakesWordsAndSpeaking">Counts takes, words and speaking time on this computer. Never the words themselves, never uploaded.</span>
             </span>
             <input type="checkbox" id="usage-enabled" class="switch" role="switch" />
           </label>
-          <p id="usage-off-hint" class="hint" hidden>Counting is off. Earlier numbers are kept.</p>
+          <p id="usage-off-hint" class="hint" hidden data-i18n="settings.usageOffHint">Counting is off. Earlier numbers are kept.</p>
         </div>
         <div class="card" id="usage-card" aria-live="polite">
-          <p id="usage-empty" class="muted usage-note" hidden>No dictations counted yet.</p>
+          <p id="usage-empty" class="muted usage-note" hidden data-i18n="settings.usageEmpty">No dictations counted yet.</p>
           <p id="usage-readonly" class="hint usage-note" hidden></p>
           <p id="usage-load-status" class="status err usage-note" role="status" hidden></p>
           <dl class="usage-stats">
-            <div class="usage-stat"><dt>Takes</dt><dd id="usage-takes">—</dd></div>
-            <div class="usage-stat"><dt>Words</dt><dd id="usage-words">—</dd></div>
-            <div class="usage-stat"><dt>Speaking time</dt><dd id="usage-speech">—</dd></div>
-            <div class="usage-stat"><dt>Average speed</dt><dd id="usage-wpm">—</dd></div>
-            <div class="usage-stat"><dt>Streak</dt><dd id="usage-streak">—</dd></div>
-            <div class="usage-stat"><dt>Time saved (estimate)</dt><dd id="usage-saved">—</dd></div>
+            <div class="usage-stat"><dt data-i18n="settings.takes">Takes</dt><dd id="usage-takes">—</dd></div>
+            <div class="usage-stat"><dt data-i18n="settings.words">Words</dt><dd id="usage-words">—</dd></div>
+            <div class="usage-stat"><dt data-i18n="settings.speakingTime">Speaking time</dt><dd id="usage-speech">—</dd></div>
+            <div class="usage-stat"><dt data-i18n="settings.averageSpeed">Average speed</dt><dd id="usage-wpm">—</dd></div>
+            <div class="usage-stat"><dt data-i18n="settings.streak">Streak</dt><dd id="usage-streak">—</dd></div>
+            <div class="usage-stat"><dt data-i18n="settings.timeSavedEstimate">Time saved (estimate)</dt><dd id="usage-saved">—</dd></div>
           </dl>
           <p id="usage-estimate-note" class="hint">Estimate: typing these words at <span id="usage-baseline">40</span> WPM, minus the time you spent speaking them. Not measured.</p>
           <div class="field usage-baseline">
-            <label for="typing-wpm">Your typing speed (WPM)</label>
+            <label for="typing-wpm" data-i18n="settings.yourTypingSpeedWpm">Your typing speed (WPM)</label>
             <input id="typing-wpm" type="number" min="10" max="200" step="1" />
           </div>
         </div>
         <div class="card">
-          <div class="card-title" id="usage-days-title">Last 14 days</div>
+          <div class="card-title" id="usage-days-title" data-i18n="settings.usageDaysTitle">Last 14 days</div>
           <ol id="usage-days" class="usage-days" aria-labelledby="usage-days-title"></ol>
         </div>
         <div class="row space-between usage-foot">
           <span id="usage-since" class="muted"></span>
-          <button id="usage-reset" class="ghost danger" type="button">Reset statistics</button>
+          <button id="usage-reset" class="ghost danger" type="button" data-i18n="settings.usageReset">Reset statistics</button>
         </div>
         <p id="usage-reset-status" class="status err" role="alert" hidden></p>
       </section>
@@ -730,20 +1040,52 @@
           <svg class="legend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="14" cy="6" r="2.2" fill="currentColor" stroke="none"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="8" cy="12" r="2.2" fill="currentColor" stroke="none"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="16" cy="18" r="2.2" fill="currentColor" stroke="none"/></svg>
           Advanced
         </h2>
+        <div class="card" id="tools-card">
+          <div class="card-title">Tools (local MCP servers, experimental)</div>
+          <p class="hint">Run programs you trust as tool servers. Earheart starts one only when you press Discover or a tool is called, never at launch, and asks you before each call unless you set a tool to Allow. Voice commands do not use tool servers yet, so nothing calls these tools from your voice today.</p>
+          <p id="tools-storage" class="hint"></p>
+          <div id="tools-list"></div>
+          <div class="field">
+            <label for="tools-name">Server name</label>
+            <input id="tools-name" type="text" maxlength="60" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="field">
+            <label for="tools-command">Command</label>
+            <input id="tools-command" type="text" autocomplete="off" spellcheck="false" placeholder="node" />
+            <p class="hint">An executable, not a shell line. On Windows use the real .exe (node, python), not npx.cmd.</p>
+          </div>
+          <div class="field">
+            <label for="tools-args">Arguments (one per line)</label>
+            <textarea id="tools-args" rows="3" spellcheck="false"></textarea>
+          </div>
+          <div class="field">
+            <label for="tools-cwd">Working directory (optional, absolute)</label>
+            <input id="tools-cwd" type="text" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="field">
+            <label for="tools-env">Environment (KEY=value per line; start a line with ! to keep its value secret)</label>
+            <textarea id="tools-env" rows="3" spellcheck="false"></textarea>
+          </div>
+          <div class="row">
+            <button id="tools-save" class="ghost" type="button">Add server</button>
+            <button id="tools-cancel-edit" class="ghost" type="button" hidden>Cancel edit</button>
+            <span id="tools-status" class="status" role="status" aria-live="polite"></span>
+          </div>
+        </div>
         <div class="card">
-          <div class="card-title">Performance</div>
+          <div class="card-title" data-i18n="settings.performance">Performance</div>
           <div class="grid-2">
             <div class="field">
-              <label for="max-seconds">Max dictation length (s)</label>
+              <label for="max-seconds" data-i18n="settings.maxDictationLengthS">Max dictation length (s)</label>
               <input id="max-seconds" type="number" min="10" max="3600" step="10" />
             </div>
             <div class="field">
-              <label for="idle-unload">Unload models after idle (min)</label>
+              <label for="idle-unload" data-i18n="settings.unloadModelsAfterIdleMin">Unload models after idle (min)</label>
               <input id="idle-unload" type="number" min="0" max="240" step="1" />
             </div>
           </div>
           <p class="hint">
-            <strong>Max dictation length</strong> — a dictation that reaches the cap stops
+            <strong data-i18n="settings.maxDictationLength">Max dictation length</strong> — a dictation that reaches the cap stops
             and transcribes on its own; nothing is lost. Raising it lets the cleanup model
             hold more of what you say, at the cost of some memory; a dictation longer than
             it can hold is still transcribed and delivered, just as spoken. 10–3600 seconds;
@@ -751,7 +1093,7 @@
             current one.
           </p>
           <p class="hint">
-            <strong>Unload models after idle</strong> — built-in models stay in memory for
+            <strong data-i18n="settings.unloadModelsAfterIdle">Unload models after idle</strong> — built-in models stay in memory for
             fast repeat dictations, then unload after this many idle minutes to free memory
             (~1.5 GB or more); 0 keeps them loaded for the whole session. The next dictation
             reloads them in a few seconds, usually hidden while you're still speaking. Only
@@ -761,36 +1103,36 @@
         </div>
 
         <div class="card">
-          <div class="card-title">Setup wizard</div>
+          <div class="card-title" data-i18n="settings.setupWizard">Setup wizard</div>
           <div class="row">
-            <button id="open-wizard" class="ghost">Run the setup wizard again…</button>
+            <button id="open-wizard" class="ghost" data-i18n="settings.openWizard">Run the setup wizard again…</button>
           </div>
-          <p class="hint">
+          <p class="hint" data-i18n="settings.walksThroughHotkeyMicrophoneSpeechtotext">
             Walks through hotkey, microphone, speech-to-text and cleanup from scratch.
             Nothing changes until you finish the wizard.
           </p>
         </div>
 
         <div class="card">
-          <div class="card-title">Updates</div>
+          <div class="card-title" data-i18n="settings.updates">Updates</div>
           <label class="toggle">
             <span class="toggle-text">
-              <span class="t">Check for updates automatically</span>
-              <span class="d">Looks at GitHub releases on startup and twice a day. Nothing installs without you.</span>
+              <span class="t" data-i18n="settings.checkForUpdatesAutomatically">Check for updates automatically</span>
+              <span class="d" data-i18n="settings.looksAtGithubReleasesOn">Looks at GitHub releases on startup and twice a day. Nothing installs without you.</span>
             </span>
             <input type="checkbox" id="updates-autocheck" class="switch" role="switch" />
           </label>
           <label class="toggle">
             <span class="toggle-text">
-              <span class="t">Tell me when a new version is out</span>
-              <span class="d">A prompt on the dictation bar (between dictations, never during one) plus a system notification. Off: updates only show up here and in the tray.</span>
+              <span class="t" data-i18n="settings.tellMeWhenANew">Tell me when a new version is out</span>
+              <span class="d" data-i18n="settings.aPromptOnTheDictation">A prompt on the dictation bar (between dictations, never during one) plus a system notification. Off: updates only show up here and in the tray.</span>
             </span>
             <input type="checkbox" id="updates-remind" class="switch" role="switch" />
           </label>
           <div class="dl-bar" id="update-bar" hidden><div class="dl-fill" id="update-fill"></div></div>
           <div class="row">
             <button id="update-action" class="ghost">Check for updates</button>
-            <button id="update-skip" class="ghost" hidden>Skip this version</button>
+            <button id="update-skip" class="ghost" hidden data-i18n="settings.updateSkip">Skip this version</button>
           </div>
           <span id="update-status" class="status" aria-live="polite"></span>
           <!-- Everything the update brings, version by version — the full list
@@ -803,16 +1145,16 @@
         </div>
 
         <div class="card">
-          <div class="card-title">About</div>
+          <div class="card-title" data-i18n="settings.about">About</div>
           <p class="hint">
             Earheart <span id="version"></span> — private, hotkey-driven voice dictation.
             Free and open source (MIT).
           </p>
           <div class="row">
-            <button id="open-logs" class="ghost">Open error log</button>
+            <button id="open-logs" class="ghost" data-i18n="settings.openLogs">Open error log</button>
             <span id="open-logs-result" class="status" aria-live="polite"></span>
           </div>
-          <p class="hint">Errors are written here — attach it when reporting a problem.</p>
+          <p class="hint" data-i18n="settings.errorsAreWrittenHereAttach">Errors are written here — attach it when reporting a problem.</p>
         </div>
       </section>
       </main>
@@ -821,21 +1163,28 @@
     <footer>
       <span id="model-dl-announce" class="sr-only" aria-live="polite"></span>
       <span id="save-status" class="status" aria-live="polite"></span>
-      <button id="close">Close</button>
-      <button id="save" class="primary">Save</button>
+      <button id="close" data-i18n="settings.close">Close</button>
+      <button id="save" class="primary" data-i18n="settings.save">Save</button>
     </footer>
 
+    <script src="i18n.js"></script>
+    <script src="locales/en.js"></script>
+    <script src="i18n-client.js"></script>
     <script src="hotkey-capture.js"></script>
     <script src="vocabulary.js"></script>
+    <script src="vocab-packs.js"></script>
     <script src="aliases.js"></script>
+    <script src="snippets.js"></script>
     <script src="prompt-diff.js"></script>
     <script src="settings-sync.js"></script>
     <script src="permission-status.js"></script>
     <script src="model-progress.js"></script>
     <script src="model-save.js"></script>
     <script src="ducking-status.js"></script>
+    <script src="mic-policy.js"></script>
     <script src="record-cues.js"></script>
     <script src="usage-stats.js"></script>
+    <script src="tools-settings.js"></script>
     <script src="settings.js"></script>
   </body>
 </html>

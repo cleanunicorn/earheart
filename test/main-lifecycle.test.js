@@ -9,6 +9,7 @@
 // test sees the actual registration and the actual startup-notice policy, with
 // only Electron's globalShortcut and Notification faked underneath them.
 
+const { EventEmitter } = require("node:events");
 const { test } = require("node:test");
 const assert = require("node:assert");
 const path = require("node:path");
@@ -27,6 +28,7 @@ function makeCfg(overrides = {}) {
   return {
     hotkey: RECORD,
     pauseHotkey: PAUSE,
+    paletteHotkey: "CommandOrControl+Shift+K",
     startOnBoot: false,
     output: { mode: "paste" },
     stt: { engine: "builtin" },
@@ -51,6 +53,7 @@ async function loadMain(
     canCloseCorrection = true,
     pruned = () => [], // ids a kept-recordings prune (#343) removes
     ducking = {},
+    tools = {},
   } = {}
 ) {
   const events = [];
@@ -64,6 +67,8 @@ async function loadMain(
   let captureListener = null;
   const powerHandlers = {};
   let state = pipelineState;
+  let wizardOpen = false;
+  let openCommands;
 
   class FakeNotification {
     static isSupported() {
@@ -100,6 +105,7 @@ async function loadMain(
           },
         },
       },
+      ipcMain: { handle() {} },
       Notification: FakeNotification,
       powerMonitor: {
         on: (event, handler) => {
@@ -127,17 +133,39 @@ async function loadMain(
     "./settings": { isFirstRun: () => firstRun, get: () => cfg, onChanged: () => () => {}, cleanupPromptOffer: () => null },
     "./windows": {
       init: () => events.push("windows.init"),
+      isWizardOpen: () => wizardOpen,
+      createPaletteWindow: () => {
+        events.push("palette.create");
+        const win = new EventEmitter();
+        win.webContents = new EventEmitter();
+        let destroyed = false;
+        win.isDestroyed = () => destroyed;
+        win.destroy = () => { destroyed = true; win.emit("closed"); };
+        win.show = () => events.push("palette.show");
+        win.focus = () => {};
+        return win;
+      },
+      loadPalette: async () => {},
       createOverlay: () => events.push("createOverlay"),
       rejoinOverlayAfterWake: (reason, opts) => events.push(`rejoin:${reason}:${JSON.stringify(opts)}`),
       destroyOverlay: () => events.push("destroyOverlay"),
       openSettings: () => events.push("openSettings"),
       confirmCorrectionClose: () => canCloseCorrection,
       closeCorrection: () => events.push("closeCorrection"),
-      openWizard: () => events.push("openWizard"),
+      openWizard: () => { wizardOpen = true; events.push("openWizard"); },
       openCorrection: (entry) => events.push(`correct:${entry.text}`),
       sendToSettings: (channel, payload) => events.push(`settings:${channel}:${JSON.stringify(payload ?? null)}`),
     },
     "./appearance": { init: () => events.push("appearance.init") },
+    "./commands": {
+      init: () => events.push("commands.init"),
+      begin: () => events.push("commands.begin"),
+      suspend: () => {},
+      applyHotkey: () => ({ ok: true, empty: true }),
+      capabilities: () => ({}),
+      getHotkeyStatus: () => ({ ok: true, empty: true }),
+      isRecording: () => false,
+    },
     "./recordings": {
       startPruning: (getCfg, onPruned) => {
         events.push("recordings.startPruning");
@@ -151,17 +179,22 @@ async function loadMain(
     "./history": { list: () => [{ text: "last transcript" }] },
     "./pipeline": {
       getState: () => state,
+      isPaletteIdle: () => state === "idle",
+      setPaletteGuard() {},
       init: () => events.push("pipeline.init"),
       toggle: () => events.push("pipeline.toggle"),
       pauseToggle: () => events.push("pipeline.pauseToggle"),
       discard: () => events.push("pipeline.discard"),
+      stopFromEnter: () => events.push("pipeline.stopFromEnter"),
       onStateChange: (listener) => { stateListener = listener; },
       onCaptureChange: (listener) => { captureListener = listener; },
       onSettingsChanged: () => {},
       onOverlayRendererGone: () => {},
     },
     "./usage": { init: () => {} },
-    "./tray": { init: () => events.push("tray.init"), refresh: () => {} },
+    "./tray": { init: () => events.push("tray.init"), refresh: () => {}, setOpenCommands: open => { openCommands = open; },
+      correctLast: () => { if (state === "idle") events.push("correct:last transcript"); },
+    },
     "./ipc": {
       init: (opts) => {
         Object.assign(ipcInit, opts);
@@ -173,6 +206,9 @@ async function loadMain(
       stop: () => events.push("engines.stop"),
     },
     "./autostart": { apply: () => events.push("autostart.apply") },
+    // Tool servers (#346): wired in main.js, covered by test/tools-*.test.js.
+    "./tools": { init: () => {}, running: () => 0, shutdown: async () => {}, ...tools },
+    "./mic-probe": { init: () => events.push("micProbe.init") },
     "./ducking": {
       init: () => events.push("ducking.init"),
       setCapturing: (owner, live) => events.push(`ducking.capture:${owner}:${live}`),
@@ -225,11 +261,13 @@ async function loadMain(
     appHandlers,
     shortcuts,
     ipcInit,
+    openCommands: () => openCommands(),
     recordingsHooks,
     notices,
     permissionHandler: () => permissionHandler,
     changeState: (state) => stateListener(state),
     changeCapture: (live) => captureListener(live),
+    cfg,
     powerHandlers,
     setPipelineState: (next) => { state = next; },
   };
@@ -289,6 +327,8 @@ test("a healthy launch registers both hotkeys and announces ready", async () => 
     pauseHotkey: { ok: true, accelerator: PAUSE },
     discardHotkey: { ok: true, empty: true, accelerator: "" },
     correctHotkey: { ok: true, empty: true, accelerator: "" },
+    paletteHotkey: { ok: true, accelerator: "CommandOrControl+Shift+K" },
+    commandsHotkey: { ok: true, empty: true },
   });
 
   // Only the microphone and clipboard writes from app pages are granted.
@@ -430,6 +470,29 @@ test("quitting while other audio is lowered waits for the restore, then quits ag
   assert.strictEqual(prevented, false);
 });
 
+test("quitting with a tool server running stops it (bounded), then quits again", async () => {
+  let running = 1;
+  let finish;
+  const { events, appHandlers } = await loadMain({
+    tools: {
+      running: () => running,
+      shutdown: (ms) => { events.push(`tools.shutdown:${ms}`); return new Promise((resolve) => { finish = resolve; }); },
+    },
+  });
+  events.length = 0;
+  let prevented = false;
+  appHandlers["before-quit"]({ preventDefault: () => { prevented = true; } });
+  assert.strictEqual(prevented, true, "the first quit waits for the servers");
+  assert.deepStrictEqual(events, ["destroyOverlay", "tools.shutdown:2500"]);
+  running = 0;
+  finish();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepStrictEqual(events.slice(-1), ["app.quit"]);
+  prevented = false;
+  appHandlers["before-quit"]({ preventDefault: () => { prevented = true; } });
+  assert.strictEqual(prevented, false, "the second pass lets the quit through");
+});
+
 test("correction hotkey and desktop command open the latest saved transcript only when idle", async () => {
   const key = "CommandOrControl+Alt+C";
   for (const pipelineState of ["idle", "recording", "processing"]) {
@@ -522,3 +585,107 @@ for (const platform of ["linux", "win32"]) {
     assert.deepStrictEqual(Object.keys(powerHandlers), []);
   });
 }
+
+test("palette hotkey, tray and second instance share the singleton and busy gate", async () => {
+  for (const pipelineState of ["idle", "recording", "processing"]) {
+    const rig = await loadMain({ pipelineState });
+    rig.events.length = 0;
+    rig.shortcuts.get("CommandOrControl+Shift+K")();
+    rig.openCommands();
+    rig.appHandlers["second-instance"]({}, ["earheart", "--palette"]);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(rig.events.filter(e => e === "palette.create").length, pipelineState === "idle" ? 1 : 0);
+    assert.equal(rig.events.filter(e => e === "palette.show").length, pipelineState === "idle" ? 1 : 0);
+    assert.ok(!rig.events.includes("pipeline.toggle"));
+  }
+});
+test("cold --palette opens Commands for a returning user; first-run setup wins", async () => {
+  for (const firstRun of [false, true]) {
+    const rig = await loadMain({ argv: ["--palette"], firstRun });
+    assert.equal(rig.events.includes("palette.show"), !firstRun);
+    if (firstRun) {
+      rig.appHandlers["second-instance"]({}, ["earheart", "--palette"]);
+      assert.ok(!rig.events.includes("palette.create"));
+    }
+  }
+});
+
+test("Commands refusal never opens Settings without notification support", async () => {
+  for (const options of [
+    { pipelineState: "recording" },
+    { pipelineState: "processing" },
+    { firstRun: true },
+  ]) {
+    // Keep the real palette and notifier wired by main; disregard startup's
+    // separate setup notices before triggering each Commands entry point.
+    const rig = await loadMain({ ...options, notificationsSupported: false });
+    rig.events.length = 0;
+    rig.shortcuts.get("CommandOrControl+Shift+K")();
+    rig.openCommands();
+    rig.appHandlers["second-instance"]({}, ["earheart", "--palette"]);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepStrictEqual(rig.events, [], JSON.stringify(options));
+  }
+});
+
+test("enter-to-stop holds Enter only for a live capture and stops once (#338)", async () => {
+  const { events, shortcuts, changeState, changeCapture, setPipelineState } = await loadMain({
+    cfg: makeCfg({ enterToStop: true }),
+  });
+  assert.ok(!shortcuts.has("Enter"), "idle: Enter is the user's");
+
+  setPipelineState("recording");
+  changeState("recording");
+  assert.ok(!shortcuts.has("Enter"), "recording but the mic is not live yet (early Enter)");
+
+  changeCapture(true);
+  assert.ok(shortcuts.has("Enter"), "capturing");
+  changeCapture(false);
+  assert.ok(!shortcuts.has("Enter"), "paused: normal Enter");
+  changeCapture(true);
+
+  events.length = 0;
+  shortcuts.get("Enter")();
+  assert.ok(!shortcuts.has("Enter"), "released as the stop is requested");
+  assert.deepStrictEqual(events.filter((e) => e.startsWith("pipeline.stop")), ["pipeline.stopFromEnter"]);
+
+  changeCapture(true); // a settings save or resume must not re-arm a spent take
+  assert.ok(!shortcuts.has("Enter"));
+
+  setPipelineState("idle");
+  changeCapture(false);
+  changeState("idle");
+  setPipelineState("recording");
+  changeState("recording");
+  changeCapture(true);
+  assert.ok(shortcuts.has("Enter"), "the next take gets its own Enter");
+  setPipelineState("idle");
+  changeState("idle");
+  assert.ok(!shortcuts.has("Enter"), "every terminal state releases it");
+});
+
+test("enter-to-stop stays off by default and follows the setting while a take is live (#338)", async () => {
+  const { shortcuts, changeState, changeCapture, setPipelineState, cfg, ipcInit } = await loadMain();
+  setPipelineState("recording");
+  changeState("recording");
+  changeCapture(true);
+  assert.ok(!shortcuts.has("Enter"), "default off");
+
+  cfg.enterToStop = true;
+  ipcInit.onSettingsChanged();
+  assert.ok(shortcuts.has("Enter"), "turned on mid-take");
+  cfg.enterToStop = false;
+  ipcInit.onSettingsChanged();
+  assert.ok(!shortcuts.has("Enter"), "turned off mid-take");
+});
+
+test("enter-to-stop yields when Enter is a configured hotkey (#338)", async () => {
+  const { shortcuts, changeState, changeCapture, setPipelineState } = await loadMain({
+    cfg: makeCfg({ enterToStop: true, pauseHotkey: "Enter" }),
+  });
+  setPipelineState("recording");
+  changeState("recording");
+  changeCapture(true);
+  assert.notStrictEqual(shortcuts.get("Enter"), undefined, "the pause hotkey holds it");
+  assert.strictEqual(shortcuts.size >= 1, true);
+});

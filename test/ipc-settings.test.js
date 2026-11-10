@@ -136,7 +136,7 @@ for (const channel of ["settings:save", "wizard:complete"]) {
     const { snapshot, baseline } = openForm(settings);
     writeMainSide(settings);
 
-    const edited = { ...snapshot, history: { ...snapshot.history, enabled: false } };
+    const edited = { ...snapshot, hotkey: "F9", history: { ...snapshot.history, enabled: false } };
     const reply = handlers[channel]({}, { settings: edited, baseline });
 
     // The reply carries what was saved, which the form then shows.
@@ -149,7 +149,8 @@ for (const channel of ["settings:save", "wizard:complete"]) {
     assert.strictEqual(disk.output.mode, "clipboard");
     assert.deepStrictEqual(disk.overlay, { x: 10, y: 20 });
     assert.deepStrictEqual(disk.customModels, [customModel]);
-    assert.strictEqual(disk.history.enabled, false, "the form's own edit still lands");
+    assert.strictEqual(disk.hotkey, "F9", "the form's own edit still lands");
+    assert.strictEqual(disk.history.enabled, channel === "wizard:complete", "only Settings edits history");
   });
 
   test(`${channel} applies a form change to a shared field main left alone`, (t) => {
@@ -165,7 +166,7 @@ for (const channel of ["settings:save", "wizard:complete"]) {
     handlers[channel]({}, { settings: edited, baseline });
 
     assert.strictEqual(readFile().output.mode, "paste-copy");
-    assert.strictEqual(readFile().updates.remind, false);
+    assert.strictEqual(readFile().updates.remind, channel === "wizard:complete", "only Settings edits reminders");
   });
 }
 
@@ -256,7 +257,7 @@ test("every successful save broadcasts settings:changed and refreshes the tray",
   for (const side of ["previous", "current"]) {
     assert.deepStrictEqual(
       Object.keys(changed[0].payload[side]).sort(),
-      ["aliases", "customModels", "dictionary", "output", "overlay", "updates"],
+      ["aliases", "customModels", "dictionary", "output", "overlay", "snippets", "updates"],
       side
     );
   }
@@ -691,4 +692,206 @@ test("a stale wizard does not overwrite an appearance saved in Settings", (t) =>
   const again = settings.get();
   handlers["settings:save"]({}, { settings: { ...again, appearance: "dark" }, baseline: sharedBaseline(again) });
   assert.strictEqual(readFile().appearance, "dark");
+});
+
+// #373: the wizard owns leaves, not the full settings snapshot or sections.
+const { sharedBaseline } = require("../renderer/settings-sync");
+const wizardSettingsOnly = {
+  pauseHotkey: "F6", discardHotkey: "F7", correctHotkey: "F8", startOnBoot: true,
+  appearance: "light", engines: { idleUnloadMinutes: 9 },
+  history: { enabled: false, limit: 77 },
+  recordings: { keep: true, maxAgeDays: 12, maxMegabytes: 256 },
+  usage: { enabled: false, typingWpm: 65 },
+  updates: { autoCheck: false, remind: false },
+  stt: {
+    builtin: { model: "new-speech", future: "speech option" },
+    baseUrl: "https://speech.invalid/v1", apiKey: "speech-key", model: "remote-speech",
+    language: "ro", timeoutMs: 90000, livePreview: { enabled: false },
+  },
+  cleanup: {
+    builtin: { future: "cleanup option" },
+    baseUrl: "https://cleanup.invalid/v1", apiKey: "cleanup-key", model: "remote-cleanup",
+    timeoutMs: 80000, systemPrompt: "Keep my prompt", custom: { temperature: 0.4 },
+    dictionary: ["Earheart"], aliases: [{ term: "Earheart", heard: ["ear heart"] }],
+    promptOfferDecided: "decided", promptOfferNotified: "notified",
+  },
+  audio: { maxRecordingSeconds: 300, recordSounds: true, recordSoundVolumePercent: 35 },
+  output: { pasteDelayMs: 275, singleLine: true },
+  future: { enabled: true },
+};
+
+for (const [section, patch] of Object.entries(wizardSettingsOnly)) {
+  test(`wizard preserves concurrent Settings-only ${section} changes on disk and in its reply`, (t) => {
+    const { handlers, settings, readFile } = loadIpc(t, { safeStorage: keyring() });
+    const wizard = settings.get();
+    const editor = settings.get();
+    const value = patch && typeof patch === "object" ? { ...editor[section], ...patch } : patch;
+    handlers["settings:save"]({}, { settings: { ...editor, [section]: value }, baseline: sharedBaseline(editor) });
+    const live = settings.get();
+    const liveDisk = readFile()[section];
+    assert.notDeepStrictEqual(live[section], wizard[section], "fixture must change the live setting");
+    if (section === "recordings") assert.strictEqual(live.recordings.keep, true);
+    const reply = handlers["wizard:complete"]({}, { settings: { ...wizard, hotkey: "F9" }, baseline: sharedBaseline(wizard) });
+    assert.deepStrictEqual(reply.settings[section], live[section]);
+    // Secret fields are encrypted on disk; reading via settings.get checks their plaintext value.
+    const diskSection = readFile()[section];
+    if (section === "stt" || section === "cleanup") {
+      assert.ok(diskSection.apiKeyEncrypted);
+      assert.strictEqual(diskSection.apiKey, "");
+      assert.deepStrictEqual(diskSection, liveDisk);
+      assert.strictEqual(diskSection.builtin.future, patch.builtin.future);
+    } else assert.deepStrictEqual(diskSection, live[section]);
+    assert.strictEqual(readFile().hotkey, "F9");
+  });
+}
+
+test("wizard applies all 11 owned leaves without replacing their live siblings", (t) => {
+  const { handlers, settings, readFile } = loadIpc(t);
+  const wizard = settings.get();
+  const live = settings.save({ ...wizard, stt: { ...wizard.stt, engine: "remote" }, cleanup: { ...wizard.cleanup, engine: "remote" } });
+  const owned = {
+    hotkey: "F9",
+    output: { mode: "paste-copy", restoreClipboard: false },
+    stt: { engine: "builtin" },
+    cleanup: { enabled: false, engine: "builtin", builtin: { model: "wizard-cleanup" }, style: "custom" },
+    audio: { deviceId: "wizard-mic", duckOtherAudio: true, duckLevelPercent: 35 },
+  };
+  const reply = handlers["wizard:complete"]({}, { settings: owned, baseline: sharedBaseline(wizard) });
+  const expected = {
+    ...live, ...owned,
+    output: { ...live.output, ...owned.output },
+    stt: { ...live.stt, ...owned.stt },
+    cleanup: { ...live.cleanup, ...owned.cleanup, builtin: { ...live.cleanup.builtin, ...owned.cleanup.builtin } },
+    audio: { ...live.audio, ...owned.audio },
+  };
+  assert.deepStrictEqual(reply.settings, expected);
+  assert.deepStrictEqual(readFile(), expected);
+});
+
+for (const malformed of [undefined, null, [], "invalid", 7]) {
+  test(`wizard ignores absent or malformed sections (${JSON.stringify(malformed)})`, (t) => {
+    const { handlers, settings, readFile } = loadIpc(t);
+    const live = settings.save(settings.get());
+    const reply = handlers["wizard:complete"]({}, { settings: { stt: malformed, cleanup: malformed, audio: malformed, output: malformed } });
+    assert.deepStrictEqual(reply.settings, live);
+    assert.deepStrictEqual(readFile(), live);
+  });
+}
+
+test("wizard ignores malformed nested builtin while applying valid cleanup siblings", (t) => {
+  const { handlers, settings } = loadIpc(t);
+  const live = settings.get();
+  const reply = handlers["wizard:complete"]({}, { settings: { cleanup: { builtin: null, enabled: false } } });
+  assert.deepStrictEqual(reply.settings.cleanup, { ...live.cleanup, enabled: false });
+});
+
+for (const baseline of [undefined, { outputMode: "paste-copy" }, { outputMode: "paste" }]) {
+  test(`wizard output reconciliation retains legacy semantics (${JSON.stringify(baseline)})`, (t) => {
+    const { handlers, settings, readFile } = loadIpc(t);
+    const initial = settings.get();
+    settings.save({ ...initial, output: { ...initial.output, mode: "paste", restoreClipboard: false } });
+    const wizard = settings.get();
+    settings.save({ ...wizard, output: { ...wizard.output, restoreClipboard: true, singleLine: true } });
+    handlers["wizard:complete"]({}, { settings: wizard, baseline });
+    assert.strictEqual(readFile().output.restoreClipboard, baseline?.outputMode === "paste-copy");
+    assert.strictEqual(readFile().output.singleLine, true);
+  });
+}
+
+test("wizard cannot resurrect vocabulary or aliases removed after it opened", (t) => {
+  const { handlers, settings, readFile } = loadIpc(t);
+  const initial = settings.get();
+  const wizard = settings.save({ ...initial, cleanup: { ...initial.cleanup, dictionary: ["Old"], aliases: [{ term: "Old", heard: ["old word"] }] } });
+  const editor = settings.get();
+  handlers["settings:save"]({}, { settings: { ...editor, cleanup: { ...editor.cleanup, dictionary: ["New"], aliases: [{ term: "New", heard: ["new word"] }] } }, baseline: sharedBaseline(editor) });
+  const live = settings.get().cleanup;
+  const reply = handlers["wizard:complete"]({}, { settings: wizard, baseline: sharedBaseline(wizard) });
+  assert.deepStrictEqual(reply.settings.cleanup, live);
+  assert.deepStrictEqual(readFile().cleanup, live);
+});
+
+// #349: like appearance, the UI language is edited only in Settings.
+test("a stale wizard does not overwrite a UI language saved in Settings", (t) => {
+  const locales = require("../renderer/locales");
+  locales.ro = { "meta.name": "Română" };
+  t.after(() => { delete locales.ro; });
+  const { sharedBaseline } = require("../renderer/settings-sync");
+  const { handlers, settings, readFile } = loadIpc(t);
+  settings.save(settings.get());
+  const wizard = settings.get();
+  const wizardBaseline = sharedBaseline(wizard);
+  const editor = settings.get();
+  assert.strictEqual(wizardBaseline.uiLanguage, "system");
+
+  handlers["settings:save"]({}, { settings: { ...editor, uiLanguage: "ro" }, baseline: sharedBaseline(editor) });
+  assert.strictEqual(readFile().uiLanguage, "ro");
+
+  const reply = handlers["wizard:complete"]({}, { settings: { ...wizard, hotkey: "F9" }, baseline: wizardBaseline });
+  assert.strictEqual(readFile().uiLanguage, "ro", "the live language wins over the wizard's stale copy");
+  assert.strictEqual(reply.settings.uiLanguage, "ro");
+  assert.strictEqual(readFile().hotkey, "F9");
+
+  const again = settings.get();
+  handlers["settings:save"]({}, { settings: { ...again, uiLanguage: "system" }, baseline: sharedBaseline(again) });
+  assert.strictEqual(readFile().uiLanguage, "system");
+});
+
+// #334: snippets ride the same save path as aliases, merged per snippet id.
+const snip = (id, triggers, content = "body") => ({ id, triggers, content });
+const withBaseline = (settings) => {
+  const snapshot = settings.get();
+  return { snapshot, baseline: require("../renderer/settings-sync").sharedBaseline(snapshot) };
+};
+
+test("two Settings windows adding different snippets both keep theirs", async (t) => {
+  const { settings, handlers, readFile } = loadIpc(t);
+  const first = withBaseline(settings);
+  const second = withBaseline(settings);
+  first.snapshot.snippets = [snip("snp_a", ["alpha"])];
+  second.snapshot.snippets = [snip("snp_b", ["bravo"])];
+  await handlers["settings:save"]({}, { settings: first.snapshot, baseline: first.baseline });
+  const result = await handlers["settings:save"]({}, { settings: second.snapshot, baseline: second.baseline });
+  assert.deepStrictEqual(readFile().snippets.map((r) => r.id), ["snp_b", "snp_a"]);
+  assert.deepStrictEqual(result.settings.snippets.map((r) => r.id), ["snp_b", "snp_a"]);
+});
+
+test("two windows giving different snippets one trigger: the second save fails and keeps the first", async (t) => {
+  const { settings, handlers, readFile } = loadIpc(t);
+  const first = withBaseline(settings);
+  const second = withBaseline(settings);
+  first.snapshot.snippets = [snip("snp_a", ["My Address"])];
+  second.snapshot.snippets = [snip("snp_b", ["my  address"])];
+  await handlers["settings:save"]({}, { settings: first.snapshot, baseline: first.baseline });
+  await assert.rejects(
+    async () => handlers["settings:save"]({}, { settings: second.snapshot, baseline: second.baseline }),
+    /already inserts/
+  );
+  assert.deepStrictEqual(readFile().snippets, [snip("snp_a", ["My Address"])]);
+});
+
+test("an invalid snippet list is refused before hotkeys or disk are touched", async (t) => {
+  const { settings, handlers, readFile } = loadIpc(t);
+  settings.save(settings.get());
+  const before = JSON.stringify(readFile());
+  const { snapshot, baseline } = withBaseline(settings);
+  snapshot.snippets = [snip("snp_a", ["x1"], "uses {{bogus}}")];
+  await assert.rejects(async () => handlers["settings:save"]({}, { settings: snapshot, baseline }), /Unknown tag/);
+  assert.strictEqual(JSON.stringify(readFile()), before);
+});
+
+test("a save from a form that has no snippets key keeps the saved snippets", async (t) => {
+  const { settings, handlers, readFile } = loadIpc(t);
+  settings.save({ ...settings.get(), snippets: [snip("snp_a", ["alpha"])] });
+  const { snapshot } = withBaseline(settings);
+  delete snapshot.snippets;
+  await handlers["settings:save"]({}, { settings: snapshot, baseline: {} });
+  assert.deepStrictEqual(readFile().snippets, [snip("snp_a", ["alpha"])]);
+});
+
+test("the wizard passes snippets saved elsewhere through its stale copy", async (t) => {
+  const { settings, handlers, readFile } = loadIpc(t);
+  const wizard = withBaseline(settings); // opens with none
+  settings.save({ ...settings.get(), snippets: [snip("snp_a", ["alpha"])] });
+  await handlers["settings:save"]({}, { settings: wizard.snapshot, baseline: wizard.baseline });
+  assert.deepStrictEqual(readFile().snippets, [snip("snp_a", ["alpha"])]);
 });

@@ -2550,3 +2550,58 @@ test("cleanup readiness bypasses only known missing builtin files", () => {
   const broken = readinessFacade({ isInstalled: () => { throw new Error("disk inaccessible"); } }).facade;
   assert.deepStrictEqual(broken.getCleanupReadiness({ enabled: true, engine: "builtin", builtin: { model: "granite-4.0-micro" } }), { ok: true });
 });
+
+/* ---------- voice command transform (#344) ---------- */
+
+test("engines.transform sends its own request type, prompt and output budget", async () => {
+  const requests = [];
+  const hostModule = fakeHost(async (type, args) => {
+    requests.push({ type, args });
+    if (type === "transform") return "Rewritten.";
+    throw new Error(`unexpected request: ${type}`);
+  });
+  const facade = loadFacadeWith({ host: hostModule, manager: installedManager() });
+  const out = await facade.transform(
+    { instruction: "shorten it", selection: "A long selected sentence." },
+    { maxOutputTokens: 400 },
+    undefined,
+    { cleanupModelId: registry.DEFAULT_CLEANUP_MODEL, maxRecordingSeconds: 300 }
+  );
+  assert.strictEqual(out, "Rewritten.");
+  assert.strictEqual(requests.length, 1, "no cleanup request rides along");
+  const { args } = requests[0];
+  assert.strictEqual(args.maxTokens, 400, "the command's budget, not the cleanup ratio");
+  assert.match(args.turn, /SELECTED TEXT [0-9a-f]{12} BEGIN\nA long selected sentence\.\nSELECTED TEXT/);
+  assert.match(args.turn, /Instruction:\nshorten it\n\nResult:$/);
+  assert.ok(Number.isInteger(args.operationId));
+});
+
+test("engines.transform refuses an empty reply and a missing model", async () => {
+  let reply = "   ";
+  const facade = loadFacadeWith({ host: fakeHost(async () => reply), manager: installedManager() });
+  const opts = { cleanupModelId: registry.DEFAULT_CLEANUP_MODEL };
+  await assert.rejects(facade.transform({ instruction: "x" }, {}, undefined, opts), /returned no text/);
+  await assert.rejects(facade.transform({ instruction: "x" }, {}, undefined, { cleanupModelId: "no-such-model" }));
+  const aborted = new AbortController();
+  aborted.abort();
+  await assert.rejects(facade.transform({ instruction: "x" }, {}, aborted.signal, opts), /aborted/);
+});
+
+test("engines.transform cancels only its own worker operation", async () => {
+  const requests = [];
+  let release;
+  const hostModule = fakeHost((type, args) => {
+    requests.push({ type, args });
+    if (type === "transform") return new Promise((resolve) => { release = resolve; });
+    return Promise.resolve({ cancelled: 1 });
+  });
+  const facade = loadFacadeWith({ host: hostModule, manager: installedManager() });
+  const controller = new AbortController();
+  const pending = facade.transform({ instruction: "x" }, {}, controller.signal, { cleanupModelId: registry.DEFAULT_CLEANUP_MODEL });
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.abort();
+  const operationId = requests.find((r) => r.type === "transform").args.operationId;
+  assert.deepStrictEqual(requests.find((r) => r.type === "cancel-clean").args, { operationId });
+  release("late");
+  await assert.rejects(pending, /aborted/);
+});

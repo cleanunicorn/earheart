@@ -104,8 +104,8 @@ function stepCue(event, startContext = null) {
 
 // Persistent audio engine. Opening the audio stack is the latency-critical path
 // of every dictation — whatever the user says before samples flow is lost — so
-// the 16 kHz AudioContext and the worklet module are created ONCE (warmed at
-// page load, i.e. app startup) and reused across sessions: suspended while
+// the 16 kHz AudioContext and worklet module are warmed at page load and
+// normally reused across sessions (a stalled engine can be replaced): suspended while
 // idle, resumed per dictation. That leaves getUserMedia as the only real cost
 // between the hotkey and a live microphone.
 let audioContext = null; // set once the warm-up below resolves
@@ -113,31 +113,33 @@ let audioEngineReady = null; // Promise<AudioContext>
 
 function ensureAudioEngine() {
   if (!audioEngineReady) {
-    audioEngineReady = (async () => {
+    const ready = (async () => {
       const context = new AudioContext({ sampleRate: SAMPLE_RATE });
+      // Publish the pending context too: timeout/reset must close it even if
+      // addModule is still pending. A retired warm-up may never replace a
+      // newer engine or clear that engine's cached promise.
+      audioContext = context;
       try {
         await context.audioWorklet.addModule("recorder-worklet.js");
+        if (audioContext !== context) throw new Error("Audio engine superseded");
+        await context.suspend().catch(() => {});
+        return context;
       } catch (err) {
         await context.close().catch(() => {});
+        if (audioContext === context) audioContext = null;
         throw err;
       }
-      audioContext = context;
-      // Park it until a session resumes it — no point ticking the audio
-      // thread while nothing records.
-      await context.suspend().catch(() => {});
-      return context;
     })();
-    // A failed warm-up (worklet fetch hiccup, audio stack not up yet) must not
-    // poison every future dictation: drop the cache so the next start retries.
-    audioEngineReady.catch(() => {
-      audioEngineReady = null;
+    audioEngineReady = ready;
+    ready.catch(() => {
+      if (audioEngineReady === ready) audioEngineReady = null;
     });
   }
   return audioEngineReady;
 }
 ensureAudioEngine();
 
-// Drop (and close) the cached engine so the next session rebuilds it from
+// Drop (and close) the cached engine so a retry or next session rebuilds it from
 // scratch. The escape hatch for a context that died AFTER a successful
 // warm-up — an audio backend restart (PipeWire/PulseAudio), a wedged device
 // stack — which the resolve-once cache above would otherwise pin until the
@@ -149,9 +151,8 @@ function resetAudioEngine() {
   context?.close().catch(() => {});
 }
 
-// Watchdog for the whole mic start (getUserMedia through first samples): a
-// stream that opens but never delivers audio, or a getUserMedia that hangs,
-// must not leave the card saying "Starting mic…" forever.
+// Once permission and engine readiness resolve, bound the wait for first
+// samples. Permission prompts themselves may remain open indefinitely.
 const MIC_START_TIMEOUT_MS = 10000;
 let startWatchdogId = null;
 
@@ -160,6 +161,41 @@ function clearStartWatchdog() {
     clearTimeout(startWatchdogId);
     startWatchdogId = null;
   }
+}
+
+// A running state alone does not prove the render clock is ticking (#371).
+// Observe a full second after resume resolves, using measured monotonic time.
+// Stop probing on ANY first sample post, including one inside the cue guard.
+const MIC_CLOCK_PROBE_MS = 250;
+const MIC_CLOCK_STALL_MS = 1000;
+function watchMicClock(rec, context, resumedAt, recover) {
+  let resumed = false;
+  let lastTime = context.currentTime;
+  let stillSince = null;
+  resumedAt.then((at) => {
+    if (at === null) return;
+    resumed = true;
+    lastTime = context.currentTime;
+    stillSince = at;
+  });
+  const probe = () => {
+    rec.clockProbeId = null;
+    if (recording !== rec || rec.guardUntil !== null) return;
+    const [track] = rec.stream.getAudioTracks();
+    const now = performance.now();
+    const time = context.currentTime;
+    if (!resumed || context.state !== "running" || track?.readyState !== "live" || track.muted || !track.enabled) {
+      stillSince = null;
+    } else if (time !== lastTime || stillSince === null) {
+      stillSince = now;
+    } else if (now - stillSince >= MIC_CLOCK_STALL_MS) {
+      recover();
+      return;
+    }
+    lastTime = time;
+    rec.clockProbeId = setTimeout(probe, MIC_CLOCK_PROBE_MS);
+  };
+  rec.clockProbeId = setTimeout(probe, MIC_CLOCK_PROBE_MS);
 }
 
 // Live preview state: the latest raw and cleaned partial transcripts. The
@@ -267,12 +303,16 @@ let progressHideTimer = null;
 const PROGRESS_HOLD_STATUSES = new Set(["transcribing", "cleaning", "delivering"]);
 
 // Title of the done card by how the text was delivered.
-const DONE_TITLE = {
-  clipboard: "Copied to clipboard",
-  "paste-copy": "Pasted & copied",
-  paste: "Pasted",
+// UI text goes through the catalog (#349): `tr` formats in the window's
+// current language, English until main reports another.
+const tr = (key, params) => i18n.t(key, params);
+
+const DONE_TITLE_KEY = {
+  clipboard: "overlay.done.clipboard",
+  "paste-copy": "overlay.done.pasteCopy",
+  paste: "overlay.done.paste",
   // Another app took the clipboard over first: nothing pasted, nothing copied.
-  "clipboard-changed": "Not pasted — the clipboard changed",
+  "clipboard-changed": "overlay.done.clipboardChanged",
 };
 
 function setStatus(status, title, detail) {
@@ -288,7 +328,7 @@ function setStatus(status, title, detail) {
   // The pause key latches a live take and releases it; anywhere else it is
   // inert. Its label follows the action it would perform.
   pauseBtn.disabled = status !== "recording" && status !== "paused";
-  const pauseLabel = status === "paused" ? "Resume" : "Pause";
+  const pauseLabel = status === "paused" ? tr("overlay.resume") : tr("overlay.pause");
   pauseBtn.title = pauseLabel;
   pauseBtn.setAttribute("aria-label", pauseLabel);
   // Pause latches, so it is a toggle: sighted users see the key sitting
@@ -310,9 +350,9 @@ function setStatus(status, title, detail) {
     status === "empty" ||
     status === "error";
   cancelBtn.title = settled
-    ? "Dismiss"
-    : `Discard — nothing is typed${discardHotkeyLabel ? ` (${discardHotkeyLabel})` : ""}`;
-  cancelBtn.setAttribute("aria-label", settled ? "Dismiss" : "Discard dictation");
+    ? tr("overlay.dismiss")
+    : tr(discardHotkeyLabel ? "overlay.discardTitleHotkey" : "overlay.discardTitle", { hotkey: discardHotkeyLabel });
+  cancelBtn.setAttribute("aria-label", settled ? tr("overlay.dismiss") : tr("overlay.discardLabel"));
   statusText.textContent = title;
   // The wave area steps back when a detail line (paste preview, error message,
   // hint) needs its space — see #card[data-detail] in overlay.css.
@@ -427,7 +467,7 @@ function capCountdown(capturedMs, capSeconds, warnMs = 60000) {
 // The status title while capturing: in the last minute before the cap it
 // says the take is about to stop, so the user can wrap up their thought.
 function listeningTitle(rec) {
-  return rec.capWarned ? "Stopping soon…" : "Listening…";
+  return rec.capWarned ? tr("overlay.stoppingSoon") : tr("overlay.listening");
 }
 
 function updateTimer() {
@@ -707,7 +747,68 @@ function recordingCapSeconds(value) {
   return seconds >= 10 && seconds <= 3600 ? seconds : 600;
 }
 
-async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, discardHotkey, sounds }) {
+// ---- Automatic microphone selection (#339) ----
+// renderer/mic-policy.js ranks the devices; this gathers its inputs at take
+// start without ever delaying the take or opening a throwaway stream (which
+// could be a Bluetooth mic and flip a headset into its call profile).
+//
+// enumerateDevices() hides labels until this page has had a stream, so the
+// labels from the last enumeration made while one was open are kept by id and
+// lent to a label-less one. The first take after launch may therefore see no
+// labels: every device is then "unknown" and the policy falls back to the saved
+// choice or the system default — the same as manual mode, never worse.
+const MIC_LOOKUP_BUDGET_MS = 300;
+const micLabels = new Map(); // deviceId → label, from the latest labelled enumeration
+
+function withinBudget(promise, fallback) {
+  return Promise.race([
+    Promise.resolve(promise).catch(() => fallback),
+    new Promise((resolve) => setTimeout(() => resolve(fallback), MIC_LOOKUP_BUDGET_MS)),
+  ]);
+}
+
+async function listMicrophones() {
+  try {
+    const all = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
+    if (all.some((d) => d.label)) {
+      micLabels.clear();
+      for (const d of all) if (d.label) micLabels.set(d.deviceId, d.label);
+    }
+    return all.map((d) => (d.label ? d : { ...d, label: micLabels.get(d.deviceId) || "" }));
+  } catch {
+    return [];
+  }
+}
+
+async function pickMicrophone(mic, savedId) {
+  const [devices, classes] = await Promise.all([
+    withinBudget(listMicrophones(), []),
+    withinBudget(earheart.invoke("mics:classes"), null),
+  ]);
+  return resolveMicrophone({
+    mode: mic?.mode,
+    savedId,
+    includeBluetooth: mic?.includeBluetooth,
+    includeVirtual: mic?.includeVirtual,
+    devices,
+    records: classes?.records || [],
+  });
+}
+
+// Refresh the cached labels now that a stream is open, and whenever the set of
+// devices changes (plug/unplug) so the next take ranks what is really there.
+function rememberMicrophoneLabels() {
+  listMicrophones().catch(() => {});
+}
+try {
+  navigator.mediaDevices.addEventListener?.("devicechange", () => {
+    rememberMicrophoneLabels();
+    // A track that died without its "ended" event reaching us: recover now.
+    if (recording?.stream.getAudioTracks()[0]?.readyState === "ended") recording.onTrackLost?.();
+  });
+} catch {}
+
+async function startRecording({ sid, deviceId, mic, maxSeconds, livePreview: live, discardHotkey, sounds }) {
   // A new session always supersedes whatever was running.
   teardown();
   const myGeneration = ++generation;
@@ -716,6 +817,8 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
     stream?.getTracks().forEach((track) => track.stop());
   };
   currentSid = sid;
+  destinationEl.hidden = true;
+  destinationEl.textContent = "";
   // Read per take, so a binding saved in Settings shows on the next dictation.
   discardHotkeyLabel = typeof discardHotkey === "string" ? discardHotkey : "";
   stopWhenReady = false;
@@ -729,7 +832,7 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
   // Honest status: the mic is NOT live yet. "Listening…" appears only when
   // the first samples arrive (micLive), so the user is never invited to talk
   // into a microphone that isn't capturing.
-  setStatus("starting", "Starting mic…");
+  setStatus("starting", tr("overlay.startingMic"));
   clearTranscript();
   levels.fill(0);
   displayLevels.fill(0);
@@ -747,9 +850,18 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
     // The two independent waits overlap: opening the mic and readying the
     // shared context. getUserMedia dominates; the context is usually warm.
     streamPromise = (async () => {
+      // Auto mode picks a device now; the saved deviceId is only the fallback
+      // and is never rewritten. Manual mode is the saved deviceId, as before.
+      let wanted = deviceId;
+      if (mic?.mode === "auto") {
+        const picked = await pickMicrophone(mic, deviceId);
+        if (!isCurrent()) return null;
+        wanted = picked.deviceId;
+        microphoneNotice = picked.notice;
+      }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          audio: microphoneConstraints(deviceId),
+          audio: microphoneConstraints(wanted),
         });
         if (!isCurrent()) {
           stopStream(stream);
@@ -760,8 +872,9 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
         if (!isCurrent()) return null;
         // A saved USB/Bluetooth device can disappear between sessions. Retry
         // once with the system default instead of making every dictation fail.
-        if (!deviceId || !isMissingMicrophone(err)) throw err;
-        microphoneNotice = "Saved mic missing — using system default";
+        if (!wanted || !isMissingMicrophone(err)) throw err;
+        microphoneNotice =
+          mic?.mode === "auto" ? tr("overlay.micAutoUnavailable") : tr("overlay.micMissing");
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: microphoneConstraints(),
         });
@@ -805,83 +918,164 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
       stepCue({ type: "error", sid });
       earheart.send("record:error", {
         sid,
-        message: "Microphone did not deliver audio in time — check the input device in Settings",
+        message: tr("overlay.micTimeout"),
       });
     }, MIC_START_TIMEOUT_MS);
-    // Safe ordering without awaiting: Web Audio applies state changes in call
-    // order, this resume() is called strictly after any prior teardown's
-    // suspend(), and any LATER teardown's suspend() lands after it — so the
-    // context is always running exactly while a session is current.
-    context.resume().catch(() => {});
-    const source = context.createMediaStreamSource(stream);
-    const recorder = new AudioWorkletNode(context, "recorder");
-    const chunks = [];
-    recorder.port.onmessage = (event) => {
-      // The node is disconnected on teardown, but a message can already be in
-      // flight; never let a stale session's samples leak into the current one.
-      if (!recording || recording.recorder !== recorder) return;
-      // Pause handshake: {drained} confirms the worklet flushed its partial
-      // batch — everything captured before the pause has now arrived, and
-      // from here on paused-era messages are pure muted silence.
-      if (event.data.drained) {
-        recording.draining = false;
-        return;
-      }
-      // Paused: the track is muted at the source, and whatever still arrives
-      // is discarded — the capture stays contiguous and the meter freezes.
-      // Until the drain confirm, though, keep accepting: the batch in flight
-      // holds the last pre-pause syllable, not pause silence.
-      if (recording.pausedAt && !recording.draining) return;
-      // First samples: capture is proven live. With sounds on the start cue
-      // plays now, on this context's clock, and every frame it can reach (cue
-      // end + output and input latency + a tail) is dropped — by capture
-      // position, not arrival, so late or bunched posts are cut exactly where
-      // the cue ends. With no cue everything passes.
-      const { kept: samples, guardDone } = ingestPost(recording, event.data, () => {
-        const cue = stepCue({ type: "samples", sid }, context);
-        return cue
-          ? guardEndFrame({
-              cueEnd: cue.endTime,
-              outputLatency: context.outputLatency,
-              baseLatency: context.baseLatency,
-              inputLatency: recording.inputLatency,
-              sampleRate: context.sampleRate,
-            })
-          : 0;
-      });
-      if (guardDone) stepCue({ type: "guardDone", sid });
-      if (samples.length === 0) return;
-      chunks.push(samples);
-      // Just record the level; the rAF meter loop reads `levels` each frame.
-      levels.push(event.data.rms);
-      levels.shift();
-      micLive(); // no-op after the first chunk
-    };
-    source.connect(recorder);
-    // A device unplugged mid-take ends its track: the take goes on (stop still
-    // delivers what was captured), but nothing is being captured any more.
-    const [track] = stream.getAudioTracks();
-    track?.addEventListener("ended", () => {
-      if (recording?.recorder !== recorder) return;
-      recording.trackEnded = true;
-      reportCapture(false);
-      stepCue({ type: "trackEnded", sid });
-    });
+    function connect(context, activeStream = stream) {
+      // Keep the normal resume/graph setup overlap. Probe only after the
+      // resume promise resolves; its rejection still uses the main watchdog.
+      const resumedAt = context.resume().then(() => performance.now(), () => null);
+      let source;
+      let recorder;
+      try {
+        source = context.createMediaStreamSource(activeStream);
+        recorder = new AudioWorkletNode(context, "recorder");
+        const chunks = [];
+        recorder.port.onmessage = (event) => {
+          // The node is disconnected on teardown, but a message can already be in
+          // flight; never let a stale session's samples leak into the current one.
+          if (!recording || recording.clockSwapping || recording.recorder !== recorder) return;
+          if (event.data.samples?.length) {
+            clearTimeout(recording.clockProbeId);
+            recording.clockProbeId = null;
+          }
+          // Pause handshake: {drained} confirms the worklet flushed its partial
+          // batch — everything captured before the pause has now arrived, and
+          // from here on paused-era messages are pure muted silence.
+          if (event.data.drained) {
+            recording.draining = false;
+            return;
+          }
+          // Paused: the track is muted at the source, and whatever still arrives
+          // is discarded — the capture stays contiguous and the meter freezes.
+          // Until the drain confirm, though, keep accepting: the batch in flight
+          // holds the last pre-pause syllable, not pause silence.
+          if (recording.pausedAt && !recording.draining) return;
+          // First samples: capture is proven live. With sounds on the start cue
+          // plays now, on this context's clock, and every frame it can reach (cue
+          // end + output and input latency + a tail) is dropped — by capture
+          // position, not arrival, so late or bunched posts are cut exactly where
+          // the cue ends. With no cue everything passes.
+          const { kept: samples, guardDone } = ingestPost(recording, event.data, () => {
+            const cue = stepCue({ type: "samples", sid }, context);
+            return cue
+              ? guardEndFrame({
+                  cueEnd: cue.endTime,
+                  outputLatency: context.outputLatency,
+                  baseLatency: context.baseLatency,
+                  inputLatency: recording.inputLatency,
+                  sampleRate: context.sampleRate,
+                })
+              : 0;
+          });
+          if (guardDone) stepCue({ type: "guardDone", sid });
+          if (samples.length === 0) return;
+          chunks.push(samples);
+          // Just record the level; the rAF meter loop reads `levels` each frame.
+          levels.push(event.data.rms);
+          levels.shift();
+          micLive(); // no-op after the first chunk
+          // The replacement microphone delivered: the take is capturing again.
+          if (recording.recovering === "swapped") {
+            recording.recovering = false;
+            recording.trackEnded = false;
+            if (!recording.pausedAt) {
+              setStatus("recording", listeningTitle(recording), recording.microphoneNotice || "");
+              reportCapture(true);
+            }
+          }
+        };
+        source.connect(recorder);
+        // A device unplugged (or a route changed away from) mid-take ends its
+        // track. The take goes on either way — stop still delivers what was
+        // captured — but first we try once to re-acquire a microphone (#339).
+        const [track] = activeStream.getAudioTracks();
+        const onTrackEnded = (ended) => {
+          // Stale: another session, a stop/cancel that already tore the take down,
+          // or a track we already replaced. A second "ended" for the same loss
+          // (the event and a devicechange both fire) is absorbed by trackEnded.
+          if (recording?.recorder !== recorder || recording.stream.getAudioTracks()[0] !== ended) return;
+          // A clock rebuild is swapping the graph: recoverClock re-checks the
+          // track when the new graph is in place, so recover once, on that graph.
+          if (recording.clockSwapping) return;
+          // A replacement that dies before delivering anything counts as a new
+          // loss; otherwise the flag already says this one is being handled.
+          if (recording.trackEnded && recording.recovering !== "swapped") return;
+          recording.recovering = false;
+          recording.trackEnded = true;
+          reportCapture(false);
+          recoverCapture(recording, recorder, context, { sid, deviceId, mic, isCurrent });
+        };
+        track?.addEventListener("ended", () => onTrackEnded(track));
 
+        return {
+          source, recorder, chunks, resumedAt,
+          // Bound to this graph's recorder, so a clock rebuild swaps it too.
+          onTrackLost: (ended) => onTrackEnded(ended ?? recording?.stream.getAudioTracks()[0]),
+        };
+      } catch (err) {
+        if (recorder) {
+          recorder.port.onmessage = null;
+          recorder.port.postMessage("stop");
+          recorder.disconnect();
+        }
+        source?.disconnect();
+        throw err;
+      }
+    }
+
+    async function recoverClock(rec) {
+      if (!isCurrent() || recording !== rec || rec.clockRetried || rec.recovering) return;
+      rec.clockRetried = true;
+      rec.recovering = true;
+      rec.clockSwapping = true;
+      try {
+        // Retire only the graph. Keep the selected stream, SID, timers and
+        // original startup watchdog while its replacement warms up.
+        rec.recorder.port.onmessage = null;
+        rec.recorder.port.postMessage("stop");
+        rec.source.disconnect();
+        rec.recorder.disconnect();
+        resetAudioEngine();
+        const replacement = await ensureAudioEngine();
+        if (!isCurrent() || recording !== rec) return;
+        Object.assign(rec, connect(replacement, rec.stream));
+        rec.recovering = false;
+        rec.clockSwapping = false;
+        // The mic may have been lost during the swap; the new graph never saw
+        // that "ended" event, so recover now if the track is already dead.
+        if (rec.stream.getAudioTracks()[0]?.readyState === "ended") rec.onTrackLost();
+        // No second clock probe: another stall reaches the original deadline.
+      } catch (err) {
+        rec.clockSwapping = false;
+        if (!isCurrent() || recording !== rec) return;
+        teardown();
+        resetAudioEngine();
+        stepCue({ type: "error", sid });
+        earheart.send("record:error", { sid, message: microphoneErrorMessage(err) });
+      }
+    }
+
+    const graph = connect(context);
     recording = {
       sid,
       microphoneNotice,
+      // Mid-take recovery (#339): how many re-acquires this take has used, and
+      // whether one is in flight / its new stream has not delivered yet.
+      recoveries: 0,
+      recovering: false,
       stream,
-      source,
-      recorder,
-      chunks,
+      ...graph,
+      clockProbeId: null,
+      clockRetried: false,
+      clockSwapping: false,
       // The start-cue guard: the capture frame the take begins at (0 = no
       // cue, nothing dropped), set on the first samples; guardSpent once
       // samples past it arrive. "Listening…" waits for guardSpent.
       guardUntil: null,
       guardSpent: false,
       // The mic path's own latency when Chromium reports it (seconds).
-      inputLatency: track?.getSettings?.().latency,
+      inputLatency: stream.getAudioTracks()[0]?.getSettings?.().latency,
       // Set by micLive() on the first samples; "Listening…" and the timer wait
       // for it. Until then the card still shows "Starting mic…".
       startedAt: null,
@@ -912,7 +1106,10 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
         ? setInterval(sendPartial, livePreview.intervalMs || 1200)
         : null,
     };
+    const rec = recording;
+    watchMicClock(rec, context, graph.resumedAt, () => recoverClock(rec));
     startMeter(); // rAF loop runs for the whole session (recording is now set)
+    rememberMicrophoneLabels(); // a stream is open: labels are readable now
     if (stopWhenReady) {
       stopWhenReady = false;
       stopRecording();
@@ -940,6 +1137,81 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
   }
 }
 
+// One attempt to keep a take alive after its microphone's track ended (a
+// device unplugged, a Bluetooth route dropped). Everything captured so far is
+// already in rec.chunks and stays there: the worklet and its recorder node are
+// untouched, only the source feeding them is swapped, so the WAV is contiguous
+// up to the loss and continues after it. A different sample rate on the new
+// device is resampled by the AudioContext itself, which is fixed at 16 kHz.
+//
+// Deliberately conservative, since a regression here touches every take:
+//  - at most MAX_RECOVERIES per take, one attempt per loss;
+//  - trackEnded stays true (capture reported not-live) until the new stream's
+//    first samples arrive, and the error cue is only played if recovery fails;
+//  - every await re-checks that this same take is still the current one, so a
+//    stop/cancel/new session racing the attempt just releases the new stream.
+const MAX_RECOVERIES = 2;
+
+async function recoverCapture(rec, recorder, context, { sid, deviceId, mic, isCurrent }) {
+  const stillCurrent = () => recording === rec && recording.recorder === recorder && isCurrent();
+  const fail = (notice) => {
+    if (!stillCurrent()) return;
+    rec.recovering = false;
+    rec.microphoneNotice = notice;
+    if (!rec.pausedAt && rec.startedAt) setStatus("recording", listeningTitle(rec), notice);
+    stepCue({ type: "trackEnded", sid });
+  };
+  if (rec.recoveries >= MAX_RECOVERIES) return fail(tr("overlay.micLostKept"));
+  rec.recoveries++;
+  rec.recovering = true;
+  rec.microphoneNotice = tr("overlay.micLostSwitching");
+  if (!rec.pausedAt && rec.startedAt) setStatus("recording", listeningTitle(rec), rec.microphoneNotice);
+  let next = null;
+  try {
+    let wanted = deviceId;
+    let notice = "";
+    if (mic?.mode === "auto") {
+      const picked = await pickMicrophone(mic, deviceId);
+      wanted = picked.deviceId;
+      notice = picked.notice;
+    }
+    if (!stillCurrent()) return;
+    try {
+      next = await navigator.mediaDevices.getUserMedia({ audio: microphoneConstraints(wanted) });
+    } catch (err) {
+      // The device we wanted is the one that just went away: the system
+      // default is the one choice that can still be there.
+      if (!wanted || !isMissingMicrophone(err)) throw err;
+      next = await navigator.mediaDevices.getUserMedia({ audio: microphoneConstraints() });
+    }
+    if (!stillCurrent()) {
+      next.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    const [track] = next.getAudioTracks();
+    if (!track) throw new Error("no audio track");
+    // Same pause state as the take: a muted take stays muted.
+    track.enabled = !rec.pausedAt;
+    const source = context.createMediaStreamSource(next);
+    source.connect(recorder);
+    try {
+      rec.source.disconnect();
+    } catch {}
+    rec.stream.getTracks().forEach((t) => t.stop());
+    rec.source = source;
+    rec.stream = next;
+    rec.inputLatency = track.getSettings?.().latency;
+    rec.microphoneNotice = notice || tr("overlay.micChanged");
+    rec.recovering = "swapped"; // trackEnded clears when this stream delivers
+    track.addEventListener("ended", () => rec.onTrackLost?.(track));
+    next = null;
+    rememberMicrophoneLabels();
+  } catch (err) {
+    next?.getTracks().forEach((t) => t.stop());
+    fail(tr("overlay.micLostKept"));
+  }
+}
+
 // How long to wait for the worklet's {flushed} reply before encoding anyway.
 // In-flight sample messages arrive within a few main-thread task checkpoints;
 // this is a generous ceiling, not a fixed pause (the flush usually lands in
@@ -947,9 +1219,9 @@ async function startRecording({ sid, deviceId, maxSeconds, livePreview: live, di
 const STOP_FLUSH_TIMEOUT_MS = 150;
 
 // Synchronous on purpose: the suspend() of the shared context must be CALLED
-// before a superseding session's resume() (see the ordering note in
-// startRecording), which is guaranteed because every start calls teardown()
-// in the same synchronous turn before touching the context.
+// before a superseding session's resume(), which is guaranteed because
+// every start calls teardown() in the same synchronous turn before touching
+// the context.
 //
 // With `collectTail`, samples the worklet posted but the main thread hasn't
 // received yet keep being collected into rec.chunks until the processor's
@@ -965,6 +1237,7 @@ function teardown({ collectTail = false } = {}) {
   if (!recording) return null;
   const rec = recording;
   recording = null;
+  clearTimeout(rec.clockProbeId);
   clearInterval(rec.timerId);
   if (rec.maxTimerId) clearTimeout(rec.maxTimerId);
   if (rec.partialTimerId) clearInterval(rec.partialTimerId);
@@ -1082,7 +1355,7 @@ function togglePause() {
     // Mute at the track so nothing is even delivered; the onmessage guard
     // discards any chunk already in flight.
     recording.stream.getAudioTracks().forEach((track) => (track.enabled = false));
-    setStatus("paused", "Paused", recording.microphoneNotice || "Press play to resume");
+    setStatus("paused", tr("overlay.paused"), recording.microphoneNotice || tr("overlay.pressPlay"));
     reportCapture(false);
   } else {
     recording.pausedMs += Date.now() - recording.pausedAt;
@@ -1104,6 +1377,14 @@ function togglePause() {
 }
 
 earheart.on("record:start", startRecording);
+// The matched destination rule, shown while recording (#336). textContent
+// only: the label holds a user-supplied host. Dropped for a stale take.
+const destinationEl = document.getElementById("destination");
+earheart.on("record:destination", ({ sid, label } = {}) => {
+  if (sid !== currentSid || typeof label !== "string" || !label) return;
+  destinationEl.textContent = label.slice(0, 120);
+  destinationEl.hidden = false;
+});
 earheart.on("record:stop", stopRecording);
 // Pause hotkey / `earheart --pause`: same action as the pause key.
 earheart.on("record:pause-toggle", togglePause);
@@ -1155,10 +1436,16 @@ earheart.on("pipeline:progress", ({ phase, fraction }) => {
 
 function retryDetail(detail) {
   const retry = detail?.retry;
-  return retry ? `Retrying (try ${retry.attempt} of ${retry.of})…` : "";
+  return retry ? tr("overlay.retrying", { attempt: retry.attempt, of: retry.of }) : "";
 }
 
-earheart.on("pipeline:status", ({ status, detail }) => {
+// The last post-recording status, so a language change can repaint it in place.
+let lastPipelineStatus = null;
+const SETTLED_PIPELINE = new Set(["transcribing", "cleaning", "delivering", "done", "empty", "error"]);
+
+function onPipelineStatus({ status, detail }) {
+  lastPipelineStatus = SETTLED_PIPELINE.has(status) ? { status, detail } : null;
+  if (status === "done" || status === "empty" || status === "error") destinationEl.hidden = true;
   // The live preview belongs to the recording phase; the moment the pipeline
   // reports a post-recording status, retire the transcript so it doesn't linger
   // alongside the control row's own status/preview.
@@ -1167,56 +1454,57 @@ earheart.on("pipeline:status", ({ status, detail }) => {
     // A stage that failed for a reason that can pass is tried again; the
     // title stays, the detail line counts the tries.
     case "transcribing":
-      setStatus("transcribing", "Transcribing…", retryDetail(detail));
+      setStatus("transcribing", tr("overlay.transcribing"), retryDetail(detail));
       break;
     case "cleaning":
-      setStatus("cleaning", "Cleaning up…", retryDetail(detail));
+      setStatus("cleaning", tr("overlay.cleaning"), retryDetail(detail));
       break;
     case "delivering":
-      setStatus("delivering", "Typing…");
+      setStatus("delivering", tr("overlay.typing"));
       break;
     case "done": {
       // A note means auto-paste was attempted and failed: say so in the
       // title, and put the reason or what to do where the preview would go —
       // the text is on the clipboard either way.
       const delivered = detail?.method === "clipboard-changed"
-        ? DONE_TITLE["clipboard-changed"]
+        ? tr(DONE_TITLE_KEY["clipboard-changed"])
         : detail?.note
-          ? "Copied — auto-paste failed"
-          : DONE_TITLE[detail?.method] ?? "Pasted";
+          ? tr("overlay.done.pasteFailed")
+          : tr(DONE_TITLE_KEY[detail?.method] ?? "overlay.done.paste");
       // Some of the speech never made it into the transcript (the engine
       // stopped part-way). The OS notification that said so is gone in
       // seconds; the card is what the user is still looking at, so the title
       // carries it — and, being the live region, says it to assistive tech.
       setStatus(
         "done",
-        detail?.incomplete ? `${delivered} — incomplete` : delivered,
+        detail?.incomplete ? tr("overlay.done.incomplete", { title: delivered }) : delivered,
         detail?.note || detail?.preview
       );
       const rawReason = document.getElementById("raw-reason");
       rawReason.hidden = detail?.rawReason !== "cleanup-downloading";
-      rawReason.textContent = rawReason.hidden ? "" : "Raw transcript — cleanup model still downloading";
+      rawReason.textContent = rawReason.hidden ? "" : tr("overlay.rawReason");
       syncOverlayHeight();
       break;
     }
     case "empty":
-      setStatus("empty", "Nothing heard", "Try again closer to the mic");
+      setStatus("empty", tr("overlay.empty"), tr("overlay.emptyHint"));
       break;
     case "error":
-      setStatus("error", "Failed", detail?.message);
+      setStatus("error", tr("overlay.failed"), detail?.message);
       // The recording survived the failure: offer it back (#293).
       if (detail?.failedTake) {
         const minutes = Math.floor(detail.failedTake.expiresInSec / 60);
-        const remaining = minutes < 1 ? "less than a minute" : `${minutes} min`;
-        takeNote.textContent = `${detail.failedTake.earlier ? "Earlier recording" : "Recording"} kept for ${remaining}`;
+        const remaining = minutes < 1 ? tr("overlay.lessThanMinute") : tr("overlay.minutes", { count: minutes });
+        takeNote.textContent = tr(detail.failedTake.earlier ? "overlay.earlierKept" : "overlay.recordingKept", { remaining });
         takeActions.hidden = false;
         // ✕ only dismisses the card; next to a Discard pill, say what stays.
-        cancelBtn.title = "Dismiss — the recording stays in the tray menu";
+        cancelBtn.title = tr("overlay.dismissKeep");
         syncOverlayHeight();
       }
       break;
   }
-});
+}
+earheart.on("pipeline:status", onPipelineStatus);
 
 // Main ignores a retry with nothing held or a dictation running, so a double
 // click can't transcribe the take twice; hiding the row just says it landed.
@@ -1232,7 +1520,7 @@ takeDiscard.addEventListener("click", () => {
 earheart.on("pipeline:take-released", () => {
   if (takeActions.hidden) return;
   takeActions.hidden = true;
-  cancelBtn.title = "Dismiss";
+  cancelBtn.title = tr("overlay.dismiss");
   syncOverlayHeight();
 });
 
@@ -1251,16 +1539,16 @@ let updatePrompt = null;
 // exits still make sense — they don't once the update is already downloading.
 const UPDATE_ACTIONS = {
   available: { channel: "updates:apply", primary: true, outs: true },
-  downloading: { label: "Cancel", channel: "updates:cancel", primary: false, outs: false },
-  ready: { label: "Restart now", channel: "updates:install", primary: true, outs: false },
-  installing: { label: "", channel: null, primary: false, outs: false },
-  error: { label: "Try again", channel: "updates:apply", primary: true, outs: true },
+  downloading: { labelKey: "overlay.update.cancel", channel: "updates:cancel", primary: false, outs: false },
+  ready: { labelKey: "overlay.update.restart", channel: "updates:install", primary: true, outs: false },
+  installing: { labelKey: "", channel: null, primary: false, outs: false },
+  error: { labelKey: "overlay.update.retry", channel: "updates:apply", primary: true, outs: true },
 };
 
 // The what's-new card asks for nothing, so it gets one way out and no
 // "stop bothering me" exits — there's nothing left to bother anyone about.
 const WHATSNEW_ACTION = {
-  label: "Got it",
+  labelKey: "overlay.update.gotIt",
   channel: "updates:dismiss",
   primary: true,
   outs: false,
@@ -1276,23 +1564,23 @@ function updateText(p) {
   if (p.kind === "whatsnew") {
     // No second line: the bullets below are the whole message, and a card that
     // interrupts nothing should be as short as it can be.
-    return [`What's new in Earheart ${p.version}`, ""];
+    return [tr("overlay.update.whatsNew", { version: p.version }), ""];
   }
   switch (p.status) {
     case "downloading":
-      return [`Downloading ${p.version}…`, `${pct}% of the update`];
+      return [tr("overlay.update.downloading", { version: p.version }), tr("overlay.update.percent", { percent: pct })];
     case "ready":
-      return [`Earheart ${p.version} is ready`, "Restart to finish the update."];
+      return [tr("overlay.update.ready", { version: p.version }), tr("overlay.update.readyNote")];
     case "installing":
-      return ["Installing the update…", "Earheart will restart."];
+      return [tr("overlay.update.installing"), tr("overlay.update.installingNote")];
     case "error":
-      return ["Update failed", p.error || "Something went wrong."];
+      return [tr("overlay.update.failed"), p.error || tr("error.generic")];
     default:
       return [
-        `Earheart ${p.version} is available`,
+        tr("overlay.update.available", { version: p.version }),
         p.method === "install"
-          ? `You're on ${p.current}. It takes a few seconds.`
-          : "Open the releases page to download it.",
+          ? tr("overlay.update.availableInstall", { current: p.current })
+          : tr("overlay.update.availableOpen"),
       ];
   }
 }
@@ -1314,7 +1602,7 @@ function renderUpdateNotes(p) {
   if (items.length && p.notesMore > 0) {
     const li = document.createElement("li");
     li.className = "more";
-    li.textContent = `and ${p.notesMore} more change${p.notesMore === 1 ? "" : "s"} — see Settings`;
+    li.textContent = tr("overlay.update.more", { count: p.notesMore });
     updateNotes.append(li);
   }
   updateNotes.hidden = !items.length;
@@ -1337,7 +1625,8 @@ function renderUpdatePrompt() {
 
   const action = actionFor(p);
   updateNow.textContent =
-    action.label || (p.method === "install" ? "Update now" : "Open releases page");
+    (action.labelKey && tr(action.labelKey)) ||
+    tr(p.method === "install" ? "overlay.update.now" : "overlay.update.openReleases");
   updateNow.hidden = !action.channel;
   updateNow.classList.toggle("primary", action.primary);
   updateNow.classList.toggle("quiet", !action.primary);
@@ -1359,6 +1648,14 @@ function renderUpdatePrompt() {
 earheart.on("updates:prompt", (payload) => {
   updatePrompt = payload || null;
   renderUpdatePrompt();
+});
+
+// A language change repaints what is on the card in place: the settled
+// pipeline status and the update prompt. An active capture keeps running and
+// its status line is refreshed by its next state change.
+i18n.onChange(() => {
+  if (lastPipelineStatus && card.dataset.status === lastPipelineStatus.status) onPipelineStatus(lastPipelineStatus);
+  if (updatePrompt) renderUpdatePrompt();
 });
 
 updateNow.addEventListener("click", () => {

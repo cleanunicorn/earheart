@@ -470,3 +470,37 @@ test("usage counting is on by default, and its typing baseline is clamped to 10â
   assert.strictEqual(settings.get().usage.typingWpm, 40);
   assert.strictEqual(readFile(dir).usage.typingWpm, 40);
 });
+
+/* ---------- voice commands (#344) ---------- */
+
+test("the voice command service key is encrypted at rest like the other remote keys", (t) => {
+  const dir = makeDir(t);
+  const { settings } = loadSettings(t, dir);
+  const cfg = settings.get();
+  settings.save({ ...cfg, commands: { ...cfg.commands, engine: "remote", baseUrl: "https://llm.example/v1", model: "m", apiKey: "sk-command-secret" } });
+
+  assert.doesNotMatch(readRaw(dir), /sk-command-secret/);
+  assert.strictEqual(readFile(dir).commands.apiKeyEncrypted, ciphertextOf("sk-command-secret"));
+  assert.strictEqual(readFile(dir).commands.apiKey, "");
+  assert.strictEqual(settings.get().commands.apiKey, "sk-command-secret");
+  assert.ok(!("apiKeyEncrypted" in settings.get().commands));
+  assert.strictEqual(loadSettings(t, dir).settings.get().commands.apiKey, "sk-command-secret");
+});
+
+test("voice commands default to local, off the hotkey and with no remote address", (t) => {
+  const { settings } = loadSettings(t, makeDir(t));
+  const { commands } = settings.get();
+  assert.strictEqual(commands.engine, "builtin");
+  assert.strictEqual(commands.hotkey, "");
+  assert.strictEqual(commands.baseUrl, "");
+  assert.strictEqual(commands.apiKey, "");
+  assert.strictEqual(commands.allowApply, true);
+});
+
+test("voice command limits are clamped like the other numeric settings", (t) => {
+  const dir = makeDir(t);
+  writeFile(dir, { commands: { timeoutMs: 1, maxOutputTokens: 99999999 } });
+  const { commands } = loadSettings(t, dir).settings.get();
+  assert.strictEqual(commands.timeoutMs, 5000);
+  assert.strictEqual(commands.maxOutputTokens, 8192);
+});

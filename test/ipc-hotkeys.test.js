@@ -308,13 +308,13 @@ test("wizard completion reconciles a record failure and stays open", () => {
   const reply = handlers["wizard:complete"]({}, request(attempt));
 
   assert.strictEqual(calls.saved[0].hotkey, working.hotkey);
-  assert.strictEqual(calls.saved[0].pauseHotkey, attempt.pauseHotkey);
+  assert.strictEqual(calls.saved[0].pauseHotkey, working.pauseHotkey);
   assert.strictEqual(reply.settings.hotkey, attempt.hotkey);
   assert.deepStrictEqual(calls.opened, []);
   assert.strictEqual(calls.closed, 0);
 });
 
-test("successful wizard completion persists both hotkeys and hands off", () => {
+test("successful wizard completion persists its hotkey, keeps Settings hotkeys and hands off", () => {
   const attempt = submitted();
   const results = { hotkey: { ok: true }, pauseHotkey: { ok: true } };
   const { handlers, calls } = loadIpcHandlers({ previous: working, hotkeyResults: results });
@@ -322,29 +322,33 @@ test("successful wizard completion persists both hotkeys and hands off", () => {
   const reply = handlers["wizard:complete"]({}, request(attempt));
 
   assert.strictEqual(calls.saved[0].hotkey, attempt.hotkey);
-  assert.strictEqual(calls.saved[0].pauseHotkey, attempt.pauseHotkey);
+  assert.strictEqual(calls.saved[0].pauseHotkey, working.pauseHotkey);
   assert.strictEqual(reply.settings.hotkey, attempt.hotkey);
   assert.deepStrictEqual(calls.opened, [{ fromWizard: true }]);
   assert.strictEqual(calls.closed, 1);
 });
 
-test("a settings write failure restores the pair that remains on disk", () => {
-  const attempt = submitted();
-  const writeError = new Error("disk full");
-  const results = { hotkey: { ok: true }, pauseHotkey: { ok: true } };
-  const { handlers, calls } = loadIpcHandlers({
-    previous: working,
-    hotkeyResults: results,
-    saveError: writeError,
-  });
+for (const channel of ["settings:save", "wizard:complete"]) {
+  test(`${channel} write failure restores the hotkeys that remain on disk`, () => {
+    const attempt = submitted();
+    const writeError = new Error("disk full");
+    const results = { hotkey: { ok: true }, pauseHotkey: { ok: true } };
+    const { handlers, calls } = loadIpcHandlers({
+      previous: working,
+      hotkeyResults: results,
+      saveError: writeError,
+    });
 
-  assert.throws(() => handlers["settings:save"]({}, request(attempt)), /disk full/);
-  assert.strictEqual(calls.applied.length, 2);
-  assert.deepStrictEqual(calls.applied[0].overlay, working.overlay);
-  assert.deepStrictEqual(calls.applied[1], working);
-  assert.deepStrictEqual(calls.autostart, []);
-  assert.strictEqual(calls.settingsChanged, 0);
-});
+    assert.throws(() => handlers[channel]({}, request(attempt)), /disk full/);
+    assert.strictEqual(calls.applied.length, 2);
+    assert.deepStrictEqual(calls.applied[0].overlay, working.overlay);
+    assert.deepStrictEqual(calls.applied[1], working);
+    assert.deepStrictEqual(calls.autostart, []);
+    assert.strictEqual(calls.settingsChanged, 0);
+    assert.deepStrictEqual(calls.opened, []);
+    assert.strictEqual(calls.closed, 0);
+  });
+}
 
 test("a failed write keeps its error when hotkey rollback reports a failure", () => {
   const attempt = submitted();
@@ -533,4 +537,24 @@ test("settings save keeps a rejected correction hotkey off disk but in the reply
   assert.strictEqual(calls.saved[0].pauseHotkey, attempt.pauseHotkey, "the other slots still save");
   assert.strictEqual(reply.settings.correctHotkey, attempt.correctHotkey);
   assert.strictEqual(reply.correctHotkey.error, "correction rejected");
+});
+
+test("rejected palette shortcut stays off disk and reports beside its attempted value", () => {
+  const previous = { ...working, paletteHotkey: "Control+Shift+K" };
+  const attempted = submitted({ paletteHotkey: working.hotkey });
+  const { handlers, calls } = loadIpcHandlers({ previous, hotkeyResults: {
+    hotkey: { ok: true }, pauseHotkey: { ok: true }, paletteHotkey: { ok: false, error: "already used by record" },
+  } });
+  const reply = handlers["settings:save"]({}, request(attempted));
+  assert.equal(calls.saved[0].paletteHotkey, previous.paletteHotkey);
+  assert.equal(reply.settings.paletteHotkey, attempted.paletteHotkey);
+  assert.equal(reply.paletteHotkey.ok, false);
+});
+test("palette shortcut is restored when saving settings fails", () => {
+  const previous = { ...working, paletteHotkey: "Control+Shift+K" };
+  const { handlers, calls } = loadIpcHandlers({ previous, saveError: new Error("read-only"), hotkeyResults: {
+    hotkey: { ok: true }, pauseHotkey: { ok: true }, paletteHotkey: { ok: true },
+  } });
+  assert.throws(() => handlers["settings:save"]({}, request(submitted({ paletteHotkey: "Control+Alt+K" }))), /read-only/);
+  assert.equal(calls.applied.at(-1).paletteHotkey, previous.paletteHotkey);
 });

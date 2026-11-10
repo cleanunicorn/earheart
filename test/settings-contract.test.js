@@ -301,6 +301,8 @@ function settingsCollectSource() {
     // page loads before settings.js.
     fs.readFileSync(path.join(RENDERER, "aliases.js"), "utf8"),
     extractFunction(js, "collectAliases"),
+    extractFunction(js, "collectFormatting"),
+    extractFunction(js, "collectVocabPacks"),
     extractFunction(js, "collect"),
     "this.collect = collect;",
   ].join("\n");
@@ -403,6 +405,7 @@ function microphonePage(source, page) {
     "cleanup-key": { value: "" },
     "cleanup-model": { value: "" },
     "cleanup-dictionary": { value: "" },
+    "vocab-packs": { querySelectorAll: () => [] },
     "cleanup-prompt": { value: "" },
     "cleanup-style-mode": { value: "custom" },
     "stt-url": { value: "" },
@@ -410,15 +413,29 @@ function microphonePage(source, page) {
     "stt-model": { value: "" },
     "stt-language": { value: "" },
     "stt-live-preview": { checked: true },
+    "commands-engine": { value: "builtin" },
+    "commands-url": { value: "" },
+    "commands-key": { value: "" },
+    "commands-model": { value: "" },
+    "commands-allow-apply": { checked: true },
     "max-seconds": { value: "300", ...inputRange("max-seconds") },
     "start-on-boot": { checked: false },
     "updates-autocheck": { checked: true },
     "updates-remind": { checked: true },
     "idle-unload": { value: "0", ...inputRange("idle-unload") },
     "history-enabled": { checked: true },
+    "agents-enabled": { checked: false },
+    "agents-permission": { value: "edit" },
+    "agents-codex-path": { value: "" },
+    "agents-claude-path": { value: "" },
     // Background audio: chosen on in this form, at a level other than the
     // default, so the save proves both fields are read from the form.
     "duck-other-audio": { checked: true },
+    // Automatic microphone selection (#339), as the user left the form.
+    "mic-mode": { value: "auto" },
+    "mic-auto": { checked: true },
+    "mic-bluetooth": { checked: false },
+    "mic-virtual": { checked: true },
     "duck-level": { value: "35", ...inputRange("duck-level", page === "wizard" ? wizardHtml : html) },
     "finish-status": { textContent: "", className: "" },
   };
@@ -431,6 +448,7 @@ function microphonePage(source, page) {
         return elements[id] || baseDocument.getElementById(id);
       },
       createElement: () => baseDocument.createElement(),
+      querySelectorAll: () => [],
       querySelector(selector) {
         // finish() re-checks the radio for the saved mode afterwards.
         if (selector.startsWith('input[name="output-mode"][value=')) return { checked: false };
@@ -447,6 +465,11 @@ function microphonePage(source, page) {
       },
     },
     CSS: { escape: (value) => value },
+    // The window's i18n client, in English.
+    i18n: {
+      locale: "en",
+      t: require("../renderer/i18n").createTranslator({ locale: "en", catalogs: require("../renderer/locales") }).t,
+    },
     current,
     baseline: { outputMode: current.output.mode, remind: true },
     formBaseline: new Map(),
@@ -534,6 +557,17 @@ for (const [page, source] of [["settings", js], ["wizard", wizardJs]]) {
       assert.strictEqual(result.saved.cleanup.style, "verbatim");
       assert.strictEqual(result.saved.hotkey, "CommandOrControl+Shift+Space");
     }
+  });
+
+  // #339: enumeration only reports devices; it never writes the auto-selection
+  // controls, and the saved explicit device survives while auto is on.
+  test(`${page} saves the automatic-selection choices made while enumeration ran, keeping the saved device`, async () => {
+    const fixture = microphonePage(source, page);
+    const result = await fixture.reproduce();
+    assert.strictEqual(result.saved.audio.micMode, "auto");
+    assert.strictEqual(result.saved.audio.micIncludeBluetooth, false);
+    assert.strictEqual(result.saved.audio.micIncludeVirtual, true);
+    assert.strictEqual(result.saved.audio.deviceId, "saved-id");
   });
 
   test(`${page} restores the saved microphone when the user leaves it untouched`, async () => {
@@ -752,7 +786,7 @@ test("the cleanup Test connection row lives inside the external-engine fields", 
   // fields instead of needing its own toggle in syncEngine.
   const start = html.indexOf('<div id="cleanup-external-fields">');
   const row = html.indexOf('id="cleanup-test-row"');
-  const builtinCardEnd = html.indexOf('<div class="card-title">Cleanup style</div>');
+  const builtinCardEnd = html.indexOf('>Cleanup style</div>');
   assert.ok(start !== -1 && row > start && row < builtinCardEnd);
 });
 
@@ -786,7 +820,7 @@ test("Save never closes Settings; the footer's Close button does", () => {
   assert.ok(save.length > 0, "saveSettings must exist");
   assert.doesNotMatch(save, /settings:close/, "Save must not close the window");
   const footer = html.match(/<footer>[\s\S]*?<\/footer>/)?.[0] ?? "";
-  assert.match(footer, /<button id="close">Close<\/button>\s*<button id="save" class="primary">Save<\/button>/);
+  assert.match(footer, /<button id="close"[^>]*>Close<\/button>\s*<button id="save" class="primary"[^>]*>Save<\/button>/);
   assert.match(js, /\$\("close"\)\.addEventListener\("click", \(\) => earheart\.invoke\("settings:close"\)\)/);
   assert.equal(js.match(/settings:close/g).length, 1, "only the Close button closes Settings");
   // With the window staying open, a failed Save's clear-timer must not wipe
@@ -814,6 +848,7 @@ function collectLimits({ maxSeconds = "", idle = "", saved = {} }) {
   const elements = {
     "max-seconds": { value: maxSeconds, ...inputRange("max-seconds") },
     "idle-unload": { value: idle, ...inputRange("idle-unload") },
+    "vocab-packs": { querySelectorAll: () => [] },
   };
   const context = {
     current: {
@@ -825,7 +860,7 @@ function collectLimits({ maxSeconds = "", idle = "", saved = {} }) {
     defaults: DEFAULTS,
     cleanupStyles: [{ id: "clean" }],
     $: (id) => elements[id] || { value: "", checked: false },
-    document: { querySelector: () => ({ value: "builtin" }) },
+    document: { querySelector: () => ({ value: "builtin" }), querySelectorAll: () => [] },
   };
   require("node:vm").runInNewContext(settingsCollectSource(), context);
   const out = context.collect();
@@ -1049,6 +1084,19 @@ test("the Usage figures say the time saved is an estimate against the stated bas
   assert.strictEqual(empty.streak, "1 day");
   assert.match(usageView({ ...summary, readOnly: "newer" }).readOnly, /newer version/);
   // The markup labels the figure and discloses the baseline beside it.
-  assert.match(html, /<dt>Time saved \(estimate\)<\/dt>/);
+  assert.match(html, /<dt[^>]*>Time saved \(estimate\)<\/dt>/);
   assert.match(html, /Estimate: typing these words at <span id="usage-baseline">40<\/span> WPM, minus the time you spent speaking them\. Not measured\./);
+});
+
+test("snippets.js loads before settings.js, and the Snippets section sits between Cleanup and History (#334)", () => {
+  assert.ok(html.indexOf('src="aliases.js"') < html.indexOf('src="snippets.js"'), "snippets.js needs aliases.js's aliasKey");
+  assert.ok(html.indexOf('src="snippets.js"') < html.indexOf('src="settings.js"'));
+  const order = [...html.matchAll(/<section id="tab-([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepStrictEqual(order.slice(order.indexOf("cleanup"), order.indexOf("cleanup") + 3), ["cleanup", "snippets", "history"]);
+  assert.ok(definesRule('[data-tab="snippets"] .tab-icon'));
+  assert.match(tokensCss, /--section-snippets:\s*#[0-9a-f]{6}/);
+  // Every tag button inserts a tag the renderer knows.
+  const { SNIPPET_TAGS } = require("../renderer/snippets");
+  const buttons = [...html.matchAll(/data-snippet-tag="([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepStrictEqual(buttons, SNIPPET_TAGS);
 });

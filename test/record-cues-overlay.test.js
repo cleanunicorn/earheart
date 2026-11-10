@@ -162,9 +162,17 @@ for (const [label, end] of [
 ]) {
   for (const cancel of ["record:cancel", "record:discard"]) {
     test(`record cues: ${cancel} after ${label} cuts the end cue still sounding`, async () => {
-      const rig = createOverlayVm(LATENCY);
+      // The lost mic never comes back, so recovery (#339) fails and the cue plays.
+      const rig = createOverlayVm({
+        ...LATENCY,
+        getUserMedia: async (c, calls) => {
+          if (calls.length > 1) throw Object.assign(new Error("gone"), { name: "NotFoundError" });
+          return rig.streams[0].stream;
+        },
+      });
       await liveTake(rig, 400);
       end(rig);
+      await rig.settle();
       rig.deliver();
       await rig.settle();
       const ctx = cueOutput(rig);
@@ -201,6 +209,7 @@ test("record cues: a stale session's cancel never cuts the newer session's cue",
   // The current session's cancel does cut it.
   rig.eval('stepCue({ type: "cancel", sid: 501 })');
   for (const n of startNotes) assert.strictEqual(n.stops.length, 2, "cut by the current cancel");
+  rig.send("record:cancel");
 });
 
 test("overlay VM fixture: root custom properties read like the real stylesheet", () => {

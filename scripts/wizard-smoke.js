@@ -231,6 +231,48 @@ async function checkWizard({ waitFor, check, setDuckingStatus }) {
     await waitFor(() => sw.webContents.executeJavaScript('document.activeElement?.closest("#stt-model-manage") !== null', true), "Skip did not focus speech Download");
     check("Skip opens missing speech Download without starting cleanup", !active.has(cleanupKey));
     active.get(key).finish();
+
+    // #373: reproduce Settings → Advanced → wizard, then Save in the still
+    // open Settings form before Finish. Ready fixtures keep this independent
+    // of transfer timing; both saves use the real controls and IPC handlers.
+    installed.add(key); installed.add(cleanupKey);
+    windows.closeSettings();
+    await waitFor(() => sw.isDestroyed(), "Settings did not close before concurrent-save check");
+    const editor = externalSettings = windows.openSettings();
+    await waitForLoad(editor.webContents);
+    const edit = (code) => editor.webContents.executeJavaScript(code, true);
+    await waitFor(() => edit('typeof formReady !== "undefined" && formReady'), "concurrent-save Settings did not initialize");
+    const openWizard = windows.openWizard;
+    let loaded;
+    windows.openWizard = (...args) => {
+      win = openWizard(...args);
+      loaded = waitForLoad(win.webContents);
+      return win;
+    };
+    try {
+      await edit('document.getElementById("open-wizard").click(); undefined');
+      await waitFor(() => !!loaded, "Advanced did not open the wizard");
+      await loaded;
+    } finally {
+      windows.openWizard = openWizard;
+    }
+    await until('!!current && !!modelStatus', "concurrent-save wizard did not initialize");
+    await edit(`document.getElementById("cleanup-prompt").value = "Concurrent Settings prompt #373";
+      document.getElementById("idle-unload").value = "9";
+      document.getElementById("record-sounds").checked = true;
+      document.getElementById("save").click(); undefined`);
+    await waitFor(() => edit('document.getElementById("save-status").className === "status ok" && !document.getElementById("save").disabled'), "concurrent Settings Save did not succeed");
+    check("Settings Save commits while the wizard stays open",
+      !win.isDestroyed() && settings.get().cleanup.systemPrompt === "Concurrent Settings prompt #373" && settings.get().engines.idleUnloadMinutes === 9);
+    await click("next"); await click("next");
+    await js('document.getElementById("duck-other-audio").checked = true; document.getElementById("duck-level").value = "45"; undefined');
+    for (let i = 0; i < 5; i++) await click("next");
+    await waitFor(() => win.isDestroyed(), "concurrent-save Finish did not close wizard");
+    const disk = JSON.parse(require("node:fs").readFileSync(require("node:path").join(require("electron").app.getPath("userData"), "settings.json"), "utf8"));
+    check("Finish keeps concurrent top-level and nested Settings edits on disk",
+      disk.engines.idleUnloadMinutes === 9 && disk.cleanup.systemPrompt === "Concurrent Settings prompt #373" && disk.audio.recordSounds === true, JSON.stringify({ engines: disk.engines, audio: disk.audio }));
+    check("Finish still commits the wizard's audio choices",
+      disk.audio.duckOtherAudio === true && disk.audio.duckLevelPercent === 45);
   } finally {
     windows.closeSettings();
     if (externalSettings) await waitFor(() => externalSettings.isDestroyed(), "Settings did not close");

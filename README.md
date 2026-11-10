@@ -71,6 +71,12 @@ Earheart works with any agent you can type into — no integration, plugin, API
 key, or account required. It pastes into the focused window and leaves the
 prompt for you to review and submit.
 
+If you want Earheart to start the task itself, opt in under Settings → History:
+review a transcript, pick a project, and send it to an installed Codex or
+Claude Code, then follow, cancel or reply to it. See
+[docs/agent-tasks.md](docs/agent-tasks.md). The brief then goes to that
+agent's provider, so it is off by default.
+
 ### Quick start for agents
 
 1. [Install Earheart](#install) and finish the first-run wizard.
@@ -90,7 +96,7 @@ do not collide with your editor — live in **[docs/agents.md](docs/agents.md)**
 | **claude.ai, ChatGPT, agent web UIs** | Same. The overlay never steals focus, so the composer keeps it. |
 | **Anywhere via a shortcut** | Bind a system shortcut, mouse button or foot pedal to `earheart --toggle` instead of using the built-in hotkey (Earheart must already be running). |
 
-Three settings are worth a minute for agent work:
+A few settings are worth a minute for agent work:
 
 - **Cleanup style** (Settings → Cleanup). **Clean** — the default — removes
   *ums* and restarts but keeps your wording and intent. Switch to **Verbatim**
@@ -105,6 +111,10 @@ Three settings are worth a minute for agent work:
   back, write an exact rule: `air heart, ear heart -> Earheart`. Each heard
   phrase is swapped for the spelling in every dictation, with cleanup on, off,
   or failing. See [Always replace](#always-replace).
+- **Snippets** (Settings → Snippets). Say a short phrase and get a saved block
+  of text instead: an address, a signature, a standing brief for an agent. The
+  text is inserted exactly, with cleanup on or off, and can include the
+  clipboard, date, time and time zone. See [docs/snippets.md](docs/snippets.md).
 - **System prompt** (Settings → Cleanup). Tell it to preserve file paths,
   flags, and identifiers exactly as spoken and never to answer the transcript.
   The default prompt already treats your dictation as text to clean, never as
@@ -123,6 +133,28 @@ Those ideas are filed under the
 label, and opinions are welcome.
 
 ## Features
+
+### New features at a glance
+
+Most of these are off by default or live in a menu you may not have opened.
+Each row says where to turn it on and where the details are.
+
+| Feature | How to use it | Details |
+| --- | --- | --- |
+| **Commands** (keyboard search) | `Ctrl+Shift+K` / `Cmd+Shift+K`, tray ▸ Commands…, or `Ctrl/Cmd+K` in Settings. Jump to a setting, copy or correct the last dictation, search History. | [command-palette.md](docs/command-palette.md) |
+| **Voice commands** | Tray ▸ Voice command… (or set a hotkey in Settings → General). Say "make this friendlier" over a selection, or "write a thank-you note" with nothing selected; review, then Replace or Copy. | [commands.md](docs/commands.md) |
+| **Spoken snippets** | Settings → Snippets. Save text under a trigger phrase, then say the phrase while dictating. | [snippets.md](docs/snippets.md) |
+| **Formatting by destination** | Settings → Cleanup → Formatting by destination. Per-website and per-app capitalization and punctuation. | [formatting-profiles.md](docs/formatting-profiles.md) |
+| **Starter packs / Learn from a folder** | Settings → Cleanup → Dictionary. Add vocabulary packs, or pick a project folder and review the suggested terms. | [Starter packs](#starter-packs-and-learning-from-a-project) |
+| **Send to coding agents** | Settings → History → turn on *Send transcripts to coding agents*, then **Send to agent…** on a History entry. | [agent-tasks.md](docs/agent-tasks.md) |
+| **Local tool servers (MCP)** | Settings → Advanced → Tools. Experimental. | [tools.md](docs/tools.md) |
+| **Double-tap to start** | Settings → General → Hotkey activation. | [double-tap.md](docs/double-tap.md) |
+| **Press Enter to stop and paste** | Settings → General. | [Using Earheart](#using-earheart) |
+| **Automatic microphone choice** | Settings → General → Microphone ▸ *Choose automatically*, with Bluetooth and virtual-device switches. | [microphone-selection.md](docs/microphone-selection.md) |
+| **Interface language** | Settings → General → Language. Independent of the language you dictate in. | [localization.md](docs/localization.md) |
+| **Quieter background audio** | Settings → General → Background audio. | [audio-ducking.md](docs/audio-ducking.md) |
+
+### All features
 
 - **Live transcript while you speak (on by default)** — with the built-in
   engine the overlay fills in the text as you talk, with a cleaned-up version
@@ -149,6 +181,8 @@ label, and opinions are welcome.
   Select **Correct…** in History to fix a phrase and remember its spelling, or
   map a recurring mishearing to it with **Always replace**, which works with
   cleanup off.
+- **Spoken snippets** — save a block of text under a trigger phrase and dictate
+  just the phrase. See [docs/snippets.md](docs/snippets.md).
 - **Pause and resume mid-dictation** — hold a take while you talk to someone or
   take a call, then resume it. Paused time is never captured or counted against
   the maximum length. You can also bind a global pause hotkey in Settings →
@@ -167,12 +201,18 @@ label, and opinions are welcome.
   short tone once the microphone is really capturing, another when you stop, and
   a low one if the microphone fails. Speak after the start tone: it is kept out
   of the recording. Off by default. See [docs/record-sounds.md](docs/record-sounds.md).
+- **Automatic microphone choice.** Settings → General → Microphone can pick for
+  you, with Bluetooth and virtual devices allowed or not, and falls back to the
+  system default (and says so) when nothing allowed is plugged in. A microphone
+  lost mid-dictation is replaced without losing what you already said. Your
+  saved microphone is kept. See [docs/microphone-selection.md](docs/microphone-selection.md).
 - **Private by default** — speech and cleanup run in-process, with no account,
   telemetry, cloud requirement, or network hop.
 - **Works anywhere without an integration** — the global hotkey (default
   `Ctrl/Cmd+Shift+Space`) starts and stops dictation without moving focus. Or,
   with Earheart running, bind `earheart --toggle` to a system shortcut, mouse
-  button, or foot pedal; `earheart --pause` pauses and resumes.
+  button, or foot pedal; `earheart --pause` pauses and resumes. Prefer a
+  hands-free double-tap? See [docs/double-tap.md](docs/double-tap.md).
 - **Speech-to-text with NVIDIA Parakeet** — Parakeet TDT 0.6B v3 (multilingual,
   25 languages, full precision) runs in-process via sherpa-onnx / ONNX Runtime, faster than
   realtime on CPU. Or use any OpenAI-compatible transcription API or the
@@ -192,9 +232,20 @@ label, and opinions are welcome.
   of the typing time saved (against a typing speed you set, 40 WPM by
   default). Counts only, never your words, on this computer only; turn it
   off or reset it there. See [docs/usage-stats.md](docs/usage-stats.md).
+- **Formatting by destination.** Format a dictation by where it lands: exact
+  website rules (macOS Safari/Chromium browsers), application rules, and a
+  default, kept apart from the Verbatim/Clean/Polished slider. Unavailable
+  context falls back to the default and never blocks dictation. See
+  [docs/formatting-profiles.md](docs/formatting-profiles.md).
 - **Kept recordings (optional)** — opt in to keep each dictation's audio,
   encrypted with your OS keychain, then play, seek, export or retranscribe it
   from History. Off by default; 30 days and 1 GB unless you change them.
+- **Local tool servers (optional, experimental)** — connect MCP servers you
+  run yourself over stdio (Settings → Advanced → Tools), see the tools they
+  offer, and choose per tool: off, ask each time, always allow or deny. Servers
+  start only when you press Discover or a tool is called. Voice commands do not
+  call these tools yet, so nothing runs them from your voice today. See
+  [docs/tools.md](docs/tools.md).
 - **Start on login (optional)** — have Earheart launch into the tray
   automatically when you sign in, so the hotkey is always ready. Off by
   default; toggle it under Settings → General. Works on Windows, macOS and
@@ -427,6 +478,17 @@ transcribing, only dismisses the bar once the paste is under way — and is
 held only while a dictation is running, so the combination is free the rest of
 the time. When set, ✕'s tooltip names it.
 
+**Press Enter to stop and paste** (Settings → General, off by default) makes
+Enter finish the dictation like the record hotkey: it stops, transcribes,
+cleans and delivers as usual. Enter is held globally only while the microphone
+is capturing — never idle, before the mic is ready, or while paused — and is
+consumed, so the app you are dictating into never sees it, and Earheart never
+sends an Enter after pasting. Because the grab is global, Enter is also
+swallowed in every other app during that window, including while you compose
+text with an input method (IME). If the system refuses the grab (for example
+Wayland) or Enter is already one of your hotkeys, it is left off with a note in
+the log and the hotkey, overlay and tray still stop the take.
+
 Earheart lives in your system tray. From the tray menu you can start a
 dictation, open the transcription history, or change any choice you made in
 the wizard:
@@ -521,6 +583,71 @@ cases. Reproduce with `node scripts/eval-vocabulary.mjs /path/to/model.gguf
 /tmp/vocabulary.json`; use the catalog's Qwen3 4B Instruct 2507 Q4_K_M model.
 The script uses the shipped cleanup prompt and scores the final postprocessed
 text. A missing exact spelling remains possible even after remembering it.
+
+### Commands
+
+Press **Ctrl+Shift+K** (**Cmd+Shift+K** on macOS) for keyboard-searchable
+Settings navigation, Copy/Correct last transcription, update checks, the
+error log and recent saved dictations. Settings also offers **Commands…**
+and **Ctrl/Cmd+K**; the tray keeps its existing controls and adds Commands.
+Change or disable the global binding in Settings → General, or bind your
+desktop to `earheart --palette`.
+
+Use arrows and Enter to select, Tab to reach Close, and Escape to dismiss.
+History searches saved and original text and opens the selected card in
+Settings. Commands refuses to open during a take; pressing record or retry
+while it is open only closes it. Focus your destination before pressing the
+dictation key again. [Commands and focus behavior](docs/command-palette.md).
+
+### Voice commands
+
+Dictation never treats your words as instructions. When you *do* want to give
+one, use the separate **voice command** mode (tray ▸ Voice command…, or the
+optional hotkey in Settings → General): say "make this friendlier" over a
+selection, or "write a two-line thank-you note" with nothing selected, review
+the result on the card, then **Replace selection** or **Copy**. It runs on your
+Cleanup model by default; a remote service is used only if you name one. See
+[docs/commands.md](docs/commands.md).
+
+### Starter packs and learning from a project
+
+Settings → Cleanup → Dictionary has two ways to fill the dictionary without
+typing every identifier:
+
+- **Starter packs** — toggleable lists for Coding agents, JS / Web, Cloud /
+  Kubernetes and Python / Data (at most 40 terms each). Enabled packs are added
+  to the cleanup prompt *after* your own terms and are never copied into your
+  list, so switching one off removes exactly its words. The prompt carries at
+  most 400 terms in total; your own terms are never dropped, packs only fill
+  what room is left.
+- **Learn from a folder…** — you pick a project folder, and Earheart suggests
+  words from its manifest (`package.json`, `pyproject.toml`, `Cargo.toml`
+  names and dependencies), top-level directory and file names, and exported
+  symbols. It runs only when you click the button, reads only inside the folder
+  you chose, never follows symlinks, skips `node_modules`, build output and
+  hidden directories, and is bounded (300 source files, 3 levels deep, the
+  first 64 KiB of each file). Only identifier-shaped words come back — no paths
+  or file contents — ranked (manifest name, then top-level directories,
+  dependencies, exports, file names) and cut to 40. You review the list,
+  untick what you would not say, and the words join the dictionary only when
+  you press **Add selected** and then **Save**. Additions respect the
+  dictionary's 256-term / 8,192-character limits.
+
+The cleanup directive still tells the model to never force a term in where the
+speaker clearly said something else. `node scripts/eval-vocabulary.mjs
+/path/to/model.gguf /tmp/vocabulary.json` now also runs a large-dictionary arm
+(your list plus every pack) over the original prompts and six extra controls
+that say pack words in an ordinary sense ("move the cursor…"); it exits non-zero
+if any control gets a term forced in, and the report records SHA-256 hashes of
+the model and of each arm's prompt so a rerun is comparable. It needs a local
+cleanup model, so CI only tests the evaluation logic, and the result is a small
+synthetic text check on one model, not a guarantee, and **the large-dictionary
+arm has not been run yet**. Some pack words are also ordinary words ("Cursor",
+"Claude", "Lambda", "Prettier"); packs are off by default for that reason, and
+if one misfires, switch the pack off or use the dictionary directly. Settings
+refuses to save a dictionary over the 256-term / 8,192-character limits rather
+than truncating it. Not yet shipped: an
+`earheart --learn-vocab <path>` command and an MCP tool for agents to call.
 
 ### Always replace
 
@@ -654,7 +781,8 @@ checksum-verified. Only add models from repos you trust.
   `~/Applications/Earheart-<version>.AppImage --toggle`. The same works for
   pause/resume with `earheart --pause`, for discarding the dictation in
   progress with `earheart --discard`, and for retrying a failed transcription
-  with `earheart --retry`.
+  with `earheart --retry`. With double-tap activation enabled, bind
+  `earheart --tap` instead of `--toggle` (see [docs/double-tap.md](docs/double-tap.md)).
 
 ### macOS
 
@@ -709,9 +837,22 @@ checksum-verified. Only add models from repos you trust.
   the Linux Secret Service such as GNOME Keyring or KWallet). On Linux without
   a keyring they are saved unencrypted, and Settings says so under each API key
   field — set up a keyring and restart Earheart to encrypt them.
+- Tool servers you add (optional) are programs on your computer that run with
+  your permissions: Earheart starts one only on request, with a minimal
+  environment, and asks before each call by default. Secret environment values
+  are encrypted like API keys where the OS allows it. See
+  [docs/tools.md](docs/tools.md).
 - A settings file damaged by a crash or a bad hand-edit is kept as
   `settings.json.corrupt-<timestamp>` next to the fresh one, so nothing is
   silently thrown away.
+- If you turn on "Send transcripts to coding agents", the briefs you
+  explicitly send go to the Codex or Claude Code you chose, and its provider
+  processes them. Tasks are kept in `agent-tasks.json` (user-only) and are
+  deleted with Clear history.
+- Voice commands send your selected text and spoken instruction only to the
+  writing model you chose: the built-in Cleanup model on your machine (the
+  default) or a remote service you name for them. They are never saved to
+  History or logged ([docs/commands.md](docs/commands.md)).
 - No telemetry, no accounts, no cloud.
 
 ## Star history

@@ -438,6 +438,46 @@ app.whenReady().then(async () => {
     check("new session remains usable after the stale rejection", capturedCurrent.sid === 95);
     await win.webContents.executeJavaScript("window.__micTest.calls = []");
 
+    // ---- Route change mid-capture (#339): the mic's track ends, a replacement
+    // is opened, and the words from before the loss are still in the WAV.
+    start(win, 96);
+    await waitForStatus(win, "recording");
+    await sleep(700);
+    await win.webContents.executeJavaScript(`(() => {
+      const track = window.__micTest.streams.at(-1).getTracks()[0];
+      track.stop();
+      track.dispatchEvent(new Event("ended")); // stop() alone fires no event
+    })()`);
+    await waitFor(
+      () => win.webContents.executeJavaScript("window.__micTest.calls.length >= 2"),
+      "no replacement microphone was requested after the track ended"
+    );
+    await sleep(700);
+    const recoveredUi = await win.webContents.executeJavaScript(`({
+      status: document.getElementById("card").dataset.status,
+      detail: document.getElementById("detail-text").textContent,
+    })`);
+    const routeCapture = waitForMessage("audio:captured");
+    win.webContents.send("record:stop");
+    const routed = await routeCapture;
+    const routedStats = wavStats(routed.wav);
+    check(
+      "a track that ends mid-take is replaced once and the take keeps recording",
+      recoveredUi.status === "recording" && (await win.webContents.executeJavaScript("window.__micTest.calls.length")) === 2,
+      JSON.stringify(recoveredUi)
+    );
+    check(
+      "the route change shows its notice on the card",
+      /Microphone changed|switching/.test(recoveredUi.detail),
+      recoveredUi.detail
+    );
+    check(
+      "speech from before and after the route change is in the delivered WAV",
+      routed.sid === 96 && routedStats.seconds >= 1.1 && routedStats.rms > 0.001,
+      JSON.stringify(routedStats)
+    );
+    await win.webContents.executeJavaScript("window.__micTest.calls = []");
+
     // ---- Session 1: status order, and capture aligned with the UI ----------
     // Record every data-status transition from inside the page, so the order
     // is exact rather than sampled by polling.

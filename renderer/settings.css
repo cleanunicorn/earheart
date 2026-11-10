@@ -152,6 +152,10 @@ nav#tabs {
 #legend-cleanup .legend-icon {
   color: var(--section-cleanup);
 }
+[data-tab="snippets"] .tab-icon,
+#legend-snippets .legend-icon {
+  color: var(--section-snippets);
+}
 [data-tab="history"] .tab-icon,
 #legend-history .legend-icon {
   color: var(--section-history);
@@ -278,7 +282,8 @@ main {
   margin-bottom: 0;
 }
 
-.field > label:first-child {
+.field > label:first-child,
+.field > .field-label:first-child {
   display: block;
   font-weight: 550;
   font-size: 13px;
@@ -1095,6 +1100,67 @@ input[type="range"]:focus-visible {
   font-size: 14px;
 }
 
+/* ---------- snippets (#334) ---------- */
+
+.snippet-search {
+  margin-bottom: 4px;
+}
+
+#snippet-list {
+  list-style: none;
+  margin: 6px 0 10px;
+}
+
+#snippet-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--wash-faint);
+  border: 1px solid var(--seam);
+  border-radius: 10px;
+  padding: 9px 12px;
+  margin-bottom: 8px;
+}
+
+#snippet-list li.editing {
+  border-color: var(--section-snippets);
+}
+
+#snippet-list .snippet-body {
+  flex: 1;
+  min-width: 0;
+}
+
+#snippet-list .snippet-triggers {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+#snippet-list .snippet-excerpt {
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.snippet-tags {
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+#snippet-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  background: var(--wash-faint);
+  border: 1px solid var(--seam);
+  border-radius: 8px;
+  padding: 9px 11px;
+  min-height: 2.4em;
+  max-height: 14em;
+  overflow: auto;
+}
+
 /* ---------- history ---------- */
 
 .history-head {
@@ -1422,4 +1488,77 @@ footer {
   main {
     scroll-behavior: auto;
   }
+}
+
+/* Send to agents (#345): the review form on a History entry and the task list. */
+#agent-tasks {
+  max-width: 620px;
+  margin-bottom: 14px;
+}
+
+#agent-task-list {
+  list-style: none;
+}
+
+#agent-task-list li,
+#history-list .agent-review {
+  background: var(--wash-faint);
+  border: 1px solid var(--seam);
+  border-radius: 10px;
+  padding: 11px 13px;
+  margin-bottom: 8px;
+}
+
+#history-list .agent-review {
+  margin: 9px 0 0;
+}
+
+.agent-review textarea {
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+}
+
+.agent-review .agent-row,
+#agent-task-list .agent-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+#agent-task-list .agent-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#agent-task-list .agent-status {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+#agent-task-list .agent-status.failed,
+#agent-task-list .agent-status.interrupted {
+  color: var(--err);
+}
+
+#agent-task-list .agent-brief,
+#agent-task-list .agent-output {
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow: auto;
+  margin-top: 6px;
+}
+
+#agent-task-list .agent-output {
+  border-top: 1px solid var(--seam);
+  padding-top: 6px;
+}
+
+.hint.err {
+  color: var(--err);
 }

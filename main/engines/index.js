@@ -11,6 +11,7 @@ const hostModule = require("./host");
 const { resolveCleanup } = require("../cleanup-styles");
 const { cleanContextFor, cleanTranscriptBudget } = require("../util/clean-budget");
 const { cleanupTurnPrefix } = require("../util/cleanup-turn");
+const { transformTurn, transformMaxTokens, TRANSFORM_TEMPERATURE, TRANSFORM_EMPTY_MESSAGE } = require("../util/transform-turn");
 const { unsupportedSttFamily } = require("../services/hf-models");
 
 // STT and cleanup each get their own worker process so they run in parallel and
@@ -320,6 +321,36 @@ async function clean(transcript, cfg, signal, { onProgress, maxRecordingSeconds 
   }
 }
 
+// Voice command (#344) on the cleanup model: draft from `instruction`, or
+// rewrite `selection` by it. Its own request type with its own output budget
+// (`cfg.maxOutputTokens`); see main/util/transform-turn.js. Cancelled through
+// `signal` like clean(): only this operation is aborted in the worker.
+async function transform({ instruction, selection = "" }, cfg, signal, { cleanupModelId, maxRecordingSeconds } = {}) {
+  if (signal?.aborted) throw new Error("aborted");
+  const model = cleanupModel(cleanupModelId, { maxRecordingSeconds });
+  const operationId = ++cleanupOperationId;
+  const abort = () => {
+    if (cleanupResident) cleanupHost.request("cancel-clean", { operationId }).catch(() => {});
+  };
+  const pending = cleanupRequest("transform", {
+    model,
+    operationId,
+    turn: transformTurn({ instruction, selection }),
+    maxTokens: transformMaxTokens(cfg?.maxOutputTokens),
+    sampling: { temperature: TRANSFORM_TEMPERATURE },
+  });
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
+  try {
+    const text = await pending;
+    if (signal?.aborted) throw new Error("aborted");
+    if (typeof text !== "string" || text.trim().length === 0) throw new Error(TRANSFORM_EMPTY_MESSAGE);
+    return text;
+  } finally {
+    signal?.removeEventListener("abort", abort);
+  }
+}
+
 // Worker exit forgets STT identity and cleanup residency. Cleanup model
 // identity is authoritative inside the worker, checked on every operation.
 function forgetStt() {
@@ -420,6 +451,7 @@ module.exports = {
   transcribe,
   ensureCleanup,
   clean,
+  transform,
   primeCleanup,
   cancelClean,
   stop,

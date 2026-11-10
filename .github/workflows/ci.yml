@@ -29,7 +29,11 @@ jobs:
       # Electron fetches its binary on first use; parallel test files that each
       # trigger that download race and fail, so fetch it once up front.
       - run: npx --no install-electron # make install
-      - run: npm test # make test
+      # Bound the step so a hang fails in minutes, not at the job limit. (On
+      # Windows a hung child can outlive this and the log is then lost.)
+      - name: Unit tests
+        timeout-minutes: 8
+        run: npm test # make test
       # Electron needs a display; Linux runners are headless so wrap with xvfb.
       # make smoke
       - name: Smoke test (headless)
@@ -59,6 +63,14 @@ jobs:
       - name: Overlay capture sync
         if: runner.os != 'Linux'
         run: npx electron scripts/overlay-smoke.js --no-sandbox
+      # Real OS key events (xdotool on Xvfb) through a real globalShortcut into
+      # the double-tap recognizer: double tap, single tap, held-key auto-repeat.
+      # make double-tap-check
+      - name: Double-tap real key events (Linux/X11)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y xdotool
+          xvfb-run -a npx electron scripts/double-tap-check.js --no-sandbox
       # Drive the real settings window and verify the settings-page contract:
       # one continuous scroll, the scroll-spy index, and the seated roving
       # tabindex.
@@ -69,6 +81,26 @@ jobs:
       - name: Settings panel smoke
         if: runner.os != 'Linux'
         run: npx electron scripts/settings-smoke.js --no-sandbox
+      # Drive the Tools settings card, the real approval window and a fixture
+      # MCP server over stdio (it spawns `node` from PATH).
+      # make approval-smoke
+      - name: Tool approval smoke (headless)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npx electron scripts/approval-smoke.js --no-sandbox
+      - name: Tool approval smoke
+        if: runner.os != 'Linux'
+        run: npx electron scripts/approval-smoke.js --no-sandbox
+      # Drive the real voice command card (#344): text-only rendering, the
+      # Apply/Copy rules, cancellation, and that only the card may call the
+      # command channels. CI can't prove native selection capture or paste;
+      # those are checked by hand per OS (docs/commands.md).
+      # make command-smoke
+      - name: Voice command card smoke (headless)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npx electron scripts/command-smoke.js --no-sandbox
+      - name: Voice command card smoke
+        if: runner.os != 'Linux'
+        run: npx electron scripts/command-smoke.js --no-sandbox
 
   # `.nvmrc` floats to the newest Node 22, so the job above never sees the
   # oldest Node that package.json's engines field promises. Install and unit-test

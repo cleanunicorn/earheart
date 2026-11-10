@@ -1,11 +1,13 @@
 // Window management: the recording overlay (a small always-on-top card that
-// also owns the microphone), Settings, the first-run wizard and correction editor.
+// also owns the microphone), Settings, the first-run wizard, correction editor
+// and the tool-approval prompt.
 
 const { BrowserWindow, ipcMain, screen, dialog, nativeTheme } = require("electron");
 const path = require("node:path");
 const settings = require("./settings");
 const logger = require("./util/logger");
 const { guardNavigation } = require("./window-guard");
+const { t } = require("./i18n");
 
 const PRELOAD = path.join(__dirname, "..", "preload.js");
 const RENDERER = path.join(__dirname, "..", "renderer");
@@ -38,8 +40,12 @@ let overlayWindow = null;
 let settingsWindow = null;
 let wizardWindow = null;
 let correctionWindow = null;
+let paletteWindow = null;
+let approvalWindow = null;
+let approvalClosedHandler = () => {};
 let correctionText = "";
 let correctionDirty = false;
+let commandWindow = null; // the voice command card (#344)
 let overlayCustomPosition = null; // set when the user drags the card
 let overlayDragOrigin = null; // { winX, winY, pointerX, pointerY }
 let overlayHideTimer = null;
@@ -487,16 +493,48 @@ function sendToOverlay(channel, payload) {
   if (win) win.webContents.send(channel, payload);
 }
 
-function openSettings({ fromWizard = false, section, model = false } = {}) {
+// A hidden palette reserves its lifecycle before loading. Only its controller
+// may show it after checking the pipeline again.
+function createPaletteWindow() {
+  paletteWindow = createFormWindow("palette", { width: 620, height: 600, minWidth: 420,
+    minHeight: 360, title: t("window.palette.title"), show: false });
+  const win = paletteWindow;
+  win.on("closed", () => { if (paletteWindow === win) paletteWindow = null; });
+  return win;
+}
+function loadPalette(win) { return win.loadFile(path.join(RENDERER, "palette.html")); }
+function paletteCaller(sender) { return alive(settingsWindow) && settingsWindow.webContents === sender; }
+function capturePaletteCaller() {
+  const win = BrowserWindow.getFocusedWindow();
+  return [settingsWindow, wizardWindow, correctionWindow].includes(win) ? win : null;
+}
+function restorePaletteCaller(win) {
+  // Chromium retains the focused control in the existing document. For an
+  // external caller, leave foreground restoration to the window manager.
+  if (alive(win)) bringForward(win);
+}
+
+function openSettings({ fromWizard = false, section, model = false, query: historyQuery, entryId } = {}) {
   const destination = ["general", "live", "stt", "cleanup", "history", "advanced"].includes(section) ? section : undefined;
-  const navigation = { fromWizard, section: destination, model: !!model };
+  const historyDestination = destination === "history" && typeof historyQuery === "string"
+    ? { query: historyQuery.slice(0, 200), ...(typeof entryId === "string" ? { entryId } : {}) } : {};
+  const navigation = { fromWizard, section: destination, model: !!model, ...historyDestination };
   const query = {
+    ...historyDestination,
     ...(fromWizard ? { wizard: "1" } : {}),
     ...(destination ? { section: destination, ...(model ? { model: "1" } : {}) } : {}),
   };
   const load = (win) => win.loadFile(path.join(RENDERER, "settings.html"), Object.keys(query).length ? { query } : undefined);
   if (alive(settingsWindow)) {
-    if (fromWizard || destination) settingsWindow.webContents.send("settings:navigate", navigation);
+    if (fromWizard || destination) {
+      const target = settingsWindow;
+      const send = () => {
+        if (alive(target) && settingsWindow === target) target.webContents.send("settings:navigate", navigation);
+      };
+      // A loading page has not necessarily installed its navigation listener.
+      if (target.webContents.isLoadingMainFrame?.()) target.webContents.once("did-finish-load", send);
+      else send();
+    }
     return bringForward(settingsWindow);
   }
   settingsWindow = createFormWindow("settings", {
@@ -510,7 +548,7 @@ function openSettings({ fromWizard = false, section, model = false } = {}) {
     height: 780,
     minWidth: 560,
     minHeight: 480,
-    title: "Earheart",
+    title: t("window.settings.title"),
   });
   load(settingsWindow);
   settingsWindow.on("closed", () => {
@@ -523,7 +561,7 @@ function openSettings({ fromWizard = false, section, model = false } = {}) {
 function openCorrection(entry = null) {
   if (alive(correctionWindow)) {
     if (entry?.text && entry.text !== correctionText) {
-      correctionWindow.webContents.send("correction:notice", "Your current correction is still open. Copy or close it before opening another transcript.");
+      correctionWindow.webContents.send("correction:notice", t("correction.busy"));
     }
     return bringForward(correctionWindow);
   }
@@ -531,7 +569,7 @@ function openCorrection(entry = null) {
   correctionDirty = false;
   correctionWindow = createFormWindow("correction", {
     width: 720, height: 780, minWidth: 520, minHeight: 600,
-    title: "Correct transcript · Earheart",
+    title: t("window.correction.title"),
   });
   correctionWindow.loadFile(path.join(RENDERER, "correction.html"));
   correctionWindow.on("close", (event) => {
@@ -555,11 +593,11 @@ function confirmCorrectionClose() {
   try {
     const choice = dialog.showMessageBoxSync(correctionWindow, {
       type: "question",
-      buttons: ["Keep editing", "Discard draft"],
+      buttons: [t("correction.discard.keep"), t("correction.discard.discard")],
       defaultId: 0,
       cancelId: 0,
-      message: "Discard your uncopied corrections?",
-      detail: "Your original transcript stays in History. Remembered spellings have already been saved.",
+      message: t("correction.discard.message"),
+      detail: t("correction.discard.detail"),
     });
     if (choice !== 1) return false;
     correctionDirty = false;
@@ -573,6 +611,112 @@ function confirmCorrectionClose() {
 function getCorrectionText() { return correctionText; }
 function closeCorrection() { if (alive(correctionWindow)) correctionWindow.close(); }
 
+// The tool-approval prompt (#346): a small always-on-top window that shows the
+// broker's current request. It is the only window whose bridge can resolve an
+// approval. A user closing it denies whatever is pending (approvalClosedHandler);
+// main closing it because nothing is pending does not (see closeApproval).
+function openApproval() {
+  if (alive(approvalWindow)) {
+    approvalWindow.showInactive?.();
+    return approvalWindow;
+  }
+  approvalWindow = createFormWindow("approval", {
+    width: 520,
+    height: 520,
+    minWidth: 420,
+    minHeight: 360,
+    alwaysOnTop: true,
+    minimizable: false,
+    title: t("window.approval.title"),
+  });
+  const win = approvalWindow;
+  win.loadFile(path.join(RENDERER, "approval.html"));
+  win.on("closed", () => {
+    if (approvalWindow !== win) return; // main closed it (closeApproval)
+    approvalWindow = null;
+    approvalClosedHandler();
+  });
+  return win;
+}
+
+// The voice command card (#344): input, spoken instruction, result and the
+// Apply / Copy / Cancel controls. Like the overlay it never takes keyboard
+// focus (focusable: false, shown inactive), because Apply pastes into whatever
+// window has the keyboard — if the card held it, the paste would land in the
+// card. The command session also checks the focused window right before it
+// pastes, so a card that did end up focused fails safe to Copy.
+const COMMAND_WIDTH = 540;
+const COMMAND_HEIGHT = 520;
+
+function openCommand({ onClosed } = {}) {
+  if (alive(commandWindow)) {
+    if (!commandWindow.isVisible()) commandWindow.showInactive();
+    return commandWindow;
+  }
+  const { workArea } = screen.getPrimaryDisplay();
+  commandWindow = createAppWindow("command", {
+    width: COMMAND_WIDTH,
+    height: COMMAND_HEIGHT,
+    x: Math.round(workArea.x + (workArea.width - COMMAND_WIDTH) / 2),
+    y: Math.round(workArea.y + Math.max(40, (workArea.height - COMMAND_HEIGHT) / 3)),
+    show: false,
+    frame: false,
+    resizable: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    acceptFirstMouse: true,
+    backgroundColor: inkColor(),
+    webPreferences: { backgroundThrottling: false },
+  });
+  commandWindow.setAlwaysOnTop(true, "screen-saver");
+  commandWindow.loadFile(path.join(RENDERER, "command.html"));
+  commandWindow.once("ready-to-show", () => {
+    if (alive(commandWindow)) commandWindow.showInactive();
+  });
+  const win = commandWindow;
+  win.on("closed", () => {
+    if (commandWindow === win) commandWindow = null;
+    onClosed?.();
+  });
+  return win;
+}
+
+function closeApproval() {
+  if (!alive(approvalWindow)) return;
+  const win = approvalWindow;
+  approvalWindow = null; // detach first: a programmatic close must not read as "the user closed it"
+  win.destroy();
+}
+
+function getApprovalWindow() { return alive(approvalWindow) ? approvalWindow : null; }
+function onApprovalClosed(fn) { approvalClosedHandler = typeof fn === "function" ? fn : () => {}; }
+function sendToApproval(channel, payload) {
+  if (alive(approvalWindow)) approvalWindow.webContents.send(channel, payload);
+}
+// Sender identity for IPC handlers: the web contents of that role's window.
+function isApprovalSender(sender) { return alive(approvalWindow) && sender === approvalWindow.webContents; }
+function isSettingsSender(sender) { return alive(settingsWindow) && sender === settingsWindow.webContents; }
+
+function closeCommand() {
+  if (alive(commandWindow)) commandWindow.destroy();
+  commandWindow = null;
+}
+
+function sendToCommand(channel, payload) {
+  if (alive(commandWindow)) commandWindow.webContents.send(channel, payload);
+}
+
+// True when `sender` (an IPC event's webContents) is the command card's own
+// page: the role check every command:* handler makes (main/commands/ipc.js).
+function isCommandSender(sender) {
+  return alive(commandWindow) && sender === commandWindow.webContents;
+}
+
 function openWizard() {
   if (alive(wizardWindow)) return bringForward(wizardWindow);
   wizardWindow = createFormWindow("wizard", {
@@ -580,7 +724,7 @@ function openWizard() {
     height: 680,
     minWidth: 560,
     minHeight: 560,
-    title: "Welcome to Earheart",
+    title: t("window.wizard.title"),
   });
   wizardWindow.loadFile(path.join(RENDERER, "wizard.html"));
   wizardWindow.on("closed", () => {
@@ -595,6 +739,12 @@ function closeWizard() {
 
 function closeSettings() {
   if (alive(settingsWindow)) settingsWindow.close();
+}
+
+// True when `contents` is the Settings window's own page: the agent:* handlers
+// (#345) accept requests from nowhere else.
+function isSettingsContents(contents) {
+  return alive(settingsWindow) && settingsWindow.webContents === contents;
 }
 
 function sendToSettings(channel, payload) {
@@ -617,17 +767,33 @@ function broadcast(channel, payload) {
   }
 }
 
+// Re-title the open framed windows after a UI-language change (#349). The
+// pages translate themselves; only the native title bar is main's.
+function retitle() {
+  const titles = [
+    [settingsWindow, "window.settings.title"],
+    [wizardWindow, "window.wizard.title"],
+    [correctionWindow, "window.correction.title"],
+    [paletteWindow, "window.palette.title"],
+    [approvalWindow, "window.approval.title"],
+  ];
+  for (const [win, key] of titles) {
+    if (alive(win)) win.setTitle(t(key));
+  }
+}
+
 // Repaint the framed windows' native background in the current palette. The
 // pages re-theme themselves (prefers-color-scheme); this keeps the window
 // behind them — visible while resizing — from showing the old ink.
 function refreshInk() {
   const ink = inkColor();
-  for (const win of [settingsWindow, wizardWindow, correctionWindow]) {
+  for (const win of [settingsWindow, wizardWindow, correctionWindow, paletteWindow, approvalWindow, commandWindow]) {
     if (win && !win.isDestroyed()) win.setBackgroundColor(ink);
   }
 }
 
 module.exports = {
+  isSettingsContents,
   init,
   INK_COLORS,
   inkColor,
@@ -640,14 +806,32 @@ module.exports = {
   setOverlayPinned,
   isOverlayVisible,
   sendToOverlay,
+  isWizardOpen: () => alive(wizardWindow),
+  createPaletteWindow,
+  loadPalette,
+  paletteCaller,
+  capturePaletteCaller,
+  restorePaletteCaller,
   openSettings,
   openCorrection,
   getCorrectionText,
   setCorrectionDirty,
   confirmCorrectionClose,
   closeCorrection,
+  openApproval,
+  closeApproval,
+  onApprovalClosed,
+  getApprovalWindow,
+  sendToApproval,
+  isApprovalSender,
+  isSettingsSender,
+  openCommand,
+  closeCommand,
+  sendToCommand,
+  isCommandSender,
   sendToSettings,
   sendToForms,
+  retitle,
   broadcast,
   openWizard,
   closeWizard,

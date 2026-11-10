@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:" />
+  <title>Voice command · Earheart</title>
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="command.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <h1 id="title">Voice command</h1>
+      <p id="phase" role="status" aria-live="polite"></p>
+    </header>
+    <p id="remote-note" class="hint" hidden>This command uses a remote service: the selected text and your instruction are sent to it.</p>
+    <p id="capture-note" class="hint" hidden></p>
+
+    <section id="selection-box" hidden>
+      <h2>Selected text <span class="hint">· what will be rewritten</span></h2>
+      <pre id="selection" tabindex="0" aria-label="Selected text"></pre>
+    </section>
+    <section id="instruction-box" hidden>
+      <h2>You said</h2>
+      <pre id="instruction" class="short" tabindex="0" aria-label="Your spoken instruction"></pre>
+    </section>
+    <section id="output-box" hidden>
+      <h2>Result</h2>
+      <pre id="output" tabindex="0" aria-label="Result"></pre>
+    </section>
+
+    <p id="error" role="alert" hidden></p>
+    <p id="notice" role="status" aria-live="polite" hidden></p>
+
+    <footer>
+      <button id="cancel">Cancel</button>
+      <span class="spacer"></span>
+      <button id="finish" class="primary" hidden>Finish speaking</button>
+      <button id="again" hidden>Speak again</button>
+      <button id="retry" hidden>Retry</button>
+      <button id="copy" hidden>Copy</button>
+      <button id="apply" class="primary" hidden>Replace selection</button>
+    </footer>
+  </main>
+  <script src="command.js"></script>
+</body>
+</html>

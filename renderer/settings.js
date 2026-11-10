@@ -8,6 +8,7 @@ let defaults = null;
 let platform = "linux";
 let modelStatus = null; // { stt: [...], cleanup: [...] } from the main process
 let keyStorage = null; // how main stores API keys (settings:get keyStorage)
+let formattingStyles = []; // [{ id, label, hint }] — destination formatting styles
 let cleanupStyles = []; // [{ id, label, hint }] — the cleanup style slider stops
 
 const $ = (id) => document.getElementById(id);
@@ -173,6 +174,24 @@ $("discard-hotkey-clear").addEventListener("click", () => {
   discardHotkeyInput.value = "";
 });
 
+const paletteHotkeyInput = $("palette-hotkey");
+wireHotkeyCapture(paletteHotkeyInput, {
+  apply: accelerator => { current.paletteHotkey = accelerator; paletteHotkeyInput.value = accelerator; },
+  restore: () => current?.paletteHotkey || "",
+});
+$("palette-hotkey-clear").addEventListener("click", () => { current.paletteHotkey = ""; paletteHotkeyInput.value = ""; });
+async function openCommands() {
+  const result = await earheart.invoke("palette:open");
+  $("commands-status").textContent = result.ok ? "" : result.error;
+}
+$("commands").addEventListener("click", openCommands);
+document.addEventListener("keydown", event => {
+  if (event.isComposing || event.repeat || document.querySelector(".capturing")) return;
+  if ((platform === "darwin" ? event.metaKey : event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "k") {
+    event.preventDefault(); openCommands();
+  }
+});
+
 const correctHotkeyInput = $("correct-hotkey");
 wireHotkeyCapture(correctHotkeyInput, {
   apply: (accelerator) => {
@@ -185,6 +204,41 @@ $("correct-hotkey-clear").addEventListener("click", () => {
   current.correctHotkey = "";
   correctHotkeyInput.value = "";
 });
+
+// The voice command hotkey (#344) is optional like the others.
+const commandsHotkeyInput = $("commands-hotkey");
+wireHotkeyCapture(commandsHotkeyInput, {
+  apply: (accelerator) => {
+    current.commands = { ...current.commands, hotkey: accelerator };
+    commandsHotkeyInput.value = accelerator;
+  },
+  restore: () => current?.commands?.hotkey || "",
+});
+$("commands-hotkey-clear").addEventListener("click", () => {
+  current.commands = { ...current.commands, hotkey: "" };
+  commandsHotkeyInput.value = "";
+});
+
+// Remote fields show only for the remote engine; the engine hint says where
+// the text goes either way.
+function renderCommandsEngine() {
+  const remote = $("commands-engine").value === "remote";
+  $("commands-remote").hidden = !remote;
+  $("commands-engine-hint").textContent = remote
+    ? ""
+    : "Runs on this computer with the Cleanup model, so nothing leaves it. Download the model in Cleanup.";
+}
+$("commands-engine").addEventListener("change", renderCommandsEngine);
+
+// What this OS can do, from main (settings:get commandCapabilities).
+function renderCommandCapabilities(caps) {
+  if (!caps) return;
+  const parts = [];
+  if (!caps.capture?.ok) parts.push(`Reading a selection isn't available: ${caps.capture?.reason || "unsupported"}.`);
+  if (!caps.apply?.ok) parts.push(`${caps.apply?.reason || "Replacing the selection isn't available."}`);
+  if (platform !== "darwin") parts.push("Password fields can't be detected on this system: don't run a command with one focused.");
+  $("commands-capabilities").textContent = parts.join(" ");
+}
 
 /* ---------- background audio ---------- */
 
@@ -229,7 +283,7 @@ async function loadMicrophones() {
   if (current.audio.deviceId) {
     const saved = document.createElement("option");
     saved.value = current.audio.deviceId;
-    saved.textContent = "Configured microphone";
+    saved.textContent = i18n.t("rt.configuredMicrophone");
     select.appendChild(saved);
     select.value = current.audio.deviceId;
   }
@@ -258,16 +312,78 @@ async function loadMicrophones() {
     ) {
       const configured = select.querySelector(`option[value="${CSS.escape(current.audio.deviceId)}"]`);
       if (configured) {
-        configured.textContent = "Configured microphone (not connected)";
+        configured.textContent = i18n.t("rt.configuredMicrophoneNotConnected");
         status.textContent =
           "Saved microphone not found. Dictation can temporarily use the system default; this selection stays saved.";
       }
     }
     if (!selectionChanged) select.value = current.audio.deviceId || "";
+    if (typeof onMicrophonesListed === "function") onMicrophonesListed(devices);
   } catch {
     // No microphone permission/device; leave "System default".
   }
   if (!selectionChanged) formBaseline.set(select, { value: select.value, checked: select.checked });
+}
+
+// ---- Automatic selection (#339) ----
+// The three controls are written ONLY by populate()/showMicPolicy() and the
+// post-save sync above, never by device enumeration: loadMicrophones() reports
+// what it found through onMicrophonesListed(), and renderMicPolicy() reads the
+// controls to draw the preview. So a choice made while enumeration runs can't
+// be overwritten by it.
+let micDevices = [];
+let micClasses = null; // { records, available } once the probe answered
+
+function showMicPolicy(audio) {
+  $("mic-mode").value = audio.micMode === "auto" ? "auto" : "manual";
+  $("mic-bluetooth").checked = audio.micIncludeBluetooth !== false;
+  $("mic-virtual").checked = audio.micIncludeVirtual !== false;
+  renderMicPolicy();
+}
+
+function onMicrophonesListed(devices) {
+  micDevices = devices.filter((d) => d.kind === "audioinput");
+  renderMicPolicy();
+}
+
+function renderMicPolicy() {
+  const auto = $("mic-mode").value === "auto";
+  $("mic-auto-options").hidden = !auto;
+  // The probe answered with nothing: say the toggles may be inert here.
+  $("mic-class-hint").hidden = !(auto && micClasses && !micClasses.available);
+  const status = $("mic-auto-status");
+  if (!auto) {
+    status.textContent = "";
+    return;
+  }
+  if (!micDevices.some((d) => d.label)) {
+    status.textContent = "Currently: decided when you start dictating.";
+    return;
+  }
+  const picked = resolveMicrophone({
+    mode: "auto",
+    savedId: $("mic-device").value,
+    includeBluetooth: $("mic-bluetooth").checked,
+    includeVirtual: $("mic-virtual").checked,
+    devices: micDevices,
+    records: micClasses?.records || [],
+  });
+  status.textContent = picked.notice
+    ? `Currently: ${picked.notice.replace(/^./, (c) => c.toLowerCase())}.`
+    : `Currently: ${picked.label || "system default"}.`;
+}
+
+async function initMicrophonePolicy() {
+  for (const id of ["mic-mode", "mic-bluetooth", "mic-virtual", "mic-device"]) {
+    $(id).addEventListener("change", renderMicPolicy);
+  }
+  try {
+    // Settings may wait for the OS tool; a take never does.
+    micClasses = await earheart.invoke("mics:classes", { wait: 5000 });
+  } catch {
+    micClasses = { records: [], available: false };
+  }
+  renderMicPolicy();
 }
 
 /* ---------- populate / collect ---------- */
@@ -282,9 +398,21 @@ function showOutputMode(output) {
 
 function populate() {
   hotkeyInput.value = current.hotkey;
+  $("activation-mode").value = current.activationMode || "toggle";
+  $("double-tap-window").value = current.doubleTapWindowMs ?? 500;
+  $("double-tap-window-field").hidden = $("activation-mode").value !== "double-tap";
   pauseHotkeyInput.value = current.pauseHotkey || "";
   discardHotkeyInput.value = current.discardHotkey || "";
   correctHotkeyInput.value = current.correctHotkey || "";
+  paletteHotkeyInput.value = current.paletteHotkey || "";
+  $("commands-shortcut").textContent = displayHotkey("CommandOrControl+K");
+  commandsHotkeyInput.value = current.commands?.hotkey || "";
+  $("commands-engine").value = current.commands?.engine === "remote" ? "remote" : "builtin";
+  $("commands-url").value = current.commands?.baseUrl || "";
+  $("commands-key").value = current.commands?.apiKey || "";
+  $("commands-model").value = current.commands?.model || "";
+  $("commands-allow-apply").checked = current.commands?.allowApply !== false;
+  renderCommandsEngine();
   showOutputMode(current.output);
 
   $("stt-url").value = current.stt.baseUrl;
@@ -302,6 +430,9 @@ function populate() {
   populateCleanupStyle();
   $("cleanup-dictionary").value = (current.cleanup.dictionary || []).join("\n");
   $("cleanup-aliases").value = formatAliases(current.cleanup.aliases);
+  renderFormatting(current.formatting);
+  renderVocabPacks(current.cleanup.vocabPacks);
+  renderSnippets();
   $("cleanup-prompt").value = current.cleanup.systemPrompt;
   selectEngine("cleanup", current.cleanup.engine);
   renderKeyStorage();
@@ -311,9 +442,16 @@ function populate() {
   syncEngine("cleanup");
 
   $("start-on-boot").checked = !!current.startOnBoot;
+  $("enter-to-stop").checked = !!current.enterToStop;
   $("appearance").value = current.appearance || "system";
+  populateUiLanguages();
+  $("ui-language").value = EarheartI18n.normalizePreference(current.uiLanguage);
 
   $("history-enabled").checked = current.history.enabled;
+  $("agents-enabled").checked = current.agents?.enabled === true;
+  $("agents-permission").value = current.agents?.permission === "read" ? "read" : "edit";
+  $("agents-codex-path").value = current.agents?.binaries?.codex || "";
+  $("agents-claude-path").value = current.agents?.binaries?.claude || "";
   $("recordings-keep").checked = current.recordings?.keep === true;
   $("recordings-days").value = current.recordings?.maxAgeDays ?? defaults.recordings.maxAgeDays;
   $("recordings-mb").value = current.recordings?.maxMegabytes ?? defaults.recordings.maxMegabytes;
@@ -326,6 +464,7 @@ function populate() {
   $("updates-remind").checked = current.updates?.remind !== false;
   $("max-seconds").value = current.audio.maxRecordingSeconds;
   $("duck-other-audio").checked = current.audio.duckOtherAudio === true;
+  showMicPolicy(current.audio);
   $("duck-level").value = current.audio.duckLevelPercent ?? defaults.audio.duckLevelPercent;
   $("record-sounds").checked = current.audio.recordSounds === true;
   $("record-sound-volume").value = current.audio.recordSoundVolumePercent ?? defaults.audio.recordSoundVolumePercent;
@@ -351,15 +490,36 @@ function collectAliases() {
   }
 }
 
+$("activation-mode").addEventListener("change", () => {
+  $("double-tap-window-field").hidden = $("activation-mode").value !== "double-tap";
+});
+
 function collect() {
   return {
     ...current,
     hotkey: current.hotkey,
+    activationMode: $("activation-mode").value === "double-tap" ? "double-tap" : "toggle",
+    // Clamped as main clamps it; blank or junk keeps the stored value.
+    doubleTapWindowMs: Number.isFinite(parseFloat($("double-tap-window").value))
+      ? Math.round(Math.min(1000, Math.max(250, parseFloat($("double-tap-window").value))))
+      : current.doubleTapWindowMs ?? 500,
     pauseHotkey: current.pauseHotkey || "",
     discardHotkey: current.discardHotkey || "",
     correctHotkey: current.correctHotkey || "",
+    paletteHotkey: current.paletteHotkey || "",
+    commands: {
+      ...current.commands,
+      hotkey: current.commands?.hotkey || "",
+      engine: $("commands-engine").value === "remote" ? "remote" : "builtin",
+      baseUrl: $("commands-url").value.trim(),
+      apiKey: $("commands-key").value.trim(),
+      model: $("commands-model").value.trim(),
+      allowApply: $("commands-allow-apply").checked,
+    },
     startOnBoot: $("start-on-boot").checked,
+    enterToStop: $("enter-to-stop").checked,
     appearance: $("appearance").value,
+    uiLanguage: $("ui-language").value,
     updates: {
       ...current.updates,
       autoCheck: $("updates-autocheck").checked,
@@ -389,6 +549,7 @@ function collect() {
         enabled: $("stt-live-preview").checked,
       },
     },
+    formatting: collectFormatting(),
     cleanup: {
       ...current.cleanup,
       enabled: $("cleanup-enabled").checked,
@@ -405,11 +566,17 @@ function collect() {
         .map((t) => t.trim())
         .filter(Boolean),
       aliases: collectAliases(),
+      vocabPacks: collectVocabPacks(),
       systemPrompt: $("cleanup-prompt").value,
     },
     audio: {
       ...current.audio,
       deviceId: $("mic-device").value,
+      // Automatic selection (#339). deviceId above is kept whatever the mode:
+      // it is the manual choice and the fallback, never rewritten by auto.
+      micMode: $("mic-mode").value === "auto" ? "auto" : "manual",
+      micIncludeBluetooth: $("mic-bluetooth").checked !== false,
+      micIncludeVirtual: $("mic-virtual").checked !== false,
       // Clamped to the field's own min/max: the markup's limits bind nothing
       // on their own, and a tiny or negative cap ends every dictation at once.
       maxRecordingSeconds: Math.round(
@@ -441,6 +608,16 @@ function collect() {
     history: {
       ...current.history,
       enabled: $("history-enabled").checked,
+    },
+    // Send to agents (#345): off unless turned on; no full-access mode exists.
+    agents: {
+      ...current.agents,
+      enabled: $("agents-enabled").checked,
+      permission: $("agents-permission").value === "read" ? "read" : "edit",
+      binaries: {
+        codex: $("agents-codex-path").value.trim(),
+        claude: $("agents-claude-path").value.trim(),
+      },
     },
     // Kept recordings (#343). Main refuses `keep` without secure storage.
     recordings: {
@@ -485,6 +662,19 @@ function setStyleMode(mode) {
   if (el) el.checked = true;
 }
 
+// One option per shipped catalog, named in its own language so a user can find
+// theirs whatever the current UI language is (#349). Idempotent.
+function populateUiLanguages() {
+  const select = $("ui-language");
+  for (const tag of Object.keys(EarheartLocales)) {
+    if (select.querySelector(`option[value="${tag}"]`)) continue;
+    const option = document.createElement("option");
+    option.value = tag;
+    option.textContent = EarheartLocales[tag]["meta.name"] || tag;
+    select.append(option);
+  }
+}
+
 function populateCleanupStyle() {
   const c = current.cleanup;
   setStyleMode(c.style === "custom" ? "custom" : "preset");
@@ -514,7 +704,7 @@ function renderStyleLabel() {
   $("cleanup-style").setAttribute("aria-valuetext", `${style.label} — ${style.hint}`);
   // The custom pane's seed button tracks the slider's last position, which
   // persists while the preset pane is hidden.
-  $("cleanup-custom-from-preset").textContent = `Start from preset: ${style.label}`;
+  $("cleanup-custom-from-preset").textContent = i18n.t("rt.startFromPresetLabel", { label: style.label });
 }
 
 // Show only the active mode's controls; `hidden` also removes the inactive
@@ -665,9 +855,9 @@ function renderManage(kind) {
   const download = modelDownloads.get(modelDownloadKey(kind, modelId));
 
   if (info.installed) {
-    status.textContent = "Downloaded ✓";
+    status.textContent = i18n.t("rt.downloaded");
     status.className = "status ok";
-    btn.textContent = "Remove";
+    btn.textContent = i18n.t("rt.remove");
     btn.className = "ghost danger";
     // For a custom model "Remove" also forgets its definition, since there's no
     // curated reason to keep an un-downloaded custom entry around.
@@ -678,7 +868,7 @@ function renderManage(kind) {
       bar.hidden = false;
       fill.style.width = `${Math.round(download.fraction * 100)}%`;
       status.textContent = download.message || "Downloading…";
-      btn.textContent = "Cancel";
+      btn.textContent = i18n.t("rt.cancel");
       btn.className = "ghost";
       btn.onclick = () => earheart.invoke("models:cancel", { kind, modelId });
     } else {
@@ -695,7 +885,7 @@ function renderManage(kind) {
   // A custom model that isn't downloaded still needs a way off the list.
   if (info.custom && !info.installed) {
     const forget = document.createElement("button");
-    forget.textContent = "Remove from list";
+    forget.textContent = i18n.t("rt.removeFromList");
     forget.className = "ghost danger";
     forget.onclick = () => removeCustomModel(modelId);
     row.append(forget);
@@ -767,7 +957,7 @@ function setRowRemoving(modelId, removing) {
       button.disabled = removing;
     }
     if (removing && ui.status) {
-      ui.status.textContent = "Removing…";
+      ui.status.textContent = i18n.t("rt.removing");
       ui.status.className = "status";
     }
   }
@@ -931,6 +1121,105 @@ async function answerPromptOffer(decision) {
 $("prompt-offer-use").addEventListener("click", () => answerPromptOffer("use"));
 $("prompt-offer-keep").addEventListener("click", () => answerPromptOffer("keep"));
 
+// ---- Dictionary: starter packs and "Learn from a folder…" (#72) ----
+
+function renderVocabPacks(enabled) {
+  const box = $("vocab-packs");
+  const on = new Set(enabled || []);
+  box.textContent = "";
+  for (const pack of VOCAB_PACKS) {
+    const label = document.createElement("label");
+    label.className = "choice";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = pack.id;
+    input.checked = on.has(pack.id);
+    input.addEventListener("change", updateVocabCount);
+    label.append(input, ` ${pack.label} (${Math.min(pack.terms.length, PACK_TERMS_MAX)} terms)`);
+    box.append(label);
+  }
+  updateVocabCount();
+}
+
+function collectVocabPacks() {
+  return [...$("vocab-packs").querySelectorAll("input:checked")].map((input) => input.value);
+}
+
+// What the cleanup prompt will carry: the user's terms plus the pack terms that
+// fit under the prompt cap, against the dictionary's own limits.
+function updateVocabCount() {
+  const user = vocabularyTerms($("cleanup-dictionary").value.split("\n"));
+  const total = mergePromptTerms(user, collectVocabPacks()).length;
+  const problem = dictionaryProblem(user);
+  $("vocab-count").textContent = problem ||
+    `${user.length} of ${VOCAB_LIMITS.terms} terms in your list; ${total} in the cleanup prompt` +
+    ` (up to ${PROMPT_TERMS_MAX}).`;
+  $("vocab-count").classList.toggle("err", Boolean(problem));
+}
+$("cleanup-dictionary").addEventListener("input", updateVocabCount);
+
+function closeVocabReview() {
+  $("vocab-review").hidden = true;
+  $("vocab-review-list").textContent = "";
+}
+
+$("vocab-learn").addEventListener("click", async () => {
+  const status = $("vocab-learn-status");
+  const button = $("vocab-learn");
+  button.disabled = true;
+  status.className = "status";
+  status.textContent = "Scanning…";
+  try {
+    const result = await earheart.invoke("vocab:learn-folder");
+    if (result.cancelled) { status.textContent = ""; return; }
+    if (!result.ok) throw new Error(result.error || "Could not read that folder.");
+    const have = new Set(vocabularyTerms($("cleanup-dictionary").value.split("\n")));
+    const terms = result.terms.filter((term) => typeof term === "string" && !have.has(term));
+    if (!terms.length) {
+      closeVocabReview();
+      status.textContent = "No new words found in that folder.";
+      return;
+    }
+    const list = $("vocab-review-list");
+    list.textContent = "";
+    for (const term of terms) {
+      const label = document.createElement("label");
+      label.className = "choice";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.value = term;
+      input.checked = true;
+      label.append(input, ` ${term}`);
+      list.append(label);
+    }
+    $("vocab-review-title").textContent = `${terms.length} suggested words, best first.` +
+      (result.truncated ? " The folder was large, so only part of it was scanned." : "") +
+      " Untick any you would not say.";
+    $("vocab-review").hidden = false;
+    status.textContent = "";
+  } catch (err) {
+    status.className = "status err";
+    status.textContent = err.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("vocab-review-add").addEventListener("click", () => {
+  const picked = [...$("vocab-review-list").querySelectorAll("input:checked")].map((input) => input.value);
+  const field = $("cleanup-dictionary");
+  const { terms, added, skipped } = addVocabulary(field.value.split("\n"), picked);
+  field.value = terms.join("\n");
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+  closeVocabReview();
+  const status = $("vocab-learn-status");
+  status.className = skipped.length ? "status err" : "status ok";
+  status.textContent = `Added ${added.length} words; press Save to keep them.` +
+    (skipped.length ? ` ${skipped.length} left out: the list is full.` : "");
+});
+
+$("vocab-review-dismiss").addEventListener("click", closeVocabReview);
+
 /* ---------- changes saved elsewhere ---------- */
 
 // Main saved the settings (tray radio, update prompt, overlay drag, custom
@@ -986,6 +1275,20 @@ function applySettingsChange({ previous, current: saved }) {
     current.cleanup.aliases = Array.isArray(parsed) ? mergeAliases(baseline.aliases, parsed, saved.aliases) : saved.aliases;
     baseline.aliases = saved.aliases.map((r) => ({ term: r.term, heard: [...r.heard] }));
   }
+  if (Array.isArray(saved.snippets) && JSON.stringify(previous.snippets) !== JSON.stringify(saved.snippets)) {
+    // Saved elsewhere (another Settings or wizard window). Merge by snippet id
+    // so unsaved edits here stay. If the two lists clash (the same trigger on
+    // two snippets) nothing moves: the baseline stays put and Save names the
+    // clash, instead of silently dropping either side.
+    try {
+      current.snippets = SnippetsLib.mergeSnippets(baseline.snippets, snippetsList(), saved.snippets);
+      baseline.snippets = saved.snippets.map((r) => ({ id: r.id, triggers: [...r.triggers], content: r.content }));
+      renderSnippets();
+      flipped.push("Snippets updated with saved changes.");
+    } catch {
+      // Surfaces as an error on Save.
+    }
+  }
   current.overlay = saved.overlay;
   current.customModels = saved.customModels;
   current.updates = {
@@ -1004,7 +1307,7 @@ function applySettingsChange({ previous, current: saved }) {
     baseline.outputMode = sharedBaseline(saved).outputMode;
     // Only main's tray radios change the mode while this window is open.
     if (!preserveEdit && shownBefore !== displayedOutputMode(saved.output)) {
-      flipped.push("Output mode changed from the tray menu.");
+      flipped.push(i18n.t("rt.outputModeChangedFromThe"));
     }
   }
   const remind = saved.updates.remind !== false;
@@ -1068,8 +1371,10 @@ function keyStorageNote(section, value) {
 function renderKeyStorage() {
   $("stt-key-storage").textContent = keyStorageNote("stt", $("stt-key").value.trim());
   $("cleanup-key-storage").textContent = keyStorageNote("cleanup", $("cleanup-key").value.trim());
+  $("commands-key-storage").textContent = keyStorageNote("commands", $("commands-key").value.trim());
 }
 
+$("commands-key").addEventListener("input", renderKeyStorage);
 $("stt-key").addEventListener("input", renderKeyStorage);
 $("cleanup-key").addEventListener("input", renderKeyStorage);
 
@@ -1082,10 +1387,12 @@ $("cleanup-key").addEventListener("input", renderKeyStorage);
 // `unbound` one — a failed restore left the saved hotkey itself unregistered.
 function renderHotkeyStatus(status) {
   const rows = [
+    [$("commands-hotkey-status"), status?.commandsHotkey, current.commands?.hotkey],
     [$("hotkey-status"), status?.hotkey, current.hotkey],
     [$("pause-hotkey-status"), status?.pauseHotkey, current.pauseHotkey],
     [$("discard-hotkey-status"), status?.discardHotkey, current.discardHotkey],
     [$("correct-hotkey-status"), status?.correctHotkey, current.correctHotkey],
+    [$("palette-hotkey-status"), status?.paletteHotkey, current.paletteHotkey],
   ];
   for (const [row, result, shown] of rows) {
     const stale =
@@ -1095,12 +1402,13 @@ function renderHotkeyStatus(status) {
   }
 }
 
-function hotkeySaveMessage(hotkeyResult, pauseResult, discardResult, correctResult) {
+function hotkeySaveMessage(hotkeyResult, pauseResult, discardResult, correctResult, paletteResult) {
   const failed = [
     [hotkeyResult, "hotkey"],
     [pauseResult, "pause hotkey"],
     [discardResult, "discard hotkey"],
     [correctResult, "correction hotkey"],
+    [paletteResult, "Commands hotkey"],
   ].filter(([result]) => result && !result.ok);
   // More than one slot failing is usually one coupled rollback; blaming a
   // single field would be wrong.
@@ -1161,7 +1469,7 @@ async function downloadSelectedModels(save) {
     if (!needed) return next;
     const key = modelDownloadKey(needed.kind, needed.modelId);
     if (finished.has(key)) throw new Error(`${needed.label}: downloaded, but still not available`);
-    save.textContent = `Downloading ${needed.label} before saving…`;
+    save.textContent = i18n.t("rt.downloadingLabelBeforeSaving", { label: needed.label });
     save.className = "status";
     const result = await saveDownload(needed.kind, needed.modelId);
     if (!result?.ok) {
@@ -1218,12 +1526,20 @@ async function saveSettings() {
   // Acknowledge the click immediately and block a duplicate save while the
   // round-trip is in flight.
   saveButton.disabled = true;
-  save.textContent = "Saving…";
+  save.textContent = i18n.t("rt.saving");
   save.className = "status";
+  if (snippetEditorDirty()) {
+    save.textContent = "Not saved — add or cancel the snippet you're editing first.";
+    save.className = "status err";
+    saveButton.disabled = false;
+    return;
+  }
   try {
     parseAliases($("cleanup-aliases").value);
+    const problem = dictionaryProblem(vocabularyTerms($("cleanup-dictionary").value.split("\n")));
+    if (problem) throw new Error(problem);
   } catch (err) {
-    save.textContent = `Not saved — ${err.message}`;
+    save.textContent = i18n.t("rt.notSavedMessage", { message: err.message });
     save.className = "status err";
     saveButton.disabled = false;
     return;
@@ -1233,12 +1549,12 @@ async function saveSettings() {
     next = await downloadSelectedModels(save);
   } catch (err) {
     // Nothing was saved: say so, and leave the form as the user set it.
-    save.textContent = `Not saved — ${err.message}`;
+    save.textContent = i18n.t("rt.notSavedMessage", { message: err.message });
     save.className = "status err";
     saveButton.disabled = false;
     return;
   }
-  save.textContent = "Saving…";
+  save.textContent = i18n.t("rt.saving");
   save.className = "status";
   try {
     current = next;
@@ -1258,6 +1574,7 @@ async function saveSettings() {
     );
     current = result.settings;
     baseline = sharedBaseline(current);
+    renderSnippets();
     // Main may have kept its own value for a shared field (a tray change this
     // form hadn't seen yet), so show what was actually saved unless the user
     // edited that control while waiting. Treat the output radios as one field.
@@ -1268,6 +1585,11 @@ async function saveSettings() {
     const adjusted = limitAdjustments(current, sent);
     if (unchanged($("max-seconds"))) $("max-seconds").value = current.audio.maxRecordingSeconds;
     if (unchanged($("duck-other-audio"))) $("duck-other-audio").checked = current.audio.duckOtherAudio === true;
+    // Each control on its own: one the user touched while saving keeps their value.
+    if (unchanged($("mic-mode"))) $("mic-mode").value = current.audio.micMode === "auto" ? "auto" : "manual";
+    if (unchanged($("mic-bluetooth"))) $("mic-bluetooth").checked = current.audio.micIncludeBluetooth !== false;
+    if (unchanged($("mic-virtual"))) $("mic-virtual").checked = current.audio.micIncludeVirtual !== false;
+    renderMicPolicy();
     if (unchanged($("duck-level"))) $("duck-level").value = current.audio.duckLevelPercent;
     if (unchanged($("record-sounds"))) $("record-sounds").checked = current.audio.recordSounds === true;
     if (unchanged($("record-sound-volume"))) $("record-sound-volume").value = current.audio.recordSoundVolumePercent;
@@ -1279,12 +1601,13 @@ async function saveSettings() {
     // Main turns "keep" back off without secure storage: show what was saved.
     $("recordings-keep").checked = current.recordings.keep === true;
     renderRecordingsStatus();
+    refreshAgents();
     // Older mains don't report a pause result; treat that as fine.
     pauseResult = result.pauseHotkey ?? { ok: true };
     discardResult = result.discardHotkey ?? { ok: true };
     correctResult = result.correctHotkey ?? { ok: true };
-    const hotkeysOk = result.hotkey.ok && pauseResult.ok && discardResult.ok && correctResult.ok;
-    const hotkeyStatus = { hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult };
+    const hotkeysOk = result.hotkey.ok && pauseResult.ok && discardResult.ok && correctResult.ok && (result.paletteHotkey?.ok !== false);
+    const hotkeyStatus = { hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult, paletteHotkey: result.paletteHotkey, commandsHotkey: result.commandsHotkey };
     if (hotkeysOk) {
       // Save never closes the window (#298): a window that vanished on its own
       // read as a crash. "Saved" stays until the form is edited again; Close
@@ -1293,7 +1616,7 @@ async function saveSettings() {
       if (editedWhileSaving) {
         // What was sent is saved; the edits since are not. Say so, and take no
         // snapshot that would vouch for them.
-        save.textContent = `${saved}. Changes made while saving aren't saved yet.`;
+        save.textContent = i18n.t("rt.savedChangesMadeWhileSaving", { saved });
         save.className = "status";
         savedForm = null;
       } else {
@@ -1308,7 +1631,7 @@ async function saveSettings() {
   } catch (err) {
     // Covers a rejected save AND a resolved-but-malformed result, so the button
     // never stays stuck disabled on "Saving…".
-    save.textContent = `Could not save: ${err.message}`;
+    save.textContent = i18n.t("rt.couldNotSaveMessage", { message: err.message });
     save.className = "status err";
     saveButton.disabled = false;
     return;
@@ -1318,9 +1641,9 @@ async function saveSettings() {
   // A hotkey couldn't be registered: keep the window open so the error is
   // visible and the user can pick a combination that works.
   saveButton.disabled = false;
-  save.textContent = hotkeySaveMessage(result.hotkey, pauseResult, discardResult, correctResult);
+  save.textContent = hotkeySaveMessage(result.hotkey, pauseResult, discardResult, correctResult, result.paletteHotkey);
   save.className = "status err";
-  renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult });
+  renderHotkeyStatus({ hotkey: result.hotkey, pauseHotkey: pauseResult, discardHotkey: discardResult, correctHotkey: correctResult, paletteHotkey: result.paletteHotkey, commandsHotkey: result.commandsHotkey });
   saveStatusTimer = setTimeout(() => {
     save.textContent = "";
   }, 4000);
@@ -1335,7 +1658,7 @@ function bindTest(buttonId, resultId, channel, getCfg) {
     // Disable while the test is in flight so a second click can't race a stale
     // response over the result (mirrors bindFetchModels).
     btn.disabled = true;
-    el.textContent = "Testing…";
+    el.textContent = i18n.t("rt.testing");
     el.className = "status";
     try {
       const result = await earheart.invoke(channel, getCfg());
@@ -1368,7 +1691,7 @@ function bindFetchModels(buttonId, resultId, datalistId, getCfg) {
     // Guard against a second click firing a concurrent fetch while one is
     // in flight.
     btn.disabled = true;
-    el.textContent = "Fetching…";
+    el.textContent = i18n.t("rt.fetching");
     el.className = "status";
     try {
       const result = await earheart.invoke("models:list-remote", getCfg());
@@ -1452,7 +1775,7 @@ function bindAddCustomModel(kind) {
     if (!url) return;
     findBtn.disabled = true;
     pick.hidden = true;
-    result.textContent = "Looking up versions…";
+    result.textContent = i18n.t("rt.lookingUpVersions");
     result.className = "status";
     try {
       const res = await earheart.invoke("models:hf-variants", { kind, url });
@@ -1475,7 +1798,7 @@ function bindAddCustomModel(kind) {
       );
       if (res.recommended) variantSelect.value = res.recommended;
       pick.hidden = false;
-      result.textContent = `${res.repo} — ${res.variants.length} version${res.variants.length === 1 ? "" : "s"}`;
+      result.textContent = i18n.t("rt.repoVersions", { repo: res.repo, count: res.variants.length });
       result.className = "status ok";
     } finally {
       findBtn.disabled = false;
@@ -1487,7 +1810,7 @@ function bindAddCustomModel(kind) {
     const variant = variantSelect.value;
     if (!url || !variant) return;
     addBtn.disabled = true;
-    result.textContent = "Adding…";
+    result.textContent = i18n.t("rt.adding");
     result.className = "status";
     try {
       const res = await earheart.invoke("models:add-custom", { kind, url, variant });
@@ -1501,7 +1824,7 @@ function bindAddCustomModel(kind) {
       await refreshModels({ [kind]: res.modelId });
       urlInput.value = "";
       pick.hidden = true;
-      result.textContent = "Added — click Download to fetch it";
+      result.textContent = i18n.t("rt.addedClickDownloadToFetch");
       result.className = "status ok";
     } finally {
       addBtn.disabled = false;
@@ -1529,7 +1852,7 @@ function historyCopyButton(label, value, report) {
     try {
       const result = await earheart.invoke("transcript:copy", value);
       if (!result.ok) throw new Error(result.error);
-      button.textContent = "Copied";
+      button.textContent = i18n.t("rt.copied");
       setTimeout(() => (button.textContent = label), 1200);
     } catch (err) { report(`Could not copy: ${err.message}`); }
   });
@@ -1586,7 +1909,7 @@ async function renderHistory() {
 
   const start = res.offset;
   const slice = res.entries;
-  $("history-range").textContent = `${start + 1}–${start + slice.length} of ${res.total}${query.trim() ? " matching" : ""}`;
+  $("history-range").textContent = i18n.t(query.trim() ? "rt.historyRangeMatching" : "rt.historyRange", { from: start + 1, to: start + slice.length, total: res.total });
   $("history-newer").disabled = historyPage === 0;
   $("history-older").disabled = historyPage >= pages - 1;
 
@@ -1600,9 +1923,9 @@ async function renderHistory() {
     const when = document.createElement("span");
     // `incomplete` means the engine stopped part-way and this is what was
     // recovered — the entry has to say so long after the notification went.
-    when.textContent = `${new Date(item.at).toLocaleString()}${item.cleaned ? " · cleaned" : ""}${
-      item.incomplete ? " · incomplete" : ""
-    }${item.audio === "unreadable" ? " · recording unreadable" : ""}`;
+    when.textContent = `${new Date(item.at).toLocaleString(i18n.locale)}${item.cleaned ? i18n.t("rt.tagCleaned") : ""}${
+      item.incomplete ? i18n.t("rt.tagIncomplete") : ""
+    }${item.audio === "unreadable" ? i18n.t("rt.tagRecordingUnreadable") : ""}`;
     const feedback = document.createElement("span");
     feedback.className = "status err";
     feedback.setAttribute("role", "status");
@@ -1611,7 +1934,7 @@ async function renderHistory() {
     actions.className = "actions";
     actions.append(historyCopyButton("Copy", item.text, report));
     const correct = document.createElement("button");
-    correct.textContent = "Correct…";
+    correct.textContent = i18n.t("rt.correct");
     correct.addEventListener("click", async () => {
       report("");
       try {
@@ -1620,9 +1943,10 @@ async function renderHistory() {
       } catch (err) { report(err.message); }
     });
     actions.append(correct);
+    if (agentState.enabled) actions.append(agentSendButton(item, li, report));
     if (item.cleaned && typeof item.raw === "string" && item.raw !== item.text) {
       const copyOriginal = historyCopyButton("Copy original", item.raw, report);
-      copyOriginal.title = "Copy the transcript before cleanup";
+      copyOriginal.title = i18n.t("rt.copyTheTranscriptBeforeCleanup");
       actions.append(copyOriginal);
     }
     if (item.audio === "kept") actions.append(...recordingButtons(item, li, report));
@@ -1641,7 +1965,7 @@ async function renderHistory() {
     if (text.scrollHeight > text.clientHeight + 1) {
       const more = document.createElement("button");
       more.className = "more";
-      more.textContent = "Show more";
+      more.textContent = i18n.t("rt.showMore");
       more.setAttribute("aria-expanded", "false");
       more.addEventListener("click", () => {
         const open = li.classList.toggle("expanded");
@@ -1692,8 +2016,8 @@ function recordingButtons(item, li, report) {
   const play = document.createElement("button");
   play.className = "play";
   play.type = "button";
-  play.textContent = "Play";
-  play.title = "Play the recording";
+  play.textContent = i18n.t("rt.play");
+  play.title = i18n.t("rt.playTheRecording");
   play.addEventListener("click", async () => {
     report("");
     if (activePlayer?.id === item.id) {
@@ -1732,8 +2056,8 @@ function recordingButtons(item, li, report) {
   const exportButton = document.createElement("button");
   exportButton.className = "export";
   exportButton.type = "button";
-  exportButton.textContent = "Export…";
-  exportButton.title = "Save the recording as a WAV file";
+  exportButton.textContent = i18n.t("rt.export");
+  exportButton.title = i18n.t("rt.saveTheRecordingAsA");
   exportButton.addEventListener("click", async () => {
     report("");
     exportButton.disabled = true;
@@ -1753,12 +2077,12 @@ function recordingButtons(item, li, report) {
   const again = document.createElement("button");
   again.className = "retranscribe";
   again.type = "button";
-  again.textContent = "Retranscribe";
-  again.title = "Transcribe the recording again with the current settings. Nothing is pasted; the original stays.";
+  again.textContent = i18n.t("rt.retranscribe");
+  again.title = i18n.t("rt.transcribeTheRecordingAgainWith");
   again.addEventListener("click", async () => {
     report("");
     again.disabled = true;
-    again.textContent = "Retranscribing…";
+    again.textContent = i18n.t("rt.retranscribing");
     let res;
     try {
       res = await earheart.invoke("history:retranscribe", item.id);
@@ -1768,11 +2092,11 @@ function recordingButtons(item, li, report) {
     // A stored result redraws the page (history:changed); otherwise say why.
     if (!res?.ok && !res?.retry) {
       again.disabled = false;
-      again.textContent = "Retranscribe";
+      again.textContent = i18n.t("rt.retranscribe");
       report(recordingError(res?.error || "unknown error"));
     } else if (res?.ok === false) {
       again.disabled = false;
-      again.textContent = "Retranscribe";
+      again.textContent = i18n.t("rt.retranscribe");
       report(`Couldn't save the retranscription (${res.error}).`);
     }
   });
@@ -1790,7 +2114,7 @@ function retryBlock(item, report) {
   head.className = "retry-head";
   const when = retry.at ? new Date(retry.at).toLocaleString() : "";
   if (retry.status === "done") {
-    head.textContent = `Retranscribed ${when}${retry.cleaned ? " · cleaned" : ""}${retry.incomplete ? " · incomplete" : ""}`;
+    head.textContent = `${i18n.t("rt.retranscribedWhen", { when })}${retry.cleaned ? i18n.t("rt.tagCleaned") : ""}${retry.incomplete ? i18n.t("rt.tagIncomplete") : ""}`;
     const text = document.createElement("div");
     text.className = "retry-text";
     text.textContent = retry.text || "(no speech found)";
@@ -1801,7 +2125,7 @@ function retryBlock(item, report) {
       box.append(copy);
     }
   } else if (retry.status === "cancelled") {
-    head.textContent = `Retranscription ${when} was cancelled by a new dictation. Try again any time.`;
+    head.textContent = i18n.t("rt.retranscriptionWhenWasCancelledBy", { when });
     box.append(head);
   } else {
     head.textContent = `Retranscription ${when} failed: ${retry.error || "unknown error"}`;
@@ -1878,7 +2202,7 @@ $("recordings-clear").addEventListener("click", async () => {
   if (!res?.ok) {
     const line = $("recordings-status");
     line.hidden = false;
-    line.textContent = `Some recordings couldn't be deleted (${res?.error || "unknown error"}). Close anything that might be using them and try again.`;
+    line.textContent = i18n.t("rt.someRecordingsCouldntBeDeleted", { error: res?.error || i18n.t("rt.unknownError") });
   }
   renderHistory();
 });
@@ -1891,8 +2215,8 @@ $("history-enabled").addEventListener("change", () => renderRecordingsStatus());
 function historyDeleteButton(item, report) {
   const button = document.createElement("button");
   button.className = "delete danger";
-  button.textContent = "Delete";
-  button.title = "Delete this transcription";
+  button.textContent = i18n.t("rt.delete");
+  button.title = i18n.t("rt.deleteThisTranscription");
   button.addEventListener("click", async () => {
     report("");
     // Its kept recording goes with it (main/ipc.js history:delete): say so.
@@ -1976,7 +2300,7 @@ $("history-clear").addEventListener("click", async () => {
   if (!status.hidden) status.textContent = historyClearError(res.error);
   else if (res?.audioError) {
     status.hidden = false;
-    status.textContent = `Cleared the transcriptions, but some recordings couldn't be deleted (${res.audioError}). Use Delete all recordings to try again.`;
+    status.textContent = i18n.t("rt.clearedTheTranscriptionsButSome", { audioError: res.audioError });
   }
   releasePlayer();
   renderHistory();
@@ -1992,6 +2316,231 @@ earheart.on("history:changed", (change) => {
   renderHistory();
   renderRecordingsStatus();
 });
+
+/* ---------- agents (#345) ---------- */
+
+// Send a reviewed transcript to an installed coding agent and follow the task.
+// Everything here is built with textContent: briefs and agent output are the
+// user's words and an agent's, and may look like markup. Nothing is sent until
+// the user presses Send in the review form; the idempotency key below makes a
+// repeated press (or a replayed request) start one task, not two.
+let agentState = { enabled: false, agents: [], tasks: [], projects: [], permission: "edit" };
+let agentRequest = 0;
+const agentReplyDrafts = new Map(); // task id -> reply text kept across redraws
+let agentOpenReview = null; // { id, remove } — one review form at a time
+
+function agentNewKey() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function agentButton(label, onClick, title) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost";
+  button.textContent = label;
+  if (title) button.title = title;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+async function refreshAgents() {
+  const request = ++agentRequest;
+  let res;
+  try {
+    res = await earheart.invoke("agent:state");
+  } catch {
+    res = { ok: false };
+  }
+  if (request !== agentRequest) return;
+  const wasEnabled = agentState.enabled;
+  agentState = res?.ok ? { enabled: true, ...res } : { enabled: false, agents: [], tasks: [], projects: [], permission: "edit" };
+  $("agent-tasks").hidden = !agentState.enabled;
+  const detected = $("agents-detected");
+  detected.textContent = agentState.enabled
+    ? agentState.agents
+        .map((a) => `${a.label}: ${a.available ? `found${a.version ? ` (${a.version})` : ""}` : a.reason || "not found"}`)
+        .join(" · ")
+    : "";
+  renderAgentTasks();
+  if (wasEnabled !== agentState.enabled) renderHistory();
+}
+
+function agentStatusText(task) {
+  const base = { starting: "Starting…", running: "Running", completed: "Completed", failed: "Failed", cancelled: "Cancelled", interrupted: "Interrupted" }[task.status] || task.status;
+  return task.status === "running" && task.progress ? `${base} — ${task.progress}` : base;
+}
+
+function renderAgentTasks() {
+  const list = $("agent-task-list");
+  if (!agentState.enabled) { list.replaceChildren(); return; }
+  if (!agentState.tasks.length) {
+    const li = document.createElement("li");
+    li.className = "hint";
+    li.textContent = "No agent tasks yet.";
+    list.replaceChildren(li);
+    return;
+  }
+  list.replaceChildren(...agentState.tasks.map(agentTaskItem));
+}
+
+function agentTaskItem(task) {
+  const li = document.createElement("li");
+  li.dataset.id = task.id;
+  const title = document.createElement("div");
+  title.className = "agent-title";
+  title.textContent = `${task.agentLabel} · ${task.project}`;
+  const status = document.createElement("div");
+  status.className = `agent-status ${task.status}`;
+  status.setAttribute("role", "status");
+  status.textContent = `${agentStatusText(task)}${task.turns > 1 ? ` · ${task.turns} messages` : ""}${task.error ? ` — ${task.error}` : ""}`;
+  const brief = document.createElement("div");
+  brief.className = "agent-brief";
+  brief.textContent = task.brief;
+  li.append(title, status, brief);
+  if (task.output) {
+    const output = document.createElement("div");
+    output.className = "agent-output";
+    output.textContent = task.output;
+    li.append(output);
+  }
+  const feedback = document.createElement("span");
+  feedback.className = "status err";
+  feedback.setAttribute("role", "status");
+  const report = (message) => { feedback.textContent = message; };
+  const actions = document.createElement("div");
+  actions.className = "agent-row";
+  // Each action invokes a literal channel (the IPC contract test reads them).
+  const act = (call) => async () => {
+    report("");
+    try {
+      const res = await call();
+      if (!res?.ok) report(res?.error || "That didn't work.");
+    } catch (err) { report(err.message); }
+    refreshAgents();
+  };
+  const active = task.status === "starting" || task.status === "running";
+  if (active) actions.append(agentButton("Cancel", act(() => earheart.invoke("agent:cancel", task.id))));
+  if (task.resumeCommand) actions.append(agentButton("Copy resume command", act(() => earheart.invoke("agent:copy-resume", task.id)), "Copies a command that opens this session in the agent's own terminal UI"));
+  if (!active) actions.append(agentButton("Remove", act(() => earheart.invoke("agent:remove", task.id))));
+  li.append(actions);
+  if (!active && task.externalId) {
+    const row = document.createElement("div");
+    row.className = "agent-row";
+    const input = document.createElement("textarea");
+    input.rows = 2;
+    input.placeholder = "Reply to continue this task…";
+    input.setAttribute("aria-label", "Reply to this task");
+    input.value = agentReplyDrafts.get(task.id) || "";
+    input.addEventListener("input", () => agentReplyDrafts.set(task.id, input.value));
+    const send = agentButton("Send reply", async () => {
+      report("");
+      send.disabled = true; // one press, one reply
+      try {
+        const res = await earheart.invoke("agent:reply", { id: task.id, text: input.value });
+        if (res?.ok) agentReplyDrafts.delete(task.id);
+        else report(res?.error || "The reply wasn't sent."); // the text stays for a retry
+      } catch (err) { report(err.message); }
+      send.disabled = false;
+      refreshAgents();
+    });
+    row.append(input, send);
+    li.append(row);
+  }
+  li.append(feedback);
+  return li;
+}
+
+earheart.on("agent:changed", () => refreshAgents());
+
+function agentSendButton(item, li, report) {
+  return agentButton("Send to agent…", () => openAgentReview(item, li, report));
+}
+
+function openAgentReview(item, li, report) {
+  if (agentOpenReview) agentOpenReview.remove();
+  const usable = agentState.agents.filter((a) => a.available);
+  const form = document.createElement("div");
+  form.className = "agent-review";
+  const close = () => { form.remove(); if (agentOpenReview?.form === form) agentOpenReview = null; };
+  agentOpenReview = { form, remove: close };
+  if (!usable.length) {
+    const none = document.createElement("p");
+    none.className = "hint";
+    none.textContent = "No supported agent was found. Install Codex or Claude Code, or set its path above.";
+    form.append(none, agentButton("Close", close));
+    li.append(form);
+    return;
+  }
+  const brief = document.createElement("textarea");
+  brief.value = item.text;
+  brief.setAttribute("aria-label", "Brief to send — review and edit it");
+  const agentSelect = document.createElement("select");
+  agentSelect.setAttribute("aria-label", "Agent");
+  for (const a of usable) agentSelect.append(new Option(a.label, a.id));
+  const modelSelect = document.createElement("select");
+  modelSelect.setAttribute("aria-label", "Model");
+  const syncModels = () => {
+    const models = usable.find((a) => a.id === agentSelect.value)?.models || [];
+    modelSelect.replaceChildren(new Option("Agent's default model", ""), ...models.map((m) => new Option(m, m)));
+    modelSelect.hidden = !models.length; // shown only where the agent supports a choice
+  };
+  agentSelect.addEventListener("change", syncModels);
+  syncModels();
+  const projectSelect = document.createElement("select");
+  projectSelect.setAttribute("aria-label", "Project folder");
+  projectSelect.append(new Option("Choose a project folder…", ""));
+  for (const p of agentState.projects) projectSelect.append(new Option(p, p));
+  const choose = agentButton("Browse…", async () => {
+    const res = await earheart.invoke("agent:pick-project");
+    if (res?.ok && res.path) {
+      if (![...projectSelect.options].some((o) => o.value === res.path)) projectSelect.append(new Option(res.path, res.path));
+      projectSelect.value = res.path;
+    } else if (res && !res.ok) feedback.textContent = res.error;
+  });
+  const disclosure = document.createElement("p");
+  disclosure.className = "hint";
+  disclosure.textContent = "This brief goes to the agent and its provider, which may process it off-device. Nothing is sent until you press Send.";
+  const feedback = document.createElement("span");
+  feedback.className = "status err";
+  feedback.setAttribute("role", "status");
+  const key = agentNewKey(); // one review, one send
+  let sent = false;
+  const send = agentButton("Send", async () => {
+    feedback.textContent = "";
+    if (sent) return;
+    if (!projectSelect.value) { feedback.textContent = "Choose a project folder first."; return; }
+    sent = true;
+    send.disabled = true;
+    let res;
+    try {
+      res = await earheart.invoke("agent:send", {
+        key, agent: agentSelect.value, model: modelSelect.value, project: projectSelect.value,
+        brief: brief.value, historyId: item.id,
+      });
+    } catch (err) { res = { ok: false, error: err.message }; }
+    if (res?.ok) {
+      close();
+      report("");
+      refreshAgents();
+      return;
+    }
+    // A refusal keeps the form and the brief; the same key is safe to retry.
+    sent = false;
+    send.disabled = false;
+    feedback.textContent = res?.error || "The brief wasn't sent.";
+  });
+  send.className = "";
+  const row = document.createElement("div");
+  row.className = "agent-row";
+  row.append(agentSelect, modelSelect, projectSelect, choose);
+  const buttons = document.createElement("div");
+  buttons.className = "agent-row";
+  buttons.append(send, agentButton("Cancel", close), feedback);
+  form.append(brief, row, disclosure, buttons);
+  li.append(form);
+  brief.focus();
+}
 
 /* ---------- setup wizard ---------- */
 
@@ -2024,7 +2573,7 @@ $("open-logs").addEventListener("click", async () => {
   } catch (err) {
     // A bridge-level throw (e.g. a channel missing from the preload allowlist)
     // must surface here, not die as an unhandled rejection.
-    el.textContent = `Couldn't open the log: ${err.message}`;
+    el.textContent = i18n.t("rt.couldntOpenTheLogMessage", { message: err.message });
     el.className = "status err";
   }
 });
@@ -2091,7 +2640,9 @@ function renderSetupBanner() {
         : " Cleanup isn't downloaded. Dictations use raw transcripts; download it in Settings → Cleanup."
       : "";
 }
+let settingsNavigation = 0;
 async function navigateSettings(destination) {
+  const navigationVersion = ++settingsNavigation;
   if (!formReady) { pendingNavigation = destination; return; }
   if (destination.fromWizard) {
     const before = formSnapshot();
@@ -2115,6 +2666,31 @@ async function navigateSettings(destination) {
   renderSetupBanner();
   if (!["general", "live", "stt", "cleanup", "history", "advanced"].includes(destination.section)) return;
   activateTab(destination.section, { focusSection: true });
+  if (destination.section === "history" && typeof destination.query === "string") {
+    historyQuery = destination.query.slice(0, 200);
+    $("history-search").value = historyQuery;
+    historyPage = 0;
+    if (destination.entryId) {
+      const page = await earheart.invoke("history:search", { query: historyQuery, limit: 50 });
+      if (navigationVersion !== settingsNavigation) return;
+      const index = page.ok ? page.entries.findIndex(item => item.id === destination.entryId) : -1;
+      if (index >= 0) historyPage = Math.floor(index / HISTORY_PAGE_SIZE);
+    }
+    await renderHistory();
+    if (navigationVersion !== settingsNavigation) return;
+    const card = [...$("history-list").children].find(item => item.dataset.id === destination.entryId);
+    if (card) {
+      card.tabIndex = -1;
+      card.focus();
+      card.scrollIntoView({ block: "center" });
+    } else {
+      $("history-search").focus();
+      if (destination.entryId) {
+        $("history-clear-status").hidden = false;
+        $("history-clear-status").textContent = "This transcript is no longer in the matching History results.";
+      }
+    }
+  }
   if (destination.model && ["stt", "cleanup"].includes(destination.section)) {
     const target = $(destination.section + "-model-manage");
     target?.scrollIntoView({ block: "center" });
@@ -2168,33 +2744,33 @@ function renderUpdateState(u) {
 
   switch (u.status) {
     case "checking":
-      action.textContent = "Checking…";
+      action.textContent = i18n.t("rt.checking");
       status.textContent = "";
       break;
     case "available":
       if (u.method === "install") {
-        action.textContent = `Update to v${u.latest}`;
+        action.textContent = i18n.t("rt.updateToVlatest", { latest: u.latest });
       } else {
-        action.textContent = "Open download page";
+        action.textContent = i18n.t("rt.openDownloadPage");
         if (u.hint) $("update-hint").textContent = u.hint;
       }
-      status.textContent = `Version ${u.latest} is available`;
+      status.textContent = i18n.t("rt.versionLatestIsAvailable", { latest: u.latest });
       status.className = "status ok";
       break;
     case "downloading": {
       const pct = Math.round(((u.progress && u.progress.fraction) || 0) * 100);
       $("update-fill").style.width = `${pct}%`;
-      action.textContent = "Cancel";
-      status.textContent = `Downloading… ${pct}%`;
+      action.textContent = i18n.t("rt.cancel");
+      status.textContent = i18n.t("rt.downloadingPct", { pct });
       break;
     }
     case "ready":
-      action.textContent = `Restart to update to v${u.latest}`;
-      status.textContent = "Downloaded ✓";
+      action.textContent = i18n.t("rt.restartToUpdateToVlatest", { latest: u.latest });
+      status.textContent = i18n.t("rt.downloaded");
       status.className = "status ok";
       break;
     case "installing":
-      action.textContent = "Restarting…";
+      action.textContent = i18n.t("rt.restarting");
       status.textContent = "";
       break;
     case "error":
@@ -2204,7 +2780,7 @@ function renderUpdateState(u) {
       break;
     default:
       // idle — leave any "Up to date ✓" set by a manual check in place
-      action.textContent = "Check for updates";
+      action.textContent = i18n.t("rt.checkForUpdates");
   }
 }
 
@@ -2219,7 +2795,7 @@ $("update-action").addEventListener("click", async () => {
   } else {
     const res = await earheart.invoke("updates:check");
     if (res.status === "idle") {
-      $("update-status").textContent = "Up to date ✓";
+      $("update-status").textContent = i18n.t("rt.upToDate");
       $("update-status").className = "status ok";
     }
   }
@@ -2228,6 +2804,229 @@ $("update-action").addEventListener("click", async () => {
 $("update-skip").addEventListener("click", () => earheart.invoke("updates:skip"));
 
 earheart.on("updates:state", renderUpdateState);
+
+/* ---------- formatting by destination (#336) ---------- */
+
+function formatStyleSelect(value, label) {
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", label);
+  for (const style of formattingStyles) {
+    const option = document.createElement("option");
+    option.value = style.id;
+    option.textContent = style.label;
+    option.title = style.hint;
+    select.append(option);
+  }
+  select.value = formattingStyles.some((s) => s.id === value) ? value : "standard";
+  return select;
+}
+
+function addFormatRow(rule) {
+  const row = document.createElement("div");
+  row.className = "row format-rule";
+  row.setAttribute("role", "listitem");
+  row.dataset.ruleId = rule.id || "";
+
+  const type = document.createElement("select");
+  type.setAttribute("aria-label", "Rule applies to");
+  for (const [value, text] of [["host", "Website"], ["app", "Application"]]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = text;
+    type.append(option);
+  }
+  type.value = rule.scope?.type === "app" ? "app" : "host";
+
+  const value = document.createElement("input");
+  value.type = "text";
+  value.spellcheck = false;
+  value.autocomplete = "off";
+  value.maxLength = 253;
+  value.setAttribute("aria-label", "Website or application id");
+  value.placeholder = "github.com";
+  value.value = rule.scope?.value || "";
+
+  const style = formatStyleSelect(rule.style, "Formatting style");
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "ghost";
+  remove.textContent = "Remove";
+  remove.setAttribute("aria-label", "Remove rule");
+  remove.addEventListener("click", () => {
+    row.remove();
+    $("format-add").focus();
+  });
+  row.append(type, value, style, remove);
+  $("format-rules").append(row);
+}
+
+function renderFormatting(formatting) {
+  const select = $("format-default");
+  select.replaceChildren(...formatStyleSelect(formatting?.defaultStyle, "").children);
+  select.value = formattingStyles.some((s) => s.id === formatting?.defaultStyle) ? formatting.defaultStyle : "standard";
+  $("format-rules").replaceChildren();
+  (formatting?.rules || []).forEach((rule) => addFormatRow(rule));
+}
+
+// Rows → stored shape. Empty rows are skipped; main validates the rest
+// (exact host / app id, no duplicates) when it saves.
+function collectFormatting() {
+  const rules = [...document.querySelectorAll("#format-rules .format-rule")]
+    .map((row) => {
+      const [type, value, style] = row.querySelectorAll("select, input");
+      return { id: row.dataset.ruleId, scope: { type: type.value, value: value.value.trim() }, style: style.value };
+    })
+    .filter((rule) => rule.scope.value);
+  return { defaultStyle: $("format-default").value || "standard", rules };
+}
+
+$("format-add").addEventListener("click", () => {
+  addFormatRow({ id: `rule-${Date.now().toString(36)}`, scope: { type: "host", value: "" }, style: "standard" });
+  document.querySelector("#format-rules .format-rule:last-child input").focus();
+});
+
+/* ---------- snippets (#334) ---------- */
+
+// The list lives in current.snippets and is saved with everything else;
+// "Add/Update snippet" validates one edit at once (the same rules main applies
+// on Save) so a mistake is named where it is made. The editor holds a draft
+// until then, and Save refuses while a draft is unapplied.
+let snippetQuery = "";
+let snippetEditing = null; // null = closed, else { id: string|null } (null = a new snippet)
+
+const snippetsList = () => (Array.isArray(current?.snippets) ? current.snippets : []);
+
+function snippetDraft() {
+  return {
+    triggers: $("snippet-triggers").value.split("\n").map((t) => t.trim()).filter(Boolean),
+    content: $("snippet-content").value,
+  };
+}
+
+// Whether the open editor holds anything not yet applied to the list.
+function snippetEditorDirty() {
+  if (!snippetEditing) return false;
+  const draft = snippetDraft();
+  const saved = snippetsList().find((r) => r.id === snippetEditing.id);
+  if (!saved) return draft.triggers.length > 0 || draft.content !== "";
+  return JSON.stringify(draft.triggers) !== JSON.stringify(saved.triggers) || draft.content !== saved.content;
+}
+
+function snippetMatches(record, query) {
+  const needle = query.normalize("NFC").trim().toLowerCase();
+  if (!needle) return true;
+  return [...record.triggers, record.content].some((t) => t.normalize("NFC").toLowerCase().includes(needle));
+}
+
+function renderSnippets() {
+  const all = snippetsList();
+  const shown = all.filter((r) => snippetMatches(r, snippetQuery));
+  const list = $("snippet-list");
+  list.replaceChildren();
+  for (const record of shown) {
+    const li = document.createElement("li");
+    li.dataset.id = record.id;
+    if (snippetEditing?.id === record.id) li.classList.add("editing");
+    const body = document.createElement("div");
+    body.className = "snippet-body";
+    const triggers = document.createElement("div");
+    triggers.className = "snippet-triggers";
+    triggers.textContent = record.triggers.join(" · ");
+    const excerpt = document.createElement("div");
+    excerpt.className = "snippet-excerpt";
+    excerpt.textContent = record.content.replace(/\s*\n\s*/g, " ⏎ ");
+    body.append(triggers, excerpt);
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "ghost";
+    edit.textContent = "Edit";
+    edit.setAttribute("aria-label", `Edit snippet ${record.triggers[0]}`);
+    edit.addEventListener("click", () => openSnippetEditor(record));
+    li.append(body, edit);
+    list.appendChild(li);
+  }
+  $("snippet-empty").textContent = all.length === 0
+    ? "No snippets yet. Add one to dictate a longer text by saying a short phrase."
+    : shown.length === 0 ? `No snippets match “${snippetQuery.trim()}”.` : "";
+  $("snippet-count").textContent = `${all.length} of ${SnippetsLib.SNIPPET_MAX} snippets`;
+  $("snippet-new").disabled = all.length >= SnippetsLib.SNIPPET_MAX;
+}
+
+function renderSnippetPreview() {
+  const { content } = snippetDraft();
+  // The clipboard is only known when you dictate; the preview shows where it goes.
+  $("snippet-preview").textContent = SnippetsLib.renderSnippet(content, { clipboard: "‹clipboard›", now: new Date() });
+}
+
+function showSnippetError(message) {
+  const el = $("snippet-error");
+  el.textContent = message;
+  el.hidden = !message;
+}
+
+function openSnippetEditor(record) {
+  snippetEditing = { id: record ? record.id : null };
+  $("snippet-triggers").value = record ? record.triggers.join("\n") : "";
+  $("snippet-content").value = record ? record.content : "";
+  $("snippet-editor-title").textContent = record ? "Edit snippet" : "New snippet";
+  $("snippet-apply").textContent = record ? "Update snippet" : "Add snippet";
+  $("snippet-delete").hidden = !record;
+  $("snippet-editor").hidden = false;
+  showSnippetError("");
+  renderSnippetPreview();
+  renderSnippets();
+  $("snippet-triggers").focus();
+}
+
+function closeSnippetEditor() {
+  snippetEditing = null;
+  $("snippet-editor").hidden = true;
+  showSnippetError("");
+  renderSnippets();
+}
+
+// The list is replaced wholesale by a save in flight (current = the saved
+// settings), so changes wait for it.
+const snippetsLocked = () => saveButton.disabled;
+
+$("snippet-new").addEventListener("click", () => { if (!snippetsLocked()) openSnippetEditor(null); });
+$("snippet-cancel").addEventListener("click", closeSnippetEditor);
+$("snippet-search").addEventListener("input", (event) => {
+  snippetQuery = event.target.value;
+  renderSnippets();
+});
+for (const id of ["snippet-triggers", "snippet-content"]) $(id).addEventListener("input", renderSnippetPreview);
+for (const button of document.querySelectorAll("[data-snippet-tag]")) {
+  button.addEventListener("click", () => {
+    const field = $("snippet-content");
+    field.setRangeText(`{{${button.dataset.snippetTag}}}`, field.selectionStart, field.selectionEnd, "end");
+    field.focus();
+    renderSnippetPreview();
+  });
+}
+
+$("snippet-apply").addEventListener("click", () => {
+  if (!snippetEditing || snippetsLocked()) return;
+  const list = snippetsList();
+  const draft = snippetDraft();
+  const existing = list.find((r) => r.id === snippetEditing.id);
+  const record = { id: existing ? existing.id : SnippetsLib.newSnippetId(), ...draft };
+  const next = existing ? list.map((r) => (r.id === existing.id ? record : r)) : [...list, record];
+  try {
+    current.snippets = SnippetsLib.validateSnippets(next, { trusted: baseline?.snippets });
+  } catch (err) {
+    showSnippetError(err.message);
+    return;
+  }
+  closeSnippetEditor();
+});
+
+$("snippet-delete").addEventListener("click", () => {
+  if (!snippetEditing?.id || snippetsLocked()) return;
+  current.snippets = snippetsList().filter((r) => r.id !== snippetEditing.id);
+  closeSnippetEditor();
+});
 
 /* ---------- init ---------- */
 
@@ -2238,11 +3037,13 @@ earheart.on("updates:state", renderUpdateState);
   defaults = data.defaults;
   platform = data.platform;
   cleanupStyles = data.cleanupStyles || [];
+  formattingStyles = data.formattingStyles || [];
   promptOffer = data.promptOffer || null;
   keyStorage = data.keyStorage || null;
   // A hotkey that failed at launch shows now, not after a Save — and before
   // the update and model round-trips below.
   renderHotkeyStatus(data.hotkeyStatus);
+  renderCommandCapabilities(data.commandCapabilities);
   // The Accessibility permission only exists on macOS.
   if (platform === "darwin") $("accessibility-field").hidden = false;
   $("version").textContent = `v${data.version}`;
@@ -2263,12 +3064,16 @@ earheart.on("updates:state", renderUpdateState);
   savedSetup = current;
   formReady = true;
   const query = new URLSearchParams(location.search);
-  await navigateSettings(pendingNavigation || {
+  const destination = pendingNavigation || {
     fromWizard: query.has("wizard"), section: query.get("section"), model: query.has("model"),
-  });
+    ...(query.has("query") ? { query: query.get("query"), entryId: query.get("entryId") } : {}),
+  };
+  await navigateSettings(destination);
   settingsChangesReady();
-  renderHistory();
+  if (destination.section !== "history" || typeof destination.query !== "string") renderHistory();
+  refreshAgents();
   loadMicrophones();
+  initMicrophonePolicy();
   refreshDuckStatus();
   // The line says what is happening now (lowered, skipped, failed), which
   // changes with every take: keep it current while the window is shown.

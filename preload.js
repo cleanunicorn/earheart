@@ -15,11 +15,13 @@ const { contextBridge, ipcRenderer } = require("electron");
 const ROLES = {
   overlay: {
     LISTEN: [
+      "i18n:changed",
       "record:start",
       "record:stop",
       "record:cancel",
       "record:pause-toggle",
       "record:discard",
+      "record:destination",
       "pipeline:status",
       "pipeline:partial",
       "pipeline:progress",
@@ -43,16 +45,23 @@ const ROLES = {
       "overlay:resize",
     ],
     INVOKE: [
+      "i18n:get",
       "updates:apply",
       "updates:install",
       "updates:cancel",
       "updates:skip",
       "updates:dismiss",
       "updates:remind-off",
+      "mics:classes",
     ],
+  },
+  palette: {
+    LISTEN: [], SEND: [],
+    INVOKE: ["palette:query", "palette:execute", "palette:close"],
   },
   settings: {
     LISTEN: [
+      "i18n:changed",
       "settings:navigate",
       "history:changed",
       "models:progress",
@@ -60,13 +69,18 @@ const ROLES = {
       "updates:state",
       "settings:changed",
       "usage:changed",
+      "agent:changed",
     ],
     SEND: ["hotkeys:capture"],
     INVOKE: [
+      "palette:open",
+      "i18n:get",
       "settings:get",
       "settings:save",
       "settings:close",
+      "vocab:learn-folder",
       "ducking:status",
+      "mics:classes",
       "wizard:open",
       "permissions:accessibility-check",
       "permissions:accessibility-fix",
@@ -83,6 +97,13 @@ const ROLES = {
       "history:audio-get",
       "history:audio-export",
       "history:retranscribe",
+      "agent:state",
+      "agent:send",
+      "agent:cancel",
+      "agent:reply",
+      "agent:remove",
+      "agent:copy-resume",
+      "agent:pick-project",
       "recordings:status",
       "recordings:clear",
       "correction:open",
@@ -101,16 +122,46 @@ const ROLES = {
       "updates:cancel",
       "updates:skip",
       "logs:open",
+      "tools:list",
+      "tools:save-server",
+      "tools:remove-server",
+      "tools:discover",
+      "tools:set-policy",
     ],
   },
+  // The tool-approval prompt (#346): shows one request, answers allow/deny.
+  approval: {
+    LISTEN: ["approval:request"],
+    SEND: [],
+    INVOKE: ["approval:get", "approval:decide"],
+  },
   correction: {
-    LISTEN: ["correction:notice"], SEND: ["correction:dirty"],
-    INVOKE: ["correction:get", "correction:remember", "transcript:copy", "correction:close"],
+    LISTEN: ["correction:notice", "i18n:changed"], SEND: ["correction:dirty"],
+    INVOKE: ["i18n:get", "correction:get", "correction:remember", "transcript:copy", "correction:close"],
+  },
+  // The voice command card (#344): it renders the selected text, the spoken
+  // instruction and the result, so it gets only its own session's controls and
+  // nothing about settings, history or models. Each handler in
+  // main/commands/ipc.js also checks that the sender IS this window.
+  command: {
+    LISTEN: ["command:state"],
+    SEND: [],
+    INVOKE: [
+      "command:get",
+      "command:stop",
+      "command:cancel",
+      "command:retry",
+      "command:restart",
+      "command:apply",
+      "command:copy",
+      "command:close",
+    ],
   },
   wizard: {
-    LISTEN: ["models:progress", "models:done", "settings:changed"],
+    LISTEN: ["models:progress", "models:done", "settings:changed", "i18n:changed"],
     SEND: ["hotkeys:capture"],
     INVOKE: [
+      "i18n:get",
       "settings:get",
       "wizard:complete",
       "wizard:skip",

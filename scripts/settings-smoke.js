@@ -240,6 +240,10 @@ app.whenReady().then(async () => {
       enabled: false,
     };
     ipcMain.handle("ducking:status", async () => duckingStatus);
+    // Handlers main.js registers beside ipc.init (mic-probe #339, tool servers
+    // #346); the smoke boots only ipc, so stand in with their empty answers.
+    ipcMain.handle("mics:classes", async () => ({ records: [], available: false }));
+    ipcMain.handle("tools:list", () => ({ ok: true, servers: [], secureStorage: false }));
     const downloads = new Map();
     // Every transfer the engine was asked for, in order (check 16 counts them).
     const downloadCalls = [];
@@ -1932,7 +1936,7 @@ app.whenReady().then(async () => {
       { kind: "audioinput", deviceId: ALT_MIC, label: "Desk Mic" },
       { kind: "videoinput", deviceId: "camera", label: "Camera" },
     ];
-    async function micRace({ hold, choose, reject = false, save = false, seedAlt = false }) {
+    async function micRace({ hold, choose, reject = false, save = false, seedAlt = false, auto = false }) {
       settings.save({ ...settings.get(), audio: { ...settings.get().audio, deviceId: SAVED_MIC } });
       const raceWin = windows.openSettings();
       await waitForLoad(raceWin.webContents);
@@ -1982,6 +1986,17 @@ app.whenReady().then(async () => {
             select.dispatchEvent(new Event("change", { bubbles: true }));
           })()`);
         }
+        if (auto) {
+          // Automatic selection chosen while the enumeration is pending (#339).
+          await run(`(() => {
+            const mode = document.getElementById("mic-mode");
+            mode.value = "auto";
+            mode.dispatchEvent(new Event("change", { bubbles: true }));
+            const bt = document.getElementById("mic-bluetooth");
+            bt.checked = false;
+            bt.dispatchEvent(new Event("change", { bubbles: true }));
+          })()`);
+        }
         if (hold === "permission") {
           await run(reject
             ? `window.__micProbe.permission.reject(new DOMException("denied", "NotAllowedError"))`
@@ -2002,6 +2017,9 @@ app.whenReady().then(async () => {
             status: document.getElementById("mic-device-status").textContent,
             stopped: window.__micProbe.stopped,
             error: window.__micProbe.error,
+            mode: document.getElementById("mic-mode").value,
+            bluetooth: document.getElementById("mic-bluetooth").checked,
+            optionsHidden: document.getElementById("mic-auto-options").hidden,
           });
           delete navigator.mediaDevices.getUserMedia;
           delete navigator.mediaDevices.enumerateDevices;
@@ -2010,9 +2028,9 @@ app.whenReady().then(async () => {
         if (save) {
           await run(`document.getElementById("save").click()`);
           await savedThenClose(raceWin, "Save never reported Saved");
-          state.persisted = JSON.parse(
-            fs.readFileSync(path.join(userData, "settings.json"), "utf8")
-          ).audio.deviceId;
+          const savedAudio = JSON.parse(fs.readFileSync(path.join(userData, "settings.json"), "utf8")).audio;
+          state.persisted = savedAudio.deviceId;
+          state.persistedAudio = savedAudio;
         }
         return state;
       } finally {
@@ -2062,6 +2080,17 @@ app.whenReady().then(async () => {
       "an untouched saved microphone stays selected with its refreshed label",
       untouched.value === SAVED_MIC && refreshed(untouched) && untouched.status === "",
       JSON.stringify(untouched)
+    );
+    const autoDuring = await micRace({ hold: "enumerate", auto: true, save: true });
+    check(
+      "automatic selection chosen while enumeration is pending survives it and Save writes it, keeping the saved device",
+      autoDuring.mode === "auto" &&
+        autoDuring.bluetooth === false &&
+        autoDuring.optionsHidden === false &&
+        autoDuring.persistedAudio?.micMode === "auto" &&
+        autoDuring.persistedAudio?.micIncludeBluetooth === false &&
+        autoDuring.persisted === SAVED_MIC,
+      JSON.stringify(autoDuring)
     );
     const denied = await micRace({ hold: "permission", choose: "", reject: true });
     check(
@@ -2417,6 +2446,121 @@ app.whenReady().then(async () => {
         settings.save({ ...after, cleanup: { ...after.cleanup, enabled: beforeEdit.cleanup.enabled, aliases: beforeEdit.cleanup.aliases } });
       }
 
+      // #336: formatting rules are added, edited and removed in the real
+      // window, saved normalized (www. stripped, duplicates and wildcards
+      // dropped), and shown again from disk.
+      {
+        const beforeEdit = settings.get();
+        const { saveWin, run } = await openSaveWindow();
+        const ok = await run(`(() => {
+          const set = (el, value) => { el.value = value; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); };
+          const defaultSelect = document.getElementById("format-default");
+          set(defaultSelect, "chat");
+          for (const [type, value, style] of [["host", "https://www.GitHub.com/x", "code-safe"], ["host", "github.com", "email"], ["host", "*.evil.com", "email"], ["app", "com.apple.Terminal", "code-safe"]]) {
+            document.getElementById("format-add").click();
+            const row = document.querySelector("#format-rules .format-rule:last-child");
+            const [t, v, st] = row.querySelectorAll("select, input");
+            set(t, type); set(v, value); set(st, style);
+          }
+          document.querySelector("#format-rules .format-rule:last-child button").click();
+          document.querySelector("#format-rules .format-rule:last-child button").click();
+          return document.querySelectorAll("#format-rules .format-rule").length === 2;
+        })()`);
+        check("rule rows can be added and removed", ok === true);
+        await run(`document.getElementById("save").click()`);
+        await waitFor(() => run(`document.getElementById("save-status").className === "status ok"`), "the formatting Save never reported Saved", 500);
+        const saved = savedJson().formatting;
+        check("Save stores the normalized rules and the default",
+          saved.defaultStyle === "chat" && saved.rules.length === 1 &&
+            saved.rules[0].scope.type === "host" && saved.rules[0].scope.value === "github.com" && saved.rules[0].style === "code-safe",
+          JSON.stringify(saved));
+        await clickClose(saveWin);
+        const after = settings.get();
+        settings.save({ ...after, formatting: beforeEdit.formatting });
+      }
+
+      // #334: Snippets are created, searched and edited in the real window, a
+      // snippet saved elsewhere meanwhile joins the list without losing the
+      // typed one, Save stores both, a reopened window shows them, and a bad
+      // tag or a half-edited snippet blocks Save.
+      {
+        const beforeEdit = settings.get();
+        const { saveWin, run } = await openSaveWindow();
+        const body = "Ada Lovelace\n  12 Analytical Way\n\nOn {{date}}";
+        const created = await run(`(() => {
+          const set = (id, value) => {
+            const el = document.getElementById(id);
+            el.value = value;
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+          };
+          document.getElementById("snippet-new").click();
+          set("snippet-triggers", "my address\\nhome address");
+          set("snippet-content", ${JSON.stringify(body)});
+          const preview = document.getElementById("snippet-preview").textContent;
+          document.getElementById("snippet-apply").click();
+          return {
+            preview,
+            rows: [...document.querySelectorAll("#snippet-list li")].map((li) => li.textContent),
+            editorHidden: document.getElementById("snippet-editor").hidden,
+          };
+        })()`);
+        check("a new snippet is added to the list with a rendered preview",
+          created.editorHidden && created.rows.length === 1 && /my address · home address/.test(created.rows[0]) &&
+            /On \d{4}-\d{2}-\d{2}$/.test(created.preview) && !created.preview.includes("{{"),
+          JSON.stringify(created));
+        const live = settings.get();
+        settings.save({ ...live, snippets: [{ id: "snp_elsewhere", triggers: ["sign off"], content: "Best,\nAda" }] });
+        await waitFor(
+          () => run(`document.querySelectorAll("#snippet-list li").length === 2`),
+          "a snippet saved elsewhere never reached the open list"
+        );
+        const searched = await run(`(() => {
+          const search = document.getElementById("snippet-search");
+          search.value = "sign";
+          search.dispatchEvent(new Event("input", { bubbles: true }));
+          const shown = document.querySelectorAll("#snippet-list li").length;
+          search.value = "";
+          search.dispatchEvent(new Event("input", { bubbles: true }));
+          return shown;
+        })()`);
+        check("search narrows the list to matching triggers or text", searched === 1, String(searched));
+        const blocked = await run(`(() => {
+          document.getElementById("snippet-new").click();
+          document.getElementById("snippet-triggers").value = "bad tag";
+          document.getElementById("snippet-content").value = "x {{nope}}";
+          document.getElementById("snippet-apply").click();
+          return document.getElementById("snippet-error").textContent;
+        })()`);
+        check("an unknown tag is refused where it is typed", /Unknown tag {{nope}}/.test(blocked), blocked);
+        const halfEdited = await run(`(() => {
+          document.getElementById("save").click();
+          return document.getElementById("save-status").textContent;
+        })()`);
+        check("Save refuses while a snippet is half-edited and writes nothing new",
+          /^Not saved — add or cancel the snippet/.test(halfEdited) && savedJson().snippets.every((r) => r.id === "snp_elsewhere"),
+          halfEdited);
+        await run(`document.getElementById("snippet-cancel").click(); document.getElementById("save").click()`);
+        await waitFor(() => run(`document.getElementById("save-status").className === "status ok"`), "the snippet Save never reported Saved", 500);
+        const stored = savedJson().snippets;
+        check("Save stores the typed snippet exactly beside the one saved elsewhere",
+          stored.length === 2 && stored.some((r) => r.content === body && r.triggers.join("|") === "my address|home address") &&
+            stored.some((r) => r.id === "snp_elsewhere"),
+          JSON.stringify(stored));
+        await clickClose(saveWin);
+        const reopened = await openSaveWindow();
+        const rows = await reopened.run(`document.querySelectorAll("#snippet-list li").length`);
+        check("a reopened Settings window lists the saved snippets", rows === 2, String(rows));
+        await reopened.run(`(() => {
+          document.querySelector("#snippet-list li button").click();
+          document.getElementById("snippet-delete").click();
+          document.getElementById("save").click();
+        })()`);
+        await waitFor(() => reopened.run(`document.getElementById("save-status").className === "status ok"`), "the snippet delete never reported Saved", 500);
+        check("deleting a snippet and saving removes it from disk", savedJson().snippets.length === 1, JSON.stringify(savedJson().snippets));
+        await clickClose(reopened.saveWin);
+        settings.save({ ...settings.get(), snippets: beforeEdit.snippets });
+      }
+
       // An edit made while the save is in flight is not in what was saved:
       // Save must say so instead of "Saved", and disk keeps the sent value.
       // Cover a plain field and a limit that the response used to overwrite.
@@ -2555,6 +2699,14 @@ app.whenReady().then(async () => {
     await require("./wizard-smoke").checkWizard({ waitFor, check, setDuckingStatus: (status) => { duckingStatus = status; } });
     await require("./correction-smoke").checkCorrection({ waitFor, check, savedThenClose });
     await require("./theme-smoke").checkTheme({ waitFor, check, savedThenClose });
+    await require("./i18n-smoke").checkI18n({ waitFor, check });
+
+    // The i18n check closes Settings without waiting; Commands needs a fresh one.
+    await waitFor(
+      async () => require("electron").BrowserWindow.getAllWindows().every((w) => w.isDestroyed() || !w.webContents.getURL().includes("settings.html")),
+      "the Settings window did not finish closing"
+    );
+    await require("./palette-smoke").checkPalette({ waitFor, check, invokeHandlers });
 
     const failed = checks.filter((c) => !c.ok);
     console.log(

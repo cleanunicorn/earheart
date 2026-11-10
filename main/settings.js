@@ -12,6 +12,10 @@ const logger = require("./util/logger");
 const secretStore = require("./secret-store");
 const { DEFAULT_STYLE, styleById, NEUTRAL_SAMPLING } = require("./cleanup-styles");
 const { normalizeAliases } = require("../renderer/aliases");
+const i18nCore = require("../renderer/i18n");
+const { sanitizeFormatting, DEFAULT_FORMATTING_STYLE } = require("./formatting-profiles");
+const { normalizePackIds } = require("../renderer/vocab-packs");
+const { normalizeSnippets } = require("../renderer/snippets");
 
 // The invariant core of the cleanup instructions, inlined into the model's user
 // turn (not used as a chat system prompt) — see main/engines/engine-worker.js
@@ -60,6 +64,13 @@ const DEFAULTS = {
   // Global hotkey (Electron accelerator format). Press once to start
   // recording, press again to stop and transcribe.
   hotkey: "CommandOrControl+Shift+Space",
+  // How the record hotkey starts a dictation: "toggle" (press to start, press
+  // again to stop) or "double-tap" (two quick presses start; one press stops —
+  // see main/double-tap.js). Only the hotkey and `earheart --tap` follow it;
+  // the tray and `--toggle` always toggle.
+  activationMode: "toggle",
+  // Longest gap between the two taps of a double tap, in ms (250–1000).
+  doubleTapWindowMs: 500,
   // Optional pause/resume hotkey for a dictation in progress. Empty = not
   // registered — deliberately unset by default, since a second global grab
   // shadows some app's shortcut for somebody; the combo is the user's choice
@@ -71,6 +82,12 @@ const DEFAULTS = {
   discardHotkey: "",
   // Open the last saved transcript for explicit spelling corrections.
   correctHotkey: "",
+  paletteHotkey: "CommandOrControl+Shift+K",
+  // Opt-in (#338): while a take is recording, Enter stops it and delivers the
+  // transcript like the toggle hotkey. A global grab, so Enter is swallowed
+  // in every app for that window (including IME composition); never forwarded
+  // and never synthesized after delivery.
+  enterToStop: false,
   // Launch Earheart automatically at login (it lands in the tray, ready for
   // the hotkey). Pushed to the OS by main/autostart.js — a native login item
   // on Windows/macOS, an XDG autostart .desktop file on Linux — on save, and
@@ -79,6 +96,32 @@ const DEFAULTS = {
   // "system" (follow the OS), "light" or "dark" — every window's palette,
   // applied by main/appearance.js. Anything else reads as "system".
   appearance: "system",
+  // The language of menus, settings and notifications (#349): "system" (follow
+  // the OS) or a supported locale tag. Independent of stt.language. Resolved by
+  // main/i18n.js; an unsupported value reads as "system".
+  uiLanguage: "system",
+  // Voice commands (#344): an explicit, separate mode that turns a spoken
+  // instruction into text (draft from a brief, or rewrite the selection). It
+  // never runs from ordinary dictation. Off the hotkey nothing here is active;
+  // the tray item and `earheart --command` also start one.
+  commands: {
+    // Optional global hotkey, unset by default like the other optional keys.
+    hotkey: "",
+    // "builtin" = the cleanup GGUF model runs the transform in-process (no
+    // setup, nothing leaves the machine); "remote" = an OpenAI-compatible chat
+    // API the user names HERE. There is no fallback to the cleanup service:
+    // selected text is only sent where the user said it may go.
+    engine: "builtin",
+    baseUrl: "",
+    apiKey: "",
+    model: "",
+    timeoutMs: 120000,
+    // Output budget in tokens: its own, never the cleanup ratio (a draft from
+    // a ten-word brief is far longer than its transcript).
+    maxOutputTokens: 1024,
+    // Apply (paste over the selection) can be turned off, leaving Copy only.
+    allowApply: true,
+  },
   output: {
     // "paste" = type into focused app (restores clipboard afterwards),
     // "paste-copy" = paste AND keep the transcript on the clipboard,
@@ -155,6 +198,10 @@ const DEFAULTS = {
     // see applyAliases in renderer/aliases.js. A separate key, so the flat
     // dictionary above stays as older versions wrote and read it.
     aliases: [],
+    // Enabled starter vocabulary packs (#72): ids from renderer/vocab-packs.js.
+    // Their terms are added to the cleanup prompt after the dictionary's, and
+    // never copied into it. A separate key, so older versions ignore it.
+    vocabPacks: [],
     // The new-default-prompt offer (cleanupPromptOffer): the default's id the
     // user decided on (took it or kept theirs), and the one a launch notice
     // already announced, so each new default is announced once and offered
@@ -162,8 +209,29 @@ const DEFAULTS = {
     promptOfferDecided: "",
     promptOfferNotified: "",
   },
+  // Destination-aware formatting (#336, main/formatting-profiles.js): the
+  // capitalization/punctuation style used when no rule matches, and exact
+  // website-host / application rules `{ id, scope: { type, value }, style }`.
+  // Separate from cleanup.style (how much the cleanup edits).
+  formatting: {
+    defaultStyle: DEFAULT_FORMATTING_STYLE,
+    rules: [],
+  },
+  // Text snippets (#334): [{ id, triggers: [...], content }]. A spoken trigger
+  // becomes its content, cleanup or not — see main/text-expansions.js. Top
+  // level, not under cleanup, because it works with cleanup off.
+  snippets: [],
   audio: {
     deviceId: "", // empty = system default microphone
+    // How a take picks its microphone (#339). "manual" (default, as before):
+    // deviceId above, or the system default when empty. "auto": rank the
+    // present devices by the two preferences below (renderer/mic-policy.js).
+    // Auto never rewrites deviceId, so going back to manual restores it.
+    micMode: "manual",
+    // In auto mode: whether Bluetooth / virtual inputs may be chosen. A device
+    // whose class can't be established is never excluded by either.
+    micIncludeBluetooth: true,
+    micIncludeVirtual: true,
     // Ten minutes. The built-in cleanup context is sized from this (see
     // cleanContextFor in util/clean-budget.js), so raising it costs memory; a
     // large dictionary or custom prompt grows it too, up to CLEAN_CONTEXT_MAX.
@@ -187,6 +255,16 @@ const DEFAULTS = {
   history: {
     enabled: true,
     limit: 100,
+  },
+  // Send a reviewed transcript to an installed coding agent (#345,
+  // main/agent-tasks.js). Off until the user turns it on. `permission` is the
+  // agent's sandbox: "edit" (workspace-write / acceptEdits) or "read"
+  // (read-only / plan). There is no full-access mode. `binaries` optionally
+  // pins an agent's executable (absolute path) instead of looking it up on PATH.
+  agents: {
+    enabled: false,
+    permission: "edit",
+    binaries: { codex: "", claude: "" },
   },
   // Local usage counts (#347, main/usage.js): takes, words and speech time,
   // never text. typingWpm is the baseline the "time saved" estimate uses.
@@ -417,6 +495,9 @@ const LIMITS = [
   { section: "recordings", key: "maxMegabytes", min: 50, max: 10240 },
   // Settings → Usage's typing-speed baseline (#typing-wpm).
   { section: "usage", key: "typingWpm", min: 10, max: 200 },
+  // Settings → Commands: the transform's timeout and output budget.
+  { section: "commands", key: "timeoutMs", min: 5000, max: 600000 },
+  { section: "commands", key: "maxOutputTokens", min: 64, max: 8192 },
 ];
 
 // Clamp each limit into its range (rounded to whole units); a non-finite value
@@ -436,11 +517,52 @@ function clampLimits(merged) {
   return out;
 }
 
+// An unknown micMode reads as "manual" and a non-boolean preference as its
+// default (a hand-edited file). Not rewritten until the next save.
+function normalizeMic(merged) {
+  const audio = merged.audio;
+  const mode = audio.micMode === "auto" ? "auto" : "manual";
+  const flag = (value) => (typeof value === "boolean" ? value : true);
+  if (
+    audio.micMode === mode &&
+    audio.micIncludeBluetooth === flag(audio.micIncludeBluetooth) &&
+    audio.micIncludeVirtual === flag(audio.micIncludeVirtual)
+  ) {
+    return merged;
+  }
+  return {
+    ...merged,
+    audio: {
+      ...audio,
+      micMode: mode,
+      micIncludeBluetooth: flag(audio.micIncludeBluetooth),
+      micIncludeVirtual: flag(audio.micIncludeVirtual),
+    },
+  };
+}
+
 // An unknown or missing appearance reads as "system". Not rewritten on disk
 // until the next save, like clampLimits.
 const APPEARANCES = ["system", "light", "dark"];
 function normalizeAppearance(merged) {
-  return APPEARANCES.includes(merged.appearance) ? merged : { ...merged, appearance: "system" };
+  const out = APPEARANCES.includes(merged.appearance) ? merged : { ...merged, appearance: "system" };
+  // Same rule for the UI language (#349).
+  const language = i18nCore.normalizePreference(out.uiLanguage);
+  return language === out.uiLanguage ? out : { ...out, uiLanguage: language };
+}
+
+// An unknown activation mode reads as "toggle"; the double-tap window is
+// clamped to what Settings offers. Not rewritten until the next save.
+const ACTIVATION_MODES = ["toggle", "double-tap"];
+function normalizeActivation(merged) {
+  const window = merged.doubleTapWindowMs;
+  return {
+    ...merged,
+    activationMode: ACTIVATION_MODES.includes(merged.activationMode) ? merged.activationMode : "toggle",
+    doubleTapWindowMs: Number.isFinite(window)
+      ? Math.round(Math.min(1000, Math.max(250, window)))
+      : DEFAULTS.doubleTapWindowMs,
+  };
 }
 
 // Make cleanup.aliases valid whatever the file held (hand edits, another
@@ -450,7 +572,24 @@ function normalizeAppearance(merged) {
 function normalizeStoredAliases(merged) {
   const aliases = normalizeAliases(merged.cleanup.aliases, (reason) =>
     logger.warn(`dropped a saved dictionary alias: ${reason}`));
-  return { ...merged, cleanup: { ...merged.cleanup, aliases } };
+  return { ...merged, cleanup: { ...merged.cleanup, aliases, vocabPacks: normalizePackIds(merged.cleanup.vocabPacks) } };
+}
+
+// Make `formatting` valid whatever the file held (older versions have none;
+// hand edits): bad rules dropped, duplicates collapsed, capped. Logs reasons,
+// never rule text. Idempotent; nothing is rewritten until the next save.
+function normalizeStoredFormatting(merged) {
+  const formatting = sanitizeFormatting(merged.formatting, (reason) =>
+    logger.warn(`dropped a saved formatting rule: ${reason}`));
+  return { ...merged, formatting };
+}
+
+// Make snippets valid whatever the file held, like normalizeStoredAliases.
+function normalizeStoredSnippets(merged) {
+  return {
+    ...merged,
+    snippets: normalizeSnippets(merged.snippets, (reason) => logger.warn(`dropped a saved snippet: ${reason}`)),
+  };
 }
 
 // safeStorage answers only after app `ready` (before it, Linux reports no
@@ -515,7 +654,7 @@ function load() {
     ? secretStore.storageStatus(safeStorage, process.platform)
     : { secure: false, backend: null };
   const decoded = secretStore.decodeSecrets(stored, ready ? safeStorage : null);
-  const merged = normalizeAppearance(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored)))));
+  const merged = normalizeActivation(normalizeMic(normalizeAppearance(normalizeStoredSnippets(normalizeStoredFormatting(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, migrateLegacy(decoded.stored)))))))));
   // Before `ready` encrypted keys read as "", so the result is not cached:
   // the first load after `ready` decrypts them. Nothing saves before then
   // (save() refuses).
@@ -585,7 +724,7 @@ function writeFile(merged) {
 function save(next) {
   if (!appReady()) throw new Error("settings cannot be saved before the app is ready");
   const previous = load();
-  const merged = normalizeAppearance(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, next))));
+  const merged = normalizeActivation(normalizeMic(normalizeAppearance(normalizeStoredSnippets(normalizeStoredFormatting(normalizeStoredAliases(clampLimits(deepMerge(DEFAULTS, next))))))));
   // Fail closed (#343): recordings are only ever kept encrypted, so keeping
   // them can't be turned on without OS-backed secure storage.
   if (merged.recordings.keep === true && !keyStorageStatus.secure) {

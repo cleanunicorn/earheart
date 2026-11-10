@@ -1,5 +1,5 @@
 # TEMPORARY diagnostic for PR #396: find the unit-test file that hangs on
-# Windows and the smoke step that hangs on Linux. Delete before merging.
+# Windows. Delete before merging.
 name: diag-hang
 on:
   push:
@@ -7,57 +7,32 @@ on:
 jobs:
   windows-tests:
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with: { node-version-file: .nvmrc }
       - run: npm ci
       - run: npx --no install-electron
-      - name: Run each test file with a kill timeout
-        shell: node {0}
+      - name: Run suspect files one at a time, killing any that hang
+        shell: pwsh
         run: |
-          const { spawn } = require("node:child_process");
-          const fs = require("node:fs");
-          const files = fs.readdirSync("test").filter((f) => f.endsWith(".test.js")).sort().map((f) => "test/" + f);
-          const hung = [];
-          // Never let this step run into the job limit: stop reporting at 14 minutes.
-          setTimeout(() => { console.log("DEADLINE reached; hung so far:", JSON.stringify(hung)); process.exit(0); }, 14 * 60 * 1000).unref();
-          (async () => {
-            for (const file of files) {
-              const started = Date.now();
-              let output = "";
-              const status = await new Promise((resolve) => {
-                const child = spawn(process.execPath, ["--test", "--test-timeout=30000", file], { stdio: ["ignore", "pipe", "pipe"] });
-                child.stdout.on("data", (d) => { output += d; });
-                child.stderr.on("data", (d) => { output += d; });
-                const timer = setTimeout(() => {
-                  // Fire and forget: do not wait on taskkill or the child.
-                  spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" }).on("error", () => {});
-                  resolve("HUNG");
-                }, 90000);
-                child.on("exit", (code) => { clearTimeout(timer); resolve(code === 0 ? "ok" : "FAIL " + code); });
-              });
-              const secs = ((Date.now() - started) / 1000).toFixed(1);
-              console.log(`${status.padEnd(8)} ${secs.padStart(6)}s ${file}`);
-              if (status !== "ok") {
-                const notOk = output.split("\n").filter((l) => /^\s*(not ok|error:|code:|failureType|# Subtest)/.test(l) || /Error|ENOENT|EBUSY|EPERM|spawn/.test(l)).slice(-25);
-                console.log(notOk.map((l) => "      | " + l.slice(0, 220)).join("\n"));
-                console.log("      | last output:", JSON.stringify(output.slice(-600)));
-              }
-              if (status === "HUNG") hung.push(file);
+          foreach ($file in @("test/ducking.test.js", "test/command-wiring.test.js", "test/deliver.test.js")) {
+            $out = "$env:RUNNER_TEMP\out.txt"; $err = "$env:RUNNER_TEMP\err.txt"
+            Remove-Item $out, $err -ErrorAction SilentlyContinue
+            $sw = [Diagnostics.Stopwatch]::StartNew()
+            $p = Start-Process node -ArgumentList "--test", "--test-timeout=60000", $file -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
+            $done = $p.WaitForExit(120000)
+            if (-not $done) {
+              Write-Host "HUNG after $($sw.Elapsed.TotalSeconds)s: $file"
+              Write-Host "Child processes still alive:"
+              Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $p.Id -or $_.CommandLine -match "powershell" } |
+                Select-Object ProcessId, ParentProcessId, Name, @{n="Cmd";e={($_.CommandLine -replace "\s+", " ").Substring(0, [Math]::Min(160, $_.CommandLine.Length))}} | Format-Table -AutoSize | Out-String | Write-Host
+              taskkill /T /F /PID $p.Id | Out-Host
+            } else {
+              Write-Host "exit=$($p.ExitCode) after $($sw.Elapsed.TotalSeconds)s: $file"
             }
-            console.log("HUNG FILES:", JSON.stringify(hung));
-            process.exit(0);
-          })();
-  linux-approval-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with: { node-version-file: .nvmrc }
-      - run: npm ci
-      - run: npx --no install-electron
-      - name: Tool approval smoke with a 3 minute limit
-        run: timeout 180 xvfb-run -a npx electron scripts/approval-smoke.js --no-sandbox; echo "exit=$?"
+            Write-Host "---- last output of $file"
+            Get-Content $out -Tail 40 -ErrorAction SilentlyContinue | Write-Host
+            Get-Content $err -Tail 10 -ErrorAction SilentlyContinue | Write-Host
+          }

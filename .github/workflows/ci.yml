@@ -29,8 +29,8 @@ jobs:
       # Electron fetches its binary on first use; parallel test files that each
       # trigger that download race and fail, so fetch it once up front.
       - run: npx --no install-electron # make install
-      # A hung test file must end the step (and upload its log) instead of
-      # running to the job limit: Windows cannot always kill a stuck test file.
+      # Bound the step so a hang fails in minutes, not at the job limit. (On
+      # Windows a hung child can outlive this and the log is then lost.)
       - name: Unit tests
         timeout-minutes: 8
         run: npm test # make test

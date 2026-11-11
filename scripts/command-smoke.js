@@ -43,6 +43,13 @@ const { registerCommandIpc, REJECTED } = require("../main/commands/ipc");
 
 app.on("window-all-closed", () => {});
 
+// A renderer call can stay pending when its window is destroyed before the
+// reply reaches main. Bound the whole smoke, including calls inside waitFor.
+const watchdog = setTimeout(() => {
+  console.error("[command-smoke] ERROR: smoke did not finish within 60 s");
+  app.exit(1);
+}, 60000);
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function waitFor(read, message, attempts = 200) {
   for (let attempt = 0; attempt < attempts; attempt++) {
@@ -161,7 +168,14 @@ app.whenReady().then(async () => {
     await session.begin();
     state.handlers.onTranscript(7, INSTRUCTION);
     await waitFor(() => run('document.getElementById("cancel").textContent === "Cancel"'), "no Cancel while working");
-    await run('document.getElementById("cancel").click()');
+    // Cancel destroys the renderer. Send a real mouse click from main so we
+    // don't await a JavaScript reply from the window we're closing.
+    const cancelPoint = await run(`(() => {
+      const rect = document.getElementById("cancel").getBoundingClientRect();
+      return { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) };
+    })()`);
+    win.webContents.sendInputEvent({ type: "mouseDown", ...cancelPoint, button: "left", clickCount: 1 });
+    win.webContents.sendInputEvent({ type: "mouseUp", ...cancelPoint, button: "left", clickCount: 1 });
     await waitFor(() => win.isDestroyed(), "Cancel did not close the card");
     release(OUTPUT);
     await sleep(50);
@@ -216,5 +230,6 @@ app.whenReady().then(async () => {
   }
   const failed = checks.filter((c) => !c.ok);
   console.log(`[command-smoke] ${checks.length - failed.length}/${checks.length} checks passed`);
+  clearTimeout(watchdog);
   app.exit(failed.length ? 1 : 0);
 });

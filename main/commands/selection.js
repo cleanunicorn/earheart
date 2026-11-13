@@ -36,6 +36,17 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 function createSelectionCapture({ clipboard, snapshot, restore, platform, copyTimeoutMs = 700, modifierWaitMs }) {
   const sentinel = () => `​​earheart-capture-${crypto.randomBytes(8).toString("hex")}`;
+  let pending = Promise.resolve();
+
+  // Cancellation can leave Copy or a polling tick in flight. Serialize the
+  // entire clipboard loan, including restoration, so a restarted command
+  // never snapshots the preceding capture's sentinel. Recording is independent
+  // of this queue and still starts immediately.
+  function capture(signal) {
+    const result = pending.then(() => captureOnce(signal));
+    pending = result.catch(() => {});
+    return result;
+  }
 
   // Put the user's clipboard back, but only if it still holds one of our own
   // values. Never throws: a failed restore must not hide the capture result.
@@ -54,7 +65,7 @@ function createSelectionCapture({ clipboard, snapshot, restore, platform, copyTi
    * @param {AbortSignal} [signal]
    * @returns {Promise<{ok: true, text: string} | {ok: false, reason: string, message: string}>}
    */
-  async function capture(signal) {
+  async function captureOnce(signal) {
     const fail = (reason, message) => ({ ok: false, reason, message });
     if (signal?.aborted) return fail("cancelled", "Cancelled");
     const support = platform.captureSupport();

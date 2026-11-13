@@ -1,11 +1,11 @@
 // The voice command state machine (#344), free of Electron so every race in it
-// can be tested: capture the selection, record the spoken instruction (the
+// can be tested: record while capturing the selection, take the instruction (the
 // dictation pipeline's recorder and STT, handed over before cleanup), run the
 // transform, then show input and output for an explicit Apply or Copy.
 //
-//   idle ─begin─▶ capturing ─▶ recording ─▶ transcribing ─▶ transforming ─▶ ready ─apply─▶ applying ─▶ applied
-//                    │            │              │               │            │ ▲             │
-//                    └────────────┴──── cancel / failure ────────┴─▶ failed   └─┴ (retry)     └─▶ ready (+ note)
+//   idle ─begin─▶ recording (+ selection capture) ─▶ transcribing ─▶ transforming ─▶ ready ─apply─▶ applying ─▶ applied
+//   Cancel ends any active stage; a failure keeps the card for Retry or Speak again.
+//   A blocked Apply returns to ready with a note.
 //
 // Rules this file exists to keep:
 //  * Every call from outside carries the command id; a new command bumps it,
@@ -75,6 +75,7 @@ function createCommandSession(deps) {
       error: cmd.error,
       notice: cmd.notice,
       captureNote: cmd.captureNote,
+      selectionPending: !cmd.contextReady && !cmd.recordingFailed,
       remote: cmd.remote,
       canApply: cmd.phase === "ready" && apply.ok,
       applyNote: cmd.phase === "ready" && !apply.ok ? apply.reason : null,
@@ -127,11 +128,29 @@ function createCommandSession(deps) {
       target: null,
       targetNote: null,
       recordingSid: null,
+      contextReady: false,
       abort: new AbortController(),
       run: 0,
     });
     push();
     const { signal } = c.abort;
+
+    // Start the shared recorder before any native Copy or window probes.
+    // Those async operations can take seconds; speech must not wait for them.
+    const sid = deps.startRecording({
+      onTranscript: (rsid, text) => onTranscript(c, rsid, text),
+      onEnd: (rsid, reason, message) => onRecordingEnd(c, rsid, reason, message),
+    });
+    if (cmd !== c) return { ok: false, cancelled: true };
+    if (sid === false) {
+      // The pipeline is busy or the speech model isn't ready; it said why.
+      set({ phase: "failed", error: { kind: "no-recording", message: "Couldn't start recording. Check that the speech model is ready and that no dictation is running." } });
+      c.recordingFailed = true;
+      push();
+      return { ok: false };
+    }
+    c.recordingSid = sid;
+    set({ phase: "recording" });
 
     // 1. The selection. A failure is not fatal: it becomes a draft from the
     //    brief, said plainly on the card, unless the user cancels.
@@ -140,8 +159,10 @@ function createCommandSession(deps) {
       const captured = await deps.selection.capture(signal);
       if (cmd !== c || signal.aborted) return { ok: false, cancelled: true };
       if (captured.ok) c.selection = captured.text;
-      else if (captured.reason === "cancelled") return { ok: false, cancelled: true };
-      else {
+      else if (captured.reason === "cancelled") {
+        cancel(c.id);
+        return { ok: false, cancelled: true };
+      } else {
         c.captureNote = captured.message;
         // Only a genuinely empty selection makes this a draft that may be
         // pasted. If the selection (or a secure field) exists but couldn't be
@@ -163,26 +184,21 @@ function createCommandSession(deps) {
         c.targetNote = fp.reason;
       }
     } catch (err) {
-      if (cmd !== c || signal.aborted || isAbort(err)) return { ok: false, cancelled: true };
+      if (cmd !== c || signal.aborted) return { ok: false, cancelled: true };
+      if (isAbort(err)) {
+        cancel(c.id);
+        return { ok: false, cancelled: true };
+      }
       c.captureNote = "Couldn't read the selection";
       log.warn(`command ${c.id}: capture failed: ${err.message}`);
     }
 
-    // 3. Record the spoken instruction.
-    const sid = deps.startRecording({
-      onTranscript: (rsid, text) => onTranscript(c, rsid, text),
-      onEnd: (rsid, reason, message) => onRecordingEnd(c, rsid, reason, message),
-    });
-    if (cmd !== c) return { ok: false, cancelled: true };
-    if (sid === false) {
-      // The pipeline is busy or the speech model isn't ready; it said why.
-      set({ phase: "failed", error: { kind: "no-recording", message: "Couldn't start recording. Check that the speech model is ready and that no dictation is running." } });
-      c.recordingFailed = true;
-      push();
-      return { ok: false };
-    }
-    c.recordingSid = sid;
-    set({ phase: "recording" });
+    c.contextReady = true;
+    // A short take may already be transcribed. Generate only once both the
+    // instruction and its selection/target are ready, without reviving a
+    // cancelled or failed recording.
+    if (c.instruction !== null && !c.recordingFailed) runTransform(c);
+    else push();
     return { ok: true, id: c.id };
   }
 
@@ -206,16 +222,16 @@ function createCommandSession(deps) {
 
   function onTranscript(c, rsid, text) {
     if (cmd !== c || c.recordingSid !== rsid) return;
-    c.recordingSid = null;
     const instruction = String(text || "").trim().slice(0, MAX_INSTRUCTION_CHARS);
     if (!instruction) {
       onRecordingEnd(c, rsid, "empty");
       return;
     }
+    c.recordingSid = null;
     c.instruction = instruction;
-    c.phase = "transforming"; // set before the pipeline reports idle
-    push();
-    runTransform(c);
+    // Keep the command busy even if STT wins the race with selection capture.
+    if (c.contextReady) runTransform(c);
+    else set({ phase: "transcribing" });
   }
 
   async function runTransform(c) {
@@ -252,7 +268,7 @@ function createCommandSession(deps) {
   function cancel(commandId, { fromRecording = false } = {}) {
     const c = current(commandId);
     if (!c) return { ok: false, stale: true };
-    const wasRecording = c.phase === "recording" || c.phase === "transcribing";
+    const wasRecording = c.recordingSid !== null && (c.phase === "recording" || c.phase === "transcribing");
     teardown(c);
     c.run++;
     c.runAbort?.abort();
@@ -370,7 +386,7 @@ function createCommandSession(deps) {
   /** Window closed or app quitting: end whatever is running. */
   function dispose() {
     if (!cmd) return;
-    const wasRecording = cmd.phase === "recording" || cmd.phase === "transcribing";
+    const wasRecording = cmd.recordingSid !== null && (cmd.phase === "recording" || cmd.phase === "transcribing");
     teardown(cmd);
     cmd.run++;
     cmd.runAbort?.abort();

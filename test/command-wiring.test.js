@@ -13,7 +13,7 @@ const FRESH = ["../main/commands/index", "../main/commands/platform", "../main/c
   .map((p) => require.resolve(p));
 
 function load({ commands = {}, cleanup = {}, occupied = [], fakeEdges = false, readiness = { ok: true }, pipelineState = "idle" } = {}) {
-  const log = { registered: new Map(), unregistered: [], routed: [], deliveries: [], opened: 0, closed: 0, fakePlatform: 0, handlers: {}, started: [], sent: [] };
+  const log = { startup: [], registered: new Map(), unregistered: [], routed: [], deliveries: [], opened: 0, closed: 0, fakePlatform: 0, handlers: {}, started: [], sent: [] };
   const cfg = {
     commands: { hotkey: "", engine: "builtin", baseUrl: "", apiKey: "", model: "", timeoutMs: 5000, maxOutputTokens: 512, allowApply: true, ...commands },
     cleanup: { builtin: { model: "cleanup-model" }, baseUrl: "https://cleanup.example/v1", apiKey: "cleanup-key", engine: "remote", ...cleanup },
@@ -25,7 +25,7 @@ function load({ commands = {}, cleanup = {}, occupied = [], fakeEdges = false, r
   const pipeline = {
     getState: () => state,
     onStateChange: (fn) => listeners.push(fn),
-    startCommandRecording: (handlers) => { log.started.push(handlers); return 5; },
+    startCommandRecording: (handlers) => { log.startup.push("record"); log.started.push(handlers); return 5; },
     stopRecording() {},
     cancel() {},
   };
@@ -44,7 +44,7 @@ function load({ commands = {}, cleanup = {}, occupied = [], fakeEdges = false, r
     },
     [resolveFrom("./settings")]: { get: () => cfg },
     [resolveFrom("./windows")]: {
-      openCommand: () => { log.opened++; },
+      openCommand: () => { log.startup.push("card"); log.opened++; },
       closeCommand: () => { log.closed++; },
       sendToCommand: (channel, payload) => log.sent.push([channel, payload]),
       isCommandSender: () => false,
@@ -193,4 +193,11 @@ test("commandConfig runs anything but an explicit remote engine locally", () => 
   const remote = load({ commands: { engine: "remote" } });
   remote.commandsModule.init({ pipeline: remote.pipeline });
   assert.strictEqual(remote.commandsModule.commandConfig().engine, "remote");
+});
+
+test("recording is dispatched before constructing the command card", async () => {
+  const t = load({ fakeEdges: true });
+  t.commandsModule.init({ pipeline: t.pipeline });
+  await t.commandsModule.begin();
+  assert.deepStrictEqual(t.log.startup, ["record", "card"]);
 });

@@ -76,6 +76,26 @@ async function toReady(r) {
   return r.last().id;
 }
 
+test("recording starts before selection capture or window identification can finish", async () => {
+  const selection = deferred();
+  const fingerprint = deferred();
+  const r = rig({ selection: () => selection.promise, fingerprint: () => fingerprint.promise });
+  const started = r.session.begin();
+  assert.strictEqual(r.calls.recordings.length, 1, "the hotkey starts capture synchronously");
+  assert.strictEqual(r.last().phase, "recording");
+  assert.strictEqual(r.session.stop(r.last().id).ok, true, "Finish works while Copy is pending");
+  r.speak();
+  assert.strictEqual(r.calls.transform.length, 0, "early speech waits for the selection");
+  selection.resolve({ ok: true, text: SELECTION });
+  await tick();
+  assert.strictEqual(r.calls.transform.length, 0, "Apply's target must also be known");
+  fingerprint.resolve({ id: "x11:1" });
+  await started;
+  await tick();
+  assert.strictEqual(r.last().phase, "ready");
+  assert.deepStrictEqual(r.calls.transform, [{ instruction: INSTRUCTION, selection: SELECTION }]);
+});
+
 test("a rewrite captures the selection, takes the spoken instruction and shows input and output", async () => {
   const r = rig();
   const started = await r.session.begin();
@@ -308,16 +328,17 @@ for (const error of [
 
 /* ---- cancellation at every stage ---- */
 
-test("cancel while reading the selection stops there: no recording, no transform, no paste", async () => {
+test("cancel while reading the selection cancels the live take and never transforms or pastes", async () => {
   const gate = deferred();
   const r = rig({ selection: async (signal) => { signal.addEventListener("abort", () => gate.resolve({ ok: false, reason: "cancelled" })); return gate.promise; } });
   const started = r.session.begin();
   await tick();
-  assert.strictEqual(r.last().phase, "capturing");
+  assert.strictEqual(r.last().phase, "recording");
   r.session.cancel(r.last().id);
   assert.strictEqual((await started).cancelled, true);
   assert.strictEqual(r.last(), null);
-  assert.strictEqual(r.calls.recordings.length, 0);
+  assert.strictEqual(r.calls.recordings.length, 1);
+  assert.strictEqual(r.calls.cancels, 1);
   assert.strictEqual(r.calls.transform.length, 0);
   assert.deepStrictEqual(r.calls.pasted, []);
 });
@@ -611,4 +632,68 @@ test("a draft is refused if text got selected, or the cursor became unreadable, 
     assert.strictEqual((await r.session.apply(id)).blocked, true);
     assert.deepStrictEqual(r.calls.pasted, []);
   }
+});
+
+for (const stage of ["selection", "fingerprint"]) {
+  test(`cancellation with ${stage} pending drops early speech and late context`, async () => {
+    const gate = deferred();
+    const r = rig(stage === "selection" ? { selection: () => gate.promise } : { fingerprint: () => gate.promise });
+    const started = r.session.begin();
+    await tick();
+    r.speak();
+    const oldId = r.last().id;
+    r.session.cancel(oldId);
+    gate.resolve(stage === "selection" ? { ok: true, text: SELECTION } : { id: "x11:1" });
+    assert.strictEqual((await started).cancelled, true);
+    await tick();
+    assert.strictEqual(r.last(), null);
+    assert.deepStrictEqual(r.calls.transform, []);
+    assert.strictEqual(r.calls.cancels, 0, "STT has finished; a newer dictation must not be cancelled");
+  });
+}
+
+for (const reason of ["empty", "error"]) {
+  test(`a ${reason} recording stays failed when selection capture completes later`, async () => {
+    const gate = deferred();
+    const r = rig({ selection: () => gate.promise });
+    const started = r.session.begin();
+    r.handlers().onEnd(r.sid(), reason);
+    gate.resolve({ ok: true, text: SELECTION });
+    await started;
+    assert.strictEqual(r.last().phase, "failed");
+    assert.strictEqual(r.last().selection, SELECTION);
+    assert.strictEqual(r.last().canRetry, false);
+    assert.deepStrictEqual(r.calls.transform, []);
+  });
+}
+
+test("closing the card while selection capture is pending cancels its recording", async () => {
+  const gate = deferred();
+  const r = rig({ selection: () => gate.promise });
+  const started = r.session.begin();
+  r.session.dispose();
+  gate.resolve({ ok: true, text: SELECTION });
+  assert.strictEqual((await started).cancelled, true);
+  assert.strictEqual(r.calls.cancels, 1);
+  assert.strictEqual(r.last(), null);
+});
+
+test("a blank transcript fails even when the recorder reports it as successful", async () => {
+  const r = rig();
+  await r.session.begin();
+  r.speak("   ");
+  assert.strictEqual(r.last().phase, "failed");
+  assert.strictEqual(r.last().error.kind, "empty-speech");
+});
+
+test("the command hotkey stops recording while selection capture is pending", async () => {
+  const gate = deferred();
+  const r = rig({ selection: () => gate.promise });
+  const started = r.session.begin();
+  assert.strictEqual((await r.session.begin()).stopped, true);
+  gate.resolve({ ok: true, text: SELECTION });
+  await started;
+  assert.strictEqual(r.last().phase, "transcribing", "context completion cannot restart recording");
+  assert.strictEqual(r.calls.stops, 1);
+  assert.strictEqual(r.calls.recordings.length, 1);
 });

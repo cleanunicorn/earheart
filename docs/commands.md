@@ -20,12 +20,16 @@ out of scope: this mode only produces text.
 
 ## How a command runs
 
-1. **Capture.** Earheart sends Copy to the app that has the keyboard and reads
-   the selection, then puts your clipboard back exactly as it was. With nothing
-   selected (or a selection it can't read) the command **drafts** from your
-   spoken brief instead, and the card says why.
-2. **Speak.** The overlay records you with the same recorder and speech-to-text
-   as dictation. Press the hotkey again (or **Finish speaking**) to stop.
+1. **Speak immediately.** The overlay starts the same recorder and
+   speech-to-text as dictation as soon as the command starts. Press the hotkey
+   again (or **Finish speaking**) to stop, even while the selection is being read.
+2. **Capture alongside speech.** Earheart sends Copy to the app that has the
+   keyboard, reads the selection and puts your clipboard back exactly as it
+   was, then identifies the window. Waiting for hotkey release, copying and
+   window checks never hold up recording. With nothing selected (or a selection
+   it can't read), the command **drafts** from your spoken brief instead, and
+   the card says why. If speech is transcribed first, the command waits for
+   these checks before generating a result.
 3. **Transform.** The instruction and the selection go to the writing model:
    the Cleanup model on your computer by default, or a remote service you
    name. The prompt is its own ([`main/util/transform-turn.js`](../main/util/transform-turn.js));

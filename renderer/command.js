@@ -29,7 +29,8 @@ function render(next) {
   if (!view) return;
   const busy = BUSY.includes(view.phase);
   $("title").textContent = view.mode === "rewrite" ? "Rewrite selection" : "Write from your description";
-  $("phase").textContent = PHASES[view.phase] || "";
+  $("phase").textContent = view.phase === "transcribing" && view.instruction !== null && view.selectionPending
+    ? PHASES.capturing : PHASES[view.phase] || "";
   show("remote-note", view.remote);
   $("capture-note").textContent = view.captureNote ? `${view.captureNote}. Writing a new text from what you say instead.` : "";
   show("capture-note", Boolean(view.captureNote));
@@ -58,10 +59,12 @@ function render(next) {
   $("cancel").textContent = busy ? "Cancel" : "Close";
 }
 
-// One request at a time: a double click must not apply twice.
-async function act(call) {
-  if (!view || pending) return;
-  pending = true;
+// Serialize ordinary actions so a double click cannot apply twice. Stop and
+// Cancel must work even while Speak again is waiting for selection capture;
+// those interrupts neither take nor release the ordinary action's guard.
+async function act(call, { interrupt = false } = {}) {
+  if (!view || (pending && !interrupt)) return;
+  if (!interrupt) pending = true;
   render(view);
   try {
     const result = await call({ id: view.id });
@@ -73,7 +76,7 @@ async function act(call) {
     $("notice").textContent = "That didn't work. Try again.";
     show("notice", true);
   } finally {
-    pending = false;
+    if (!interrupt) pending = false;
     if (view) render(view);
   }
 }
@@ -82,9 +85,9 @@ $("cancel").addEventListener("click", () => {
   if (!view) return earheart.invoke("command:close", {});
   return act(BUSY.includes(view.phase)
     ? (payload) => earheart.invoke("command:cancel", payload)
-    : (payload) => earheart.invoke("command:close", payload));
+    : (payload) => earheart.invoke("command:close", payload), { interrupt: true });
 });
-$("finish").addEventListener("click", () => act((payload) => earheart.invoke("command:stop", payload)));
+$("finish").addEventListener("click", () => act((payload) => earheart.invoke("command:stop", payload), { interrupt: true }));
 $("again").addEventListener("click", () => act((payload) => earheart.invoke("command:restart", payload)));
 $("retry").addEventListener("click", () => act((payload) => earheart.invoke("command:retry", payload)));
 $("copy").addEventListener("click", () => act((payload) => earheart.invoke("command:copy", payload)));

@@ -20,7 +20,7 @@ function fakeClipboard(initial = { text: "USER-CLIPBOARD", other: "image-bytes" 
 }
 
 function rig({ copies, platform = {}, clipboard = fakeClipboard(), copyTimeoutMs = 60 } = {}) {
-  const calls = { copy: 0, restores: 0 };
+  const calls = { copy: 0, restores: 0, snapshots: 0 };
   const fakePlatform = {
     captureSupport: () => ({ ok: true }),
     secureInputActive: async () => false,
@@ -35,7 +35,10 @@ function rig({ copies, platform = {}, clipboard = fakeClipboard(), copyTimeoutMs
   };
   const capture = createSelectionCapture({
     clipboard,
-    snapshot: () => (clipboard.state.text !== undefined || clipboard.state.other !== undefined ? { ...clipboard.state } : null),
+    snapshot: () => {
+      calls.snapshots++;
+      return clipboard.state.text !== undefined || clipboard.state.other !== undefined ? { ...clipboard.state } : null;
+    },
     restore: (snap) => { calls.restores++; for (const k of Object.keys(clipboard.state)) delete clipboard.state[k]; Object.assign(clipboard.state, snap); },
     platform: fakePlatform,
     copyTimeoutMs,
@@ -196,4 +199,72 @@ test("a failing restore doesn't lose the selection", async () => {
     modifierWaitMs: 1,
   });
   assert.deepStrictEqual(await capture.capture(), { ok: true, text: "words" });
+});
+
+const deferred = () => {
+  let resolve, reject;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+};
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+test("a replacement capture waits for the aborted capture to restore the clipboard", async () => {
+  const oldCopy = deferred();
+  const newCopy = deferred();
+  const firstControl = new AbortController();
+  let copies = 0;
+  const r = rig({
+    platform: {
+      sendCopy: async () => {
+        if (++copies === 1) return oldCopy.promise;
+        await newCopy.promise;
+        r.clipboard.state.text = "replacement selection";
+      },
+    },
+  });
+  const first = r.capture(firstControl.signal);
+  await tick(); // the old sentinel is on the clipboard, Copy still pending
+  firstControl.abort();
+  const second = r.capture();
+  await tick();
+  const copiesBeforeCleanup = copies;
+  oldCopy.reject(Object.assign(new Error("aborted"), { aborted: true }));
+  assert.strictEqual((await first).reason, "cancelled");
+  await tick();
+  newCopy.resolve();
+  assert.deepStrictEqual(await second, { ok: true, text: "replacement selection" });
+  unchanged(r);
+  assert.strictEqual(copiesBeforeCleanup, 1, "a second Copy cannot borrow the first sentinel");
+});
+
+test("a cancelled queued capture never borrows the clipboard or sends Copy", async () => {
+  const copying = deferred();
+  const r = rig({ copies: async (clipboard) => { await copying.promise; clipboard.state.text = "selection"; } });
+  const first = r.capture();
+  await tick();
+  const controller = new AbortController();
+  const second = r.capture(controller.signal);
+  controller.abort();
+  copying.resolve();
+  await first;
+  assert.strictEqual((await second).reason, "cancelled");
+  assert.strictEqual(r.calls.copy, 1);
+  assert.strictEqual(r.calls.snapshots, 1);
+  unchanged(r);
+});
+
+test("a rejected capture does not strand later clipboard captures", async () => {
+  let checks = 0;
+  const r = rig({
+    copies: "selection",
+    platform: { captureSupport: () => {
+      if (++checks === 1) throw new Error("native probe failed");
+      return { ok: true };
+    } },
+  });
+  const first = r.capture();
+  const second = r.capture();
+  await assert.rejects(first, /native probe failed/);
+  assert.deepStrictEqual(await second, { ok: true, text: "selection" });
+  unchanged(r);
 });

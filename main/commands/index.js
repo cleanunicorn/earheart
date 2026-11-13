@@ -109,10 +109,12 @@ async function begin() {
   if (!session) return { ok: false };
   if (session.isRecording()) return session.begin();
   if (pipeline.getState() !== "idle") return { ok: false, busy: true };
-  // The card first, so the user sees "Reading the selection…" at once; it is
-  // inactive and never takes the keyboard from the app holding the selection.
+  // Dispatch recording before constructing/loading the card. The card asks
+  // command:get on load, so it also picks up state sent before it existed.
+  // It stays inactive to preserve the app holding the selection.
+  const started = session.begin();
   windows.openCommand({ onClosed: () => session?.dispose() });
-  return session.begin();
+  return started;
 }
 
 function cancel() {

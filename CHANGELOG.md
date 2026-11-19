@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.53.3 — 2026-11-19
+
+- Prevent approval smoke from hanging on decisions (#402)
+
 ## v0.53.2 — 2026-11-13
 
 - Start voice capture before selection checks (#399)

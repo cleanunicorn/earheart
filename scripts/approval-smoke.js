@@ -42,6 +42,27 @@ async function waitFor(fn, message, ms = 10000) {
 }
 const calls = () => (fs.existsSync(LOG) ? fs.readFileSync(LOG, "utf8").split("\n").filter((l) => l.startsWith("call ")) : []);
 
+// A renderer evaluation or an IPC request can remain pending even after its
+// window disappears. Bound the whole smoke, including those awaited promises.
+const watchdog = setTimeout(() => {
+  console.error("[approval-smoke] timed out after 120 seconds");
+  app.exit(1);
+}, 120000);
+watchdog.unref();
+
+async function clickDecision({ w, run }, id) {
+  // Deciding destroys the renderer synchronously in main. Read the position
+  // first, then send input from main instead of awaiting executeJavaScript's
+  // reply from the window that the click is about to destroy.
+  const point = await run(`(() => {
+    const rect = document.getElementById(${JSON.stringify(id)}).getBoundingClientRect();
+    return { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) };
+  })()`);
+  w.webContents.sendInputEvent({ type: "mouseDown", ...point, button: "left", clickCount: 1 });
+  w.webContents.sendInputEvent({ type: "mouseUp", ...point, button: "left", clickCount: 1 });
+  await waitFor(() => w.isDestroyed(), `${id} did not close the approval window`);
+}
+
 app.whenReady().then(async () => {
   try {
     nativeTheme.themeSource = "dark";
@@ -101,7 +122,7 @@ app.whenReady().then(async () => {
     await waitFor(() => ap.run('document.getElementById("request").hidden === false && document.getElementById("args").textContent.includes("first")'), "approval did not render");
     check("approval shows the request as text with a provenance label and Deny focused",
       await ap.run('document.getElementById("args").textContent.includes("<b>first</b>") && !document.querySelector("#args b") && document.getElementById("server").textContent.includes("<img") && document.getElementById("provenance").textContent.includes("Server-provided") && document.activeElement.id === "deny"'));
-    await ap.run('document.getElementById("deny").click()');
+    await clickDecision(ap, "deny");
     const denied = await pending;
     check("Deny never executes the tool", denied.ok === false && /denied/.test(denied.error) && calls().length === 0, JSON.stringify(denied));
     await waitFor(() => ap.w.isDestroyed(), "approval window did not close after the decision");
@@ -124,7 +145,7 @@ app.whenReady().then(async () => {
     pending = tools.host.execute({ ...model, args: { message: "approved" } });
     ap = await approval();
     await waitFor(() => ap.run('!document.getElementById("allow").disabled'), "Allow never enabled");
-    await ap.run('document.getElementById("allow").click()');
+    await clickDecision(ap, "allow");
     const done = await pending;
     check("Allow executes the approved arguments once", done.ok && /echo: approved/.test(done.text) && calls().length === 1 && calls()[0].includes('"approved"'), JSON.stringify(done));
 

@@ -394,6 +394,11 @@ function main() {
       runStartupDownloads({
         plan: downloadPlan,
         download: ipc.startDownload,
+        isSelected: ({ kind, modelId }) => {
+          const selected = settings.get()[kind];
+          return selected?.engine === "builtin" && selected.builtin?.model === modelId
+            && (kind !== "cleanup" || selected.enabled);
+        },
         notify: notifier.show,
         logger,
         hotkey: cfg.hotkey,

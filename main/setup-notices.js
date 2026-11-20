@@ -161,9 +161,11 @@ function startupDownloads({ smokeTest, firstRun, sttReadiness, cleanupReadiness 
  * (pipeline.onCleanupDownloaded), and a failed one is only logged: cleanup is
  * optional and the first dictation without it says so. Never rejects.
  */
-async function runStartupDownloads({ plan, download, notify, logger, hotkey, hotkeyOk = true }) {
+async function runStartupDownloads({ plan, download, notify, logger, hotkey, hotkeyOk = true, isSelected = () => true }) {
   const results = [];
   for (const item of plan) {
+    // Settings may change while the preceding download is in flight.
+    if (!isSelected(item)) continue;
     let result;
     try {
       result = await download({ kind: item.kind, modelId: item.modelId, join: true });
@@ -171,6 +173,7 @@ async function runStartupDownloads({ plan, download, notify, logger, hotkey, hot
       result = { ok: false, error: err?.message || String(err) };
     }
     results.push({ ...item, ...result });
+    if (!isSelected(item)) continue;
     if (result?.ok) {
       logger.info?.(`downloaded missing ${item.kind} model ${item.modelId} at launch`);
       if (item.kind === "stt" && hotkeyOk) notify(readyNotice(hotkey));

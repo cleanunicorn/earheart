@@ -451,3 +451,37 @@ test("a cancelled download is quiet, a failed cleanup is only logged, and a thro
   assert.match(r.warnings[0], /cleanup model granite-micro: disk full/);
   assert.deepStrictEqual(results.map((x) => x.ok), [false, false]);
 });
+
+
+test("startup skips queued models deselected while speech downloads", async () => {
+  let cleanupEnabled = true;
+  const calls = [];
+  await runStartupDownloads({
+    plan: fullPlan,
+    ...downloadRig({}).opts,
+    isSelected: (item) => item.kind === "stt" || cleanupEnabled,
+    download: async (item) => {
+      calls.push(item.kind);
+      cleanupEnabled = false;
+      return { ok: true };
+    },
+  });
+  assert.deepStrictEqual(calls, ["stt"]);
+});
+
+test("startup does not announce an obsolete speech download outcome", async () => {
+  for (const outcome of [{ ok: true }, { ok: false, error: "offline" }]) {
+    let selected = true;
+    const r = downloadRig({});
+    await runStartupDownloads({
+      plan: fullPlan.slice(0, 1),
+      ...r.opts,
+      isSelected: () => selected,
+      download: async () => {
+        selected = false;
+        return outcome;
+      },
+    });
+    assert.deepStrictEqual(r.notes, []);
+  }
+});

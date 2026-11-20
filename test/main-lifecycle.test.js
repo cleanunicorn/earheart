@@ -702,7 +702,14 @@ test("enter-to-stop yields when Enter is a configured hotkey (#338)", async () =
 test("a launch with selected models missing downloads them, speech first, and says so", async () => {
   const sttMissing = { ok: false, reason: "missing", modelId: "parakeet", label: "Parakeet" };
   const cleanupMissing = { ok: false, reason: "missing", modelId: "granite", label: "Granite" };
-  const { events } = await loadMain({ sttReadiness: sttMissing, cleanupReadiness: cleanupMissing });
+  const { events } = await loadMain({
+    sttReadiness: sttMissing,
+    cleanupReadiness: cleanupMissing,
+    cfg: makeCfg({
+      stt: { engine: "builtin", builtin: { model: "parakeet" } },
+      cleanup: { enabled: true, engine: "builtin", builtin: { model: "granite" } },
+    }),
+  });
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.ok(events.includes("notify:Earheart: downloading the speech model"), events.join(", "));

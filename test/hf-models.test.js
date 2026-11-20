@@ -828,6 +828,9 @@ test("searchUrl points each kind at the hub filtered to what its discoverer acce
   // so compare with separators folded the same way.
   const fold = (x) => x.toLowerCase().replace(/[-_]/g, "-");
   for (const m of registry.listModels("stt")) {
+    // The curated FluidVoice export is offered directly in the catalog;
+    // this browse shortcut remains scoped to csukuangfj's Parakeet bundles.
+    if (!m.files.some(f => f.url.startsWith("https://huggingface.co/csukuangfj/"))) continue;
     const repo = m.files.map((f) => f.url).find(Boolean).split("/")[4];
     assert.ok(fold(repo).includes(fold(stt.searchParams.get("search"))), `${repo} should match the STT search`);
   }

@@ -388,7 +388,14 @@ quietly bypassed, with one notice per launch pointing to Settings → Cleanup.
 Explicit Download resumes a saved partial file when possible.
 
 You can choose another built-in model later in Settings — int8 Parakeet
-(≈ 670 MB) or Gemma 3 1B (≈ 0.8 GB), for example. Pick it and press **Save**:
+(≈ 670 MB), Fluid Speech Pro (≈ 801 MB), or Gemma 3 1B (≈ 0.8 GB), for example.
+Built-in choices show both their resource tier (Small, Medium, or Large) and
+original model name, including in the wizard and selected-model summary.
+[Fluid Speech Pro by FluidVoice](https://huggingface.co/FluidVoice-Labs/fluid-speech-pro)
+is available for speech-to-text in 25 European languages through its official
+int8 ONNX export, running locally on CPU under CC BY 4.0. It uses verbatim
+transcription; Earheart's separate cleanup step remains optional.
+Pick a model and press **Save**:
 a model that isn't downloaded yet downloads first, with its progress and
 **Cancel** in the model row, and Settings saves once it is installed. If the
 download fails or you cancel it, nothing is saved and Settings says why, so

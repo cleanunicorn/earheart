@@ -32,7 +32,7 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 // STT: sherpa-onnx exports carry no library tag, so this is a name search.
 // A bare "sherpa-onnx" matches ~550 repos, mostly streaming, CTC, TTS and
 // build artifacts the offline recognizer can't load; "…-nemo-parakeet-tdt"
-// is the Parakeet TDT family the built-ins come from, and nearly every hit is
+// is the Parakeet TDT family used by most built-ins, and nearly every hit is
 // a transducer bundle that loads.
 const HF_SEARCH = {
   cleanup:

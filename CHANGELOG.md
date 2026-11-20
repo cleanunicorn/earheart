@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.55.0 — 2026-11-20
+
+- Download missing selected models at startup (#401)
+
 ## v0.54.0 — 2026-11-20
 
 - Add Fluid Speech Pro and show full model names (#403)

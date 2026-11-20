@@ -1137,6 +1137,22 @@ test("pipeline: a missing built-in model refuses the recording before the mic op
   assert.strictEqual(rig.log.settingsOpened, 1, "the notice opens Settings");
 });
 
+test("pipeline: a press while the speech model is still downloading says so, not \"download it\"", () => {
+  const rig = dictationRig({
+    sttReadiness: () => MISSING,
+    isDownloading: (kind, modelId) => kind === "stt" && modelId === MISSING.modelId,
+    transcribe: async () => "unused",
+  });
+
+  rig.pipeline.toggle();
+
+  assert.strictEqual(rig.pipeline.getState(), "idle");
+  assert.strictEqual(rig.log.lastStart, null, "no record:start was sent");
+  assert.strictEqual(rig.log.notifications.length, 1);
+  assert.match(rig.log.notifications[0].title, /downloading the speech model/);
+  assert.ok(rig.log.notifications[0].body.includes(MISSING.label));
+});
+
 test("pipeline: the model check runs on every press, so a finished download records at once", async () => {
   let readiness = MISSING;
   const rig = dictationRig({ sttReadiness: () => readiness, transcribe: async () => "hello" });

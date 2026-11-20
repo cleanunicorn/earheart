@@ -1,6 +1,6 @@
 // Notices that tell the user about a broken setup before they speak: a record
 // hotkey that failed to register, or a built-in speech model that isn't on
-// disk. main.js shows them at launch and pipeline.js when the hotkey is pressed
+// disk (downloaded at launch, see startupDownloads). main.js shows them at launch and pipeline.js when the hotkey is pressed
 // without a model, so both say the same thing and both lead to Settings.
 //
 // Electron is injected rather than required, so the copy, the notifier and the
@@ -33,6 +33,28 @@ function sttNotReadyNotice(readiness) {
   return {
     title: t("notice.sttMissing.title"),
     body: t("notice.sttMissing.body", { model: readiness.label }),
+  };
+}
+
+/**
+ * The notice for a speech model Earheart started downloading at launch because
+ * it wasn't on disk. Its click opens Settings, where the progress shows.
+ */
+function sttDownloadingNotice(readiness) {
+  return {
+    title: t("notice.sttDownloading.title"),
+    body: t("notice.sttDownloading.body", { model: readiness.label }),
+  };
+}
+
+/** The notice for a launch-time speech model download that failed. */
+function sttDownloadFailedNotice(label, error) {
+  const suffix = ` ${t("notice.hotkey.clickToOpen")}`;
+  const head = t("notice.sttDownloadFailed.body", { model: label });
+  const detail = error ? ` ${String(error)}` : "";
+  return {
+    title: t("notice.sttDownloadFailed.title"),
+    body: `${head}${detail}`.slice(0, BODY_MAX - suffix.length) + suffix,
   };
 }
 
@@ -111,10 +133,65 @@ function createNotifier({ Notification, openSettings, logger, settingsWhenUnsupp
 }
 
 /**
+ * Which selected built-in models a launch downloads because they are missing
+ * from disk: the speech model, then the cleanup model while cleanup is on, in
+ * that order so speech is ready first and the two never share bandwidth.
+ * Nothing on the smoke test, and nothing on first run, where the wizard asks
+ * before downloading. A model the registry doesn't know ("unknown") is left
+ * to its notice: there is nothing to download.
+ */
+function startupDownloads({ smokeTest, firstRun, sttReadiness, cleanupReadiness }) {
+  if (smokeTest || firstRun) return [];
+  const plan = [];
+  if (sttReadiness?.reason === "missing") {
+    plan.push({ kind: "stt", modelId: sttReadiness.modelId, label: sttReadiness.label });
+  }
+  if (cleanupReadiness?.reason === "missing") {
+    plan.push({ kind: "cleanup", modelId: cleanupReadiness.modelId, label: cleanupReadiness.label });
+  }
+  return plan;
+}
+
+/**
+ * Download a startupDownloads() plan one model at a time through `download`
+ * (ipc.startDownload, which every window tracks). A speech model that finishes
+ * announces "ready" (unless the record hotkey failed, which announceStartup
+ * already reported); one that fails says so and leads to Settings. A cancelled
+ * transfer stays quiet. Cleanup announces itself when it lands
+ * (pipeline.onCleanupDownloaded), and a failed one is only logged: cleanup is
+ * optional and the first dictation without it says so. Never rejects.
+ */
+async function runStartupDownloads({ plan, download, notify, logger, hotkey, hotkeyOk = true, isSelected = () => true }) {
+  const results = [];
+  for (const item of plan) {
+    // Settings may change while the preceding download is in flight.
+    if (!isSelected(item)) continue;
+    let result;
+    try {
+      result = await download({ kind: item.kind, modelId: item.modelId, join: true });
+    } catch (err) {
+      result = { ok: false, error: err?.message || String(err) };
+    }
+    results.push({ ...item, ...result });
+    if (!isSelected(item)) continue;
+    if (result?.ok) {
+      logger.info?.(`downloaded missing ${item.kind} model ${item.modelId} at launch`);
+      if (item.kind === "stt" && hotkeyOk) notify(readyNotice(hotkey));
+      continue;
+    }
+    if (result?.cancelled) continue;
+    logger.warn(`could not download missing ${item.kind} model ${item.modelId}: ${result?.error}`);
+    if (item.kind === "stt") notify(sttDownloadFailedNotice(item.label, result?.error), { critical: true });
+  }
+  return results;
+}
+
+/**
  * Decide what a launch shows. First match wins:
  *   smoke test                 → nothing
  *   visible first run          → the setup wizard
  *   record hotkey failed       → Settings (visible) / a notice (hidden)
+ *   speech model downloading   → a "downloading" notice (visible or hidden)
  *   speech model not ready     → a notice (visible or hidden)
  *   visible                    → the "ready" notice
  *   hidden (autostart), healthy → nothing
@@ -128,6 +205,7 @@ function announceStartup({
   firstRun,
   hotkeyStatus,
   sttReadiness,
+  sttDownloading = false,
   openWizard,
   openSettings,
   notify,
@@ -143,6 +221,11 @@ function announceStartup({
     // (autostart): there is no window, so the notice is the signal.
     if (hidden) notify(hotkeyFailureNotice(hotkeyStatus.hotkey), { critical: true });
     else openSettings();
+    return;
+  }
+  if (!sttReadiness.ok && sttDownloading) {
+    // runStartupDownloads says "ready" (or what failed) once it lands.
+    notify(sttDownloadingNotice(sttReadiness));
     return;
   }
   if (!sttReadiness.ok) {
@@ -170,6 +253,8 @@ function announcePromptOffer({ cfg, offer, notify, record }) {
 module.exports = {
   readyNotice,
   sttNotReadyNotice,
+  sttDownloadingNotice,
+  sttDownloadFailedNotice,
   hotkeyFailureNotice,
   promptOfferNotice,
   createNotifier,
@@ -177,4 +262,6 @@ module.exports = {
   HELD_MAX,
   announceStartup,
   announcePromptOffer,
+  startupDownloads,
+  runStartupDownloads,
 };

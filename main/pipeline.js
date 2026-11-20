@@ -31,7 +31,7 @@ const logger = require("./util/logger");
 const { prettyHotkey } = require("./util/hotkey-label");
 const { t } = require("./i18n");
 const { describeError } = require("./error-text");
-const { createNotifier, sttNotReadyNotice, BODY_MAX } = require("./setup-notices");
+const { createNotifier, sttNotReadyNotice, sttDownloadingNotice, BODY_MAX } = require("./setup-notices");
 const { createFailedTake } = require("./failed-take");
 const recordings = require("./recordings");
 const { applyAliases } = require("../renderer/aliases");
@@ -740,7 +740,10 @@ function startRecording(command = null) {
   const readiness = engines.getSttReadiness(cfg.stt);
   if (!readiness.ok) {
     logger.warn(`not recording: speech model ${readiness.modelId} is ${readiness.reason}`);
-    setupNotifier.show(sttNotReadyNotice(readiness), { critical: true });
+    // Started at launch (or in Settings) and still on its way: say so, rather
+    // than asking the user to download what is already downloading.
+    const downloading = readiness.reason === "missing" && isModelDownloading("stt", readiness.modelId);
+    setupNotifier.show(downloading ? sttDownloadingNotice(readiness) : sttNotReadyNotice(readiness), { critical: true });
     return false;
   }
   // The dictation wins the engines: a History retranscription still running

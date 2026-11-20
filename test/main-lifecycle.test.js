@@ -54,6 +54,8 @@ async function loadMain(
     pruned = () => [], // ids a kept-recordings prune (#343) removes
     ducking = {},
     tools = {},
+    sttReadiness = { ok: true },
+    cleanupReadiness = { ok: true },
   } = {}
 ) {
   const events = [];
@@ -200,9 +202,14 @@ async function loadMain(
         Object.assign(ipcInit, opts);
         events.push("ipc.init");
       },
+      startDownload: async (req) => {
+        events.push(`download:${req.kind}:${req.modelId}`);
+        return { ok: true };
+      },
     },
     "./engines": {
-      getSttReadiness: () => ({ ok: true }),
+      getSttReadiness: () => sttReadiness,
+      getCleanupReadiness: () => cleanupReadiness,
       stop: () => events.push("engines.stop"),
     },
     "./autostart": { apply: () => events.push("autostart.apply") },
@@ -688,4 +695,34 @@ test("enter-to-stop yields when Enter is a configured hotkey (#338)", async () =
   changeCapture(true);
   assert.notStrictEqual(shortcuts.get("Enter"), undefined, "the pause hotkey holds it");
   assert.strictEqual(shortcuts.size >= 1, true);
+});
+
+// A selected built-in model missing at launch downloads through ipc's shared
+// registry (so Settings shows and cancels it): speech first, then cleanup.
+test("a launch with selected models missing downloads them, speech first, and says so", async () => {
+  const sttMissing = { ok: false, reason: "missing", modelId: "parakeet", label: "Parakeet" };
+  const cleanupMissing = { ok: false, reason: "missing", modelId: "granite", label: "Granite" };
+  const { events } = await loadMain({
+    sttReadiness: sttMissing,
+    cleanupReadiness: cleanupMissing,
+    cfg: makeCfg({
+      stt: { engine: "builtin", builtin: { model: "parakeet" } },
+      cleanup: { enabled: true, engine: "builtin", builtin: { model: "granite" } },
+    }),
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.ok(events.includes("notify:Earheart: downloading the speech model"), events.join(", "));
+  before(events, "download:stt:parakeet", "download:cleanup:granite");
+  before(events, "download:stt:parakeet", "notify:Earheart is ready");
+});
+
+test("first run and the smoke test never start a launch-time download", async (t) => {
+  const missing = { sttReadiness: { ok: false, reason: "missing", modelId: "parakeet", label: "Parakeet" } };
+  const first = await loadMain({ firstRun: true, ...missing });
+  assert.ok(!first.events.some((e) => e.startsWith("download:")), first.events.join(", "));
+
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const smoke = await loadMain({ argv: ["--smoke-test"], ...missing });
+  assert.ok(!smoke.events.some((e) => e.startsWith("download:")), smoke.events.join(", "));
 });

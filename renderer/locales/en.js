@@ -41,6 +41,11 @@
     "notice.sttMissing.title": "Earheart: speech model not downloaded",
     "notice.sttMissing.body":
       "Download “{model}” in Settings → Speech-to-text before dictating. Click to open Settings.",
+    "notice.sttDownloading.title": "Earheart: downloading the speech model",
+    "notice.sttDownloading.body":
+      "“{model}” wasn't on disk, so it is downloading now. Dictation works once it finishes. Click to see progress in Settings.",
+    "notice.sttDownloadFailed.title": "Earheart: speech model download failed",
+    "notice.sttDownloadFailed.body": "Couldn't download “{model}”.",
     "notice.promptOffer.title": "Earheart: a new cleanup prompt",
     "notice.promptOffer.custom":
       "The default prompt is now tuned for code dictation. Yours is edited, so it wasn't changed. Click to compare.",
@@ -210,7 +215,7 @@
     "rt.restarting": "Restarting…",
     "rt.checkForUpdates": "Check for updates",
     "rt.upToDate": "Up to date ✓",
-    "rt.downloadsSkippedSpeechIsRequired": "Downloads skipped. Speech is required for dictation; cleanup is optional. Download later in Settings.",
+    "rt.downloadsSkippedSpeechIsRequired": "Downloads skipped. Speech is required for dictation; cleanup is optional. It downloads the next time Earheart starts, or from Settings.",
     "rt.outputModeChangedFromThe": "Output mode changed from the tray menu.",
     "rt.errorChooseADifferentCombination": "{error} — choose a different combination, then finish setup again.",
     "rt.stepPosition": "Step {current} of {total}",

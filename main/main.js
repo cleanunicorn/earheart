@@ -28,7 +28,7 @@ const logger = require("./util/logger");
 const deliver = require("./output/deliver");
 const { createHost, LOADCHECK_TIMEOUT_MS } = require("./engines/host");
 const { bindCustomModels } = require("./engines/catalog");
-const { createNotifier, announceStartup, announcePromptOffer } = require("./setup-notices");
+const { createNotifier, announceStartup, announcePromptOffer, startupDownloads, runStartupDownloads } = require("./setup-notices");
 const { installPermissionHandler } = require("./window-guard");
 const { createAgentApi } = require("./agent-api");
 const { createTaskStore } = require("./agent-tasks");
@@ -363,6 +363,16 @@ function main() {
       logger.warn(hotkeyResults.correctHotkey.error);
     }
 
+    // Selected built-in models missing from disk (a skipped or interrupted
+    // download, a deleted models folder) download now, speech first, through
+    // the same registry Settings shows and cancels (setup-notices.js).
+    const sttReadiness = engines.getSttReadiness(cfg.stt);
+    const downloadPlan = startupDownloads({
+      smokeTest: isSmokeTest,
+      firstRun,
+      sttReadiness,
+      cleanupReadiness: engines.getCleanupReadiness(cfg.cleanup),
+    });
     // A returning user lands straight in the tray with a "ready" notice — or,
     // when the record hotkey didn't register or the speech model isn't
     // downloaded, a notice (or Settings) saying what to fix, so they find out
@@ -374,11 +384,27 @@ function main() {
       smokeTest: isSmokeTest,
       firstRun,
       hotkeyStatus: hotkeyResults,
-      sttReadiness: engines.getSttReadiness(cfg.stt),
+      sttReadiness,
+      sttDownloading: downloadPlan.some((item) => item.kind === "stt"),
       openWizard: () => windows.openWizard(),
       openSettings: () => windows.openSettings(),
       notify: notifier.show,
     });
+    if (downloadPlan.length) {
+      runStartupDownloads({
+        plan: downloadPlan,
+        download: ipc.startDownload,
+        isSelected: ({ kind, modelId }) => {
+          const selected = settings.get()[kind];
+          return selected?.engine === "builtin" && selected.builtin?.model === modelId
+            && (kind !== "cleanup" || selected.enabled);
+        },
+        notify: notifier.show,
+        logger,
+        hotkey: cfg.hotkey,
+        hotkeyOk: hotkeyResults.hotkey.ok,
+      });
+    }
     if (!isSmokeTest && !firstRun && startPalette) palette.open();
     // A new default cleanup prompt is announced once (setup-notices.js).
     if (!isSmokeTest && !firstRun) {

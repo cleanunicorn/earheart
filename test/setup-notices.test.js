@@ -14,6 +14,9 @@ const {
   announceStartup,
   announcePromptOffer,
   promptOfferNotice,
+  startupDownloads,
+  runStartupDownloads,
+  BODY_MAX,
   HELD_MAX,
 } = require("../main/setup-notices");
 
@@ -322,5 +325,163 @@ test("the prompt notice says whether the user's own prompt was left alone", () =
   assert.match(promptOfferNotice({ kind: "previous-default" }).body, /switch/);
   for (const kind of ["custom", "previous-default"]) {
     assert.ok(promptOfferNotice({ kind }).body.length <= 180);
+  }
+});
+
+/* ---------------- launch-time downloads of missing models ---------------- */
+
+const cleanupMissing = { ok: false, reason: "missing", modelId: "granite-micro", label: "Granite 4.0 Micro" };
+
+test("a launch downloads the missing speech model, then the missing cleanup model", () => {
+  assert.deepStrictEqual(
+    startupDownloads({ sttReadiness: missing, cleanupReadiness: cleanupMissing }),
+    [
+      { kind: "stt", modelId: missing.modelId, label: missing.label },
+      { kind: "cleanup", modelId: cleanupMissing.modelId, label: cleanupMissing.label },
+    ]
+  );
+  assert.deepStrictEqual(
+    startupDownloads({ sttReadiness: { ok: true }, cleanupReadiness: cleanupMissing }).map((d) => d.kind),
+    ["cleanup"]
+  );
+  assert.deepStrictEqual(startupDownloads({ sttReadiness: { ok: true }, cleanupReadiness: { ok: true } }), []);
+});
+
+test("first run, the smoke test and an unknown model download nothing", () => {
+  const both = { sttReadiness: missing, cleanupReadiness: cleanupMissing };
+  assert.deepStrictEqual(startupDownloads({ ...both, firstRun: true }), []);
+  assert.deepStrictEqual(startupDownloads({ ...both, smokeTest: true }), []);
+  assert.deepStrictEqual(
+    startupDownloads({ sttReadiness: { ok: false, reason: "unknown", modelId: "gone" }, cleanupReadiness: { ok: true } }),
+    []
+  );
+});
+
+test("a launch downloading the speech model says so instead of asking the user to download it", () => {
+  for (const hidden of [false, true]) {
+    const r = rig();
+    startup(r, { hidden, sttReadiness: missing, sttDownloading: true });
+    assert.strictEqual(r.shown.length, 1);
+    assert.match(r.shown[0].options.title, /downloading the speech model/);
+    assert.ok(r.shown[0].options.body.includes(`“${missing.label}”`));
+    assert.doesNotMatch(r.shown[0].options.title, /ready|not downloaded/);
+  }
+  // A failed record hotkey still wins.
+  const r = rig();
+  startup(r, { hidden: true, hotkeyStatus: failedRecord, sttReadiness: missing, sttDownloading: true });
+  assert.match(r.shown[0].options.title, /hotkey not working/);
+});
+
+function downloadRig(outcomes) {
+  const calls = [];
+  const notes = [];
+  const warnings = [];
+  return {
+    calls,
+    notes,
+    warnings,
+    opts: {
+      download: async (req) => {
+        calls.push(req);
+        const outcome = outcomes[req.kind];
+        if (outcome instanceof Error) throw outcome;
+        return outcome;
+      },
+      notify: (note, options) => notes.push({ ...note, critical: !!options?.critical }),
+      logger: { info() {}, warn: (msg) => warnings.push(msg) },
+      hotkey: "CommandOrControl+Shift+Space",
+    },
+  };
+}
+const fullPlan = startupDownloads({ sttReadiness: missing, cleanupReadiness: cleanupMissing });
+
+test("startup downloads run one at a time, speech first, and joining any transfer already running", async () => {
+  let active = 0;
+  let peak = 0;
+  const order = [];
+  await runStartupDownloads({
+    plan: fullPlan,
+    download: async (req) => {
+      order.push(req);
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setImmediate(resolve));
+      active -= 1;
+      return { ok: true };
+    },
+    notify() {},
+    logger: { info() {}, warn() {} },
+  });
+  assert.strictEqual(peak, 1);
+  assert.deepStrictEqual(order, [
+    { kind: "stt", modelId: missing.modelId, join: true },
+    { kind: "cleanup", modelId: cleanupMissing.modelId, join: true },
+  ]);
+});
+
+test("a speech model that lands says ready; cleanup announces itself elsewhere", async () => {
+  const r = downloadRig({ stt: { ok: true }, cleanup: { ok: true } });
+  await runStartupDownloads({ plan: fullPlan, ...r.opts });
+  assert.deepStrictEqual(r.notes.map((n) => n.title), ["Earheart is ready"]);
+
+  const noHotkey = downloadRig({ stt: { ok: true } });
+  await runStartupDownloads({ plan: fullPlan.slice(0, 1), ...noHotkey.opts, hotkeyOk: false });
+  assert.strictEqual(noHotkey.notes.length, 0, "no \"press X\" when X didn't register");
+});
+
+test("a failed speech download says why and leads to Settings; cleanup still tries", async () => {
+  const r = downloadRig({ stt: { ok: false, error: "getaddrinfo ENOTFOUND huggingface.co" }, cleanup: { ok: true } });
+  const results = await runStartupDownloads({ plan: fullPlan, ...r.opts });
+  assert.strictEqual(r.notes.length, 1);
+  assert.match(r.notes[0].title, /download failed/);
+  assert.ok(r.notes[0].body.includes(`“${missing.label}”`));
+  assert.ok(r.notes[0].body.includes("ENOTFOUND"));
+  assert.match(r.notes[0].body, /Click to open Settings\.$/);
+  assert.ok(r.notes[0].body.length <= BODY_MAX);
+  assert.strictEqual(r.notes[0].critical, true);
+  assert.strictEqual(r.calls.length, 2);
+  assert.deepStrictEqual(results.map((x) => x.ok), [false, true]);
+});
+
+test("a cancelled download is quiet, a failed cleanup is only logged, and a throw never escapes", async () => {
+  const r = downloadRig({ stt: { ok: false, cancelled: true, error: "aborted" }, cleanup: new Error("disk full") });
+  const results = await runStartupDownloads({ plan: fullPlan, ...r.opts });
+  assert.strictEqual(r.notes.length, 0);
+  assert.strictEqual(r.warnings.length, 1);
+  assert.match(r.warnings[0], /cleanup model granite-micro: disk full/);
+  assert.deepStrictEqual(results.map((x) => x.ok), [false, false]);
+});
+
+
+test("startup skips queued models deselected while speech downloads", async () => {
+  let cleanupEnabled = true;
+  const calls = [];
+  await runStartupDownloads({
+    plan: fullPlan,
+    ...downloadRig({}).opts,
+    isSelected: (item) => item.kind === "stt" || cleanupEnabled,
+    download: async (item) => {
+      calls.push(item.kind);
+      cleanupEnabled = false;
+      return { ok: true };
+    },
+  });
+  assert.deepStrictEqual(calls, ["stt"]);
+});
+
+test("startup does not announce an obsolete speech download outcome", async () => {
+  for (const outcome of [{ ok: true }, { ok: false, error: "offline" }]) {
+    let selected = true;
+    const r = downloadRig({});
+    await runStartupDownloads({
+      plan: fullPlan.slice(0, 1),
+      ...r.opts,
+      isSelected: () => selected,
+      download: async () => {
+        selected = false;
+        return outcome;
+      },
+    });
+    assert.deepStrictEqual(r.notes, []);
   }
 });

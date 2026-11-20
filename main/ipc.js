@@ -94,6 +94,39 @@ async function runDownload(kind, modelId, entry) {
   return result;
 }
 
+// Start (or, with `join: true`, wait for) one model's download through the
+// shared registry, so every window tracks it and Settings can cancel it.
+// Resolves to { ok } or { ok: false, cancelled?, error }; never rejects.
+// Backs models:download and the launch-time download of missing models
+// (main.js).
+async function startDownload({ kind, modelId, owner, join } = {}) {
+  const key = modelKey(kind, modelId);
+  if (downloads.has(key)) {
+    return join === true ? downloads.get(key).done : { ok: false, error: "Already downloading" };
+  }
+  // Like every other terminal outcome (except "Already downloading", whose
+  // transfer will broadcast its own), report it to every window so a row
+  // that optimistically showed "Downloading…" settles.
+  const settle = (result) => {
+    windows.broadcast("models:done", { kind, modelId, ...result });
+    return result;
+  };
+  if (busyModels.has(key)) return settle({ ok: false, error: "This model is being removed" });
+  let installed;
+  try {
+    installed = engines.isInstalled(kind, modelId); // throws for a model the registry lacks
+  } catch (err) {
+    return settle({ ok: false, error: err.message });
+  }
+  if (installed) return settle({ ok: true });
+  const controller = new AbortController();
+  const entry = { controller, owner: typeof owner === "string" ? owner : null, progress: { received: 0 }, done: null };
+  downloadFailures.delete(key);
+  downloads.set(key, entry);
+  entry.done = runDownload(kind, modelId, entry);
+  return entry.done;
+}
+
 // Run `fn` with the given models marked busy: their downloads are stopped and
 // awaited first, and none can restart until `fn` settles.
 async function withModelsBusy(models, fn) {
@@ -730,33 +763,7 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   // Stream a model download to disk, posting progress to the requesting window.
   // `join: true` (Settings' Save) waits for a transfer already in flight and
   // returns its own outcome instead of refusing; the joiner never takes it over.
-  ipcMain.handle("models:download", async (event, { kind, modelId, owner, join } = {}) => {
-    const key = modelKey(kind, modelId);
-    if (downloads.has(key)) {
-      return join === true ? downloads.get(key).done : { ok: false, error: "Already downloading" };
-    }
-    // Like every other terminal outcome (except "Already downloading", whose
-    // transfer will broadcast its own), report it to every window so a row
-    // that optimistically showed "Downloading…" settles.
-    const settle = (result) => {
-      windows.broadcast("models:done", { kind, modelId, ...result });
-      return result;
-    };
-    if (busyModels.has(key)) return settle({ ok: false, error: "This model is being removed" });
-    let installed;
-    try {
-      installed = engines.isInstalled(kind, modelId); // throws for a model the registry lacks
-    } catch (err) {
-      return settle({ ok: false, error: err.message });
-    }
-    if (installed) return settle({ ok: true });
-    const controller = new AbortController();
-    const entry = { controller, owner: typeof owner === "string" ? owner : null, progress: { received: 0 }, done: null };
-    downloadFailures.delete(key);
-    downloads.set(key, entry);
-    entry.done = runDownload(kind, modelId, entry);
-    return entry.done;
-  });
+  ipcMain.handle("models:download", (event, request) => startDownload(request));
 
   ipcMain.handle("models:cancel", (event, { kind, modelId, owner } = {}) => {
     const entry = downloads.get(modelKey(kind, modelId));
@@ -973,4 +980,4 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
   });
 }
 
-module.exports = { init, isDownloading, openLog };
+module.exports = { init, isDownloading, startDownload, openLog };

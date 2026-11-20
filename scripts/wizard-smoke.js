@@ -54,6 +54,21 @@ async function checkWizard({ waitFor, check, setDuckingStatus }) {
     setDuckingStatus({ available: false, mechanism: null, reason: "smoke: no volume tool", state: "idle", detail: "", lastError: "", enabled: false });
     const savedAudio = settings.get().audio;
     await open();
+    const speechSummary = await js(`(() => {
+      const previous = current.stt.builtin.model;
+      try {
+        current.stt.builtin.model = "fluid-speech-pro-int8";
+        renderSummary();
+        return [...document.querySelectorAll("#summary > div")]
+          .find(row => row.querySelector("dt").textContent === "Speech-to-text")
+          .querySelector("dd").textContent;
+      } finally {
+        current.stt.builtin.model = previous;
+        renderSummary();
+      }
+    })()`);
+    check("wizard summary identifies the selected speech model and resource tier",
+      speechSummary === `Built-in ${engines.registry.getModel("stt", "fluid-speech-pro-int8").label} (on this computer)`, speechSummary);
     await click("next"); await click("next");
     const duck = JSON.parse(await until(`document.querySelector(".step.active")?.id === "step-mic" &&
       document.getElementById("duck-status").textContent.startsWith("Not available") &&

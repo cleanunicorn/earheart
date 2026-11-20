@@ -84,6 +84,42 @@ test("registry totalBytes sums the file sizes", () => {
   assert.strictEqual(registry.totalBytes(model), 15);
 });
 
+test("built-in labels expose both the resource tier and original model identity", () => {
+  const names = {
+    "fluid-speech-pro-int8": "Fluid Speech Pro 0.63B",
+    "parakeet-tdt-0.6b-v3-int8": "Parakeet TDT 0.6B v3",
+    "parakeet-tdt-0.6b-v3": "Parakeet TDT 0.6B v3",
+    "parakeet-tdt-0.6b-v2": "Parakeet TDT 0.6B v2",
+    "parakeet-tdt-110m-en": "Parakeet TDT 110M",
+    "gemma-3-1b": "Gemma 3 1B",
+    "granite-4.0-micro": "Granite 4.0 Micro",
+    "gemma-3-4b": "Gemma 3 4B",
+    "qwen3-4b-2507": "Qwen3 4B Instruct 2507",
+    "gemma-4-12b": "Gemma 3 12B",
+  };
+  for (const kind of ["stt", "cleanup"]) {
+    for (const m of registry.listModels(kind)) {
+      assert.match(m.label, /^(Small|Medium|Large) · /);
+      assert.ok(names[m.id] && m.label.includes(names[m.id]), m.id);
+    }
+  }
+});
+
+test("Fluid Speech Pro ships the separate sherpa graphs and all external weights", () => {
+  const model = registry.getModel("stt", "fluid-speech-pro-int8");
+  assert.ok(model);
+  assert.equal(model.sherpa.modelType, "nemo_transducer");
+  const files = new Set(model.files.map(f => f.name));
+  for (const role of ["encoder", "decoder", "joiner"]) {
+    assert.ok(files.has(model.sherpa[role]), role);
+    assert.ok(files.has(`${model.sherpa[role]}.data`), `${role} external weights`);
+  }
+  assert.ok(files.has(model.sherpa.tokens));
+  assert.equal(files.size, 7);
+  assert.ok(!model.default, "adding a model must not change existing defaults");
+  assert.ok(![...files].some(name => /clean|decoder_joint/.test(name)));
+});
+
 test("model paths cannot escape the managed model directory", () => {
   const base = path.join(os.tmpdir(), "earheart-models");
   const model = { kind: "cleanup", id: "safe-model" };
@@ -165,7 +201,7 @@ test("exactly one cleanup model is marked default, and it is Granite 4.0 Micro",
 test("registry pins the benchmarked Granite and Qwen GGUFs", () => {
   const expected = {
     "granite-4.0-micro": {
-      label: "Medium · code and speech (recommended)",
+      label: "Medium · Granite 4.0 Micro · code and speech (recommended)",
       note: "Runs on this computer · ~2.1 GB · needs ~6 GB RAM · code dictation, the fastest of the code models · Granite 4.0 Micro",
       file: {
         name: "granite-4.0-micro-Q4_K_M.gguf",
@@ -175,7 +211,7 @@ test("registry pins the benchmarked Granite and Qwen GGUFs", () => {
       },
     },
     "qwen3-4b-2507": {
-      label: "Medium · code and speech, polished writing",
+      label: "Medium · Qwen3 4B Instruct 2507 · code and speech, polished writing",
       note: "Runs on this computer · ~2.5 GB · needs ~7 GB RAM · code dictation, writes the most spoken code as code, cleanest on the Polished style · Qwen3 4B Instruct 2507",
       file: {
         name: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",

@@ -681,7 +681,7 @@ test("stt-eval plan: a catalogued candidate is planned once, as a candidate, and
   // Shipped models that were never candidates stay verdict-free baselines.
   assert.deepStrictEqual(
     plan.filter((x) => x.role === "baseline").map((x) => x.model.id).sort(),
-    ["parakeet-tdt-0.6b-v2", "parakeet-tdt-0.6b-v3"]
+    ["fluid-speech-pro-int8", "parakeet-tdt-0.6b-v2", "parakeet-tdt-0.6b-v3"]
   );
   // The default opens and (for a timed pass) closes the run; accuracy has no closing run.
   assert.strictEqual(plan[0].role, "bracket-first");

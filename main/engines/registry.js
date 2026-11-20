@@ -46,9 +46,68 @@ const ggufUrl = (repo, commit, file) =>
 
 const MODELS = {
   stt: {
+    // Official sherpa-onnx export; keep each external .data file beside its graph.
+    // Verbatim mode: Earheart handles optional cleanup separately.
+    "fluid-speech-pro-int8": {
+      id: "fluid-speech-pro-int8",
+      label: "Medium · Fluid Speech Pro 0.63B (multilingual, int8)",
+      kind: "stt",
+      note: "Runs on this computer · 25 languages · ~801 MB · Fluid Speech Pro by FluidVoice · CC BY 4.0",
+      files: [
+        {
+          name: "encoder-model.int8.onnx",
+          bytes: 955592,
+          "sha256": "07ad77459bd3bb165c2c53e978ed1dfd64c6e129b18af2ec5ee38343be1d4451",
+          url: "https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx/resolve/fa588e9f87f1b9ad0ca2e2d8f7eaf84dc3803581/encoder-model.int8.onnx"
+        },
+        {
+          name: "encoder-model.int8.onnx.data",
+          bytes: 745971712,
+          "sha256": "d2f8bfbb1fa399f207cde85aa3fabee0d67f6730cb31cbf31832c10de69f9c3c",
+          url: "https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx/resolve/fa588e9f87f1b9ad0ca2e2d8f7eaf84dc3803581/encoder-model.int8.onnx.data"
+        },
+        {
+          name: "decoder.int8.onnx",
+          bytes: 4797,
+          "sha256": "0bd3e225124a8a90373e500f62516270fd85fdf42237aa569489b232d21cac08",
+          url: "https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx/resolve/fa588e9f87f1b9ad0ca2e2d8f7eaf84dc3803581/decoder.int8.onnx"
+        },
+        {
+          name: "decoder.int8.onnx.data",
+          bytes: 47251456,
+          "sha256": "632c3cbf59d3e52d2f7f4dda3bf8e28c045f7a3bb3dbef0f44529ba63926efaa",
+          url: "https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx/resolve/fa588e9f87f1b9ad0ca2e2d8f7eaf84dc3803581/decoder.int8.onnx.data"
+        },
+        {
+          name: "joiner.int8.onnx",
+          bytes: 2754,
+          "sha256": "c0e995b659ed5e15fc0c38408ee56cd9a03e6d3329f304c32b9d5017c8cdd381",
+          url: "https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx/resolve/fa588e9f87f1b9ad0ca2e2d8f7eaf84dc3803581/joiner.int8.onnx"
+        },
+        {
+          name: "joiner.int8.onnx.data",
+          bytes: 6564352,
+          "sha256": "7473427ab99417fae8cf7025ba11507cb5dcc223194bae2f79064dde0936d0af",
+          url: "https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx/resolve/fa588e9f87f1b9ad0ca2e2d8f7eaf84dc3803581/joiner.int8.onnx.data"
+        },
+        {
+          name: "vocab.txt",
+          bytes: 93939,
+          "sha256": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
+          url: "https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx/resolve/fa588e9f87f1b9ad0ca2e2d8f7eaf84dc3803581/vocab.txt"
+        }
+      ],
+      sherpa: {
+        encoder: "encoder-model.int8.onnx",
+        decoder: "decoder.int8.onnx",
+        joiner: "joiner.int8.onnx",
+        tokens: "vocab.txt",
+        modelType: "nemo_transducer"
+      }
+    },
     "parakeet-tdt-0.6b-v3-int8": {
       id: "parakeet-tdt-0.6b-v3-int8",
-      label: "Parakeet TDT 0.6B v3 (multilingual, int8)",
+      label: "Medium · Parakeet TDT 0.6B v3 (multilingual, int8)",
       kind: "stt",
       // ~25 languages, auto-detected, faster-than-realtime on CPU. Same model
       // as the default with int8 weights: a quarter of the download, for
@@ -79,7 +138,7 @@ const MODELS = {
     },
     "parakeet-tdt-0.6b-v3": {
       id: "parakeet-tdt-0.6b-v3",
-      label: "Parakeet TDT 0.6B v3 (multilingual, full precision)",
+      label: "Large · Parakeet TDT 0.6B v3 (multilingual, full precision)",
       kind: "stt",
       default: true,
       // fp32 weights of the 25-language v3 model — slightly higher accuracy
@@ -113,7 +172,7 @@ const MODELS = {
     },
     "parakeet-tdt-0.6b-v2": {
       id: "parakeet-tdt-0.6b-v2",
-      label: "Parakeet TDT 0.6B v2 (English only, full precision)",
+      label: "Large · Parakeet TDT 0.6B v2 (English only, full precision)",
       kind: "stt",
       // English-only fp32 model. Top of the English ASR leaderboards; pick this
       // if you only dictate in English and want the best accuracy.
@@ -145,7 +204,7 @@ const MODELS = {
     },
     "parakeet-tdt-110m-en": {
       id: "parakeet-tdt-110m-en",
-      label: "Parakeet TDT 110M (English only, fastest)",
+      label: "Small · Parakeet TDT 110M (English only, fastest)",
       kind: "stt",
       // English-only 110M-parameter Parakeet TDT, fp32 (there is no int8 build
       // of it). Measured by scripts/eval-stt.js against the default on FLEURS
@@ -177,12 +236,8 @@ const MODELS = {
       },
     },
   },
-  // Labels say what a model is for, not what it is: a size (Small / Medium /
-  // Large, the download and RAM it costs) and a use — "code and speech" for
-  // the models that handle dictated commands, paths and symbols, "everyday
-  // speech" for the ones measured to get spoken code wrong
-  // (docs/cleanup-models.md, technical corpus). The model's own name ends
-  // the note, for anyone who wants it.
+  // Labels show resource tier, original model name, and recommended use.
+  // Small / Medium / Large describe download and RAM cost within each kind.
   //
   // `stumbleBackstop: false` turns off the deterministic filler/repeat pass
   // (main/util/stumble-strip.js) for a model measured not to need it: on the
@@ -193,7 +248,7 @@ const MODELS = {
   cleanup: {
     "gemma-3-1b": {
       id: "gemma-3-1b",
-      label: "Small · everyday speech",
+      label: "Small · Gemma 3 1B · everyday speech",
       kind: "cleanup",
       // Honest about where it falls down. On the technical corpus
       // (docs/cleanup-models.md) it copies the transcript nearly word for
@@ -211,7 +266,7 @@ const MODELS = {
     "granite-4.0-micro": {
       id: "granite-4.0-micro",
       stumbleBackstop: false,
-      label: "Medium · code and speech (recommended)",
+      label: "Medium · Granite 4.0 Micro · code and speech (recommended)",
       kind: "cleanup",
       default: true,
       // The default, per the cleanup benchmark (#167, Ryzen 9 3900X CPU): no
@@ -233,7 +288,7 @@ const MODELS = {
     },
     "gemma-3-4b": {
       id: "gemma-3-4b",
-      label: "Medium · everyday speech",
+      label: "Medium · Gemma 3 4B · everyday speech",
       kind: "cleanup",
       note: "Runs on this computer · ~2.6 GB · needs ~6 GB RAM · for everyday speech; often gets spoken code wrong · Gemma 3 4B",
       files: [
@@ -246,7 +301,7 @@ const MODELS = {
     "qwen3-4b-2507": {
       id: "qwen3-4b-2507",
       stumbleBackstop: false,
-      label: "Medium · code and speech, polished writing",
+      label: "Medium · Qwen3 4B Instruct 2507 · code and speech, polished writing",
       kind: "cleanup",
       // The default before Granite 4.0 Micro. Same benchmark: also no fillers
       // left, and cleaner than Granite on the polished style (0 "kind of like"
@@ -266,7 +321,7 @@ const MODELS = {
     "gemma-4-12b": {
       id: "gemma-4-12b",
       stumbleBackstop: false,
-      label: "Large · code and speech, best quality",
+      label: "Large · Gemma 3 12B · code and speech, best quality",
       kind: "cleanup",
       note: "Runs on this computer · ~7 GB · needs ~10 GB RAM, strong machine · Gemma 3 12B",
       files: [

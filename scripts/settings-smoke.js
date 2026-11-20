@@ -314,6 +314,17 @@ app.whenReady().then(async () => {
     })()`);
     const definitionIds = () => (settings.get().customModels || []).map((m) => m.id);
 
+    for (const kind of ["stt", "cleanup"]) {
+      const options = await js(`Array.from(document.getElementById(${JSON.stringify(`${kind}-builtin-model`)}).options, o => ({ id: o.value, label: o.textContent }))`);
+      check(`${kind} selector shows the tier and model name for every built-in`,
+        registry.listModels(kind).every(m => options.some(o => o.id === m.id && o.label === m.label)));
+    }
+    await selectModel("stt", "fluid-speech-pro-int8");
+    check("Fluid Speech Pro is selectable by its full label",
+      await js(`document.getElementById("stt-builtin-model").selectedOptions[0].textContent`) ===
+        registry.getModel("stt", "fluid-speech-pro-int8").label);
+    await selectModel("stt", registry.DEFAULT_STT_MODEL);
+
     // 15. API key storage note and the on-disk form of a saved key.
     const keyStorage = settings.keyStorage();
     const keyNotes = JSON.parse(await js(`JSON.stringify({

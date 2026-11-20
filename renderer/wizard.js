@@ -252,6 +252,7 @@ function duckLevel() {
 function renderSummary() {
   const next = collect();
   const mic = $("mic-device");
+  const speech = modelStatus.stt.find((m) => m.id === next.stt.builtin.model);
   const rows = [
     ["Hotkey", next.hotkey],
     ["Microphone", mic.selectedOptions[0]?.textContent || "System default"],
@@ -259,7 +260,7 @@ function renderSummary() {
       "Other audio",
       next.audio.duckOtherAudio ? `Lowered to ${next.audio.duckLevelPercent}% while recording` : "Left as is",
     ],
-    ["Speech-to-text", "Built-in Parakeet (on this computer)"],
+    ["Speech-to-text", `Built-in ${speech?.label || next.stt.builtin.model} (on this computer)`],
   ];
   if (!next.cleanup.enabled) {
     rows.push(["Cleanup", "Off"]);

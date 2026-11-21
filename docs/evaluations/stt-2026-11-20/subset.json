@@ -1,0 +1,5031 @@
+{
+  "schema": 1,
+  "pass": "accuracy",
+  "status": "partial (development subset)",
+  "command": "<benchmark-dir>/headless.cjs --no-sandbox --disable-gpu --pass accuracy --limit 100 --models fluid-speech-pro-int8,parakeet-tdt-0.6b-v3-int8,parakeet-tdt-0.6b-v3,parakeet-tdt-0.6b-v2,parakeet-tdt-110m-en --keep --cache-dir <benchmark-dir>/cache --out <benchmark-dir>/subset.json --log <benchmark-dir>/subset-progress.log",
+  "machine": {
+    "cpu": "AMD Ryzen 9 3900X 12-Core Processor",
+    "logicalCpus": 24,
+    "appThreads": 8,
+    "ramGb": 61,
+    "platform": "linux 6.17.0-40-generic x64",
+    "versions": {
+      "node": "24.19.0",
+      "electron": "42.11.16",
+      "v8": "14.8.178.38-electron.0",
+      "sherpaOnnxNode": "1.13.3"
+    },
+    "gitHead": "22635b1c7e18ab9d9f330729b1a3d9c636e2a9ab",
+    "measuringCode": "710af85038ec6ac034df988fd48cd3db8d8cf62e33f5eb75bfbcd51c3324b1f4"
+  },
+  "corpus": {
+    "id": "fleurs-en_us-test",
+    "source": "google/fleurs",
+    "commit": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+    "licence": "CC BY 4.0",
+    "files": [
+      {
+        "name": "test.tar.gz",
+        "bytes": 289851356,
+        "sha256": "d9c2e37b41aacd41bc283554a0a82b5476b36887049774ecb2819dcaaa55a356",
+        "url": "https://huggingface.co/datasets/google/fleurs/resolve/70bb2e84b976b7e960aa89f1c648e09c59f894dd/data/en_us/audio/test.tar.gz"
+      },
+      {
+        "name": "test.tsv",
+        "bytes": 367864,
+        "sha256": "74c046239374deeb60fa63f258f907388093a32bcaa3140965f70ef05c79f7ca",
+        "url": "https://huggingface.co/datasets/google/fleurs/resolve/70bb2e84b976b7e960aa89f1c648e09c59f894dd/data/en_us/test.tsv"
+      }
+    ],
+    "utterances": 100,
+    "sentences": 52,
+    "referenceWords": 2196,
+    "audioSec": 956.2599999999999,
+    "columnMismatches": 2,
+    "level": {
+      "targetRms": 0.1,
+      "peakCeiling": 0.99,
+      "gainP50": 94.47802808551117,
+      "gainMin": 0.817145868308699,
+      "gainMax": 306.684903273534
+    },
+    "unmodelledUtterances": 4,
+    "limited": true,
+    "subset": "all",
+    "utteranceIndex": [
+      {
+        "file": "12741024238657315067.wav",
+        "sentenceId": "1980",
+        "refWords": 17
+      },
+      {
+        "file": "9055240296608129734.wav",
+        "sentenceId": "1980",
+        "refWords": 17
+      },
+      {
+        "file": "621925716775998155.wav",
+        "sentenceId": "1914",
+        "refWords": 16
+      },
+      {
+        "file": "10335587906469246566.wav",
+        "sentenceId": "1914",
+        "refWords": 16
+      },
+      {
+        "file": "2589557553267364799.wav",
+        "sentenceId": "1771",
+        "refWords": 29
+      },
+      {
+        "file": "17824557748066874904.wav",
+        "sentenceId": "1771",
+        "refWords": 29
+      },
+      {
+        "file": "8173060820032255320.wav",
+        "sentenceId": "1669",
+        "refWords": 14
+      },
+      {
+        "file": "15618717836108767541.wav",
+        "sentenceId": "1669",
+        "refWords": 14
+      },
+      {
+        "file": "2652155470394119415.wav",
+        "sentenceId": "1949",
+        "refWords": 16
+      },
+      {
+        "file": "14585898865749103727.wav",
+        "sentenceId": "1949",
+        "refWords": 16
+      },
+      {
+        "file": "18066939864018796519.wav",
+        "sentenceId": "1832",
+        "refWords": 19
+      },
+      {
+        "file": "15648812079343683412.wav",
+        "sentenceId": "1832",
+        "refWords": 19
+      },
+      {
+        "file": "16847628585853049714.wav",
+        "sentenceId": "1915",
+        "refWords": 24
+      },
+      {
+        "file": "8756381645087147947.wav",
+        "sentenceId": "1915",
+        "refWords": 24
+      },
+      {
+        "file": "1596269393232229615.wav",
+        "sentenceId": "1699",
+        "refWords": 26
+      },
+      {
+        "file": "16355757648693617724.wav",
+        "sentenceId": "1699",
+        "refWords": 26
+      },
+      {
+        "file": "2637301866626572038.wav",
+        "sentenceId": "1673",
+        "refWords": 25
+      },
+      {
+        "file": "2939761992885557861.wav",
+        "sentenceId": "1673",
+        "refWords": 25
+      },
+      {
+        "file": "1722118868151836971.wav",
+        "sentenceId": "1877",
+        "refWords": 30
+      },
+      {
+        "file": "18080893208509673354.wav",
+        "sentenceId": "1877",
+        "refWords": 30
+      },
+      {
+        "file": "13230261475791184258.wav",
+        "sentenceId": "1860",
+        "refWords": 11
+      },
+      {
+        "file": "12164368102080603077.wav",
+        "sentenceId": "1860",
+        "refWords": 11
+      },
+      {
+        "file": "5106380017322065030.wav",
+        "sentenceId": "1935",
+        "refWords": 22
+      },
+      {
+        "file": "1618638950277648344.wav",
+        "sentenceId": "1935",
+        "refWords": 22
+      },
+      {
+        "file": "10492135991603561867.wav",
+        "sentenceId": "1674",
+        "refWords": 16
+      },
+      {
+        "file": "2254021119996292300.wav",
+        "sentenceId": "1674",
+        "refWords": 16
+      },
+      {
+        "file": "6817878979697223927.wav",
+        "sentenceId": "1675",
+        "refWords": 21
+      },
+      {
+        "file": "10052240106321793346.wav",
+        "sentenceId": "1675",
+        "refWords": 21
+      },
+      {
+        "file": "10197164397713068203.wav",
+        "sentenceId": "1728",
+        "refWords": 15
+      },
+      {
+        "file": "13006273800980159403.wav",
+        "sentenceId": "1728",
+        "refWords": 15
+      },
+      {
+        "file": "1218355507714944126.wav",
+        "sentenceId": "1798",
+        "refWords": 24
+      },
+      {
+        "file": "5606750157981126233.wav",
+        "sentenceId": "1798",
+        "refWords": 24
+      },
+      {
+        "file": "283614893570272908.wav",
+        "sentenceId": "1924",
+        "refWords": 32
+      },
+      {
+        "file": "4498797456222901763.wav",
+        "sentenceId": "1924",
+        "refWords": 32
+      },
+      {
+        "file": "4496786334735634498.wav",
+        "sentenceId": "1684",
+        "refWords": 23
+      },
+      {
+        "file": "9431561488681290113.wav",
+        "sentenceId": "1684",
+        "refWords": 23
+      },
+      {
+        "file": "5505398583576174352.wav",
+        "sentenceId": "1936",
+        "refWords": 47
+      },
+      {
+        "file": "2467414061703477879.wav",
+        "sentenceId": "1936",
+        "refWords": 47
+      },
+      {
+        "file": "6917907748364342404.wav",
+        "sentenceId": "1661",
+        "refWords": 19
+      },
+      {
+        "file": "8546403500877190903.wav",
+        "sentenceId": "1661",
+        "refWords": 19
+      },
+      {
+        "file": "16851035292487940942.wav",
+        "sentenceId": "1721",
+        "refWords": 21
+      },
+      {
+        "file": "1633905380187706594.wav",
+        "sentenceId": "1721",
+        "refWords": 21
+      },
+      {
+        "file": "6852813781354643345.wav",
+        "sentenceId": "1869",
+        "refWords": 35
+      },
+      {
+        "file": "3585583328394597156.wav",
+        "sentenceId": "1869",
+        "refWords": 35
+      },
+      {
+        "file": "11536232800365538941.wav",
+        "sentenceId": "1893",
+        "refWords": 25
+      },
+      {
+        "file": "11593450817032542587.wav",
+        "sentenceId": "1893",
+        "refWords": 25
+      },
+      {
+        "file": "3927163358777802368.wav",
+        "sentenceId": "1735",
+        "refWords": 49
+      },
+      {
+        "file": "16824485789160047135.wav",
+        "sentenceId": "1996",
+        "refWords": 23
+      },
+      {
+        "file": "14993919225529607964.wav",
+        "sentenceId": "1996",
+        "refWords": 23
+      },
+      {
+        "file": "11705046490861852963.wav",
+        "sentenceId": "1866",
+        "refWords": 15
+      },
+      {
+        "file": "559615000143317446.wav",
+        "sentenceId": "1866",
+        "refWords": 15
+      },
+      {
+        "file": "18320871674783850842.wav",
+        "sentenceId": "1742",
+        "refWords": 23
+      },
+      {
+        "file": "5907599423488165658.wav",
+        "sentenceId": "1742",
+        "refWords": 23
+      },
+      {
+        "file": "3502277023574363012.wav",
+        "sentenceId": "1977",
+        "refWords": 20
+      },
+      {
+        "file": "15592925372393530543.wav",
+        "sentenceId": "1977",
+        "refWords": 20
+      },
+      {
+        "file": "17087438879836851456.wav",
+        "sentenceId": "1967",
+        "refWords": 29
+      },
+      {
+        "file": "6507390080013738113.wav",
+        "sentenceId": "1967",
+        "refWords": 29
+      },
+      {
+        "file": "1605300975319497622.wav",
+        "sentenceId": "1975",
+        "refWords": 23
+      },
+      {
+        "file": "11265842188315045636.wav",
+        "sentenceId": "1975",
+        "refWords": 23
+      },
+      {
+        "file": "7587276269543309929.wav",
+        "sentenceId": "1871",
+        "refWords": 14
+      },
+      {
+        "file": "4838660681321542582.wav",
+        "sentenceId": "1871",
+        "refWords": 14
+      },
+      {
+        "file": "8324220666349639753.wav",
+        "sentenceId": "1770",
+        "refWords": 14
+      },
+      {
+        "file": "3529855487992513201.wav",
+        "sentenceId": "1770",
+        "refWords": 14
+      },
+      {
+        "file": "5407053594615190090.wav",
+        "sentenceId": "1819",
+        "refWords": 26
+      },
+      {
+        "file": "7366992441583559574.wav",
+        "sentenceId": "1819",
+        "refWords": 26
+      },
+      {
+        "file": "10861831846737909528.wav",
+        "sentenceId": "1897",
+        "refWords": 20
+      },
+      {
+        "file": "6656552880161745727.wav",
+        "sentenceId": "1897",
+        "refWords": 20
+      },
+      {
+        "file": "8268356342449509719.wav",
+        "sentenceId": "1816",
+        "refWords": 22
+      },
+      {
+        "file": "17737260257548671107.wav",
+        "sentenceId": "1816",
+        "refWords": 22
+      },
+      {
+        "file": "6354316372780583820.wav",
+        "sentenceId": "1901",
+        "refWords": 28
+      },
+      {
+        "file": "7053482366261158.wav",
+        "sentenceId": "1901",
+        "refWords": 28
+      },
+      {
+        "file": "5433314566767233828.wav",
+        "sentenceId": "1826",
+        "refWords": 14
+      },
+      {
+        "file": "2786302614981736925.wav",
+        "sentenceId": "1820",
+        "refWords": 15
+      },
+      {
+        "file": "2381187994276969930.wav",
+        "sentenceId": "1820",
+        "refWords": 15
+      },
+      {
+        "file": "12381237049043414166.wav",
+        "sentenceId": "1899",
+        "refWords": 29
+      },
+      {
+        "file": "1876924768395363851.wav",
+        "sentenceId": "1899",
+        "refWords": 29
+      },
+      {
+        "file": "5657427923960079748.wav",
+        "sentenceId": "1874",
+        "refWords": 28
+      },
+      {
+        "file": "837008417921522673.wav",
+        "sentenceId": "1874",
+        "refWords": 28
+      },
+      {
+        "file": "1944915261206096046.wav",
+        "sentenceId": "1664",
+        "refWords": 17
+      },
+      {
+        "file": "13031516147694203229.wav",
+        "sentenceId": "1664",
+        "refWords": 17
+      },
+      {
+        "file": "14076834086577911298.wav",
+        "sentenceId": "1903",
+        "refWords": 19
+      },
+      {
+        "file": "13130060533227294993.wav",
+        "sentenceId": "1803",
+        "refWords": 21
+      },
+      {
+        "file": "11987168412167267165.wav",
+        "sentenceId": "1803",
+        "refWords": 21
+      },
+      {
+        "file": "15667010054869079797.wav",
+        "sentenceId": "1991",
+        "refWords": 18
+      },
+      {
+        "file": "1116401173651214130.wav",
+        "sentenceId": "1991",
+        "refWords": 18
+      },
+      {
+        "file": "17257800930548614745.wav",
+        "sentenceId": "1731",
+        "refWords": 12
+      },
+      {
+        "file": "7546471028199266685.wav",
+        "sentenceId": "1731",
+        "refWords": 12
+      },
+      {
+        "file": "3362263413020550013.wav",
+        "sentenceId": "1884",
+        "refWords": 19
+      },
+      {
+        "file": "13029464143980259888.wav",
+        "sentenceId": "1884",
+        "refWords": 19
+      },
+      {
+        "file": "7489324500816890474.wav",
+        "sentenceId": "1872",
+        "refWords": 28
+      },
+      {
+        "file": "2642023010607031328.wav",
+        "sentenceId": "1872",
+        "refWords": 28
+      },
+      {
+        "file": "10323357556845456822.wav",
+        "sentenceId": "1876",
+        "refWords": 16
+      },
+      {
+        "file": "8491962032427728850.wav",
+        "sentenceId": "1876",
+        "refWords": 16
+      },
+      {
+        "file": "221216034074176262.wav",
+        "sentenceId": "1687",
+        "refWords": 15
+      },
+      {
+        "file": "13888599635337906526.wav",
+        "sentenceId": "1687",
+        "refWords": 15
+      },
+      {
+        "file": "4103166808026076685.wav",
+        "sentenceId": "1857",
+        "refWords": 22
+      },
+      {
+        "file": "14805661830607478688.wav",
+        "sentenceId": "1857",
+        "refWords": 22
+      },
+      {
+        "file": "8395660467583137383.wav",
+        "sentenceId": "1783",
+        "refWords": 14
+      },
+      {
+        "file": "8582392026322819617.wav",
+        "sentenceId": "1783",
+        "refWords": 14
+      },
+      {
+        "file": "8398257681626621326.wav",
+        "sentenceId": "1759",
+        "refWords": 38
+      }
+    ]
+  },
+  "threshold": {
+    "speedup": 1.3,
+    "werSlack": 0.01,
+    "slowdown": 1.1,
+    "against": "parakeet-tdt-0.6b-v3-int8",
+    "longForm": {
+      "ratioSlack": 0.1,
+      "werSlack": 0.05,
+      "minWordRatio": 0.9,
+      "absoluteAt": "60s"
+    },
+    "bracketDrift": 0.1
+  },
+  "skipped": [
+    {
+      "repo": "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-fp16",
+      "reason": "empty repository (only .gitattributes at abb5c91f)"
+    },
+    {
+      "repo": "csukuangfj/sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000-int8",
+      "reason": "empty repository (only .gitattributes at 09886b8f)"
+    },
+    {
+      "repo": "csukuangfj/sherpa-onnx-nemo-parakeet_tdt_ctc_110m-en-36000-int8",
+      "reason": "empty repository (only .gitattributes at a42c4220); the fp32 build is measured in the exploratory arm"
+    },
+    {
+      "repo": "csukuangfj/sherpa-onnx-whisper-{tiny.en,base.en,small.en,distil-small.en} fp32",
+      "reason": "size: the int8 build of each is measured; fp32 is 1.5-2.6x the download for the same weights"
+    },
+    {
+      "repo": "csukuangfj/sherpa-onnx-whisper-{medium,large-v3,turbo}",
+      "reason": "size: 1-3 GB int8 and several times slower than small on CPU; large-v3/turbo also use 128 mel bins where the worker fixes 80"
+    },
+    {
+      "repo": "csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17",
+      "reason": "licence: FunASR model licence (\"other\"), not a standard open licence \u2014 needs a human read before any catalog entry"
+    },
+    {
+      "repo": "csukuangfj/sherpa-onnx-streaming-zipformer-*",
+      "reason": "streaming models load through OnlineRecognizer; the engine only builds an OfflineRecognizer"
+    },
+    {
+      "repo": "csukuangfj/sherpa-onnx-paraformer-*, -dolphin-*, -fire-red-asr-*, -telespeech-*",
+      "reason": "unwired family, and not English-first (Chinese / multilingual Asian models)"
+    }
+  ],
+  "rows": [
+    {
+      "id": "parakeet-tdt-0.6b-v3-int8",
+      "label": "Medium \u00b7 Parakeet TDT 0.6B v3 (multilingual, int8)",
+      "role": "bracket-first",
+      "arm": "shipped",
+      "path": "worker",
+      "downloadMs": 1008,
+      "files": [
+        {
+          "name": "encoder.int8.onnx",
+          "bytes": 652184281,
+          "sha256": "acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/encoder.int8.onnx"
+        },
+        {
+          "name": "decoder.int8.onnx",
+          "bytes": 11845275,
+          "sha256": "179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/decoder.int8.onnx"
+        },
+        {
+          "name": "joiner.int8.onnx",
+          "bytes": 6355277,
+          "sha256": "3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/joiner.int8.onnx"
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 93939,
+          "sha256": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/tokens.txt"
+        }
+      ],
+      "bytes": 670478772,
+      "loadavgBefore": [
+        11.27,
+        20.39,
+        20.38
+      ],
+      "coldLoadWallMs": 2473,
+      "numThreads": 8,
+      "provider": "cpu",
+      "firstDecodeMs": 544,
+      "firstDecodeRtf": 0.043037974683544304,
+      "deterministic": true,
+      "emptyRate": 0,
+      "decodeRtf": 0.04268086085374271,
+      "p50Rtf": 0.04254385964912281,
+      "p95Rtf": 0.045915032679738566,
+      "wallRtf": 0.044127637358040706,
+      "decodeSec": 40.814,
+      "audioSec": 956.2599999999999,
+      "errors": 131,
+      "ref": 2196,
+      "sub": 107,
+      "del": 20,
+      "ins": 4,
+      "werNorm": 0.05965391621129326,
+      "werNormMeanUtt": 0.05636636183380093,
+      "werVerbatim": 0.14159702878365832,
+      "werNormClean": 0.05829383886255924,
+      "perUtteranceErrors": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        4,
+        2,
+        0,
+        0,
+        2,
+        2,
+        2,
+        2,
+        0,
+        2,
+        0,
+        0,
+        0,
+        2,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        2,
+        2,
+        1,
+        2,
+        1,
+        1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        0,
+        0,
+        0,
+        0,
+        2,
+        4,
+        1,
+        3,
+        7,
+        4,
+        5,
+        1,
+        2,
+        3,
+        1,
+        2,
+        1,
+        3,
+        3,
+        1,
+        5,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        3,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        2,
+        2,
+        3,
+        1,
+        0,
+        2,
+        0,
+        2,
+        0,
+        0,
+        0,
+        1,
+        0,
+        3,
+        3,
+        8,
+        5,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0,
+        1
+      ],
+      "punctuationRate": 1,
+      "capitalisationRate": 0.99,
+      "hesitationsPer1000Words": 0,
+      "decodes": [
+        {
+          "file": "12741024238657315067.wav",
+          "text": "Unfortunately, studying traffic flow is difficult because driver behavior cannot be predicted with 100% certainty.",
+          "decodeMs": 533,
+          "wallMs": 550.6
+        },
+        {
+          "file": "9055240296608129734.wav",
+          "text": "Unfortunately, studying traffic flow is difficult because driver behavior cannot be predicted with 100 percent certainty.",
+          "decodeMs": 341,
+          "wallMs": 353.8
+        },
+        {
+          "file": "621925716775998155.wav",
+          "text": "Twentieth century research has shown that there are two pools of genetic variation - hidden and expressed.",
+          "decodeMs": 265,
+          "wallMs": 274.8
+        },
+        {
+          "file": "10335587906469246566.wav",
+          "text": "20th century research has shown that there are two pools of genetic variation hidden and expressed.",
+          "decodeMs": 298,
+          "wallMs": 308.4
+        },
+        {
+          "file": "2589557553267364799.wav",
+          "text": "Remember that even though music on the main stages may have finished, there may be sections of the festival that will keep playing music until late into the night.",
+          "decodeMs": 377,
+          "wallMs": 390.7
+        },
+        {
+          "file": "17824557748066874904.wav",
+          "text": "Remember that even though music on the main stages may have finished, there may be sections of the festival that will keep playing music until late into the night.",
+          "decodeMs": 511,
+          "wallMs": 527
+        },
+        {
+          "file": "8173060820032255320.wav",
+          "text": "Police Superintendent Shana Shankar Solansky said the accused appear in court with covered faces.",
+          "decodeMs": 386,
+          "wallMs": 399.2
+        },
+        {
+          "file": "15618717836108767541.wav",
+          "text": "Police superintendent Chandra Shikar Sonaki said the accused appeared in court with covered faces.",
+          "decodeMs": 309,
+          "wallMs": 320
+        },
+        {
+          "file": "2652155470394119415.wav",
+          "text": "The term bug is used by entomologists in a formal sense for this group of insects.",
+          "decodeMs": 308,
+          "wallMs": 318
+        },
+        {
+          "file": "14585898865749103727.wav",
+          "text": "The term bug is used by entomologists in a formal sense for this group of insects.",
+          "decodeMs": 288,
+          "wallMs": 296.4
+        },
+        {
+          "file": "18066939864018796519.wav",
+          "text": "Popular sports include football, basketball, volleyball, water polo, fencing, rugby, cycling, ice hockey, roller hockey and F1 motoring.",
+          "decodeMs": 433,
+          "wallMs": 448.8
+        },
+        {
+          "file": "15648812079343683412.wav",
+          "text": "Popular sports include football, basketball volleyball, waterpolo, fencing, rugby cycling, ice hockey, roller hockey and F1 motor racing.",
+          "decodeMs": 393,
+          "wallMs": 405.4
+        },
+        {
+          "file": "16847628585853049714.wav",
+          "text": "You can use Boda Boda, Morris Cycle Taxi, to get around Goma. The normal local price is five hundred Congolese francs for the short ride.",
+          "decodeMs": 542,
+          "wallMs": 560.2
+        },
+        {
+          "file": "8756381645087147947.wav",
+          "text": "You can use Boda Boda motorcycle taxi to get around Goma. The normal local price is 500 Condolise France for the short ride",
+          "decodeMs": 502,
+          "wallMs": 519.3
+        },
+        {
+          "file": "1596269393232229615.wav",
+          "text": "Bishkek was described as sinking into a state of anarchy by one observer as gangs of people roamed the streets and plundered stores of consumer goods.",
+          "decodeMs": 399,
+          "wallMs": 412.6
+        },
+        {
+          "file": "16355757648693617724.wav",
+          "text": "Bishkek was described as sinking into a state of anarchy by one observer, as gang of people roamed the street and plundered stores of consumer goods.",
+          "decodeMs": 343,
+          "wallMs": 355.2
+        },
+        {
+          "file": "2637301866626572038.wav",
+          "text": "During the Revolutionary War, the 13 states first formed a weak central government with the Congress being its only component under the articles of confederation.",
+          "decodeMs": 417,
+          "wallMs": 431.9
+        },
+        {
+          "file": "2939761992885557861.wav",
+          "text": "During the Revolutionary War, the 13 States first formed a weak central government, with the Congress being its only component under the articles of confederation.",
+          "decodeMs": 443,
+          "wallMs": 459.1
+        },
+        {
+          "file": "1722118868151836971.wav",
+          "text": "Current Senator and Argentine First Lady Cristina Fernandez de Kirchner announced her presidential candidacy yesterday evening in La Plata, a city 50 kilometers 31 miles away from Buenos Aires.",
+          "decodeMs": 819,
+          "wallMs": 840.3
+        },
+        {
+          "file": "18080893208509673354.wav",
+          "text": "Current Senator and Argentina First Lady Cristina Fernandez de Kersner announced her presidential candidacy yesterday evening in La Plata, a city 50 kilometers 31 miles away from Buenos Aires.",
+          "decodeMs": 501,
+          "wallMs": 514
+        },
+        {
+          "file": "13230261475791184258.wav",
+          "text": "The governor's office and nineteen of the injured were police officers.",
+          "decodeMs": 210,
+          "wallMs": 216.4
+        },
+        {
+          "file": "12164368102080603077.wav",
+          "text": "The governor's office said 19 of the injured were police officers.",
+          "decodeMs": 311,
+          "wallMs": 322
+        },
+        {
+          "file": "5106380017322065030.wav",
+          "text": "However, that is not true. Although there is something written on the back of the document, it is not a treasure map.",
+          "decodeMs": 362,
+          "wallMs": 376.6
+        },
+        {
+          "file": "1618638950277648344.wav",
+          "text": "However, that is not true. Although there is something written on the back of the document, it is not a treasure map.",
+          "decodeMs": 412,
+          "wallMs": 425.7
+        },
+        {
+          "file": "10492135991603561867.wav",
+          "text": "In some areas, boiling water for a minute is enough and others several minutes are needed.",
+          "decodeMs": 254,
+          "wallMs": 263.4
+        },
+        {
+          "file": "2254021119996292300.wav",
+          "text": "In some areas boiling water for a minute is enough, in others several minutes are needed.",
+          "decodeMs": 288,
+          "wallMs": 298.1
+        },
+        {
+          "file": "6817878979697223927.wav",
+          "text": "All nouns alongside the word c for u always begin with a capital letter even in the middle of a sentence.",
+          "decodeMs": 292,
+          "wallMs": 302.1
+        },
+        {
+          "file": "10052240106321793346.wav",
+          "text": "All nouns alongside the world say for you always begin with a capital letter, even in the middle of a sentence",
+          "decodeMs": 376,
+          "wallMs": 389.6
+        },
+        {
+          "file": "10197164397713068203.wav",
+          "text": "The cabbage juice changes color depending on how acidic, basic alkaline the chemical is.",
+          "decodeMs": 253,
+          "wallMs": 262.8
+        },
+        {
+          "file": "13006273800980159403.wav",
+          "text": "The cabbage juice changes colours depending on how acidic or basic alkaline that chemical is.",
+          "decodeMs": 291,
+          "wallMs": 302.5
+        },
+        {
+          "file": "1218355507714944126.wav",
+          "text": "In its early days, the show was featured solely at the long running internet radio site, TokyNet Radio, a site focused on talk radio.",
+          "decodeMs": 544,
+          "wallMs": 561.1
+        },
+        {
+          "file": "5606750157981126233.wav",
+          "text": "In its early days, the show was featured solely at the long-running internet radio site, ToggyNet Radio, a site focused on talk radio.",
+          "decodeMs": 469,
+          "wallMs": 486
+        },
+        {
+          "file": "283614893570272908.wav",
+          "text": "Four skiers in the women's siting group failed to finish their runs, and 45 of the 117 total skiers in the Giant failed to rank in the race.",
+          "decodeMs": 327,
+          "wallMs": 339.1
+        },
+        {
+          "file": "4498797456222901763.wav",
+          "text": "Four skiers in the women's siting group failed to finish their runs and 45 of the 117 total skiers in the Giant Slaman failed to rank in the race.",
+          "decodeMs": 531,
+          "wallMs": 549.2
+        },
+        {
+          "file": "4496786334735634498.wav",
+          "text": "Apia is the capital of Samoa. The town is on the island of Upolut and has a population of just under 4,000.",
+          "decodeMs": 450,
+          "wallMs": 464.2
+        },
+        {
+          "file": "9431561488681290113.wav",
+          "text": "Apia is the capital of Samoa, the town is on the island of Opulu and has a population of just under 4,000.",
+          "decodeMs": 420,
+          "wallMs": 440.3
+        },
+        {
+          "file": "5505398583576174352.wav",
+          "text": "Harry stated that he would return to Texas to assess the results of tonight's caucus, determine whether it is a path forward for myself in this race, but later said that he would remain in the race and compete in the January twenty-one South Carolina primary.",
+          "decodeMs": 528,
+          "wallMs": 546.7
+        },
+        {
+          "file": "2467414061703477879.wav",
+          "text": "Perry stated that he would return to Texas to assess the results of tonight's Caucus to determine whether there is a path forward for myself in this race, but Letter said that he would remain in the race and compete in the january twenty one, South Carolina primary.",
+          "decodeMs": 571,
+          "wallMs": 588.8
+        },
+        {
+          "file": "6917907748364342404.wav",
+          "text": "He did not set a figure for the cuts saying they will be made based on China's economic output.",
+          "decodeMs": 280,
+          "wallMs": 289.2
+        },
+        {
+          "file": "8546403500877190903.wav",
+          "text": "He did not set a figure for the cuts, saying they will be made based on China's economic output.",
+          "decodeMs": 302,
+          "wallMs": 312.5
+        },
+        {
+          "file": "16851035292487940942.wav",
+          "text": "After the dam was built in 1963, the seasonal floods that would spread sediment throughout the river were halted.",
+          "decodeMs": 298,
+          "wallMs": 307.1
+        },
+        {
+          "file": "1633905380187706594.wav",
+          "text": "After the dam was built in 1963, the seasonal floods that would spread sediment throughout the river were halted.",
+          "decodeMs": 388,
+          "wallMs": 401.9
+        },
+        {
+          "file": "6852813781354643345.wav",
+          "text": "Its long jaws were studded with more than 70 razor sharp teeth, along with an extra set in the roof of its mouth, mean that it was no escape for anything that crossed its path.",
+          "decodeMs": 461,
+          "wallMs": 477.9
+        },
+        {
+          "file": "3585583328394597156.wav",
+          "text": "His long jaws were studied with more than seventy razor sharp teeth, along with an extra set in the roof of its mouth, meaning that there was no escape or anything that crossed his path.",
+          "decodeMs": 679,
+          "wallMs": 699
+        },
+        {
+          "file": "11536232800365538941.wav",
+          "text": "The Sundarbans are the largest littoral mangrove belt in the world stretching 80 km 50 miles into the Bangladeshi and Indian hinterland from the coast.",
+          "decodeMs": 433,
+          "wallMs": 448.5
+        },
+        {
+          "file": "11593450817032542587.wav",
+          "text": "The Sundarbans are the largest littoral mangro belt in the world stretching 80 km 50 miles into the Bangladeshi Indian hinterland from the coast.",
+          "decodeMs": 519,
+          "wallMs": 535.1
+        },
+        {
+          "file": "3927163358777802368.wav",
+          "text": "Researchers from Princeton University in the United States and Uppsala University in Sweden reported the new species evolved in just two generations, though this process has been to take much longer due to the breeding between an endemic Darwin Finch, Jospisa Forties, and the immigrant cactus finch, Jospisa Konirostris.",
+          "decodeMs": 873,
+          "wallMs": 900.9
+        },
+        {
+          "file": "16824485789160047135.wav",
+          "text": "Australia's Mitchell Gorley finis 11th in the men's standing Super G. Czech competitor Ulrich Delenik finished 16th in the men's sitting super G.",
+          "decodeMs": 592,
+          "wallMs": 612.3
+        },
+        {
+          "file": "14993919225529607964.wav",
+          "text": "Australia's Mitchell Gowry finished eleventh in the men's standing Super G. Chet's competitor Ulrich Juklin finis sixteenth in the men's sitting Super G.",
+          "decodeMs": 658,
+          "wallMs": 678.6
+        },
+        {
+          "file": "11705046490861852963.wav",
+          "text": "First, most riders wearing riding boots with a heel and a smooth, quite narrow sole.",
+          "decodeMs": 340,
+          "wallMs": 352.2
+        },
+        {
+          "file": "559615000143317446.wav",
+          "text": "First, most riders were riding boots with a heel on a smooth, quite narrow sole.",
+          "decodeMs": 223,
+          "wallMs": 231
+        },
+        {
+          "file": "18320871674783850842.wav",
+          "text": "Hongkong Island gives the territory of Hong Kong its name and is a place that many tourists regard as the main focus.",
+          "decodeMs": 309,
+          "wallMs": 320.6
+        },
+        {
+          "file": "5907599423488165658.wav",
+          "text": "Hong Kong Island gives the territory of Hong Kong its name and is a place that many tourists regard as the main focus.",
+          "decodeMs": 397,
+          "wallMs": 411.2
+        },
+        {
+          "file": "3502277023574363012.wav",
+          "text": "Brides are made up of one of three related adult males, along with as many as thirty females and cubs.",
+          "decodeMs": 297,
+          "wallMs": 306.5
+        },
+        {
+          "file": "15592925372393530543.wav",
+          "text": "Preeds are made up of one to three related adult males, along with as many as 30 females and cubs.",
+          "decodeMs": 307,
+          "wallMs": 317.5
+        },
+        {
+          "file": "17087438879836851456.wav",
+          "text": "Leighton had asked changes to the Conservatives' Environmental Bill during the meeting with the PM asking for a thorough and complete rewriting of the Conservatives' Party's environmental bill.",
+          "decodeMs": 418,
+          "wallMs": 434.1
+        },
+        {
+          "file": "6507390080013738113.wav",
+          "text": "Leyton had asked changes to the conservative environmental bill during the meeting with the PM asking for a thorough and complete rewriting of the conservative party's environmental bill.",
+          "decodeMs": 486,
+          "wallMs": 501.3
+        },
+        {
+          "file": "1605300975319497622.wav",
+          "text": "Vatican City population is around 800. It is the smallest independent country in the world, and the country with the lowest population.",
+          "decodeMs": 413,
+          "wallMs": 426.6
+        },
+        {
+          "file": "11265842188315045636.wav",
+          "text": "Vatican City population is around 800. It is the smallest independent country in the world and the population",
+          "decodeMs": 456,
+          "wallMs": 471.3
+        },
+        {
+          "file": "7587276269543309929.wav",
+          "text": "In the warm climate of the Middle East, the house was not so important.",
+          "decodeMs": 269,
+          "wallMs": 277.7
+        },
+        {
+          "file": "4838660681321542582.wav",
+          "text": "In the warm climate of the Middle East, the house was not so important.",
+          "decodeMs": 293,
+          "wallMs": 303.2
+        },
+        {
+          "file": "8324220666349639753.wav",
+          "text": "This seems sensible, because the earth doesn't feel as if it's moving, does it?",
+          "decodeMs": 205,
+          "wallMs": 211.6
+        },
+        {
+          "file": "3529855487992513201.wav",
+          "text": "This seems sensible, because the earth doesn't feel as if it's moving, does it?",
+          "decodeMs": 255,
+          "wallMs": 263.2
+        },
+        {
+          "file": "5407053594615190090.wav",
+          "text": "Ancient China had a unique way of showing different time periods. Each stage of China or each family that was in power was a distinctive dynasty.",
+          "decodeMs": 546,
+          "wallMs": 563.3
+        },
+        {
+          "file": "7366992441583559574.wav",
+          "text": "Ancient China had a unique way of showing different periods. Each stage of China, or each family that was in power, was a distinctive dynasty.",
+          "decodeMs": 521,
+          "wallMs": 537.8
+        },
+        {
+          "file": "10861831846737909528.wav",
+          "text": "In the north, the region is bounded by the Sahel, and in the south and west by the Atlantic Ocean.",
+          "decodeMs": 400,
+          "wallMs": 414.1
+        },
+        {
+          "file": "6656552880161745727.wav",
+          "text": "In the north, the region is bounded by the Sahel, and in the south and west by the Atlantic Ocean.",
+          "decodeMs": 311,
+          "wallMs": 322
+        },
+        {
+          "file": "8268356342449509719.wav",
+          "text": "Deval, who was married to two adult children, did not leave a big impression on Miller, to whom the story was related.",
+          "decodeMs": 399,
+          "wallMs": 412.6
+        },
+        {
+          "file": "17737260257548671107.wav",
+          "text": "Duvall, who was married with two adult children, did not leave a big impression on Miller, to whom the story was related.",
+          "decodeMs": 283,
+          "wallMs": 292.8
+        },
+        {
+          "file": "6354316372780583820.wav",
+          "text": "Although AI has a strong connotation of science fiction, AI forms a very important branch of computer science dealing with behavior learning and intelligent adaptation in the machine.",
+          "decodeMs": 579,
+          "wallMs": 597.2
+        },
+        {
+          "file": "7053482366261158.wav",
+          "text": "Although AI has a strong connotation of science fiction, AI forms a very important branch of computer science dealing with behavior, learning, and intelligent adaptation in a machine.",
+          "decodeMs": 679,
+          "wallMs": 699
+        },
+        {
+          "file": "5433314566767233828.wav",
+          "text": "After the accident occurred, Gibson was transported to a hospital but died shortly afterwards.",
+          "decodeMs": 293,
+          "wallMs": 303.1
+        },
+        {
+          "file": "2786302614981736925.wav",
+          "text": "People now write messages on computer screens never having to come close to a sharpener.",
+          "decodeMs": 246,
+          "wallMs": 253.2
+        },
+        {
+          "file": "2381187994276969930.wav",
+          "text": "People now write messages on computer screens never having to come close to a sharpener.",
+          "decodeMs": 368,
+          "wallMs": 378.9
+        },
+        {
+          "file": "12381237049043414166.wav",
+          "text": "Muhammad was deeply interested in matters beyond this mundane life. He used to frequent a cave that became known as Hera on the Mountain of Nor, light for contemplation.",
+          "decodeMs": 479,
+          "wallMs": 491.5
+        },
+        {
+          "file": "1876924768395363851.wav",
+          "text": "Muhammad was deeply interested in matters beyond his mundane life. He used to frequent a cave that became known as Hira on the Mountain of Nor light for contemplation.",
+          "decodeMs": 605,
+          "wallMs": 623.8
+        },
+        {
+          "file": "5657427923960079748.wav",
+          "text": "Some people thought he was right, but many people believe the oppos, that the solar system moves around the Earth, including the Sun, and even the other stars.",
+          "decodeMs": 339,
+          "wallMs": 350.5
+        },
+        {
+          "file": "837008417921522673.wav",
+          "text": "Some people thought he was right, but many people believed the opposite that the solar system moved around the earth, including the Sun and even other stars.",
+          "decodeMs": 346,
+          "wallMs": 360
+        },
+        {
+          "file": "1944915261206096046.wav",
+          "text": "Swirl the two dry powders together and then with clean wet hands squeeze them into a ball.",
+          "decodeMs": 244,
+          "wallMs": 265.2
+        },
+        {
+          "file": "13031516147694203229.wav",
+          "text": "Swirl the two dry powers together and then with queen wet hands squeeze them into a ball.",
+          "decodeMs": 355,
+          "wallMs": 366.9
+        },
+        {
+          "file": "14076834086577911298.wav",
+          "text": "When all available resources are effectively used across the functional departments of an organization, creativity and ingenuity can transpire.",
+          "decodeMs": 388,
+          "wallMs": 401.7
+        },
+        {
+          "file": "13130060533227294993.wav",
+          "text": "The moisture on your hands will react with the outer layers, which will feel funny, in form of a sort of shell.",
+          "decodeMs": 341,
+          "wallMs": 352.8
+        },
+        {
+          "file": "11987168412167267165.wav",
+          "text": "The moisture on your hands will react with the outer layers, which will feel funny and form a sort of shell.",
+          "decodeMs": 364,
+          "wallMs": 377.3
+        },
+        {
+          "file": "15667010054869079797.wav",
+          "text": "During this period of European history the Catholic Church, which had become rich and powerful, came under scrutiny.",
+          "decodeMs": 414,
+          "wallMs": 427.9
+        },
+        {
+          "file": "1116401173651214130.wav",
+          "text": "During this period of European history, the Catholic Church, which had become rich and powerful, came under scrutiny.",
+          "decodeMs": 485,
+          "wallMs": 501.6
+        },
+        {
+          "file": "17257800930548614745.wav",
+          "text": "In the Archipelago and Lakes, you do not necessarily need a yacht.",
+          "decodeMs": 319,
+          "wallMs": 330.4
+        },
+        {
+          "file": "7546471028199266685.wav",
+          "text": "In the Archipelagos and Lakes you do not necessarily need a yacht.",
+          "decodeMs": 310,
+          "wallMs": 320.7
+        },
+        {
+          "file": "3362263413020550013.wav",
+          "text": "In particular, it is claim that one can detect whether a person is lying by interpreting microexpressions correctly.",
+          "decodeMs": 330,
+          "wallMs": 341.6
+        },
+        {
+          "file": "13029464143980259888.wav",
+          "text": "In particular, it is claim that one can detect whether a person is lying by interpreting microexpressions correctly.",
+          "decodeMs": 281,
+          "wallMs": 292.7
+        },
+        {
+          "file": "7489324500816890474.wav",
+          "text": "During the struggle for independence organized by the Mao movement, a peaceful gathering in the town resulted in the killing of Paramont Chief Tube Thubutya the Third.",
+          "decodeMs": 529,
+          "wallMs": 544
+        },
+        {
+          "file": "2642023010607031328.wav",
+          "text": "During the struggle for independence organized by the Mao movement, a peaceful gathering in the town resulted in the killing of the Paramount Chief, Tutamaze Lelophi III.",
+          "decodeMs": 516,
+          "wallMs": 532.2
+        },
+        {
+          "file": "10323357556845456822.wav",
+          "text": "The Northern Mariana's Emergency Management Office said that there were no damages reported in the nation.",
+          "decodeMs": 452,
+          "wallMs": 466.8
+        },
+        {
+          "file": "8491962032427728850.wav",
+          "text": "The Northern Marianas Emergency Management Office said that there were no damages reported in the nation.",
+          "decodeMs": 470,
+          "wallMs": 485.7
+        },
+        {
+          "file": "221216034074176262.wav",
+          "text": "Segregation and recombination. Shuffle variation back and forth between the two pools with each generation.",
+          "decodeMs": 470,
+          "wallMs": 485.4
+        },
+        {
+          "file": "13888599635337906526.wav",
+          "text": "Segregation and recombination shuffle variation back and forth between the two pools with each generation.",
+          "decodeMs": 478,
+          "wallMs": 494.3
+        },
+        {
+          "file": "4103166808026076685.wav",
+          "text": "He added that they should not, however, be asked to take on obligations that go beyond their development stage, responsibility, and capabilities.",
+          "decodeMs": 431,
+          "wallMs": 444.8
+        },
+        {
+          "file": "14805661830607478688.wav",
+          "text": "He added they should not, however, be asked to take on obligations that go beyond their development stage, responsibility and capabilities.",
+          "decodeMs": 516,
+          "wallMs": 531.6
+        },
+        {
+          "file": "8395660467583137383.wav",
+          "text": "Regional and seasonal severe weather phenomena include blizzards, storms, ice storms, and dust storms.",
+          "decodeMs": 335,
+          "wallMs": 346.8
+        },
+        {
+          "file": "8582392026322819617.wav",
+          "text": "Regional and seasonal severe weather phenomena include blizzards, snowstorms, ice storms, and dust storms.",
+          "decodeMs": 339,
+          "wallMs": 350.9
+        },
+        {
+          "file": "8398257681626621326.wav",
+          "text": "Dr Malar Balasubraman 29 was found in Blue Ash, Ohio, a suburb approximately 15 miles north of Cincinnati, lying on the ground beside the road in a t shirt and underwear in an apparently heavily medicated state.",
+          "decodeMs": 605,
+          "wallMs": 625.5
+        }
+      ],
+      "status": "measured",
+      "longForm": [
+        {
+          "label": "60s",
+          "audioSec": 68.82,
+          "utterances": [
+            "9055240296608129734.wav",
+            "621925716775998155.wav",
+            "2589557553267364799.wav",
+            "15618717836108767541.wav",
+            "2652155470394119415.wav",
+            "18066939864018796519.wav",
+            "1596269393232229615.wav",
+            "2637301866626572038.wav"
+          ],
+          "decodeMs": 3665,
+          "decodeRtf": 0.05325486777099681,
+          "wer": 0.04938271604938271,
+          "wordRatio": 0.9876543209876543,
+          "text": "Unfortunately, studying traffic flow is difficult because driver behavior cannot be predicted with 100% certainty. Twentieth century research has shown that there are two pools of genetic variation, hidden and expressed. Remember that even though music on the main stages may have finished, there may be sections of the festival that will keep play music until late into the night. Police superintendent Shandra Shikar Solanke said that accused appear in court with covered faces. The term bug is used by entomologists in a formal sense for this group of insects. Popular sports include football, basketball, volleyball, water polo, fencing, rugby, cycling, ice hockey, roller hockey, and F1 motor racing. Bishkek was described as sinking into a state of anarchy by one observer as gangs roamed the streets and plundered stores of consumer goods. During the Revolutionary War, the 13 States first formed a weak central government, with the Congress being its only component under the Articles of Confederation."
+        },
+        {
+          "label": "300s",
+          "audioSec": 310.92,
+          "utterances": [
+            "9055240296608129734.wav",
+            "621925716775998155.wav",
+            "2589557553267364799.wav",
+            "15618717836108767541.wav",
+            "2652155470394119415.wav",
+            "18066939864018796519.wav",
+            "1596269393232229615.wav",
+            "2637301866626572038.wav",
+            "18080893208509673354.wav",
+            "13230261475791184258.wav",
+            "10492135991603561867.wav",
+            "6817878979697223927.wav",
+            "10197164397713068203.wav",
+            "5606750157981126233.wav",
+            "283614893570272908.wav",
+            "9431561488681290113.wav",
+            "5505398583576174352.wav",
+            "6917907748364342404.wav",
+            "16851035292487940942.wav",
+            "6852813781354643345.wav",
+            "11536232800365538941.wav",
+            "3927163358777802368.wav",
+            "16824485789160047135.wav",
+            "11705046490861852963.wav",
+            "18320871674783850842.wav",
+            "3502277023574363012.wav",
+            "17087438879836851456.wav",
+            "11265842188315045636.wav",
+            "4838660681321542582.wav",
+            "8324220666349639753.wav",
+            "6656552880161745727.wav",
+            "17737260257548671107.wav",
+            "5433314566767233828.wav",
+            "2786302614981736925.wav",
+            "12381237049043414166.wav"
+          ],
+          "error": "engine process exited",
+          "wer": 1,
+          "wordRatio": 0
+        }
+      ],
+      "otherRun": {
+        "pattern": "bench-cleanup|eval-cleanup",
+        "samples": 7,
+        "hits": 0,
+        "unknown": 0,
+        "active": false
+      },
+      "loadavgAfter": [
+        9.57,
+        18.52,
+        19.74
+      ],
+      "quietWait": null,
+      "contended": true,
+      "measureAttempts": [
+        {
+          "contended": true,
+          "decodeRtf": 0.04268086085374271,
+          "otherRun": {
+            "pattern": "bench-cleanup|eval-cleanup",
+            "samples": 7,
+            "hits": 0,
+            "unknown": 0,
+            "active": false
+          },
+          "loadavgBefore": [
+            11.27,
+            20.39,
+            20.38
+          ],
+          "loadavgAfter": [
+            9.57,
+            18.52,
+            19.74
+          ]
+        }
+      ],
+      "measuredWith": {
+        "gitHead": "22635b1c7e18ab9d9f330729b1a3d9c636e2a9ab",
+        "measuringCode": "710af85038ec6ac034df988fd48cd3db8d8cf62e33f5eb75bfbcd51c3324b1f4"
+      }
+    },
+    {
+      "id": "fluid-speech-pro-int8",
+      "label": "Medium \u00b7 Fluid Speech Pro 0.63B (multilingual, int8)",
+      "role": "baseline",
+      "arm": "shipped",
+      "path": "worker",
+      "downloadMs": 1268,
+      "files": [
+        {
+          "name": "encoder-model.int8.onnx",
+          "bytes": 955592,
+          "sha256": "07ad77459bd3bb165c2c53e978ed1dfd64c6e129b18af2ec5ee38343be1d4451",
+          "url": "https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx/resolve/fa588e9f87f1b9ad0ca2e2d8f7eaf84dc3803581/encoder-model.int8.onnx"
+        },
+        {
+          "name": "encoder-model.int8.onnx.data",
+          "bytes": 745971712,
+          "sha256": "d2f8bfbb1fa399f207cde85aa3fabee0d67f6730cb31cbf31832c10de69f9c3c",
+          "url": "https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx/resolve/fa588e9f87f1b9ad0ca2e2d8f7eaf84dc3803581/encoder-model.int8.onnx.data"
+        },
+        {
+          "name": "decoder.int8.onnx",
+          "bytes": 4797,
+          "sha256": "0bd3e225124a8a90373e500f62516270fd85fdf42237aa569489b232d21cac08",
+          "url": "https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx/resolve/fa588e9f87f1b9ad0ca2e2d8f7eaf84dc3803581/decoder.int8.onnx"
+        },
+        {
+          "name": "decoder.int8.onnx.data",
+          "bytes": 47251456,
+          "sha256": "632c3cbf59d3e52d2f7f4dda3bf8e28c045f7a3bb3dbef0f44529ba63926efaa",
+          "url": "https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx/resolve/fa588e9f87f1b9ad0ca2e2d8f7eaf84dc3803581/decoder.int8.onnx.data"
+        },
+        {
+          "name": "joiner.int8.onnx",
+          "bytes": 2754,
+          "sha256": "c0e995b659ed5e15fc0c38408ee56cd9a03e6d3329f304c32b9d5017c8cdd381",
+          "url": "https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx/resolve/fa588e9f87f1b9ad0ca2e2d8f7eaf84dc3803581/joiner.int8.onnx"
+        },
+        {
+          "name": "joiner.int8.onnx.data",
+          "bytes": 6564352,
+          "sha256": "7473427ab99417fae8cf7025ba11507cb5dcc223194bae2f79064dde0936d0af",
+          "url": "https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx/resolve/fa588e9f87f1b9ad0ca2e2d8f7eaf84dc3803581/joiner.int8.onnx.data"
+        },
+        {
+          "name": "vocab.txt",
+          "bytes": 93939,
+          "sha256": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
+          "url": "https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx/resolve/fa588e9f87f1b9ad0ca2e2d8f7eaf84dc3803581/vocab.txt"
+        }
+      ],
+      "bytes": 800844602,
+      "loadavgBefore": [
+        8.96,
+        18.25,
+        19.65
+      ],
+      "coldLoadWallMs": 1418,
+      "numThreads": 8,
+      "provider": "cpu",
+      "firstDecodeMs": 3122,
+      "firstDecodeRtf": 0.24699367088607593,
+      "deterministic": true,
+      "emptyRate": 0,
+      "decodeRtf": 0.3140578922050489,
+      "p50Rtf": 0.32034090909090907,
+      "p95Rtf": 0.4806737588652482,
+      "wallRtf": 0.31534406500428763,
+      "decodeSec": 300.321,
+      "audioSec": 956.2599999999999,
+      "errors": 104,
+      "ref": 2196,
+      "sub": 75,
+      "del": 15,
+      "ins": 14,
+      "werNorm": 0.04735883424408015,
+      "werNormMeanUtt": 0.043741889600475606,
+      "werVerbatim": 0.11281337047353761,
+      "werNormClean": 0.04739336492890995,
+      "perUtteranceErrors": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3,
+        2,
+        0,
+        0,
+        0,
+        0,
+        3,
+        1,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        6,
+        6,
+        1,
+        1,
+        1,
+        1,
+        2,
+        1,
+        1,
+        1,
+        3,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        3,
+        1,
+        6,
+        3,
+        4,
+        1,
+        2,
+        1,
+        1,
+        1,
+        0,
+        3,
+        2,
+        1,
+        5,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        3,
+        2,
+        1,
+        0,
+        0,
+        0,
+        0,
+        2,
+        3,
+        1,
+        1,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        6,
+        4,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0,
+        3
+      ],
+      "punctuationRate": 1,
+      "capitalisationRate": 1,
+      "hesitationsPer1000Words": 0,
+      "decodes": [
+        {
+          "file": "12741024238657315067.wav",
+          "text": "Unfortunately, studying traffic flow is difficult because driver behavior cannot be predicted with one hundred percent certainty.",
+          "decodeMs": 3142,
+          "wallMs": 3156
+        },
+        {
+          "file": "9055240296608129734.wav",
+          "text": "Unfortunately, studying traffic flow is difficult because driver behavior cannot be predicted with 100% certainty.",
+          "decodeMs": 2869,
+          "wallMs": 2878.1
+        },
+        {
+          "file": "621925716775998155.wav",
+          "text": "Twentieth-century research has shown that there are two pools of genetic variation, hidden and expressed.",
+          "decodeMs": 2775,
+          "wallMs": 2783.9
+        },
+        {
+          "file": "10335587906469246566.wav",
+          "text": "Twentieth-century research has shown that there are two pools of genetic variation hidden and expressed.",
+          "decodeMs": 2799,
+          "wallMs": 2810.1
+        },
+        {
+          "file": "2589557553267364799.wav",
+          "text": "Remember that even though music on the main stages may have finished, there may be sections of the festival that will keep playing music until late into the night.",
+          "decodeMs": 2978,
+          "wallMs": 2987.9
+        },
+        {
+          "file": "17824557748066874904.wav",
+          "text": "Remember that even though music on the main stages may have finished, there may be sections of the festival that will keep playing music until late into the night.",
+          "decodeMs": 3052,
+          "wallMs": 3065.3
+        },
+        {
+          "file": "8173060820032255320.wav",
+          "text": "Police Superintendent Shandra Shankhar Solansky said the accused appeared in court with covered faces.",
+          "decodeMs": 2929,
+          "wallMs": 2939.7
+        },
+        {
+          "file": "15618717836108767541.wav",
+          "text": "Police Superintendent Chandra Shikar Solankie said the accused appeared in court with covered faces.",
+          "decodeMs": 2811,
+          "wallMs": 2819
+        },
+        {
+          "file": "2652155470394119415.wav",
+          "text": "The term bug is used by entomologists in a formal sense for this group of insects.",
+          "decodeMs": 2774,
+          "wallMs": 2781.7
+        },
+        {
+          "file": "14585898865749103727.wav",
+          "text": "The term bug is used by entomologists in a formal sense for this group of insects.",
+          "decodeMs": 2742,
+          "wallMs": 2748.8
+        },
+        {
+          "file": "18066939864018796519.wav",
+          "text": "Popular sports include football, basketball, volleyball, water polo, fencing, rugby, cycling, ice hockey, roller hockey, and F1 motor racing.",
+          "decodeMs": 3219,
+          "wallMs": 3230.3
+        },
+        {
+          "file": "15648812079343683412.wav",
+          "text": "Popular sports include football, basketball, volleyball, water polo, fencing, rugby, cycling, ice hockey, roller hockey, and F1 motor racing.",
+          "decodeMs": 3189,
+          "wallMs": 3201.5
+        },
+        {
+          "file": "16847628585853049714.wav",
+          "text": "You can use Boda Boda, more a cycle taxi, to get around Goma. The normal local price is 500 Congolese francs for the short ride.",
+          "decodeMs": 3204,
+          "wallMs": 3220.7
+        },
+        {
+          "file": "8756381645087147947.wav",
+          "text": "You can use Boda Boda Motorcycle Taxi to get around Goma. The normal local price is 500 Condolis Francs for the short ride.",
+          "decodeMs": 3229,
+          "wallMs": 3241.9
+        },
+        {
+          "file": "1596269393232229615.wav",
+          "text": "Bishkek was described as sinking into a state of anarchy by one observer as gangs of people roamed the streets and plundered stores of consumer goods.",
+          "decodeMs": 3027,
+          "wallMs": 3039
+        },
+        {
+          "file": "16355757648693617724.wav",
+          "text": "Bishkek was described as sinking into a state of anarchy by one observer as gangs of people roamed the street and plundered stores of consumer goods.",
+          "decodeMs": 3008,
+          "wallMs": 3016.3
+        },
+        {
+          "file": "2637301866626572038.wav",
+          "text": "During the Revolutionary War, the Thirteen States first formed a weak central government, with the Congress being its only component under the Articles of Confederation.",
+          "decodeMs": 3062,
+          "wallMs": 3077.3
+        },
+        {
+          "file": "2939761992885557861.wav",
+          "text": "During the Revolutionary War, the Thirteen States first formed a weak central government, with the Congress being its only component under the Articles of Confederation.",
+          "decodeMs": 3126,
+          "wallMs": 3141.1
+        },
+        {
+          "file": "1722118868151836971.wav",
+          "text": "Current Senator and Argentine First Lady Cristina Fernandez de Kirchner announced her presidential candidacy yesterday evening in La Plata, a city 50 kilometers 31 miles away from Buenos Aires.",
+          "decodeMs": 3707,
+          "wallMs": 3733.1
+        },
+        {
+          "file": "18080893208509673354.wav",
+          "text": "Current Senator and Argentine First Lady Cristina Fernandez de Kirchner announced her presidential candidacy yesterday evening in La Plata, a city 50 km 31 miles away from Buenos Aires.",
+          "decodeMs": 3405,
+          "wallMs": 3418.6
+        },
+        {
+          "file": "13230261475791184258.wav",
+          "text": "The governor's office and nineteen of the injured were police officers.",
+          "decodeMs": 2599,
+          "wallMs": 2604.8
+        },
+        {
+          "file": "12164368102080603077.wav",
+          "text": "The governor's office said 19 of the injured were police officers.",
+          "decodeMs": 2750,
+          "wallMs": 2760.8
+        },
+        {
+          "file": "5106380017322065030.wav",
+          "text": "However, that is not true. Although there is something written on the back of the document, it is not a treasure map.",
+          "decodeMs": 2835,
+          "wallMs": 2846.3
+        },
+        {
+          "file": "1618638950277648344.wav",
+          "text": "However, that is not true. Although there is something written on the back of the document, it is not a treasure map.",
+          "decodeMs": 2912,
+          "wallMs": 2922.8
+        },
+        {
+          "file": "10492135991603561867.wav",
+          "text": "In some areas, boiling water for a minute is enough in others several minutes are needed.",
+          "decodeMs": 2711,
+          "wallMs": 2720.1
+        },
+        {
+          "file": "2254021119996292300.wav",
+          "text": "In some areas boiling water for a minute is enough, in others several minutes are needed.",
+          "decodeMs": 2726,
+          "wallMs": 2733.3
+        },
+        {
+          "file": "6817878979697223927.wav",
+          "text": "All nouns alongside the word <unk>c<unk> for <unk>u<unk> always begin with a capital letter even in the middle of a sentence.",
+          "decodeMs": 2877,
+          "wallMs": 2884.9
+        },
+        {
+          "file": "10052240106321793346.wav",
+          "text": "All nouns alongside the word <unk>say<unk> for <unk>y<unk> always begin with a capital letter, even in the middle of a sentence.",
+          "decodeMs": 2972,
+          "wallMs": 2984.4
+        },
+        {
+          "file": "10197164397713068203.wav",
+          "text": "The cabbage juice changes color depending on how acidic, basic, alkaline the chemical is.",
+          "decodeMs": 2679,
+          "wallMs": 2685.9
+        },
+        {
+          "file": "13006273800980159403.wav",
+          "text": "The cabbage juice changes colors depending on how acidic or basic alkaline the chemical is.",
+          "decodeMs": 2733,
+          "wallMs": 2744.8
+        },
+        {
+          "file": "1218355507714944126.wav",
+          "text": "In its early days, the show was featured solely at the long-running internet radio site, TokyNet Radio, a site focused on talk radio.",
+          "decodeMs": 3169,
+          "wallMs": 3185.1
+        },
+        {
+          "file": "5606750157981126233.wav",
+          "text": "In its early days, the show was featured solely at the long-running internet radio site ToggyNet Radio, a site focused on talk radio.",
+          "decodeMs": 3177,
+          "wallMs": 3195.8
+        },
+        {
+          "file": "283614893570272908.wav",
+          "text": "Four skiers in the women's sitting group failed to finish their runs, and 45 of the 117 total skiers in the Giants failed to rank in the race.",
+          "decodeMs": 3096,
+          "wallMs": 3105.3
+        },
+        {
+          "file": "4498797456222901763.wav",
+          "text": "Four skiers in the women's sitting group failed to finish their runs, and 45 of the 117 total skiers in the Giant Salamen failed to rank in the race.",
+          "decodeMs": 3339,
+          "wallMs": 3359.5
+        },
+        {
+          "file": "4496786334735634498.wav",
+          "text": "Apia is the capital of Samoa. The town is on the island of Upollu and has a population of just under 40,000.",
+          "decodeMs": 3008,
+          "wallMs": 3020.2
+        },
+        {
+          "file": "9431561488681290113.wav",
+          "text": "Apia is the capital of Samoa, the town is on the island of Opulu and has a population of just under 40,000.",
+          "decodeMs": 2959,
+          "wallMs": 2974.3
+        },
+        {
+          "file": "5505398583576174352.wav",
+          "text": "Harry stated that he would return to Texas to assess the results of tonight's caucus, determining whether is a path forward for myself in this race, but later said that he would remain in the race and compete in the January 21 South Carolina primary.",
+          "decodeMs": 3513,
+          "wallMs": 3531.2
+        },
+        {
+          "file": "2467414061703477879.wav",
+          "text": "Perry stated that he would return to Texas to assess the results of tonight's caucus, determine whether there is a path forward for myself in this race, but Letter said that he would remain in the race and compete in the January 21 South Carolina primary.",
+          "decodeMs": 3557,
+          "wallMs": 3577
+        },
+        {
+          "file": "6917907748364342404.wav",
+          "text": "He did not set a figure for the cuts, saying they will be made based on China's economic output.",
+          "decodeMs": 2732,
+          "wallMs": 2741.2
+        },
+        {
+          "file": "8546403500877190903.wav",
+          "text": "He did not set a figure for the cuts, saying they will be made based on China's economic output.",
+          "decodeMs": 2748,
+          "wallMs": 2756.3
+        },
+        {
+          "file": "16851035292487940942.wav",
+          "text": "After the dam was built in 1963, the seasonal floods that would spread sediment throughout the river were halted.",
+          "decodeMs": 2798,
+          "wallMs": 2805.9
+        },
+        {
+          "file": "1633905380187706594.wav",
+          "text": "After the dam was built in 1963, the seasonal floods that would spread sediment throughout the river were halted.",
+          "decodeMs": 2953,
+          "wallMs": 2963.8
+        },
+        {
+          "file": "6852813781354643345.wav",
+          "text": "Its long jaws were studded with more than seventy razor-sharp teeth, along with an extra set in the roof of its mouth, meaning that it was no escape for anything that crossed its path.",
+          "decodeMs": 3207,
+          "wallMs": 3219.1
+        },
+        {
+          "file": "3585583328394597156.wav",
+          "text": "Its long jaws were studded with more than seventy razor sharp teeth, along with an extra set in the roof of its mouth, meaning that there was no escape or anything that crossed its path.",
+          "decodeMs": 3434,
+          "wallMs": 3457.3
+        },
+        {
+          "file": "11536232800365538941.wav",
+          "text": "The Sundarbans are the largest littoral mangrove belt in the world stretching 80 km <unk>50 miles<unk> into the Bangladeshi and Indian hinterland from the coast.",
+          "decodeMs": 3173,
+          "wallMs": 3188.1
+        },
+        {
+          "file": "11593450817032542587.wav",
+          "text": "The Sundarbans are the largest littoral mangrove belt in the world stretching 80 km/50 miles into the Bangladeshi and Indian hinterland from the coast.",
+          "decodeMs": 3274,
+          "wallMs": 3287.6
+        },
+        {
+          "file": "3927163358777802368.wav",
+          "text": "Researchers from Princeton University in the United States and Uppsala University in Sweden reported the new species evolved in just two generations, though this process has been to take much longer due to the breeding between an endemic Darwin finch, Geospisa fortis, and the immigrant cactus finch, Geospisa conirostris.",
+          "decodeMs": 4140,
+          "wallMs": 4161.5
+        },
+        {
+          "file": "16824485789160047135.wav",
+          "text": "Australia's Mitchell Gorley finished eleventh in the men's standing Super-G. Czech competitor Uldrich Delenik finished sixteenth in the men's sitting Super-G.",
+          "decodeMs": 3452,
+          "wallMs": 3467.6
+        },
+        {
+          "file": "14993919225529607964.wav",
+          "text": "Australia's Mitchell Gowery finished eleventh in the men's standing Super-G, Chets competitor Ulrich Joklin finished sixteenth in the men's sitting Super-G.",
+          "decodeMs": 3529,
+          "wallMs": 3550.8
+        },
+        {
+          "file": "11705046490861852963.wav",
+          "text": "First, most riders wearing riding boots with a heel and a smooth, quite narrow sole.",
+          "decodeMs": 2811,
+          "wallMs": 2824.3
+        },
+        {
+          "file": "559615000143317446.wav",
+          "text": "First, most riders were riding boots with the heel and a smooth, quite, narrow sole.",
+          "decodeMs": 2648,
+          "wallMs": 2654.8
+        },
+        {
+          "file": "18320871674783850842.wav",
+          "text": "Hong Kong Island gives the territory of Hong Kong its name and is a place that many tourists regard as the main focus.",
+          "decodeMs": 2830,
+          "wallMs": 2837.8
+        },
+        {
+          "file": "5907599423488165658.wav",
+          "text": "Hong Kong Island gives the territory of Hong Kong its name and is a place that many tourists regard as the main focus.",
+          "decodeMs": 2900,
+          "wallMs": 2913.1
+        },
+        {
+          "file": "3502277023574363012.wav",
+          "text": "Brides are made up of one to three related adult males, along with as many as 30 females and cubs.",
+          "decodeMs": 2771,
+          "wallMs": 2781
+        },
+        {
+          "file": "15592925372393530543.wav",
+          "text": "Prides are made up of one to three related adult males, along with as many as thirty females, and cubs.",
+          "decodeMs": 2786,
+          "wallMs": 2793.1
+        },
+        {
+          "file": "17087438879836851456.wav",
+          "text": "Leighton had asked for changes to the Conservatives' environmental bill during the meeting with the PM, asking for a thorough and complete rewriting of the Conservatives' Party environmental bill.",
+          "decodeMs": 3274,
+          "wallMs": 3284.9
+        },
+        {
+          "file": "6507390080013738113.wav",
+          "text": "Leighton had asked for changes to the Conservative's environmental bill during the meeting with the PM, asking for a thorough and complete rewriting of the Conservative Party's environmental bill.",
+          "decodeMs": 3345,
+          "wallMs": 3362.5
+        },
+        {
+          "file": "1605300975319497622.wav",
+          "text": "Vatican City population is around 800. It is the smallest independent country in the world, and the country with the lowest population.",
+          "decodeMs": 3042,
+          "wallMs": 3052.9
+        },
+        {
+          "file": "11265842188315045636.wav",
+          "text": "Vatican City population is around 800. It is the smallest independent country in the world, and the population",
+          "decodeMs": 3062,
+          "wallMs": 3080.3
+        },
+        {
+          "file": "7587276269543309929.wav",
+          "text": "In the warm climate of the Middle East, the house was not so important.",
+          "decodeMs": 2657,
+          "wallMs": 2663.9
+        },
+        {
+          "file": "4838660681321542582.wav",
+          "text": "In the warm climate of the Middle East, the house was not so important.",
+          "decodeMs": 2689,
+          "wallMs": 2699.1
+        },
+        {
+          "file": "8324220666349639753.wav",
+          "text": "This seems sensible, because the Earth doesn't feel as if it's moving, does it?",
+          "decodeMs": 2665,
+          "wallMs": 2671.9
+        },
+        {
+          "file": "3529855487992513201.wav",
+          "text": "This seems sensible, because the Earth doesn't feel as if it's moving, does it?",
+          "decodeMs": 2702,
+          "wallMs": 2709.4
+        },
+        {
+          "file": "5407053594615190090.wav",
+          "text": "Ancient China had a unique way of showing different time periods. Each stage of China or each family that was in power was a distinctive dynasty.",
+          "decodeMs": 3158,
+          "wallMs": 3171.9
+        },
+        {
+          "file": "7366992441583559574.wav",
+          "text": "Ancient China had a unique way of showing different periods. Each stage of China, or each family that was in power, was a distinctive dynasty.",
+          "decodeMs": 3093,
+          "wallMs": 3106.5
+        },
+        {
+          "file": "10861831846737909528.wav",
+          "text": "In the north, the region is bounded by the Sahel, and in the south and west by the Atlantic Ocean.",
+          "decodeMs": 2926,
+          "wallMs": 2941
+        },
+        {
+          "file": "6656552880161745727.wav",
+          "text": "In the north, the region is bounded by the Sahel, and in the south and west by the Atlantic Ocean.",
+          "decodeMs": 2809,
+          "wallMs": 2819.5
+        },
+        {
+          "file": "8268356342449509719.wav",
+          "text": "Deval, who was married to two adult children, did not leave a big impression on Miller, to whom the story was related.",
+          "decodeMs": 2983,
+          "wallMs": 2996.6
+        },
+        {
+          "file": "17737260257548671107.wav",
+          "text": "Duval, who was married with two adult children, did not leave a big impression on Miller, to whom the story was related.",
+          "decodeMs": 2828,
+          "wallMs": 2836.8
+        },
+        {
+          "file": "6354316372780583820.wav",
+          "text": "Although AI has a strong connotation of science fiction, AI forms a very important branch of computer science dealing with behavior learning and intelligent adaptation in the machine.",
+          "decodeMs": 3249,
+          "wallMs": 3268.4
+        },
+        {
+          "file": "7053482366261158.wav",
+          "text": "Although AI has a strong connotation of science fiction, AI forms a very important branch of computer science dealing with behavior, learning, and intelligent adaptation in a machine.",
+          "decodeMs": 3423,
+          "wallMs": 3445.7
+        },
+        {
+          "file": "5433314566767233828.wav",
+          "text": "After the accident occurred, Gibson was transported to a hospital but died shortly afterwards.",
+          "decodeMs": 2697,
+          "wallMs": 2705.1
+        },
+        {
+          "file": "2786302614981736925.wav",
+          "text": "People now write messages on computer screens never having to come close to a sharpener.",
+          "decodeMs": 2716,
+          "wallMs": 2724.6
+        },
+        {
+          "file": "2381187994276969930.wav",
+          "text": "People now write messages on computer screens, never having to come close to a sharpener.",
+          "decodeMs": 2819,
+          "wallMs": 2831.1
+        },
+        {
+          "file": "12381237049043414166.wav",
+          "text": "Muhammad was deeply interested in matters beyond this mundane life. He used to frequent a cave that became known as Hera on the mountain of Nor, light, for contemplation.",
+          "decodeMs": 3260,
+          "wallMs": 3272
+        },
+        {
+          "file": "1876924768395363851.wav",
+          "text": "Muhammad was deeply interested in matters beyond his mundane life. He used to frequent a cave that became known as Hira on the mountain of Nurte for contemplation.",
+          "decodeMs": 3433,
+          "wallMs": 3449.2
+        },
+        {
+          "file": "5657427923960079748.wav",
+          "text": "Some people thought he was right, but many people believed the opposite <unk> that the solar system moved around the Earth, including the Sun, and even the other stars.",
+          "decodeMs": 3022,
+          "wallMs": 3030.5
+        },
+        {
+          "file": "837008417921522673.wav",
+          "text": "Some people thought he was right, but many people believed the opposite: that the solar system moved around the Earth, including the Sun and even other stars.",
+          "decodeMs": 2988,
+          "wallMs": 2999.4
+        },
+        {
+          "file": "1944915261206096046.wav",
+          "text": "Swirl the two dry powders together and then with clean wet hands squeeze them into a ball.",
+          "decodeMs": 2742,
+          "wallMs": 2750.4
+        },
+        {
+          "file": "13031516147694203229.wav",
+          "text": "Swirl the two dry powers together and then with clean wet hands squeeze them into a ball.",
+          "decodeMs": 2846,
+          "wallMs": 2858.9
+        },
+        {
+          "file": "14076834086577911298.wav",
+          "text": "When all available resources are effectively used across the functional departments of an organization, creativity and ingenuity can transpire.",
+          "decodeMs": 2910,
+          "wallMs": 2921.7
+        },
+        {
+          "file": "13130060533227294993.wav",
+          "text": "The moisture on your hands will react with the outer layers, which will feel funny, and form a sort of shell.",
+          "decodeMs": 2800,
+          "wallMs": 2808.4
+        },
+        {
+          "file": "11987168412167267165.wav",
+          "text": "The moisture on your hands will react with the outer layers, which will feel funny, and form a sort of shell.",
+          "decodeMs": 2812,
+          "wallMs": 2822.1
+        },
+        {
+          "file": "15667010054869079797.wav",
+          "text": "During this period of European history, the Catholic Church, which had become rich and powerful, came under scrutiny.",
+          "decodeMs": 2927,
+          "wallMs": 2937.8
+        },
+        {
+          "file": "1116401173651214130.wav",
+          "text": "During this period of European history, the Catholic Church, which had become rich and powerful, came under scrutiny.",
+          "decodeMs": 2950,
+          "wallMs": 2962.5
+        },
+        {
+          "file": "17257800930548614745.wav",
+          "text": "In the archipelagos and lakes you do not necessarily need a yacht.",
+          "decodeMs": 2661,
+          "wallMs": 2670.8
+        },
+        {
+          "file": "7546471028199266685.wav",
+          "text": "In the archipelagos and lakes you do not necessarily need a yacht.",
+          "decodeMs": 2657,
+          "wallMs": 2674.5
+        },
+        {
+          "file": "3362263413020550013.wav",
+          "text": "In particular, it is claimed that one can detect whether a person is lying by interpreting micro-expressions correctly.",
+          "decodeMs": 2792,
+          "wallMs": 2801.6
+        },
+        {
+          "file": "13029464143980259888.wav",
+          "text": "In particular, it is claimed that one can detect whether a person is lying by interpreting micro-expressions correctly.",
+          "decodeMs": 2739,
+          "wallMs": 2746.2
+        },
+        {
+          "file": "7489324500816890474.wav",
+          "text": "During the struggle for independence organized by the Mao movement, a peaceful gathering in the town resulted in the killing of Paramount chief Tupa Tubutsiya III.",
+          "decodeMs": 3239,
+          "wallMs": 3253.6
+        },
+        {
+          "file": "2642023010607031328.wav",
+          "text": "During the struggle for independence organized by the Mao movement, a peaceful gathering in the town resulted in the killing of the Paramount chief, Tupua Tomasese Leolofi III.",
+          "decodeMs": 3304,
+          "wallMs": 3317.4
+        },
+        {
+          "file": "10323357556845456822.wav",
+          "text": "The Northern Mariana's Emergency Management Office said that there were no damages reported in the nation.",
+          "decodeMs": 2942,
+          "wallMs": 2953.2
+        },
+        {
+          "file": "8491962032427728850.wav",
+          "text": "The Northern Marianas Emergency Management Office said that there were no damages reported in the nation.",
+          "decodeMs": 3015,
+          "wallMs": 3027.1
+        },
+        {
+          "file": "221216034074176262.wav",
+          "text": "Segregation and recombination shuffle variation back and forth between the two pools with each generation.",
+          "decodeMs": 2862,
+          "wallMs": 2876.5
+        },
+        {
+          "file": "13888599635337906526.wav",
+          "text": "Segregation and recombination shuffle variation back and forth between the two pools with each generation.",
+          "decodeMs": 2923,
+          "wallMs": 2935.2
+        },
+        {
+          "file": "4103166808026076685.wav",
+          "text": "He added that they should not, however, be asked to take on obligations that go beyond their development stage, responsibility, and capabilities.",
+          "decodeMs": 3061,
+          "wallMs": 3075.7
+        },
+        {
+          "file": "14805661830607478688.wav",
+          "text": "He added they should not, however, be asked to take on obligations that go beyond their development stage, responsibility, and capabilities.",
+          "decodeMs": 3145,
+          "wallMs": 3161.6
+        },
+        {
+          "file": "8395660467583137383.wav",
+          "text": "Regional and seasonal severe weather phenomena include blizzards, storms, ice storms, and dust storms.",
+          "decodeMs": 2855,
+          "wallMs": 2863.4
+        },
+        {
+          "file": "8582392026322819617.wav",
+          "text": "Regional and seasonal severe weather phenomena include blizzards, snowstorms, ice storms, and dust storms.",
+          "decodeMs": 2847,
+          "wallMs": 2855.1
+        },
+        {
+          "file": "8398257681626621326.wav",
+          "text": "Dr. Millar Balasubrahman 29 was found in Blue Ash, Ohio, a suburb approximately 15 miles north of Cincinnati, lying on the ground beside the road in a t-shirt and underwear, in apparently heavily medicated state.",
+          "decodeMs": 3607,
+          "wallMs": 3623.3
+        }
+      ],
+      "status": "measured",
+      "longForm": [
+        {
+          "label": "60s",
+          "audioSec": 68.82,
+          "utterances": [
+            "9055240296608129734.wav",
+            "621925716775998155.wav",
+            "2589557553267364799.wav",
+            "15618717836108767541.wav",
+            "2652155470394119415.wav",
+            "18066939864018796519.wav",
+            "1596269393232229615.wav",
+            "2637301866626572038.wav"
+          ],
+          "decodeMs": 9065,
+          "decodeRtf": 0.13172043010752688,
+          "wer": 0.018518518518518517,
+          "wordRatio": 1,
+          "text": "Unfortunately, studying traffic flow is difficult because driver behavior cannot be predicted with 100% certainty. Twentieth century research has shown that there are two pools of genetic variation, hidden and expressed. Remember that even though music on the main stages may have finished, there may be sections of the festival that will keep playing music until late into the night. Police Superintendent Chandra Shikar Solanke said that accused appeared in court with covered faces. The term bug is used by entomologists in a formal sense for this group of insects. Popular sports include football, basketball, volleyball, water polo, fencing, rugby, cycling, ice hockey, roller hockey, and F1 motor racing. Bishkek was described as sinking into a state of anarchy by one observer as gangs of people roamed the streets and plundered stores of consumer goods. During the Revolutionary War, the 13 states first formed a weak central government, with the Congress being its only component under the Articles of Confederation."
+        },
+        {
+          "label": "300s",
+          "audioSec": 310.92,
+          "utterances": [
+            "9055240296608129734.wav",
+            "621925716775998155.wav",
+            "2589557553267364799.wav",
+            "15618717836108767541.wav",
+            "2652155470394119415.wav",
+            "18066939864018796519.wav",
+            "1596269393232229615.wav",
+            "2637301866626572038.wav",
+            "18080893208509673354.wav",
+            "13230261475791184258.wav",
+            "10492135991603561867.wav",
+            "6817878979697223927.wav",
+            "10197164397713068203.wav",
+            "5606750157981126233.wav",
+            "283614893570272908.wav",
+            "9431561488681290113.wav",
+            "5505398583576174352.wav",
+            "6917907748364342404.wav",
+            "16851035292487940942.wav",
+            "6852813781354643345.wav",
+            "11536232800365538941.wav",
+            "3927163358777802368.wav",
+            "16824485789160047135.wav",
+            "11705046490861852963.wav",
+            "18320871674783850842.wav",
+            "3502277023574363012.wav",
+            "17087438879836851456.wav",
+            "11265842188315045636.wav",
+            "4838660681321542582.wav",
+            "8324220666349639753.wav",
+            "6656552880161745727.wav",
+            "17737260257548671107.wav",
+            "5433314566767233828.wav",
+            "2786302614981736925.wav",
+            "12381237049043414166.wav"
+          ],
+          "error": "engine process exited",
+          "wer": 1,
+          "wordRatio": 0
+        }
+      ],
+      "otherRun": {
+        "pattern": "bench-cleanup|eval-cleanup",
+        "samples": 33,
+        "hits": 0,
+        "unknown": 0,
+        "active": false
+      },
+      "loadavgAfter": [
+        10.68,
+        13.02,
+        16.89
+      ],
+      "quietWait": null,
+      "contended": true,
+      "measureAttempts": [
+        {
+          "contended": true,
+          "decodeRtf": 0.3140578922050489,
+          "otherRun": {
+            "pattern": "bench-cleanup|eval-cleanup",
+            "samples": 33,
+            "hits": 0,
+            "unknown": 0,
+            "active": false
+          },
+          "loadavgBefore": [
+            8.96,
+            18.25,
+            19.65
+          ],
+          "loadavgAfter": [
+            10.68,
+            13.02,
+            16.89
+          ]
+        }
+      ],
+      "measuredWith": {
+        "gitHead": "22635b1c7e18ab9d9f330729b1a3d9c636e2a9ab",
+        "measuringCode": "710af85038ec6ac034df988fd48cd3db8d8cf62e33f5eb75bfbcd51c3324b1f4"
+      }
+    },
+    {
+      "id": "parakeet-tdt-0.6b-v3",
+      "label": "Large \u00b7 Parakeet TDT 0.6B v3 (multilingual, full precision)",
+      "role": "baseline",
+      "arm": "shipped",
+      "path": "worker",
+      "downloadMs": 24658,
+      "files": [
+        {
+          "name": "encoder.onnx",
+          "bytes": 41766257,
+          "sha256": "3eed7ce424bf8339ad09233533c687e2dbd07e74ccf5027b5e7344019ea373b0",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/encoder.onnx"
+        },
+        {
+          "name": "encoder.weights",
+          "bytes": 2435420160,
+          "sha256": "3af3f51af5f2d01dbbf5af47d42c7962a2c205f11004254bb4f2b979862f39a8",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/encoder.weights"
+        },
+        {
+          "name": "decoder.onnx",
+          "bytes": 47233743,
+          "sha256": "d593cdb0e571f5a457ec2219af9968cbf6b0e8198e8f7839b40a8754593bf68c",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/decoder.onnx"
+        },
+        {
+          "name": "joiner.onnx",
+          "bytes": 25286330,
+          "sha256": "b9b0bcf88ac571902e69a6536223ed2d94885e981b85045410f1403d53121a63",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/joiner.onnx"
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 93939,
+          "sha256": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/tokens.txt"
+        }
+      ],
+      "bytes": 2549800429,
+      "loadavgBefore": [
+        7.29,
+        12.04,
+        16.46
+      ],
+      "coldLoadWallMs": 3027,
+      "numThreads": 8,
+      "provider": "cpu",
+      "firstDecodeMs": 408,
+      "firstDecodeRtf": 0.032278481012658226,
+      "deterministic": true,
+      "emptyRate": 0,
+      "decodeRtf": 0.031065818919540716,
+      "p50Rtf": 0.030938123752495012,
+      "p95Rtf": 0.036170212765957444,
+      "wallRtf": 0.03246226693472487,
+      "decodeSec": 29.707,
+      "audioSec": 956.2599999999999,
+      "errors": 112,
+      "ref": 2196,
+      "sub": 88,
+      "del": 23,
+      "ins": 1,
+      "werNorm": 0.051001821493624776,
+      "werNormMeanUtt": 0.046691689902227614,
+      "werVerbatim": 0.12720519962859797,
+      "werNormClean": 0.05023696682464455,
+      "perUtteranceErrors": [
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        3,
+        2,
+        0,
+        0,
+        0,
+        0,
+        4,
+        2,
+        0,
+        0,
+        1,
+        2,
+        3,
+        3,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        2,
+        1,
+        1,
+        1,
+        1,
+        0,
+        1,
+        1,
+        1,
+        1,
+        3,
+        3,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        8,
+        4,
+        9,
+        1,
+        2,
+        1,
+        1,
+        1,
+        1,
+        2,
+        1,
+        1,
+        5,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        3,
+        2,
+        1,
+        0,
+        0,
+        0,
+        0,
+        2,
+        2,
+        0,
+        1,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        7,
+        5,
+        1,
+        0,
+        0,
+        0,
+        0,
+        3,
+        1,
+        0,
+        1
+      ],
+      "punctuationRate": 1,
+      "capitalisationRate": 0.99,
+      "hesitationsPer1000Words": 0,
+      "decodes": [
+        {
+          "file": "12741024238657315067.wav",
+          "text": "Unfortunately, studying traffic flow is difficult because driver's behavior cannot be predicted with 100 percent certainty.",
+          "decodeMs": 378,
+          "wallMs": 395.3
+        },
+        {
+          "file": "9055240296608129734.wav",
+          "text": "Unfortunately, studying traffic flow is difficult because driver's behavior cannot be predicted with 100 percent certainty.",
+          "decodeMs": 241,
+          "wallMs": 251.6
+        },
+        {
+          "file": "621925716775998155.wav",
+          "text": "20th-century research has shown that there are two pools of genetic variation - hidden and expressed.",
+          "decodeMs": 207,
+          "wallMs": 214
+        },
+        {
+          "file": "10335587906469246566.wav",
+          "text": "Twentieth century research has shown that there are two pools of genetic variation hidden and expressed.",
+          "decodeMs": 227,
+          "wallMs": 237.1
+        },
+        {
+          "file": "2589557553267364799.wav",
+          "text": "Remember that even though music on the main stages may have finished, there may be sections of the festival that will keep playing music until late into the night.",
+          "decodeMs": 289,
+          "wallMs": 301.8
+        },
+        {
+          "file": "17824557748066874904.wav",
+          "text": "Remember that even though music on the main stages may have finished, there may be sections of the festival that will keep playing music until late into the night.",
+          "decodeMs": 339,
+          "wallMs": 357
+        },
+        {
+          "file": "8173060820032255320.wav",
+          "text": "Police Superintendent Shanra Shankhar Solansky said the accused appeared in court with covered faces.",
+          "decodeMs": 307,
+          "wallMs": 318.1
+        },
+        {
+          "file": "15618717836108767541.wav",
+          "text": "Police Superintendent Chandra Shikar Salawki said the accused appeared in court with covered faces.",
+          "decodeMs": 278,
+          "wallMs": 288.8
+        },
+        {
+          "file": "2652155470394119415.wav",
+          "text": "The term bug is used by entomologists in a formal sense for this group of insects.",
+          "decodeMs": 227,
+          "wallMs": 235.3
+        },
+        {
+          "file": "14585898865749103727.wav",
+          "text": "The term bug is used by entomologists in a formal sense for this group of insects.",
+          "decodeMs": 206,
+          "wallMs": 213.5
+        },
+        {
+          "file": "18066939864018796519.wav",
+          "text": "Popular sports include football, basketball, volleyball, water polo, fencing, rugby, cycling, ice hockey, roller hockey and F1 motor racing.",
+          "decodeMs": 323,
+          "wallMs": 334.8
+        },
+        {
+          "file": "15648812079343683412.wav",
+          "text": "Popular sports include football, basketball, volleyball, water polo fencing, rugby, cycling, ice hockey, roller hockey, and F1 motor racing.",
+          "decodeMs": 306,
+          "wallMs": 320.1
+        },
+        {
+          "file": "16847628585853049714.wav",
+          "text": "You can use BotaBoda more cycle taxi to get around Goma, the normal local price is 500 Cangolese francs for the short ride.",
+          "decodeMs": 394,
+          "wallMs": 413.7
+        },
+        {
+          "file": "8756381645087147947.wav",
+          "text": "You can use Boda Boda motorcycle taxi to get around Goma, the normal local price is 500 kantalys France for the short ride.",
+          "decodeMs": 361,
+          "wallMs": 378.6
+        },
+        {
+          "file": "1596269393232229615.wav",
+          "text": "Bishkek was described as sinking into a state of anarchy by one observer as gangs of people roamed the streets and plundered stores of consumer goods.",
+          "decodeMs": 293,
+          "wallMs": 306
+        },
+        {
+          "file": "16355757648693617724.wav",
+          "text": "Bishkek was described as sinking into a state of anarchy by one observer, as gangs of people roamed the streets and plundered stores of consumer goods.",
+          "decodeMs": 273,
+          "wallMs": 288.6
+        },
+        {
+          "file": "2637301866626572038.wav",
+          "text": "During the Revolutionary War, the thirteen states first formed a weak central government with Congress being its only component under the Articles of confederation.",
+          "decodeMs": 308,
+          "wallMs": 322
+        },
+        {
+          "file": "2939761992885557861.wav",
+          "text": "During the Revolutionary War, the thirteen states first formed a weak central government. Congress being its only component under the Articles of confederation.",
+          "decodeMs": 321,
+          "wallMs": 336.6
+        },
+        {
+          "file": "1722118868151836971.wav",
+          "text": "Current Senator and Argentine First Lady Crist\u00e1nde de Kirchner announced her presidential candidacy yesterday evening in La Plata, a city 50 km 31 miles away from Buenos Aires.",
+          "decodeMs": 568,
+          "wallMs": 593.8
+        },
+        {
+          "file": "18080893208509673354.wav",
+          "text": "Current Senator and Argentinian First Lady Christina Fernandez de Kirchner announced her presidential candidacy yesterday evening in La Plata, a city 50 km 31 miles away from Buenos Aires.",
+          "decodeMs": 355,
+          "wallMs": 372.4
+        },
+        {
+          "file": "13230261475791184258.wav",
+          "text": "The governor's office and nineteen of the injured were police officers.",
+          "decodeMs": 165,
+          "wallMs": 171.9
+        },
+        {
+          "file": "12164368102080603077.wav",
+          "text": "The governor's office said 19 of the injured were police officers.",
+          "decodeMs": 226,
+          "wallMs": 236.7
+        },
+        {
+          "file": "5106380017322065030.wav",
+          "text": "However, that is not true. Although there is something written on the back of the document, it is not a treasure map.",
+          "decodeMs": 277,
+          "wallMs": 289.3
+        },
+        {
+          "file": "1618638950277648344.wav",
+          "text": "However that is not true. Although there is something written on the back of the document, it is not a treasure map.",
+          "decodeMs": 310,
+          "wallMs": 323.8
+        },
+        {
+          "file": "10492135991603561867.wav",
+          "text": "In some areas, boiling water for a minute is enough and others several minutes are needed.",
+          "decodeMs": 206,
+          "wallMs": 215.2
+        },
+        {
+          "file": "2254021119996292300.wav",
+          "text": "In some areas boiling water for a minute is enough in others several minutes are needed.",
+          "decodeMs": 219,
+          "wallMs": 229
+        },
+        {
+          "file": "6817878979697223927.wav",
+          "text": "All nouns alongside the word c for u always begin with a capital letter even in the middle of a sentence.",
+          "decodeMs": 228,
+          "wallMs": 238.5
+        },
+        {
+          "file": "10052240106321793346.wav",
+          "text": "All nouns alongside the word say for you always begin with a capital letter even in the middle of a sentence.",
+          "decodeMs": 268,
+          "wallMs": 280.1
+        },
+        {
+          "file": "10197164397713068203.wav",
+          "text": "The cabbage juice changes color depending on how acidic, basic alkaline the chemical is.",
+          "decodeMs": 207,
+          "wallMs": 215.8
+        },
+        {
+          "file": "13006273800980159403.wav",
+          "text": "The cabbage juice changes colors depending on how acidic or basic alkaline the chemical is.",
+          "decodeMs": 220,
+          "wallMs": 229.7
+        },
+        {
+          "file": "1218355507714944126.wav",
+          "text": "In its early days, the show was featured solely at the long-running Internet radio site, TokiNet Radio, a site focused on talk radio.",
+          "decodeMs": 401,
+          "wallMs": 420.2
+        },
+        {
+          "file": "5606750157981126233.wav",
+          "text": "In its early days, the show was featured solely at the long-running internet radio site TogiNet Radio, a site focused on talk radio.",
+          "decodeMs": 340,
+          "wallMs": 356.1
+        },
+        {
+          "file": "283614893570272908.wav",
+          "text": "Four skiers in the women's sitting group failed to finish their runs and 45 of the 117 total skiers in the giant silent failed to rank in the race.",
+          "decodeMs": 249,
+          "wallMs": 260.3
+        },
+        {
+          "file": "4498797456222901763.wav",
+          "text": "Four skiers in the women's sitting group failed to finish their runs and 45 of the 117 total skiers in the Giant Salam failed to rank in the race.",
+          "decodeMs": 400,
+          "wallMs": 420.2
+        },
+        {
+          "file": "4496786334735634498.wav",
+          "text": "Apia is the capital of Samoa, the town is on the island of UpLut and has a population of just under 40,000.",
+          "decodeMs": 339,
+          "wallMs": 354.6
+        },
+        {
+          "file": "9431561488681290113.wav",
+          "text": "Apia is the capital of Samoa, the town is on the island of Opolu and has a population of just under 40,000.",
+          "decodeMs": 295,
+          "wallMs": 309.5
+        },
+        {
+          "file": "5505398583576174352.wav",
+          "text": "Harry stated that he would return to Texas to assess the results of tonight's caucus, determine whether a path forward for myself in this race. But later said that he would remain in the race and compete in the January 21 South Carolina primary.",
+          "decodeMs": 412,
+          "wallMs": 430.2
+        },
+        {
+          "file": "2467414061703477879.wav",
+          "text": "Perry stated that he would return to Texas to assess the results of tonight's caucus, determine whether there is a path forward for myself in this race, Bellard said he would remain in the race and compete in the January 21 South Carolina primary.",
+          "decodeMs": 416,
+          "wallMs": 435.8
+        },
+        {
+          "file": "6917907748364342404.wav",
+          "text": "He did not set a figure for the cuts saying they will be made based on China's economic output.",
+          "decodeMs": 225,
+          "wallMs": 234.3
+        },
+        {
+          "file": "8546403500877190903.wav",
+          "text": "He did not set a figure for the cuts saying they will be made based on China's economic output.",
+          "decodeMs": 225,
+          "wallMs": 234.8
+        },
+        {
+          "file": "16851035292487940942.wav",
+          "text": "After the dam was built in 1963, the seasonal floods that would spread sediment throughout the river were halted.",
+          "decodeMs": 213,
+          "wallMs": 223.4
+        },
+        {
+          "file": "1633905380187706594.wav",
+          "text": "After the dam was built in 1963, the seasonal floods that would spread sediment throughout the river were halted.",
+          "decodeMs": 279,
+          "wallMs": 292.7
+        },
+        {
+          "file": "6852813781354643345.wav",
+          "text": "Its long jaws were studded with more than 70 razor sharp teeth, along with an extra set in the roof of its mouth, meaning that it was no escape for anything that crossed its path.",
+          "decodeMs": 336,
+          "wallMs": 351.7
+        },
+        {
+          "file": "3585583328394597156.wav",
+          "text": "Its long jaws were studded with more than 70 razor sharp teeth along with an extra set in the roof of its mouth, meaning that there was no escape or anything that crossed its path.",
+          "decodeMs": 480,
+          "wallMs": 503.1
+        },
+        {
+          "file": "11536232800365538941.wav",
+          "text": "The Sundarbans are the largest littoral mangrove belt in the world stretching 80 km 50 miles into the Bangladeshi and Indian hinterland from the coast.",
+          "decodeMs": 316,
+          "wallMs": 331.5
+        },
+        {
+          "file": "11593450817032542587.wav",
+          "text": "The Sundarbans are the largest littoral mangrove belt in the world stretching 80 km 50 miles into the Bangladeshi and Indian hinterland from the coast.",
+          "decodeMs": 362,
+          "wallMs": 379.8
+        },
+        {
+          "file": "3927163358777802368.wav",
+          "text": "Researchers from Princeton University in the United States and Upsala University in Sweden reported the new species evolved in just two generations, though this process has been to take much longer due to the breeding between an endemic Darwin Finch, Jospisa Forces, and the immigrant cactus Finch Geospisa Kanistris.",
+          "decodeMs": 609,
+          "wallMs": 636.4
+        },
+        {
+          "file": "16824485789160047135.wav",
+          "text": "Australia's Michael Gorley finished 11th in the men's standing super G Czech competitor Udrich Dillonek finished sixteenth in the Men's Sitting Super G.",
+          "decodeMs": 432,
+          "wallMs": 452.1
+        },
+        {
+          "file": "14993919225529607964.wav",
+          "text": "Australia's Michael Gowry finished 11th in the men's Standing Supergy's Jet's competitor Orich Jutland finished sixteenth in the men's sitting SuperG.",
+          "decodeMs": 468,
+          "wallMs": 489.9
+        },
+        {
+          "file": "11705046490861852963.wav",
+          "text": "First, most riders wearing riding boots with a heel and a smooth, quite narrow sole.",
+          "decodeMs": 264,
+          "wallMs": 276
+        },
+        {
+          "file": "559615000143317446.wav",
+          "text": "First, most riders were riding boots with a heel on a smooth, quite narrow sole.",
+          "decodeMs": 167,
+          "wallMs": 174.8
+        },
+        {
+          "file": "18320871674783850842.wav",
+          "text": "Hong Kong Island gives the territory of Hong Kong its name and is a place that many tourists regard as the main focus.",
+          "decodeMs": 221,
+          "wallMs": 231.8
+        },
+        {
+          "file": "5907599423488165658.wav",
+          "text": "Hong Kong Island gives the territory of Hong Kong its name and is a place that many tourists regard as the main focus.",
+          "decodeMs": 276,
+          "wallMs": 289.4
+        },
+        {
+          "file": "3502277023574363012.wav",
+          "text": "Brides are made up of one to three related adult males, along with as many as 30 females and cubs.",
+          "decodeMs": 216,
+          "wallMs": 226.1
+        },
+        {
+          "file": "15592925372393530543.wav",
+          "text": "Prides are made up of 1-3 related adult males, along with as many as 30 females and cubs.",
+          "decodeMs": 230,
+          "wallMs": 239.7
+        },
+        {
+          "file": "17087438879836851456.wav",
+          "text": "Leighton had asked for changes to the Conservatives' environmental bill during the meeting with the PM asking for a thorough and complete rewriting of the Conservatives' Party's environmental bill.",
+          "decodeMs": 314,
+          "wallMs": 328
+        },
+        {
+          "file": "6507390080013738113.wav",
+          "text": "Layton had asked for changes to the conservative environmental bill during the meeting with the PM, asking for a thorough and complete rewriting of the conservative party's environmental bill.",
+          "decodeMs": 341,
+          "wallMs": 357.7
+        },
+        {
+          "file": "1605300975319497622.wav",
+          "text": "Vatican City population is around 800. It is the smallest independent country in the world, and the country with the lowest population.",
+          "decodeMs": 300,
+          "wallMs": 314
+        },
+        {
+          "file": "11265842188315045636.wav",
+          "text": "Vatican City population is around 800. It is the smallest independent country in the world and the population.",
+          "decodeMs": 321,
+          "wallMs": 336.5
+        },
+        {
+          "file": "7587276269543309929.wav",
+          "text": "In the warm climate of the Middle East, the house was not so important.",
+          "decodeMs": 202,
+          "wallMs": 210.2
+        },
+        {
+          "file": "4838660681321542582.wav",
+          "text": "In the warm climate of the Middle East, the house was not so important.",
+          "decodeMs": 216,
+          "wallMs": 226.6
+        },
+        {
+          "file": "8324220666349639753.wav",
+          "text": "This seems sensible, because the earth doesn't feel as if it's moving, does it?",
+          "decodeMs": 175,
+          "wallMs": 181.5
+        },
+        {
+          "file": "3529855487992513201.wav",
+          "text": "This seems sensible because the earth doesn't feel as if it's moving, does it?",
+          "decodeMs": 204,
+          "wallMs": 210.6
+        },
+        {
+          "file": "5407053594615190090.wav",
+          "text": "Ancient China had a unique way of showing different time periods. Each stage of China or each family that was in power was a distinctive dynasty.",
+          "decodeMs": 374,
+          "wallMs": 388.8
+        },
+        {
+          "file": "7366992441583559574.wav",
+          "text": "Ancient China had a unique way of showing different periods. Each stage of China or each family that was in power was a distinctive dynasty.",
+          "decodeMs": 348,
+          "wallMs": 361.7
+        },
+        {
+          "file": "10861831846737909528.wav",
+          "text": "In the north, the region is bounded by the Sahel, and in the south and west by the Atlantic Ocean.",
+          "decodeMs": 274,
+          "wallMs": 284.3
+        },
+        {
+          "file": "6656552880161745727.wav",
+          "text": "In the north, the region is bounded by the Sahel, and in the south and west by the Atlantic Ocean.",
+          "decodeMs": 225,
+          "wallMs": 233
+        },
+        {
+          "file": "8268356342449509719.wav",
+          "text": "Deval, who was married to two adult children, did not leave a big impression on Miller to whom the story was related.",
+          "decodeMs": 295,
+          "wallMs": 304.7
+        },
+        {
+          "file": "17737260257548671107.wav",
+          "text": "Deval, who was married with two adult children, did not leave a big impression on Miller, to whom the story was related.",
+          "decodeMs": 226,
+          "wallMs": 235.3
+        },
+        {
+          "file": "6354316372780583820.wav",
+          "text": "Although AI has a strong connotation of science fiction, AI forms a very important branch of computer science dealing with behavior learning and intelligent adaptation in the machine.",
+          "decodeMs": 395,
+          "wallMs": 415.7
+        },
+        {
+          "file": "7053482366261158.wav",
+          "text": "Although AI has a strong connotation of science fiction, AI forms a very important branch of computer science dealing with behavior, learning and intelligent adaptation in a machine.",
+          "decodeMs": 477,
+          "wallMs": 501.3
+        },
+        {
+          "file": "5433314566767233828.wav",
+          "text": "After the accident occurred, Gibson was transported to a hospital but died shortly afterwards.",
+          "decodeMs": 201,
+          "wallMs": 222.9
+        },
+        {
+          "file": "2786302614981736925.wav",
+          "text": "People now write messages on computer screens never having to come close to a sharpener.",
+          "decodeMs": 190,
+          "wallMs": 199
+        },
+        {
+          "file": "2381187994276969930.wav",
+          "text": "People now write messages on computer screens, never having to come close to a sharpener.",
+          "decodeMs": 268,
+          "wallMs": 281.1
+        },
+        {
+          "file": "12381237049043414166.wav",
+          "text": "Muhammad was deeply interested in matters beyond this mundane life. He used to frequent a cave that became known as Hera on the Mountain of Nor, light for contemplation.",
+          "decodeMs": 364,
+          "wallMs": 380
+        },
+        {
+          "file": "1876924768395363851.wav",
+          "text": "Muhammad was deeply interested in matters beyond his mundane life. He used to frequent a cave that became known as hera on the mountain of Noor light for contemplation.",
+          "decodeMs": 457,
+          "wallMs": 476.5
+        },
+        {
+          "file": "5657427923960079748.wav",
+          "text": "Some people thought he was right, but many people believed the opposite, that the solar system moved around the Earth, including the Sun, and even the other stars.",
+          "decodeMs": 247,
+          "wallMs": 255.3
+        },
+        {
+          "file": "837008417921522673.wav",
+          "text": "Some people thought he was right, but many people believed the opposite, that the solar system moved around the Earth, including the Sun and even other stars.",
+          "decodeMs": 268,
+          "wallMs": 277.1
+        },
+        {
+          "file": "1944915261206096046.wav",
+          "text": "Swirl the two dry powders together and then with clean wet hands squeeze them into a ball.",
+          "decodeMs": 188,
+          "wallMs": 194.2
+        },
+        {
+          "file": "13031516147694203229.wav",
+          "text": "Swirl the two dry powers together and then with clean wet hands squeeze them into a ball.",
+          "decodeMs": 256,
+          "wallMs": 267.8
+        },
+        {
+          "file": "14076834086577911298.wav",
+          "text": "When all available resources are effectively used across the functional departments of an organization, creativity and ingenuity can transpire.",
+          "decodeMs": 283,
+          "wallMs": 296.2
+        },
+        {
+          "file": "13130060533227294993.wav",
+          "text": "The moisture on your hands will react with the outer layers, which will feel funny, and form a sort of shell.",
+          "decodeMs": 245,
+          "wallMs": 256.8
+        },
+        {
+          "file": "11987168412167267165.wav",
+          "text": "The moisture on your hands will react with the outer layers, which will feel funny and form a sort of shell.",
+          "decodeMs": 277,
+          "wallMs": 288.9
+        },
+        {
+          "file": "15667010054869079797.wav",
+          "text": "During this period of European history the Catholic Church, which had become rich and powerful, came under scrutiny.",
+          "decodeMs": 294,
+          "wallMs": 308.1
+        },
+        {
+          "file": "1116401173651214130.wav",
+          "text": "During this period of European history the Catholic Church, which had become rich and powerful, came under scrutiny.",
+          "decodeMs": 332,
+          "wallMs": 348.9
+        },
+        {
+          "file": "17257800930548614745.wav",
+          "text": "In the archipelagos and lakes you do not necessarily need a yacht.",
+          "decodeMs": 241,
+          "wallMs": 251.4
+        },
+        {
+          "file": "7546471028199266685.wav",
+          "text": "In the archipelagos and lakes, you do not necessarily need a yacht.",
+          "decodeMs": 243,
+          "wallMs": 253.7
+        },
+        {
+          "file": "3362263413020550013.wav",
+          "text": "In particular, it is claimed that one can detect whether a person is lying by interpreting micro-expressions correctly.",
+          "decodeMs": 239,
+          "wallMs": 250.5
+        },
+        {
+          "file": "13029464143980259888.wav",
+          "text": "In particular, it is claimed that one can detect whether a person is lying by interpreting micro-expressions correctly.",
+          "decodeMs": 196,
+          "wallMs": 203.8
+        },
+        {
+          "file": "7489324500816890474.wav",
+          "text": "During the struggle for independence organized by the Mao movement, a peaceful gathering in the town resulted in the killing of Paramont Chief Tutha Tutra III.",
+          "decodeMs": 363,
+          "wallMs": 376.1
+        },
+        {
+          "file": "2642023010607031328.wav",
+          "text": "During the struggle for independence organized by the Mao movement, a peaceful gathering in the town resulted in the killing of the Paramount chief Tutua Thomase Lolaf III.",
+          "decodeMs": 350,
+          "wallMs": 367
+        },
+        {
+          "file": "10323357556845456822.wav",
+          "text": "The Northern Mariana's Emergency Management office said that there were no damages reported in the nation.",
+          "decodeMs": 302,
+          "wallMs": 314.3
+        },
+        {
+          "file": "8491962032427728850.wav",
+          "text": "The Northern Marianas Emergency Management Office said that there were no damages reported in the nation.",
+          "decodeMs": 324,
+          "wallMs": 336.2
+        },
+        {
+          "file": "221216034074176262.wav",
+          "text": "Segregation and recombination shuffle variation back and forth between the two pools with each generation.",
+          "decodeMs": 316,
+          "wallMs": 327.2
+        },
+        {
+          "file": "13888599635337906526.wav",
+          "text": "Segregation and recombination shuffle variation back and forth between the two pools with each generation.",
+          "decodeMs": 313,
+          "wallMs": 324.9
+        },
+        {
+          "file": "4103166808026076685.wav",
+          "text": "He added that they should not however be asked to take on obligations that go beyond their development stage, responsibility and capabilities.",
+          "decodeMs": 298,
+          "wallMs": 308.6
+        },
+        {
+          "file": "14805661830607478688.wav",
+          "text": "He added The Should, however, be asked to take on obligations that go beyond their development stage, responsibility and capabilities.",
+          "decodeMs": 359,
+          "wallMs": 375.7
+        },
+        {
+          "file": "8395660467583137383.wav",
+          "text": "Regional and seasonal severe weather phenomena include blizzards, storms, ice storms, and dust storms.",
+          "decodeMs": 230,
+          "wallMs": 240.3
+        },
+        {
+          "file": "8582392026322819617.wav",
+          "text": "Regional and seasonal severe weather phenomena include blizzards, snowstorms, ice storms, and dust storms.",
+          "decodeMs": 251,
+          "wallMs": 259.6
+        },
+        {
+          "file": "8398257681626621326.wav",
+          "text": "Dr. Malar Balasubraman 29 was found in Blue Ash, Ohio, a suburb, approximately 15 miles north of Cincinnati lying on the ground beside the road in a t-shirt and underwear in an apparently heavily medicated state.",
+          "decodeMs": 427,
+          "wallMs": 447
+        }
+      ],
+      "status": "measured",
+      "longForm": [
+        {
+          "label": "60s",
+          "audioSec": 68.82,
+          "utterances": [
+            "9055240296608129734.wav",
+            "621925716775998155.wav",
+            "2589557553267364799.wav",
+            "15618717836108767541.wav",
+            "2652155470394119415.wav",
+            "18066939864018796519.wav",
+            "1596269393232229615.wav",
+            "2637301866626572038.wav"
+          ],
+          "decodeMs": 2615,
+          "decodeRtf": 0.0379976750944493,
+          "wer": 0.018518518518518517,
+          "wordRatio": 1,
+          "text": "Unfortunately, studying traffic flow is difficult because driver behavior cannot be predicted with 100% certainty. Twentieth century research has shown that there are two pools of genetic variation, hidden and expressed. Remember that even though music on the main stages may have finished, there may be sections of the festival that will keep playing music until late into the night. Police Superintendent Chandra Shikar Solanke said that accused appeared in court with covered faces. The term bug is used by entomologists in a formal sense for this group of insects. Popular sports include football, basketball, volleyball, water polo, fencing, rugby, cycling, ice hockey, roller hockey, and F1 motor racing. Bishkek was described as sinking into a state of anarchy by one observer as gangs of people roamed the streets and plundered stores of consumer goods. During the Revolutionary War, the 13 states first formed a weak central government with the Congress being its only component under the Articles of Confederation."
+        },
+        {
+          "label": "300s",
+          "audioSec": 310.92,
+          "utterances": [
+            "9055240296608129734.wav",
+            "621925716775998155.wav",
+            "2589557553267364799.wav",
+            "15618717836108767541.wav",
+            "2652155470394119415.wav",
+            "18066939864018796519.wav",
+            "1596269393232229615.wav",
+            "2637301866626572038.wav",
+            "18080893208509673354.wav",
+            "13230261475791184258.wav",
+            "10492135991603561867.wav",
+            "6817878979697223927.wav",
+            "10197164397713068203.wav",
+            "5606750157981126233.wav",
+            "283614893570272908.wav",
+            "9431561488681290113.wav",
+            "5505398583576174352.wav",
+            "6917907748364342404.wav",
+            "16851035292487940942.wav",
+            "6852813781354643345.wav",
+            "11536232800365538941.wav",
+            "3927163358777802368.wav",
+            "16824485789160047135.wav",
+            "11705046490861852963.wav",
+            "18320871674783850842.wav",
+            "3502277023574363012.wav",
+            "17087438879836851456.wav",
+            "11265842188315045636.wav",
+            "4838660681321542582.wav",
+            "8324220666349639753.wav",
+            "6656552880161745727.wav",
+            "17737260257548671107.wav",
+            "5433314566767233828.wav",
+            "2786302614981736925.wav",
+            "12381237049043414166.wav"
+          ],
+          "error": "engine process exited",
+          "wer": 1,
+          "wordRatio": 0
+        }
+      ],
+      "otherRun": {
+        "pattern": "bench-cleanup|eval-cleanup",
+        "samples": 5,
+        "hits": 0,
+        "unknown": 0,
+        "active": false
+      },
+      "loadavgAfter": [
+        9.7,
+        12,
+        16.26
+      ],
+      "quietWait": null,
+      "contended": true,
+      "measureAttempts": [
+        {
+          "contended": true,
+          "decodeRtf": 0.031065818919540716,
+          "otherRun": {
+            "pattern": "bench-cleanup|eval-cleanup",
+            "samples": 5,
+            "hits": 0,
+            "unknown": 0,
+            "active": false
+          },
+          "loadavgBefore": [
+            7.29,
+            12.04,
+            16.46
+          ],
+          "loadavgAfter": [
+            9.7,
+            12,
+            16.26
+          ]
+        }
+      ],
+      "measuredWith": {
+        "gitHead": "22635b1c7e18ab9d9f330729b1a3d9c636e2a9ab",
+        "measuringCode": "710af85038ec6ac034df988fd48cd3db8d8cf62e33f5eb75bfbcd51c3324b1f4"
+      }
+    },
+    {
+      "id": "parakeet-tdt-0.6b-v2",
+      "label": "Large \u00b7 Parakeet TDT 0.6B v2 (English only, full precision)",
+      "role": "baseline",
+      "arm": "shipped",
+      "path": "worker",
+      "downloadMs": 26559,
+      "files": [
+        {
+          "name": "encoder.onnx",
+          "bytes": 41766257,
+          "sha256": "7ce8d2b3f45fcd3b553d3b7a188436db7748c271081cc004f28bf76f3df01893",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2/resolve/86891485dd8ad7cb28cb1aade45c3e23d0197c30/encoder.onnx"
+        },
+        {
+          "name": "encoder.weights",
+          "bytes": 2435420160,
+          "sha256": "90cd4bb6c9b60496d49be9bec3a844f4e9bf22c62a45ea93f391cc00f9a47cfe",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2/resolve/86891485dd8ad7cb28cb1aade45c3e23d0197c30/encoder.weights"
+        },
+        {
+          "name": "decoder.onnx",
+          "bytes": 28883663,
+          "sha256": "0140d12782ccf550a9709f03a52c2782b3c54d045f47ce14af39c713ab42de7f",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2/resolve/86891485dd8ad7cb28cb1aade45c3e23d0197c30/decoder.onnx"
+        },
+        {
+          "name": "joiner.onnx",
+          "bytes": 6907576,
+          "sha256": "a9e57e488cd1016cbefd51f60712896af6590e3f61ff466a540e085bbd6af59e",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2/resolve/86891485dd8ad7cb28cb1aade45c3e23d0197c30/joiner.onnx"
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 9384,
+          "sha256": "ec182b70dd42113aff6c5372c75cac58c952443eb22322f57bbd7f53977d497d",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2/resolve/86891485dd8ad7cb28cb1aade45c3e23d0197c30/tokens.txt"
+        }
+      ],
+      "bytes": 2512987040,
+      "loadavgBefore": [
+        6.72,
+        11.07,
+        15.81
+      ],
+      "coldLoadWallMs": 2977,
+      "numThreads": 8,
+      "provider": "cpu",
+      "firstDecodeMs": 397,
+      "firstDecodeRtf": 0.03140822784810127,
+      "deterministic": true,
+      "emptyRate": 0,
+      "decodeRtf": 0.029878903227155796,
+      "p50Rtf": 0.029687500000000002,
+      "p95Rtf": 0.035815602836879436,
+      "wallRtf": 0.031282248579884125,
+      "decodeSec": 28.572,
+      "audioSec": 956.2599999999999,
+      "errors": 88,
+      "ref": 2196,
+      "sub": 68,
+      "del": 15,
+      "ins": 5,
+      "werNorm": 0.04007285974499089,
+      "werNormMeanUtt": 0.03817362306970134,
+      "werVerbatim": 0.11327762302692665,
+      "werNormClean": 0.03838862559241706,
+      "perUtteranceErrors": [
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        2,
+        2,
+        0,
+        0,
+        0,
+        2,
+        4,
+        1,
+        0,
+        1,
+        0,
+        0,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        3,
+        2,
+        1,
+        2,
+        1,
+        0,
+        2,
+        2,
+        0,
+        1,
+        0,
+        3,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        5,
+        2,
+        5,
+        1,
+        2,
+        1,
+        1,
+        2,
+        0,
+        1,
+        0,
+        1,
+        5,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        2,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        2,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        6,
+        4,
+        1,
+        1,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0,
+        3
+      ],
+      "punctuationRate": 1,
+      "capitalisationRate": 1,
+      "hesitationsPer1000Words": 0,
+      "decodes": [
+        {
+          "file": "12741024238657315067.wav",
+          "text": "Unfortunately, studying traffic flow is difficult because driver behavior cannot be predicted with 100% certainty.",
+          "decodeMs": 356,
+          "wallMs": 370.9
+        },
+        {
+          "file": "9055240296608129734.wav",
+          "text": "Unfortunately, studying traffic flow is difficult because driver behavior cannot be predicted with 100 percent certainty.",
+          "decodeMs": 245,
+          "wallMs": 254.2
+        },
+        {
+          "file": "621925716775998155.wav",
+          "text": "Twentieth Century research has shown that there are two pools of genetic variation hidden and expressed.",
+          "decodeMs": 208,
+          "wallMs": 217
+        },
+        {
+          "file": "10335587906469246566.wav",
+          "text": "Twenteth Century research has shown that there are two pools of genetic variation hidden and expressed.",
+          "decodeMs": 242,
+          "wallMs": 250.9
+        },
+        {
+          "file": "2589557553267364799.wav",
+          "text": "Remember that even though music on the main stages may have finished, there may be sections of the festival that will keep playing music until late into the night.",
+          "decodeMs": 276,
+          "wallMs": 290
+        },
+        {
+          "file": "17824557748066874904.wav",
+          "text": "Remember that even though music on the main stages may have finished, there may be sections of the festival that will keep playing music until late into the night.",
+          "decodeMs": 341,
+          "wallMs": 358.3
+        },
+        {
+          "file": "8173060820032255320.wav",
+          "text": "Police superintendent Chandra Shankar-Solansky said the accused appeared in court with covered faces.",
+          "decodeMs": 290,
+          "wallMs": 303.2
+        },
+        {
+          "file": "15618717836108767541.wav",
+          "text": "Police superintendent Chandra Shik Solanke said the accused appeared in court with covered faces.",
+          "decodeMs": 228,
+          "wallMs": 239.3
+        },
+        {
+          "file": "2652155470394119415.wav",
+          "text": "The term bug is used by entomologists in a formal sense for this group of insects.",
+          "decodeMs": 211,
+          "wallMs": 219.5
+        },
+        {
+          "file": "14585898865749103727.wav",
+          "text": "The term bug is used by entomologists in a formal sense for this group of insects.",
+          "decodeMs": 205,
+          "wallMs": 213.2
+        },
+        {
+          "file": "18066939864018796519.wav",
+          "text": "Popular sports include football, basketball, volleyball, water polo, fencing, rugby, cycling, ice hockey, roller hockey and F1 motor racing.",
+          "decodeMs": 306,
+          "wallMs": 320.6
+        },
+        {
+          "file": "15648812079343683412.wav",
+          "text": "Popular sports include football, basketball, volleyball, water polo, fencing, rugby, cycling, ice hockey, roller hockey and F one motor racing.",
+          "decodeMs": 278,
+          "wallMs": 291.7
+        },
+        {
+          "file": "16847628585853049714.wav",
+          "text": "You can use Boda Boda, more a cycle taxi, to get around Goma. The normal local price is 500 Kongoles francs for the short ride.",
+          "decodeMs": 366,
+          "wallMs": 385.4
+        },
+        {
+          "file": "8756381645087147947.wav",
+          "text": "You can use Boda Boda motorcycle taxi to get around Goma. The normal local price is 500 condole-francs for the short ride.",
+          "decodeMs": 341,
+          "wallMs": 354
+        },
+        {
+          "file": "1596269393232229615.wav",
+          "text": "Bishkek was described as sinking into a state of anarchy by one observer as gangs of people roamed the streets and plundered stores of consumer goods.",
+          "decodeMs": 285,
+          "wallMs": 295.9
+        },
+        {
+          "file": "16355757648693617724.wav",
+          "text": "Bishkek was described as sinking into a state of anarchy by one observer, as gangs of people roamed the street and plundered stores of consumer goods.",
+          "decodeMs": 244,
+          "wallMs": 255
+        },
+        {
+          "file": "2637301866626572038.wav",
+          "text": "During the Revolutionary War, the 13 states first formed a weak central government, with the Congress being its only component under the Articles of Confederation.",
+          "decodeMs": 304,
+          "wallMs": 319.2
+        },
+        {
+          "file": "2939761992885557861.wav",
+          "text": "During the Revolutionary War, the 13 states first formed a weak central government, with the Congress being its only component under the Articles of Confederation.",
+          "decodeMs": 311,
+          "wallMs": 324
+        },
+        {
+          "file": "1722118868151836971.wav",
+          "text": "Current Senator and Argentine First Lady Cristina Fernandez de Kirchner announced her presidential candidacy yesterday evening in La Plata, a city 50 km 31 miles away from Buenos Aires.",
+          "decodeMs": 540,
+          "wallMs": 560.8
+        },
+        {
+          "file": "18080893208509673354.wav",
+          "text": "Current Senator and Argentine First Lady Cristina Fernandez de Kirchner announced her presidential candidacy yesterday evening in La Plata, a city 50 km 31 miles away from Buenos Aires.",
+          "decodeMs": 348,
+          "wallMs": 364.9
+        },
+        {
+          "file": "13230261475791184258.wav",
+          "text": "The governor's office and nineteen of the injured were police officers.",
+          "decodeMs": 164,
+          "wallMs": 170.3
+        },
+        {
+          "file": "12164368102080603077.wav",
+          "text": "The governor's office said nineteen of the injured were police officers.",
+          "decodeMs": 226,
+          "wallMs": 236.5
+        },
+        {
+          "file": "5106380017322065030.wav",
+          "text": "However, that is not true. Although there is something written on the back of the document, it is not a treasure map.",
+          "decodeMs": 280,
+          "wallMs": 292.6
+        },
+        {
+          "file": "1618638950277648344.wav",
+          "text": "However, that is not true. Although there is something written on the back of the document, it is not a treasure map.",
+          "decodeMs": 300,
+          "wallMs": 316.7
+        },
+        {
+          "file": "10492135991603561867.wav",
+          "text": "In some areas boiling water for a minute is enough and others several minutes are needed.",
+          "decodeMs": 202,
+          "wallMs": 210.9
+        },
+        {
+          "file": "2254021119996292300.wav",
+          "text": "In some areas boiling water for a minute is enough, in others several minutes are needed.",
+          "decodeMs": 207,
+          "wallMs": 216.6
+        },
+        {
+          "file": "6817878979697223927.wav",
+          "text": "All nouns, alongside the words c for u, always begin with a capital letter, even in the middle of a sentence.",
+          "decodeMs": 205,
+          "wallMs": 215
+        },
+        {
+          "file": "10052240106321793346.wav",
+          "text": "All nouns alongside the words save for you always begin with a capital letter, even in the middle of a sentence.",
+          "decodeMs": 259,
+          "wallMs": 271.6
+        },
+        {
+          "file": "10197164397713068203.wav",
+          "text": "The cabbage juice changes color depending on how acidic, basic, alkaline the chemical is.",
+          "decodeMs": 207,
+          "wallMs": 216.1
+        },
+        {
+          "file": "13006273800980159403.wav",
+          "text": "The cabbage juice changes colors depending on how acidic or basic alkaline that chemical is.",
+          "decodeMs": 208,
+          "wallMs": 218.1
+        },
+        {
+          "file": "1218355507714944126.wav",
+          "text": "In its early days, the show was featured solely at the long running Internet radio site TokyNet Radio, a site focused on talk radio.",
+          "decodeMs": 369,
+          "wallMs": 388.5
+        },
+        {
+          "file": "5606750157981126233.wav",
+          "text": "In its early days, the show was featured solely at the long running Internet radio site TogiNet Radio, a site focused on talk radio.",
+          "decodeMs": 327,
+          "wallMs": 343.9
+        },
+        {
+          "file": "283614893570272908.wav",
+          "text": "Four skiers in the women's sitting group failed to finish their runs and 45 of the 117 total skiers in the Giants silent failed to rank in the race.",
+          "decodeMs": 228,
+          "wallMs": 240.9
+        },
+        {
+          "file": "4498797456222901763.wav",
+          "text": "Four skiers in the women's sitting group failed to finish the runs, and 45 of the 117 total skiers in the giant Slaomen failed to rank in the race.",
+          "decodeMs": 365,
+          "wallMs": 383.3
+        },
+        {
+          "file": "4496786334735634498.wav",
+          "text": "Apia is the capital of Samoa. The town is on the island of Upolu, and has a population of just under 40,000.",
+          "decodeMs": 312,
+          "wallMs": 327.3
+        },
+        {
+          "file": "9431561488681290113.wav",
+          "text": "Apia is the capital of Samoa. The town is on the island of Apulu and has a population of just under 40,000.",
+          "decodeMs": 300,
+          "wallMs": 314.4
+        },
+        {
+          "file": "5505398583576174352.wav",
+          "text": "Perry stated that he would return to Texas to assess the results of tonight's caucus, determine whether there is a path forward for myself in this race, but later said that he would remain in the race and compete in the January 21 South Carolina primary.",
+          "decodeMs": 395,
+          "wallMs": 413.3
+        },
+        {
+          "file": "2467414061703477879.wav",
+          "text": "Perry stated that he would return to Texas to assess the results of tonight's Cocus, determine whether there is a path forward for himself in this race, but later said he would remain in the race and compete in the January 21 South Carolina primary.",
+          "decodeMs": 398,
+          "wallMs": 417.2
+        },
+        {
+          "file": "6917907748364342404.wav",
+          "text": "He did not set a figure for the cuts, saying they will be made based on China's economic output.",
+          "decodeMs": 195,
+          "wallMs": 210.3
+        },
+        {
+          "file": "8546403500877190903.wav",
+          "text": "He did not set a figure for the cuts, saying they will be made based on China's economic output.",
+          "decodeMs": 207,
+          "wallMs": 218.1
+        },
+        {
+          "file": "16851035292487940942.wav",
+          "text": "After the dam was built in 1963 the seasonal floods that would spread sediment throughout the river were halted.",
+          "decodeMs": 215,
+          "wallMs": 224.5
+        },
+        {
+          "file": "1633905380187706594.wav",
+          "text": "After the dam was built in 1963 the seasonal floods that would spread sediment throughout the river were halted.",
+          "decodeMs": 300,
+          "wallMs": 313.7
+        },
+        {
+          "file": "6852813781354643345.wav",
+          "text": "Its long jaws were studded with more than 70 razor sharp teeth, along with an extra set in the roof of its mouth, meaning that it was no escape for anything that crossed its path.",
+          "decodeMs": 320,
+          "wallMs": 335.3
+        },
+        {
+          "file": "3585583328394597156.wav",
+          "text": "Its long jaws were studded with more than 70 razor sharp teeth, along with an extra set in the roof of its mouth, meaning that there was no escape for anything that crossed its path.",
+          "decodeMs": 467,
+          "wallMs": 490.2
+        },
+        {
+          "file": "11536232800365538941.wav",
+          "text": "The Sundarbans are the largest littoral mangrove belt in the world, stretching 80 km 50 mi into the Bangladeshi and Indian hinterland from the coast.",
+          "decodeMs": 291,
+          "wallMs": 305.4
+        },
+        {
+          "file": "11593450817032542587.wav",
+          "text": "The Sundarbans are the largest littoral mangrove belt in the world, stretching 80 km 50 miles into the Bangladeshi and Indian hinterland from the coast.",
+          "decodeMs": 344,
+          "wallMs": 361.3
+        },
+        {
+          "file": "3927163358777802368.wav",
+          "text": "Researchers from Princeton University in the United States and Uppsala University in Sweden reported the new species evolved in just two generations, though this process has been believed to take much longer due to the breeding between an endemic Darwin finch Geospatia fortes and the immigrant cactus finch Geospesia cornerstress.",
+          "decodeMs": 587,
+          "wallMs": 613.5
+        },
+        {
+          "file": "16824485789160047135.wav",
+          "text": "Australia's Mitchell Gourley finished eleventh in the men's standing Super-G. Czech competitor Uldrich Djalick finished 16th in the men's sitting super-G.",
+          "decodeMs": 401,
+          "wallMs": 416
+        },
+        {
+          "file": "14993919225529607964.wav",
+          "text": "Australia's Mitch Gowry finished 11th in the men's standing Super-G. Chet's competitor Ulrich Jocklen finished 16th in the men's sitting Super-G.",
+          "decodeMs": 441,
+          "wallMs": 458.8
+        },
+        {
+          "file": "11705046490861852963.wav",
+          "text": "First, most riders wearing riding boots with a heel and a smooth, quite narrow sole.",
+          "decodeMs": 233,
+          "wallMs": 245.1
+        },
+        {
+          "file": "559615000143317446.wav",
+          "text": "First, most riders were riding boots with a heel on a smooth, quite, narrow sole.",
+          "decodeMs": 163,
+          "wallMs": 170.1
+        },
+        {
+          "file": "18320871674783850842.wav",
+          "text": "Hong Kong Island gives the territory of Hong Kong its name and is a place that many tourists regard as the main focus.",
+          "decodeMs": 213,
+          "wallMs": 223.6
+        },
+        {
+          "file": "5907599423488165658.wav",
+          "text": "Hong Kong Island gives the territory of Hong Kong its name and is a place that many tourists regard as the main focus.",
+          "decodeMs": 274,
+          "wallMs": 287.6
+        },
+        {
+          "file": "3502277023574363012.wav",
+          "text": "Brides are made up of one of three related adult males along with as many as 30 females and cubs.",
+          "decodeMs": 222,
+          "wallMs": 231.4
+        },
+        {
+          "file": "15592925372393530543.wav",
+          "text": "Prides are made up of one to three related adult males along with as many as thirty females and cubs.",
+          "decodeMs": 216,
+          "wallMs": 226.3
+        },
+        {
+          "file": "17087438879836851456.wav",
+          "text": "Layton had asked for changes to the conservatives' environmental bill during the meeting with the PM asking for a thorough and complete rewriting of the Conservatives' Party's environmental bill.",
+          "decodeMs": 284,
+          "wallMs": 298.3
+        },
+        {
+          "file": "6507390080013738113.wav",
+          "text": "Layton had asked for changes to the conservatives' environmental bill during the meeting with the PM asking for a thorough and complete rewriting of the Conservative Party's environmental bill.",
+          "decodeMs": 336,
+          "wallMs": 352.2
+        },
+        {
+          "file": "1605300975319497622.wav",
+          "text": "Vatican City population is around 800. It is the smallest independent country in the world and the country with the lowest population.",
+          "decodeMs": 296,
+          "wallMs": 306.8
+        },
+        {
+          "file": "11265842188315045636.wav",
+          "text": "Vatican City population is around 800. It is the smallest independent country in the world and the population.",
+          "decodeMs": 306,
+          "wallMs": 321.2
+        },
+        {
+          "file": "7587276269543309929.wav",
+          "text": "In the warm climate of the Middle East, the house was not so important.",
+          "decodeMs": 218,
+          "wallMs": 226.7
+        },
+        {
+          "file": "4838660681321542582.wav",
+          "text": "In the warm climate of the Middle East the house was not so important.",
+          "decodeMs": 216,
+          "wallMs": 225.6
+        },
+        {
+          "file": "8324220666349639753.wav",
+          "text": "This seems sensible, because the Earth doesn't feel as if it's moving, does it?",
+          "decodeMs": 162,
+          "wallMs": 169.7
+        },
+        {
+          "file": "3529855487992513201.wav",
+          "text": "This seems sensible, because the earth doesn't feel as if it's moving, does it?",
+          "decodeMs": 184,
+          "wallMs": 192.6
+        },
+        {
+          "file": "5407053594615190090.wav",
+          "text": "Ancient China had a unique way of showing different time periods. Each stage of China or each family that was in power was a distinctive dynasty.",
+          "decodeMs": 367,
+          "wallMs": 386.1
+        },
+        {
+          "file": "7366992441583559574.wav",
+          "text": "Ancient China had a unique way of showing different periods. Each stage of China or each family that was in power was a distinctive dynasty.",
+          "decodeMs": 346,
+          "wallMs": 362.9
+        },
+        {
+          "file": "10861831846737909528.wav",
+          "text": "In the north the region is bounded by the Sahel and in the south and west by the Atlantic Ocean.",
+          "decodeMs": 277,
+          "wallMs": 291.1
+        },
+        {
+          "file": "6656552880161745727.wav",
+          "text": "In the north the region is bounded by the Sahel and in the south and west by the Atlantic Ocean.",
+          "decodeMs": 214,
+          "wallMs": 224.2
+        },
+        {
+          "file": "8268356342449509719.wav",
+          "text": "Duval, who is married to two adult children, did not leave a big impression on Miller, to whom the story was related.",
+          "decodeMs": 265,
+          "wallMs": 278.6
+        },
+        {
+          "file": "17737260257548671107.wav",
+          "text": "Duvall who was married with two adult children, did not leave a big impression on Miller, to whom the story was related.",
+          "decodeMs": 207,
+          "wallMs": 214.9
+        },
+        {
+          "file": "6354316372780583820.wav",
+          "text": "Although AI has a strong connotation of science fiction, AI forms a very important branch of computer science dealing with behavior learning and intelligent adaptation in the machine.",
+          "decodeMs": 393,
+          "wallMs": 408.7
+        },
+        {
+          "file": "7053482366261158.wav",
+          "text": "Although AI has a strong connotation of science fiction, AI forms a very important branch of computer science dealing with behavior learning and intelligent adaptation in a machine.",
+          "decodeMs": 490,
+          "wallMs": 510.4
+        },
+        {
+          "file": "5433314566767233828.wav",
+          "text": "After the accident occurred, Gibson was transported to a hospital but died shortly afterwards.",
+          "decodeMs": 199,
+          "wallMs": 208
+        },
+        {
+          "file": "2786302614981736925.wav",
+          "text": "People now write messages on computer screens, never having to come close to a sharpener.",
+          "decodeMs": 182,
+          "wallMs": 190.7
+        },
+        {
+          "file": "2381187994276969930.wav",
+          "text": "People now write messages on computer screens never having to come close to a sharpener.",
+          "decodeMs": 252,
+          "wallMs": 264.4
+        },
+        {
+          "file": "12381237049043414166.wav",
+          "text": "Muhammad was deeply interested in matters beyond this mundane life. He used to frequent a cave that became known as Hira on the mountain of Nor Light for contemplation.",
+          "decodeMs": 328,
+          "wallMs": 343.5
+        },
+        {
+          "file": "1876924768395363851.wav",
+          "text": "Muhammad was deeply interested in matters beyond his mundane life. He used to frequent a cave that became known as Hira on the mountain of Nor Light for contemplation.",
+          "decodeMs": 417,
+          "wallMs": 437.7
+        },
+        {
+          "file": "5657427923960079748.wav",
+          "text": "Some people thought he was right but many people believed the opposite, that the solar system moved around the Earth including the Sun and even the other stars.",
+          "decodeMs": 256,
+          "wallMs": 267.1
+        },
+        {
+          "file": "837008417921522673.wav",
+          "text": "Some people thought he was right, but many people believed the opposite. That the solar system moved around the earth, including the Sun and even other stars.",
+          "decodeMs": 293,
+          "wallMs": 304.6
+        },
+        {
+          "file": "1944915261206096046.wav",
+          "text": "Swirl the two dry powders together and then with clean wet hands squeeze them into a ball.",
+          "decodeMs": 183,
+          "wallMs": 195.9
+        },
+        {
+          "file": "13031516147694203229.wav",
+          "text": "Swirl the two dry powders together and then with clean, wet hands, squeeze them into a ball.",
+          "decodeMs": 244,
+          "wallMs": 266.4
+        },
+        {
+          "file": "14076834086577911298.wav",
+          "text": "When all available resources are effectively used across the functional departments of an organization, creativity and ingenuity can transpire.",
+          "decodeMs": 271,
+          "wallMs": 284.1
+        },
+        {
+          "file": "13130060533227294993.wav",
+          "text": "The moisture on your hands will react with the outer layers, which will feel funny and form a sort of shell.",
+          "decodeMs": 239,
+          "wallMs": 250.8
+        },
+        {
+          "file": "11987168412167267165.wav",
+          "text": "The moisture on your hands will react with the outer layers, which will feel funny and form a sort of shell.",
+          "decodeMs": 261,
+          "wallMs": 271.3
+        },
+        {
+          "file": "15667010054869079797.wav",
+          "text": "During this period of European history the Catholic Church, which had become rich and powerful, came under scrutiny.",
+          "decodeMs": 271,
+          "wallMs": 285.2
+        },
+        {
+          "file": "1116401173651214130.wav",
+          "text": "During this period of European history the Catholic Church, which had become rich and powerful, came under scrutiny.",
+          "decodeMs": 330,
+          "wallMs": 346.3
+        },
+        {
+          "file": "17257800930548614745.wav",
+          "text": "In the archipelagos and lakes you do not necessarily need a yacht.",
+          "decodeMs": 233,
+          "wallMs": 243.5
+        },
+        {
+          "file": "7546471028199266685.wav",
+          "text": "In the archipelagos and lakes, you do not necessarily need a yacht.",
+          "decodeMs": 206,
+          "wallMs": 214.1
+        },
+        {
+          "file": "3362263413020550013.wav",
+          "text": "In particular, it is claimed that one can detect whether a person is lying by interpreting micro-expressions correctly.",
+          "decodeMs": 215,
+          "wallMs": 223
+        },
+        {
+          "file": "13029464143980259888.wav",
+          "text": "In particular, it is claimed that one can detect whether a person is lying by interpreting micro-expressions correctly.",
+          "decodeMs": 193,
+          "wallMs": 200.1
+        },
+        {
+          "file": "7489324500816890474.wav",
+          "text": "During the struggle for independence organized by the Mau movement, a peaceful gathering in the town resulted in the killing of Paramount chief Tutubai.",
+          "decodeMs": 353,
+          "wallMs": 367.6
+        },
+        {
+          "file": "2642023010607031328.wav",
+          "text": "During the struggle for independence organised by the Mao Movement, a peaceful gathering in the town resulted in the killing of the Paramount chief, Tutuaton Lalofi III.",
+          "decodeMs": 343,
+          "wallMs": 360.2
+        },
+        {
+          "file": "10323357556845456822.wav",
+          "text": "The Northern Mariana's Emergency Management Office said that there were no damages reported in the nation.",
+          "decodeMs": 311,
+          "wallMs": 323.2
+        },
+        {
+          "file": "8491962032427728850.wav",
+          "text": "The Northern Mariana's emergency management office said that there were no damages reported in the nation.",
+          "decodeMs": 316,
+          "wallMs": 331.4
+        },
+        {
+          "file": "221216034074176262.wav",
+          "text": "Segregation and recombination shuffle variation back and forth between the two pools with each generation.",
+          "decodeMs": 302,
+          "wallMs": 318.9
+        },
+        {
+          "file": "13888599635337906526.wav",
+          "text": "Segregation and recombination shuffle variation back and forth between the two pools with each generation.",
+          "decodeMs": 325,
+          "wallMs": 341.7
+        },
+        {
+          "file": "4103166808026076685.wav",
+          "text": "He added that they should not however be asked to take on obligations that go beyond their development stage, responsibility and capabilities.",
+          "decodeMs": 311,
+          "wallMs": 325.2
+        },
+        {
+          "file": "14805661830607478688.wav",
+          "text": "He added they should not however be asked to take on obligations that go beyond their development stage, responsibility, and capabilities.",
+          "decodeMs": 341,
+          "wallMs": 357.8
+        },
+        {
+          "file": "8395660467583137383.wav",
+          "text": "Regional and seasonal severe weather phenomena include blizzards, storms, ice storms, and dust storms.",
+          "decodeMs": 223,
+          "wallMs": 234
+        },
+        {
+          "file": "8582392026322819617.wav",
+          "text": "Regional and seasonal severe weather phenomena include blizzards, snowstorms, ice storms and dust storms.",
+          "decodeMs": 239,
+          "wallMs": 251.2
+        },
+        {
+          "file": "8398257681626621326.wav",
+          "text": "Dr. Malar Balassum Bramman, 29 was found in Blue Ash, Ohio, a suburb approximately 15 miles north of Cincinnati, lying on the ground beside the road in a t-shirt and underwear, in apparently heavily medicated state.",
+          "decodeMs": 408,
+          "wallMs": 424
+        }
+      ],
+      "status": "measured",
+      "longForm": [
+        {
+          "label": "60s",
+          "audioSec": 68.82,
+          "utterances": [
+            "9055240296608129734.wav",
+            "621925716775998155.wav",
+            "2589557553267364799.wav",
+            "15618717836108767541.wav",
+            "2652155470394119415.wav",
+            "18066939864018796519.wav",
+            "1596269393232229615.wav",
+            "2637301866626572038.wav"
+          ],
+          "decodeMs": 2531,
+          "decodeRtf": 0.03677709968032549,
+          "wer": 0.1111111111111111,
+          "wordRatio": 0.9012345679012346,
+          "text": "Unfortunately, studying traffic flow is difficult because driver behavior cannot be predicted with 100 percent certainty. Remember that even though music on the main stages may have finished, there may be sections of the festival that will keep playing music until late into the night. Police superintendent Chandra Shikar Solanke said the accused appeared in court with covered faces. The term bug is used by entomologists in a formal sense for this group of insects. Popular sports include football, basketball, volleyball, water polo, fencing, rugby, cycling, ice hockey, roller hockey and F1 motor racing. Bishkek was described as sinking into a state of anarchy by one observer as gangs of people roamed the streets and plundered stores of consumer goods. During the Revolutionary War, the 13 states first formed a weak central government with the Congress being its only component under the Articles of Confederation."
+        },
+        {
+          "label": "300s",
+          "audioSec": 310.92,
+          "utterances": [
+            "9055240296608129734.wav",
+            "621925716775998155.wav",
+            "2589557553267364799.wav",
+            "15618717836108767541.wav",
+            "2652155470394119415.wav",
+            "18066939864018796519.wav",
+            "1596269393232229615.wav",
+            "2637301866626572038.wav",
+            "18080893208509673354.wav",
+            "13230261475791184258.wav",
+            "10492135991603561867.wav",
+            "6817878979697223927.wav",
+            "10197164397713068203.wav",
+            "5606750157981126233.wav",
+            "283614893570272908.wav",
+            "9431561488681290113.wav",
+            "5505398583576174352.wav",
+            "6917907748364342404.wav",
+            "16851035292487940942.wav",
+            "6852813781354643345.wav",
+            "11536232800365538941.wav",
+            "3927163358777802368.wav",
+            "16824485789160047135.wav",
+            "11705046490861852963.wav",
+            "18320871674783850842.wav",
+            "3502277023574363012.wav",
+            "17087438879836851456.wav",
+            "11265842188315045636.wav",
+            "4838660681321542582.wav",
+            "8324220666349639753.wav",
+            "6656552880161745727.wav",
+            "17737260257548671107.wav",
+            "5433314566767233828.wav",
+            "2786302614981736925.wav",
+            "12381237049043414166.wav"
+          ],
+          "error": "engine process exited",
+          "wer": 1,
+          "wordRatio": 0
+        }
+      ],
+      "otherRun": {
+        "pattern": "bench-cleanup|eval-cleanup",
+        "samples": 5,
+        "hits": 0,
+        "unknown": 0,
+        "active": false
+      },
+      "loadavgAfter": [
+        8.01,
+        10.85,
+        15.54
+      ],
+      "quietWait": null,
+      "contended": true,
+      "measureAttempts": [
+        {
+          "contended": true,
+          "decodeRtf": 0.029878903227155796,
+          "otherRun": {
+            "pattern": "bench-cleanup|eval-cleanup",
+            "samples": 5,
+            "hits": 0,
+            "unknown": 0,
+            "active": false
+          },
+          "loadavgBefore": [
+            6.72,
+            11.07,
+            15.81
+          ],
+          "loadavgAfter": [
+            8.01,
+            10.85,
+            15.54
+          ]
+        }
+      ],
+      "measuredWith": {
+        "gitHead": "22635b1c7e18ab9d9f330729b1a3d9c636e2a9ab",
+        "measuringCode": "710af85038ec6ac034df988fd48cd3db8d8cf62e33f5eb75bfbcd51c3324b1f4"
+      }
+    },
+    {
+      "id": "parakeet-tdt-110m-en",
+      "label": "Small \u00b7 Parakeet TDT 110M (English only, fastest)",
+      "role": "candidate",
+      "arm": "wired",
+      "path": "worker",
+      "downloadMs": 10624,
+      "files": [
+        {
+          "name": "encoder.onnx",
+          "bytes": 456050698,
+          "sha256": "db260f1073c654c37dd65006885d1ee98ff16c22463b1ef992bbcabc29780a3f",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000/resolve/e9bea5a06247dc3f55319ff23d34b0328f2f5ddf/encoder.onnx"
+        },
+        {
+          "name": "decoder.onnx",
+          "bytes": 15753086,
+          "sha256": "3da156bde41a04c94ef783e0bd92928e9974e08645b976a22d0c3e1063510249",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000/resolve/e9bea5a06247dc3f55319ff23d34b0328f2f5ddf/decoder.onnx"
+        },
+        {
+          "name": "joiner.onnx",
+          "bytes": 5596854,
+          "sha256": "b603765c0724a0768c378a23326dabbeb9cfea932d260e4fcc14384fa5fd5aff",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000/resolve/e9bea5a06247dc3f55319ff23d34b0328f2f5ddf/joiner.onnx"
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 9953,
+          "sha256": "450e56bd2f036fe5b6aa821865838cc5aa9d8b0106134ce9a9ba0664abe6cd10",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000/resolve/e9bea5a06247dc3f55319ff23d34b0328f2f5ddf/tokens.txt"
+        }
+      ],
+      "bytes": 477410591,
+      "loadavgBefore": [
+        6.93,
+        10.52,
+        15.38
+      ],
+      "coldLoadWallMs": 1788,
+      "numThreads": 8,
+      "provider": "cpu",
+      "firstDecodeMs": 126,
+      "firstDecodeRtf": 0.009968354430379746,
+      "deterministic": true,
+      "emptyRate": 0,
+      "decodeRtf": 0.010420806056930125,
+      "p50Rtf": 0.010446009389671362,
+      "p95Rtf": 0.011498708010335916,
+      "wallRtf": 0.011860720627235274,
+      "decodeSec": 9.965,
+      "audioSec": 956.2599999999999,
+      "errors": 129,
+      "ref": 2196,
+      "sub": 102,
+      "del": 17,
+      "ins": 10,
+      "werNorm": 0.05874316939890711,
+      "werNormMeanUtt": 0.05486702927747153,
+      "werVerbatim": 0.15598885793871867,
+      "werNormClean": 0.05687203791469194,
+      "perUtteranceErrors": [
+        2,
+        0,
+        0,
+        1,
+        0,
+        0,
+        3,
+        2,
+        0,
+        0,
+        2,
+        3,
+        3,
+        1,
+        0,
+        2,
+        0,
+        0,
+        4,
+        3,
+        1,
+        0,
+        0,
+        0,
+        2,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        2,
+        2,
+        0,
+        2,
+        2,
+        5,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0,
+        3,
+        3,
+        8,
+        6,
+        8,
+        1,
+        3,
+        0,
+        1,
+        2,
+        0,
+        2,
+        2,
+        3,
+        6,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        3,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        2,
+        0,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        6,
+        3,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0,
+        3
+      ],
+      "punctuationRate": 0.96,
+      "capitalisationRate": 0.99,
+      "hesitationsPer1000Words": 0,
+      "decodes": [
+        {
+          "file": "12741024238657315067.wav",
+          "text": "Unfortunately, stunning traffic flow is difficult because driver behaviour cannot be predicted with one hundred percent certainty.",
+          "decodeMs": 121,
+          "wallMs": 137.4
+        },
+        {
+          "file": "9055240296608129734.wav",
+          "text": "Unfortunately, studying traffic flow is difficult because driver behavior cannot be predicted with one hundred percent certainty.",
+          "decodeMs": 82,
+          "wallMs": 90.9
+        },
+        {
+          "file": "621925716775998155.wav",
+          "text": "Twentieth century research has shown that there are two pools of genetic variation, hidden and expressed.",
+          "decodeMs": 67,
+          "wallMs": 73.4
+        },
+        {
+          "file": "10335587906469246566.wav",
+          "text": "Twieth century research has shown that there are two pools of genetic variation hidden and expressed.",
+          "decodeMs": 76,
+          "wallMs": 87.4
+        },
+        {
+          "file": "2589557553267364799.wav",
+          "text": "Remember that even though music on the main stages may have finished, there may be sections of the festival that will keep playing music until late into the night.",
+          "decodeMs": 90,
+          "wallMs": 102.7
+        },
+        {
+          "file": "17824557748066874904.wav",
+          "text": "Remember that even though music on the main stages may have finished, there may be sections of the festival that will keep playing music until late into the night.",
+          "decodeMs": 128,
+          "wallMs": 144.2
+        },
+        {
+          "file": "8173060820032255320.wav",
+          "text": "Police superintendent Shanra Shankar Solanski said the accused appeared in court with covered faces.",
+          "decodeMs": 96,
+          "wallMs": 108.9
+        },
+        {
+          "file": "15618717836108767541.wav",
+          "text": "Police superintendent Shandra Shikar Solanki said the accused appeared in court with covered faces",
+          "decodeMs": 77,
+          "wallMs": 87
+        },
+        {
+          "file": "2652155470394119415.wav",
+          "text": "The term bug is used by entomologists in a formal sense for this group of insects.",
+          "decodeMs": 71,
+          "wallMs": 81.4
+        },
+        {
+          "file": "14585898865749103727.wav",
+          "text": "The term bug is used by entomologists in a formal sense for this group of insects.",
+          "decodeMs": 70,
+          "wallMs": 78.7
+        },
+        {
+          "file": "18066939864018796519.wav",
+          "text": "Popular sports include football, basketball, volleyball, water polo, fencing, rugby, cycling, ice hockey, roller hockey, and F one motor racing.",
+          "decodeMs": 110,
+          "wallMs": 125.1
+        },
+        {
+          "file": "15648812079343683412.wav",
+          "text": "Popular sports include football, basketball, volleyball, water bolo, fencing, rugby, cycling, ice hockey, roller hockey, and F one motor racing.",
+          "decodeMs": 97,
+          "wallMs": 111.2
+        },
+        {
+          "file": "16847628585853049714.wav",
+          "text": "You can use Boda Boda Morocc to get around Goma. The normal local price is five hundred congoles francs for the short ride.",
+          "decodeMs": 144,
+          "wallMs": 162.9
+        },
+        {
+          "file": "8756381645087147947.wav",
+          "text": "You can use Boda Boda, motorcycle taxi to get around Goma. The normal local price is five hundred condolees francs for the short ride.",
+          "decodeMs": 123,
+          "wallMs": 139.9
+        },
+        {
+          "file": "1596269393232229615.wav",
+          "text": "Bishkek was described as sinking into a state of anarchy by one observer as gangs of people roamed the streets and plundered stores of consumer goods.",
+          "decodeMs": 96,
+          "wallMs": 110.3
+        },
+        {
+          "file": "16355757648693617724.wav",
+          "text": "Bichek was described as sinking into a state of anarchy by one observer as gangs of people roamed the street and plundered stores of consumer goods.",
+          "decodeMs": 88,
+          "wallMs": 99.4
+        },
+        {
+          "file": "2637301866626572038.wav",
+          "text": "During the Revolutionary War, the thirteen states first formed a weak central government, with the Congress being its only component under the Articles of Confederation.",
+          "decodeMs": 104,
+          "wallMs": 117.5
+        },
+        {
+          "file": "2939761992885557861.wav",
+          "text": "During the Revolutionary War, the thirteen states first formed a weak central government, with the Congress being its only component under the Articles of Confederation.",
+          "decodeMs": 110,
+          "wallMs": 124.9
+        },
+        {
+          "file": "1722118868151836971.wav",
+          "text": "Current Senator and Argentine First Lady Christina Fernandez De Kerschner announced her presidential candidacy yesterday evening in La Plata, a city fifty kilometers forty one miles away from Buenos Ares",
+          "decodeMs": 189,
+          "wallMs": 215.4
+        },
+        {
+          "file": "18080893208509673354.wav",
+          "text": "Current Senator and Argentine First Lady Christina Fernandes de Kerschner announced her presidential candidacy yesterday evening in La Plata a city fifty kilometers thirty one miles away from Buenos Aires.",
+          "decodeMs": 129,
+          "wallMs": 149.5
+        },
+        {
+          "file": "13230261475791184258.wav",
+          "text": "The Governor's office in nineteen of the injured were police officers.",
+          "decodeMs": 57,
+          "wallMs": 64.5
+        },
+        {
+          "file": "12164368102080603077.wav",
+          "text": "The Governor's Office said nineteen of the injured were police officers.",
+          "decodeMs": 76,
+          "wallMs": 86.8
+        },
+        {
+          "file": "5106380017322065030.wav",
+          "text": "However, that is not true. Although there is something written on the back of the document, it is not a treasure map.",
+          "decodeMs": 89,
+          "wallMs": 101.3
+        },
+        {
+          "file": "1618638950277648344.wav",
+          "text": "However, that is not true. Although there is something written on the back of the document, it is not a treasure map.",
+          "decodeMs": 106,
+          "wallMs": 119.6
+        },
+        {
+          "file": "10492135991603561867.wav",
+          "text": "In some areas boiling water for a minute is enough and other several minutes are needed.",
+          "decodeMs": 62,
+          "wallMs": 71.1
+        },
+        {
+          "file": "2254021119996292300.wav",
+          "text": "In some areas, boiling water for a minute is enough, and others several minutes are needed.",
+          "decodeMs": 71,
+          "wallMs": 80.2
+        },
+        {
+          "file": "6817878979697223927.wav",
+          "text": "All nouns, alongside the word c for you, always begin with a capital letter even in the middle of a sentence.",
+          "decodeMs": 70,
+          "wallMs": 79.3
+        },
+        {
+          "file": "10052240106321793346.wav",
+          "text": "All nouns alongside the word say for you always begin with a capital letter even in the middle of a sentence.",
+          "decodeMs": 88,
+          "wallMs": 101.1
+        },
+        {
+          "file": "10197164397713068203.wav",
+          "text": "The cabbage juice changes color depending on how acidic, basic alkaline the chemical is.",
+          "decodeMs": 65,
+          "wallMs": 73.8
+        },
+        {
+          "file": "13006273800980159403.wav",
+          "text": "The cabbage juice changes colours depending on how acidic or basic alkaline the chemical is.",
+          "decodeMs": 74,
+          "wallMs": 83.9
+        },
+        {
+          "file": "1218355507714944126.wav",
+          "text": "In its early days, the show was featured solely at the long running internet radio site, Tokynet Radio, a site focused on talk radio.",
+          "decodeMs": 142,
+          "wallMs": 161.5
+        },
+        {
+          "file": "5606750157981126233.wav",
+          "text": "In its early days, the show was featured solely at the long running internet radio site Toggynet radio, a site focused on talk radio.",
+          "decodeMs": 116,
+          "wallMs": 132.4
+        },
+        {
+          "file": "283614893570272908.wav",
+          "text": "Four skiers in the women's sitting group failed to finish their runs and forty five of the one seventeen total skiers in the giant lynel failed to rank in the race.",
+          "decodeMs": 86,
+          "wallMs": 96.8
+        },
+        {
+          "file": "4498797456222901763.wav",
+          "text": "Four skiers in the women's sitting group failed to finish their runs and forty five of the one hundred and seventeen total skiers in the giant slammon failed to rank in the race",
+          "decodeMs": 129,
+          "wallMs": 147.7
+        },
+        {
+          "file": "4496786334735634498.wav",
+          "text": "Apia is the capital of Samoa. The town is on the island of Upolu and has a population of just under forty thousand.",
+          "decodeMs": 110,
+          "wallMs": 126
+        },
+        {
+          "file": "9431561488681290113.wav",
+          "text": "Apea is the capital of Samoa, the town is on the island of Opulu and has a population of just under forty thousand.",
+          "decodeMs": 101,
+          "wallMs": 115.1
+        },
+        {
+          "file": "5505398583576174352.wav",
+          "text": "Perry stated that he would return to Texas to assess the results of tonight's caucus to determine whether it is a path forward for myself in this race, but later said that he would remain in the race and compete in the january twenty one South Carolina primary.",
+          "decodeMs": 128,
+          "wallMs": 146.8
+        },
+        {
+          "file": "2467414061703477879.wav",
+          "text": "Perry stated that he would return to Texas to assess the results of To Night's Cocus, determine whether there is a path forward for myself in this race but letters said that he would remain in the race and compete at the january twenty one South Carolina primary.",
+          "decodeMs": 134,
+          "wallMs": 154.2
+        },
+        {
+          "file": "6917907748364342404.wav",
+          "text": "He did not set a figure for the cuts saying they will be made based on China's economic output.",
+          "decodeMs": 68,
+          "wallMs": 78.7
+        },
+        {
+          "file": "8546403500877190903.wav",
+          "text": "He did not set a figure for the cuts saying they will be made based on China's economic output.",
+          "decodeMs": 76,
+          "wallMs": 86.7
+        },
+        {
+          "file": "16851035292487940942.wav",
+          "text": "After the dam was built in nineteen sixty three, the seasonal floods that would spread sediment throughout the river were halted.",
+          "decodeMs": 71,
+          "wallMs": 80.5
+        },
+        {
+          "file": "1633905380187706594.wav",
+          "text": "After the dam was built in nineteen sixty three, the seasonal floods though would spread sediment throughout the river were halted.",
+          "decodeMs": 95,
+          "wallMs": 108.7
+        },
+        {
+          "file": "6852813781354643345.wav",
+          "text": "Its long jaws were studded with more than seventy razor sharp teeth, along with an extra set in the roof of its mouth, meaning that it was no escape for anything that crossed its path.",
+          "decodeMs": 119,
+          "wallMs": 134.6
+        },
+        {
+          "file": "3585583328394597156.wav",
+          "text": "Its long jaws were studded with more than seventy razor sharp teeth along with an extra set in the roof of its mouth, meaning that there was no escape for anything that crossed its path.",
+          "decodeMs": 153,
+          "wallMs": 176.6
+        },
+        {
+          "file": "11536232800365538941.wav",
+          "text": "The Sundarbans are the largest litorial mangrove belt in the world stretching eighty kilometers, fifty miles into the Bangladeshi and Indian hinterland from the coast.",
+          "decodeMs": 103,
+          "wallMs": 118.7
+        },
+        {
+          "file": "11593450817032542587.wav",
+          "text": "The Sundarbans are the largest litoral mangrove belt in the world, stretching eighty kilometers fifty miles into the Bangladeshi and Indian hinterland from the coast.",
+          "decodeMs": 125,
+          "wallMs": 143.7
+        },
+        {
+          "file": "3927163358777802368.wav",
+          "text": "Researchers from Princeton University in the United States and Upso University in Sweden reported the new species evolved in just two generations, though this process has been believed to take much longer due to the breeding between an endemic Darwin Finch, Giospa Fortes and the immigrant cactus finish Jospiza Coni Rostris.",
+          "decodeMs": 210,
+          "wallMs": 236.9
+        },
+        {
+          "file": "16824485789160047135.wav",
+          "text": "Australia's Mitchell Gorley finished eleventh in the men's standing superge. Czech competitor Oldrich Delenik finished sixteenth in the men's sitting superge.",
+          "decodeMs": 137,
+          "wallMs": 157.3
+        },
+        {
+          "file": "14993919225529607964.wav",
+          "text": "Australia's Mitchell Gowry finished eleventh in the men's standing superge chets competitor Oric Joklin finished sixteenth in the men's sitting superge.",
+          "decodeMs": 153,
+          "wallMs": 174.5
+        },
+        {
+          "file": "11705046490861852963.wav",
+          "text": "First, most riders wearing riding boots with a heel and a smooth, quite narrow sole.",
+          "decodeMs": 82,
+          "wallMs": 92.6
+        },
+        {
+          "file": "559615000143317446.wav",
+          "text": "First, most writers were riding boots with a heel on a smooth, quite narrow sole.",
+          "decodeMs": 58,
+          "wallMs": 64.9
+        },
+        {
+          "file": "18320871674783850842.wav",
+          "text": "Hong Kong Island gives the territory of Hong Kong its name and is the place that many tourists regard as the main focus.",
+          "decodeMs": 75,
+          "wallMs": 84.7
+        },
+        {
+          "file": "5907599423488165658.wav",
+          "text": "Hong Kong Island gives the territory of Hong Kong its name and is a place that many tourists regard as the main focus.",
+          "decodeMs": 94,
+          "wallMs": 106.9
+        },
+        {
+          "file": "3502277023574363012.wav",
+          "text": "Prides are made up of one of two three related adult males along with as many as thirty females and cubs.",
+          "decodeMs": 72,
+          "wallMs": 81
+        },
+        {
+          "file": "15592925372393530543.wav",
+          "text": "Prides are made up of one to three related adult males, along with as many as thirty females and cubs.",
+          "decodeMs": 72,
+          "wallMs": 82.1
+        },
+        {
+          "file": "17087438879836851456.wav",
+          "text": "Layton had asked for changes to the Conservatives Environmental Bill during the meeting with the PM asking for a thorough and complete rewriting of the Conservatives Party Environmental Bill.",
+          "decodeMs": 104,
+          "wallMs": 117.2
+        },
+        {
+          "file": "6507390080013738113.wav",
+          "text": "Leighton had asked for changes to the Conservative Environmental Bill during the meeting with the PM, asking for a thorough and complete rewriting of the Conservative Party's environmental bill.",
+          "decodeMs": 122,
+          "wallMs": 138.4
+        },
+        {
+          "file": "1605300975319497622.wav",
+          "text": "The Vatican City population is around eight hundred. It is the smallest independent country in the world and a country with the lowest population.",
+          "decodeMs": 99,
+          "wallMs": 112.8
+        },
+        {
+          "file": "11265842188315045636.wav",
+          "text": "The Vatican City population is around eight hundred. It is the smallest independent country in the world and the population.",
+          "decodeMs": 115,
+          "wallMs": 130.6
+        },
+        {
+          "file": "7587276269543309929.wav",
+          "text": "In the warm climate of the Middle East, the house was not so important.",
+          "decodeMs": 66,
+          "wallMs": 75.1
+        },
+        {
+          "file": "4838660681321542582.wav",
+          "text": "In the warm climate of the Middle East, the house was not so important.",
+          "decodeMs": 70,
+          "wallMs": 79.3
+        },
+        {
+          "file": "8324220666349639753.wav",
+          "text": "This seems sensible because the Earth doesn't feel as if it's moving, does it?",
+          "decodeMs": 53,
+          "wallMs": 59.8
+        },
+        {
+          "file": "3529855487992513201.wav",
+          "text": "This seems sensible, because the earth doesn't feel as if it's moving, does it?",
+          "decodeMs": 61,
+          "wallMs": 69.4
+        },
+        {
+          "file": "5407053594615190090.wav",
+          "text": "Ancient China had a unique way of showing different time periods. Each stage of China or each family that was in power was a distinctive dynasty.",
+          "decodeMs": 128,
+          "wallMs": 146.9
+        },
+        {
+          "file": "7366992441583559574.wav",
+          "text": "Ancient China had a unique way of showing different periods. Each stage of China or each family that was in power was a distinctive dynasty.",
+          "decodeMs": 121,
+          "wallMs": 138
+        },
+        {
+          "file": "10861831846737909528.wav",
+          "text": "In the north, the region is bounded by the Sale and in the south and west by the Atlantic Ocean.",
+          "decodeMs": 105,
+          "wallMs": 118.3
+        },
+        {
+          "file": "6656552880161745727.wav",
+          "text": "In the north, the region is bounded by the Sahil and in the south and west by the Atlantic Ocean.",
+          "decodeMs": 77,
+          "wallMs": 87.5
+        },
+        {
+          "file": "8268356342449509719.wav",
+          "text": "Deval, who was married to two adult children, did not leave a big impression on Miller, to whom the story was related.",
+          "decodeMs": 97,
+          "wallMs": 110.3
+        },
+        {
+          "file": "17737260257548671107.wav",
+          "text": "Duval, who was married with two adult children, did not leave a big impression on Miller to whom the story was related.",
+          "decodeMs": 69,
+          "wallMs": 77.9
+        },
+        {
+          "file": "6354316372780583820.wav",
+          "text": "Although AI has a strong connotation of science fiction, AI forms a very important branch of computer science dealing with behavior learning and intelligent adaptation in a machine.",
+          "decodeMs": 140,
+          "wallMs": 159.6
+        },
+        {
+          "file": "7053482366261158.wav",
+          "text": "Although AI has a strong connotation of science fiction, AI forms a very important branch of computer science dealing with behavior, learning and intelligent adaptation in a machine.",
+          "decodeMs": 152,
+          "wallMs": 174.8
+        },
+        {
+          "file": "5433314566767233828.wav",
+          "text": "After the accident occurred, Gibson was transported to a hospital but died shortly afterwards.",
+          "decodeMs": 67,
+          "wallMs": 75.9
+        },
+        {
+          "file": "2786302614981736925.wav",
+          "text": "People now write messages on computer screens never having to come close to a sharpener.",
+          "decodeMs": 62,
+          "wallMs": 71.1
+        },
+        {
+          "file": "2381187994276969930.wav",
+          "text": "People now write messages on computer screens, never having to come close to a sharpener.",
+          "decodeMs": 88,
+          "wallMs": 100
+        },
+        {
+          "file": "12381237049043414166.wav",
+          "text": "Mohammed was deeply interested in matters beyond this mundane life. He used to frequent a cave that became known as Hira on the Mountain of Nor Light for Contemplation.",
+          "decodeMs": 114,
+          "wallMs": 130.8
+        },
+        {
+          "file": "1876924768395363851.wav",
+          "text": "Mohammed was deeply interested in matters beyond his mundane life. He used to frequent a cave that became known as Hira on the Mountain of Noor Light for contemplation.",
+          "decodeMs": 144,
+          "wallMs": 165.2
+        },
+        {
+          "file": "5657427923960079748.wav",
+          "text": "Some people thought he was right but many people believed the opposite that the solar system moved around the Earth including the sun and even the other stars.",
+          "decodeMs": 89,
+          "wallMs": 110.6
+        },
+        {
+          "file": "837008417921522673.wav",
+          "text": "Some people thought he was right but many people believed the opposite that the solar system moved around the Earth, including the sun and even other stars.",
+          "decodeMs": 95,
+          "wallMs": 106
+        },
+        {
+          "file": "1944915261206096046.wav",
+          "text": "Swirl the two dry powders together and then with clean wet hands squeeze them into a ball",
+          "decodeMs": 66,
+          "wallMs": 74.7
+        },
+        {
+          "file": "13031516147694203229.wav",
+          "text": "Swirl the two dry powers together and then with clean wet hands squeeze them into a ball.",
+          "decodeMs": 94,
+          "wallMs": 106.9
+        },
+        {
+          "file": "14076834086577911298.wav",
+          "text": "When all available resources are effectively used across the functional departments of an organisation, creativity and ingenuity can transpire.",
+          "decodeMs": 95,
+          "wallMs": 105.2
+        },
+        {
+          "file": "13130060533227294993.wav",
+          "text": "The moisture on your hands will react with the outer layers, which will feel funny and form a sort of shell.",
+          "decodeMs": 88,
+          "wallMs": 100.4
+        },
+        {
+          "file": "11987168412167267165.wav",
+          "text": "The moisture on your hands will react with the outer layers, which will feel funny and form a sort of shell.",
+          "decodeMs": 89,
+          "wallMs": 101.1
+        },
+        {
+          "file": "15667010054869079797.wav",
+          "text": "During this period of European history the Catholic Church, which had become rich and powerful, came under scrutiny.",
+          "decodeMs": 110,
+          "wallMs": 123.4
+        },
+        {
+          "file": "1116401173651214130.wav",
+          "text": "During this period of European history, the Catholic Church which had become rich and powerful came under scrutiny.",
+          "decodeMs": 117,
+          "wallMs": 133.7
+        },
+        {
+          "file": "17257800930548614745.wav",
+          "text": "In the archipelagos and lakes you do not necessarily need a yacht.",
+          "decodeMs": 77,
+          "wallMs": 88
+        },
+        {
+          "file": "7546471028199266685.wav",
+          "text": "In the archipelagos and lakes, you do not necessarily need a yacht.",
+          "decodeMs": 73,
+          "wallMs": 83.8
+        },
+        {
+          "file": "3362263413020550013.wav",
+          "text": "In particular, it is claimed that one can detect whether a person is lying by interpreting micro expressions correctly.",
+          "decodeMs": 77,
+          "wallMs": 87.5
+        },
+        {
+          "file": "13029464143980259888.wav",
+          "text": "In particular, it is claimed that one can detect whether a person is lying by interpreting micro expressions correctly.",
+          "decodeMs": 67,
+          "wallMs": 76.1
+        },
+        {
+          "file": "7489324500816890474.wav",
+          "text": "During the struggle for independence organized by the Mao movement a peaceful gathering in the town resulted in the killing of Paramount chief Tuba Tubesa Luft III.",
+          "decodeMs": 125,
+          "wallMs": 142.5
+        },
+        {
+          "file": "2642023010607031328.wav",
+          "text": "During the struggle for independence organised by the Mao movement a peaceful gathering in the town resulted in the killing of the Paramount chief Tupua Tamas Leolofi III",
+          "decodeMs": 122,
+          "wallMs": 139.4
+        },
+        {
+          "file": "10323357556845456822.wav",
+          "text": "The Northern Marianas Emergency Management Office said there were no damages reported in the nation.",
+          "decodeMs": 106,
+          "wallMs": 121.1
+        },
+        {
+          "file": "8491962032427728850.wav",
+          "text": "The Northern Marianas Emergency Management Office said that there were no damages reported in the nation.",
+          "decodeMs": 111,
+          "wallMs": 125.6
+        },
+        {
+          "file": "221216034074176262.wav",
+          "text": "segregation and recombination, shuffle variation back and forth between the two pools with each generation.",
+          "decodeMs": 116,
+          "wallMs": 131.4
+        },
+        {
+          "file": "13888599635337906526.wav",
+          "text": "Segregation and recombination shuffle variation back and forth between the two pools with each generation.",
+          "decodeMs": 123,
+          "wallMs": 138.4
+        },
+        {
+          "file": "4103166808026076685.wav",
+          "text": "He added that they should not, however, be asked to take on obligations that go beyond their development stage, responsibility and capabilities.",
+          "decodeMs": 113,
+          "wallMs": 127.4
+        },
+        {
+          "file": "14805661830607478688.wav",
+          "text": "He added they should not however be asked to take on obligations that go beyond their development stage, responsibility and capabilities.",
+          "decodeMs": 120,
+          "wallMs": 135.7
+        },
+        {
+          "file": "8395660467583137383.wav",
+          "text": "Regional and seasonal severe weather phenomena include blizzards, storms, ice storms, and dust storms.",
+          "decodeMs": 78,
+          "wallMs": 88.7
+        },
+        {
+          "file": "8582392026322819617.wav",
+          "text": "Regional and seasonal severe weather phenomena include blizzards, snowstorms, ice storms and dust storms.",
+          "decodeMs": 81,
+          "wallMs": 91.9
+        },
+        {
+          "file": "8398257681626621326.wav",
+          "text": "doctor Malar Balasumbromian twenty nine was found in Blue Ash, Ohio, a suburb approximately fifteen miles north of Cincinnati, lying on the ground beside the road in a t shirt and underwear, in apparently heavily medicated state.",
+          "decodeMs": 144,
+          "wallMs": 164.2
+        }
+      ],
+      "status": "measured",
+      "longForm": [
+        {
+          "label": "60s",
+          "audioSec": 68.82,
+          "utterances": [
+            "9055240296608129734.wav",
+            "621925716775998155.wav",
+            "2589557553267364799.wav",
+            "15618717836108767541.wav",
+            "2652155470394119415.wav",
+            "18066939864018796519.wav",
+            "1596269393232229615.wav",
+            "2637301866626572038.wav"
+          ],
+          "decodeMs": 1126,
+          "decodeRtf": 0.016361522813135715,
+          "wer": 0.043209876543209874,
+          "wordRatio": 1.0061728395061729,
+          "text": "Unfortunately, studying traffic flow is difficult because driver behavior cannot be predicted with one hundred percent certainty. Twentieth century research has shown that there are two pools of genetic variation hidden and expressed. Remember that even though music on the main stages may have finished, there may be sections of the festival that will keep playing music until late into the night. Police superintendent Shandra Shikar Salanki said that accused appeared in court with covered faces. The term bug is used by entomologists in a formal sense for this group of insects. Popular sports include football, basketball, volleyball, water polo, fencing, rugby, cycling, ice hockey, roller hockey, and F one motor racing. Bishkeck was described as sinking into a state of anarchy by one observer as gangs of people roamed the streets and plundered stores of consumer goods. During the Revolutionary War, the thirteen states first formed a weak central government, with the Congress being its only component under the Articles of Confederation."
+        },
+        {
+          "label": "300s",
+          "audioSec": 310.92,
+          "utterances": [
+            "9055240296608129734.wav",
+            "621925716775998155.wav",
+            "2589557553267364799.wav",
+            "15618717836108767541.wav",
+            "2652155470394119415.wav",
+            "18066939864018796519.wav",
+            "1596269393232229615.wav",
+            "2637301866626572038.wav",
+            "18080893208509673354.wav",
+            "13230261475791184258.wav",
+            "10492135991603561867.wav",
+            "6817878979697223927.wav",
+            "10197164397713068203.wav",
+            "5606750157981126233.wav",
+            "283614893570272908.wav",
+            "9431561488681290113.wav",
+            "5505398583576174352.wav",
+            "6917907748364342404.wav",
+            "16851035292487940942.wav",
+            "6852813781354643345.wav",
+            "11536232800365538941.wav",
+            "3927163358777802368.wav",
+            "16824485789160047135.wav",
+            "11705046490861852963.wav",
+            "18320871674783850842.wav",
+            "3502277023574363012.wav",
+            "17087438879836851456.wav",
+            "11265842188315045636.wav",
+            "4838660681321542582.wav",
+            "8324220666349639753.wav",
+            "6656552880161745727.wav",
+            "17737260257548671107.wav",
+            "5433314566767233828.wav",
+            "2786302614981736925.wav",
+            "12381237049043414166.wav"
+          ],
+          "error": "engine process exited",
+          "wer": 1,
+          "wordRatio": 0
+        }
+      ],
+      "otherRun": {
+        "pattern": "bench-cleanup|eval-cleanup",
+        "samples": 3,
+        "hits": 0,
+        "unknown": 0,
+        "active": false
+      },
+      "loadavgAfter": [
+        8.18,
+        10.61,
+        15.33
+      ],
+      "quietWait": null,
+      "contended": true,
+      "measureAttempts": [
+        {
+          "contended": true,
+          "decodeRtf": 0.010420806056930125,
+          "otherRun": {
+            "pattern": "bench-cleanup|eval-cleanup",
+            "samples": 3,
+            "hits": 0,
+            "unknown": 0,
+            "active": false
+          },
+          "loadavgBefore": [
+            6.93,
+            10.52,
+            15.38
+          ],
+          "loadavgAfter": [
+            8.18,
+            10.61,
+            15.33
+          ]
+        }
+      ],
+      "catalogued": true,
+      "measuredWith": {
+        "gitHead": "22635b1c7e18ab9d9f330729b1a3d9c636e2a9ab",
+        "measuringCode": "710af85038ec6ac034df988fd48cd3db8d8cf62e33f5eb75bfbcd51c3324b1f4"
+      }
+    }
+  ],
+  "policy": {
+    "cpuLock": null,
+    "otherRunPattern": "bench-cleanup|eval-cleanup",
+    "quietLoad": 4
+  },
+  "cpuLock": null,
+  "ablation": {
+    "all": 0.05965391621129326,
+    "without_lowercase": 0.08151183970856102,
+    "without_numbers": 0.06890215893431327,
+    "without_punctuation": 0.11882998171846434,
+    "without_fillers": 0.05965391621129326
+  }
+}

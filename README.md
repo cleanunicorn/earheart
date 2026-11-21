@@ -399,6 +399,8 @@ original model name, including in the wizard and selected-model summary.
 is available for speech-to-text in 25 European languages through its official
 int8 ONNX export, running locally on CPU under CC BY 4.0. It uses verbatim
 transcription; Earheart's separate cleanup step remains optional.
+See the [STT model benchmark](docs/stt-models.md) for an English subset comparison,
+observed CPU decoding times, and evaluation limitations.
 Pick a model and press **Save**:
 a model that isn't downloaded yet downloads first, with its progress and
 **Cancel** in the model row, and Settings saves once it is installed. If the

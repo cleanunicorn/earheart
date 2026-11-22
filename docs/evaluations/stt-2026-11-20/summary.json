@@ -1,0 +1,174 @@
+{
+  "scope": "First 100 FLEURS en_us test clips; preliminary subset benchmark. Timings from accuracy pass under uncontrolled host load, not a clean speed ranking.",
+  "machine": {
+    "cpu": "AMD Ryzen 9 3900X 12-Core Processor",
+    "logicalCpus": 24,
+    "appThreads": 8,
+    "ramGb": 61,
+    "platform": "linux 6.17.0-40-generic x64",
+    "versions": {
+      "node": "24.19.0",
+      "electron": "42.11.16",
+      "v8": "14.8.178.38-electron.0",
+      "sherpaOnnxNode": "1.13.3"
+    },
+    "gitHead": "22635b1c7e18ab9d9f330729b1a3d9c636e2a9ab",
+    "measuringCode": "710af85038ec6ac034df988fd48cd3db8d8cf62e33f5eb75bfbcd51c3324b1f4"
+  },
+  "utterances": 100,
+  "sentences": 52,
+  "audioMinutes": 15.94,
+  "referenceWords": 2196,
+  "rows": [
+    {
+      "model": "Medium \u00b7 Parakeet TDT 0.6B v3 (multilingual, int8)",
+      "id": "parakeet-tdt-0.6b-v3-int8",
+      "status": "measured",
+      "werPercent": 5.97,
+      "errors": 131,
+      "deltaPoints": 0,
+      "delta95CI": [
+        0,
+        0
+      ],
+      "observedRtf": 0.0427,
+      "observedSecondsPer10s": 0.427,
+      "coldLoadSeconds": 2.47,
+      "sizeMB": 670,
+      "longForm": [
+        {
+          "duration": "60s",
+          "werPercent": 4.94,
+          "wordRatio": 0.988,
+          "error": null
+        },
+        {
+          "duration": "300s",
+          "werPercent": 100,
+          "wordRatio": 0,
+          "error": "engine process exited"
+        }
+      ]
+    },
+    {
+      "model": "Medium \u00b7 Fluid Speech Pro 0.63B (multilingual, int8)",
+      "id": "fluid-speech-pro-int8",
+      "status": "measured",
+      "werPercent": 4.74,
+      "errors": 104,
+      "deltaPoints": -1.23,
+      "delta95CI": [
+        -2.3,
+        -0.04
+      ],
+      "observedRtf": 0.3141,
+      "observedSecondsPer10s": 3.141,
+      "coldLoadSeconds": 1.42,
+      "sizeMB": 801,
+      "longForm": [
+        {
+          "duration": "60s",
+          "werPercent": 1.85,
+          "wordRatio": 1,
+          "error": null
+        },
+        {
+          "duration": "300s",
+          "werPercent": 100,
+          "wordRatio": 0,
+          "error": "engine process exited"
+        }
+      ]
+    },
+    {
+      "model": "Large \u00b7 Parakeet TDT 0.6B v3 (multilingual, full precision)",
+      "id": "parakeet-tdt-0.6b-v3",
+      "status": "measured",
+      "werPercent": 5.1,
+      "errors": 112,
+      "deltaPoints": -0.87,
+      "delta95CI": [
+        -2.18,
+        0.28
+      ],
+      "observedRtf": 0.0311,
+      "observedSecondsPer10s": 0.311,
+      "coldLoadSeconds": 3.03,
+      "sizeMB": 2550,
+      "longForm": [
+        {
+          "duration": "60s",
+          "werPercent": 1.85,
+          "wordRatio": 1,
+          "error": null
+        },
+        {
+          "duration": "300s",
+          "werPercent": 100,
+          "wordRatio": 0,
+          "error": "engine process exited"
+        }
+      ]
+    },
+    {
+      "model": "Large \u00b7 Parakeet TDT 0.6B v2 (English only, full precision)",
+      "id": "parakeet-tdt-0.6b-v2",
+      "status": "measured",
+      "werPercent": 4.01,
+      "errors": 88,
+      "deltaPoints": -1.96,
+      "delta95CI": [
+        -2.99,
+        -1.04
+      ],
+      "observedRtf": 0.0299,
+      "observedSecondsPer10s": 0.299,
+      "coldLoadSeconds": 2.98,
+      "sizeMB": 2513,
+      "longForm": [
+        {
+          "duration": "60s",
+          "werPercent": 11.11,
+          "wordRatio": 0.901,
+          "error": null
+        },
+        {
+          "duration": "300s",
+          "werPercent": 100,
+          "wordRatio": 0,
+          "error": "engine process exited"
+        }
+      ]
+    },
+    {
+      "model": "Small \u00b7 Parakeet TDT 110M (English only, fastest)",
+      "id": "parakeet-tdt-110m-en",
+      "status": "measured",
+      "werPercent": 5.87,
+      "errors": 129,
+      "deltaPoints": -0.09,
+      "delta95CI": [
+        -1.51,
+        1.14
+      ],
+      "observedRtf": 0.0104,
+      "observedSecondsPer10s": 0.104,
+      "coldLoadSeconds": 1.79,
+      "sizeMB": 477,
+      "longForm": [
+        {
+          "duration": "60s",
+          "werPercent": 4.32,
+          "wordRatio": 1.006,
+          "error": null
+        },
+        {
+          "duration": "300s",
+          "werPercent": 100,
+          "wordRatio": 0,
+          "error": "engine process exited"
+        }
+      ]
+    }
+  ]
+}

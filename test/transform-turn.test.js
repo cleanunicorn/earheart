@@ -59,10 +59,12 @@ test("rewrite prompts ask for a complete edit of the selection from a noisy spok
   const remote = transformMessages(request);
   for (const prompt of [local, remote.system]) {
     assert.match(prompt, /complete revised version of the selected text/);
+    assert.match(prompt, /preserve any content and formatting the instruction does not ask you to change/i);
     assert.match(prompt, /speech-recognition errors/);
     assert.match(prompt, /use the selection.*technical terms/i);
     assert.match(prompt, /do not.*polish the instruction itself/i);
     assert.match(prompt, /exact replacement wording/i);
+    assert.match(prompt, /include quotes and code fences only if they belong in the result/i);
   }
   for (const prompt of [local, remote.user]) {
     assert.ok(prompt.includes(request.selection));

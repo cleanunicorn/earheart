@@ -51,8 +51,8 @@ async function transform({ instruction, selection = "" }, cfg, signal) {
   if (choice?.finish_reason === "length") throw new Error(TRANSFORM_TRUNCATED_MESSAGE);
   const content = choice?.message?.content;
   if (typeof content !== "string") throw new Error("Command service returned no message content");
-  const text = stripThinking(content);
-  if (text.length === 0) throw new Error(TRANSFORM_EMPTY_MESSAGE);
+  const text = stripThinking(content, { preserveWhitespace: true });
+  if (!text.trim()) throw new Error(TRANSFORM_EMPTY_MESSAGE);
   return text;
 }
 

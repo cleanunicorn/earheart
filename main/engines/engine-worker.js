@@ -503,8 +503,8 @@ async function transform({ model, operationId, turn, maxTokens, sampling }) {
       maxTokens,
     });
     if (stopReason === "maxTokens") throw new Error(TRANSFORM_TRUNCATED_MESSAGE);
-    const text = (responseText || "").trim();
-    if (!text) throw new Error(TRANSFORM_EMPTY_MESSAGE);
+    const text = responseText || "";
+    if (!text.trim()) throw new Error(TRANSFORM_EMPTY_MESSAGE);
     return text;
   }, operationId);
 }

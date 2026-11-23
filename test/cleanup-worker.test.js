@@ -20,7 +20,7 @@ const drain = () => new Promise((resolve) => setImmediate(resolve));
 function worker({
   loadGate, promptGate, promptStarted, preloadGate, preloadStarted,
   env = { EARHEART_LLAMA_GPU: "off" }, gpuFails = false, stopReason = "eogToken",
-  contextFailsAbove = Infinity, trainContextSize,
+  contextFailsAbove = Infinity, trainContextSize, responseText,
 } = {}) {
   const events = [];
   // Kept apart from `events`, whose exact sequence the older tests pin.
@@ -67,7 +67,7 @@ function worker({
         promptStarted?.resolve();
         if (promptGate) await promptGate.promise;
         if (signal.aborted) throw new Error("cleanup cancelled");
-        return { responseText: this.modelPath, stopReason };
+        return { responseText: responseText ?? this.modelPath, stopReason };
       }
       async preloadPrompt(text, { signal }) {
         assert.equal(signal.aborted, false);
@@ -422,11 +422,12 @@ const command = (modelPath, over = {}) => ({
   model: model(modelPath), operationId: 21, turn: "rules\n\nInstruction:\nshorten it\n\nResult:", maxTokens: 256, sampling: { temperature: 0.4 }, ...over,
 });
 
-test("transform: returns the generated text under its own output cap", async () => {
-  const w = worker();
+test("transform: preserves generated whitespace under its own output cap", async () => {
+  const text = "    return 2\n";
+  const w = worker({ responseText: text });
   const reply = await w.send("transform", command("A"));
   assert.equal(reply.ok, true);
-  assert.equal(reply.result, "A");
+  assert.equal(reply.result, text);
   assert.deepEqual(w.promptOptions, [{ maxTokens: 256 }], "the cap is the request's, not the cleanup ratio");
 });
 
@@ -437,11 +438,13 @@ test("transform: hitting the output cap is an error, never a partial result", as
   assert.match(reply.error, /length limit/);
 });
 
-test("transform: an empty reply is an error", async () => {
-  const w = worker();
-  const reply = await w.send("transform", command(""));
-  assert.equal(reply.ok, false);
-  assert.match(reply.error, /returned no text/);
+test("transform: an empty or whitespace-only reply is an error", async () => {
+  for (const responseText of ["", " \t\n"]) {
+    const w = worker({ responseText });
+    const reply = await w.send("transform", command("A"));
+    assert.equal(reply.ok, false);
+    assert.match(reply.error, /returned no text/);
+  }
 });
 
 test("transform: a long selection grows the context, within the ceiling", async () => {

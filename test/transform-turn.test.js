@@ -50,6 +50,28 @@ test("an instruction that quotes the nonce also forces a re-draw", () => {
   assert.strictEqual(parts.nonce, "010203040506");
 });
 
+test("rewrite prompts ask for a complete edit of the selection from a noisy spoken brief", () => {
+  const request = {
+    selection: "Should we restyle `SearchBox` or use shadcn Command? Keep the existing behavior for now.",
+    instruction: "Changes changes this to uh the search box should be a command palette with command K and use a shad cn command.",
+  };
+  const local = transformTurn(request);
+  const remote = transformMessages(request);
+  for (const prompt of [local, remote.system]) {
+    assert.match(prompt, /complete revised version of the selected text/);
+    assert.match(prompt, /preserve any content and formatting the instruction does not ask you to change/i);
+    assert.match(prompt, /speech-recognition errors/);
+    assert.match(prompt, /use the selection.*technical terms/i);
+    assert.match(prompt, /do not.*polish the instruction itself/i);
+    assert.match(prompt, /exact replacement wording/i);
+    assert.match(prompt, /include quotes and code fences only if they belong in the result/i);
+  }
+  for (const prompt of [local, remote.user]) {
+    assert.ok(prompt.includes(request.selection));
+    assert.ok(prompt.includes(request.instruction));
+  }
+});
+
 test("a nonce that can never be safe fails closed", () => {
   assert.throws(() => pickNonce(["aabbccddeeff"], nonces("aabbccddeeff")), /safe delimiter/);
 });

@@ -8,8 +8,8 @@ const { serviceUrl, authHeaders } = require("./service-url");
 const { requestJson } = require("./transport-error");
 
 // Reasoning models may emit <think>...</think> blocks; strip them.
-function stripThinking(text) {
-  return text
+function stripThinking(text, { preserveWhitespace = false } = {}) {
+  const answer = text
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
     // A response can hit its token/time limit before the closing tag. Treat
     // everything after an unmatched opener as reasoning too; clean() will
@@ -19,8 +19,8 @@ function stripThinking(text) {
     // mid-reasoning and only the closer arrives — sometimes more than once.
     // Everything up to the last closer is reasoning. Runs last, so a closer that
     // a paired block already consumed can't take an answer with it.
-    .replace(/^[\s\S]*<\/think>/i, "")
-    .trim();
+    .replace(/^[\s\S]*<\/think>/i, "");
+  return preserveWhitespace ? answer : answer.trim();
 }
 
 /**

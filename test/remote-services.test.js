@@ -614,8 +614,21 @@ test("transform: a reply cut off at the token limit is an error, not a partial r
   });
 });
 
+test("transform: preserves result whitespace while removing reasoning", async () => {
+  const text = "    return 2\n";
+  for (const content of [text, `<think>only thoughts</think>${text}`]) {
+    await withReply(replyWith({ message: { content }, finish_reason: "stop" }), async (base) => {
+      const result = await remoteTransform(
+        { instruction: "change 1 to 2", selection: "    return 1\n" },
+        { baseUrl: base, model: "m" }
+      );
+      assert.strictEqual(result, text);
+    });
+  }
+});
+
 test("transform: an empty or reasoning-only reply is an error", async () => {
-  for (const content of ["", "   ", "<think>only thoughts</think>"]) {
+  for (const content of ["", "   ", "<think>only thoughts</think>\n  "]) {
     await withReply(replyWith({ message: { content }, finish_reason: "stop" }), async (base) => {
       await assert.rejects(remoteTransform({ instruction: "x", selection: "y" }, { baseUrl: base, model: "m" }),
         { message: TRANSFORM_EMPTY_MESSAGE });

@@ -1,27 +1,40 @@
-/* Earheart's shared palette — the bar's materials, declared once and loaded
-   before overlay.css, settings.css (which the wizard layers on) and
-   correction.css. Every colour in the renderer lives here; the other sheets
-   only reference these tokens. See DESIGN.md.
+/* Earheart's shared theme. shadcn preset b2xar39I1o (Maia / Mist / Teal)
+   provides the surfaces, type, and radius scale. Teal actions and orange
+   chart bars use shades that meet contrast on both native palettes.
 
    Two palettes: dark is the base (the unconditional :root block) and light
    overrides every colour token under prefers-color-scheme: light. Main sets
    nativeTheme.themeSource from the Appearance setting, so Chromium resolves
-   the right block on the first paint and re-resolves it live when the OS (or
-   the setting) flips — no JS involved. Both blocks must declare the same token
-   names (test/theme-contract.test.js pins this, plus the WCAG ratios).
+   the right block on first paint and re-resolves it when the OS or setting
+   flips. Both blocks declare the same color tokens. Type and radii are shared.
 
-   Washes are the foreground channel at an alpha: rgb(var(--fg-rgb) / 0.08) is
-   white in dark and black in light, at the same strength. --accent-rgb and
-   --err-rgb do the same for the coral glow and the error wash.
+   --fg-rgb, --accent-rgb and --err-rgb supply translucent state colors.
 
    One value is duplicated outside CSS and must stay in sync: --ink with
    INK_COLORS in main/windows.js (the framed windows' native background). The
    overlay's canvas reads --accent at runtime. */
 
+@import url("fonts/fonts.css");
+
 :root {
   color-scheme: light dark; /* native selects, scrollbars and dialogs follow */
 
-  --ink: #18181b; /* the bar and the framed windows — solid near-black */
+  --font-sans: "Space Grotesk", system-ui, sans-serif;
+  --font-heading: "Outfit", var(--font-sans);
+  --radius: 0.45rem;
+  --radius-control: calc(var(--radius) * 1.4);
+  --radius-card: calc(var(--radius) * 1.8);
+  --radius-button: calc(var(--radius) * 2.6);
+
+  --ink: #090b0c;
+  --surface: #161b1d;
+  --sidebar: #161b1d;
+  --menu-active: #22292b;
+  --primary: #077a70;
+  --primary-hover: #087e75;
+  --primary-text: #f0fdfa;
+  --focus: #65b9b2;
+  --chart: #ff6900;
   --fg-rgb: 255 255 255; /* the foreground channel washes are made of */
   --edge: rgba(255, 255, 255, 0.1); /* hairline card + panel edges */
   --seam: rgba(255, 255, 255, 0.08); /* dividers between regions */
@@ -31,18 +44,17 @@
   --tray: rgba(0, 0, 0, 0.25); /* recessed tray inside a card */
   --dot: rgba(255, 255, 255, 0.35); /* a wizard step not yet reached (≥3:1) */
 
-  --text-strong: #ffffff; /* a filled key's hover — one step past --text */
-  --text: #f4f4f5; /* primary text; the filled key */
-  --text-mid: #d4d4d8; /* the overlay's status word */
-  --text-dim: #a1a1aa; /* secondary text, hints (≥4.5:1 on --ink) */
+  --text: #f9fbfb;
+  --text-mid: #d4dbdc; /* the overlay's status word */
+  --text-dim: #9ca8ab; /* secondary text, hints */
   --text-faint: rgba(255, 255, 255, 0.28); /* disabled key glyphs */
   --idle: #71717a; /* status dot: idle / nothing heard */
 
-  --field: #101013; /* input fill — a step below the ink */
-  --field-edge: #6b6b74; /* input boundary — ≥3:1 on --ink (WCAG 1.4.11) */
+  --field: #111719;
+  --field-edge: #718287; /* input boundary — ≥3:1 (WCAG 1.4.11) */
   /* The select caret: a CSS var can't be interpolated into a data: URI, so
      the stroke is this palette's --text-dim, written out. */
-  --caret: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="%23a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+  --caret: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="%239ca8ab" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>');
 
   --accent: #fb4d5c; /* the voice: capture dot, waveform, progress; in the
                         framed windows only while a hotkey field captures */
@@ -77,26 +89,33 @@
 
 @media (prefers-color-scheme: light) {
   :root {
-    --ink: #fafafa; /* near-white paper */
+    --ink: #ffffff;
+    --surface: #ffffff;
+    --sidebar: #f9fbfb;
+    --menu-active: #f1f3f3;
+    --primary: #00786f;
+    --primary-hover: #00655e;
+    --primary-text: #f0fdfa;
+    --focus: #00786f;
+    --chart: #ca3500;
     --fg-rgb: 0 0 0;
-    --edge: rgba(0, 0, 0, 0.1);
-    --seam: rgba(0, 0, 0, 0.08);
+    --edge: #e3e7e8;
+    --seam: #e3e7e8;
     --wash: rgba(0, 0, 0, 0.06);
     --wash-faint: rgba(0, 0, 0, 0.04);
     --track: rgba(0, 0, 0, 0.1);
     --tray: rgba(0, 0, 0, 0.05);
     --dot: rgba(0, 0, 0, 0.45);
 
-    --text-strong: #000000;
-    --text: #18181b;
-    --text-mid: #3f3f46;
-    --text-dim: #52525b;
+    --text: #090b0c;
+    --text-mid: #39474a;
+    --text-dim: #586a6e;
     --text-faint: rgba(0, 0, 0, 0.32);
     --idle: #71717a;
 
-    --field: #ffffff;
-    --field-edge: #82828b;
-    --caret: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="%2352525b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+    --field: #f9fbfb;
+    --field-edge: #758187;
+    --caret: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="%23586a6e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>');
 
     --accent: #d42a3c;
     --accent-rgb: 212 42 60;

@@ -1,18 +1,19 @@
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--ink); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+body { margin: 0; background: var(--ink); color: var(--text); font: 15px/1.5 var(--font-sans); }
 main { max-width: 760px; margin: auto; padding: 24px; }
-h1 { margin: 0 0 8px; font-size: 22px; }
+h1 { font-family: var(--font-heading); margin: 0 0 8px; font-size: 22px; }
 label { display: block; margin: 14px 0 6px; font-weight: 600; }
 .hint { color: var(--text-dim); font-size: 13px; }
-textarea, input { width: 100%; background: var(--field); color: var(--text); border: 1px solid var(--field-edge); border-radius: 6px; padding: 10px; font: inherit; }
-textarea { min-height: 160px; height: 24vh; resize: vertical; }
-button { border: 1px solid var(--field-edge); border-radius: 6px; background: var(--field); color: var(--text); padding: 9px 12px; font: inherit; cursor: pointer; }
-button.primary { background: var(--text); color: var(--ink); border-color: var(--text); font-weight: 600; }
+textarea, input { width: 100%; background: var(--field); color: var(--text); border: 1px solid var(--field-edge); border-radius: var(--radius-control); padding: 10px; font: inherit; }
+textarea { min-height: 160px; height: 21vh; resize: vertical; }
+button { border: 1px solid var(--field-edge); border-radius: var(--radius-button); background: var(--field); color: var(--text); padding: 9px 12px; font: inherit; cursor: pointer; }
+button.primary { background: var(--primary); color: var(--primary-text); border-color: var(--primary); font-weight: 600; }
+button.primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
 button:disabled { opacity: .45; cursor: default; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 .actions, footer { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 footer { justify-content: space-between; border-top: 1px solid var(--field-edge); padding-top: 16px; }
 #status { min-height: 24px; }
 #undo-hint { margin: 8px 0 0; }
 label.check { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; font-weight: 400; }
-label.check input { width: auto; margin: 0; padding: 0; accent-color: var(--text); } /* DESIGN.md: a checked box is white, never coral */
+label.check input { width: auto; margin: 0; padding: 0; accent-color: var(--primary); }

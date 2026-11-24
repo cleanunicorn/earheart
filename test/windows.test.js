@@ -650,7 +650,7 @@ test("the overlay keeps backgroundThrottling off; the forms keep their framed op
   assert.strictEqual(overlay.backgroundColor, undefined, "the transparent overlay must not get the ink background");
   for (const form of [settingsWin, wizard]) {
     assert.strictEqual(form.autoHideMenuBar, true);
-    assert.strictEqual(form.backgroundColor, "#18181b", "dark palette: the dark ink");
+    assert.strictEqual(form.backgroundColor, "#090b0c", "dark palette: the dark ink");
     assert.match(form.icon, /icon\.png$/);
   }
   assert.strictEqual(settingsWin.title, "Earheart");
@@ -873,7 +873,7 @@ test("requiring windows.js registers no IPC handler until init(), which is idemp
 });
 
 test("each framed window is created in the current palette's ink (#348)", () => {
-  for (const [dark, ink] of [[true, "#18181b"], [false, "#fafafa"]]) {
+  for (const [dark, ink] of [[true, "#090b0c"], [false, "#ffffff"]]) {
     const { windows, calls } = loadWindows({ nativeTheme: { shouldUseDarkColors: dark } });
     windows.openSettings();
     windows.openWizard();
@@ -898,7 +898,7 @@ test("refreshInk repaints only the open framed windows, never the overlay (#348)
   const correction = windows.openCorrection({ text: "draft" });
   nativeTheme.shouldUseDarkColors = false;
   windows.refreshInk();
-  assert.deepStrictEqual(painted(), ["#fafafa", "#fafafa", "#fafafa"],
+  assert.deepStrictEqual(painted(), ["#ffffff", "#ffffff", "#ffffff"],
     "Settings, the wizard and the correction window repaint; the transparent overlay does not");
 
   // A window destroyed under its reference (closed, or destroyed before its
@@ -908,7 +908,7 @@ test("refreshInk repaints only the open framed windows, never the overlay (#348)
   correction.closed = true; // destroyed without its closed handler running
   nativeTheme.shouldUseDarkColors = true;
   assert.doesNotThrow(() => windows.refreshInk());
-  assert.deepStrictEqual(painted(), ["#18181b"], "only the live Settings window repaints");
+  assert.deepStrictEqual(painted(), ["#090b0c"], "only the live Settings window repaints");
   assert.ok(!settingsWin.isDestroyed());
 });
 

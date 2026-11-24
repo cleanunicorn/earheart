@@ -27,11 +27,7 @@ html,
 body {
   background: transparent;
   overflow: hidden;
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
+  font-family: var(--font-sans);
   user-select: none;
   -webkit-app-region: no-drag;
 }
@@ -49,7 +45,7 @@ body {
   display: flex;
   flex-direction: column;
   margin: 12px;
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   /* Solid (not translucent) so the words and the waveform never depend on
      whatever app shows through behind the overlay. */
   background: var(--ink);
@@ -104,9 +100,9 @@ body {
   gap: 6px;
   margin: 2px 12px 6px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   border: 1px solid var(--edge);
-  background: rgb(var(--fg-rgb) / 0.05);
+  background: var(--surface);
 }
 
 /* Solo prompt: the card came up for the update alone, with no dictation behind
@@ -126,6 +122,7 @@ body {
   flex: 1;
   min-width: 0;
   font-size: 13px;
+  font-family: var(--font-heading);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -195,32 +192,31 @@ body {
   gap: 4px;
 }
 
-/* Text pills — the update note's actions. The filled white pill is the same
-   "this is the key action" grammar as the Done key below. */
+/* Update actions share the bar's primary and secondary button styles. */
 /* (The button base below already supplies border: none and a transparent
    background; pills only override the circle's geometry and type.) */
 .pill {
   width: auto;
   height: 26px;
   padding: 0 11px;
-  border-radius: 13px;
+  border-radius: var(--radius-button);
   font-size: 12px;
   font-weight: 600;
   font-family: inherit;
 }
 
 .pill::before {
-  border-radius: 15px;
+  border-radius: calc(var(--radius-button) + 2px);
   inset: -2px;
 }
 
 .pill.primary {
-  background: var(--text);
-  color: var(--ink);
+  background: var(--primary);
+  color: var(--primary-text);
 }
 
 .pill.primary:hover {
-  background: var(--text-strong);
+  background: var(--primary-hover);
 }
 
 /* Quiet pills and the dismiss key ride the button base for color and hover
@@ -542,21 +538,19 @@ button:active {
 /* Keyboard focus ring. The overlay is focusable:false so focus normally never
    lands here, but this is cheap insurance for AT or a future focusable context. */
 button:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
-/* Done: the one filled key — white while there's a dictation to finish, the
-   single strongest thing on the bar. Keeps its slot through the processing
-   phases (disabled, faded) so the discard key never jumps. */
+/* Done keeps its slot through processing so the discard key stays in place. */
 #stop {
-  background: var(--text);
-  color: var(--ink);
+  background: var(--primary);
+  color: var(--primary-text);
 }
 
 #stop:hover {
-  background: var(--text-strong);
-  color: var(--ink);
+  background: var(--primary-hover);
+  color: var(--primary-text);
 }
 
 /* Outside a dictation there is nothing to finish: the key stays in its slot

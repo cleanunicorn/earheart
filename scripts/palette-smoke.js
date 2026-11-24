@@ -117,7 +117,7 @@ async function checkPalette({ waitFor, check, invokeHandlers }) {
     for (const scheme of ["dark", "light"]) {
       nativeTheme.themeSource = scheme;
       palette.open(); await opened();
-      const expectedInk = scheme === "dark" ? "#18181b" : "#fafafa";
+      const expectedInk = windows.INK_COLORS[scheme];
       await waitFor(() => run(`getComputedStyle(document.documentElement).getPropertyValue("--ink").trim().toLowerCase() === "${expectedInk}"`), `Commands did not adopt ${scheme}`);
       const nativeInk = `#${win.getBackgroundColor().replace("#", "").slice(-6).toLowerCase()}`;
       check(`Commands uses the ${scheme} theme`, nativeInk === expectedInk, `native=${nativeInk} expected=${expectedInk}`);

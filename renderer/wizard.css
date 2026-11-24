@@ -1,7 +1,7 @@
 /* Setup wizard — layered on top of settings.css, which provides the quiet
    transcription bar's palette, form controls and header/footer chrome. The
-   wizard's own pieces follow the same grammar: quiet white-wash cards, plain
-   controls, step dots, and a miniature of the real dictation bar in the
+   wizard's own pieces follow the same theme: Mist cards, teal controls,
+   step dots, and a miniature of the real dictation bar in the
    welcome demo. */
 
 /* Steps center vertically in the fixed frame: auto margins collapse to zero
@@ -25,6 +25,7 @@ main {
 }
 
 .step h2 {
+  font-family: var(--font-heading);
   font-size: 16px;
   font-weight: 650;
   margin-bottom: 10px;
@@ -35,7 +36,7 @@ footer {
   justify-content: space-between;
 }
 
-/* Step position as a row of dots: quiet stops, the current one white. */
+/* An outline distinguishes the current step independently of its fill. */
 .dots {
   display: flex;
   gap: 7px;
@@ -51,7 +52,9 @@ footer {
 }
 
 .dot.active {
-  background: var(--text);
+  background: var(--primary);
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
 
 /* ---------- "how it works" demo on the welcome step ---------- */
@@ -69,9 +72,9 @@ footer {
 #summary,
 .value-card,
 .dl-item {
-  background: var(--wash-faint);
+  background: var(--surface);
   border: 1px solid var(--edge);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
 }
 
 .demo-card {
@@ -120,17 +123,14 @@ kbd {
   color: var(--text);
 }
 
-/* Step 2: a miniature of the real dictation bar (see overlay.css) — pulsing
-   coral capture dot, the live coral waveform, the timer, and the filled
-   white Done key. Like the real bar, it carries no parts that don't report
-   something. */
+/* Step 2 mirrors the dictation bar's coral waveform and teal Done key. */
 .mini-bar {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 36px;
   padding: 0 10px;
-  border-radius: 18px;
+  border-radius: var(--radius-button);
   background: var(--ink);
   border: 1px solid rgb(var(--fg-rgb) / 0.14);
 }
@@ -181,10 +181,7 @@ kbd {
   color: var(--text);
 }
 
-/* The real Done key's glyph in miniature — a text ✓ at this size renders as
-   a smudge, so it is the same SVG path as the overlay's key. 3.2 at 9px
-   renders ~1.8px — proportionally heavier than the key's 2.25px-on-32px, so
-   the check still reads at miniature scale. */
+/* The overlay's Done glyph with a heavier stroke for miniature scale. */
 .mini-done {
   display: flex;
   align-items: center;
@@ -192,8 +189,8 @@ kbd {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: var(--text);
-  color: var(--ink);
+  background: var(--primary);
+  color: var(--primary-text);
 }
 
 .mini-done svg {

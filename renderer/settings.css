@@ -1,10 +1,6 @@
-/* Earheart settings — the quiet transcription bar's settings window. One
-   continuous near-black page read top to bottom: a sticky index on the left,
-   quiet white-wash cards for each group, plain solid inputs, fully-rounded
-   pill buttons, and one filled white Save — the same "the key action is the
-   white thing" grammar as the overlay's Done key. Flat throughout: hairline
-   edges and washes, no shadows, no glows. Coral appears in exactly one place:
-   a hotkey field that is literally capturing your key press.
+/* Settings share the Mist surfaces, Maia shapes, and teal actions in
+   tokens.css. The sticky index and cards organize one continuous page.
+   Coral signals a hotkey field that is capturing a key press.
 
    The wizard layers on top of this file, so the shared primitives (tokens,
    header, footer, .field, .choice, .hint, .lead, buttons, .status, .dl-bar)
@@ -30,11 +26,7 @@
 }
 
 body {
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
+  font-family: var(--font-sans);
   background: var(--ink);
   color: var(--text);
   font-size: 14px;
@@ -61,6 +53,7 @@ header img {
 }
 
 header h1 {
+  font-family: var(--font-heading);
   font-size: 16px;
   font-weight: 650;
   letter-spacing: -0.01em;
@@ -98,6 +91,7 @@ nav#tabs {
      sizes); 12px left + .tab's 12px = 24px, flush with the header and
      content column inset. */
   padding: 15px 10px 18px 12px;
+  background: var(--sidebar);
   overflow-y: auto;
   border-right: 1px solid var(--seam);
   scrollbar-width: thin;
@@ -112,7 +106,7 @@ nav#tabs {
   padding: 8px 12px;
   background: none;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--text-dim);
   font-size: 13px;
   font-weight: 500;
@@ -177,11 +171,11 @@ nav#tabs {
 /* You are here: the wash plus bright text — no markers, no dots. */
 .tab.active {
   color: var(--text);
-  background: var(--wash);
+  background: var(--menu-active);
 }
 
 .tab:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 
@@ -223,6 +217,7 @@ main {
   display: flex;
   align-items: center;
   gap: 10px;
+  font-family: var(--font-heading);
   font-size: 16px;
   font-weight: 650;
   letter-spacing: -0.01em;
@@ -246,7 +241,7 @@ main {
 /* Index activation moves focus here (tabindex=-1); show a ring only for
    keyboard-driven activation. */
 .legend:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--focus);
   outline-offset: 3px;
   border-radius: 2px;
 }
@@ -254,9 +249,9 @@ main {
 /* ---------- cards: quiet group panels ---------- */
 
 .card {
-  background: var(--wash-faint);
+  background: var(--surface);
   border: 1px solid var(--edge);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   padding: 16px 18px;
   margin-bottom: 12px;
 }
@@ -266,6 +261,7 @@ main {
 }
 
 .card-title {
+  font-family: var(--font-heading);
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
@@ -312,7 +308,7 @@ textarea {
   /* The boundary is the input's main cue against the card — --field-edge
      clears the 3:1 UI-component bar. */
   border: 1px solid var(--field-edge);
-  border-radius: 8px;
+  border-radius: var(--radius-button);
   padding: 9px 11px;
   font-size: 13px;
   font-family: inherit;
@@ -331,20 +327,19 @@ textarea::placeholder {
 /* Prompt and dictionary are machine instructions — data, so monospace. */
 textarea {
   font-family: var(--mono);
+  border-radius: var(--radius-control);
   font-size: 13px;
   line-height: 1.55;
   resize: vertical;
   margin-bottom: 8px;
 }
 
-/* Focus: the edge brightens to white with a soft ring — the same "this is
-   the active thing" white the whole system speaks. */
 input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: var(--text);
-  box-shadow: 0 0 0 3px rgb(var(--fg-rgb) / 0.1);
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 25%, transparent);
 }
 
 select {
@@ -370,11 +365,7 @@ select {
    they read in the body face, not the accelerator mono. */
 #hotkey::placeholder,
 #pause-hotkey::placeholder {
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
+  font-family: var(--font-sans);
   letter-spacing: normal;
 }
 
@@ -651,9 +642,7 @@ select {
   line-height: 1.5;
 }
 
-/* The switch: engaging it fills the track white and the knob goes ink — the
-   filled-white "this is on" grammar. The knob's brightness is the off-state's
-   3:1 cue against the ink. */
+/* The track boundary is visible at rest. Checked uses the primary pair. */
 input.switch {
   appearance: none;
   -webkit-appearance: none;
@@ -662,7 +651,7 @@ input.switch {
   height: 22px;
   flex-shrink: 0;
   border-radius: 11px;
-  border: 1px solid var(--edge);
+  border: 1px solid var(--field-edge);
   background: rgb(var(--fg-rgb) / 0.1);
   cursor: pointer;
   transition:
@@ -685,13 +674,13 @@ input.switch::after {
 }
 
 input.switch:checked {
-  background: var(--text);
-  border-color: var(--text);
+  background: var(--primary);
+  border-color: var(--primary);
 }
 
 input.switch:checked::after {
   transform: translateX(18px);
-  background: var(--ink);
+  background: var(--primary-text);
 }
 
 /* ---------- inline choice (checkbox/radio) — kept for the wizard ---------- */
@@ -705,7 +694,7 @@ input.switch:checked::after {
   font-weight: 400 !important;
 }
 
-/* A plain checkbox: fills white with an ink check when engaged. */
+/* A checked box uses the primary fill and its paired foreground. */
 .choice input {
   appearance: none;
   -webkit-appearance: none;
@@ -723,8 +712,8 @@ input.switch:checked::after {
 }
 
 .choice input:checked {
-  background: var(--text);
-  border-color: var(--text);
+  background: var(--primary);
+  border-color: var(--primary);
 }
 
 .choice input:checked::after {
@@ -734,7 +723,7 @@ input.switch:checked::after {
   top: 2px;
   width: 4px;
   height: 8px;
-  border: solid var(--ink);
+  border: solid var(--primary-text);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
@@ -745,7 +734,7 @@ input.switch:checked::after {
 
 .choice input[type="radio"]:checked {
   background: transparent;
-  border-color: var(--text);
+  border-color: var(--focus);
 }
 
 .choice input[type="radio"]:checked::after {
@@ -755,7 +744,7 @@ input.switch:checked::after {
   height: 8px;
   border: none;
   border-radius: 50%;
-  background: var(--text);
+  background: var(--primary);
   transform: none;
 }
 
@@ -798,7 +787,7 @@ button {
   background: var(--wash);
   border: none;
   color: var(--text);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   padding: 8px 14px;
   font-size: 13px;
   font-weight: 500;
@@ -827,7 +816,7 @@ button:focus-visible,
 .option input:focus-visible,
 input.switch:focus-visible,
 .choice input:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -840,17 +829,16 @@ button:disabled {
   cursor: default;
 }
 
-/* Save: the one filled white pill — the same "this is the key action"
-   grammar as the overlay's Done key. */
+/* Save and the wizard's next action use the primary fill. */
 button.primary {
-  background: var(--text);
-  color: var(--ink);
+  background: var(--primary);
+  color: var(--primary-text);
   font-weight: 600;
   padding: 9px 20px;
 }
 
 button.primary:hover:not(:disabled) {
-  background: var(--text-strong);
+  background: var(--primary-hover);
 }
 
 /* Quiet pills: an edge and a label, brightening on hover. */
@@ -1086,7 +1074,7 @@ input[type="range"]:focus {
   box-shadow: none;
 }
 input[type="range"]:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--focus);
   outline-offset: 3px;
 }
 
@@ -1238,11 +1226,7 @@ input[type="range"]:focus-visible {
 #history-list .retranscribe {
   padding: 3px 11px;
   font-size: 12px;
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
+  font-family: var(--font-sans);
   letter-spacing: normal;
 }
 
@@ -1371,8 +1355,7 @@ footer {
   max-width: 220px;
 }
 
-/* Last 14 days: the progress grammar (Track fill, white fill — never coral,
-   One Voice Rule), one row per day, the number in text beside its bar. */
+/* Last 14 days: the orange chart series with a count beside each bar. */
 .usage-days {
   list-style: none;
   margin: 0;
@@ -1410,7 +1393,7 @@ footer {
   height: 100%;
   width: 0;
   border-radius: 2px;
-  background: var(--text);
+  background: var(--chart);
 }
 
 .usage-foot {

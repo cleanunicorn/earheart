@@ -28,7 +28,7 @@ const OVERLAY_FADE_MS = 200;
 // Match --ink in each palette of renderer/tokens.css (which every framed
 // window loads), so no window flashes the other palette before its stylesheet
 // paints (test/theme-contract.test.js pins both).
-const INK_COLORS = { dark: "#18181b", light: "#fafafa" };
+const INK_COLORS = { dark: "#090b0c", light: "#ffffff" };
 
 // The ink of the palette the stylesheets resolve right now: nativeTheme
 // follows the Appearance setting (main/appearance.js) and, on "system", the OS.
@@ -515,7 +515,7 @@ function restorePaletteCaller(win) {
 }
 
 function openSettings({ fromWizard = false, section, model = false, query: historyQuery, entryId } = {}) {
-  const destination = ["general", "live", "stt", "cleanup", "history", "advanced"].includes(section) ? section : undefined;
+  const destination = ["general", "live", "stt", "cleanup", "history", "usage", "advanced"].includes(section) ? section : undefined;
   const historyDestination = destination === "history" && typeof historyQuery === "string"
     ? { query: historyQuery.slice(0, 200), ...(typeof entryId === "string" ? { entryId } : {}) } : {};
   const navigation = { fromWizard, section: destination, model: !!model, ...historyDestination };
@@ -531,8 +531,9 @@ function openSettings({ fromWizard = false, section, model = false, query: histo
       const send = () => {
         if (alive(target) && settingsWindow === target) target.webContents.send("settings:navigate", navigation);
       };
-      // A loading page has not necessarily installed its navigation listener.
-      if (target.webContents.isLoadingMainFrame?.()) target.webContents.once("did-finish-load", send);
+      // did-finish-load can already have fired while the page still reports
+      // loading. did-stop-loading marks the end of that same loading state.
+      if (target.webContents.isLoading()) target.webContents.once("did-stop-loading", send);
       else send();
     }
     return bringForward(settingsWindow);

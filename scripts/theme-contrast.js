@@ -91,25 +91,27 @@ const hex = ({ r, g, b }) => "#" + [r, g, b].map((c) => Math.round(c).toString(1
 // (opaque) or a stack of translucent tokens over one, bottom first.
 const SURFACES = {
   ink: ["--ink"],
-  card: ["--ink", "--wash-faint"], // Settings/wizard cards
+  card: ["--surface"], // Settings/wizard cards
   field: ["--field"], // inputs
   hover: ["--ink", "--wash"], // a hovered row or key
-  tray: ["--ink", "--wash-faint", "--tray"], // a model tray inside a card
+  tray: ["--surface", "--tray"], // a model tray inside a card
   "err-wash": ["--ink", "err@0.12"], // the overlay's discard hover
-  "danger hover": ["--ink", "--wash-faint", "err@0.12"], // a danger pill hovered on a card
+  "danger hover": ["--surface", "err@0.12"], // a button hovered on a card
   // A capturing hotkey field: its coral fill replaces --field, over the card;
   // the 3px coral ring sits outside its edge.
-  "capture fill": ["--ink", "--wash-faint", "accent@0.07"],
-  "capture ring": ["--ink", "--wash-faint", "accent@0.16"],
+  "capture fill": ["--surface", "accent@0.07"],
+  "capture ring": ["--surface", "accent@0.16"],
   "selected segment": ["--field", "fg@0.14"], // the engine choice, on its field-filled track
-  "chosen option": ["--ink", "--wash-faint", "fg@0.07"], // a checked option row on a card
-  "button on card": ["--ink", "--wash-faint", "--wash"], // a pill button at rest
-  "button hover on card": ["--ink", "--wash-faint", "fg@0.14"],
-  "button hover in tray": ["--ink", "--wash-faint", "--tray", "fg@0.14"],
+  "chosen option": ["--surface", "fg@0.07"], // a checked option row on a card
+  "button on card": ["--surface", "--wash"], // a button at rest
+  "button hover on card": ["--surface", "fg@0.14"],
+  "button hover in tray": ["--surface", "--tray", "fg@0.14"],
   // An engine-state badge: its colour's 12% wash on the card it sits in.
-  "own wash on card": ["--ink", "--wash-faint", "self@0.12"],
-  "filled key": ["--text"], // Save, Done, the primary pill
-  "filled key hover": ["--text-strong"],
+  "own wash on card": ["--surface", "self@0.12"],
+  "primary button": ["--primary"],
+  "primary button hover": ["--primary-hover"],
+  "active menu item": ["--menu-active"],
+  "usage chart track": ["--surface", "--track"],
 };
 
 // [foreground, surfaces, minimum, what it is, paint surface?]. A translucent
@@ -136,8 +138,11 @@ const PAIRS = [
   ["--idle", ["ink"], UI, "idle status dot"],
   ["--dot", ["ink"], UI, "wizard step dot, not yet reached"],
   ["--field-edge", ["ink", "card"], UI, "input boundary"],
-  ["--text", ["ink", "card", "field"], UI, "focus outline / focused edge"],
-  ["--ink", ["filled key", "filled key hover"], TEXT, "text on a filled key"],
+  ["--focus", ["ink", "card", "field", "active menu item"], UI, "focus outline / focused edge"],
+  ["--primary", ["ink", "card"], UI, "checked control and primary button fill"],
+  ["--primary-text", ["primary button", "primary button hover"], TEXT, "text on a primary button"],
+  ["--text", ["active menu item"], TEXT, "active menu label"],
+  ["--chart", ["usage chart track"], UI, "usage chart bar"],
   ["--section-general", ["ink", "card"], TEXT, "section hue"],
   ["--section-live", ["ink", "card"], TEXT, "section hue"],
   ["--section-stt", ["ink", "card"], TEXT, "section hue"],

@@ -2,19 +2,27 @@
 name: Earheart
 description: The quiet transcription bar — live words as the interface, one coral voice.
 colors:
-  bar-ink: "#18181b"
+  bar-ink: "#090b0c"
+  surface: "#161b1d"
+  sidebar: "#161b1d"
+  menu-active: "#22292b"
+  primary: "#077a70"
+  primary-hover: "#087e75"
+  primary-text: "#f0fdfa"
+  focus: "#65b9b2"
+  chart: "#ff6900"
   coral-voice: "#fb4d5c"
-  text-primary: "#f4f4f5"
-  text-status: "#d4d4d8"
-  text-dim: "#a1a1aa"
+  text-primary: "#f9fbfb"
+  text-status: "#d4dbdc"
+  text-dim: "#9ca8ab"
   text-faint: "rgba(255, 255, 255, 0.28)"
   hairline-edge: "rgba(255, 255, 255, 0.1)"
   seam: "rgba(255, 255, 255, 0.08)"
   hover-wash: "rgba(255, 255, 255, 0.08)"
   wash-faint: "rgba(255, 255, 255, 0.04)"
   track: "rgba(255, 255, 255, 0.12)"
-  field: "#101013"
-  field-edge: "#6b6b74"
+  field: "#111719"
+  field-edge: "#718287"
   tray: "rgba(0, 0, 0, 0.25)"
   step-dot: "rgba(255, 255, 255, 0.35)"
   delivered-green: "#34d399"
@@ -31,20 +39,27 @@ colors:
   state-private: "#16bbbc"
   state-external: "#ea9941"
   # The light palette (#348): same roles, prefers-color-scheme: light.
-  bar-ink-light: "#fafafa"
+  bar-ink-light: "#ffffff"
+  surface-light: "#ffffff"
+  sidebar-light: "#f9fbfb"
+  menu-active-light: "#f1f3f3"
+  primary-light: "#00786f"
+  primary-hover-light: "#00655e"
+  primary-text-light: "#f0fdfa"
+  focus-light: "#00786f"
+  chart-light: "#ca3500"
   coral-voice-light: "#d42a3c"
-  text-primary-light: "#18181b"
-  text-strong-light: "#000000"
-  text-status-light: "#3f3f46"
-  text-dim-light: "#52525b"
+  text-primary-light: "#090b0c"
+  text-status-light: "#39474a"
+  text-dim-light: "#586a6e"
   text-faint-light: "rgba(0, 0, 0, 0.32)"
-  hairline-edge-light: "rgba(0, 0, 0, 0.1)"
-  seam-light: "rgba(0, 0, 0, 0.08)"
+  hairline-edge-light: "#e3e7e8"
+  seam-light: "#e3e7e8"
   hover-wash-light: "rgba(0, 0, 0, 0.06)"
   wash-faint-light: "rgba(0, 0, 0, 0.04)"
   track-light: "rgba(0, 0, 0, 0.1)"
-  field-light: "#ffffff"
-  field-edge-light: "#82828b"
+  field-light: "#f9fbfb"
+  field-edge-light: "#758187"
   tray-light: "rgba(0, 0, 0, 0.05)"
   step-dot-light: "rgba(0, 0, 0, 0.45)"
   delivered-green-light: "#047857"
@@ -62,35 +77,35 @@ colors:
   state-external-light: "#994500"
 typography:
   body:
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontFamily: "Space Grotesk, system-ui, sans-serif"
     fontSize: "15px"
     fontWeight: 500
     lineHeight: 1.5
   window-title:
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontFamily: "Outfit, Space Grotesk, system-ui, sans-serif"
     fontSize: "16px"
     fontWeight: 650
     letterSpacing: "-0.01em"
   settings-body:
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontFamily: "Space Grotesk, system-ui, sans-serif"
     fontSize: "14px"
     fontWeight: 400
     lineHeight: 1.45
   title:
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontFamily: "Outfit, Space Grotesk, system-ui, sans-serif"
     fontSize: "13px"
     fontWeight: 600
   label:
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontFamily: "Space Grotesk, system-ui, sans-serif"
     fontSize: "12.5px"
     fontWeight: 550
   hint:
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontFamily: "Space Grotesk, system-ui, sans-serif"
     fontSize: "12px"
     fontWeight: 400
     lineHeight: 1.55
   caption:
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontFamily: "Space Grotesk, system-ui, sans-serif"
     fontSize: "11.5px"
     fontWeight: 400
   mono-value:
@@ -112,14 +127,15 @@ rounded:
   hairline: "2px"
   download-bar: "2px"
   chip: "4px"
-  input: "8px"
+  input: "1.17rem"
+  control: "0.63rem"
   icon: "9px"
   row: "10px"
   capsule: "11px"
-  panel: "12px"
-  pill: "13px"
-  card: "16px"
-  mini-bar: "18px"
+  panel: "0.81rem"
+  pill: "1.17rem"
+  card: "0.81rem"
+  mini-bar: "1.17rem"
   full: "999px"
   key: "50%"
 spacing:
@@ -139,12 +155,12 @@ components:
     backgroundColor: "{colors.hover-wash}"
     textColor: "{colors.text-primary}"
   key-done:
-    backgroundColor: "{colors.text-primary}"
-    textColor: "{colors.bar-ink}"
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.primary-text}"
     rounded: "{rounded.key}"
     size: "32px"
   key-done-hover:
-    backgroundColor: "#ffffff"
+    backgroundColor: "{colors.primary-hover}"
   key-done-disabled:
     backgroundColor: "transparent"
     textColor: "{colors.text-faint}"
@@ -152,8 +168,8 @@ components:
     backgroundColor: "rgba(248, 113, 113, 0.12)"
     textColor: "{colors.failed-red}"
   pill-primary:
-    backgroundColor: "{colors.text-primary}"
-    textColor: "{colors.bar-ink}"
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.primary-text}"
     rounded: "{rounded.pill}"
     height: "26px"
     padding: "0 11px"
@@ -164,15 +180,15 @@ components:
     height: "26px"
     padding: "0 11px"
   update-panel:
-    backgroundColor: "rgba(255, 255, 255, 0.05)"
+    backgroundColor: "{colors.surface}"
     rounded: "{rounded.panel}"
     padding: "10px 12px"
   card:
     backgroundColor: "{colors.bar-ink}"
     textColor: "{colors.text-primary}"
     rounded: "{rounded.card}"
-  card-wash:
-    backgroundColor: "{colors.wash-faint}"
+  settings-card:
+    backgroundColor: "{colors.surface}"
     textColor: "{colors.text-primary}"
     rounded: "{rounded.panel}"
     padding: "16px 18px"
@@ -184,29 +200,29 @@ components:
   button-standard:
     backgroundColor: "{colors.hover-wash}"
     textColor: "{colors.text-primary}"
-    rounded: "{rounded.full}"
+    rounded: "{rounded.pill}"
     padding: "8px 14px"
   button-standard-hover:
     backgroundColor: "rgba(255, 255, 255, 0.14)"
   button-primary:
-    backgroundColor: "{colors.text-primary}"
-    textColor: "{colors.bar-ink}"
-    rounded: "{rounded.full}"
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.primary-text}"
+    rounded: "{rounded.pill}"
     padding: "9px 20px"
   button-primary-hover:
-    backgroundColor: "#ffffff"
+    backgroundColor: "{colors.primary-hover}"
   button-ghost:
     backgroundColor: "transparent"
     textColor: "{colors.text-dim}"
-    rounded: "{rounded.full}"
+    rounded: "{rounded.pill}"
     padding: "8px 14px"
   tab:
     backgroundColor: "transparent"
     textColor: "{colors.text-dim}"
-    rounded: "{rounded.input}"
+    rounded: "{rounded.control}"
     padding: "8px 12px"
   tab-active:
-    backgroundColor: "{colors.hover-wash}"
+    backgroundColor: "{colors.menu-active}"
     textColor: "{colors.text-primary}"
 ---
 
@@ -223,84 +239,44 @@ hairline-edged, with the transcript growing upward above a single control row.
 Every control is a glyph the whole world already reads (pause, check, X);
 nothing on the bar needs a manual, a legend, or a label.
 
-One color speaks: a coral accent lifted from the app icon's waveform-heart,
-and it means exactly one thing — "Earheart is working with your voice." The
-capture dot, the live waveform, and the dictation progress fill wear it;
-beyond the bar it appears only in two sanctioned capture moments (see The
-Capture Exception). Everything else is white and gray on near-black, with
-green and red confined to miniature status signals. The settings window — and
-only the settings window — adds two small hue families that carry meaning
-rather than decoration: five equal-weight section hues on the index and its
-matching legends, and a two-state privacy color on the engine badges (see The
-Wayfinding Hue Rule and The Consequence Color Rule). The overlay and the
-wizard stay monochrome. The world explicitly refuses the hardware metaphor:
-no tape, no lamps, no legends, no eject. The
-previous "Tape Transport" service-panel system and the earlier violet/rose
-"On-Air Lamp" system are both fully retired; neither may resurface.
+The Electron renderers use Maia component shapes, Mist surfaces, teal actions,
+and orange usage bars from the shadcn preset. Space Grotesk sets body text,
+Outfit sets headings, and Lucide supplies the settings navigation and dictation
+controls. The fonts load offline from `renderer/fonts/`.
+[Shadcn preset b2xar39I1o](https://ui.shadcn.com/create?preset=b2xar39I1o)
 
-**Scope note:** the world now covers every surface. The overlay
-(`renderer/overlay.*`), the settings window (`renderer/settings.*`), and the
-setup wizard (`renderer/wizard.*`, which layers on `settings.css`) all speak
-this language; the framed windows extend the bar's grammar with white-wash
-cards, solid inputs, and pill buttons, documented below. The main process
-paints framed windows in the current palette's Bar Ink before load
-(`INK_COLORS` in `main/windows.js`), which must stay in sync with `--ink` in
-each palette. Every colour — both palettes — is declared once, in
-`renderer/tokens.css`, which every page loads before its own sheet; the page
-sheets hold no colour literals of their own (see Appearance below). The retired Tape
-Transport and On-Air Lamp systems survive only as historical notes.
-
-**Key Characteristics:**
-- Solid neutral surfaces — near-black in dark, near-white in light; nothing
-  translucent under text
-- One coral accent, reserved exclusively for the voice being heard or captured
-- Hue only where recognition or consequence needs it: the settings index's
-  section glyphs and the engine badges — never on chrome, never as decoration
-- Universally-read glyphs in circular ghost keys; one filled Done key
-- Chosen things are filled in Primary Text (white in dark, ink in light):
-  washes, radio cores, switch tracks, the Save pill
-- Hairline edges and subtle foreground washes instead of shadows
-- The live transcript is the hero; chrome stays quiet around it
+Coral continues to show voice activity through the capture dot, waveform,
+and dictation progress. Settings uses distinct hues for the navigation
+glyphs and the engine privacy badges. Green and red mark success and error.
+The main process paints windows with `INK_COLORS` in `main/windows.js`
+before the stylesheet loads. Both values match `--ink` in `renderer/tokens.css`.
 
 ## Colors
 
 ### Appearance: two palettes, one grammar
-Earheart ships a dark palette (the base, unchanged since before #348) and a
-light one. Settings → General → Appearance picks System (the default), Light
+Earheart ships light and dark palettes based on Mist.
+Settings → General → Appearance picks System (the default), Light
 or Dark; main sets `nativeTheme.themeSource` from it, and every page resolves
 `prefers-color-scheme` from that — on its first paint and live afterwards,
 with no reload. Rules:
 - **Both palettes, one file.** `renderer/tokens.css` holds the dark `:root`
   and a `@media (prefers-color-scheme: light)` `:root` that sets every token
-  the dark one does. Page sheets use tokens only — no hex, `rgb()` or named
-  colour (`test/theme-contract.test.js`).
+  the dark one does for colors. Type and radii are shared. The theme contract
+  test checks that page sheets use color tokens.
 - **Washes are the foreground at an alpha.** `rgb(var(--fg-rgb) / a)` is white
   in dark and black in light at the same strength; coral and red washes use
   `--accent-rgb` / `--err-rgb` the same way.
-- **"White" means Primary Text.** Everything this document calls filled white
-  (Done, Save, switch tracks, radio cores) is `--text`: white in dark, ink in
-  light, with Bar Ink glyphs on it either way. `--text-strong` is its hover.
+- **Teal.** `--primary` with `--primary-text` styles the main action and
+  checked controls. `--focus` styles focus outlines.
+- **Orange.** `--chart` colors Usage bars, with a darker orange in light mode.
 - **Every pair is measured.** Text ≥4.5:1 and UI components ≥3:1 in both
   palettes, computed from the tokens by `scripts/theme-contrast.js` and
   enforced by the contract test. Each pair is measured on the pixels the CSS
   actually composites: a chosen option, a selected segment, a hovered pill, a
-  badge on its own wash, the capture edge over its own coral fill. Lowest
-  pairs as shipped — text: Failed Red on a hovered danger pill, 4.84:1 dark /
-  4.66:1 light; UI: Field Edge on a card, 3.04:1 dark, and the capture edge
-  against its ring, 3.14:1 light. Coral Voice is 4.80:1 on the light Bar Ink,
-  enough to serve as the countdown's text.
-- Values below name the dark palette; each has a `-light` counterpart in the
-  front matter.
+  badge on its own wash, and the capture edge over its own coral fill.
 
-A single-accent dark-neutral palette: near-black ink, four steps of white/gray
-text, a small family of white washes and hairlines, one coral voice, and
-green/red kept miniature. Two settings-only families sit outside the accent —
-wayfinding and consequence — each governed by its own Named Rule below and
-each barred from the overlay and the wizard.
-
-### Primary
-- **Coral Voice** (`coral-voice`): the app's one expressive color, from the
-  icon's waveform-heart. On the overlay it appears only where the user's voice
+### Recording accent
+- **Coral Voice** (`coral-voice`): the dictation color from the icon's waveform-heart. On the overlay it appears only where the user's voice
   is live or being processed: the capture dot (filled) and warming/paused ring
   (hollow), the canvas waveform, the dictation progress fill, and the timer's
   last-minute countdown before the cap stops a live take. The canvas reads
@@ -310,13 +286,11 @@ each barred from the overlay and the wizard.
   Capture Exception below.
 
 ### Neutral
-- **Bar Ink** (`bar-ink`): every surface — the overlay bar (solid, never
-  translucent) and the framed settings/wizard windows, painted before load via
-  `INK_COLORS` in `main/windows.js` (one per palette). Also the glyph/label
-  color on filled-white elements.
-- **Primary Text** (`text-primary`): settled transcript text, active timer,
-  headings and labels, the filled Done key / Save pill, white download fills,
-  switch-on tracks, chosen radio cores.
+- **Bar Ink** (`bar-ink`) is the background of the overlay and framed windows.
+- **Surface** (`surface`) fills raised cards. **Sidebar** (`sidebar`) fills the
+  settings index. **Active menu** (`menu-active`) marks the current item.
+- **Primary Text** (`text-primary`) colors settled transcript text, the active
+  timer, headings, labels, and download fills.
 - **Status Text** (`text-status`): the overlay's one-word status next to its
   dot.
 - **Dim Text** (`text-dim`): secondary text, hints, the streaming raw tail,
@@ -328,15 +302,13 @@ each barred from the overlay and the wizard.
   borders, the index rail's edge, the legend's trailing hairline, history-card
   borders, the overlay's transcript/controls divider.
 - **Hover Wash** (`hover-wash`, white 0.08): ghost-key and quiet-pill hover
-  fill, standard pill-button fill, the index's active wash, the held (paused)
+  fill, standard pill-button fill, and the held (paused)
   pause key.
-- **Faint Wash** (`wash-faint`, white 0.04): card fills, quiet hovers — the
-  settings window's card material (cards sit at 0.04–0.05 with a hairline
-  edge).
+- **Faint Wash** (`wash-faint`, white 0.04) fills quiet hovers and inset items.
 - **Track** (`track`): empty progress/download track fills.
-- **Field** (`field`, #101013): input fill — a deliberate step below the ink
+- **Field** (`field`, #111719): input fill — a deliberate step below the ink
   so fields read as wells.
-- **Field Edge** (`field-edge`, #6b6b74): the input boundary, chosen to clear
+- **Field Edge** (`field-edge`, #718287): the input boundary, chosen to clear
   the 3:1 UI-component contrast bar on the ink (WCAG 1.4.11).
 - **Tray** (`tray`, black 0.25): the darker inset model-management trays
   inside cards.
@@ -350,11 +322,11 @@ each barred from the overlay and the wizard.
 - **Idle Gray** (`idle-gray`): the idle / nothing-heard status dot.
 
 ### Wayfinding hues (settings window only)
-Seven hues, one per settings section, worn by the index glyph and its matching
+Eight hues, one per settings section, worn by the index glyph and its matching
 legend glyph and nothing else. Derived in OKLCH at one lightness and chroma
-(L≈0.72, C≈0.10) so no section outranks another; each clears 6.8:1 on Bar Ink.
-The light set keeps the hues at L≈0.50, C≈0.09 (cyan at its in-gamut ≈0.08)
-and clears 5.0:1 on a card.
+(L≈0.72, C≈0.10) so no section outranks another. The light set keeps the hues
+at L≈0.50, C≈0.09 (cyan at its in-gamut ≈0.08). The contrast checks cover
+the section colors on Bar Ink and Surface in both palettes.
 They name a place, never a state.
 - **Section General** (`section-general`, #79a7e2): blue — mic glyph.
 - **Section Live transcript** (`section-live`, #9cae65): lime — waveform glyph.
@@ -381,9 +353,7 @@ there.
 ### Named Rules
 **The One Voice Rule.** Coral is spent only on the dictation itself — the
 capture dot, the waveform, the dictation progress fill. When the app talks
-about itself (the update prompt, model downloads), it uses the neutral white
-grammar: filled white primary pill, white download-bar fill. Never spend coral
-on non-voice surfaces.
+about itself, its download bars use Primary Text and the primary action is teal.
 
 **The Capture Exception.** On the settings window coral appears exactly once:
 a hotkey field mid-capture (`.capturing` — coral border at 0.9 alpha, so the
@@ -405,7 +375,7 @@ the moment of intent, never at rest.
 **The Wayfinding Hue Rule.** The section hues live on the settings
 window's index and legend glyphs and nowhere else. Each is constant for its
 section — unmoved by hover, active, or the scroll spy — so the color reads as
-a landmark rather than a state cue; "you are here" stays Hover Wash + Primary
+a landmark rather than a state cue; "you are here" uses Active Menu + Primary
 Text on the label. Equal OKLCH lightness and chroma keeps them peers: a new
 section takes a new hue at the same weight, never a brighter one. Labels,
 cards, edges and controls stay neutral — the hue rides the glyph alone.
@@ -415,17 +385,17 @@ the user chooses one. The engine state badge is the single sanctioned case,
 and it wears Private Teal or External Amber end to end (glyph, text, 12%
 wash, 38% edge, all mixed from the one variable) because reading the color is
 reading the answer. It is never spent on the choice controls themselves — the
-segmented control, radios and switches keep the chosen-is-white grammar — and
+segmented control, radios and switches use shared control colors — and
 the color never travels alone: the glyph and the sentence say the same thing.
 A second consequence color is a new rule, not a precedent to copy.
 
 ## Typography
 
-**Body Font:** system-ui (with -apple-system, "Segoe UI", sans-serif)
+**Body font** is Space Grotesk. **Heading font** is Outfit.
 **Mono Font:** ui-monospace (with "Cascadia Code", monospace) — machine
 values only
 
-**Character:** invisible craftsmanship. The native system stack at small,
+**Character:** invisible craftsmanship. Both faces use small,
 confident sizes; weight and gray-steps carry the hierarchy, not size jumps.
 The transcript is the largest type in the system because the words are the
 interface; window chrome never exceeds 16px.
@@ -458,7 +428,7 @@ interface; window chrome never exceeds 16px.
 - **Timer** (400, 12px mono, tabular-nums, 0.03em): captured-audio time; Dim
   Text at rest, Primary Text while recording. In the last minute before the
   max dictation length it counts down (`−0:42`) in Coral Voice
-  (5.33:1 on Bar Ink), and the status reads "Stopping soon…".
+  and the status reads "Stopping soon…".
 - **History meta** (400, 11px mono, tabular-nums, 0.02em): timestamp rows
   under history entries.
 
@@ -495,7 +465,7 @@ hidden-tab shuffle. Header (icon + 16px title + tagline, seam below), then a
 deck: a 180px sticky index rail on the left (outside the scroll area, seam on
 its right) beside one scrolling column of sections capped at 620px
 (`.panel { max-width: 620px }`), then a fixed footer commit row (seam above,
-right-aligned: status, a plain Close button, then the white Save pill). Save
+right-aligned: status, a plain Close button, then the teal Save pill). Save
 never closes the window — it says "Saved" and stays — so a window never
 vanishes on its own. The index is a scroll spy with roving tabindex: the
 entry currently in view takes the wash; clicking glides the page
@@ -508,7 +478,7 @@ inside its scroll range and cannot create an outer document scrollbar.
 same header and materials. Steps (max-width 640px) center vertically in the
 fixed frame via auto margins that collapse when a tall step scrolls. The
 footer is the wizard's nav row: Skip on the left, step dots centered,
-Back/Next on the right — Next/Get started is the filled white pill. Below
+Back/Next on the right — Next/Get started uses the teal primary fill. Below
 600px the welcome demo stacks vertically.
 
 ## Elevation & Depth
@@ -517,8 +487,8 @@ Flat by necessity and by conviction. The overlay window is transparent and
 focusable:false, so surfaces carry **no drop shadows** — soft shadows band and
 halo on transparent windows — and the framed windows keep the same flatness by
 conviction. Depth is conveyed by hairline edges, white washes (0.04–0.14 alpha
-fills), and one step of solid layering: inputs sink to Field (#101013), model
-trays sink to Tray (black 0.25), cards rise on Faint Wash. Every surface under
+fills), and one step of solid layering: the Field token marks inputs,
+Tray marks inset model trays, and Surface fills cards. Every surface under
 text is opaque or sits on the solid ink.
 
 ### Named Rules
@@ -528,7 +498,7 @@ elevation and are sanctioned: (1) the recording dot's coral bloom
 (`box-shadow: 0 0 6px rgba(251, 77, 92, 0.45)`; its wizard-demo miniature
 uses `0 0 5px rgba(251, 77, 92, 0.5)`) — a light-emission cue on a tiny dot;
 and (2) 0-blur box-shadow spreads used as rings — the input focus ring
-(`0 0 0 3px rgba(255, 255, 255, 0.1)`) and the hotkey capture ring
+(`0 0 0 3px` at 25% of the focus color) and the hotkey capture ring
 (`0 0 0 3px rgba(251, 77, 92, 0.16)`). Zero-blur spreads are
 outline-equivalents that hug the border; they cast nothing. True drop shadows
 remain banned everywhere.
@@ -539,14 +509,10 @@ in-window washes are safe because the solid ink is beneath them.
 
 ## Shapes
 
-Soft-rounded rectangles, perfect circles, and full pills. The radius scale as
-built: 2px hairline rounds (progress tracks, grip), 8px (inputs, selects,
-textareas, index entries, model trays), 10px (option rows, history cards),
-12px (cards, banners, the overlay's update panel, wizard summary / value /
-download cards), 13px-on-26px overlay pills, 16px overlay card
-(`overflow: hidden` keeps children inside the corners), 18px the wizard's
-mini-bar demo, and fully-rounded 999px pills (settings buttons, the segmented
-control). All overlay keys are 32px circles whose clickable area extends to
+The Maia scale starts at `0.45rem`. Cards use `0.81rem`, multiline fields
+and navigation rows use `0.63rem`, and buttons, single-line fields, and
+selects use `1.17rem`. Progress tracks and the overlay grip use 2px.
+All overlay keys are 32px circles whose clickable area extends to
 ~42px via an invisible `::before` halo (inset -5px) — the hit area grows, the
 painted key does not. Borders are 1px hairlines only (the demo `kbd` keycaps'
 2px bottom edge is the lone weighted edge); no decorative borders, no square
@@ -561,9 +527,8 @@ corners anywhere.
 - **Ghost (pause, discard):** transparent with Dim Text glyph; hover fills
   Hover Wash and brightens the glyph to Primary Text; active presses to
   `scale(0.92)`.
-- **Done (`#stop`):** the one filled key — Primary Text fill, Bar Ink glyph,
-  pure white on hover; the single strongest thing on the bar. Disabled outside
-  a live take: transparent with a Faint Text glyph, but it stays in its slot.
+- **Done (`#stop`)** uses the teal primary fill and its paired foreground.
+  It stays in its slot with a faint glyph outside a live take.
 - **Discard (`#cancel`):** a plain X, gray until you mean it; hover applies
   the Destructive Hover Exception (Failed Red glyph + red wash). Carries a
   10px extra left margin — the clear gap between its hit halo and Done's —
@@ -575,7 +540,7 @@ corners anywhere.
   (Ctrl+Alt+D)"); the hotkey runs the same handler as the click.
 - **Pause:** latching (`aria-pressed`); while paused it holds the Hover Wash
   fill and swaps to the play glyph.
-- **Focus:** `outline: 2px solid` Primary Text, 2px offset — the universal
+- **Focus:** `outline: 2px solid` Focus, 2px offset — the universal
   focus treatment across all three surfaces.
 - **Named rule — The Keys Keep Their Slots Rule.** Keys disable and fade but
   never leave the row; the row never reflows and no key ever jumps under the
@@ -587,19 +552,18 @@ sits above the control row like the raw-reason line: a Dim Text 12px note
 ("Recording kept for 10 min") pushed left, then a primary **Retry
 transcription** and a quiet **Discard**.
 - **Shape:** fully rounded, 26px tall, 0 11px padding, 12px text.
-- **Primary:** filled Primary Text with a Bar Ink label; pure white on hover.
+- **Primary:** teal with its paired foreground and hover fill.
 - **Quiet:** transparent with a Dim Text label (weight 500); hover wash +
   brighten, same as ghost keys.
 
 ### Pill buttons — settings/wizard (three tiers + danger)
-- **Shape:** fully rounded (999px), 8px 14px padding, 13px/500 text; active
+- **Shape:** 1.17rem radius, 8px 14px padding, 13px/500 text; active
   presses to `scale(0.97)`; disabled holds opacity 0.6 — except ghost pills,
   which hold full opacity with a Seam edge instead, because their labels are
   almost always in-flight ("Checking…", "Restarting…") and 0.6 over Dim Text
   would drop them below AA.
-- **Primary (Save / Get started):** the one filled white pill per window —
-  Primary Text fill, Bar Ink label, weight 600, 9px 20px padding, pure white
-  on hover. The overlay Done key's grammar on a framed window.
+- **Primary (Save / Get started)** uses the teal fill, weight 600, and
+  9px 20px padding.
 - **Standard:** Hover Wash fill (white 0.08), brightening to white 0.14 on
   hover.
 - **Ghost:** transparent, 1px rgba(255, 255, 255, 0.14) edge, Dim Text label;
@@ -609,10 +573,10 @@ transcription** and a quiet **Discard**.
   rgba(248, 113, 113, 0.4) border).
 
 ### Sticky index (settings navigation)
-- 180px rail outside the scroll area; entries are 8px-radius buttons pairing a
+- 180px rail outside the scroll area; entries are 0.63rem-radius buttons pairing a
   16px section glyph in its own Wayfinding hue with a 13px/500 Dim Text label,
   9px apart. The glyph's hue never changes; the label washes faintly on hover
-  and the active entry takes Hover Wash + Primary Text — no markers, no dots.
+  and the active entry takes Active Menu + Primary Text — no markers, no dots.
   Scroll spy tracks the section currently in view; roving tabindex; clicks
   glide the page and focus the section legend.
   Docks horizontally with a bottom seam below 600px.
@@ -625,9 +589,8 @@ transcription** and a quiet **Discard**.
   focusable (tabindex -1) with a keyboard-only ring.
 
 ### Cards / Containers
-- **White-wash cards:** Faint Wash fill (white 0.04; the overlay update panel
-  and setup banner sit at 0.05) + 1px Hairline Edge, 12px radius, 16px 18px
-  padding, 13px/600 card titles. Fields inside separate by whitespace only.
+- **Settings cards** use Surface, a 1px Hairline Edge, 0.81rem radius,
+  16px 18px padding, and 13px/600 Outfit titles. Whitespace separates fields.
 - **Banner:** the overlay's update-panel grammar on the settings page — white
   0.05 wash, hairline edge, 12px radius, 11px 14px padding, message left /
   ghost pill right.
@@ -637,19 +600,15 @@ transcription** and a quiet **Discard**.
 - **Model trays:** a darker inset inside a card — Tray fill (black 0.25),
   1px rgba(255, 255, 255, 0.07) edge, 8px radius, 12px 14px padding; holds
   the model note, its download bar, and its buttons.
-- **Wizard summary / value / download cards:** Faint Wash + hairline edge,
-  12px radius; the summary is a dl of seam-divided rows with mono accelerator
-  values; value lists use neutral "–" markers in Dim Text (never emoji — the
-  world speaks one color).
+- **Wizard summary, value, and download cards** use Surface, a hairline edge,
+  and a 0.81rem radius. The summary is a description list with mono accelerator
+  values. Value lists use neutral “–” markers in Dim Text.
 
 ### Inputs / Fields
-- **Style:** solid Field fill (#101013), 1px Field Edge boundary (#6b6b74 —
-  the 3:1 cue against the card), 8px radius, 9px 11px padding, 13px text;
-  placeholders in full Dim Text (no opacity). Selects draw their own Dim Text
-  caret (hardcoded #a1a1aa in the data URI — keep in sync).
-- **Focus:** border brightens to Primary Text white plus the 0-blur ring
-  (`box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1)`) — the "active thing is
-  white" grammar; no default outline.
+- **Style.** Field fill and a 1px Field Edge boundary provide at least 3:1
+  contrast against the card. Single-line fields have 9px 11px padding and
+  13px text. Placeholders and the select caret use Dim Text.
+- **Focus.** The edge uses the focus color with a 3px spread at 25% opacity.
 - **Textareas** (prompt, dictionary): mono 13px, vertical resize.
 - **Hotkey capture fields:** readonly, mono, click-to-capture; hover hints
   changeability (Dim Text border + white 0.06 fill); while capturing they wear
@@ -672,28 +631,24 @@ transcription** and a quiet **Discard**.
   Consequence Color Rule.
 
 ### Icons (settings)
-- Monoline SVG, `stroke="currentColor"`, 1.6–1.8 stroke, 14–18px, no fills
-  beyond the Advanced glyph's slider knobs. Reserved for genuine recognition
-  or consequence aids — section wayfinding, the engine state badge, the three
-  output destinations — and deliberately absent from cards that read fine
-  without one (About, Setup wizard, Updates, Performance, Dictionary, System
-  prompt). Always `aria-hidden`; the adjacent text is the accessible name.
+- Monoline SVG uses `stroke="currentColor"` and 14–18px boxes. The index
+  and section headings share the same Lucide glyphs. The engine state badge
+  and output destinations also use icons. SVGs are `aria-hidden` and adjacent
+  text supplies the accessible name.
 
 ### Option rows (radios)
 - 10px-radius rows, transparent border at rest, Faint Wash on hover; the
   chosen row takes a white 0.07 wash + brightened rgba(255, 255, 255, 0.22)
-  edge — chosen is white, like everything chosen in this system. Custom 16px
-  radios: Field Edge ring that gains a white core (`inset: 3px`) when chosen.
+  edge. The 16px radios use a Field Edge ring with an inset Primary Text core.
   Where the rows read alike as prose (the output destinations), each carries a
   distinct 16px pictogram between radio and label — Dim Text at rest,
   brightening to Primary Text on the chosen row; never a second accent color.
 
 ### Switches & checkboxes
-- **Switch:** 40×22px track, white 0.1 fill + hairline edge off, Dim Text
-  knob; checked fills the track solid white and the knob goes Bar Ink — the
-  filled-white "this is on" grammar. 0.16s ease.
-- **Checkbox (`.choice`):** 16px, 4px radius, Field Edge ring; checked fills
-  white with an ink check.
+- **Switch** uses a 40×22px track with Field Edge and a Dim Text knob at
+  rest. When checked, the track and knob use the primary color pair.
+- **Checkbox (`.choice`)** uses a 16px box with a 4px radius and Field Edge.
+  A checked box uses the primary color pair.
 - **Slider:** a 4px Field Edge track (≥3:1 on Bar Ink, 2px radius) under a
   16px solid white knob; keyboard-only focus ring. The live readout label is
   the bright element (14px Primary Text).
@@ -736,15 +691,14 @@ transcription** and a quiet **Discard**.
   download and update bars (`.dl-bar`): 6px tracks (Track fill, 2px radius)
   with solid white fills — always white, never coral (One Voice Rule). The
   Usage section's per-day bars (`.usage-day-track`) are the same 6px track and
-  white fill, a static measure with the number in text beside it. All
-  fills ease `width 0.15s linear`, driven from JS.
+  an orange fill, with the number in text beside it. Download and dictation
+  progress fills ease `width 0.15s linear`.
 - The overlay's dictation progress overlays the bottom of the wave area
   absolutely, so appearing never changes card height.
 
 ### Update panel (overlay)
-- A quiet in-card note: 12px radius, white 0.05-alpha fill, hairline edge,
-  10px 12px padding. Entirely neutral-white grammar — no coral. In solo mode
-  the control row hides and the note is the whole card.
+- An in-card note with Surface fill, a 0.81rem radius, a hairline edge,
+  and 10px 12px padding. In solo mode the note is the whole card.
 - **What's-new list:** up to three Caption-weight bullets under the note,
   3px apart, markers in Text Faint so the words carry the line; a fourth,
   markerless Dim Text line counts what didn't fit and points at Settings.
@@ -754,17 +708,16 @@ transcription** and a quiet **Discard**.
   version heading per release.
 
 ### Wizard step dots
-- 7px circles in `--dot` at rest — white 0.35 in dark (3.23:1), black 0.45
-  in light (3.33:1), clearing the 3:1 UI bar on the ink — solid Primary Text
-  when active; centered in the footer with an sr-only spoken
-  counterpart.
+- The footer centers 7px step dots. The current step has a teal fill and a
+  2px outline with a 1px offset so its shape distinguishes it from the
+  remaining steps. A screen-reader label announces the current step.
 
 ### Wizard demo (welcome step)
-- Three Faint Wash demo cards with 11px captions: `kbd` keycaps (wash fill,
+- Three Mist demo cards with 11px captions: `kbd` keycaps (wash fill,
   6px radius, 2px bottom edge, 11px mono); the **mini quiet bar** — an
-  18px-radius miniature of the real bar (ink fill, 0.14 hairline) with pulsing
+  1.17rem-radius miniature of the real bar (ink fill, 0.14 hairline) with pulsing
   6px coral dot (5px bloom), animated coral wave bars on a deliberately
-  non-monotonic 7-bar delay cycle, 10px mono timer, and a 16px filled white
+  non-monotonic 7-bar delay cycle, 10px mono timer, and a 16px teal
   Done circle — the sanctioned demonstration coral; and a typing line behind
   a plain 1px white caret. All demo animations go still under reduced motion.
 
@@ -794,16 +747,14 @@ transcription** and a quiet **Discard**.
 
 ### Do:
 - **Do** keep every surface under text solid; every window is opaque Bar Ink
-  (#18181b dark, #fafafa light) — the overlay by its own paint, framed windows
+  (#090b0c dark, #ffffff light) — the overlay by its own paint, framed windows
   via `INK_COLORS` in `main/windows.js`, kept in sync with `--ink`.
 - **Do** reserve Coral Voice (#fb4d5c) for the dictation itself — capture dot,
   waveform, dictation progress — plus only the two Capture Exception moments
   (a hotkey field mid-capture; the wizard's mini-bar demo). Declare it only as
   `--accent` in `tokens.css`; the waveform reads it from there.
-- **Do** use the filled-white grammar — filled Primary Text, so ink in the
-  light palette — (Done key, Save / Get started pill,
-  switch-on track, radio core, download fill) for the single strongest action,
-  the chosen state, or the app talking about itself.
+- **Do** use teal for primary actions and checked switches and checkboxes.
+  Orange is reserved for Usage bars.
 - **Do** keep keys in their slots across all states — disable and fade, never
   remove or reflow.
 - **Do** honor the Filled Dot Contract: filled pulsing coral dot only while
@@ -833,12 +784,9 @@ transcription** and a quiet **Discard**.
   surface.
 - **Don't** spend coral outside the voice and the two Capture Exception
   moments; a third non-overlay coral use is a defect, not a precedent.
-- **Don't** let a Wayfinding hue ride the active or hover state, or leak off
-  the index and legend glyphs onto labels, cards, edges or controls; a color
-  that moves is a state cue, and this system's state cue is white.
+- **Do** keep each wayfinding hue on its index and legend glyphs across states.
 - **Don't** add a third settings hue family, or bring either family to the
-  overlay or the wizard — those surfaces stay white/gray plus coral. New color
-  is a decision at this file's level, not a per-surface one.
+  overlay or the wizard so their meanings remain local to Settings.
 - **Don't** write a colour literal outside `renderer/tokens.css`, or add a
   token to one palette only; a colour that ignores the appearance is a defect
   in the other palette. Don't animate the switch between palettes.
@@ -857,8 +805,8 @@ idle, so its focused search cannot replace an active take's delivery target.
 A labelled combobox owns an active descendant in a listbox; visible Navigation,
 Actions and History labels group the results. Up/Down and Home/End move the
 selection, Enter accepts once, Tab cycles search and Close, and Escape closes.
-The selected row uses text on ink reversed, with a text-colored focus outline;
-no animation is needed. Disabled rows remain labelled and skipped by selection.
+The selected row uses the active menu fill with a focus-colored edge. Keyboard
+selection skips disabled rows.
 Search counts, empty states and errors share a persistent polite live region.
 Transcript previews, query text and errors are text nodes. History results
 navigate to the existing card and retain its confirmed destructive controls.

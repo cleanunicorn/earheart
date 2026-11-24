@@ -38,9 +38,41 @@ const visibleText = (id) => `(() => {
   return node && !node.hidden && node.offsetParent !== null && getComputedStyle(node).display !== "none" ? node.textContent : null;
 })()`;
 
+async function checkUsageWithAgentTasks({ waitFor, check, invokeHandlers }) {
+  const tasks = Array.from({ length: 5 }, (_, i) => ({
+    id: `smoke-task-${i}`, agentLabel: "Codex", project: "earheart",
+    status: "completed", brief: "A completed task", output: "Done", externalId: `session-${i}`,
+  }));
+  const realState = invokeHandlers.get("agent:state");
+  ipcMain.removeHandler("agent:state");
+  ipcMain.handle("agent:state", () => ({ ok: true, agents: [], tasks, projects: [] }));
+  let win;
+  try {
+    win = windows.openSettings({ section: "usage" });
+    await waitForLoad(win.webContents);
+    await waitFor(() => win.webContents.executeJavaScript(`(() => {
+      const tasks = document.querySelectorAll("#agent-task-list li[data-id]");
+      const card = document.getElementById("runtime-card").getBoundingClientRect();
+      const viewport = document.querySelector("main").getBoundingClientRect();
+      const memory = document.getElementById("runtime-memory").textContent;
+      return tasks.length === ${tasks.length} && card.top >= viewport.top && card.bottom <= viewport.bottom &&
+        document.activeElement.id === "legend-usage" && /[\\d.,]+ [MG]iB/.test(memory);
+    })()`, true), "App statistics did not scroll into view with Agent tasks enabled", 300);
+    check("App statistics scrolls into view and shows memory with Agent tasks enabled", true);
+  } finally {
+    ipcMain.removeHandler("agent:state");
+    ipcMain.handle("agent:state", realState);
+    if (win && !win.isDestroyed()) {
+      windows.closeSettings();
+      await waitFor(() => win.isDestroyed(), "App statistics did not close after the Agent tasks check");
+    }
+  }
+}
+
 async function checkUsage({ waitFor, check, savedThenClose, userData, invokeHandlers }) {
+  await checkUsageWithAgentTasks({ waitFor, check, invokeHandlers });
   const before = settings.get();
-  const win = windows.openSettings();
+  const win = windows.openSettings({ section: "usage" });
   try {
     await waitForLoad(win.webContents);
     const run = (code) => win.webContents.executeJavaScript(code, true);
@@ -50,6 +82,16 @@ async function checkUsage({ waitFor, check, savedThenClose, userData, invokeHand
       () => run(`document.querySelectorAll("#usage-days li").length === 14 && document.getElementById("typing-wpm").value !== ""`),
       "Usage did not render its 14 days and saved settings"
     );
+    await waitFor(() => run(`document.getElementById("runtime-memory").textContent.match(/[\\d.,]+ [MG]iB/) !== null`),
+      "the Usage shortcut did not bring a current memory sample into view", 800).catch(async err => {
+      const details = await run(`({ text: document.getElementById("runtime-card").innerText,
+        top: document.getElementById("runtime-card").getBoundingClientRect().top,
+        hidden: document.hidden, focus: document.activeElement.id, query: location.search })`);
+      throw new Error(`${err.message}: ${JSON.stringify(details)}`);
+    });
+    check("Usage identifies both idle local engines", await run(`
+      ["runtime-stt", "runtime-cleanup"].every(id => document.getElementById(id).textContent === "None loaded")
+    `));
     const shown = await run(`JSON.stringify({
       takes: document.getElementById("usage-takes").textContent,
       words: document.getElementById("usage-words").textContent,
@@ -196,7 +238,9 @@ async function checkUsage({ waitFor, check, savedThenClose, userData, invokeHand
     await run(`document.getElementById("save").click(); true`);
     await waitFor(() => run(`document.getElementById("usage-baseline").textContent === "60"`), "the new baseline did not reach the estimate");
     await savedThenClose(win, "Usage settings Save did not report Saved");
-    const saved = JSON.parse(fs.readFileSync(path.join(userData, "settings.json"), "utf8")).usage;
+    const stored = JSON.parse(fs.readFileSync(path.join(userData, "settings.json"), "utf8"));
+    check("saving Usage preserves the configured microphone", stored.audio.deviceId === before.audio.deviceId);
+    const saved = stored.usage;
     check(
       "the Usage switch and typing speed save, and off says earlier numbers are kept",
       hint === true && saved.enabled === false && saved.typingWpm === 60,

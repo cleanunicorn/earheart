@@ -151,7 +151,7 @@ async function loadMain(
       createOverlay: () => events.push("createOverlay"),
       rejoinOverlayAfterWake: (reason, opts) => events.push(`rejoin:${reason}:${JSON.stringify(opts)}`),
       destroyOverlay: () => events.push("destroyOverlay"),
-      openSettings: () => events.push("openSettings"),
+      openSettings: (opts) => events.push(opts?.section === "usage" ? "openUsage" : "openSettings"),
       confirmCorrectionClose: () => canCloseCorrection,
       closeCorrection: () => events.push("closeCorrection"),
       openWizard: () => { wizardOpen = true; events.push("openWizard"); },
@@ -725,4 +725,12 @@ test("first run and the smoke test never start a launch-time download", async (t
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const smoke = await loadMain({ argv: ["--smoke-test"], ...missing });
   assert.ok(!smoke.events.some((e) => e.startsWith("download:")), smoke.events.join(", "));
+});
+
+test("the statistics launcher opens Usage on cold and second-instance launches", async () => {
+  const { events, appHandlers } = await loadMain({ argv: ["--stats"] });
+  assert.ok(events.includes("openUsage"));
+  events.length = 0;
+  appHandlers["second-instance"]({}, ["earheart", "--stats"]);
+  assert.deepEqual(events, ["openUsage"]);
 });

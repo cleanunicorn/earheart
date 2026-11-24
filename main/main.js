@@ -38,6 +38,7 @@ const agentCommon = require("./agents/common");
 const isSmokeTest = process.argv.includes("--smoke-test");
 let palette = null;
 const startHidden = process.argv.includes("--hidden");
+const startStats = process.argv.includes("--stats");
 const startPalette = process.argv.includes("--palette");
 
 // Single instance: a second `earheart --toggle` invocation forwards the
@@ -62,6 +63,8 @@ if (!gotLock) {
       pipeline.discard();
     } else if (argv.includes("--retry")) {
       pipeline.retryFailedTake();
+    } else if (argv.includes("--stats")) {
+      windows.openSettings({ section: "usage" });
     } else if (argv.includes("--palette")) {
       palette?.open();
     } else if (argv.includes("--command")) {
@@ -405,6 +408,7 @@ function main() {
         hotkeyOk: hotkeyResults.hotkey.ok,
       });
     }
+    if (!isSmokeTest && !firstRun && startStats) windows.openSettings({ section: "usage" });
     if (!isSmokeTest && !firstRun && startPalette) palette.open();
     // A new default cleanup prompt is announced once (setup-notices.js).
     if (!isSmokeTest && !firstRun) {

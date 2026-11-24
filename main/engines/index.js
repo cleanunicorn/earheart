@@ -235,6 +235,7 @@ function cleanupModel(modelId, { maxRecordingSeconds } = {}) {
     throw new Error(`Cleanup model "${modelId}" is not downloaded yet`);
   }
   return {
+    modelId,
     modelPath: path.join(manager.modelDir(modelsDir(), model), model.gguf.file),
     contextSize: cleanContextFor(maxRecordingSeconds),
     transcriptTokens: cleanTranscriptBudget(maxRecordingSeconds),
@@ -439,7 +440,17 @@ function unloadIdle() {
 sttHost.onExit(forgetStt);
 cleanupHost.onExit(forgetCleanup);
 
+// Reading status never starts a worker or waits behind inference.
+function loadedModels() {
+  function label(kind, host) {
+    const id = host.getLoadedModel();
+    return id ? registry.getModel(kind, id)?.label || id : null;
+  }
+  return { stt: label("stt", sttHost), cleanup: label("cleanup", cleanupHost) };
+}
+
 module.exports = {
+  loadedModels,
   isInstalled,
   getSttReadiness,
   getCleanupReadiness,

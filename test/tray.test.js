@@ -18,11 +18,12 @@ const resolveFrom = (spec) => require.resolve(spec, { paths: [path.dirname(trayP
 
 // Load the real tray.js + settings.js against fakes and init() the tray.
 // `menus` collects every menu template the tray builds, newest last.
-function loadTray(t, { historyEntries = [], stored } = {}) {
+function loadTray(t, { historyEntries = [], stored, dock } = {}) {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "earheart-tray-"));
   t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
   if (stored) fs.writeFileSync(path.join(userData, "settings.json"), JSON.stringify(stored));
   const menus = [];
+  const destinations = [];
   const images = [];
   const warnings = [];
   const notifications = [];
@@ -56,7 +57,7 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
       },
       clipboard: { writeText: (text) => copies.push(text) },
     },
-    [resolveFrom("./windows")]: { openSettings() {} },
+    [resolveFrom("./windows")]: { openSettings: opts => destinations.push(opts) },
     [resolveFrom("./updates")]: { getState: () => ({ status: "idle" }) },
     [resolveFrom("./history")]: { list: () => entries },
     [resolveFrom("./engines/registry")]: {
@@ -93,9 +94,9 @@ function loadTray(t, { historyEntries = [], stored } = {}) {
     undelivered: null,
     getUndelivered() { return this.undelivered; },
   };
-  tray.init({ quit() {} }, pipeline);
+  tray.init({ quit() {}, dock }, pipeline);
   const file = path.join(userData, "settings.json");
-  return { tray, pipeline, images, settings, menus, warnings, notifications, copies, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
+  return { tray, pipeline, images, settings, menus, destinations, warnings, notifications, copies, readFile: () => JSON.parse(fs.readFileSync(file, "utf8")) };
 }
 
 const item = (menu, label) => menu.find((entry) => entry.label === label);
@@ -322,4 +323,14 @@ test("Copy last transcription flattens a newer History entry instead of older he
   await item(menus.at(-1), "Copy last transcription").click();
   assert.deepStrictEqual(copies, ["Newer first. Newer second."]);
   assert.strictEqual(entry.text, "Newer first.\nNewer second.");
+});
+
+test("the macOS Dock and tray statistics actions both navigate to Usage", (t) => {
+  const original = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { value: "darwin" });
+  t.after(() => Object.defineProperty(process, "platform", original));
+  let dockMenu;
+  const { menus, destinations } = loadTray(t, { dock: { setMenu(menu) { dockMenu = menu; } } });
+  for (const menu of [menus.at(-1), dockMenu]) item(menu, "App statistics…").click();
+  assert.deepEqual(destinations, [{ section: "usage" }, { section: "usage" }]);
 });

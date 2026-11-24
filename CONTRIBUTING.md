@@ -532,6 +532,9 @@ overlay in the light palette. If the UI changes, re-capture them:
 make screenshots       # runs scripts/screenshots.js under xvfb
 ```
 
+Set `EARHEART_SCREENSHOTS_DIR` to capture the comparison set in another
+directory, including Usage, tool approval, and voice commands in both palettes.
+
 The capture runs in a throwaway demo profile (`scripts/demo-profile.js`) with
 fixed settings, never your own: your hotkeys, microphone and setup don't reach
 the images, and your settings file is neither read nor migrated. The profile

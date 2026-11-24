@@ -324,9 +324,9 @@ with no reload. Rules:
 ### Wayfinding hues (settings window only)
 Eight hues, one per settings section, worn by the index glyph and its matching
 legend glyph and nothing else. Derived in OKLCH at one lightness and chroma
-(L≈0.72, C≈0.10) so no section outranks another; each clears 6.8:1 on Bar Ink.
-The light set keeps the hues at L≈0.50, C≈0.09 (cyan at its in-gamut ≈0.08)
-and clears 5.0:1 on a card.
+(L≈0.72, C≈0.10) so no section outranks another. The light set keeps the hues
+at L≈0.50, C≈0.09 (cyan at its in-gamut ≈0.08). The contrast checks cover
+the section colors on Bar Ink and Surface in both palettes.
 They name a place, never a state.
 - **Section General** (`section-general`, #79a7e2): blue — mic glyph.
 - **Section Live transcript** (`section-live`, #9cae65): lime — waveform glyph.
@@ -708,10 +708,9 @@ transcription** and a quiet **Discard**.
   version heading per release.
 
 ### Wizard step dots
-- 7px circles in `--dot` at rest — white 0.35 in dark (3.23:1), black 0.45
-  in light (3.33:1), clearing the 3:1 UI bar on the ink — solid teal
-  when active; centered in the footer with an sr-only spoken
-  counterpart.
+- The footer centers 7px step dots. The current step has a teal fill and a
+  2px outline with a 1px offset so its shape distinguishes it from the
+  remaining steps. A screen-reader label announces the current step.
 
 ### Wizard demo (welcome step)
 - Three Mist demo cards with 11px captions: `kbd` keycaps (wash fill,

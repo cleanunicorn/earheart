@@ -119,8 +119,13 @@ async function checkSettingsTheme({ waitFor, check, savedThenClose }) {
     return true;
   })()`);
   await waitFor(() => run(`document.querySelector(".tab[aria-current]")?.dataset.tab === "history"`), "scrolling did not light History");
+  // Scroll anchoring adjusts scrollTop if controls above History reflow.
+  // Measure the heading relative to the scroller to catch visible movement.
   const snapshot = () => run(`JSON.stringify({
-    scrollTop: Math.round(document.querySelector("main").scrollTop),
+    historyTop: Math.round(
+      document.getElementById("tab-history").getBoundingClientRect().top -
+      document.querySelector("main").getBoundingClientRect().top
+    ),
     active: document.querySelector(".tab[aria-current]")?.dataset.tab,
     expanded: !!document.querySelector("#history-list li.expanded"),
     probe: window.__themeProbe,
@@ -171,7 +176,7 @@ async function checkSettingsTheme({ waitFor, check, savedThenClose }) {
   await waitFor(() => bgHex(win) === INK.dark, "the native background did not follow the flip", 300);
   const afterFlip = await snapshot();
   check("a theme flip keeps unsaved edits and the page as it was",
-    loads === 0 && afterFlip.maxSeconds === edited && afterFlip.scrollTop === before.scrollTop &&
+    loads === 0 && afterFlip.maxSeconds === edited && afterFlip.historyTop === before.historyTop &&
       afterFlip.active === before.active && afterFlip.expanded && afterFlip.probe === "kept",
     JSON.stringify({ loads, afterFlip, edited }));
 

@@ -6,6 +6,13 @@
     "meta.name": "English",
 
     // Tray menu, tooltip and tray notifications (main/tray.js)
+    "tray.statistics": "App statistics…",
+    "settings.runtime": "App statistics",
+    "settings.appMemory": "App memory",
+    "settings.localSpeech": "Loaded speech model",
+    "settings.localCleanup": "Loaded cleanup model",
+    "runtime.none": "None loaded",
+    "runtime.unavailable": "Unavailable",
     "tray.start": "Start dictation",
     "tray.stop": "Stop & transcribe",
     "tray.processing": "Processing…",

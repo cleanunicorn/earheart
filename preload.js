@@ -110,6 +110,7 @@ const ROLES = {
       "transcript:copy",
       "history:clear",
       "usage:get",
+      "usage:runtime",
       "usage:reset",
       "models:status",
       "models:download",

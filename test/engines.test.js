@@ -2028,11 +2028,15 @@ function loadWorkerWith(sherpaStub) {
   const restoreSherpa = stubModules({ [sherpaPath]: sherpaStub });
   let onMessage = null;
   const replies = [];
+  const loadedModels = [];
   process.parentPort = {
     on: (event, fn) => {
       if (event === "message") onMessage = fn;
     },
-    postMessage: (msg) => replies.push(msg),
+    postMessage(msg) {
+      if ("loadedModel" in msg) loadedModels.push(msg.loadedModel);
+      else replies.push(msg);
+    },
   };
   delete require.cache[workerPath];
   require(workerPath);
@@ -2048,7 +2052,7 @@ function loadWorkerWith(sherpaStub) {
     restoreSherpa();
     process.parentPort = savedPort;
   };
-  return { send, restore };
+  return { send, restore, loadedModels };
 }
 
 test("engine worker: load-stt reports the thread count and provider it built the recognizer with", async () => {
@@ -2125,6 +2129,7 @@ test("engine worker: load-stt routes on the declared family and never guesses Wh
       assert.strictEqual(reply.ok, false, JSON.stringify(sherpa));
       assert.match(reply.error, /Unsupported speech model configuration/);
     }
+    assert.deepStrictEqual(worker.loadedModels, ["m1", null, "m2", null, "m3"]);
     assert.strictEqual(built.length, 3, "no recognizer is built for a rejected config");
     // ...and the refusal doesn't drop the model that was already resident.
     assert.strictEqual((await load(3, { joiner: "j", modelType: "transducer" })).ok, true);

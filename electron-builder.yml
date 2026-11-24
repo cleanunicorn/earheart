@@ -48,6 +48,18 @@ linux:
     entry:
       StartupWMClass: earheart
 
+# The installed deb provides the earheart executable on PATH. A standalone
+# AppImage can live anywhere and exposes the same action through its tray.
+deb:
+  desktop:
+    entry:
+      Actions: Statistics;
+    desktopActions:
+      Statistics:
+        Name: App statistics
+        Name[ro]: Statistici aplicație
+        Exec: earheart --stats
+
 # Build on a native Apple Silicon runner so npm installs the arm64 native
 # addons. release.yml boots the packaged app and loads its engines before
 # uploading it with latest-mac.yml. Intel Macs are not built (the last was

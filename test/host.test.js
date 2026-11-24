@@ -470,3 +470,15 @@ test("host: a worker's stderr never leaks into its successor's exit log", async 
     process.stderr.write = originalWrite;
   }
 });
+
+test("resident model status clears on exit and ignores a retired worker", async () => {
+  const { child, host } = setup();
+  assert.equal(host.getLoadedModel(), null);
+  const pending = host.request("load-stt");
+  child.emit("message", { loadedModel: "tiny" });
+  assert.equal(host.getLoadedModel(), "tiny");
+  child.emit("exit", 1);
+  await assert.rejects(pending, /exited/);
+  child.emit("message", { loadedModel: "tiny" });
+  assert.equal(host.getLoadedModel(), null);
+});

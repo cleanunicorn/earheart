@@ -25,6 +25,7 @@ function worker({
   const events = [];
   // Kept apart from `events`, whose exact sequence the older tests pin.
   const contextEvents = [];
+  const loadedModels = [];
   const getLlamaCalls = [];
   // The options each generation ran with, apart from the pinned `events`.
   const promptOptions = [];
@@ -97,7 +98,9 @@ function worker({
       parentPort: {
         on: (event, fn) => { if (event === "message") onMessage = fn; },
         postMessage(msg) {
-          if (typeof msg.progress !== "number") {
+          if ("loadedModel" in msg) {
+            loadedModels.push(msg.loadedModel);
+          } else if (typeof msg.progress !== "number") {
             pending.get(msg.id)(msg);
             pending.delete(msg.id);
           }
@@ -116,7 +119,7 @@ function worker({
       onMessage({ data: { id, type, ...args } });
     });
   }
-  return { send, events, contextEvents, getLlamaCalls, promptOptions };
+  return { send, events, loadedModels, contextEvents, getLlamaCalls, promptOptions };
 }
 const model = (modelPath) => ({ modelPath, contextSize: 4096, cpuOnly: true });
 const turn = (modelPath) => ({ model: model(modelPath), transcript: "hello", systemPrompt: "rules" });
@@ -473,4 +476,12 @@ test("transform: a cancel reaches it and frees the queue for the next turn", asy
   promptGate.resolve();
   assert.equal((await active).ok, false);
   assert.equal((await next).result, "B");
+});
+
+test("model status reflects successful cleanup loads and a failed replacement", async () => {
+  const w = worker();
+  await w.send("prime-cleanup", { model: { ...model("A"), modelId: "a" }, text: "hello" });
+  const failure = await w.send("load-cleanup", { ...model("bad"), modelId: "b" });
+  assert.equal(failure.ok, false);
+  assert.deepEqual(w.loadedModels, ["a", null]);
 });

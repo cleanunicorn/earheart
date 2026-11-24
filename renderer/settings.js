@@ -271,22 +271,22 @@ $("record-sound-test").addEventListener("click", () => {
   }
 });
 
+// Saving from any section must preserve the configured device, even before
+// the user opens the microphone picker or grants microphone access.
+function showSavedMicrophone(deviceId) {
+  const select = $("mic-device");
+  if (deviceId && !select.querySelector(`option[value="${CSS.escape(deviceId)}"]`)) {
+    const saved = document.createElement("option");
+    saved.value = deviceId;
+    saved.textContent = i18n.t("rt.configuredMicrophone");
+    select.appendChild(saved);
+  }
+  select.value = deviceId || "";
+}
+
 async function loadMicrophones() {
   const select = $("mic-device");
   const status = $("mic-device-status");
-  let selectionChanged = false;
-  select.addEventListener("change", () => {
-    selectionChanged = true;
-  });
-  // Show the saved device immediately so saving before (or without)
-  // enumeration never silently resets the microphone choice.
-  if (current.audio.deviceId) {
-    const saved = document.createElement("option");
-    saved.value = current.audio.deviceId;
-    saved.textContent = i18n.t("rt.configuredMicrophone");
-    select.appendChild(saved);
-    select.value = current.audio.deviceId;
-  }
   try {
     // Ask for permission once so device labels are populated.
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -317,12 +317,10 @@ async function loadMicrophones() {
           "Saved microphone not found. Dictation can temporarily use the system default; this selection stays saved.";
       }
     }
-    if (!selectionChanged) select.value = current.audio.deviceId || "";
     if (typeof onMicrophonesListed === "function") onMicrophonesListed(devices);
   } catch {
-    // No microphone permission/device; leave "System default".
+    // Keep the current choice if device discovery is unavailable.
   }
-  if (!selectionChanged) formBaseline.set(select, { value: select.value, checked: select.checked });
 }
 
 // ---- Automatic selection (#339) ----
@@ -374,7 +372,15 @@ function renderMicPolicy() {
 }
 
 async function initMicrophonePolicy() {
+  // The native picker needs permission for device labels. Start discovery
+  // once, when a microphone control receives keyboard or pointer focus.
+  const focusListeners = new AbortController();
+  const discover = () => {
+    focusListeners.abort();
+    loadMicrophones();
+  };
   for (const id of ["mic-mode", "mic-bluetooth", "mic-virtual", "mic-device"]) {
+    $(id).addEventListener("focus", discover, { signal: focusListeners.signal });
     $(id).addEventListener("change", renderMicPolicy);
   }
   try {
@@ -464,6 +470,7 @@ function populate() {
   $("updates-remind").checked = current.updates?.remind !== false;
   $("max-seconds").value = current.audio.maxRecordingSeconds;
   $("duck-other-audio").checked = current.audio.duckOtherAudio === true;
+  showSavedMicrophone(current.audio.deviceId);
   showMicPolicy(current.audio);
   $("duck-level").value = current.audio.duckLevelPercent ?? defaults.audio.duckLevelPercent;
   $("record-sounds").checked = current.audio.recordSounds === true;
@@ -2614,6 +2621,7 @@ let savedSetup = null;
 let formBaseline = new Map();
 let formReady = false;
 let pendingNavigation = null;
+let initialHistoryRender;
 function formSnapshot() {
   return new Map([...document.querySelectorAll("input, select, textarea")].map((el) =>
     [el, { value: el.value, checked: el.checked }]));
@@ -2664,7 +2672,13 @@ async function navigateSettings(destination) {
     $("wizard-banner").hidden = false;
   }
   renderSetupBanner();
-  if (!["general", "live", "stt", "cleanup", "history", "advanced"].includes(destination.section)) return;
+  if (!["general", "live", "stt", "cleanup", "history", "usage", "advanced"].includes(destination.section)) return;
+  if (destination.section === "usage") {
+    // History sits above Usage. Its first page must be laid out before the
+    // jump, including when the shortcut reaches an already-opening window.
+    await initialHistoryRender;
+    if (navigationVersion !== settingsNavigation) return;
+  }
   activateTab(destination.section, { focusSection: true });
   if (destination.section === "history" && typeof destination.query === "string") {
     historyQuery = destination.query.slice(0, 200);
@@ -3061,19 +3075,18 @@ $("snippet-delete").addEventListener("click", () => {
   populate();
   renderPromptOffer();
   formBaseline = formSnapshot();
+  initMicrophonePolicy();
   savedSetup = current;
-  formReady = true;
   const query = new URLSearchParams(location.search);
   const destination = pendingNavigation || {
     fromWizard: query.has("wizard"), section: query.get("section"), model: query.has("model"),
     ...(query.has("query") ? { query: query.get("query"), entryId: query.get("entryId") } : {}),
   };
+  if (destination.section !== "history" || typeof destination.query !== "string") initialHistoryRender = renderHistory();
+  formReady = true;
   await navigateSettings(destination);
   settingsChangesReady();
-  if (destination.section !== "history" || typeof destination.query !== "string") renderHistory();
   refreshAgents();
-  loadMicrophones();
-  initMicrophonePolicy();
   refreshDuckStatus();
   // The line says what is happening now (lowered, skipped, failed), which
   // changes with every take: keep it current while the window is shown.

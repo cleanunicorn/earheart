@@ -1363,6 +1363,7 @@ footer {
   font-size: 15px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .usage-baseline {

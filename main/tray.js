@@ -10,7 +10,7 @@ const history = require("./history");
 const { deliver } = require("./output/deliver");
 const { deliverText } = require("./output/single-line");
 const logger = require("./util/logger");
-const { t } = require("./i18n");
+const { t, onChange: onLocaleChange } = require("./i18n");
 
 let tray = null;
 let pipeline = null;
@@ -59,6 +59,10 @@ function correctLast() {
 }
 let openCommands = () => {};
 function setOpenCommands(open) { openCommands = open; }
+
+function statisticsItem() {
+  return { label: t("tray.statistics"), click: () => windows.openSettings({ section: "usage" }) };
+}
 
 function buildMenu(app) {
   const cfg = settings.get();
@@ -127,6 +131,7 @@ function buildMenu(app) {
     },
     ...updateItems(),
     { label: t("tray.commands"), accelerator: cfg.paletteHotkey || undefined, click: () => openCommands() },
+    statisticsItem(),
     { label: t("tray.settings"), click: () => windows.openSettings() },
     { type: "separator" },
     { label: t("tray.quit"), click: () => app.quit() },
@@ -212,6 +217,11 @@ function init(app, pipelineModule) {
   // macOS opens the context menu on click once one is set.
   if (process.platform === "win32") {
     tray.on("click", () => pipeline.toggle());
+  }
+  if (process.platform === "darwin" && app.dock) {
+    const updateDock = () => app.dock.setMenu(Menu.buildFromTemplate([statisticsItem()]));
+    updateDock();
+    onLocaleChange(updateDock);
   }
   pipeline.onStateChange(() => refresh(app));
   pipeline.onFailedTakeChange(() => refresh(app));

@@ -9,6 +9,13 @@
 (function (root) {
   const catalog = {
     "meta.name": "Română",
+    "tray.statistics": "Statistici aplicație…",
+    "settings.runtime": "Statistici aplicație",
+    "settings.appMemory": "Memoria aplicației",
+    "settings.localSpeech": "Model de transcriere încărcat",
+    "settings.localCleanup": "Model de corectare încărcat",
+    "runtime.none": "Niciun model încărcat",
+    "runtime.unavailable": "Indisponibil",
     "tray.start": "Începe dictarea",
     "tray.stop": "Oprește și transcrie",
     "tray.processing": "Se procesează…",

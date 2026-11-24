@@ -38,7 +38,39 @@ const visibleText = (id) => `(() => {
   return node && !node.hidden && node.offsetParent !== null && getComputedStyle(node).display !== "none" ? node.textContent : null;
 })()`;
 
+async function checkUsageWithAgentTasks({ waitFor, check, invokeHandlers }) {
+  const tasks = Array.from({ length: 5 }, (_, i) => ({
+    id: `smoke-task-${i}`, agentLabel: "Codex", project: "earheart",
+    status: "completed", brief: "A completed task", output: "Done", externalId: `session-${i}`,
+  }));
+  const realState = invokeHandlers.get("agent:state");
+  ipcMain.removeHandler("agent:state");
+  ipcMain.handle("agent:state", () => ({ ok: true, agents: [], tasks, projects: [] }));
+  let win;
+  try {
+    win = windows.openSettings({ section: "usage" });
+    await waitForLoad(win.webContents);
+    await waitFor(() => win.webContents.executeJavaScript(`(() => {
+      const tasks = document.querySelectorAll("#agent-task-list li[data-id]");
+      const card = document.getElementById("runtime-card").getBoundingClientRect();
+      const viewport = document.querySelector("main").getBoundingClientRect();
+      const memory = document.getElementById("runtime-memory").textContent;
+      return tasks.length === ${tasks.length} && card.top >= viewport.top && card.bottom <= viewport.bottom &&
+        document.activeElement.id === "legend-usage" && /[\\d.,]+ [MG]iB/.test(memory);
+    })()`, true), "App statistics did not scroll into view with Agent tasks enabled", 300);
+    check("App statistics scrolls into view and shows memory with Agent tasks enabled", true);
+  } finally {
+    ipcMain.removeHandler("agent:state");
+    ipcMain.handle("agent:state", realState);
+    if (win && !win.isDestroyed()) {
+      windows.closeSettings();
+      await waitFor(() => win.isDestroyed(), "App statistics did not close after the Agent tasks check");
+    }
+  }
+}
+
 async function checkUsage({ waitFor, check, savedThenClose, userData, invokeHandlers }) {
+  await checkUsageWithAgentTasks({ waitFor, check, invokeHandlers });
   const before = settings.get();
   const win = windows.openSettings({ section: "usage" });
   try {

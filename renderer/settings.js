@@ -39,6 +39,7 @@ function markActiveTab(name) {
 // While a click-initiated glide is in flight, the spy would highlight every
 // entry the scroll passes through; hold the chosen one until the scroll settles.
 let spyHeld = false;
+let settingsNavigation = 0;
 
 // `focus` keeps focus on the index button (arrow-key roving); `focusSection`
 // commits focus into the section itself (click/Enter activation) so the next
@@ -108,9 +109,10 @@ panelHost.addEventListener("scrollend", () => {
 
 tabButtons.forEach((tab, i) => {
   // Click covers Enter/Space on the focused button too (native semantics).
-  tab.addEventListener("click", () =>
-    activateTab(tab.dataset.tab, { focusSection: true })
-  );
+  tab.addEventListener("click", () => {
+    settingsNavigation++;
+    activateTab(tab.dataset.tab, { focusSection: true });
+  });
   tab.addEventListener("keydown", (event) => {
     const step =
       event.key === "ArrowRight" || event.key === "ArrowDown"
@@ -121,6 +123,7 @@ tabButtons.forEach((tab, i) => {
     if (!step) return;
     event.preventDefault();
     const next = tabButtons[(i + step + tabButtons.length) % tabButtons.length];
+    settingsNavigation++;
     activateTab(next.dataset.tab, { focus: true });
   });
 });
@@ -1849,6 +1852,7 @@ let historyQuery = ""; // what the search field filters by; "" = everything
 // Each render asks main for one page; only the newest request may draw it, so
 // a slow answer for an older query or page can't land under the current one.
 let historyRequest = 0;
+let historyRender;
 
 function historyCopyButton(label, value, report) {
   const button = document.createElement("button");
@@ -1877,8 +1881,12 @@ function historyNotice(message) {
   $("history-list").replaceChildren(li);
 }
 
-async function renderHistory() {
-  const request = ++historyRequest;
+function renderHistory() {
+  historyRender = renderHistoryPage(++historyRequest);
+  return historyRender;
+}
+
+async function renderHistoryPage(request) {
   const query = historyQuery;
   let res;
   try {
@@ -2333,6 +2341,7 @@ earheart.on("history:changed", (change) => {
 // repeated press (or a replayed request) start one task, not two.
 let agentState = { enabled: false, agents: [], tasks: [], projects: [], permission: "edit" };
 let agentRequest = 0;
+let agentRefresh;
 const agentReplyDrafts = new Map(); // task id -> reply text kept across redraws
 let agentOpenReview = null; // { id, remove } — one review form at a time
 
@@ -2351,8 +2360,11 @@ function agentButton(label, onClick, title) {
   return button;
 }
 
-async function refreshAgents() {
-  const request = ++agentRequest;
+function refreshAgents() {
+  agentRefresh = renderAgentState(++agentRequest);
+}
+
+async function renderAgentState(request) {
   let res;
   try {
     res = await earheart.invoke("agent:state");
@@ -2621,7 +2633,6 @@ let savedSetup = null;
 let formBaseline = new Map();
 let formReady = false;
 let pendingNavigation = null;
-let initialHistoryRender;
 function formSnapshot() {
   return new Map([...document.querySelectorAll("input, select, textarea")].map((el) =>
     [el, { value: el.value, checked: el.checked }]));
@@ -2648,7 +2659,6 @@ function renderSetupBanner() {
         : " Cleanup isn't downloaded. Dictations use raw transcripts; download it in Settings → Cleanup."
       : "";
 }
-let settingsNavigation = 0;
 async function navigateSettings(destination) {
   const navigationVersion = ++settingsNavigation;
   if (!formReady) { pendingNavigation = destination; return; }
@@ -2674,10 +2684,17 @@ async function navigateSettings(destination) {
   renderSetupBanner();
   if (!["general", "live", "stt", "cleanup", "history", "usage", "advanced"].includes(destination.section)) return;
   if (destination.section === "usage") {
-    // History sits above Usage. Its first page must be laid out before the
-    // jump, including when the shortcut reaches an already-opening window.
-    await initialHistoryRender;
-    if (navigationVersion !== settingsNavigation) return;
+    // Agent tasks and History can both change the scroll target. Rendering
+    // the agent state can start a new History render, so wait for that too.
+    if (!agentRefresh) refreshAgents();
+    let history;
+    let agents;
+    do {
+      history = historyRender;
+      agents = agentRefresh;
+      await Promise.all([history, agents]);
+      if (navigationVersion !== settingsNavigation) return;
+    } while (history !== historyRender || agents !== agentRefresh);
   }
   activateTab(destination.section, { focusSection: true });
   if (destination.section === "history" && typeof destination.query === "string") {
@@ -3082,11 +3099,11 @@ $("snippet-delete").addEventListener("click", () => {
     fromWizard: query.has("wizard"), section: query.get("section"), model: query.has("model"),
     ...(query.has("query") ? { query: query.get("query"), entryId: query.get("entryId") } : {}),
   };
-  if (destination.section !== "history" || typeof destination.query !== "string") initialHistoryRender = renderHistory();
+  if (destination.section !== "history" || typeof destination.query !== "string") renderHistory();
   formReady = true;
   await navigateSettings(destination);
   settingsChangesReady();
-  refreshAgents();
+  if (!agentRefresh) refreshAgents();
   refreshDuckStatus();
   // The line says what is happening now (lowered, skipped, failed), which
   // changes with every take: keep it current while the window is shown.

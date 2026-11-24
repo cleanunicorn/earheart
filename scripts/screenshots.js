@@ -1,5 +1,5 @@
-// Regenerate the README screenshots in docs/screenshots/ from the real
-// windows, staged headlessly. Run with:
+// Capture the real windows, staged headlessly. Defaults to docs/screenshots/;
+// set EARHEART_SCREENSHOTS_DIR to save a comparison run elsewhere. Run with:
 //
 //   make screenshots
 //
@@ -18,7 +18,7 @@ const { isolateProfile, assertIsolated } = require("./demo-profile");
 const profile = isolateProfile(app);
 
 const ROOT = path.join(__dirname, "..");
-const OUT = path.join(ROOT, "docs", "screenshots");
+const OUT = process.env.EARHEART_SCREENSHOTS_DIR || path.join(ROOT, "docs", "screenshots");
 const windows = require(path.join(ROOT, "main", "windows.js"));
 const ipc = require(path.join(ROOT, "main", "ipc.js"));
 const { waitForLoad } = require("./wait-for-load");
@@ -48,9 +48,36 @@ const STAGE_RECORDING = `
   `;
 
 async function shot(win, name) {
+  await win.webContents.executeJavaScript(`
+    document.fonts.ready.then(() =>
+      new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))
+    )
+  `);
   const img = await win.webContents.capturePage();
   fs.writeFileSync(path.join(OUT, `${name}.png`), img.toPNG());
   console.log(`captured ${name}.png`);
+}
+
+async function shootDialogs(suffix = "") {
+  const approval = windows.openApproval();
+  await waitForLoad(approval.webContents);
+  await sleep(650); // Allow once is deliberately disabled for the first 600ms.
+  await shot(approval, `approval${suffix}`);
+  windows.closeApproval();
+
+  const command = windows.openCommand();
+  await waitForLoad(command.webContents);
+  await shot(command, `command${suffix}`);
+  windows.closeCommand();
+}
+
+async function shootUsage(settings, suffix = "") {
+  await settings.webContents.executeJavaScript(`
+    document.getElementById("usage-days").closest(".card")
+      .scrollIntoView({ block: "start", behavior: "instant" });
+    true;
+  `);
+  await shot(settings, `settings-usage${suffix}`);
 }
 
 // The correction editor with a staged spelling fix: synthetic transcript, no
@@ -73,7 +100,6 @@ async function shootCorrection(name) {
     document.getElementById("spelling").focus();
     "";
   `);
-  await correction.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))");
   await shot(correction, name);
   windows.setCorrectionDirty(correction.webContents, false); // discard this synthetic staged draft
   correction.close();
@@ -110,11 +136,45 @@ async function main() {
   // As main.js wires them: the overlay's resize (the update card grows the
   // window) and custom models from the settings.
   windows.init();
+  const usage = require("../main/usage");
+  const today = usage.localDayKey(new Date());
+  const yesterday = usage.addDays(today, -1);
+  fs.writeFileSync(path.join(app.getPath("userData"), "usage.json"), JSON.stringify({
+    version: 1,
+    since: yesterday,
+    totals: { takes: 12, words: 1840, speechMs: 731000 },
+    days: {
+      [yesterday]: { takes: 5, words: 610, speechMs: 240000 },
+      [today]: { takes: 7, words: 1230, speechMs: 491000 },
+    },
+  }));
+  usage.init();
   require(path.join(ROOT, "main", "engines", "catalog.js")).bindCustomModels(require(path.join(ROOT, "main", "settings.js")));
   ipc.init({
     applyHotkeys: () => ({ hotkey: { ok: true }, pauseHotkey: { ok: true } }),
     onSettingsChanged: () => {},
   });
+  ipcMain.handle("approval:get", () => ({
+    id: "demo-approval",
+    server: "Project notes",
+    tool: "find_note",
+    description: "Searches the local project notes for a matching title.",
+    args: '{\n  "query": "Release checklist"\n}',
+    expiresAt: Date.now() + 30_000,
+  }));
+  ipcMain.handle("command:get", () => ({
+    ok: true,
+    view: {
+      id: "demo-command",
+      mode: "rewrite",
+      phase: "ready",
+      selection: "Could somebody make sure the documentation is updated before we ship?",
+      instruction: "Turn that into a concise release checklist item.",
+      output: "Update the documentation before release.",
+      canCopy: true,
+      canApply: true,
+    },
+  }));
 
   paletteController = require("../main/palette").createPalette({
     windows: { ...windows, createPaletteWindow: () => { paletteWindow = windows.createPaletteWindow(); return paletteWindow; } },
@@ -157,11 +217,13 @@ async function main() {
   })()`);
   await sleep(300);
   await shot(settings, "settings-record-sounds");
+  await shootUsage(settings);
   settings.close();
 
   // Correction: synthetic transcript, no dictionary/history writes.
   await shootCorrection("correction");
   await shootPalette("palette-dark");
+  await shootDialogs();
 
   // Overlay: staged recording and done states. setStatus/waveHistory/
   // drawMeter/timerEl are top-level bindings in overlay.js, reachable from
@@ -254,10 +316,12 @@ async function main() {
   await waitForLoad(lightSettings.webContents);
   await sleep(1200);
   await shot(lightSettings, "settings-light");
+  await shootUsage(lightSettings, "-light");
   lightSettings.close();
 
   await shootCorrection("correction-light");
   await shootPalette("palette-light");
+  await shootDialogs("-light");
 
   const lightOverlay = windows.createOverlay();
   await waitForLoad(lightOverlay.webContents);

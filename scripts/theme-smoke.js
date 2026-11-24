@@ -98,6 +98,11 @@ async function checkSettingsTheme({ waitFor, check, savedThenClose }) {
   await waitForLoad(win.webContents);
   const run = (code) => win.webContents.executeJavaScript(code, true);
   await waitFor(() => run(`document.getElementById("appearance").value === "dark"`), "Settings did not show the saved appearance");
+  const loadedFonts = await run(`document.fonts.ready.then(() =>
+    [...document.fonts].filter(face => face.status === "loaded").map(face => face.family)
+  )`);
+  check("Settings loads the bundled body and heading fonts",
+    loadedFonts.includes("Space Grotesk") && loadedFonts.includes("Outfit"), loadedFonts.join(", "));
   check("Settings opens in the dark ink", bgHex(win) === INK.dark && (await pageInk(win)) === INK.dark,
     `native=${bgHex(win)} page=${await pageInk(win)}`);
 
@@ -126,10 +131,11 @@ async function checkSettingsTheme({ waitFor, check, savedThenClose }) {
   // baseline is taken after one, and the checks below isolate the re-theme.
   await run(`document.getElementById("save").click(); true`);
   await waitFor(() => run(`document.getElementById("save-status").className === "status ok"`), "the settling Save never reported Saved", 500);
+  // Let Chromium paint the result and apply any pending scroll anchoring.
+  await run(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`);
   const before = await snapshot();
 
-  // Save Light. Hold the reply, edit a field meanwhile: the edit made after
-  // the click is unsaved and must survive the re-theme the Save causes.
+  // Save Light, then check that a later theme flip preserves an unsaved edit.
   await run(`(() => {
     const select = document.getElementById("appearance");
     select.value = "light";
@@ -191,10 +197,10 @@ async function checkSettingsTheme({ waitFor, check, savedThenClose }) {
     })()`));
     check(`${scheme}: error text wears the palette`, states.err === asRgb(tokens.get("--err")), JSON.stringify(states));
     // A focus ring that is actually drawn: :focus-visible matched, a real
-    // outline style and width, in this palette's Primary Text.
+    // outline style and width, in this palette's focus color.
     check(`${scheme}: the keyboard focus outline is visible and wears the palette`,
       states.visible && states.focus.style !== "none" && states.focus.width > 0 &&
-        states.focus.color === asRgb(tokens.get("--text")),
+        states.focus.color === asRgb(tokens.get("--focus")),
       JSON.stringify(states.focus) + ` visible=${states.visible}`);
   }
 

@@ -8,7 +8,7 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
-const { readPalettes, measure, PAIRS } = require("../scripts/theme-contrast");
+const { readPalettes, measure, parseColor, over, ratio, PAIRS } = require("../scripts/theme-contrast");
 
 const ROOT = path.join(__dirname, "..");
 const RENDERER = path.join(ROOT, "renderer");
@@ -18,8 +18,8 @@ const stripComments = (css) => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
 const palettes = readPalettes();
 
-test("both palettes declare exactly the same tokens", () => {
-  const dark = [...palettes.dark.keys()].sort();
+test("both palettes declare exactly the same color tokens", () => {
+  const dark = [...palettes.dark.keys()].filter((token) => !/^--(?:font-|radius)/.test(token)).sort();
   const light = [...palettes.light.keys()].sort();
   // The parse going silently empty must fail too: 30 tokens today.
   assert.ok(dark.length >= 30, `expected ≥30 dark tokens, got ${dark.length}`);
@@ -126,26 +126,16 @@ for (const name of ["dark", "light"]) {
   });
 }
 
-test("the dark palette is unchanged by the light one (#348 keeps dark as it was)", () => {
-  // The values the app shipped before light existed; dark must look identical.
-  const before = {
-    "--ink": "#18181b",
-    "--text": "#f4f4f5",
-    "--text-dim": "#a1a1aa",
-    "--text-mid": "#d4d4d8",
-    "--idle": "#71717a",
-    "--accent": "#fb4d5c",
-    "--ok": "#34d399",
-    "--err": "#f87171",
-    "--field": "#101013",
-    "--field-edge": "#6b6b74",
-    "--text-faint": "rgba(255, 255, 255, 0.28)",
-    "--tray": "rgba(0, 0, 0, 0.25)",
-    "--fg-rgb": "255 255 255",
-    "--accent-rgb": "251 77 92",
-    "--err-rgb": "248 113 113",
-  };
-  for (const [token, value] of Object.entries(before)) assert.strictEqual(palettes.dark.get(token), value, token);
+test("the preset uses Mist surfaces and keeps the recording cue distinct from teal actions", () => {
+  assert.strictEqual(palettes.dark.get("--ink"), "#090b0c");
+  assert.strictEqual(palettes.light.get("--ink"), "#ffffff");
+  assert.strictEqual(palettes.dark.get("--surface"), "#161b1d");
+  for (const [name, tokens] of Object.entries(palettes)) {
+    const primary = parseColor(tokens.get("--primary"));
+    const recording = parseColor(tokens.get("--accent"));
+    assert.ok(primary.g > primary.r && primary.b > primary.r, name);
+    assert.ok(recording.r > recording.g && recording.r > recording.b, name);
+  }
 });
 
 test("the composited pairs measured above match what settings.css draws", () => {
@@ -158,6 +148,7 @@ test("the composited pairs measured above match what settings.css draws", () => 
     return flat.slice(at, flat.indexOf("}", at));
   };
   const capturing = rule("#hotkey.capturing, #pause-hotkey.capturing");
+  assert.match(rule(".card"), /background: var\(--surface\)/);
   assert.match(capturing, /border-color: rgb\(var\(--accent-rgb\) \/ 0\.9\)/);
   assert.match(capturing, /background: rgb\(var\(--accent-rgb\) \/ 0\.07\)/);
   assert.match(capturing, /box-shadow: 0 0 0 3px rgb\(var\(--accent-rgb\) \/ 0\.16\)/);
@@ -179,13 +170,12 @@ test("the capture edge is painted once, over its own fill, then compared (round-
   // the ring instead overstated the ring ratio (light 3.17 vs 3.14).
   const css = stripComments(read("renderer", "settings.css"));
   assert.doesNotMatch(css, /background-clip/, "a clipped background would change what the edge is painted over");
-  const { parseColor, over, ratio } = require("../scripts/theme-contrast");
   for (const [name, tokens] of Object.entries(palettes)) {
     const channel = (token, a) => {
       const [r, g, b] = tokens.get(token).split(/\s+/).map(Number);
       return { r, g, b, a };
     };
-    const card = over(channel("--fg-rgb", 0.04), parseColor(tokens.get("--ink")));
+    const card = parseColor(tokens.get("--surface"));
     const fill = over(channel("--accent-rgb", 0.07), card);
     const ring = over(channel("--accent-rgb", 0.16), card);
     const edge = over(channel("--accent-rgb", 0.9), fill);
@@ -199,6 +189,4 @@ test("the capture edge is painted once, over its own fill, then compared (round-
     const wrong = ratio(over(channel("--accent-rgb", 0.9), ring), ring);
     assert.ok(Math.abs(rows[1].ratio - wrong) > 0.01, `${name}: not painted over the ring`);
   }
-  assert.strictEqual(measure(palettes.light).find((r) => r.on === "capture ring").ratio.toFixed(2), "3.14");
-  assert.strictEqual(measure(palettes.dark).find((r) => r.on === "capture ring").ratio.toFixed(2), "3.44");
 });

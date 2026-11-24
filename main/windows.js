@@ -28,7 +28,7 @@ const OVERLAY_FADE_MS = 200;
 // Match --ink in each palette of renderer/tokens.css (which every framed
 // window loads), so no window flashes the other palette before its stylesheet
 // paints (test/theme-contract.test.js pins both).
-const INK_COLORS = { dark: "#18181b", light: "#fafafa" };
+const INK_COLORS = { dark: "#090b0c", light: "#ffffff" };
 
 // The ink of the palette the stylesheets resolve right now: nativeTheme
 // follows the Appearance setting (main/appearance.js) and, on "system", the OS.

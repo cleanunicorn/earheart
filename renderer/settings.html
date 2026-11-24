@@ -993,8 +993,16 @@
       <section id="tab-usage" class="panel" aria-labelledby="legend-usage">
         <h2 class="legend" tabindex="-1" id="legend-usage">
           <svg class="legend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><path d="M7 16v-4"/><path d="M12 16V5"/><path d="M17 16V9"/></svg>
-          Usage
+          <span data-i18n="settings.usage">Usage</span>
         </h2>
+        <div class="card" id="runtime-card">
+          <div class="card-title" data-i18n="settings.runtime">App statistics</div>
+          <dl class="usage-stats">
+            <div class="usage-stat"><dt data-i18n="settings.appMemory">App memory</dt><dd id="runtime-memory">—</dd></div>
+            <div class="usage-stat"><dt data-i18n="settings.localSpeech">Loaded speech model</dt><dd id="runtime-stt">—</dd></div>
+            <div class="usage-stat"><dt data-i18n="settings.localCleanup">Loaded cleanup model</dt><dd id="runtime-cleanup">—</dd></div>
+          </dl>
+        </div>
         <div class="card">
           <label class="toggle">
             <span class="toggle-text">
@@ -1183,6 +1191,7 @@
     <script src="ducking-status.js"></script>
     <script src="mic-policy.js"></script>
     <script src="record-cues.js"></script>
+    <script src="runtime-stats.js"></script>
     <script src="usage-stats.js"></script>
     <script src="tools-settings.js"></script>
     <script src="settings.js"></script>

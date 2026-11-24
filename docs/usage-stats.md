@@ -5,6 +5,14 @@ speaking time, your average speaking speed, your current and longest streak,
 the last 14 days, and an **estimate** of the typing time saved. It is on by
 default, works with History off, and never leaves your computer.
 
+Choose **App statistics…** from the Earheart tray or macOS menu bar icon to
+open Usage. The macOS Dock icon and the installed Linux deb launcher's shortcut
+menu also offer this action. The top card shows the speech and cleanup models
+loaded on this computer and refreshes every five seconds while visible. App
+memory sums the resident working sets of Earheart's Electron processes,
+including its model workers. Shared pages can contribute to multiple processes.
+These live readings are available even when dictation counting is off.
+
 Code: [main/usage.js](../main/usage.js) (store and maths),
 [renderer/usage-stats.js](../renderer/usage-stats.js) (the section), the
 `usage.record` call in `process()` in [main/pipeline.js](../main/pipeline.js).

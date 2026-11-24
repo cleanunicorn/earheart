@@ -51,6 +51,7 @@ function hexExitCode(code) {
 // when the worker dies, so it must not throw or touch the worker.
 function createHost({ serviceName = "earheart-engines", describe } = {}) {
   let child = null;
+  let loadedModel = null;
   let startedAt = 0;
   // The most recent request, kept for the exit log only: a worker that dies
   // between requests is usually dying from the last one it ran.
@@ -73,6 +74,7 @@ function createHost({ serviceName = "earheart-engines", describe } = {}) {
   // `exitCode` is the process's own (undefined for a deliberate stop()): the
   // only trace a native abort leaves, so it rides along on the error.
   function handleGone(exitCode) {
+    loadedModel = null;
     // Fail anything still in flight so callers fall back instead of hanging.
     for (const entry of pending.values()) {
       entry.reject(engineError("engine process exited", "ENGINE_EXITED", { exitCode }));
@@ -117,6 +119,10 @@ function createHost({ serviceName = "earheart-engines", describe } = {}) {
         return;
       }
       if (child !== proc) return; // superseded worker: ignore its late messages
+      if (msg && (msg.loadedModel === null || typeof msg.loadedModel === "string")) {
+        loadedModel = msg.loadedModel;
+        return;
+      }
       const entry = msg && pending.get(msg.id);
       if (!entry) return; // late progress/reply for a finished request: drop
       if (msg.progress !== undefined) {
@@ -234,7 +240,7 @@ function createHost({ serviceName = "earheart-engines", describe } = {}) {
     handleGone(); // now, so the async "exit" can't land on the successor
   }
 
-  return { request, stop, busy, onExit };
+  return { request, stop, busy, onExit, getLoadedModel: () => loadedModel };
 }
 
 module.exports = { createHost, LOADCHECK_TIMEOUT_MS };

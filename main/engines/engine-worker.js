@@ -161,6 +161,7 @@ async function loadStt({ dir, sherpa, modelId }) {
     },
   });
   sttModelId = modelId;
+  port.postMessage({ loadedModel: modelId });
   sttRuntime = runtime;
   // Reported back so a caller can record the thread count the recognizer
   // actually got (scripts/eval-stt.js refuses a measurement that doesn't
@@ -200,7 +201,7 @@ async function rebuildCleanupContext(contextSize) {
   llamaContext = await llamaModel.createContext({ contextSize });
 }
 
-async function loadCleanup({ modelPath, contextSize, cpuOnly }) {
+async function loadCleanup({ modelId, modelPath, contextSize, cpuOnly }) {
   const wanted = contextSize || CLEAN_CONTEXT_MIN;
   if (llamaModel && llamaContext && cleanupModelPath === modelPath) {
     if (cleanupContextSize === wanted) return { ready: true };
@@ -249,6 +250,7 @@ async function loadCleanup({ modelPath, contextSize, cpuOnly }) {
       llamaContext = await llamaModel.createContext({ contextSize: wanted });
       llamaSession = null;
       cleanupModelPath = modelPath;
+      if (modelId) port.postMessage({ loadedModel: modelId });
       cleanupContextSize = wanted;
       return { ready: true };
     } catch (err) {
@@ -536,6 +538,7 @@ async function disposeCleanup() {
   }
   llamaSession = null;
   llamaContext = null;
+  if (cleanupModelPath) port.postMessage({ loadedModel: null });
   llamaModel = null;
   cleanupModelPath = null;
   cleanupContextSize = 0;
@@ -549,6 +552,7 @@ async function disposeCleanup() {
 // unloadIdle in ./index.js); here the replacement model is loaded immediately
 // after, so the process is about to be busy either way.
 async function disposeStt() {
+  if (recognizer) port.postMessage({ loadedModel: null });
   recognizer = null;
   sttModelId = null;
   sttRuntime = null;

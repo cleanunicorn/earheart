@@ -915,10 +915,10 @@ test("refreshInk repaints only the open framed windows, never the overlay (#348)
 test("History navigation requested during Settings load reaches its ready document", () => {
   const { windows, calls, webContentsHandlers } = loadWindows();
   const win = windows.openSettings();
-  win.webContents.isLoadingMainFrame = () => true;
+  win.webContents.isLoading = () => true;
   windows.openSettings({ section: "history", query: "", entryId: "selected" });
   assert.equal(calls.filter(([name, channel]) => name === "send" && channel === "settings:navigate").length, 0);
-  webContentsHandlers["did-finish-load"]();
+  webContentsHandlers["did-stop-loading"]();
   assert.deepEqual(calls.findLast(([name]) => name === "send"), ["send", "settings:navigate", {
     fromWizard: false, section: "history", model: false, query: "", entryId: "selected",
   }]);

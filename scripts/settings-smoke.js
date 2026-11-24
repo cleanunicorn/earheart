@@ -124,7 +124,7 @@ ipcMain.handle = (channel, handler) => {
 const engines = require("../main/engines");
 const { registry } = engines;
 
-// loadMicrophones() calls getUserMedia at init; the fake device keeps that
+// The microphone picker calls getUserMedia on focus; the fake device keeps that
 // deterministic on headless CI instead of hanging on a permission that will
 // never arrive.
 app.commandLine.appendSwitch("use-fake-device-for-media-stream");
@@ -487,6 +487,8 @@ app.whenReady().then(async () => {
     })()`);
     check("scroll spy changes sections at the panel read line",
       middleSpy.before === "stt" && middleSpy.after === "cleanup", JSON.stringify(middleSpy));
+    await js(`document.getElementById("mic-device").focus(); true`);
+    await waitFor(() => js(`document.getElementById("mic-device-status").textContent !== ""`), "focusing the microphone picker did not discover devices");
     const microphone = JSON.parse(await js(`JSON.stringify({
       value: document.getElementById("mic-device").value,
       label: document.querySelector('#mic-device option[value="missing-saved-device"]')?.textContent,
@@ -1954,13 +1956,10 @@ app.whenReady().then(async () => {
       await sleep(1200);
       const run = (code) => raceWin.webContents.executeJavaScript(code, true);
       try {
-        // Reset the picker to its markup state, then re-run the page's own
-        // loader against held media promises (never awaited from here).
+        // Keep the saved option the form restored, and hold the media
+        // promises when the real control first receives focus.
         const seeded = await run(`(() => {
           const select = document.getElementById("mic-device");
-          [...select.options].slice(1).forEach((o) => o.remove());
-          select.value = "";
-          document.getElementById("mic-device-status").textContent = "";
           if (${seedAlt}) {
             const alt = document.createElement("option");
             alt.value = ${JSON.stringify(ALT_MIC)};
@@ -1979,10 +1978,12 @@ app.whenReady().then(async () => {
             probe.calls.push("enumerateDevices");
             return ${JSON.stringify(hold)} === "enumerate" ? held("enumerate").then(() => devices) : Promise.resolve(devices);
           };
-          loadMicrophones().then(
+          const load = loadMicrophones;
+          loadMicrophones = () => load().then(
             () => { probe.done = true; },
             (err) => { probe.error = String(err); probe.done = true; }
           );
+          select.focus();
           return select.value;
         })()`);
         const heldCall = hold === "permission" ? "getUserMedia" : "enumerateDevices";
@@ -2706,7 +2707,17 @@ app.whenReady().then(async () => {
       });
     }
 
-    await usageSmoke.checkUsage({ waitFor, check, savedThenClose, userData, invokeHandlers });
+    let usageMicRequests = 0;
+    session.defaultSession.setPermissionRequestHandler((_contents, permission, respond) => {
+      if (permission === "media") usageMicRequests++;
+      respond(false);
+    });
+    try {
+      await usageSmoke.checkUsage({ waitFor, check, savedThenClose, userData, invokeHandlers });
+      check("opening and saving App statistics requests no microphone access", usageMicRequests === 0);
+    } finally {
+      installPermissionHandler(session.defaultSession);
+    }
     await require("./wizard-smoke").checkWizard({ waitFor, check, setDuckingStatus: (status) => { duckingStatus = status; } });
     await require("./correction-smoke").checkCorrection({ waitFor, check, savedThenClose });
     await require("./theme-smoke").checkTheme({ waitFor, check, savedThenClose });

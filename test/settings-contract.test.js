@@ -493,6 +493,7 @@ function microphonePage(source, page) {
   const loadFunction = `(${extractFunction(source, "loadMicrophones")})`;
   const load = require("node:vm").runInNewContext(loadFunction, context);
   if (page === "settings") {
+    require("node:vm").runInNewContext(`(${extractFunction(source, "showSavedMicrophone")})(current.audio.deviceId)`, context);
     const settingsFunctions = settingsCollectSource();
     const radios = { stt: "builtin", cleanup: "builtin", "cleanup-style-mode": "custom" };
     context.document.querySelector = (selector) => {

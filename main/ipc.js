@@ -736,6 +736,21 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     return answer(saved.cleanup);
   }));
 
+  ipcMain.handle("usage:runtime", () => {
+    // Electron reports working set in KiB for each process, including the
+    // utility processes that hold the models. Shared pages can count twice.
+    let memoryKiB = null;
+    try {
+      const sizes = app.getAppMetrics().map(metric => metric.memory?.workingSetSize);
+      if (sizes.length && sizes.every(size => Number.isFinite(size) && size > 0)) {
+        memoryKiB = sizes.reduce((sum, size) => sum + size, 0);
+      }
+    } catch (err) {
+      logger.warn("app memory metrics unavailable:", err.message);
+    }
+    return { memoryKiB, ...engines.loadedModels() };
+  });
+
   // ---- in-process model management (wizard download step + Settings) ----
 
   // Which built-in models are downloaded and how big they are. Used to decide

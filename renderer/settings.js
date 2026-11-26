@@ -976,7 +976,8 @@ function setRowRemoving(modelId, removing) {
 async function removeModel(kind, modelId) {
   const info = modelStatus[kind].find((m) => m.id === modelId);
   const label = info ? info.label : modelId;
-  if (!confirm(`Remove ${label}? You'll need to download it again to use it.`)) {
+  const question = `Remove ${label}? You'll need to download it again to use it.`;
+  if (!(await confirmDialog(question, { confirmLabel: i18n.t("rt.remove"), danger: true }))) {
     return;
   }
   setRowRemoving(modelId, true);
@@ -1000,7 +1001,7 @@ async function removeCustomModel(modelId) {
   const question = info?.installed
     ? `Remove ${label} and its downloaded files? You'll need to download it again to use it.`
     : `Remove ${label} from your models?`;
-  if (!confirm(question)) return;
+  if (!(await confirmDialog(question, { confirmLabel: i18n.t("rt.remove"), danger: true }))) return;
   setRowRemoving(modelId, true);
   const res = await earheart.invoke("models:remove-custom", { modelId });
   setRowRemoving(modelId, false);
@@ -2205,7 +2206,8 @@ async function renderRecordingsStatus() {
 }
 
 $("recordings-clear").addEventListener("click", async () => {
-  if (!confirm("Delete all kept recordings? Transcriptions stay in History. This can't be undone.")) return;
+  const question = "Delete all kept recordings? Transcriptions stay in History. This can't be undone.";
+  if (!(await confirmDialog(question, { confirmLabel: i18n.t("rt.delete"), danger: true }))) return;
   releasePlayer();
   let res;
   try {
@@ -2238,7 +2240,7 @@ function historyDeleteButton(item, report) {
     const question = item.audio
       ? "Delete this transcription and its kept recording? This can't be undone."
       : "Delete this transcription? This can't be undone.";
-    if (!confirm(question)) return;
+    if (!(await confirmDialog(question, { confirmLabel: i18n.t("rt.delete"), danger: true }))) return;
     // Deleted mid-playback: stop and release it before the audio goes.
     if (activePlayer?.id === item.id) releasePlayer();
     button.disabled = true;
@@ -2304,7 +2306,8 @@ $("history-clear").addEventListener("click", async () => {
   // Unlike a removed model, cleared history is gone for good — gate it the
   // same way model removal already is. Every kept recording goes with it
   // (main/ipc.js history:clear), so the question says so.
-  if (!confirm("Clear all saved transcriptions and any kept recordings? This can't be undone.")) return;
+  const question = "Clear all saved transcriptions and any kept recordings? This can't be undone.";
+  if (!(await confirmDialog(question, { confirmLabel: i18n.t("rt.delete"), danger: true }))) return;
   const res = await earheart.invoke("history:clear");
   // A failed delete left the transcripts on disk: say so, and keep showing
   // them so the user can try again (#287).

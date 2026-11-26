@@ -42,6 +42,8 @@
 //  11. Wizard-started downloads survive Settings model changes without
 //      overwriting a concurrent download's state.
 //  12. Failed model removals appear in the row and persistent live region.
+//      Removing a model through the real in-page confirmation, with real
+//      input events, leaves its dropdown able to open (:open) on every OS.
 //  13. A main-side save while the window is open (the tray's output radios,
 //      the update prompt's "Don't remind me") shows in the form through
 //      settings:changed, without discarding an edit the user hasn't saved,
@@ -292,6 +294,9 @@ app.whenReady().then(async () => {
     await sleep(1200);
 
     const js = (code) => win.webContents.executeJavaScript(code, true);
+    // Most checks stub confirmDialog; keep the real one for the check that
+    // drives it with real input.
+    await js(`window.realConfirmDialog = window.confirmDialog; true`);
     // Model-row helpers: read a row, click one of its buttons by label, pick a
     // model in a select, list the stored custom definitions.
     const rowState = (kind) => js(`JSON.stringify({
@@ -563,7 +568,7 @@ app.whenReady().then(async () => {
     };
     let failedClear;
     try {
-      await js(`window.confirm = (m) => ((window.lastConfirm = m), true); document.getElementById("history-clear").click(); true`);
+      await js(`window.confirmDialog = async (m) => ((window.lastConfirm = m), true); document.getElementById("history-clear").click(); true`);
       failedClear = await waitFor(
         () => js(`(() => {
           const status = document.getElementById("history-clear-status");
@@ -669,7 +674,7 @@ app.whenReady().then(async () => {
 
     // 9 (cont.). Delete one entry: gone from the list and the file, the rest kept.
     const deleteRow = (text) => js(`(() => {
-      window.confirm = (m) => ((window.lastConfirm = m), true);
+      window.confirmDialog = async (m) => ((window.lastConfirm = m), true);
       const li = [...document.querySelectorAll("#history-list li")].find((row) => row.querySelector(".text")?.textContent === ${JSON.stringify(text)});
       li.querySelector("button.delete").click();
       return true;
@@ -901,7 +906,7 @@ app.whenReady().then(async () => {
       await js(`(() => {
         const a = document.querySelector("#history-list audio.player");
         a.play().catch(() => {});
-        window.confirm = (m) => ((window.lastConfirm = m), true);
+        window.confirmDialog = async (m) => ((window.lastConfirm = m), true);
         ${rowWith("whole dictation")}.querySelector("button.delete").click();
         return true;
       })()`);
@@ -1540,7 +1545,7 @@ app.whenReady().then(async () => {
     engines.remove = async () => {
       throw new Error("model files are busy");
     };
-    await js(`window.confirm = () => true; true`);
+    await js(`window.confirmDialog = async () => true; true`);
     await js(`(() => {
       const select = document.getElementById("stt-builtin-model");
       select.value = ${JSON.stringify(sttModel)};
@@ -1566,6 +1571,84 @@ app.whenReady().then(async () => {
         removalAnnouncement.text.endsWith("model files are busy"),
       JSON.stringify(removalAnnouncement)
     );
+
+    // Removing a model through the real confirmation leaves its dropdown
+    // working. Electron's native confirm() left a window unable to open a
+    // <select> popup afterwards (reported on Windows, reproduced on Linux), so
+    // this runs the real in-page dialog with real input events on every CI OS
+    // and asks Chromium whether the popup opened (:open). With the native
+    // confirm in its place, the same click leaves :open false.
+    {
+      const busyRemove = engines.remove;
+      const cleanupModel = registry.DEFAULT_CLEANUP_MODEL;
+      installedModels.add(`cleanup:${cleanupModel}`);
+      engines.remove = async (kind, modelId) => { installedModels.delete(`${kind}:${modelId}`); };
+      // The cleanup model row only shows with cleanup on and the built-in
+      // engine picked; put the form back afterwards.
+      const formBefore = await js(`JSON.stringify({
+        enabled: document.getElementById("cleanup-enabled").checked,
+        engine: document.querySelector('input[name="cleanup-engine"]:checked').value,
+      })`).then(JSON.parse);
+      const setCleanupForm = ({ enabled, engine }) => js(`(() => {
+        const box = document.getElementById("cleanup-enabled");
+        if (box.checked !== ${enabled}) box.click();
+        const radio = document.querySelector('input[name="cleanup-engine"][value=${JSON.stringify(engine)}]');
+        radio.checked = true;
+        radio.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      })()`);
+      await setCleanupForm({ enabled: true, engine: "builtin" });
+      await js(`window.confirmDialog = window.realConfirmDialog; true`);
+      await selectModel("cleanup", cleanupModel);
+      // As after a finished download: the window re-reads models:status.
+      win.webContents.send("models:done", { kind: "cleanup", modelId: cleanupModel, ok: true });
+      await js(`document.getElementById("cleanup-builtin-model").scrollIntoView({ block: "center" }); true`);
+      await sleep(300);
+      // A real mouse click at an element's centre, through Chromium's input
+      // pipeline rather than a synthetic DOM click.
+      const realClick = async (selector) => {
+        const rect = await js(`(() => {
+          const r = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect();
+          return r ? [r.x + r.width / 2, r.y + r.height / 2] : null;
+        })()`);
+        if (!rect) return false;
+        const [x, y] = rect.map(Math.round);
+        win.webContents.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
+        win.webContents.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
+        return true;
+      };
+      const removeShown = await waitFor(
+        () => js(`document.querySelector("#cleanup-model-manage button")?.textContent === "Remove"`),
+        "installed cleanup model did not expose Remove"
+      );
+      await realClick("#cleanup-model-manage button");
+      const dialogOpen = await waitFor(
+        () => js(`document.querySelector("dialog.confirm-dialog")?.open === true`),
+        "Remove did not open the confirmation"
+      );
+      await realClick("dialog.confirm-dialog .row button:last-child");
+      const removed = await waitFor(
+        () => js(`!document.querySelector("dialog.confirm-dialog") &&
+          document.querySelector("#cleanup-model-manage .status")?.textContent === "Not downloaded"`),
+        "confirming did not remove the model"
+      );
+      await realClick("#cleanup-builtin-model");
+      const opened = await waitFor(
+        () => js(`document.getElementById("cleanup-builtin-model").matches(":open")`),
+        "the model dropdown did not open after the removal"
+      ).catch(() => false);
+      win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+      win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+      await sleep(200);
+      check(
+        "after removing a model through the real confirmation, a real click opens its dropdown",
+        removeShown === true && dialogOpen === true && removed === true && opened === true,
+        JSON.stringify({ platform: process.platform, removeShown, dialogOpen, removed, opened })
+      );
+      await js(`window.confirmDialog = async () => true; true`);
+      await setCleanupForm(formBefore);
+      engines.remove = busyRemove;
+    }
 
     await js(`(() => {
       const select = document.getElementById("cleanup-builtin-model");
@@ -1821,7 +1904,7 @@ app.whenReady().then(async () => {
       await removalHeld;
       throw new Error("custom model files are busy");
     };
-    await js(`window.confirms = []; window.confirm = (m) => (window.confirms.push(m), true); true`);
+    await js(`window.confirms = []; window.confirmDialog = async (m) => (window.confirms.push(m), true); true`);
     if (!(await clickRowButton("stt", "Remove"))) throw new Error("custom STT row has no Remove");
     await waitFor(
       () => rowState("stt").then((r) => r.status === "Removing…"),

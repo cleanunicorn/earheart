@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.57.0 — 2026-11-26
+
+- Show whether models are in RAM or VRAM and unload them (#410)
+
 ## v0.56.1 — 2026-11-26
 
 - Reopen the model dropdown after removing a model (#409)

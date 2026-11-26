@@ -404,7 +404,7 @@ async function openLog() {
   }
 }
 
-function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, getCommandCapabilities, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {}, onHistoryEntryDeleted = () => {}, agentApi = INERT_AGENT_API, retranscribe = async () => ({ ok: false, error: "unavailable" }) }) {
+function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus, getCommandCapabilities, canCorrect = () => true, canCopy = () => true, onCleanupDownloaded: completed = () => {}, onHistoryCleared = () => {}, onHistoryEntryDeleted = () => {}, agentApi = INERT_AGENT_API, retranscribe = async () => ({ ok: false, error: "unavailable" }), canUnloadModels = () => true }) {
   onCleanupDownloaded = completed;
   // Custom models reach the registry through the settings themselves
   // (engines/catalog.js, bound in main.js), not through this layer: the saves
@@ -736,19 +736,51 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
     return answer(saved.cleanup);
   }));
 
-  ipcMain.handle("usage:runtime", () => {
+  ipcMain.handle("usage:runtime", async () => {
     // Electron reports working set in KiB for each process, including the
     // utility processes that hold the models. Shared pages can count twice.
     let memoryKiB = null;
+    const pids = engines.workerPids();
+    const workerKiB = { stt: null, cleanup: null };
     try {
-      const sizes = app.getAppMetrics().map(metric => metric.memory?.workingSetSize);
+      const metrics = app.getAppMetrics();
+      const sizes = metrics.map(metric => metric.memory?.workingSetSize);
       if (sizes.length && sizes.every(size => Number.isFinite(size) && size > 0)) {
         memoryKiB = sizes.reduce((sum, size) => sum + size, 0);
+      }
+      for (const kind of ["stt", "cleanup"]) {
+        const size = pids[kind] && metrics.find(metric => metric.pid === pids[kind])?.memory?.workingSetSize;
+        if (Number.isFinite(size) && size > 0) workerKiB[kind] = size;
       }
     } catch (err) {
       logger.warn("app memory metrics unavailable:", err.message);
     }
-    return { memoryKiB, ...engines.loadedModels() };
+    const models = engines.loadedModels();
+    const placement = models.cleanup ? await engines.cleanupPlacement().catch(() => null) : null;
+    return {
+      memoryKiB,
+      ...models,
+      // RAM held by the worker process of each model (null when not running).
+      sttMemoryKiB: models.stt ? workerKiB.stt : null,
+      cleanupMemoryKiB: models.cleanup ? workerKiB.cleanup : null,
+      // Speech always runs on the CPU; cleanup reports what llama.cpp chose.
+      cleanupPlacement: placement && {
+        backend: placement.backend,
+        gpuLayers: placement.gpuLayers,
+        totalLayers: placement.totalLayers,
+        modelBytes: placement.modelBytes,
+      },
+      gpu: placement?.vram || null,
+    };
+  });
+
+  // Unload both local models now: exits their worker processes, the only way
+  // their memory goes back to the OS (engines.unloadIdle). Refused while a
+  // dictation runs, so a warmed worker isn't killed mid-recording; a worker
+  // busy with a Settings test is skipped and reported.
+  ipcMain.handle("usage:unload-models", () => {
+    if (!canUnloadModels()) return { ok: false, reason: "dictating" };
+    return engines.unloadIdle() ? { ok: true } : { ok: false, reason: "busy" };
   });
 
   // ---- in-process model management (wizard download step + Settings) ----

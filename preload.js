@@ -111,6 +111,7 @@ const ROLES = {
       "history:clear",
       "usage:get",
       "usage:runtime",
+      "usage:unload-models",
       "usage:reset",
       "models:status",
       "models:download",

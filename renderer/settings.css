@@ -1350,6 +1350,24 @@ footer {
   overflow-wrap: anywhere;
 }
 
+/* Where a loaded model sits (GPU layers, worker RAM), under its name. */
+.usage-detail {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.runtime-foot {
+  margin-top: 14px;
+  gap: 12px;
+}
+
+.runtime-foot .hint {
+  margin: 0;
+}
+
 .usage-baseline {
   margin-top: 14px;
   max-width: 220px;

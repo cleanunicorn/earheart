@@ -482,3 +482,54 @@ test("resident model status clears on exit and ignores a retired worker", async 
   child.emit("message", { loadedModel: "tiny" });
   assert.equal(host.getLoadedModel(), null);
 });
+
+test("peek never forks a worker and resolves null without one", async () => {
+  currentChild = null;
+  const host = createHost();
+  assert.equal(await host.peek("memory"), null);
+  assert.equal(host.getPid(), null);
+});
+
+test("peek reads a running worker without making it busy", async () => {
+  const { child, host } = setup();
+  child.pid = 4242;
+  const load = host.request("load-cleanup");
+  const loadId = child.sent[0].id;
+  child.emit("message", { id: loadId, ok: true, result: { ready: true } });
+  await load;
+  const read = host.peek("memory");
+  assert.equal(host.busy(), false);
+  assert.equal(host.getPid(), 4242);
+  const { id, type } = child.sent[1];
+  assert.equal(type, "memory");
+  child.emit("message", { id, ok: true, result: { gpuLayers: 35 } });
+  assert.deepEqual(await read, { gpuLayers: 35 });
+});
+
+test("a peek the worker doesn't answer resolves null and leaves it running", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { child, host } = setup();
+  host.request("ping").catch(() => {});
+  const read = host.peek("memory");
+  t.mock.timers.tick(1000);
+  assert.equal(await read, null);
+  assert.equal(child.killed, false);
+  host.stop();
+});
+
+test("a peek in flight resolves null when the worker exits", async () => {
+  const { child, host } = setup();
+  host.request("ping").catch(() => {});
+  const read = host.peek("memory");
+  child.emit("exit", 1);
+  assert.equal(await read, null);
+});
+
+test("a failed peek reply resolves null", async () => {
+  const { child, host } = setup();
+  host.request("ping").catch(() => {});
+  const read = host.peek("memory");
+  child.emit("message", { id: child.sent[1].id, ok: false, error: "boom" });
+  assert.equal(await read, null);
+  host.stop();
+});

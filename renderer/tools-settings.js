@@ -91,7 +91,8 @@
     actions.append(enabled, discover,
       mk("Edit", () => startEdit(server)),
       mk("Remove", async () => {
-        if (!window.confirm(`Remove ${trunc(server.name, 60)} and its tool settings?`)) return;
+        const question = `Remove ${trunc(server.name, 60)} and its tool settings?`;
+        if (!(await confirmDialog(question, { confirmLabel: "Remove", danger: true }))) return;
         const res = await api.remove(server.id);
         if (res.ok) { servers = res.servers; say("Removed."); } else say(errText(res), true);
         draw();

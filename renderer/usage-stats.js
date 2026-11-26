@@ -140,7 +140,8 @@ function usageLoadError(hadFigures) {
 
   el("usage-enabled").addEventListener("change", syncOffHint);
   el("usage-reset").addEventListener("click", async () => {
-    if (!confirm("Reset usage statistics? Counts start again from today. Transcripts and History are not affected.")) return;
+    const question = "Reset usage statistics? Counts start again from today. Transcripts and History are not affected.";
+    if (!(await confirmDialog(question, { confirmLabel: "Reset", danger: true }))) return;
     const status = el("usage-reset-status");
     status.textContent = ""; // emptied first, so a repeat failure is announced again
     let res;

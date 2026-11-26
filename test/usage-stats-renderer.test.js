@@ -68,7 +68,7 @@ const SUMMARY = {
 };
 
 // Load the script with `replies` answering each invoke in turn (a value, or
-// an Error to reject with); `confirmAnswer` is what confirm() returns.
+// an Error to reject with); `confirmAnswer` is what confirmDialog() resolves to.
 function loadSection({ replies, confirmAnswer = true }) {
   const nodes = sectionFromHtml();
   const calls = [];
@@ -89,7 +89,7 @@ function loadSection({ replies, confirmAnswer = true }) {
         return value;
       },
     },
-    confirm: () => confirmAnswer,
+    confirmDialog: async () => confirmAnswer,
   };
   vm.runInNewContext(SOURCE, context);
   const el = (id) => nodes[id];

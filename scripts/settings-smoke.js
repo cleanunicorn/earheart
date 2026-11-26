@@ -563,7 +563,7 @@ app.whenReady().then(async () => {
     };
     let failedClear;
     try {
-      await js(`window.confirm = (m) => ((window.lastConfirm = m), true); document.getElementById("history-clear").click(); true`);
+      await js(`window.confirmDialog = async (m) => ((window.lastConfirm = m), true); document.getElementById("history-clear").click(); true`);
       failedClear = await waitFor(
         () => js(`(() => {
           const status = document.getElementById("history-clear-status");
@@ -669,7 +669,7 @@ app.whenReady().then(async () => {
 
     // 9 (cont.). Delete one entry: gone from the list and the file, the rest kept.
     const deleteRow = (text) => js(`(() => {
-      window.confirm = (m) => ((window.lastConfirm = m), true);
+      window.confirmDialog = async (m) => ((window.lastConfirm = m), true);
       const li = [...document.querySelectorAll("#history-list li")].find((row) => row.querySelector(".text")?.textContent === ${JSON.stringify(text)});
       li.querySelector("button.delete").click();
       return true;
@@ -901,7 +901,7 @@ app.whenReady().then(async () => {
       await js(`(() => {
         const a = document.querySelector("#history-list audio.player");
         a.play().catch(() => {});
-        window.confirm = (m) => ((window.lastConfirm = m), true);
+        window.confirmDialog = async (m) => ((window.lastConfirm = m), true);
         ${rowWith("whole dictation")}.querySelector("button.delete").click();
         return true;
       })()`);
@@ -1540,7 +1540,7 @@ app.whenReady().then(async () => {
     engines.remove = async () => {
       throw new Error("model files are busy");
     };
-    await js(`window.confirm = () => true; true`);
+    await js(`window.confirmDialog = async () => true; true`);
     await js(`(() => {
       const select = document.getElementById("stt-builtin-model");
       select.value = ${JSON.stringify(sttModel)};
@@ -1821,7 +1821,7 @@ app.whenReady().then(async () => {
       await removalHeld;
       throw new Error("custom model files are busy");
     };
-    await js(`window.confirms = []; window.confirm = (m) => (window.confirms.push(m), true); true`);
+    await js(`window.confirms = []; window.confirmDialog = async (m) => (window.confirms.push(m), true); true`);
     if (!(await clickRowButton("stt", "Remove"))) throw new Error("custom STT row has no Remove");
     await waitFor(
       () => rowState("stt").then((r) => r.status === "Removing…"),

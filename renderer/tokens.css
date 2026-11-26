@@ -42,6 +42,7 @@
   --wash-faint: rgba(255, 255, 255, 0.04); /* card fills, quiet hovers */
   --track: rgba(255, 255, 255, 0.12); /* empty progress/download track fills */
   --tray: rgba(0, 0, 0, 0.25); /* recessed tray inside a card */
+  --scrim: rgba(0, 0, 0, 0.5); /* behind a modal dialog */
   --dot: rgba(255, 255, 255, 0.35); /* a wizard step not yet reached (≥3:1) */
 
   --text: #f9fbfb;
@@ -105,6 +106,7 @@
     --wash-faint: rgba(0, 0, 0, 0.04);
     --track: rgba(0, 0, 0, 0.1);
     --tray: rgba(0, 0, 0, 0.05);
+    --scrim: rgba(0, 0, 0, 0.3);
     --dot: rgba(0, 0, 0, 0.45);
 
     --text: #090b0c;

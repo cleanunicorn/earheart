@@ -132,7 +132,7 @@ async function checkUsage({ waitFor, check, savedThenClose, userData, invokeHand
     const seeded = fs.readFileSync(file, "utf8");
 
     // A declined Reset changes nothing, on screen or on disk.
-    await run(`window.confirm = () => false; document.getElementById("usage-reset").click(); true`);
+    await run(`window.confirmDialog = async () => false; document.getElementById("usage-reset").click(); true`);
     await new Promise((resolve) => setTimeout(resolve, 200));
     const declined = await run(`JSON.stringify({
       takes: document.getElementById("usage-takes").textContent,
@@ -153,7 +153,7 @@ async function checkUsage({ waitFor, check, savedThenClose, userData, invokeHand
     };
     let refused;
     try {
-      await run(`window.confirm = () => true; document.getElementById("usage-reset").click(); true`);
+      await run(`window.confirmDialog = async () => true; document.getElementById("usage-reset").click(); true`);
       refused = await waitFor(() => run(visibleText("usage-reset-status")), "a refused Reset never said so");
     } finally {
       fs.renameSync = realRename;
@@ -203,7 +203,7 @@ async function checkUsage({ waitFor, check, savedThenClose, userData, invokeHand
     check("the load and read-only notices clear once usage:get works again", true);
 
     // Reset: confirmed, written to disk, and the screen follows.
-    await run(`window.confirm = (m) => ((window.lastConfirm = m), true); document.getElementById("usage-reset").click(); true`);
+    await run(`window.confirmDialog = async (m) => ((window.lastConfirm = m), true); document.getElementById("usage-reset").click(); true`);
     await waitFor(() => run(`document.getElementById("usage-takes").textContent === "0"`), "Reset did not empty the shown counts");
     const onDisk = JSON.parse(fs.readFileSync(path.join(userData, "usage.json"), "utf8"));
     const afterReset = await run(`JSON.stringify({

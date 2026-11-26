@@ -1546,3 +1546,35 @@ footer {
 .hint.err {
   color: var(--err);
 }
+
+/* ---------- confirm dialog (renderer/confirm-dialog.js) ---------- */
+
+/* Stands in for window.confirm, which on Linux left <select> popups unable to
+   open afterwards. Same quiet card as the rest of the page. */
+.confirm-dialog {
+  margin: auto; /* the page reset zeroes it, which pins a modal top-left */
+  max-width: 420px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-card);
+  padding: 0;
+}
+
+.confirm-dialog-box {
+  padding: 18px 20px 16px;
+}
+
+.confirm-dialog::backdrop {
+  background: var(--scrim);
+}
+
+.confirm-dialog p {
+  margin: 0 0 16px;
+  line-height: 1.45;
+}
+
+.confirm-dialog .row {
+  justify-content: flex-end;
+  gap: 8px;
+}

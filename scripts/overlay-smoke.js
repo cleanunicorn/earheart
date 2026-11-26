@@ -889,7 +889,8 @@ app.whenReady().then(async () => {
     );
     check(
       "paused hint takes the detail line (data-detail set)",
-      pausedUi.dataDetail === true && pausedUi.detailDisplay === "block",
+      // Visible, whatever box it uses (the line clamp computes to flow-root).
+      pausedUi.dataDetail === true && Boolean(pausedUi.detailDisplay) && pausedUi.detailDisplay !== "none",
       `data-detail=${pausedUi.dataDetail} detail display=${pausedUi.detailDisplay}`
     );
     check(

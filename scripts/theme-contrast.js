@@ -136,7 +136,7 @@ const PAIRS = [
   ["--ok", ["ink", "card"], TEXT, "success status"],
   ["--err", ["ink", "card", "err-wash", "danger hover"], TEXT, "error status, discard / danger hover"],
   ["--idle", ["ink"], UI, "idle status dot"],
-  ["--dot", ["ink"], UI, "wizard step dot, not yet reached"],
+  ["--dot", ["ink"], UI, "wizard step dot, not yet reached; overlay drag grip"],
   ["--field-edge", ["ink", "card"], UI, "input boundary"],
   ["--focus", ["ink", "card", "field", "active menu item"], UI, "focus outline / focused edge"],
   ["--primary", ["ink", "card"], UI, "checked control and primary button fill"],

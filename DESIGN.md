@@ -421,7 +421,8 @@ interface; window chrome never exceeds 16px.
 - **Caption** (400, 11.5px): the overlay's detail line and update note, both
   wrapping at any point rather than truncating. The detail line sits centred
   in the 32px waveform strip on 16px lines, so it shows up to two lines; a
-  longer one clips at two whole lines and carries its full text as a tooltip.
+  longer one ends in an ellipsis on its second line and carries its full
+  text as a tooltip.
   The update note wraps freely under the update title.
 - **Mono values** (400, 13px mono, 0.02em): hotkey accelerators, textareas
   (prompt, dictionary). The version readout is mono with tabular-nums.
@@ -722,8 +723,9 @@ transcription** and a quiet **Discard**.
   a plain 1px white caret. All demo animations go still under reduced motion.
 
 ### Grip (overlay)
-- The sheet-grabber convention: 36×4px, 2px radius, white at 0.16 alpha,
-  brightening to 0.28 on card hover. Decorative — the whole card drags.
+- The sheet-grabber convention: 36×4px, 2px radius, filled `--dot` (≥3:1,
+  the non-text contrast floor, since it is the only drag cue), brightening to
+  Dim Text on card hover. The whole card drags; the grip just says so.
 
 ### Motion
 - Overlay card entrance: opacity + `translateY(8px) scale(0.98)` → identity,

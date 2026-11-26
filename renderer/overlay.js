@@ -241,10 +241,9 @@ let waveHistory = []; // newest first: waveHistory[0] sits at the right edge
 let wavePushAt = 0; // rAF timestamp of the last written column
 
 // With reduced motion the waveform updates in steps (state, not decoration):
-// no per-frame glide between writes. Snapshot at load, like the CSS media block.
-const REDUCED_MOTION = window.matchMedia(
-  "(prefers-reduced-motion: reduce)"
-).matches;
+// no per-frame glide between writes. Read live, so flipping the OS setting
+// mid-take takes effect on the next frame, as the CSS media block does.
+const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 function meterFrame(now) {
   let moved = false;
@@ -266,11 +265,13 @@ function meterFrame(now) {
       wavePushAt += WAVE_PUSH_MS;
       moved = true;
     }
-    if (!REDUCED_MOTION) frac = (now - wavePushAt) / WAVE_PUSH_MS;
+    if (!REDUCED_MOTION.matches) frac = (now - wavePushAt) / WAVE_PUSH_MS;
   }
   drawMeter(frac);
-  // Keep animating while recording; once levels settle after stop, let it idle.
-  if (recording || moved) {
+  // Keep animating while a take is live; once levels settle after stop — or
+  // while a take is paused, when nothing on the wave moves — let it idle.
+  // Resume restarts the loop (togglePause).
+  if ((recording && !recording.pausedAt) || moved) {
     meterRaf = requestAnimationFrame(meterFrame);
   } else {
     meterRaf = null;
@@ -1371,6 +1372,7 @@ function togglePause() {
     // Re-anchor the waveform's write clock: the wave didn't move while paused,
     // matching the capture — no gap is written for the gap.
     wavePushAt = 0;
+    startMeter(); // the loop idled while paused
     setStatus("recording", listeningTitle(recording), recording.microphoneNotice || "");
     reportCapture(true);
   }

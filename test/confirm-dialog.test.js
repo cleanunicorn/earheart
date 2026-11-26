@@ -1,7 +1,8 @@
 // The Settings window asks yes/no questions with an in-page dialog
-// (renderer/confirm-dialog.js), never window.confirm(): on Linux the native
-// dialog left the window unable to open a <select>'s popup afterwards, so
-// after removing a cleanup model its dropdown would not open again.
+// (renderer/confirm-dialog.js), never window.confirm(): the native dialog left
+// the window unable to open a <select>'s popup afterwards (seen on Windows,
+// reproduced on Linux/X11), so after removing a cleanup model its dropdown
+// would not open again.
 //
 // The static checks keep the native dialog out of every script Settings loads;
 // the behaviour checks drive confirmDialog against a minimal fake DOM.

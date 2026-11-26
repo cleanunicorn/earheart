@@ -1,8 +1,10 @@
 // An in-page yes/no question for the Settings window, used in place of
-// window.confirm(). On Linux the native confirm leaves the window unable to
-// open a <select>'s popup afterwards (the model dropdown stayed shut after
-// removing a model), so nothing in
-// Settings may call the native one; test/confirm-dialog.test.js holds that.
+// window.confirm(). Electron's native confirm can leave the window unable to
+// open a <select>'s popup afterwards until the window is refocused (seen on
+// Windows, reproduced on Linux/X11: the model dropdown stayed shut after
+// removing a model). The in-page dialog opens no OS window, so it behaves the
+// same everywhere. Nothing in Settings may call the native one;
+// test/confirm-dialog.test.js holds that.
 //
 // confirmDialog(message, { confirmLabel, danger }) resolves true only when the
 // user picks the confirm button; Cancel, Escape and a click outside resolve

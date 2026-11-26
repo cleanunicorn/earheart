@@ -1549,8 +1549,8 @@ footer {
 
 /* ---------- confirm dialog (renderer/confirm-dialog.js) ---------- */
 
-/* Stands in for window.confirm, which on Linux left <select> popups unable to
-   open afterwards. Same quiet card as the rest of the page. */
+/* Stands in for window.confirm, which left <select> popups unable to open
+   afterwards (Windows, Linux/X11). Same quiet card as the rest of the page. */
 .confirm-dialog {
   margin: auto; /* the page reset zeroes it, which pins a modal top-left */
   max-width: 420px;

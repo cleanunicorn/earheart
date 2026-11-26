@@ -28,12 +28,15 @@ const {
 } = require("./mac-permissions");
 
 // The paste keystroke, with one guard in front of it. Clicking the overlay
-// (Stop, Finish) activates Earheart on macOS: focusable:false keeps the card
-// from becoming the key window, but a click still brings its app to the
-// front, so Cmd+V would land in Earheart and nowhere. When Earheart is the
-// frontmost app at paste time and the take saw another app in front as it
-// started, hand the front back to that app first. Only then: a user who
-// switched apps on purpose mid-dictation still gets the paste where they are.
+// (Stop, Finish) can activate Earheart on macOS: focusable:false keeps the
+// card from becoming the key window, but a click may still bring its app to
+// the front, so Cmd+V would land in Earheart and nowhere (reported, not yet
+// reproduced on a Mac). The pipeline passes a target only when the overlay was
+// pressed during the take, and the script uses it only when Earheart is the
+// frontmost app at paste time: then it hands the front back to that app
+// first. A user who switched apps on purpose mid-dictation, including to an
+// Earheart window, still gets the paste where they are. Without a target the
+// script is the plain keystroke it always was.
 // Everything goes through System Events, which the keystroke already needs,
 // so this asks for no new permission. Arguments arrive as argv, never spliced
 // into the script. Prints "pasted", "restored" (front handed back, then
@@ -341,8 +344,9 @@ let pendingRestore = null;
  * @param {object} cfg - settings.output slice
  * @param {AbortSignal} [signal]
  * @param {{targetApp?: string|null}} [opts] - macOS: bundle id of the app
- *   that was frontmost when the take started. If Earheart is in front at
- *   paste time (the overlay was clicked), the front is handed back to it.
+ *   that was frontmost when the take started, passed only when the overlay
+ *   was pressed. If Earheart is in front at paste time, the front is handed
+ *   back to it before the keystroke.
  * @returns {Promise<{method: "paste"|"paste-copy"|"clipboard"|"clipboard-changed"|"cancelled", note?: string, hint?: string}>}
  *   "clipboard-changed": another app took the clipboard over before the paste,
  *   so nothing was pasted and the transcript is NOT on the clipboard.
@@ -425,12 +429,13 @@ async function deliver(text, cfg, signal, { targetApp = null } = {}) {
   // but nothing after it (the clipboard restore) should run for a dead session.
   if (signal?.aborted) return { method: "cancelled" };
   if (outcome === "restored") {
-    logger.info("auto-paste: Earheart was in front (overlay clicked?); handed focus back to", targetApp);
+    // No app name: the log never says where a dictation went.
+    logger.info("auto-paste: Earheart was in front after an overlay press; handed focus back to the target app");
   }
   if (outcome === "lost") {
     // Earheart stayed in front, so no keystroke was sent. The transcript stays
     // on the clipboard (no restore) so the user can paste it themselves.
-    logger.warn("auto-paste skipped: could not hand focus back to", targetApp);
+    logger.warn("auto-paste skipped: Earheart was in front after an overlay press and the target app could not be brought back");
     return { method: "clipboard", ...MAC_PASTE_FAILED };
   }
 
@@ -448,6 +453,8 @@ async function deliver(text, cfg, signal, { targetApp = null } = {}) {
 
 module.exports = {
   deliver,
+  // For the macOS compile check in test/deliver.test.js.
+  PASTE_SCRIPT,
   // For voice commands (main/commands/): the same clipboard snapshot/restore
   // and platform checks delivery uses, so a selection capture can leave the
   // user's clipboard exactly as it found it.

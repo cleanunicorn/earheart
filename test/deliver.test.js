@@ -188,6 +188,21 @@ test("trusted paste drives the keystroke", async (t) => {
   assert.strictEqual(state.prompts, 0);
 });
 
+// The script is only ever run on a Mac, and the stubs above never compile
+// it. osacompile checks the syntax and System Events' terms without running
+// anything, so it needs no permission (CI runs this on macos-latest).
+test("the macOS paste script compiles", { skip: process.platform !== "darwin" && "needs macOS (osacompile)" }, async () => {
+  const { PASTE_SCRIPT } = require("../main/output/deliver");
+  const { execFileSync } = require("node:child_process");
+  const out = path.join(require("node:os").tmpdir(), `earheart-paste-${process.pid}.scpt`);
+  try {
+    execFileSync("osacompile", ["-o", out, ...PASTE_SCRIPT], { timeout: 30000 });
+    assert.ok(fs.existsSync(out));
+  } finally {
+    fs.rmSync(out, { force: true });
+  }
+});
+
 // The paste script's trailing argv: our pid, then the app to hand the front
 // back to ("" for none).
 const pasteArgv = (state) => state.args[0].slice(-2);

@@ -830,6 +830,11 @@ checksum-verified. Only add models from repos you trust.
   notification name the permission that blocked it, or say to paste with ⌘V
   when the cause is something else. What the paste tool reported is written to
   `~/Library/Logs/Earheart/earheart.log`.
+- Clicking a button on the overlay (Stop, Finish) can bring Earheart to the
+  front. Before pasting, Earheart then hands the front back to the app you
+  started dictating in, so the text still lands there. If that app can't be
+  brought back, nothing is typed and the text stays on the clipboard to paste
+  with ⌘V. If you switched to another app yourself, the paste goes there.
 
 ### Windows
 

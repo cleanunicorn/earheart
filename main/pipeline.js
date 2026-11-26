@@ -78,9 +78,12 @@ let heldFormatting = null;
 // the recording.
 function beginTakeContext(sid, formattingCfg) {
   const rules = structuredClone(formattingCfg ?? {});
-  // targetApp: the frontmost app's bundle id as the take started (macOS), so
-  // delivery can hand the front back to it if clicking the overlay took it.
-  const take = { sid, frozen: null, promise: null, targetApp: null };
+  // targetApp: the frontmost app's bundle id as the take started (macOS).
+  // overlayPressed: the overlay was pressed during this take, which can bring
+  // Earheart to the front. Only then does delivery hand the front back to
+  // targetApp: without a press, Earheart in front means the user went there
+  // (a Settings field, say) and the paste belongs there.
+  const take = { sid, frozen: null, promise: null, targetApp: null, overlayPressed: false };
   if (!contextDetector.supported) {
     take.frozen = freezeFormatting(resolveFormatting(rules, null));
     take.promise = Promise.resolve(take.frozen);
@@ -111,7 +114,8 @@ function beginTakeContext(sid, formattingCfg) {
 }
 
 function targetAppForSession(sid) {
-  return takeContext && takeContext.sid === sid ? takeContext.targetApp : null;
+  if (!takeContext || takeContext.sid !== sid || !takeContext.overlayPressed) return null;
+  return takeContext.targetApp;
 }
 
 function formattingForSession(sid) {
@@ -1229,6 +1233,12 @@ function init({ isDownloading = () => false } = {}) {
     // on a bad message would be as wrong as ducking on one.
     if (sid !== session || state !== "recording" || typeof live !== "boolean") return;
     setCapturing(live);
+  });
+
+  // A press on the overlay while a take is live (recording or finishing).
+  ipcMain.on("overlay:pointer", () => {
+    if (state === "idle" || !takeContext || takeContext.sid !== session) return;
+    takeContext.overlayPressed = true;
   });
 
   ipcMain.on("record:cancelled", (event, { sid } = {}) => {

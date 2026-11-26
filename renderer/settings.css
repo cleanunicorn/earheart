@@ -10,7 +10,7 @@
 :root {
   /* Every colour (both palettes) lives in tokens.css; this sheet adds only
      non-colour values. */
-  --mono: ui-monospace, "Cascadia Code", monospace;
+  --mono: var(--font-mono);
 }
 
 * {

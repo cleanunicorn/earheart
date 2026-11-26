@@ -21,6 +21,7 @@
 
   --font-sans: "Space Grotesk", system-ui, sans-serif;
   --font-heading: "Outfit", var(--font-sans);
+  --font-mono: ui-monospace, "Cascadia Code", monospace; /* machine values */
   --radius: 0.45rem;
   --radius-control: calc(var(--radius) * 1.4);
   --radius-card: calc(var(--radius) * 1.8);
@@ -43,7 +44,7 @@
   --track: rgba(255, 255, 255, 0.12); /* empty progress/download track fills */
   --tray: rgba(0, 0, 0, 0.25); /* recessed tray inside a card */
   --scrim: rgba(0, 0, 0, 0.5); /* behind a modal dialog */
-  --dot: rgba(255, 255, 255, 0.35); /* a wizard step not yet reached (≥3:1) */
+  --dot: rgba(255, 255, 255, 0.35); /* a wizard step not yet reached; the overlay grip (≥3:1) */
 
   --text: #f9fbfb;
   --text-mid: #d4dbdc; /* the overlay's status word */

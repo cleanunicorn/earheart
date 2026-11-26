@@ -35,6 +35,10 @@ function worker({
       getLlamaCalls.push(JSON.parse(JSON.stringify(options)));
       const gpu = options?.gpu !== false;
       return {
+        gpu: gpu ? "cuda" : false,
+        async getVramState() {
+          return { total: 10 * 2 ** 30, used: 3 * 2 ** 30, free: 7 * 2 ** 30, unifiedSize: 0 };
+        },
         async loadModel({ modelPath }) {
           events.push(`load:${modelPath}`);
           if (loadGate) await loadGate.promise;
@@ -43,6 +47,9 @@ function worker({
           return {
             tokenize: (text) => text.split(/\s+/),
             trainContextSize,
+            gpuLayers: gpu ? 35 : 0,
+            fileInsights: { totalLayers: 35 },
+            size: 2 * 2 ** 30,
             async createContext({ contextSize }) {
               contextEvents.push(`context:${modelPath}:${contextSize}`);
               if (contextSize > contextFailsAbove) throw new Error("out of memory");
@@ -484,4 +491,42 @@ test("model status reflects successful cleanup loads and a failed replacement", 
   const failure = await w.send("load-cleanup", { ...model("bad"), modelId: "b" });
   assert.equal(failure.ok, false);
   assert.deepEqual(w.loadedModels, ["a", null]);
+});
+
+test("memory reports nothing before a cleanup model is loaded", async () => {
+  const w = worker();
+  const reply = await w.send("memory");
+  assert.equal(reply.ok, true);
+  assert.equal(reply.result, null);
+});
+
+test("memory reports a fully offloaded model and the GPU's memory", async () => {
+  const w = worker({ env: {} });
+  await w.send("load-cleanup", { ...model("A"), cpuOnly: false });
+  const reply = await w.send("memory");
+  assert.deepEqual(JSON.parse(JSON.stringify(reply.result)), {
+    backend: "cuda", gpuLayers: 35, totalLayers: 35, modelBytes: 2 * 2 ** 30,
+    vram: { used: 3 * 2 ** 30, total: 10 * 2 ** 30, unified: false },
+  });
+});
+
+test("memory shows the CPU fallback when the GPU can't fit the model", async () => {
+  const w = worker({ env: {}, gpuFails: true });
+  await w.send("load-cleanup", { ...model("A"), cpuOnly: false });
+  const { result } = await w.send("memory");
+  assert.equal(result.backend, null);
+  assert.equal(result.gpuLayers, 0);
+  assert.equal(result.vram, null);
+});
+
+test("memory answers while a cleanup generation is running", async () => {
+  const promptGate = deferred();
+  const promptStarted = deferred();
+  const w = worker({ env: {}, promptGate, promptStarted });
+  const active = w.send("clean", { ...turn("A"), model: { ...model("A"), cpuOnly: false } });
+  await promptStarted.promise;
+  const { result } = await w.send("memory");
+  assert.equal(result.gpuLayers, 35);
+  promptGate.resolve();
+  assert.equal((await active).ok, true);
 });

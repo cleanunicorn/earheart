@@ -591,8 +591,42 @@ async function loadcheck() {
   return engines;
 }
 
+// Where the cleanup model lives, for the Settings statistics. Read-only and
+// off the cleanup queue: it only reads getters llama.cpp filled in at load, so
+// it answers even while a generation runs (that work is on native threads).
+// gpuLayers against totalLayers is the real answer to "VRAM or RAM": the load
+// silently retries on CPU when the GPU can't fit the model. The VRAM figures
+// are the whole device's, every other app included.
+async function memoryState() {
+  if (!llama || !llamaModel) return null;
+  const model = llamaModel;
+  let totalLayers = null;
+  try {
+    totalLayers = model.fileInsights.totalLayers;
+  } catch {
+    // unreadable insights only cost the layer total
+  }
+  let vram = null;
+  if (llama.gpu) {
+    try {
+      const state = await llama.getVramState();
+      if (state.total > 0) vram = { used: state.used, total: state.total, unified: state.unifiedSize > 0 };
+    } catch {
+      // a GPU that can't report its memory leaves the figure out
+    }
+  }
+  return {
+    backend: llama.gpu || null,
+    gpuLayers: Number.isFinite(model.gpuLayers) ? model.gpuLayers : null,
+    totalLayers: Number.isFinite(totalLayers) ? totalLayers : null,
+    modelBytes: Number.isFinite(model.size) ? model.size : null,
+    vram,
+  };
+}
+
 const HANDLERS = {
   ping: async () => ({ pong: true }),
+  memory: memoryState,
   loadcheck,
   "load-stt": loadStt,
   transcribe,

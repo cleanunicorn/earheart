@@ -449,8 +449,25 @@ function loadedModels() {
   return { stt: label("stt", sttHost), cleanup: label("cleanup", cleanupHost) };
 }
 
+// The OS pids of the workers holding each model, so the caller can match them
+// to app.getAppMetrics(). null when that worker isn't running.
+function workerPids() {
+  return { stt: sttHost.getPid(), cleanup: cleanupHost.getPid() };
+}
+
+// Where the cleanup model sits (GPU backend, layers offloaded) and the GPU's
+// memory, from the worker that holds it. Like loadedModels(), this never starts
+// a worker: with no cleanup model resident it resolves null. Speech has no such
+// question: it always runs on the CPU (provider "cpu" in engine-worker.js).
+function cleanupPlacement() {
+  if (!cleanupHost.getLoadedModel()) return Promise.resolve(null);
+  return cleanupHost.peek("memory");
+}
+
 module.exports = {
   loadedModels,
+  workerPids,
+  cleanupPlacement,
   isInstalled,
   getSttReadiness,
   getCleanupReadiness,

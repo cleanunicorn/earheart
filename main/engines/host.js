@@ -20,6 +20,8 @@ const logger = require("../util/logger");
 // past it also fails the worker's other requests (they fall back as
 // ENGINE_EXITED).
 const DEFAULT_REQUEST_TIMEOUT_MS = 180000;
+// A status read (peek) that a worker doesn't answer this fast reads as null.
+const PEEK_TIMEOUT_MS = 1000;
 
 // Deadline for the "loadcheck" request (scripts/engine-smoke.js and the
 // packaged app's --engine-check). On Apple Silicon it initializes the Metal
@@ -59,6 +61,9 @@ function createHost({ serviceName = "earheart-engines", describe } = {}) {
   let stderrTail = "";
   let nextId = 1;
   const pending = new Map();
+  // Status reads in flight (peek): id -> settle(result | null). Kept apart
+  // from `pending` so they never make the worker look busy or time it out.
+  const peeks = new Map();
   // Notified whenever the worker process goes away, so callers can drop any
   // state they were caching about what the (now gone) worker had loaded.
   const exitListeners = new Set();
@@ -80,6 +85,8 @@ function createHost({ serviceName = "earheart-engines", describe } = {}) {
       entry.reject(engineError("engine process exited", "ENGINE_EXITED", { exitCode }));
     }
     pending.clear();
+    for (const settle of peeks.values()) settle(null);
+    peeks.clear();
     // A fresh worker has nothing loaded; let callers reset their caches so the
     // next request re-loads the model instead of assuming it is still resident.
     for (const fn of exitListeners) fn();
@@ -121,6 +128,12 @@ function createHost({ serviceName = "earheart-engines", describe } = {}) {
       if (child !== proc) return; // superseded worker: ignore its late messages
       if (msg && (msg.loadedModel === null || typeof msg.loadedModel === "string")) {
         loadedModel = msg.loadedModel;
+        return;
+      }
+      const peek = msg && peeks.get(msg.id);
+      if (peek) {
+        peeks.delete(msg.id);
+        peek(msg.ok ? msg.result : null);
         return;
       }
       const entry = msg && pending.get(msg.id);
@@ -219,6 +232,36 @@ function createHost({ serviceName = "earheart-engines", describe } = {}) {
     });
   }
 
+  /**
+   * Ask a running worker a read-only question (Settings statistics). Unlike
+   * request() it never forks a worker, never counts as busy, and a slow or
+   * failed answer resolves null instead of retiring the worker.
+   * @param {string} type
+   * @param {object} [args]
+   * @returns {Promise<any|null>}
+   */
+  function peek(type, args = {}, timeoutMs = PEEK_TIMEOUT_MS) {
+    if (!child) return Promise.resolve(null);
+    const id = nextId++;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        peeks.delete(id);
+        resolve(null);
+      }, timeoutMs);
+      peeks.set(id, (result) => {
+        clearTimeout(timer);
+        resolve(result);
+      });
+      try {
+        child.postMessage({ id, type, ...args });
+      } catch {
+        peeks.delete(id);
+        clearTimeout(timer);
+        resolve(null);
+      }
+    });
+  }
+
   /** True while any request is in flight, i.e. the worker must not be killed. */
   function busy() {
     return pending.size > 0;
@@ -240,7 +283,12 @@ function createHost({ serviceName = "earheart-engines", describe } = {}) {
     handleGone(); // now, so the async "exit" can't land on the successor
   }
 
-  return { request, stop, busy, onExit, getLoadedModel: () => loadedModel };
+  return {
+    request, peek, stop, busy, onExit,
+    getLoadedModel: () => loadedModel,
+    // The worker's OS pid, to find its memory in app.getAppMetrics().
+    getPid: () => child?.pid ?? null,
+  };
 }
 
 module.exports = { createHost, LOADCHECK_TIMEOUT_MS };

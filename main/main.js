@@ -277,6 +277,7 @@ function main() {
       applyHotkeys,
       canCorrect: () => pipeline.getState() === "idle",
       canCopy: () => pipeline.getState() !== "processing",
+      canUnloadModels: () => pipeline.getState() === "idle",
       // A binding another app took during capture is re-applied from the
       // saved settings, so the status Settings shows names the failure.
       suspendHotkeys: (on) => {

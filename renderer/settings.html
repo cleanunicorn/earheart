@@ -996,12 +996,17 @@
           <span data-i18n="settings.usage">Usage</span>
         </h2>
         <div class="card" id="runtime-card">
-          <div class="card-title" data-i18n="settings.runtime">App statistics</div>
-          <dl class="usage-stats">
-            <div class="usage-stat"><dt data-i18n="settings.appMemory">App memory</dt><dd id="runtime-memory">—</dd></div>
-            <div class="usage-stat"><dt data-i18n="settings.localSpeech">Loaded speech model</dt><dd id="runtime-stt">—</dd></div>
-            <div class="usage-stat"><dt data-i18n="settings.localCleanup">Loaded cleanup model</dt><dd id="runtime-cleanup">—</dd></div>
+          <div class="runtime-head">
+            <div class="card-title" data-i18n="settings.runtime">App statistics</div>
+            <button id="runtime-unload" class="ghost runtime-unload" type="button" disabled data-i18n="settings.unloadModels">Unload models</button>
+          </div>
+          <dl class="runtime-list">
+            <div class="runtime-row"><dt data-i18n="settings.appMemory">App memory</dt><dd><span id="runtime-memory">—</span></dd></div>
+            <div class="runtime-row"><dt data-i18n="settings.localSpeech">Speech model</dt><dd><span class="runtime-name" id="runtime-stt">—</span><span class="runtime-where" id="runtime-stt-detail" hidden></span></dd></div>
+            <div class="runtime-row"><dt data-i18n="settings.localCleanup">Cleanup model</dt><dd><span class="runtime-name" id="runtime-cleanup">—</span><span class="runtime-where" id="runtime-cleanup-detail" hidden></span></dd></div>
+            <div class="runtime-row"><dt data-i18n="settings.gpuMemory">GPU memory</dt><dd><span id="runtime-gpu">—</span><span class="runtime-where" id="runtime-gpu-detail" hidden></span></dd></div>
           </dl>
+          <p id="runtime-unload-status" class="hint runtime-status" role="status" hidden></p>
         </div>
         <div class="card">
           <label class="toggle">

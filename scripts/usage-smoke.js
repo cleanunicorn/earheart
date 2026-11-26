@@ -92,6 +92,14 @@ async function checkUsage({ waitFor, check, savedThenClose, userData, invokeHand
     check("Usage identifies both idle local engines", await run(`
       ["runtime-stt", "runtime-cleanup"].every(id => document.getElementById(id).textContent === "None loaded")
     `));
+    check("with no model loaded, GPU memory waits for one and Unload models is off", await run(`
+      document.getElementById("runtime-gpu").textContent === "—" &&
+        !document.getElementById("runtime-gpu-detail").hidden &&
+        document.getElementById("runtime-stt-detail").hidden &&
+        document.getElementById("runtime-unload").disabled
+    `));
+    const unload = await win.webContents.executeJavaScript(`earheart.invoke("usage:unload-models")`, true);
+    check("unloading with nothing loaded succeeds", unload && unload.ok === true);
     const shown = await run(`JSON.stringify({
       takes: document.getElementById("usage-takes").textContent,
       words: document.getElementById("usage-words").textContent,

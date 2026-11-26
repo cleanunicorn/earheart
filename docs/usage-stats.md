@@ -13,6 +13,20 @@ memory sums the resident working sets of Earheart's Electron processes,
 including its model workers. Shared pages can contribute to multiple processes.
 These live readings are available even when dictation counting is off.
 
+Under each loaded model, the card says where it sits. Speech always runs on
+the CPU, so its line shows the RAM its worker process holds. The cleanup line
+reports what llama.cpp chose at load: "VRAM (CUDA) · 35/35 layers" for
+a full offload, a split when only some layers fit, or "RAM (CPU)" when the
+GPU couldn't take it and the load fell back. GPU memory is the whole device's
+usage, every other app included, and is read from the cleanup worker, so it
+shows only while a cleanup model runs on a GPU. On a unified-memory Mac it is
+the same memory as system RAM.
+
+**Unload models** exits both model workers, which is the only way their memory
+goes back to the system. The models load again on the next dictation, which
+costs a few seconds. It is refused while a dictation is running, and a model
+busy with a Settings test is left loaded and reported.
+
 Code: [main/usage.js](../main/usage.js) (store and maths),
 [renderer/usage-stats.js](../renderer/usage-stats.js) (the section), the
 `usage.record` call in `process()` in [main/pipeline.js](../main/pipeline.js).

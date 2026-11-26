@@ -27,7 +27,48 @@ const {
   AUTOMATION_DENIED, OSASCRIPT_TIMEOUT_MS,
 } = require("./mac-permissions");
 
-const PASTE_SCRIPT = 'tell application "System Events" to keystroke "v" using command down';
+// The paste keystroke, with one guard in front of it. Clicking the overlay
+// (Stop, Finish) activates Earheart on macOS: focusable:false keeps the card
+// from becoming the key window, but a click still brings its app to the
+// front, so Cmd+V would land in Earheart and nowhere. When Earheart is the
+// frontmost app at paste time and the take saw another app in front as it
+// started, hand the front back to that app first. Only then: a user who
+// switched apps on purpose mid-dictation still gets the paste where they are.
+// Everything goes through System Events, which the keystroke already needs,
+// so this asks for no new permission. Arguments arrive as argv, never spliced
+// into the script. Prints "pasted", "restored" (front handed back, then
+// pasted) or "lost" (could not hand it back; nothing was typed).
+const PASTE_SCRIPT = [
+  "on run argv",
+  "set ownPid to (item 1 of argv) as integer",
+  "set targetId to item 2 of argv",
+  'tell application "System Events"',
+  "set outcome to \"pasted\"",
+  "if targetId is not \"\" and (unix id of first application process whose frontmost is true) is ownPid then",
+  "try",
+  "set frontmost of first application process whose bundle identifier is targetId to true",
+  "end try",
+  "delay 0.15",
+  "if (unix id of first application process whose frontmost is true) is ownPid then return \"lost\"",
+  "set outcome to \"restored\"",
+  "end if",
+  'keystroke "v" using command down',
+  "end tell",
+  "return outcome",
+  "end run",
+].flatMap((line) => ["-e", line]);
+
+// Bundle ids that are Earheart itself (packaged, or `npm start` under the
+// stock Electron bundle). Dictating into Earheart's own window is legitimate;
+// there is nothing to hand the front back to.
+const SELF_BUNDLE_IDS = new Set([MAC_BUNDLE_ID.toLowerCase(), "com.github.electron"]);
+
+// The app to hand the front back to, or "" for none.
+function macRestoreTarget(appId) {
+  const id = typeof appId === "string" ? appId.trim() : "";
+  if (!id || SELF_BUNDLE_IDS.has(id.toLowerCase())) return "";
+  return id;
+}
 
 // Accessibility is off for this build. Either it was never granted, or the
 // app's designated requirement changed — the move from unsigned to
@@ -148,13 +189,21 @@ function explainPasteError(err) {
   return PASTE_FAILED;
 }
 
-async function simulatePaste(signal) {
+// → "pasted" | "restored" | "lost" on macOS ("lost": no keystroke was sent);
+// "pasted" elsewhere.
+async function simulatePaste(signal, targetApp) {
   if (process.platform === "darwin") {
     // The first run can pop the Automation permission dialog, and osascript
     // blocks until the user answers it — give them time to read it. The
     // signal lets Cancel kill the waiting child instead of leaving it to fire
     // Cmd+V into whatever is focused once the dialog is finally answered.
-    await execFileAsync("osascript", ["-e", PASTE_SCRIPT], { timeout: OSASCRIPT_TIMEOUT_MS, signal });
+    const out = await execFileAsync(
+      "osascript",
+      [...PASTE_SCRIPT, String(process.pid), macRestoreTarget(targetApp)],
+      { timeout: OSASCRIPT_TIMEOUT_MS, signal }
+    );
+    const outcome = String(out ?? "").trim();
+    return outcome === "lost" || outcome === "restored" ? outcome : "pasted";
   } else if (process.platform === "win32") {
     await execFileAsync("powershell.exe", [
       "-NoProfile",
@@ -165,6 +214,7 @@ async function simulatePaste(signal) {
   } else {
     await simulatePasteLinux();
   }
+  return "pasted";
 }
 
 // A file copy's references. Only writeBuffer() can put them back, and, like
@@ -290,13 +340,16 @@ let pendingRestore = null;
  * @param {string} text
  * @param {object} cfg - settings.output slice
  * @param {AbortSignal} [signal]
+ * @param {{targetApp?: string|null}} [opts] - macOS: bundle id of the app
+ *   that was frontmost when the take started. If Earheart is in front at
+ *   paste time (the overlay was clicked), the front is handed back to it.
  * @returns {Promise<{method: "paste"|"paste-copy"|"clipboard"|"clipboard-changed"|"cancelled", note?: string, hint?: string}>}
  *   "clipboard-changed": another app took the clipboard over before the paste,
  *   so nothing was pasted and the transcript is NOT on the clipboard.
  *   `note` is a one-line reason auto-paste fell back to the clipboard (short
  *   enough for the overlay); `hint` is the full instruction for a notification.
  */
-async function deliver(text, cfg, signal) {
+async function deliver(text, cfg, signal, { targetApp = null } = {}) {
   if (signal?.aborted) return { method: "cancelled" };
   // A restore scheduled by a previous dictation must not fire under this one,
   // but its promise still stands: if that transcript is still on the
@@ -356,8 +409,9 @@ async function deliver(text, cfg, signal) {
     logger.warn("auto-paste skipped: the clipboard changed during the paste delay");
     return { method: "clipboard-changed", ...CLIPBOARD_CHANGED };
   }
+  let outcome;
   try {
-    await simulatePaste(signal);
+    outcome = await simulatePaste(signal, targetApp);
   } catch (err) {
     if (signal?.aborted || err.aborted) return { method: "cancelled" };
     // Text is already on the clipboard, so the user can paste manually. The
@@ -370,6 +424,15 @@ async function deliver(text, cfg, signal) {
   // Cancelled while the keystroke was in flight: the paste may have landed,
   // but nothing after it (the clipboard restore) should run for a dead session.
   if (signal?.aborted) return { method: "cancelled" };
+  if (outcome === "restored") {
+    logger.info("auto-paste: Earheart was in front (overlay clicked?); handed focus back to", targetApp);
+  }
+  if (outcome === "lost") {
+    // Earheart stayed in front, so no keystroke was sent. The transcript stays
+    // on the clipboard (no restore) so the user can paste it themselves.
+    logger.warn("auto-paste skipped: could not hand focus back to", targetApp);
+    return { method: "clipboard", ...MAC_PASTE_FAILED };
+  }
 
   if (previous !== null) {
     // Wait for the target app to consume the clipboard before restoring it,

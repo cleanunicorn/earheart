@@ -78,7 +78,9 @@ let heldFormatting = null;
 // the recording.
 function beginTakeContext(sid, formattingCfg) {
   const rules = structuredClone(formattingCfg ?? {});
-  const take = { sid, frozen: null, promise: null };
+  // targetApp: the frontmost app's bundle id as the take started (macOS), so
+  // delivery can hand the front back to it if clicking the overlay took it.
+  const take = { sid, frozen: null, promise: null, targetApp: null };
   if (!contextDetector.supported) {
     take.frozen = freezeFormatting(resolveFormatting(rules, null));
     take.promise = Promise.resolve(take.frozen);
@@ -89,6 +91,7 @@ function beginTakeContext(sid, formattingCfg) {
     .then(() => contextDetector.detect())
     .catch(() => null)
     .then((ctx) => {
+      take.targetApp = ctx?.app?.id ?? null;
       take.frozen = freezeFormatting(resolveFormatting(rules, ctx));
       if (take.frozen.source !== "default" && session === sid && state === "recording") {
         // The destination and style only (never text or the full URL).
@@ -105,6 +108,10 @@ function beginTakeContext(sid, formattingCfg) {
     });
   takeContext = take;
   return take;
+}
+
+function targetAppForSession(sid) {
+  return takeContext && takeContext.sid === sid ? takeContext.targetApp : null;
 }
 
 function formattingForSession(sid) {
@@ -1021,7 +1028,7 @@ async function process(sid, wavArrayBuffer, { retry = false, purpose = "dictatio
     // One line for a terminal agent, if the user asked (#68). History above
     // already holds the transcript as it was.
     const outgoing = deliverText(text, cfg.output);
-    const result = await deliver(outgoing, cfg.output, signal);
+    const result = await deliver(outgoing, cfg.output, signal, { targetApp: retry ? null : targetAppForSession(sid) });
     delivered = true;
     // New words have landed: a failed take held from before is superseded.
     // Not sooner — a mis-press, a mic check, a take that hears nothing, fails,

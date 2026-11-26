@@ -15,8 +15,8 @@ These live readings are available even when dictation counting is off.
 
 Under each loaded model, the card says where it sits. Speech always runs on
 the CPU, so its line shows the RAM its worker process holds. The cleanup line
-reports what llama.cpp chose at load: "In VRAM (CUDA) · 35 of 35 layers" for
-a full offload, a split when only some layers fit, or "In RAM (CPU)" when the
+reports what llama.cpp chose at load: "VRAM (CUDA) · 35/35 layers" for
+a full offload, a split when only some layers fit, or "RAM (CPU)" when the
 GPU couldn't take it and the load fell back. GPU memory is the whole device's
 usage, every other app included, and is read from the cleanup worker, so it
 shows only while a cleanup model runs on a GPU. On a unified-memory Mac it is

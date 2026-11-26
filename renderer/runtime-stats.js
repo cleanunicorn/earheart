@@ -19,7 +19,9 @@
   }
 
   function show(id, text, detail) {
-    document.getElementById(id).textContent = text;
+    const main = document.getElementById(id);
+    main.textContent = text;
+    main.title = text;
     const node = document.getElementById(id + "-detail");
     node.textContent = detail || "";
     node.hidden = !detail;
@@ -88,6 +90,7 @@
     unloading = true;
     syncUnload();
     unloadStatus.textContent = i18n.t("runtime.unloading");
+    unloadStatus.hidden = false;
     const result = await earheart.invoke("usage:unload-models").catch(() => null);
     unloadStatus.textContent = i18n.t(
       result?.ok ? "runtime.unloaded"

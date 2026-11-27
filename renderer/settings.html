@@ -42,7 +42,7 @@
         </button>
         <button class="tab" data-tab="snippets">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="tab-icon" aria-hidden="true"><path d="M21 5H3"></path><path d="M15 12H3"></path><path d="M17 19H3"></path></svg>
-          <span class="tab-label">Snippets</span>
+          <span class="tab-label" data-i18n="settings.snippets">Snippets</span>
         </button>
         <button class="tab" data-tab="history">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="tab-icon" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
@@ -245,9 +245,9 @@
         </div>
 
         <div class="card">
-          <div class="card-title" data-i18n="settings.whereTheTextGoes">Where the text goes</div>
+          <div class="card-title" id="output-mode-title" data-i18n="settings.whereTheTextGoes">Where the text goes</div>
           <div class="field">
-            <div class="options">
+            <div class="options" role="radiogroup" aria-labelledby="output-mode-title">
               <label class="option">
                 <input type="radio" name="output-mode" value="paste" />
                 <svg class="option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/></svg>
@@ -384,17 +384,15 @@
               <input id="commands-model" placeholder="llama3.2" />
             </div>
           </div>
-          <div class="field">
-            <label class="check" for="commands-allow-apply">
-              <input id="commands-allow-apply" type="checkbox" />
-              Let me replace the selection from the result card
-            </label>
-            <p class="hint">
-              Replacing only happens when you press the button, and only if the same window and
-              selection are still there. Otherwise the result is just copied.
-            </p>
-            <p id="commands-capabilities" class="hint"></p>
-          </div>
+          <label class="toggle">
+            <span class="toggle-text">
+              <span class="t" data-i18n="settings.commandsAllowApply">Let me replace the selection from the result card</span>
+              <span class="d" data-i18n="settings.commandsAllowApplyHint">Replacing only happens when you press the button, and only if the same window and
+                selection are still there. Otherwise the result is just copied.</span>
+            </span>
+            <input id="commands-allow-apply" type="checkbox" class="switch" role="switch" />
+          </label>
+          <p id="commands-capabilities" class="hint"></p>
         </div>
       </section>
 
@@ -426,9 +424,9 @@
           Speech-to-text
         </h2>
         <div class="card">
-          <div class="card-title" data-i18n="settings.transcriptionEngine">Transcription engine</div>
+          <div class="card-title" id="stt-engine-title" data-i18n="settings.transcriptionEngine">Transcription engine</div>
           <div class="field">
-            <div class="segmented">
+            <div class="segmented" role="radiogroup" aria-labelledby="stt-engine-title">
               <label>
                 <input type="radio" name="stt-engine" value="builtin" />
                 On this computer
@@ -562,9 +560,9 @@
 
         <div id="cleanup-fields">
           <div class="card">
-            <div class="card-title" data-i18n="settings.cleanupEngine">Cleanup engine</div>
+            <div class="card-title" id="cleanup-engine-title" data-i18n="settings.cleanupEngine">Cleanup engine</div>
             <div class="field">
-              <div class="segmented">
+              <div class="segmented" role="radiogroup" aria-labelledby="cleanup-engine-title">
                 <label>
                   <input type="radio" name="cleanup-engine" value="builtin" />
                   On this computer
@@ -652,9 +650,9 @@
           </div>
 
           <div class="card">
-            <div class="card-title" data-i18n="settings.cleanupStyle">Cleanup style</div>
+            <div class="card-title" id="cleanup-style-title" data-i18n="settings.cleanupStyle">Cleanup style</div>
             <div class="field">
-              <div class="segmented">
+              <div class="segmented" role="radiogroup" aria-labelledby="cleanup-style-title">
                 <label>
                   <input type="radio" name="cleanup-style-mode" value="preset" />
                   Preset

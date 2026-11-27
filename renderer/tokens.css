@@ -25,6 +25,9 @@
   --radius-control: calc(var(--radius) * 1.4);
   --radius-card: calc(var(--radius) * 1.8);
   --radius-button: calc(var(--radius) * 2.6);
+  /* Rows and insets inside a card (history entries, model trays, previews):
+     one step under --radius-card so the nesting reads (DESIGN.md rounded.row). */
+  --radius-row: 10px;
 
   --ink: #090b0c;
   --surface: #161b1d;

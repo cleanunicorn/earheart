@@ -33,8 +33,37 @@ function markActiveTab(name) {
     if (on) t.setAttribute("aria-current", "true");
     else t.removeAttribute("aria-current");
     t.tabIndex = on ? 0 : -1;
+    if (on) keepInRail(t);
   }
 }
+
+// A short compact window scrolls the icon rail (its scrollbar is hidden), so
+// the scroll spy brings the "you are here" entry into view. Only the rail
+// scrolls: scrollIntoView would move the page panel too.
+function keepInRail(tab) {
+  const rail = tab.parentElement;
+  if (rail.scrollHeight <= rail.clientHeight) return;
+  const box = rail.getBoundingClientRect();
+  const r = tab.getBoundingClientRect();
+  if (r.top < box.top) rail.scrollTop -= box.top - r.top + 8;
+  else if (r.bottom > box.bottom) rail.scrollTop += r.bottom - box.bottom + 8;
+}
+
+// Below 600px the index is an icon rail whose labels are visually hidden
+// (settings.css): there, and only there, each icon gets its label as a hover
+// tooltip. At full width the label is on screen, so a tooltip would repeat it.
+// Follows the window across the breakpoint and the label across languages.
+const compactRail = matchMedia("(max-width: 599px)");
+function syncRailTooltips() {
+  for (const tab of tabButtons) {
+    const label = tab.querySelector(".tab-label")?.textContent.trim();
+    if (compactRail.matches && label) tab.title = label;
+    else tab.removeAttribute("title");
+  }
+}
+compactRail.addEventListener("change", syncRailTooltips);
+i18n.onChange(syncRailTooltips);
+syncRailTooltips();
 
 // While a click-initiated glide is in flight, the spy would highlight every
 // entry the scroll passes through; hold the chosen one until the scroll settles.
@@ -98,9 +127,16 @@ function spySections() {
       }
     }
   }
-  if (name) markActiveTab(name);
+  // Only touch the index when the section changes: scroll fires far more
+  // often than the answer moves.
+  if (name && !tabButtons.find((t) => t.dataset.tab === name)?.classList.contains("active")) {
+    markActiveTab(name);
+  }
 }
 
+// Synchronous on purpose: the highlight answers the scroll that moved it
+// (settings-smoke reads it in the same task). The reads are cheap against a
+// clean layout; the guard above keeps the writes to section changes.
 panelHost.addEventListener("scroll", spySections, { passive: true });
 panelHost.addEventListener("scrollend", () => {
   spyHeld = false;

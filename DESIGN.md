@@ -470,7 +470,9 @@ never closes the window — it says "Saved" and stays — so a window never
 vanishes on its own. The index is a scroll spy with roving tabindex: the
 entry currently in view takes the wash; clicking glides the page
 (`scroll-behavior: smooth`) and moves focus to the section legend. Below 600px
-the index docks horizontally above the page.
+the index narrows to a 56px icon rail (labels visually hidden, kept as each
+button's name and tooltip). The header drops its tagline and the header and footer
+tighten there too, so a short window keeps its height for the page.
 The scrolling `main` is a positioned container so visually hidden labels stay
 inside its scroll range and cannot create an outer document scrollbar.
 
@@ -579,7 +581,7 @@ transcription** and a quiet **Discard**.
   and the active entry takes Active Menu + Primary Text — no markers, no dots.
   Scroll spy tracks the section currently in view; roving tabindex; clicks
   glide the page and focus the section legend.
-  Docks horizontally with a bottom seam below 600px.
+  Narrows to a 56px icon-only rail below 600px; labels stay as names and tooltips.
 
 ### Section headings
 - **Legend:** an 18px glyph in the section's Wayfinding hue (the same shape as
@@ -592,13 +594,13 @@ transcription** and a quiet **Discard**.
 - **Settings cards** use Surface, a 1px Hairline Edge, 0.81rem radius,
   16px 18px padding, and 13px/600 Outfit titles. Whitespace separates fields.
 - **Banner:** the overlay's update-panel grammar on the settings page — white
-  0.05 wash, hairline edge, 12px radius, 11px 14px padding, message left /
+  0.05 wash, hairline edge, 0.81rem (card) radius, 11px 14px padding, message left /
   ghost pill right.
 - **History cards:** Faint Wash + seam border, 10px radius, 11px 13px padding;
   13px pre-wrapped text above an 11px mono meta row (timestamp left, small
   copy pill right).
 - **Model trays:** a darker inset inside a card — Tray fill (black 0.25),
-  1px rgba(255, 255, 255, 0.07) edge, 8px radius, 12px 14px padding; holds
+  1px rgba(255, 255, 255, 0.07) edge, 10px (row) radius, 12px 14px padding; holds
   the model note, its download bar, and its buttons.
 - **Wizard summary, value, and download cards** use Surface, a hairline edge,
   and a 0.81rem radius. The summary is a description list with mono accelerator

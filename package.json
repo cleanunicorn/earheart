@@ -11,10 +11,10 @@
     "name": "Earheart contributors",
     "email": "lucadanielcostin@gmail.com"
   },
-  "homepage": "https://github.com/cleanunicorn/earheart",
+  "homepage": "https://github.com/earheart-hq/earheart",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cleanunicorn/earheart.git"
+    "url": "https://github.com/earheart-hq/earheart.git"
   },
   "scripts": {
     "start": "electron .",

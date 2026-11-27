@@ -10,7 +10,7 @@ read this whole codebase in an afternoon.
 Requires Node 22.12+ (an `.nvmrc` is provided, so `nvm use` picks it up).
 
 ```bash
-git clone https://github.com/cleanunicorn/earheart
+git clone https://github.com/earheart-hq/earheart
 cd earheart
 npm ci
 npm start

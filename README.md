@@ -24,14 +24,14 @@
 
 ## Watch Earheart in action
 
-[![Download the Earheart demo: Talk to your coding agents](docs/videos/poster.jpg)](https://raw.githubusercontent.com/cleanunicorn/earheart/refs/heads/main/docs/videos/earheart-horizontal.mp4)
+[![Download the Earheart demo: Talk to your coding agents](docs/videos/poster.jpg)](https://raw.githubusercontent.com/earheart-hq/earheart/refs/heads/main/docs/videos/earheart-horizontal.mp4)
 
 Hotkey → speak → clean up → paste, in 48 seconds with music. Cleanup gets a
 before-and-after sequence showing fillers removed, false starts resolved, and
 phrasing refined using the optional **Polished** style.
 
-Download the [horizontal video (16:9)](https://raw.githubusercontent.com/cleanunicorn/earheart/refs/heads/main/docs/videos/earheart-horizontal.mp4)
-or the [vertical video (9:16)](https://raw.githubusercontent.com/cleanunicorn/earheart/refs/heads/main/docs/videos/earheart-vertical.mp4) for social media.
+Download the [horizontal video (16:9)](https://raw.githubusercontent.com/earheart-hq/earheart/refs/heads/main/docs/videos/earheart-horizontal.mp4)
+or the [vertical video (9:16)](https://raw.githubusercontent.com/earheart-hq/earheart/refs/heads/main/docs/videos/earheart-vertical.mp4) for social media.
 Open either MP4 in your video player to watch. Both show an illustrated workflow;
 see [video details](docs/videos/README.md).
 
@@ -129,7 +129,7 @@ A few settings are worth a minute for agent work:
 **What it doesn't do yet.** You still press Enter yourself — Earheart pastes,
 it does not submit. The agent cannot ask you a question by voice or talk back.
 Those ideas are filed under the
-[`agents`](https://github.com/cleanunicorn/earheart/issues?q=is%3Aissue+label%3Aagents)
+[`agents`](https://github.com/earheart-hq/earheart/issues?q=is%3Aissue+label%3Aagents)
 label, and opinions are welcome.
 
 ## Features
@@ -259,13 +259,13 @@ Each row says where to turn it on and where the details are.
 
 ### 1. Download the right file for your OS
 
-Open the **[latest release page](https://github.com/cleanunicorn/earheart/releases/latest)**
+Open the **[latest release page](https://github.com/earheart-hq/earheart/releases/latest)**
 and choose an asset (`<version>` is the version number, such as `0.8.0`):
 
 | System | Download |
 | --- | --- |
 | 🪟 Windows | `Earheart-Setup-<version>.exe` for the installer, or `Earheart-<version>.exe` to run a portable build. Windows on ARM (Snapdragon X) uses these x64 builds under built-in emulation; both engines work, but there is no separate ARM build yet. |
-| 🍎 macOS | `Earheart-<version>-arm64.dmg` for Apple Silicon (M1/M2/M3/M4). Intel Macs are no longer supported: the last release with an Intel build was [v0.33.9](https://github.com/cleanunicorn/earheart/releases/tag/v0.33.9), and Intel installs keep working on it but get no further updates. Check the Apple menu → **About This Mac**: an Apple Silicon Mac lists a “Chip”, an Intel Mac a “Processor”. |
+| 🍎 macOS | `Earheart-<version>-arm64.dmg` for Apple Silicon (M1/M2/M3/M4). Intel Macs are no longer supported: the last release with an Intel build was [v0.33.9](https://github.com/earheart-hq/earheart/releases/tag/v0.33.9), and Intel installs keep working on it but get no further updates. Check the Apple menu → **About This Mac**: an Apple Silicon Mac lists a “Chip”, an Intel Mac a “Processor”. |
 | 🐧 Linux | `Earheart-<version>.AppImage` for any distro, or `earheart_<version>_amd64.deb` for Debian/Ubuntu. |
 
 ### 2. Install it
@@ -344,7 +344,7 @@ Settings → Speech-to-text lets you enter its URL and API key instead.
 If there's no release for your platform (requires Node 22.12+):
 
 ```bash
-git clone https://github.com/cleanunicorn/earheart
+git clone https://github.com/earheart-hq/earheart
 cd earheart
 npm ci
 npm run dist     # installers for the current platform land in dist/
@@ -882,10 +882,10 @@ checksum-verified. Only add models from repos you trust.
   successfully (see .github/workflows/star-history.yml for the one-time PAT
   setup). Until then the images 404, which is expected.
 -->
-<a href="https://github.com/cleanunicorn/earheart/stargazers">
+<a href="https://github.com/earheart-hq/earheart/stargazers">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/cleanunicorn/earheart/star-history/assets/my-star-history/star-history-dark.svg" />
-    <img alt="Star history chart for cleanunicorn/earheart" src="https://raw.githubusercontent.com/cleanunicorn/earheart/star-history/assets/my-star-history/star-history-light.svg" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/earheart-hq/earheart/star-history/assets/my-star-history/star-history-dark.svg" />
+    <img alt="Star history chart for earheart-hq/earheart" src="https://raw.githubusercontent.com/earheart-hq/earheart/star-history/assets/my-star-history/star-history-light.svg" />
   </picture>
 </a>
 

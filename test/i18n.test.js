@@ -277,7 +277,9 @@ test("Romanian (draft catalog): system and override selection, plurals and fallb
 
   i18n.setLocale("ro");
   assert.equal(i18n.t("tray.quit"), "Închide Earheart");
-  assert.equal(notices.readyNotice("").body, "Deschide meniul din bara de sistem pentru a începe.");
+  assert.equal(notices.readyNotice("").body, process.platform === "darwin"
+    ? "Fă clic pe pictograma Earheart din bara de meniu pentru a începe."
+    : "Deschide meniul din bara de sistem pentru a începe.");
   // Dictation settings are not part of the UI catalog.
   assert.ok(!Object.keys(draftRo).some((k) => /^(stt|cleanup)\./.test(k)));
 });

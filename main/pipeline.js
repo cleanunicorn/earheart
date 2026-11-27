@@ -30,6 +30,9 @@ const { withRetry } = require("./util/retry");
 const logger = require("./util/logger");
 const { prettyHotkey } = require("./util/hotkey-label");
 const { t } = require("./i18n");
+// Node's process object: this module's own process() (the dictation pipeline)
+// shadows the global, so `process.platform` here would read undefined.
+const nodeProcess = require("node:process");
 const { describeError } = require("./error-text");
 const { createNotifier, sttNotReadyNotice, sttDownloadingNotice, BODY_MAX } = require("./setup-notices");
 const { createFailedTake } = require("./failed-take");
@@ -1107,7 +1110,7 @@ async function process(sid, wavArrayBuffer, { retry = false, purpose = "dictatio
       const remaining = minutes < 1 ? t("pipeline.lessThanMinute") : t("pipeline.minutes", { count: minutes });
       notify({
         title: earlier ? t("pipeline.failedEarlierKept.title") : t("pipeline.failedKept.title"),
-        body: t(process.platform === "darwin" ? "pipeline.failedKept.bodyMac" : "pipeline.failedKept.body", {
+        body: t(nodeProcess.platform === "darwin" ? "pipeline.failedKept.bodyMac" : "pipeline.failedKept.body", {
           remaining,
           reason: describeError(err),
         }),

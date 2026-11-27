@@ -114,7 +114,10 @@ test("the hotkey failure notice carries the registration error and the way to fi
 test("the ready notice keeps its wording", () => {
   assert.deepStrictEqual(readyNotice(""), {
     title: "Earheart is ready",
-    body: "Open the tray menu to get started.",
+    // The tray icon is the menu bar icon on macOS.
+    body: process.platform === "darwin"
+      ? "Click Earheart's menu bar icon to get started."
+      : "Open the tray menu to get started.",
   });
   assert.match(readyNotice("CommandOrControl+Shift+Space").body, /^Press .+Shift\+Space to dictate\.$/);
 });

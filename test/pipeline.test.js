@@ -2036,7 +2036,7 @@ for (const [seconds, duration] of [[5, "less than a minute"], [59, "less than a 
     await rig.dictate(speechWav(1));
     assert.deepStrictEqual(rig.log.failedTakeCards.at(-1), { expiresInSec: seconds, earlier: true });
     assert.strictEqual(rig.log.notifications.at(-1).body,
-      `Retry it from the tray menu or the overlay, or run earheart --retry, within ${duration}. ${GENERIC_ERROR}`);
+      `Retry it from ${TRAY} or the overlay, or run earheart --retry, within ${duration}. ${GENERIC_ERROR}`);
     assert.strictEqual(rig.pipeline.getFailedTake().expiresAt, expiresAt, "the copy must not renew retention");
     rig.pipeline.discardFailedTake();
   });

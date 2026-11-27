@@ -444,6 +444,9 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
       settings: cfg,
       defaults: settings.DEFAULTS,
       platform: process.platform,
+      // A Wayland session, where apps can't grab global keys: Settings and the
+      // wizard show the desktop-shortcut notes only there.
+      wayland: process.platform === "linux" && deliver.isWayland?.() === true,
       version: app.getVersion(),
       // The last hotkey registration (launch or save), so Settings can show a
       // shortcut that failed at launch as soon as it opens. Read-only: asking

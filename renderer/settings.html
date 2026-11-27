@@ -83,7 +83,7 @@
             </div>
             <p class="hint">
               Press to start dictating, again to stop and transcribe.
-              <span id="wayland-note">On Wayland, bind a system shortcut to
+              <span id="wayland-note" data-os="wayland" hidden>On Wayland, bind a system shortcut to
               <code>earheart --toggle</code>.</span>
             </p>
             <p id="hotkey-status" class="status" aria-live="polite"></p>
@@ -97,7 +97,7 @@
             </select>
             <p class="hint">
               Two quick presses start hands-free dictation; one press stops it.
-              On Wayland, bind <code>earheart --tap</code>.
+              <span data-os="wayland" hidden>On Wayland, bind <code>earheart --tap</code>.</span>
             </p>
           </div>
 
@@ -118,7 +118,7 @@
             </div>
             <p class="hint">
               Optional. Pauses and resumes the take without ending it.
-              <span id="pause-wayland-note">On Wayland, bind <code>earheart --pause</code>.</span>
+              <span id="pause-wayland-note" data-os="wayland" hidden>On Wayland, bind <code>earheart --pause</code>.</span>
             </p>
             <p id="pause-hotkey-status" class="status" aria-live="polite"></p>
           </div>
@@ -131,7 +131,7 @@
             </div>
             <p class="hint">
               Optional. Throws away the dictation in progress.
-              <span id="discard-wayland-note">On Wayland, bind <code>earheart --discard</code>.</span>
+              <span id="discard-wayland-note" data-os="wayland" hidden>On Wayland, bind <code>earheart --discard</code>.</span>
             </p>
             <p id="discard-hotkey-status" class="status" aria-live="polite"></p>
           </div>
@@ -141,7 +141,7 @@
               <input id="correct-hotkey" readonly placeholder="Not set — click, then press a key combination" data-i18n-attr="placeholder:settings.correctHotkeyPlaceholder" />
               <button id="correct-hotkey-clear" class="ghost" data-i18n="settings.correctHotkeyClear">Clear</button>
             </div>
-            <p class="hint">Optional. Opens your last transcript to fix a spelling and remember it. On Wayland, bind <code>earheart --correct-last</code>.</p>
+            <p class="hint">Optional. Opens your last transcript to fix a spelling and remember it. <span data-os="wayland" hidden>On Wayland, bind <code>earheart --correct-last</code>.</span></p>
             <p id="correct-hotkey-status" class="status" aria-live="polite"></p>
           </div>
           <div class="field">
@@ -150,7 +150,7 @@
               <input id="palette-hotkey" readonly placeholder="Not set — click, then press a key combination" />
               <button id="palette-hotkey-clear" class="ghost">Clear</button>
             </div>
-            <p class="hint">Opens navigation, actions and saved dictations. Leave empty to turn it off. On Wayland, bind <code>earheart --palette</code>.</p>
+            <p class="hint">Opens navigation, actions and saved dictations. Leave empty to turn it off. <span data-os="wayland" hidden>On Wayland, bind <code>earheart --palette</code>.</span></p>
             <p id="palette-hotkey-status" class="status" aria-live="polite"></p>
           </div>
 
@@ -270,7 +270,7 @@
             <span id="accessibility-status" class="status" aria-live="polite"></span>
           </div>
           <p class="hint" data-i18n="settings.autopasteTypesIntoTheFocused">
-            On macOS, auto-paste needs the Accessibility and Automation permissions. If pasting stopped working, click to check both and open the System Settings pane that needs attention.
+            Auto-paste needs the Accessibility and Automation permissions. If pasting stopped working, click to check both and open the System Settings pane that needs attention.
           </p>
         </div>
 
@@ -278,7 +278,7 @@
           <label class="toggle">
             <span class="toggle-text">
               <span class="t" data-i18n="settings.startEarheartWhenILog">Start Earheart when I log in</span>
-              <span class="d" data-i18n="settings.launchesInTheBackgroundSystem">Launches in the background (system tray) after you sign in.</span>
+              <span class="d" data-i18n="settings.launchesInTheBackgroundSystem">Starts in the background after you sign in.</span>
             </span>
             <input type="checkbox" id="start-on-boot" class="switch" role="switch" />
           </label>
@@ -331,7 +331,7 @@
               <input id="commands-hotkey" readonly placeholder="Not set — click, then press a key combination" />
               <button id="commands-hotkey-clear" class="ghost">Clear</button>
             </div>
-            <p class="hint">Optional. Also in the tray menu. On Wayland, bind <code>earheart --command</code>.</p>
+            <p class="hint">Optional. <span data-os="darwin" hidden>Also in the menu bar icon's menu.</span><span data-os="not-darwin" hidden>Also in the tray icon's menu.</span> <span data-os="wayland" hidden>On Wayland, bind <code>earheart --command</code>.</span></p>
             <p id="commands-hotkey-status" class="status" aria-live="polite"></p>
           </div>
           <div class="field">
@@ -725,9 +725,12 @@
                 <button id="format-add" class="ghost" type="button">Add rule</button>
               </div>
               <p id="format-hint" class="hint">
-                Capitalization and punctuation by destination. A website rule (<code>github.com</code>) beats an app rule
+                Capitalization and punctuation by destination.
+                <span data-os="darwin" hidden>A website rule (<code>github.com</code>) beats an app rule
                 (<code>com.apple.Terminal</code>), which beats the default. Websites are detected in Safari and
-                Chromium browsers on macOS; only the site name is read.
+                Chromium browsers; only the site name is read.</span>
+                <span data-os="not-darwin" hidden>Rules are detected on macOS only; on this computer the default
+                always applies.</span>
               </p>
             </div>
           </div>
@@ -985,7 +988,7 @@
           <div class="field">
             <label for="tools-command">Command</label>
             <input id="tools-command" type="text" autocomplete="off" spellcheck="false" placeholder="node" />
-            <p class="hint">An executable, not a shell line. On Windows use the real .exe (node, python), not npx.cmd.</p>
+            <p class="hint">An executable, not a shell line.<span data-os="win32" hidden> Use the real .exe (node, python), not npx.cmd.</span></p>
           </div>
           <div class="field">
             <label for="tools-args">Arguments (one per line)</label>
@@ -1049,7 +1052,7 @@
           <label class="toggle">
             <span class="toggle-text">
               <span class="t" data-i18n="settings.tellMeWhenANew">Tell me when a new version is out</span>
-              <span class="d" data-i18n="settings.aPromptOnTheDictation">A prompt on the dictation bar between dictations, plus a system notification. Off: only here and in the tray.</span>
+              <span class="d" data-i18n="settings.aPromptOnTheDictation">A prompt on the dictation bar between dictations, plus a system notification. Off: only here and in the Earheart icon's menu.</span>
             </span>
             <input type="checkbox" id="updates-remind" class="switch" role="switch" />
           </label>
@@ -1095,6 +1098,7 @@
     <script src="locales/en.js"></script>
     <script src="i18n-client.js"></script>
     <script src="confirm-dialog.js"></script>
+    <script src="platform-context.js"></script>
     <script src="hotkey-capture.js"></script>
     <script src="vocabulary.js"></script>
     <script src="vocab-packs.js"></script>

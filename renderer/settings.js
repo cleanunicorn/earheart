@@ -516,11 +516,6 @@ function populate() {
   $("record-sound-volume").value = current.audio.recordSoundVolumePercent ?? defaults.audio.recordSoundVolumePercent;
   $("idle-unload").value = current.engines?.idleUnloadMinutes ?? defaults.engines.idleUnloadMinutes;
 
-  if (platform !== "linux") {
-    $("wayland-note").style.display = "none";
-    $("pause-wayland-note").style.display = "none";
-    $("discard-wayland-note").style.display = "none";
-  }
 }
 
 // The Always replace textarea as records. Never throws, since every form
@@ -3106,6 +3101,7 @@ $("snippet-delete").addEventListener("click", () => {
   baseline = sharedBaseline(current);
   defaults = data.defaults;
   platform = data.platform;
+  showForPlatform(document, { platform, wayland: data.wayland });
   cleanupStyles = data.cleanupStyles || [];
   formattingStyles = data.formattingStyles || [];
   promptOffer = data.promptOffer || null;

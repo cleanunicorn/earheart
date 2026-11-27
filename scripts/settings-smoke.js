@@ -1720,7 +1720,7 @@ app.whenReady().then(async () => {
     );
     check(
       "the form says why its controls changed",
-      /Output mode changed from the tray menu/.test(reflected.status) &&
+      /Output mode changed from the Earheart icon's menu/.test(reflected.status) &&
         /Update reminders turned off/.test(reflected.status),
       JSON.stringify(reflected.status)
     );

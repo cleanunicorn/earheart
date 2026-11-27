@@ -563,6 +563,7 @@ async function finish() {
   current = data.settings;
   defaults = data.defaults;
   platform = data.platform;
+  showForPlatform(document, { platform, wayland: data.wayland });
   cleanupStyles = data.cleanupStyles || [];
   modelStatus = await earheart.invoke("models:status");
   baseline = sharedBaseline(current);
@@ -591,7 +592,6 @@ async function finish() {
   for (const n of neededModels()) transfer(n.kind, n.modelId);
 
   if (platform === "darwin") $("demo-mod").textContent = "⌘";
-  if (platform !== "linux") $("wayland-note").style.display = "none";
   showStep(0);
   settingsChangesReady();
 })();

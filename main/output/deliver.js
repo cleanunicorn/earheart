@@ -28,10 +28,11 @@ const {
 } = require("./mac-permissions");
 
 // The paste keystroke, with one guard in front of it. Clicking the overlay
-// (Stop, Finish) can activate Earheart on macOS: focusable:false keeps the
-// card from becoming the key window, but a click may still bring its app to
-// the front, so Cmd+V would land in Earheart and nowhere (reported, not yet
-// reproduced on a Mac). The pipeline passes a target only when the overlay was
+// (Stop, Finish) used to activate Earheart on macOS (confirmed on a Mac), so
+// Cmd+V landed in Earheart and nowhere. The overlay is now a non-activating
+// panel (main/windows.js nonActivating()), which should stop that at the
+// source; this guard stays as the fallback should a click still activate
+// Earheart (an Electron or macOS change). The pipeline passes a target only when the overlay was
 // pressed during the take, and the script uses it only when Earheart is the
 // frontmost app at paste time: then it hands the front back to that app
 // first. A user who switched apps on purpose mid-dictation, including to an

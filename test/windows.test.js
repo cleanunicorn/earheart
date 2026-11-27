@@ -125,6 +125,7 @@ function makeFakeWindow(calls, { refuseRejoin = false, webContentsHandlers = {} 
       calls.push(["destroy"]);
     }
     on(name, handler) { this.handlers[name] = handler; }
+    once(name, handler) { this.handlers[name] = handler; }
     close() {
       let prevented = false;
       this.handlers.close?.({ preventDefault: () => { prevented = true; } });
@@ -327,6 +328,25 @@ test("win32: showOverlay() makes no all-Spaces call and keeps the topmost-band s
     "the Windows topmost-band refresh must still run, in order, after showInactive()"
   );
 });
+
+// A click on a focusable:false window still activated Earheart on macOS, and
+// the paste after it landed in Earheart. A non-activating panel takes the click
+// without activating the app. macOS only: elsewhere "panel" is not a type
+// (Linux reads unknown types as normal; Windows only knows "toolbar").
+for (const platform of ["darwin", "linux", "win32"]) {
+  test(`${platform}: the overlay and the command card are non-activating panels only on macOS`, (t) => {
+    onPlatform(t, platform);
+    const { windows, calls } = loadWindows();
+    windows.createOverlay();
+    windows.openCommand();
+    const constructed = calls.filter(([name]) => name === "construct").map(([, options]) => options);
+    assert.strictEqual(constructed.length, 2);
+    for (const options of constructed) {
+      assert.strictEqual(options.type, platform === "darwin" ? "panel" : undefined);
+      assert.strictEqual(options.focusable, false);
+    }
+  });
+}
 
 // Runs on darwin, but none of the code it asserts has a platform branch: the
 // constructor options and the size nudge are unconditional. One platform proves

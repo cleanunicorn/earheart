@@ -7,7 +7,7 @@ written. It works with cleanup on or off, and History keeps what you said.
 
 Code: [renderer/snippets.js](../renderer/snippets.js) (records, validation,
 merging, tags), [main/text-expansions.js](../main/text-expansions.js) (the
-matcher and the cleanup hand-off), the call in `process()` and `cleanKept()` in
+matcher and the cleanup hand-off), the call in `processTake()` and `cleanKept()` in
 [main/pipeline.js](../main/pipeline.js), the Snippets section in
 [renderer/settings.js](../renderer/settings.js).
 

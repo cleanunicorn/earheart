@@ -29,7 +29,7 @@ busy with a Settings test is left loaded and reported.
 
 Code: [main/usage.js](../main/usage.js) (store and maths),
 [renderer/usage-stats.js](../renderer/usage-stats.js) (the section), the
-`usage.record` call in `process()` in [main/pipeline.js](../main/pipeline.js).
+`usage.record` call in `processTake()` in [main/pipeline.js](../main/pipeline.js).
 
 ## What is stored
 

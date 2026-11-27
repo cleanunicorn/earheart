@@ -1499,7 +1499,7 @@ function onPipelineStatus({ status, detail }) {
         takeActions.hidden = false;
         // ✕ only dismisses the card; next to a Discard pill, say what stays.
         // The tray icon is the menu bar icon on macOS.
-        cancelBtn.title = tr(/Mac/.test(navigator.platform) ? "overlay.dismissKeepMac" : "overlay.dismissKeep");
+        cancelBtn.title = tr(earheart.platform === "darwin" ? "overlay.dismissKeepMac" : "overlay.dismissKeep");
         syncOverlayHeight();
       }
       break;

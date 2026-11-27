@@ -9,6 +9,7 @@
 
 const { prettyHotkey } = require("./util/hotkey-label");
 const { t } = require("./i18n");
+const { trayOrMenuBar } = require("./util/tray-place");
 
 // Matches the other notifications' limit (pipeline.js), so a long native error
 // can't push the fix path out of view.
@@ -18,7 +19,7 @@ function readyNotice(hotkey) {
   const combo = prettyHotkey(hotkey);
   return {
     title: t("notice.ready.title"),
-    body: combo ? t("notice.ready.pressHotkey", { hotkey: combo }) : t(process.platform === "darwin" ? "notice.ready.openMenuBar" : "notice.ready.openTray"),
+    body: combo ? t("notice.ready.pressHotkey", { hotkey: combo }) : t(trayOrMenuBar({ tray: "notice.ready.openTray", menuBar: "notice.ready.openMenuBar" })),
   };
 }
 

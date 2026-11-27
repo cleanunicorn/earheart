@@ -353,14 +353,20 @@ test("the failed-take card does not promise a minute when less remains", () => {
   const core = require("../renderer/i18n");
   const translator = core.createTranslator({ locale: "en", catalogs: require("../renderer/locales") });
   const tr = translator.t;
-  const render = new Function("detail", "setStatus", "takeNote", "takeActions", "cancelBtn", "syncOverlayHeight", "tr", branch[1]);
+  const render = new Function("detail", "setStatus", "takeNote", "takeActions", "cancelBtn", "syncOverlayHeight", "tr", "earheart", branch[1]);
   for (const [seconds, duration] of [[5, "less than a minute"], [59, "less than a minute"], [60, "1 min"], [120, "2 min"]]) {
     for (const earlier of [false, true]) {
       const note = {};
       const actions = { hidden: true };
-      render({ failedTake: { expiresInSec: seconds, earlier } }, () => {}, note, actions, {}, () => {}, tr);
+      render({ failedTake: { expiresInSec: seconds, earlier } }, () => {}, note, actions, {}, () => {}, tr, { platform: "linux" });
       assert.strictEqual(note.textContent, `${earlier ? "Earlier recording" : "Recording"} kept for ${duration}`);
       assert.strictEqual(actions.hidden, false);
     }
+  }
+  // The ✕ says where the recording stays: the tray menu, or on macOS the menu bar icon.
+  for (const [platform, place] of [["linux", "tray menu"], ["win32", "tray menu"], ["darwin", "menu bar icon"]]) {
+    const cancel = {};
+    render({ failedTake: { expiresInSec: 120 } }, () => {}, {}, { hidden: true }, cancel, () => {}, tr, { platform });
+    assert.match(cancel.title, new RegExp(place), platform);
   }
 });

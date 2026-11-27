@@ -30,9 +30,7 @@ const { withRetry } = require("./util/retry");
 const logger = require("./util/logger");
 const { prettyHotkey } = require("./util/hotkey-label");
 const { t } = require("./i18n");
-// Node's process object: this module's own process() (the dictation pipeline)
-// shadows the global, so `process.platform` here would read undefined.
-const nodeProcess = require("node:process");
+const { trayOrMenuBar } = require("./util/tray-place");
 const { describeError } = require("./error-text");
 const { createNotifier, sttNotReadyNotice, sttDownloadingNotice, BODY_MAX } = require("./setup-notices");
 const { createFailedTake } = require("./failed-take");
@@ -390,7 +388,7 @@ function sendProgress(phase, fraction) {
 // estimate calibrated by the measured realtime factor of previous decodes,
 // persisted in userData so calibration survives app restarts. The singleton is
 // created lazily because app.getPath needs the app ready; the first use is
-// inside process(). (Same deferred-getPath shape as history.js/settings.js.)
+// inside processTake(). (Same deferred-getPath shape as history.js/settings.js.)
 let sttRtf = null;
 
 // Cadence of the estimated transcribing bar. Faster than the worker's own
@@ -440,7 +438,7 @@ function retryNotice(phase, what) {
 // Run the final transcription with the estimated transcribing bar. The builtin
 // decoder is one opaque blocking call, so the bar is elapsed time against the
 // audio duration times the learned decode speed; this helper owns that plumbing
-// (model preload, ticker lifecycle, RTF sample) so process() stays a readable
+// (model preload, ticker lifecycle, RTF sample) so processTake() stays a readable
 // phase list. Remote STT (network-bound, no meaningful local estimate) skips
 // the estimate and keeps the indeterminate pulse. `stale` mutes sends from a
 // cancelled/superseded session; the ticker itself dies in `finally` regardless.
@@ -697,7 +695,7 @@ function retryFailedTake() {
     const wav = failedTake.take();
     if (!wav) return;
     windows.showOverlay();
-    process(sid, wav, { retry: true, formatting });
+    processTake(sid, wav, { retry: true, formatting });
   };
   if (win.webContents.isLoading()) {
     win.webContents.once("did-finish-load", begin);
@@ -877,7 +875,7 @@ function cancel() {
   windows.hideOverlay();
 }
 
-async function process(sid, wavArrayBuffer, { retry = false, purpose = "dictation", formatting: retryFormatting } = {}) {
+async function processTake(sid, wavArrayBuffer, { retry = false, purpose = "dictation", formatting: retryFormatting } = {}) {
   const cfg = settings.get();
   // Snapshot the committed chunk decodes BEFORE cancelling the live preview
   // (cancel resets them): they are the final transcript's prefix, so the
@@ -1110,7 +1108,7 @@ async function process(sid, wavArrayBuffer, { retry = false, purpose = "dictatio
       const remaining = minutes < 1 ? t("pipeline.lessThanMinute") : t("pipeline.minutes", { count: minutes });
       notify({
         title: earlier ? t("pipeline.failedEarlierKept.title") : t("pipeline.failedKept.title"),
-        body: t(nodeProcess.platform === "darwin" ? "pipeline.failedKept.bodyMac" : "pipeline.failedKept.body", {
+        body: t(trayOrMenuBar({ tray: "pipeline.failedKept.body", menuBar: "pipeline.failedKept.bodyMac" }), {
           remaining,
           reason: describeError(err),
         }),
@@ -1210,7 +1208,7 @@ function init({ isDownloading = () => false } = {}) {
   isModelDownloading = isDownloading;
   ipcMain.on("audio:captured", (event, { sid, wav } = {}) => {
     if (sid !== session || state !== "recording") return;
-    process(sid, wav, { purpose: sessionPurpose });
+    processTake(sid, wav, { purpose: sessionPurpose });
   });
 
   // `fromSample` must be forwarded: it is the contiguity check that lets the

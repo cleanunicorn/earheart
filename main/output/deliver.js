@@ -18,6 +18,8 @@
 
 const { clipboard } = require("electron");
 const { isWaylandSession } = require("../util/session");
+const { trayOrMenuBar } = require("../util/tray-place");
+const { t } = require("../i18n");
 const fs = require("node:fs");
 const logger = require("../util/logger");
 const { execFileAsync } = require("../util/exec-file");
@@ -271,16 +273,13 @@ function clipboardTakenOver(text) {
 }
 
 // What the user is told when the paste was held back: the newer copy is
-// theirs, and the transcript is a click away instead — from the tray icon, or
-// on macOS the menu bar icon. Read at delivery time, not load time.
+// theirs, and the transcript is a click away instead — in the tray menu, or on
+// macOS from the menu bar icon. Read at delivery time, not load time.
 function clipboardChanged() {
-  const where = process.platform === "darwin" ? "the menu bar icon" : "the tray menu";
-  return {
-    note: `Copy it from ${where}`,
-    hint:
-      "Another app changed the clipboard before Earheart could paste, so nothing was pasted and that copy was left as it was. " +
-      `Copy the transcript from ${where} (Copy last transcription).`,
-  };
+  return trayOrMenuBar({
+    tray: { note: t("deliver.clipboardChanged.note"), hint: t("deliver.clipboardChanged.hint") },
+    menuBar: { note: t("deliver.clipboardChanged.noteMac"), hint: t("deliver.clipboardChanged.hintMac") },
+  });
 }
 
 // The restore armed by the last paste: `{ timer, text, snap }`, where `text` is

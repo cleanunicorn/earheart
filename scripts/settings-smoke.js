@@ -1662,11 +1662,18 @@ app.whenReady().then(async () => {
           document.querySelector("#cleanup-model-manage .status")?.textContent === "Not downloaded"`),
         "confirming did not remove the model"
       );
-      await realClick("#cleanup-builtin-model");
-      const opened = await waitFor(
-        () => js(`document.getElementById("cleanup-builtin-model").matches(":open")`),
-        "the model dropdown did not open after the removal"
-      ).catch(() => false);
+      // The bug this guards (#409) is persistent: once it bites, the dropdown
+      // stays shut until the window is refocused, so every click fails. Under
+      // headless X a first click right after the dialog closes is sometimes
+      // dropped on its own (seen on main too), so one more click 300ms later
+      // tells that flake from the bug.
+      const isOpen = () => js(`document.getElementById("cleanup-builtin-model").matches(":open")`);
+      let opened = false;
+      for (let attempt = 0; attempt < 2 && !opened; attempt++) {
+        if (attempt) await sleep(300);
+        await realClick("#cleanup-builtin-model");
+        opened = await waitFor(isOpen, "the model dropdown did not open after the removal").catch(() => false);
+      }
       win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
       win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
       await sleep(200);

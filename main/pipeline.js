@@ -78,7 +78,12 @@ let heldFormatting = null;
 // the recording.
 function beginTakeContext(sid, formattingCfg) {
   const rules = structuredClone(formattingCfg ?? {});
-  const take = { sid, frozen: null, promise: null };
+  // targetApp: the frontmost app's bundle id as the take started (macOS).
+  // overlayPressed: the overlay was pressed during this take, which can bring
+  // Earheart to the front. Only then does delivery hand the front back to
+  // targetApp: without a press, Earheart in front means the user went there
+  // (a Settings field, say) and the paste belongs there.
+  const take = { sid, frozen: null, promise: null, targetApp: null, overlayPressed: false };
   if (!contextDetector.supported) {
     take.frozen = freezeFormatting(resolveFormatting(rules, null));
     take.promise = Promise.resolve(take.frozen);
@@ -89,6 +94,7 @@ function beginTakeContext(sid, formattingCfg) {
     .then(() => contextDetector.detect())
     .catch(() => null)
     .then((ctx) => {
+      take.targetApp = ctx?.app?.id ?? null;
       take.frozen = freezeFormatting(resolveFormatting(rules, ctx));
       if (take.frozen.source !== "default" && session === sid && state === "recording") {
         // The destination and style only (never text or the full URL).
@@ -105,6 +111,11 @@ function beginTakeContext(sid, formattingCfg) {
     });
   takeContext = take;
   return take;
+}
+
+function targetAppForSession(sid) {
+  if (!takeContext || takeContext.sid !== sid || !takeContext.overlayPressed) return null;
+  return takeContext.targetApp;
 }
 
 function formattingForSession(sid) {
@@ -1021,7 +1032,7 @@ async function process(sid, wavArrayBuffer, { retry = false, purpose = "dictatio
     // One line for a terminal agent, if the user asked (#68). History above
     // already holds the transcript as it was.
     const outgoing = deliverText(text, cfg.output);
-    const result = await deliver(outgoing, cfg.output, signal);
+    const result = await deliver(outgoing, cfg.output, signal, { targetApp: retry ? null : targetAppForSession(sid) });
     delivered = true;
     // New words have landed: a failed take held from before is superseded.
     // Not sooner — a mis-press, a mic check, a take that hears nothing, fails,
@@ -1222,6 +1233,12 @@ function init({ isDownloading = () => false } = {}) {
     // on a bad message would be as wrong as ducking on one.
     if (sid !== session || state !== "recording" || typeof live !== "boolean") return;
     setCapturing(live);
+  });
+
+  // A press on the overlay while a take is live (recording or finishing).
+  ipcMain.on("overlay:pointer", () => {
+    if (state === "idle" || !takeContext || takeContext.sid !== session) return;
+    takeContext.overlayPressed = true;
   });
 
   ipcMain.on("record:cancelled", (event, { sid } = {}) => {

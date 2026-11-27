@@ -42,8 +42,8 @@ const FORMAT_OF = {
 // The clipboard model follows the OS (checked against Electron 42 under Xvfb):
 // writeText(), writeBuffer() and write() each replace every format with what
 // they are given, so a text write over an image clipboard destroys the image.
-function loadDeliver({ trusted, pasteError = null, tools = [], clip = { text: "old" } }) {
-  const state = { clip: { ...clip }, prompts: 0, execs: [], logs: [] };
+function loadDeliver({ trusted, pasteError = null, tools = [], clip = { text: "old" }, pasteOut = "" }) {
+  const state = { clip: { ...clip }, prompts: 0, execs: [], args: [], logs: [] };
   const electron = {
     clipboard: {
       availableFormats: () =>
@@ -78,8 +78,9 @@ function loadDeliver({ trusted, pasteError = null, tools = [], clip = { text: "o
   const childProcess = {
     execFile: (cmd, args, opts, cb) => {
       state.execs.push(cmd);
+      state.args.push(args);
       if (pasteError) cb(new Error(`Command failed: ${cmd}\n${pasteError}`), "", pasteError);
-      else cb(null, "", "");
+      else cb(null, pasteOut, "");
     },
   };
   const realFs = require("node:fs");
@@ -185,6 +186,63 @@ test("trusted paste drives the keystroke", async (t) => {
   assert.strictEqual(result.method, "paste-copy");
   assert.deepStrictEqual(state.execs, ["osascript"]);
   assert.strictEqual(state.prompts, 0);
+});
+
+// The script is only ever run on a Mac, and the stubs above never compile
+// it. osacompile checks the syntax and System Events' terms without running
+// anything, so it needs no permission (CI runs this on macos-latest).
+test("the macOS paste script compiles", { skip: process.platform !== "darwin" && "needs macOS (osacompile)" }, async () => {
+  const { PASTE_SCRIPT } = require("../main/output/deliver");
+  const { execFileSync } = require("node:child_process");
+  const out = path.join(require("node:os").tmpdir(), `earheart-paste-${process.pid}.scpt`);
+  try {
+    execFileSync("osacompile", ["-o", out, ...PASTE_SCRIPT], { timeout: 30000 });
+    assert.ok(fs.existsSync(out));
+  } finally {
+    fs.rmSync(out, { force: true });
+  }
+});
+
+// The paste script's trailing argv: our pid, then the app to hand the front
+// back to ("" for none).
+const pasteArgv = (state) => state.args[0].slice(-2);
+
+test("macOS paste passes the take's target app to the paste script", async (t) => {
+  onMac(t);
+  const { deliver, state } = loadDeliver({ trusted: true });
+  const result = await deliver("hi", { mode: "paste-copy", pasteDelayMs: 0 }, undefined, { targetApp: "com.apple.Notes" });
+  assert.strictEqual(result.method, "paste-copy");
+  assert.deepStrictEqual(pasteArgv(state), [String(process.pid), "com.apple.Notes"]);
+  // Passed as data, never spliced into the script text.
+  assert.ok(!state.args[0].slice(0, -2).some((a) => a.includes("com.apple.Notes")));
+});
+
+test("macOS paste never hands the front to Earheart itself or to an unknown app", async (t) => {
+  onMac(t);
+  for (const targetApp of [undefined, null, "", MAC_BUNDLE_ID, "com.github.Electron"]) {
+    const { deliver, state } = loadDeliver({ trusted: true });
+    await deliver("hi", { mode: "paste-copy", pasteDelayMs: 0 }, undefined, { targetApp });
+    assert.deepStrictEqual(pasteArgv(state), [String(process.pid), ""], String(targetApp));
+  }
+});
+
+test("a restored front still counts as a paste", async (t) => {
+  onMac(t);
+  const { deliver, state } = loadDeliver({ trusted: true, pasteOut: "restored\n", clip: { text: "mine" } });
+  const result = await deliver("hi", { mode: "paste", restoreClipboard: true, pasteDelayMs: 0 }, undefined, { targetApp: "com.apple.Notes" });
+  assert.strictEqual(result.method, "paste");
+  assert.strictEqual(state.clip.text, "hi");
+});
+
+test("when the front cannot be handed back, the transcript stays on the clipboard", async (t) => {
+  onMac(t);
+  const { deliver, state } = loadDeliver({ trusted: true, pasteOut: "lost\n", clip: { text: "mine" } });
+  const result = await deliver("hi", { mode: "paste", restoreClipboard: true, pasteDelayMs: 0 }, undefined, { targetApp: "com.apple.Notes" });
+  assert.strictEqual(result.method, "clipboard");
+  assert.match(result.note, /⌘V/);
+  // Not restored to "mine", now or later: the user still has to paste it.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.strictEqual(state.clip.text, "hi");
 });
 
 test("a cancel during the paste delay wins over the permission check", async (t) => {

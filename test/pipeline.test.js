@@ -2784,6 +2784,35 @@ test("pipeline formatting: two sites in one browser get different styles, unmatc
   assert.deepStrictEqual(seen, ["code-safe", "email", "standard", "standard"]);
 });
 
+test("pipeline delivery: the take's starting app is the paste target only after an overlay press", async () => {
+  const targets = [];
+  const deliver = async (text, output, signal, opts) => {
+    targets.push(opts?.targetApp ?? null);
+    return { method: "paste" };
+  };
+  const detector = fakeDetector({ supported: true, app: { id: "com.apple.Notes", name: "Notes" }, host: null });
+  const { rig } = formattingRig({ detector, deliver });
+  // Started and stopped from the hotkey: if Earheart is in front, the user went
+  // there, so delivery gets no target and pastes where the focus is.
+  await rig.dictate(speechWav(1));
+  // The overlay was pressed (Stop, a drag): hand the front back to Notes.
+  const pressed = async (beforeStart) => {
+    if (beforeStart) rig.handlers["overlay:pointer"]();
+    rig.pipeline.toggle();
+    if (!beforeStart) rig.handlers["overlay:pointer"]();
+    const idle = new Promise((resolve) => rig.pipeline.onStateChange((st) => st === "idle" && resolve()));
+    rig.handlers["audio:captured"]({}, { sid: rig.log.lastStart.sid, wav: speechWav(1) });
+    await idle;
+  };
+  await pressed(false);
+  // A press while idle (the overlay's done card) doesn't carry into the next take.
+  await pressed(true);
+  // Pressed, but detection was unavailable: nothing to hand back to.
+  detector.answer = new Error("System Events timed out");
+  await pressed(false);
+  assert.deepStrictEqual(targets, [null, "com.apple.Notes", null, null]);
+});
+
 test("pipeline formatting: a host rule beats the application rule", async () => {
   const detector = fakeDetector({ supported: true, app: { id: "com.apple.Terminal", name: "Terminal" }, host: "mail.example.com" });
   const { rig, seen } = formattingRig({ detector });

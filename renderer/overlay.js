@@ -1681,6 +1681,12 @@ earheart.on("overlay:hide", () => card.classList.remove("visible"));
 // again on any later change (window/DPR/layout), so the bars are always crisp.
 new ResizeObserver(resizeMeter).observe(meter);
 
+// Any press on the overlay (a button, a drag) can bring Earheart to the front
+// on macOS, so the paste would land in Earheart. Tell main, which then hands
+// the front back to the app the take started in before it pastes. Capture
+// phase, so a handler that stops propagation can't hide the press.
+document.body.addEventListener("pointerdown", () => earheart.send("overlay:pointer"), true);
+
 stopBtn.addEventListener("click", stopRecording);
 pauseBtn.addEventListener("click", togglePause);
 cancelBtn.addEventListener("click", cancelRecording);

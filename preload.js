@@ -43,6 +43,7 @@ const ROLES = {
       "overlay:drag",
       "overlay:drag-end",
       "overlay:resize",
+      "overlay:pointer",
     ],
     INVOKE: [
       "i18n:get",

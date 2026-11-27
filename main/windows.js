@@ -63,6 +63,19 @@ const alive = (win) => Boolean(win && !win.isDestroyed());
 // (preload.js gives each role only the IPC channels its page uses; the role
 // travels on the renderer's command line, out of the page's reach), context
 // isolation, and the navigation guard that keeps that bridge on our own page.
+// macOS: make a window a non-activating panel (Electron adds
+// NSWindowStyleMaskNonactivatingPanel). focusable:false only keeps a window
+// from becoming key: a click on it still brought Earheart to the front, so
+// the paste that followed landed in Earheart instead of the user's text box
+// (reported: start with the hotkey, click Finish). A non-activating panel
+// takes the click without activating the app, so the user's app keeps the
+// focus throughout. Electron documents the type as also putting the window
+// on every Space. For the overlay and the command card, both of which paste
+// into whatever had focus.
+function nonActivating() {
+  return process.platform === "darwin" ? { type: "panel" } : {};
+}
+
 function createAppWindow(role, { webPreferences, ...options }) {
   const win = new BrowserWindow({
     ...options,
@@ -217,6 +230,7 @@ function createOverlay({ onOverlayRendererGone } = {}) {
   restoreOverlayPosition();
   const { x, y } = overlayPosition();
   overlayWindow = createAppWindow("overlay", {
+    ...nonActivating(),
     width: OVERLAY_WIDTH,
     height: OVERLAY_HEIGHT,
     x,
@@ -235,7 +249,9 @@ function createOverlay({ onOverlayRendererGone } = {}) {
     fullscreenable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    // Never steal keyboard focus from the app the user is dictating into.
+    // Never steal keyboard focus from the app the user is dictating into. On
+    // macOS that also takes nonActivating() (above): without it a click on the
+    // card still activates Earheart.
     focusable: false,
     // A focusable:false window shown with showInactive() is never the active
     // window, so on macOS its mouse-downs are swallowed to (try to) activate it
@@ -656,6 +672,7 @@ function openCommand({ onClosed } = {}) {
   }
   const { workArea } = screen.getPrimaryDisplay();
   commandWindow = createAppWindow("command", {
+    ...nonActivating(),
     width: COMMAND_WIDTH,
     height: COMMAND_HEIGHT,
     x: Math.round(workArea.x + (workArea.width - COMMAND_WIDTH) / 2),

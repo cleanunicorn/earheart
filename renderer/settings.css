@@ -286,12 +286,12 @@ main {
   margin-bottom: 0;
 }
 
-/* A card's lead-in paragraph right under its title (Voice commands) keeps
-   the same gap from the first field that fields keep from each other.
-   Anchored on the title so later hints (Usage's estimate note) keep their
-   own spacing. */
-.card > .card-title + .hint + .field,
-.card > .card-title + .hint + .toggle {
+/* A paragraph (Voice commands' intro, Usage's estimate note) or the Tools
+   list followed by a field inside a card keeps the same gap from that field
+   that fields keep from each other. */
+.card > .hint + .field,
+.card > .hint + .toggle,
+#tools-list + .field {
   margin-top: 16px;
 }
 
@@ -1461,7 +1461,6 @@ button.runtime-unload {
 }
 
 .usage-baseline {
-  margin-top: 14px;
   max-width: 220px;
 }
 

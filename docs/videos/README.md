@@ -4,8 +4,8 @@ Two compositions of the same 48-second demo, ready to share on social media:
 
 | Video | Resolution | Aspect ratio |
 | --- | --- | --- |
-| [Horizontal MP4](https://raw.githubusercontent.com/cleanunicorn/earheart/refs/heads/main/docs/videos/earheart-horizontal.mp4) | 1920 × 1080 | 16:9 |
-| [Vertical MP4](https://raw.githubusercontent.com/cleanunicorn/earheart/refs/heads/main/docs/videos/earheart-vertical.mp4) | 1080 × 1920 | 9:16 |
+| [Horizontal MP4](https://raw.githubusercontent.com/earheart-hq/earheart/refs/heads/main/docs/videos/earheart-horizontal.mp4) | 1920 × 1080 | 16:9 |
+| [Vertical MP4](https://raw.githubusercontent.com/earheart-hq/earheart/refs/heads/main/docs/videos/earheart-vertical.mp4) | 1080 × 1920 | 9:16 |
 
 The links download the MP4 files directly; open them in your video player.
 

@@ -137,5 +137,5 @@ The one thing to remember is the same everywhere — you press Enter.
 You press Enter — Earheart pastes, it doesn't submit. The agent can't ask *you*
 a question by voice, and it can't talk back. Ideas for agent workflows are
 tracked under the
-[`agents`](https://github.com/cleanunicorn/earheart/issues?q=is%3Aissue+label%3Aagents)
+[`agents`](https://github.com/earheart-hq/earheart/issues?q=is%3Aissue+label%3Aagents)
 label. Opinions welcome.

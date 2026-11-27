@@ -138,7 +138,7 @@ test("compareVersions orders releases", () => {
 test("assetUrl pins to the release tag by default", () => {
   assert.strictEqual(
     assetUrl(DEFAULT_FEED_BASE, "0.13.0", "Earheart-0.13.0-arm64-mac.zip"),
-    "https://github.com/cleanunicorn/earheart/releases/download/v0.13.0/Earheart-0.13.0-arm64-mac.zip"
+    "https://github.com/earheart-hq/earheart/releases/download/v0.13.0/Earheart-0.13.0-arm64-mac.zip"
   );
 });
 

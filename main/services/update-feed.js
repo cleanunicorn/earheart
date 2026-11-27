@@ -8,7 +8,7 @@
 // ship electron-updater as another runtime dependency, and so every platform
 // installs through the same checksum-verified path (see updates.js).
 
-const REPO_SLUG = "cleanunicorn/earheart";
+const REPO_SLUG = "earheart-hq/earheart";
 const DEFAULT_FEED_BASE = `https://github.com/${REPO_SLUG}/releases/latest/download`;
 const RELEASES_PAGE = `https://github.com/${REPO_SLUG}/releases/latest`;
 

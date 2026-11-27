@@ -27,7 +27,7 @@ cd stt-server && uv run earheart-stt
 Or without cloning, via uv's VCS support:
 
 ```bash
-uvx --from "git+https://github.com/cleanunicorn/earheart#subdirectory=stt-server" earheart-stt
+uvx --from "git+https://github.com/earheart-hq/earheart#subdirectory=stt-server" earheart-stt
 ```
 
 Or with pip:

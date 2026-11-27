@@ -4,9 +4,42 @@
 // keydown time — classic scripts share one global lexical environment, the
 // same arrangement overlay.html uses for transcript.js).
 
-// Prose names the actual platform key; capture fields keep stored notation.
+// How an accelerator reads on this computer: the platform's own key names,
+// never Electron's cross-platform notation ("CommandOrControl+Shift+Space"
+// reads "Ctrl+Shift+Space" on Linux and Windows, "Cmd+Shift+Space" on macOS).
+// Display only: settings keep the stored accelerator, and the capture fields
+// show this form of it. The twin of prettyHotkey in main/util/hotkey-label.js
+// (notifications); test/hotkeys.test.js holds both to the same output.
+const HOTKEY_MODIFIER_NAMES = {
+  commandorcontrol: { darwin: "Cmd", win32: "Ctrl", linux: "Ctrl" },
+  cmdorctrl: { darwin: "Cmd", win32: "Ctrl", linux: "Ctrl" },
+  command: { darwin: "Cmd", win32: "Cmd", linux: "Cmd" },
+  cmd: { darwin: "Cmd", win32: "Cmd", linux: "Cmd" },
+  control: { darwin: "Control", win32: "Ctrl", linux: "Ctrl" },
+  ctrl: { darwin: "Control", win32: "Ctrl", linux: "Ctrl" },
+  alt: { darwin: "Option", win32: "Alt", linux: "Alt" },
+  option: { darwin: "Option", win32: "Alt", linux: "Alt" },
+  altgr: { darwin: "AltGr", win32: "AltGr", linux: "AltGr" },
+  shift: { darwin: "Shift", win32: "Shift", linux: "Shift" },
+  super: { darwin: "Cmd", win32: "Win", linux: "Super" },
+  meta: { darwin: "Cmd", win32: "Win", linux: "Super" },
+};
+const HOTKEY_KEY_NAMES = {
+  num0: "Numpad 0", num1: "Numpad 1", num2: "Numpad 2", num3: "Numpad 3", num4: "Numpad 4",
+  num5: "Numpad 5", num6: "Numpad 6", num7: "Numpad 7", num8: "Numpad 8", num9: "Numpad 9",
+  numdec: "Numpad Decimal", numadd: "Numpad +", numsub: "Numpad -", nummult: "Numpad *", numdiv: "Numpad /",
+};
+
 function displayHotkey(accelerator) {
-  return String(accelerator || "").replace(/CommandOrControl|CmdOrCtrl/gi, platform === "darwin" ? "Cmd" : "Ctrl");
+  if (!accelerator) return "";
+  return String(accelerator)
+    .split("+")
+    .map((part) => {
+      const key = part.trim().toLowerCase();
+      const mod = HOTKEY_MODIFIER_NAMES[key];
+      return mod ? mod[platform] || mod.linux : HOTKEY_KEY_NAMES[key] || part.trim();
+    })
+    .join("+");
 }
 
 const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
@@ -66,7 +99,7 @@ function wireHotkeyCapture(input, { apply, restore }) {
   function endCapture() {
     if (input.classList.contains("capturing")) earheart.send("hotkeys:capture", false);
     input.classList.remove("capturing");
-    input.value = restore();
+    input.value = displayHotkey(restore());
   }
   input.addEventListener("click", startCapture);
   input.addEventListener("blur", endCapture);

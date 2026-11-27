@@ -175,13 +175,13 @@ const hotkeyInput = $("hotkey");
 wireHotkeyCapture(hotkeyInput, {
   apply: (accelerator) => {
     current.hotkey = accelerator;
-    hotkeyInput.value = accelerator;
+    hotkeyInput.value = displayHotkey(accelerator);
   },
   restore: () => current?.hotkey || "",
 });
 $("hotkey-clear").addEventListener("click", () => {
   current.hotkey = defaults.hotkey;
-  hotkeyInput.value = defaults.hotkey;
+  hotkeyInput.value = displayHotkey(defaults.hotkey);
 });
 
 // The pause hotkey is optional: Clear unbinds it entirely (empty = not
@@ -190,7 +190,7 @@ const pauseHotkeyInput = $("pause-hotkey");
 wireHotkeyCapture(pauseHotkeyInput, {
   apply: (accelerator) => {
     current.pauseHotkey = accelerator;
-    pauseHotkeyInput.value = accelerator;
+    pauseHotkeyInput.value = displayHotkey(accelerator);
   },
   restore: () => current?.pauseHotkey || "",
 });
@@ -204,7 +204,7 @@ const discardHotkeyInput = $("discard-hotkey");
 wireHotkeyCapture(discardHotkeyInput, {
   apply: (accelerator) => {
     current.discardHotkey = accelerator;
-    discardHotkeyInput.value = accelerator;
+    discardHotkeyInput.value = displayHotkey(accelerator);
   },
   restore: () => current?.discardHotkey || "",
 });
@@ -215,7 +215,7 @@ $("discard-hotkey-clear").addEventListener("click", () => {
 
 const paletteHotkeyInput = $("palette-hotkey");
 wireHotkeyCapture(paletteHotkeyInput, {
-  apply: accelerator => { current.paletteHotkey = accelerator; paletteHotkeyInput.value = accelerator; },
+  apply: accelerator => { current.paletteHotkey = accelerator; paletteHotkeyInput.value = displayHotkey(accelerator); },
   restore: () => current?.paletteHotkey || "",
 });
 $("palette-hotkey-clear").addEventListener("click", () => { current.paletteHotkey = ""; paletteHotkeyInput.value = ""; });
@@ -235,7 +235,7 @@ const correctHotkeyInput = $("correct-hotkey");
 wireHotkeyCapture(correctHotkeyInput, {
   apply: (accelerator) => {
     current.correctHotkey = accelerator;
-    correctHotkeyInput.value = accelerator;
+    correctHotkeyInput.value = displayHotkey(accelerator);
   },
   restore: () => current?.correctHotkey || "",
 });
@@ -249,7 +249,7 @@ const commandsHotkeyInput = $("commands-hotkey");
 wireHotkeyCapture(commandsHotkeyInput, {
   apply: (accelerator) => {
     current.commands = { ...current.commands, hotkey: accelerator };
-    commandsHotkeyInput.value = accelerator;
+    commandsHotkeyInput.value = displayHotkey(accelerator);
   },
   restore: () => current?.commands?.hotkey || "",
 });
@@ -442,16 +442,16 @@ function showOutputMode(output) {
 }
 
 function populate() {
-  hotkeyInput.value = current.hotkey;
+  hotkeyInput.value = displayHotkey(current.hotkey);
   $("activation-mode").value = current.activationMode || "toggle";
   $("double-tap-window").value = current.doubleTapWindowMs ?? 500;
   $("double-tap-window-field").hidden = $("activation-mode").value !== "double-tap";
-  pauseHotkeyInput.value = current.pauseHotkey || "";
-  discardHotkeyInput.value = current.discardHotkey || "";
-  correctHotkeyInput.value = current.correctHotkey || "";
-  paletteHotkeyInput.value = current.paletteHotkey || "";
+  pauseHotkeyInput.value = displayHotkey(current.pauseHotkey || "");
+  discardHotkeyInput.value = displayHotkey(current.discardHotkey || "");
+  correctHotkeyInput.value = displayHotkey(current.correctHotkey || "");
+  paletteHotkeyInput.value = displayHotkey(current.paletteHotkey || "");
   $("commands-shortcut").textContent = displayHotkey("CommandOrControl+K");
-  commandsHotkeyInput.value = current.commands?.hotkey || "";
+  commandsHotkeyInput.value = displayHotkey(current.commands?.hotkey || "");
   $("commands-engine").value = current.commands?.engine === "remote" ? "remote" : "builtin";
   $("commands-url").value = current.commands?.baseUrl || "";
   $("commands-key").value = current.commands?.apiKey || "";

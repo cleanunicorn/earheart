@@ -389,7 +389,7 @@ app.whenReady().then(async () => {
     );
     check(
       "the saved discard hotkey and its launch failure show under its field on open",
-      hotkeyRows.discardField === "CommandOrControl+Alt+D" && hotkeyRows.discard === launchDiscardError,
+      hotkeyRows.discardField === (process.platform === "darwin" ? "Cmd+Option+D" : "Ctrl+Alt+D") && hotkeyRows.discard === launchDiscardError,
       JSON.stringify(hotkeyRows)
     );
     // A failure about an accelerator the field no longer holds (a rejected
@@ -2492,7 +2492,7 @@ app.whenReady().then(async () => {
             document.getElementById("pause-hotkey").value`),
           "a captured hotkey did not clear Saved"
         );
-        check("capturing a hotkey after a Save clears Saved", /Alt\+Shift\+F9$/.test(captured), JSON.stringify(captured));
+        check("capturing a hotkey after a Save clears Saved", /\+Shift\+F9$/.test(captured) && !/CommandOrControl/.test(captured), JSON.stringify(captured));
         await clickClose(saveWin);
         check(
           "Close closes Settings without saving the edit",

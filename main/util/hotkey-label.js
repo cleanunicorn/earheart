@@ -1,10 +1,13 @@
 // Turn a stored Electron accelerator into something a person reads.
 //
-// Settings and the wizard show the accelerator verbatim ("CommandOrControl+
-// Shift+Space") because that is what gets registered, but a notification is
-// prose: it has to name the keys the way the platform's own menus do. Hotkey
-// error messages are prose too (see hotkeys.js).
+// Electron stores cross-platform notation ("CommandOrControl+Shift+Space"),
+// but people read the keys the way the platform's own menus name them.
+// Notifications and hotkey errors use this (see hotkeys.js); Settings and the
+// wizard use its twin, displayHotkey in renderer/hotkey-capture.js, which
+// test/hotkeys.test.js holds to the same output.
 //
+const { isWaylandSession } = require("./session");
+
 // Pure string work, kept out of main.js so it can be tested directly —
 // main.js binds Electron at module scope and cannot be required from a test.
 
@@ -65,12 +68,13 @@ function prettyHotkey(accelerator, platform = process.platform) {
 
 /**
  * Why a hotkey may have failed to register, pointing only at help the user can
- * find on this platform: the Wayland note in Settings exists on Linux alone.
+ * find here: Settings shows its Wayland note only in a Linux Wayland session.
  * @param {string} [platform] process.platform value; defaults to this machine
+ * @param {boolean} [wayland] a Wayland session; defaults to this machine's
  * @returns {string} a clause to put inside parentheses after the error
  */
-function registrationHint(platform = process.platform) {
-  return platform === "linux"
+function registrationHint(platform = process.platform, wayland = isWaylandSession()) {
+  return platform === "linux" && wayland
     ? "already in use, or your desktop blocks global shortcuts — see the Wayland note in Settings"
     : "already in use by another app";
 }

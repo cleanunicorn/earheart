@@ -83,13 +83,13 @@ const hotkeyInput = $("hotkey");
 wireHotkeyCapture(hotkeyInput, {
   apply: (accelerator) => {
     current.hotkey = accelerator;
-    hotkeyInput.value = accelerator;
+    hotkeyInput.value = displayHotkey(accelerator);
   },
   restore: () => current?.hotkey || "",
 });
 $("hotkey-clear").addEventListener("click", () => {
   current.hotkey = defaults.hotkey;
-  hotkeyInput.value = defaults.hotkey;
+  hotkeyInput.value = displayHotkey(defaults.hotkey);
 });
 
 /* ---------- microphone list ---------- */
@@ -568,7 +568,7 @@ async function finish() {
   modelStatus = await earheart.invoke("models:status");
   baseline = sharedBaseline(current);
 
-  hotkeyInput.value = current.hotkey;
+  hotkeyInput.value = displayHotkey(current.hotkey);
   $("cleanup-enabled").checked = current.cleanup.enabled;
   // An earlier choice stands when setup is run again (#365).
   $("duck-other-audio").checked = current.audio.duckOtherAudio === true;

@@ -10,6 +10,7 @@ const { mergeAliases, rememberAlias, normalizeAliases } = require("../renderer/a
 const { mergeSnippets, validateSnippets } = require("../renderer/snippets");
 const logger = require("./util/logger");
 const deliver = require("./output/deliver");
+const { isWaylandSession } = require("./util/session");
 const { deliverText } = require("./output/single-line");
 const history = require("./history");
 const { DISABLED } = require("./agent-api");
@@ -446,7 +447,7 @@ function init({ applyHotkeys, suspendHotkeys, onSettingsChanged, getHotkeyStatus
       platform: process.platform,
       // A Wayland session, where apps can't grab global keys: Settings and the
       // wizard show the desktop-shortcut notes only there.
-      wayland: process.platform === "linux" && deliver.isWayland?.() === true,
+      wayland: process.platform === "linux" && isWaylandSession(),
       version: app.getVersion(),
       // The last hotkey registration (launch or save), so Settings can show a
       // shortcut that failed at launch as soon as it opens. Read-only: asking

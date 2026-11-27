@@ -6,10 +6,10 @@
 // wizard use its twin, displayHotkey in renderer/hotkey-capture.js, which
 // test/hotkeys.test.js holds to the same output.
 //
-const { isWaylandSession } = require("./session");
-
 // Pure string work, kept out of main.js so it can be tested directly —
 // main.js binds Electron at module scope and cannot be required from a test.
+
+const { isWaylandSession } = require("./session");
 
 // Modifier spellings per platform. Electron accepts several aliases for the
 // same modifier (CommandOrControl/CmdOrCtrl, Command/Cmd, Control/Ctrl,

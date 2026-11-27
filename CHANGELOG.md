@@ -6,6 +6,10 @@ release.yml turns it into the `release-notes.json` asset the in-app updater
 shows before you update, and the app ships this file so it can show what
 changed right after it updates.
 
+## v0.57.3 — 2026-11-27
+
+- Keep the section index on the left in small windows and fix the audit findings (#413)
+
 ## v0.57.2 — 2026-11-27
 
 - Keep focus in the user's app when the overlay is clicked on macOS (#411)

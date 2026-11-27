@@ -1623,11 +1623,24 @@ app.whenReady().then(async () => {
       await sleep(300);
       // A real mouse click at an element's centre, through Chromium's input
       // pipeline rather than a synthetic DOM click.
+      // Waits until the target has held still for two frames first: closing
+      // the confirmation hands focus back and the panel can still be settling,
+      // and a click aimed at where the element was a moment ago misses it.
       const realClick = async (selector) => {
-        const rect = await js(`(() => {
-          const r = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect();
-          return r ? [r.x + r.width / 2, r.y + r.height / 2] : null;
-        })()`);
+        const rect = await js(`new Promise((resolve) => {
+          const el = document.querySelector(${JSON.stringify(selector)});
+          if (!el) return resolve(null);
+          let last = "", still = 0, frames = 0;
+          const tick = () => {
+            const r = el.getBoundingClientRect();
+            const now = [r.x, r.y, r.width, r.height].map(Math.round).join(",");
+            still = now === last ? still + 1 : 0;
+            last = now;
+            if (still >= 2 || ++frames > 120) return resolve([r.x + r.width / 2, r.y + r.height / 2]);
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        })`);
         if (!rect) return false;
         const [x, y] = rect.map(Math.round);
         win.webContents.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });

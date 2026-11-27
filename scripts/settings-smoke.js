@@ -461,6 +461,23 @@ app.whenReady().then(async () => {
           viewport: innerHeight,
           horizontalOverflow: root.scrollWidth - root.clientWidth,
         };
+        // When the page itself overflows, say what is doing it: the body's own
+        // height, and any element reaching past the viewport outside a scroller.
+        if (result.pageOverflow > 0) {
+          result.bodyHeight = document.body.getBoundingClientRect().height;
+          result.escaping = [...document.querySelectorAll("body *")]
+            .filter((el) => {
+              const box = el.getBoundingClientRect();
+              if (!box.height || box.bottom + window.scrollY <= innerHeight + 1) return false;
+              for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+                if (/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)) return false;
+              }
+              return true;
+            })
+            .slice(0, 6)
+            .map((el) => el.tagName + "#" + el.id + "." + el.className + " " + getComputedStyle(el).position +
+              " h=" + Math.round(el.getBoundingClientRect().height));
+        }
         host.scrollTop = 0;
         host.style.scrollBehavior = "";
         return result;

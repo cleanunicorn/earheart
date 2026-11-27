@@ -18,7 +18,7 @@ function readyNotice(hotkey) {
   const combo = prettyHotkey(hotkey);
   return {
     title: t("notice.ready.title"),
-    body: combo ? t("notice.ready.pressHotkey", { hotkey: combo }) : t("notice.ready.openTray"),
+    body: combo ? t("notice.ready.pressHotkey", { hotkey: combo }) : t(process.platform === "darwin" ? "notice.ready.openMenuBar" : "notice.ready.openTray"),
   };
 }
 

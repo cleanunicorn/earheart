@@ -214,6 +214,8 @@ function loudWav(seconds) {
 }
 
 const { countWords: realCountWords } = require("../main/usage");
+// The failed-take notice names the tray menu, or the menu bar icon on macOS.
+const TRAY = process.platform === "darwin" ? "the menu bar icon" : "the tray menu";
 
 const exited = () => Object.assign(new Error("engine process exited"), { code: "ENGINE_EXITED", exitCode: 134 });
 
@@ -1066,7 +1068,7 @@ test("pipeline: a failed transcription notifies, and the click opens Settings", 
   assert.strictEqual(note.title, "Earheart: transcription failed, recording kept");
   assert.strictEqual(
     note.body,
-    "Retry it from the tray menu or the overlay, or run earheart --retry, within 10 minutes. Couldn't reach api.example.test"
+    `Retry it from ${TRAY} or the overlay, or run earheart --retry, within 10 minutes. Couldn't reach api.example.test`
   );
   assertClickOpensSettings(rig, note);
 });
@@ -1247,7 +1249,7 @@ test("pipeline: an arbitrary error never reaches the notification text (#349)", 
   const { title, body } = rig.log.notifications[0];
   assert.ok(body.length <= BODY_MAX);
   // The retry route leads, then the generic text — never the raw exception.
-  assert.ok(body.startsWith("Retry it from the tray menu"), body);
+  assert.ok(body.startsWith(`Retry it from ${TRAY}`), body);
   assert.ok(body.endsWith(GENERIC_ERROR), body);
   assert.ok(!(title + body).includes(SECRET));
 });

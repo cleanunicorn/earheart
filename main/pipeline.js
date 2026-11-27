@@ -1107,7 +1107,10 @@ async function process(sid, wavArrayBuffer, { retry = false, purpose = "dictatio
       const remaining = minutes < 1 ? t("pipeline.lessThanMinute") : t("pipeline.minutes", { count: minutes });
       notify({
         title: earlier ? t("pipeline.failedEarlierKept.title") : t("pipeline.failedKept.title"),
-        body: t("pipeline.failedKept.body", { remaining, reason: describeError(err) }),
+        body: t(process.platform === "darwin" ? "pipeline.failedKept.bodyMac" : "pipeline.failedKept.body", {
+          remaining,
+          reason: describeError(err),
+        }),
       });
     } else {
       notify({ title: t("pipeline.failedNothing.title"), body: describeError(err) });

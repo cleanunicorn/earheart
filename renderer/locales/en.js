@@ -60,6 +60,7 @@
     "notice.ready.title": "Earheart is ready",
     "notice.ready.pressHotkey": "Press {hotkey} to dictate.",
     "notice.ready.openTray": "Open the tray menu to get started.",
+    "notice.ready.openMenuBar": "Click Earheart's menu bar icon to get started.",
     "notice.sttUnknown.title": "Earheart: no speech model available",
     "notice.sttUnknown.body":
       "The selected speech model isn't available. Choose one in Settings → Speech-to-text. Click to open Settings.",
@@ -120,6 +121,8 @@
     "pipeline.failedEarlierKept.title": "Earheart: transcription failed, earlier recording still kept",
     "pipeline.failedKept.body":
       "Retry it from the tray menu or the overlay, or run earheart --retry, within {remaining}. {reason}",
+    "pipeline.failedKept.bodyMac":
+      "Retry it from the menu bar icon or the overlay, or run earheart --retry, within {remaining}. {reason}",
     "pipeline.failedNothing.title": "Earheart: dictation failed, nothing was delivered",
     "pipeline.lessThanMinute": "less than a minute",
     "pipeline.minutes": { one: "{count} minute", other: "{count} minutes" },
@@ -140,6 +143,7 @@
     "overlay.resume": "Resume",
     "overlay.dismiss": "Dismiss",
     "overlay.dismissKeep": "Dismiss — the recording stays in the tray menu",
+    "overlay.dismissKeepMac": "Dismiss — the recording stays in the menu bar icon's menu",
     "overlay.discardTitle": "Discard — nothing is typed",
     "overlay.discardTitleHotkey": "Discard — nothing is typed ({hotkey})",
     "overlay.discardLabel": "Discard dictation",

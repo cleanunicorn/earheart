@@ -360,7 +360,7 @@ function notifyAvailable(version) {
       body:
         headline ||
         (state.method === "install"
-          ? "Update from the prompt on screen, the tray menu, or Settings → Advanced."
+          ? `Update from the prompt on screen, ${process.platform === "darwin" ? "the menu bar icon" : "the tray menu"}, or Settings → Advanced.`
           : "Download it from the releases page (see Settings → Advanced)."),
     });
   } catch (err) {

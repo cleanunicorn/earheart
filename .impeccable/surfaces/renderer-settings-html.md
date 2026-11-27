@@ -24,12 +24,14 @@ retired Tape Transport "service panel"):** **The Quiet Transcription Bar on a
 framed window** — the overlay's committed world (see DESIGN.md) applied to the
 settings page and wizard. Structure carried over intact from the prior
 direction (it was never the problem): one continuous scrolling page with a
-sticky index on the left (scroll spy, glide on click, docks horizontally under
-600px), fixed footer commit row; wizard steps centered in a fixed frame.
+sticky index on the left (scroll spy, glide on click, narrows to a 56px icon
+rail under 600px — changed 2026-11-26, the horizontal dock clipped entries and
+spent the short window's height), fixed footer commit row; wizard steps centered in a fixed frame.
 Material language replaced wholesale: solid near-black ink #18181b, white-wash
 cards (white 0.04–0.05) with hairline edges, sentence-case section headings
 running into a hairline, plain solid inputs (#101013, 3:1 boundary #6b6b74),
-fully-rounded pill buttons, one filled white Save (the overlay's Done-key
+6px-radius buttons and fields (pills dropped 2026-11-27: text at a pill's
+curved edge looked crowded or adrift), one filled white Save (the overlay's Done-key
 grammar). **Chosen things are white**: the active index entry's wash, selected
 option rows, radio cores, checkbox fills, engaged switch tracks, the selected
 segment. Downloads and update bars fill white (One Voice Rule — the app

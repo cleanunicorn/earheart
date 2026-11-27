@@ -199,6 +199,10 @@ function check(set, channel) {
 }
 
 contextBridge.exposeInMainWorld("earheart", {
+  // This machine's OS (a process.platform value), for copy that names the
+  // platform's own places — the tray, or on macOS the menu bar. Not a secret,
+  // and read here because the page itself never sees `process`.
+  platform: process.platform,
   on(channel, callback) {
     check(LISTEN, channel);
     const handler = (event, payload) => callback(payload);

@@ -1500,7 +1500,8 @@ function onPipelineStatus({ status, detail }) {
         takeNote.textContent = tr(detail.failedTake.earlier ? "overlay.earlierKept" : "overlay.recordingKept", { remaining });
         takeActions.hidden = false;
         // ✕ only dismisses the card; next to a Discard pill, say what stays.
-        cancelBtn.title = tr("overlay.dismissKeep");
+        // The tray icon is the menu bar icon on macOS.
+        cancelBtn.title = tr(earheart.platform === "darwin" ? "overlay.dismissKeepMac" : "overlay.dismissKeep");
         syncOverlayHeight();
       }
       break;

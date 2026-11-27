@@ -1345,12 +1345,12 @@ test("prettyHotkey names modifiers the way each platform does", () => {
   assert.strictEqual(prettyHotkey("", "linux"), "");
 });
 
-// The Wayland note only exists in Settings on Linux (renderer/settings.js hides
-// it elsewhere), so the hint must not point at it on macOS or Windows.
+// Settings shows its Wayland note only in a Linux Wayland session
+// (renderer/platform-context.js), so the hint points at it only there.
 test("registrationHint points only at help that exists on the platform", () => {
-  assert.match(registrationHint("linux"), /Wayland note in Settings/);
-  for (const platform of ["darwin", "win32"]) {
-    const hint = registrationHint(platform);
+  assert.match(registrationHint("linux", true), /Wayland note in Settings/);
+  for (const [platform, wayland] of [["linux", false], ["darwin", false], ["win32", false]]) {
+    const hint = registrationHint(platform, wayland);
     assert.doesNotMatch(hint, /Wayland/);
     assert.match(hint, /already in use/);
   }
@@ -1365,6 +1365,31 @@ test("onboarding hotkey prose names the platform key and preserves edited shortc
     global.platform = "darwin";
     assert.strictEqual(displayHotkey("CmdOrCtrl+Shift+Space"), "Cmd+Shift+Space");
     assert.strictEqual(displayHotkey("F8"), "F8");
+    // Only this computer's key names, never Electron's cross-platform ones.
+    assert.strictEqual(displayHotkey("CommandOrControl+Alt+D"), "Cmd+Option+D");
+    assert.strictEqual(displayHotkey("Control+Shift+Space"), "Control+Shift+Space");
+    global.platform = "win32";
+    assert.strictEqual(displayHotkey("CommandOrControl+Alt+D"), "Ctrl+Alt+D");
+    assert.strictEqual(displayHotkey("Super+Shift+Space"), "Win+Shift+Space");
+    global.platform = "linux";
+    assert.strictEqual(displayHotkey("Super+Alt+Plus"), "Super+Alt+Plus");
+    assert.strictEqual(displayHotkey(""), "");
+  } finally { global.platform = previous; }
+});
+
+test("Settings shows a hotkey exactly as notifications name it, on every OS", () => {
+  const { displayHotkey } = require("../renderer/hotkey-capture");
+  const previous = global.platform;
+  const samples = ["CommandOrControl+Shift+Space", "CmdOrCtrl+Alt+D", "Control+Option+F9", "Super+num5",
+    "Meta+Shift+Up", "Command+AltGr+K", "Alt+numadd", "F8"];
+  try {
+    for (const os of ["linux", "darwin", "win32"]) {
+      global.platform = os;
+      for (const accelerator of samples) {
+        assert.strictEqual(displayHotkey(accelerator), prettyHotkey(accelerator, os), `${os}: ${accelerator}`);
+        assert.doesNotMatch(displayHotkey(accelerator), /CommandOrControl|CmdOrCtrl/i);
+      }
+    }
   } finally { global.platform = previous; }
 });
 

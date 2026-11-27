@@ -214,6 +214,8 @@ function loudWav(seconds) {
 }
 
 const { countWords: realCountWords } = require("../main/usage");
+// The failed-take notice names the tray menu, or the menu bar icon on macOS.
+const TRAY = process.platform === "darwin" ? "the menu bar icon" : "the tray menu";
 
 const exited = () => Object.assign(new Error("engine process exited"), { code: "ENGINE_EXITED", exitCode: 134 });
 
@@ -862,7 +864,7 @@ test("pipeline: a broken snapshot's words fill the range a failed final piece le
 test("pipeline: a tail under 0.05 s after the committed text is not decoded", async () => {
   // Stop landed right on a chunk boundary: the committed text IS the
   // transcript. The early return also has to keep the { text, partial } shape,
-  // or process() reads the dictation as empty.
+  // or processTake() reads the dictation as empty.
   const framesWav = (frames) => {
     const samples = new Int16Array(frames);
     for (let i = 0; i < frames; i++) samples[i] = i % 2 ? 8000 : -8000;
@@ -1066,7 +1068,7 @@ test("pipeline: a failed transcription notifies, and the click opens Settings", 
   assert.strictEqual(note.title, "Earheart: transcription failed, recording kept");
   assert.strictEqual(
     note.body,
-    "Retry it from the tray menu or the overlay, or run earheart --retry, within 10 minutes. Couldn't reach api.example.test"
+    `Retry it from ${TRAY} or the overlay, or run earheart --retry, within 10 minutes. Couldn't reach api.example.test`
   );
   assertClickOpensSettings(rig, note);
 });
@@ -1247,7 +1249,7 @@ test("pipeline: an arbitrary error never reaches the notification text (#349)", 
   const { title, body } = rig.log.notifications[0];
   assert.ok(body.length <= BODY_MAX);
   // The retry route leads, then the generic text — never the raw exception.
-  assert.ok(body.startsWith("Retry it from the tray menu"), body);
+  assert.ok(body.startsWith(`Retry it from ${TRAY}`), body);
   assert.ok(body.endsWith(GENERIC_ERROR), body);
   assert.ok(!(title + body).includes(SECRET));
 });
@@ -1269,7 +1271,7 @@ test("pipeline: a coded service error is formatted from its key and clipped para
 
 /* ---------------- never lose the words: cancel, stale and empty paths (#196) ---------------- */
 
-// Let process() run to its end after the promise it is awaiting settles: its
+// Let processTake() run to its end after the promise it is awaiting settles: its
 // continuations are microtasks, and a macrotask runs only once they drain.
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -2034,7 +2036,7 @@ for (const [seconds, duration] of [[5, "less than a minute"], [59, "less than a 
     await rig.dictate(speechWav(1));
     assert.deepStrictEqual(rig.log.failedTakeCards.at(-1), { expiresInSec: seconds, earlier: true });
     assert.strictEqual(rig.log.notifications.at(-1).body,
-      `Retry it from the tray menu or the overlay, or run earheart --retry, within ${duration}. ${GENERIC_ERROR}`);
+      `Retry it from ${TRAY} or the overlay, or run earheart --retry, within ${duration}. ${GENERIC_ERROR}`);
     assert.strictEqual(rig.pipeline.getFailedTake().expiresAt, expiresAt, "the copy must not renew retention");
     rig.pipeline.discardFailedTake();
   });
@@ -2511,7 +2513,7 @@ test("pipeline: a usage failure never blocks delivery or shows an error", async 
 });
 
 test("pipeline: only a delivered dictation counts — retranscribe and the live preview never call usage", () => {
-  // One call site, in process() after deliver(): History's Retranscribe
+  // One call site, in processTake() after deliver(): History's Retranscribe
   // (retranscribe.js) and live-preview chunks never reach it.
   const mainDir = path.join(__dirname, "..", "main");
   const callers = [];
@@ -2523,7 +2525,7 @@ test("pipeline: only a delivered dictation counts — retranscribe and the live 
   }
   assert.deepStrictEqual(callers, [["pipeline.js", 1]]);
   const source = fs.readFileSync(pipelinePath, "utf8");
-  const processBody = source.slice(source.indexOf("async function process("), source.indexOf("function retranscribe("));
+  const processBody = source.slice(source.indexOf("async function processTake("), source.indexOf("function retranscribe("));
   const recordAt = processBody.indexOf("usage.record(");
   assert.ok(recordAt > processBody.indexOf("await deliver("), "counted after delivery");
 });

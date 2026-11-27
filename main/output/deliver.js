@@ -17,6 +17,9 @@
 //             tools exist we degrade to clipboard-only and tell the caller.
 
 const { clipboard } = require("electron");
+const { isWaylandSession } = require("../util/session");
+const { trayOrMenuBar } = require("../util/tray-place");
+const { t } = require("../i18n");
 const fs = require("node:fs");
 const logger = require("../util/logger");
 const { execFileAsync } = require("../util/exec-file");
@@ -121,9 +124,7 @@ function commandExists(cmd) {
 }
 
 function isWayland() {
-  return (
-    process.env.XDG_SESSION_TYPE === "wayland" || !!process.env.WAYLAND_DISPLAY
-  );
+  return isWaylandSession();
 }
 
 async function simulatePasteLinux() {
@@ -326,13 +327,14 @@ function clipboardTakenOver(text) {
 }
 
 // What the user is told when the paste was held back: the newer copy is
-// theirs, and the transcript is a click away instead.
-const CLIPBOARD_CHANGED = {
-  note: "Copy it from the tray menu",
-  hint:
-    "Another app changed the clipboard before Earheart could paste, so nothing was pasted and that copy was left as it was. " +
-    "Copy the transcript from the tray menu (Copy last transcription).",
-};
+// theirs, and the transcript is a click away instead — in the tray menu, or on
+// macOS from the menu bar icon. Read at delivery time, not load time.
+function clipboardChanged() {
+  return trayOrMenuBar({
+    tray: { note: t("deliver.clipboardChanged.note"), hint: t("deliver.clipboardChanged.hint") },
+    menuBar: { note: t("deliver.clipboardChanged.noteMac"), hint: t("deliver.clipboardChanged.hintMac") },
+  });
+}
 
 // The restore armed by the last paste: `{ timer, text, snap }`, where `text` is
 // the transcript it put on the clipboard and `snap` what it promised to put
@@ -404,7 +406,7 @@ async function deliver(text, cfg, signal, { targetApp = null } = {}) {
     repairPastePermissionsOnce();
     // A newer copy can arrive during the delay even when paste permission is
     // off. Report it so the pipeline keeps the transcript available to copy.
-    if (clipboardTakenOver(text)) return { method: "clipboard-changed", ...CLIPBOARD_CHANGED };
+    if (clipboardTakenOver(text)) return { method: "clipboard-changed", ...clipboardChanged() };
     return { method: "clipboard", ...ACCESSIBILITY_OFF };
   }
   // Last moment before the keystroke: is what we'd paste still ours? If not,
@@ -412,7 +414,7 @@ async function deliver(text, cfg, signal, { targetApp = null } = {}) {
   // clipboard is no longer ours to put back.
   if (clipboardTakenOver(text)) {
     logger.warn("auto-paste skipped: the clipboard changed during the paste delay");
-    return { method: "clipboard-changed", ...CLIPBOARD_CHANGED };
+    return { method: "clipboard-changed", ...clipboardChanged() };
   }
   let outcome;
   try {

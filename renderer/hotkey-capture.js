@@ -4,9 +4,16 @@
 // keydown time — classic scripts share one global lexical environment, the
 // same arrangement overlay.html uses for transcript.js).
 
-// Prose names the actual platform key; capture fields keep stored notation.
+// How an accelerator reads on this computer ("Ctrl+Shift+Space", or
+// "Cmd+Shift+Space" on macOS), from the table renderer/hotkey-names.js shares
+// with main's notifications. Display only: settings keep the stored
+// accelerator, and the capture fields show this form of it. Pages load
+// hotkey-names.js first; under require() (unit tests) it is required here.
+const hotkeyNames =
+  typeof EarheartHotkeyNames !== "undefined" ? EarheartHotkeyNames : require("./hotkey-names");
+
 function displayHotkey(accelerator) {
-  return String(accelerator || "").replace(/CommandOrControl|CmdOrCtrl/gi, platform === "darwin" ? "Cmd" : "Ctrl");
+  return hotkeyNames.formatHotkey(accelerator, platform);
 }
 
 const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
@@ -66,7 +73,7 @@ function wireHotkeyCapture(input, { apply, restore }) {
   function endCapture() {
     if (input.classList.contains("capturing")) earheart.send("hotkeys:capture", false);
     input.classList.remove("capturing");
-    input.value = restore();
+    input.value = displayHotkey(restore());
   }
   input.addEventListener("click", startCapture);
   input.addEventListener("blur", endCapture);

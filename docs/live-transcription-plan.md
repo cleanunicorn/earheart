@@ -48,7 +48,7 @@ hotkey ─▶ pipeline.toggle()                         (main/pipeline.js)
    overlay records mic, buffers chunks[]            (renderer/overlay.js)
             │  on stop: encodeWav() ─▶ audio:captured
             ▼
-   pipeline.process(): transcribe ─▶ cleanup ─▶ deliver   (main/pipeline.js)
+   pipeline.processTake(): transcribe ─▶ cleanup ─▶ deliver   (main/pipeline.js)
             │
    builtin engine, utilityProcess worker            (main/engines/engine-worker.js)
 ```
@@ -151,7 +151,7 @@ keeps the main line from flickering.
        care about the latest audio, and queueing would lag further behind real
        time).
      - Run `runTranscribe(wav, cfg.stt, partialSignal)` on a **separate abort
-       scope** from `process()`'s `abortController`, so a partial decode never
+       scope** from `processTake()`'s `abortController`, so a partial decode never
        collides with or cancels the final transcription.
      - On success, store the latest `raw` partial and, if still the same session
        and still recording, send `pipeline:partial { kind: "raw", text }` to the
@@ -169,7 +169,7 @@ keeps the main line from flickering.
      STT; a cleanup in flight blocks a new one.
    - Pass the `livePreview` flag into the `record:start` payload in
      `startRecording()` (`pipeline.js`).
-   - In `process()` (`pipeline.js`), cancel/ignore any in-flight partial
+   - In `processTake()` (`pipeline.js`), cancel/ignore any in-flight partial
      **decode and cleanup** before the final transcribe + cleanup so they don't
      overlap on the single-instance engine worker.
 

@@ -1,76 +1,37 @@
 // Turn a stored Electron accelerator into something a person reads.
 //
-// Settings and the wizard show the accelerator verbatim ("CommandOrControl+
-// Shift+Space") because that is what gets registered, but a notification is
-// prose: it has to name the keys the way the platform's own menus do. Hotkey
-// error messages are prose too (see hotkeys.js).
+// Electron stores cross-platform notation ("CommandOrControl+Shift+Space"),
+// but people read the keys the way the platform's own menus name them.
+// Notifications and hotkey errors use this (see hotkeys.js); Settings and the
+// wizard use displayHotkey in renderer/hotkey-capture.js. Both read the one
+// table in renderer/hotkey-names.js.
 //
 // Pure string work, kept out of main.js so it can be tested directly —
 // main.js binds Electron at module scope and cannot be required from a test.
 
-// Modifier spellings per platform. Electron accepts several aliases for the
-// same modifier (CommandOrControl/CmdOrCtrl, Command/Cmd, Control/Ctrl,
-// Alt/Option, Super/Meta), so every alias maps here — a hand-edited
-// settings.json is as valid an input as one the capture field wrote.
-const MODIFIERS = {
-  commandorcontrol: { darwin: "Cmd", win32: "Ctrl", linux: "Ctrl" },
-  cmdorctrl: { darwin: "Cmd", win32: "Ctrl", linux: "Ctrl" },
-  command: { darwin: "Cmd", win32: "Cmd", linux: "Cmd" },
-  cmd: { darwin: "Cmd", win32: "Cmd", linux: "Cmd" },
-  control: { darwin: "Control", win32: "Ctrl", linux: "Ctrl" },
-  ctrl: { darwin: "Control", win32: "Ctrl", linux: "Ctrl" },
-  alt: { darwin: "Option", win32: "Alt", linux: "Alt" },
-  option: { darwin: "Option", win32: "Alt", linux: "Alt" },
-  altgr: { darwin: "AltGr", win32: "AltGr", linux: "AltGr" },
-  shift: { darwin: "Shift", win32: "Shift", linux: "Shift" },
-  super: { darwin: "Cmd", win32: "Win", linux: "Super" },
-  meta: { darwin: "Cmd", win32: "Win", linux: "Super" },
-};
-
-const KEYS = Object.assign(Object.create(null), {
-  num0: "Numpad 0",
-  num1: "Numpad 1",
-  num2: "Numpad 2",
-  num3: "Numpad 3",
-  num4: "Numpad 4",
-  num5: "Numpad 5",
-  num6: "Numpad 6",
-  num7: "Numpad 7",
-  num8: "Numpad 8",
-  num9: "Numpad 9",
-  numdec: "Numpad Decimal",
-  numadd: "Numpad +",
-  numsub: "Numpad -",
-  nummult: "Numpad *",
-  numdiv: "Numpad /",
-});
+const { isWaylandSession } = require("./session");
+const { formatHotkey } = require("../../renderer/hotkey-names");
 
 /**
- * Human-readable form of an Electron accelerator.
+ * Human-readable form of an Electron accelerator (renderer/hotkey-names.js
+ * holds the table, shared with the Settings and wizard capture fields).
  * @param {string} accelerator e.g. "CommandOrControl+Shift+Space"
  * @param {string} [platform] process.platform value; defaults to this machine
  * @returns {string} e.g. "Ctrl+Shift+Space" ("" for an unbound hotkey)
  */
 function prettyHotkey(accelerator, platform = process.platform) {
-  if (!accelerator) return "";
-  // Unknown parts (the key itself: "Space", "K", "Up") pass through as typed.
-  return accelerator
-    .split("+")
-    .map((part) => {
-      const mod = MODIFIERS[part.trim().toLowerCase()];
-      return mod ? mod[platform] || mod.linux : KEYS[part.trim().toLowerCase()] || part.trim();
-    })
-    .join("+");
+  return formatHotkey(accelerator, platform);
 }
 
 /**
  * Why a hotkey may have failed to register, pointing only at help the user can
- * find on this platform: the Wayland note in Settings exists on Linux alone.
+ * find here: Settings shows its Wayland note only in a Linux Wayland session.
  * @param {string} [platform] process.platform value; defaults to this machine
+ * @param {boolean} [wayland] a Wayland session; defaults to this machine's
  * @returns {string} a clause to put inside parentheses after the error
  */
-function registrationHint(platform = process.platform) {
-  return platform === "linux"
+function registrationHint(platform = process.platform, wayland = isWaylandSession()) {
+  return platform === "linux" && wayland
     ? "already in use, or your desktop blocks global shortcuts — see the Wayland note in Settings"
     : "already in use by another app";
 }

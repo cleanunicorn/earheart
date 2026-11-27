@@ -6,7 +6,7 @@ h1 { font-family: var(--font-heading); font-size: 16px; margin: 0 0 14px; }
 label { display: block; margin-bottom: 6px; }
 input, button { font: inherit; background: var(--field); color: var(--text); border: 1px solid var(--field-edge); border-radius: var(--radius-control); padding: 9px 12px; }
 input { width: 100%; }
-button { border-radius: var(--radius-button); cursor: pointer; }
+button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 #results { overflow-y: auto; max-height: 55vh; }
 .group { color: var(--text-dim); font-size: 12px; margin: 12px 0 4px; }

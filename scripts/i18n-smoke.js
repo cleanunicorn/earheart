@@ -69,11 +69,14 @@ async function checkI18n({ waitFor, check }) {
       saved().uiLanguage === "ro" && JSON.stringify(settings.get().stt) === sttBefore, JSON.stringify(saved().uiLanguage));
 
     // Longer Romanian copy at the minimum window sizes: no sideways page scroll
-    // and no button, label or heading whose text is clipped.
+    // and no button, label or heading whose text is clipped. Text hidden on
+    // purpose (.sr-only, or the compact index rail's labels, which use the
+    // same clip below 600px and live on as names and tooltips) isn't clipped.
     const clipProbe = `(() => {
+      const hidden = (el) => el.classList.contains("sr-only") || getComputedStyle(el).clipPath === "inset(50%)";
       const bad = [...document.querySelectorAll("button, label, h1, h2, .card-title, .tab-label, option")]
         .filter((el) => el.offsetParent !== null && el.scrollWidth > el.clientWidth + 1 &&
-          getComputedStyle(el).overflowX !== "visible" && !el.classList.contains("sr-only"))
+          getComputedStyle(el).overflowX !== "visible" && !hidden(el))
         .map((el) => (el.id || el.className || el.tagName) + ":" + el.textContent.trim().slice(0, 30));
       return { pageScroll: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1, bad };
     })()`;
@@ -83,6 +86,18 @@ async function checkI18n({ waitFor, check }) {
       const clip = await read(win, clipProbe);
       check(`${name} has no clipped controls or sideways scroll in Romanian at its minimum size`,
         !clip.pageScroll && clip.bad.length === 0, JSON.stringify(clip));
+      if (name === "Settings") {
+        // The compact index rail hides its labels, so each icon carries its
+        // label as a tooltip, in the current language; full width has none.
+        const rail = await read(win, `[...document.querySelectorAll(".tab")].map((t) => t.title)`);
+        check("the compact index rail's tooltips are its labels, in Romanian",
+          rail[2] === draftRo["settings.speechtotext"] && rail[4] === draftRo["settings.snippets"] && rail.every(Boolean),
+          JSON.stringify(rail));
+        win.setContentSize(772, 780);
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        const wide = await read(win, `[...document.querySelectorAll(".tab")].filter((t) => t.hasAttribute("title")).length`);
+        check("the full-width index has no tooltips repeating its visible labels", wide === 0, String(wide));
+      }
     }
 
     // A later window starts in the effective locale, not English.

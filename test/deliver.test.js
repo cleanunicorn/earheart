@@ -681,9 +681,9 @@ for (const mode of ["paste", "paste-copy"]) {
     const result = await pending;
     assert.deepStrictEqual(result, {
       method: "clipboard-changed",
-      note: "Copy it from the tray menu",
+      note: "Copy it from the menu bar icon",
       hint: "Another app changed the clipboard before Earheart could paste, so nothing was pasted and that copy was left as it was. " +
-        "Copy the transcript from the tray menu (Copy last transcription).",
+        "Copy the transcript from the menu bar icon (Copy last transcription).",
     });
     assert.deepStrictEqual(state.clip, { text: "Newer copy" });
     assert.deepStrictEqual(state.execs, [], "no keystroke");

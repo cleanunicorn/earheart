@@ -37,6 +37,8 @@ const { pipeline: streamPipeline } = require("node:stream/promises");
 const { Readable, Transform } = require("node:stream");
 
 const feed = require("./services/update-feed");
+const { trayOrMenuBar } = require("./util/tray-place");
+const { t } = require("./i18n");
 const { fetchUpdateText } = require("./services/update-fetch");
 const releaseNotes = require("./services/release-notes");
 const settings = require("./settings");
@@ -360,7 +362,7 @@ function notifyAvailable(version) {
       body:
         headline ||
         (state.method === "install"
-          ? "Update from the prompt on screen, the tray menu, or Settings → Advanced."
+          ? t(trayOrMenuBar({ tray: "updates.available.installBody", menuBar: "updates.available.installBodyMac" }))
           : "Download it from the releases page (see Settings → Advanced)."),
     });
   } catch (err) {

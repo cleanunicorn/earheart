@@ -86,8 +86,7 @@
           <p class="hint">
             The default works fine for most people — click the box to choose
             your own.
-            <span id="wayland-note">On GNOME/KDE Wayland, apps may not be able
-            to grab global keys — instead, bind a system keyboard shortcut to
+            <span data-os="wayland" hidden>On Wayland, bind a system shortcut to
             <code>earheart --toggle</code>.</span>
           </p>
           <p id="hotkey-status" class="status" aria-live="polite"></p>
@@ -283,6 +282,8 @@
     <script src="i18n.js"></script>
     <script src="locales/en.js"></script>
     <script src="i18n-client.js"></script>
+    <script src="platform-context.js"></script>
+    <script src="hotkey-names.js"></script>
     <script src="hotkey-capture.js"></script>
     <script src="settings-sync.js"></script>
     <script src="model-progress.js"></script>

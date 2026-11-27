@@ -33,8 +33,37 @@ function markActiveTab(name) {
     if (on) t.setAttribute("aria-current", "true");
     else t.removeAttribute("aria-current");
     t.tabIndex = on ? 0 : -1;
+    if (on) keepInRail(t);
   }
 }
+
+// A short compact window scrolls the icon rail (its scrollbar is hidden), so
+// the scroll spy brings the "you are here" entry into view. Only the rail
+// scrolls: scrollIntoView would move the page panel too.
+function keepInRail(tab) {
+  const rail = tab.parentElement;
+  if (rail.scrollHeight <= rail.clientHeight) return;
+  const box = rail.getBoundingClientRect();
+  const r = tab.getBoundingClientRect();
+  if (r.top < box.top) rail.scrollTop -= box.top - r.top + 8;
+  else if (r.bottom > box.bottom) rail.scrollTop += r.bottom - box.bottom + 8;
+}
+
+// Below 600px the index is an icon rail whose labels are visually hidden
+// (settings.css): there, and only there, each icon gets its label as a hover
+// tooltip. At full width the label is on screen, so a tooltip would repeat it.
+// Follows the window across the breakpoint and the label across languages.
+const compactRail = matchMedia("(max-width: 599px)");
+function syncRailTooltips() {
+  for (const tab of tabButtons) {
+    const label = tab.querySelector(".tab-label")?.textContent.trim();
+    if (compactRail.matches && label) tab.title = label;
+    else tab.removeAttribute("title");
+  }
+}
+compactRail.addEventListener("change", syncRailTooltips);
+i18n.onChange(syncRailTooltips);
+syncRailTooltips();
 
 // While a click-initiated glide is in flight, the spy would highlight every
 // entry the scroll passes through; hold the chosen one until the scroll settles.
@@ -98,9 +127,16 @@ function spySections() {
       }
     }
   }
-  if (name) markActiveTab(name);
+  // Only touch the index when the section changes: scroll fires far more
+  // often than the answer moves.
+  if (name && !tabButtons.find((t) => t.dataset.tab === name)?.classList.contains("active")) {
+    markActiveTab(name);
+  }
 }
 
+// Synchronous on purpose: the highlight answers the scroll that moved it
+// (settings-smoke reads it in the same task). The reads are cheap against a
+// clean layout; the guard above keeps the writes to section changes.
 panelHost.addEventListener("scroll", spySections, { passive: true });
 panelHost.addEventListener("scrollend", () => {
   spyHeld = false;
@@ -139,13 +175,13 @@ const hotkeyInput = $("hotkey");
 wireHotkeyCapture(hotkeyInput, {
   apply: (accelerator) => {
     current.hotkey = accelerator;
-    hotkeyInput.value = accelerator;
+    hotkeyInput.value = displayHotkey(accelerator);
   },
   restore: () => current?.hotkey || "",
 });
 $("hotkey-clear").addEventListener("click", () => {
   current.hotkey = defaults.hotkey;
-  hotkeyInput.value = defaults.hotkey;
+  hotkeyInput.value = displayHotkey(defaults.hotkey);
 });
 
 // The pause hotkey is optional: Clear unbinds it entirely (empty = not
@@ -154,7 +190,7 @@ const pauseHotkeyInput = $("pause-hotkey");
 wireHotkeyCapture(pauseHotkeyInput, {
   apply: (accelerator) => {
     current.pauseHotkey = accelerator;
-    pauseHotkeyInput.value = accelerator;
+    pauseHotkeyInput.value = displayHotkey(accelerator);
   },
   restore: () => current?.pauseHotkey || "",
 });
@@ -168,7 +204,7 @@ const discardHotkeyInput = $("discard-hotkey");
 wireHotkeyCapture(discardHotkeyInput, {
   apply: (accelerator) => {
     current.discardHotkey = accelerator;
-    discardHotkeyInput.value = accelerator;
+    discardHotkeyInput.value = displayHotkey(accelerator);
   },
   restore: () => current?.discardHotkey || "",
 });
@@ -179,7 +215,7 @@ $("discard-hotkey-clear").addEventListener("click", () => {
 
 const paletteHotkeyInput = $("palette-hotkey");
 wireHotkeyCapture(paletteHotkeyInput, {
-  apply: accelerator => { current.paletteHotkey = accelerator; paletteHotkeyInput.value = accelerator; },
+  apply: accelerator => { current.paletteHotkey = accelerator; paletteHotkeyInput.value = displayHotkey(accelerator); },
   restore: () => current?.paletteHotkey || "",
 });
 $("palette-hotkey-clear").addEventListener("click", () => { current.paletteHotkey = ""; paletteHotkeyInput.value = ""; });
@@ -199,7 +235,7 @@ const correctHotkeyInput = $("correct-hotkey");
 wireHotkeyCapture(correctHotkeyInput, {
   apply: (accelerator) => {
     current.correctHotkey = accelerator;
-    correctHotkeyInput.value = accelerator;
+    correctHotkeyInput.value = displayHotkey(accelerator);
   },
   restore: () => current?.correctHotkey || "",
 });
@@ -213,7 +249,7 @@ const commandsHotkeyInput = $("commands-hotkey");
 wireHotkeyCapture(commandsHotkeyInput, {
   apply: (accelerator) => {
     current.commands = { ...current.commands, hotkey: accelerator };
-    commandsHotkeyInput.value = accelerator;
+    commandsHotkeyInput.value = displayHotkey(accelerator);
   },
   restore: () => current?.commands?.hotkey || "",
 });
@@ -406,16 +442,16 @@ function showOutputMode(output) {
 }
 
 function populate() {
-  hotkeyInput.value = current.hotkey;
+  hotkeyInput.value = displayHotkey(current.hotkey);
   $("activation-mode").value = current.activationMode || "toggle";
   $("double-tap-window").value = current.doubleTapWindowMs ?? 500;
   $("double-tap-window-field").hidden = $("activation-mode").value !== "double-tap";
-  pauseHotkeyInput.value = current.pauseHotkey || "";
-  discardHotkeyInput.value = current.discardHotkey || "";
-  correctHotkeyInput.value = current.correctHotkey || "";
-  paletteHotkeyInput.value = current.paletteHotkey || "";
+  pauseHotkeyInput.value = displayHotkey(current.pauseHotkey || "");
+  discardHotkeyInput.value = displayHotkey(current.discardHotkey || "");
+  correctHotkeyInput.value = displayHotkey(current.correctHotkey || "");
+  paletteHotkeyInput.value = displayHotkey(current.paletteHotkey || "");
   $("commands-shortcut").textContent = displayHotkey("CommandOrControl+K");
-  commandsHotkeyInput.value = current.commands?.hotkey || "";
+  commandsHotkeyInput.value = displayHotkey(current.commands?.hotkey || "");
   $("commands-engine").value = current.commands?.engine === "remote" ? "remote" : "builtin";
   $("commands-url").value = current.commands?.baseUrl || "";
   $("commands-key").value = current.commands?.apiKey || "";
@@ -480,11 +516,6 @@ function populate() {
   $("record-sound-volume").value = current.audio.recordSoundVolumePercent ?? defaults.audio.recordSoundVolumePercent;
   $("idle-unload").value = current.engines?.idleUnloadMinutes ?? defaults.engines.idleUnloadMinutes;
 
-  if (platform !== "linux") {
-    $("wayland-note").style.display = "none";
-    $("pause-wayland-note").style.display = "none";
-    $("discard-wayland-note").style.display = "none";
-  }
 }
 
 // The Always replace textarea as records. Never throws, since every form
@@ -3070,6 +3101,7 @@ $("snippet-delete").addEventListener("click", () => {
   baseline = sharedBaseline(current);
   defaults = data.defaults;
   platform = data.platform;
+  showForPlatform(document, { platform, wayland: data.wayland });
   cleanupStyles = data.cleanupStyles || [];
   formattingStyles = data.formattingStyles || [];
   promptOffer = data.promptOffer || null;

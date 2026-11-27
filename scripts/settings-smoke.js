@@ -389,7 +389,7 @@ app.whenReady().then(async () => {
     );
     check(
       "the saved discard hotkey and its launch failure show under its field on open",
-      hotkeyRows.discardField === "CommandOrControl+Alt+D" && hotkeyRows.discard === launchDiscardError,
+      hotkeyRows.discardField === (process.platform === "darwin" ? "Cmd+Option+D" : "Ctrl+Alt+D") && hotkeyRows.discard === launchDiscardError,
       JSON.stringify(hotkeyRows)
     );
     // A failure about an accelerator the field no longer holds (a rejected
@@ -461,6 +461,23 @@ app.whenReady().then(async () => {
           viewport: innerHeight,
           horizontalOverflow: root.scrollWidth - root.clientWidth,
         };
+        // When the page itself overflows, say what is doing it: the body's own
+        // height, and any element reaching past the viewport outside a scroller.
+        if (result.pageOverflow > 0) {
+          result.bodyHeight = document.body.getBoundingClientRect().height;
+          result.escaping = [...document.querySelectorAll("body *")]
+            .filter((el) => {
+              const box = el.getBoundingClientRect();
+              if (!box.height || box.bottom + window.scrollY <= innerHeight + 1) return false;
+              for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+                if (/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)) return false;
+              }
+              return true;
+            })
+            .slice(0, 6)
+            .map((el) => el.tagName + "#" + el.id + "." + el.className + " " + getComputedStyle(el).position +
+              " h=" + Math.round(el.getBoundingClientRect().height));
+        }
         host.scrollTop = 0;
         host.style.scrollBehavior = "";
         return result;
@@ -1606,11 +1623,24 @@ app.whenReady().then(async () => {
       await sleep(300);
       // A real mouse click at an element's centre, through Chromium's input
       // pipeline rather than a synthetic DOM click.
+      // Waits until the target has held still for two frames first: closing
+      // the confirmation hands focus back and the panel can still be settling,
+      // and a click aimed at where the element was a moment ago misses it.
       const realClick = async (selector) => {
-        const rect = await js(`(() => {
-          const r = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect();
-          return r ? [r.x + r.width / 2, r.y + r.height / 2] : null;
-        })()`);
+        const rect = await js(`new Promise((resolve) => {
+          const el = document.querySelector(${JSON.stringify(selector)});
+          if (!el) return resolve(null);
+          let last = "", still = 0, frames = 0;
+          const tick = () => {
+            const r = el.getBoundingClientRect();
+            const now = [r.x, r.y, r.width, r.height].map(Math.round).join(",");
+            still = now === last ? still + 1 : 0;
+            last = now;
+            if (still >= 2 || ++frames > 120) return resolve([r.x + r.width / 2, r.y + r.height / 2]);
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        })`);
         if (!rect) return false;
         const [x, y] = rect.map(Math.round);
         win.webContents.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
@@ -1632,11 +1662,18 @@ app.whenReady().then(async () => {
           document.querySelector("#cleanup-model-manage .status")?.textContent === "Not downloaded"`),
         "confirming did not remove the model"
       );
-      await realClick("#cleanup-builtin-model");
-      const opened = await waitFor(
-        () => js(`document.getElementById("cleanup-builtin-model").matches(":open")`),
-        "the model dropdown did not open after the removal"
-      ).catch(() => false);
+      // The bug this guards (#409) is persistent: once it bites, the dropdown
+      // stays shut until the window is refocused, so every click fails. Under
+      // headless X a first click right after the dialog closes is sometimes
+      // dropped on its own (seen on main too), so one more click 300ms later
+      // tells that flake from the bug.
+      const isOpen = () => js(`document.getElementById("cleanup-builtin-model").matches(":open")`);
+      let opened = false;
+      for (let attempt = 0; attempt < 2 && !opened; attempt++) {
+        if (attempt) await sleep(300);
+        await realClick("#cleanup-builtin-model");
+        opened = await waitFor(isOpen, "the model dropdown did not open after the removal").catch(() => false);
+      }
       win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
       win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
       await sleep(200);
@@ -1690,7 +1727,7 @@ app.whenReady().then(async () => {
     );
     check(
       "the form says why its controls changed",
-      /Output mode changed from the tray menu/.test(reflected.status) &&
+      /Output mode changed from the Earheart icon's menu/.test(reflected.status) &&
         /Update reminders turned off/.test(reflected.status),
       JSON.stringify(reflected.status)
     );
@@ -2455,7 +2492,7 @@ app.whenReady().then(async () => {
             document.getElementById("pause-hotkey").value`),
           "a captured hotkey did not clear Saved"
         );
-        check("capturing a hotkey after a Save clears Saved", /Alt\+Shift\+F9$/.test(captured), JSON.stringify(captured));
+        check("capturing a hotkey after a Save clears Saved", /\+Shift\+F9$/.test(captured) && !/CommandOrControl/.test(captured), JSON.stringify(captured));
         await clickClose(saveWin);
         check(
           "Close closes Settings without saving the edit",

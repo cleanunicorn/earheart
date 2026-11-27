@@ -42,7 +42,7 @@
         </button>
         <button class="tab" data-tab="snippets">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="tab-icon" aria-hidden="true"><path d="M21 5H3"></path><path d="M15 12H3"></path><path d="M17 19H3"></path></svg>
-          <span class="tab-label">Snippets</span>
+          <span class="tab-label" data-i18n="settings.snippets">Snippets</span>
         </button>
         <button class="tab" data-tab="history">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="tab-icon" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
@@ -82,9 +82,8 @@
               <button id="hotkey-clear" class="ghost" data-i18n="settings.hotkeyClear">Reset</button>
             </div>
             <p class="hint">
-              Press once to start dictating, again to stop and transcribe.
-              <span id="wayland-note">On GNOME/KDE Wayland, apps may not be able to grab
-              global keys — instead, bind a system keyboard shortcut to
+              Press to start dictating, again to stop and transcribe.
+              <span data-os="wayland" hidden>On Wayland, bind a system shortcut to
               <code>earheart --toggle</code>.</span>
             </p>
             <p id="hotkey-status" class="status" aria-live="polite"></p>
@@ -97,12 +96,8 @@
               <option value="double-tap">Double-tap to start</option>
             </select>
             <p class="hint">
-              Double-tap starts hands-free dictation with two quick presses;
-              a single press while dictating stops it at once. A lone tap does
-              nothing. The start is held back about 0.12&nbsp;s to tell a tap
-              from a held key. The tray and <code>earheart --toggle</code>
-              always toggle. On Wayland, bind a system shortcut to
-              <code>earheart --tap</code> instead.
+              Two quick presses start hands-free dictation; one press stops it.
+              <span data-os="wayland" hidden>On Wayland, bind <code>earheart --tap</code>.</span>
             </p>
           </div>
 
@@ -122,10 +117,8 @@
               <button id="pause-hotkey-clear" class="ghost" data-i18n="settings.pauseHotkeyClear">Clear</button>
             </div>
             <p class="hint">
-              Optional. While dictating, pauses and resumes the take without
-              ending it — same as the overlay's pause key.
-              <span id="pause-wayland-note">On Wayland, bind a system shortcut to
-              <code>earheart --pause</code> instead.</span>
+              Optional. Pauses and resumes the take without ending it.
+              <span data-os="wayland" hidden>On Wayland, bind <code>earheart --pause</code>.</span>
             </p>
             <p id="pause-hotkey-status" class="status" aria-live="polite"></p>
           </div>
@@ -137,10 +130,8 @@
               <button id="discard-hotkey-clear" class="ghost" data-i18n="settings.discardHotkeyClear">Clear</button>
             </div>
             <p class="hint">
-              Optional. Throws away the dictation in progress — same as the
-              overlay's ✕ key. Held only while dictating.
-              <span id="discard-wayland-note">On Wayland, bind a system shortcut to
-              <code>earheart --discard</code> instead.</span>
+              Optional. Throws away the dictation in progress.
+              <span data-os="wayland" hidden>On Wayland, bind <code>earheart --discard</code>.</span>
             </p>
             <p id="discard-hotkey-status" class="status" aria-live="polite"></p>
           </div>
@@ -150,7 +141,7 @@
               <input id="correct-hotkey" readonly placeholder="Not set — click, then press a key combination" data-i18n-attr="placeholder:settings.correctHotkeyPlaceholder" />
               <button id="correct-hotkey-clear" class="ghost" data-i18n="settings.correctHotkeyClear">Clear</button>
             </div>
-            <p class="hint">Open your last saved transcript, correct a spelling and remember it. Optional. On Wayland, bind <code>earheart --correct-last</code> in your desktop settings.</p>
+            <p class="hint">Optional. Opens your last transcript to fix a spelling and remember it. <span data-os="wayland" hidden>On Wayland, bind <code>earheart --correct-last</code>.</span></p>
             <p id="correct-hotkey-status" class="status" aria-live="polite"></p>
           </div>
           <div class="field">
@@ -159,7 +150,7 @@
               <input id="palette-hotkey" readonly placeholder="Not set — click, then press a key combination" />
               <button id="palette-hotkey-clear" class="ghost">Clear</button>
             </div>
-            <p class="hint">Open navigation, common actions and saved dictations. Leave empty to disable the global shortcut. Desktop bindings can run <code>earheart --palette</code>.</p>
+            <p class="hint">Opens navigation, actions and saved dictations. Leave empty to turn it off. <span data-os="wayland" hidden>On Wayland, bind <code>earheart --palette</code>.</span></p>
             <p id="palette-hotkey-status" class="status" aria-live="polite"></p>
           </div>
 
@@ -174,29 +165,26 @@
               <option value="auto">Choose automatically</option>
             </select>
             <p class="hint">
-              Automatic picks the system default when it is allowed below,
-              otherwise the first allowed microphone. If none is allowed it
-              uses the system default and says so on the card.
+              Uses the system default if it is allowed below, otherwise the first allowed microphone.
             </p>
           </div>
           <div id="mic-auto-options" hidden>
             <label class="toggle">
               <span class="toggle-text">
                 <span class="t">Allow Bluetooth microphones</span>
-                <span class="d">Off keeps a headset out of automatic selection, so it stays on its high-quality playback profile.</span>
+                <span class="d">Off keeps headsets out of automatic selection, so their playback quality stays high.</span>
               </span>
               <input type="checkbox" id="mic-bluetooth" class="switch" role="switch" />
             </label>
             <label class="toggle">
               <span class="toggle-text">
                 <span class="t">Allow virtual microphones</span>
-                <span class="d">Loopbacks and audio-routing devices. A microphone this system can't classify is never hidden by these two options.</span>
+                <span class="d">Loopbacks and audio-routing devices.</span>
               </span>
               <input type="checkbox" id="mic-virtual" class="switch" role="switch" />
             </label>
             <p id="mic-class-hint" class="hint" aria-live="polite" hidden>
-              This system doesn't report which microphones are Bluetooth or
-              virtual, so these two options may not change anything here.
+              This system doesn't report Bluetooth or virtual microphones, so these options may have no effect.
             </p>
             <p id="mic-auto-status" class="hint" aria-live="polite"></p>
           </div>
@@ -206,16 +194,14 @@
               <option value="" data-i18n="settings.systemDefault">System default</option>
             </select>
             <p class="hint">
-              The input dictation records from when the choice above is the
-              microphone below. System default follows whatever your OS has
-              selected. Your pick stays saved while automatic is on.
+              Used when the choice above is this microphone. System default follows your OS.
             </p>
             <p id="mic-device-status" class="hint" aria-live="polite"></p>
           </div>
           <label class="toggle">
             <span class="toggle-text">
               <span class="t" data-i18n="settings.playSoundsWhenRecordingStarts">Play sounds when recording starts and stops</span>
-              <span class="d" data-i18n="settings.aShortToneOnceThe">A short tone once the microphone is really capturing — speak after it — another when you stop, and a low one if the microphone fails. The start tone is kept out of the recording.</span>
+              <span class="d" data-i18n="settings.aShortToneOnceThe">A tone when the microphone starts capturing (speak after it), one when you stop, and a low one if it fails.</span>
             </span>
             <input type="checkbox" id="record-sounds" class="switch" role="switch" />
           </label>
@@ -233,7 +219,7 @@
           <label class="toggle">
             <span class="toggle-text">
               <span class="t" data-i18n="settings.lowerOtherAudioWhileRecording">Lower other audio while recording</span>
-              <span class="d" data-i18n="settings.musicVideosAndCallsGet">Music, videos and calls get quieter while the microphone is capturing, and come back when you stop, pause or cancel. A volume you change during the take is kept, and muted output stays muted.</span>
+              <span class="d" data-i18n="settings.musicVideosAndCallsGet">Music, videos and calls get quieter while you record and come back when you stop.</span>
             </span>
             <input type="checkbox" id="duck-other-audio" class="switch" role="switch" />
           </label>
@@ -245,9 +231,9 @@
         </div>
 
         <div class="card">
-          <div class="card-title" data-i18n="settings.whereTheTextGoes">Where the text goes</div>
+          <div class="card-title" id="output-mode-title" data-i18n="settings.whereTheTextGoes">Where the text goes</div>
           <div class="field">
-            <div class="options">
+            <div class="options" role="radiogroup" aria-labelledby="output-mode-title">
               <label class="option">
                 <input type="radio" name="output-mode" value="paste" />
                 <svg class="option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/></svg>
@@ -265,15 +251,13 @@
               </label>
             </div>
             <p class="hint" data-i18n="settings.pastingInsertsTheTranscriptAt">
-              Pasting inserts the transcript at your cursor by briefly using
-              the clipboard — plain paste puts your previous clipboard back
-              afterwards.
+              Pasting briefly uses the clipboard; plain paste puts back what was there.
             </p>
           </div>
           <label class="toggle">
             <span class="toggle-text">
               <span class="t" data-i18n="settings.deliverAsOneLine">Deliver as one line</span>
-              <span class="d" data-i18n="settings.forAgentsInATerminal">For agents in a terminal (Claude Code, Codex CLI), where a pasted line break can send the prompt before you're done. Applies to everything Earheart pastes or copies, code blocks included; History keeps the original.</span>
+              <span class="d" data-i18n="settings.forAgentsInATerminal">For terminal agents (Claude Code, Codex CLI), where a pasted line break can send the prompt early. History keeps the original.</span>
             </span>
             <input type="checkbox" id="output-single-line" class="switch" role="switch" />
           </label>
@@ -286,11 +270,7 @@
             <span id="accessibility-status" class="status" aria-live="polite"></span>
           </div>
           <p class="hint" data-i18n="settings.autopasteTypesIntoTheFocused">
-            Auto-paste types into the focused app, which macOS allows only with two
-            permissions: Accessibility and Automation (controlling System Events). If
-            pasting stopped working — for example, a permission still listed as on but no longer
-            valid — click here to check both, clear the stale entry, and open the System
-            Settings pane for whichever is off, then allow Earheart.
+            Auto-paste needs the Accessibility and Automation permissions. If pasting stopped working, click to check both and open the System Settings pane that needs attention.
           </p>
         </div>
 
@@ -298,14 +278,14 @@
           <label class="toggle">
             <span class="toggle-text">
               <span class="t" data-i18n="settings.startEarheartWhenILog">Start Earheart when I log in</span>
-              <span class="d" data-i18n="settings.launchesInTheBackgroundSystem">Launches in the background (system tray) after you sign in.</span>
+              <span class="d" data-i18n="settings.launchesInTheBackgroundSystem">Starts in the background after you sign in.</span>
             </span>
             <input type="checkbox" id="start-on-boot" class="switch" role="switch" />
           </label>
           <label class="toggle">
             <span class="toggle-text">
               <span class="t">Press Enter to stop and paste</span>
-              <span class="d">While you are recording, Enter finishes the dictation like the hotkey does. Enter is not sent to the app you are typing in, and is captured in every app (including while composing text with an input method) until the take ends. If your system does not allow this, use the hotkey or the overlay to stop.</span>
+              <span class="d">Enter stops the dictation like the hotkey and isn't sent to the app you're typing in. If your system blocks this, use the hotkey.</span>
             </span>
             <input type="checkbox" id="enter-to-stop" class="switch" role="switch" />
           </label>
@@ -335,7 +315,7 @@
               <!-- One option per shipped locale, named in its own language; filled by settings.js -->
             </select>
             <p class="hint" data-i18n="settings.language.hint">
-              The language of menus, settings and notifications. It does not change the language you dictate in.
+              Menus, settings and notifications. Doesn't change the language you dictate in.
             </p>
           </div>
         </div>
@@ -343,9 +323,7 @@
         <div class="card">
           <div class="card-title">Voice commands</div>
           <p class="hint">
-            A separate mode for writing or rewriting by voice: say what to do, then review the
-            result before it is used. Select text first to rewrite it, or select nothing to write
-            something new. Ordinary dictation is never treated as a command.
+            Write or rewrite by voice: select text to rewrite it, or nothing to write something new. You review the result before it's used.
           </p>
           <div class="field">
             <label for="commands-hotkey">Voice command hotkey</label>
@@ -353,7 +331,7 @@
               <input id="commands-hotkey" readonly placeholder="Not set — click, then press a key combination" />
               <button id="commands-hotkey-clear" class="ghost">Clear</button>
             </div>
-            <p class="hint">Optional. Also in the tray menu. On Wayland, bind <code>earheart --command</code> in your desktop settings.</p>
+            <p class="hint">Optional. <span data-os="darwin" hidden>Also in the menu bar icon's menu.</span><span data-os="not-darwin" hidden>Also in the tray icon's menu.</span> <span data-os="wayland" hidden>On Wayland, bind <code>earheart --command</code>.</span></p>
             <p id="commands-hotkey-status" class="status" aria-live="polite"></p>
           </div>
           <div class="field">
@@ -366,9 +344,7 @@
           </div>
           <div id="commands-remote" hidden>
             <p class="hint">
-              <strong>Your selected text and what you say are sent to this service.</strong>
-              It is never used for anything but voice commands: the Cleanup service is not a fallback.
-              What you say is still transcribed by your Speech-to-text setting.
+              <strong>Your selected text and what you say are sent to this service</strong>, for voice commands only.
             </p>
             <div class="field">
               <label for="commands-url">Base URL</label>
@@ -384,17 +360,14 @@
               <input id="commands-model" placeholder="llama3.2" />
             </div>
           </div>
-          <div class="field">
-            <label class="check" for="commands-allow-apply">
-              <input id="commands-allow-apply" type="checkbox" />
-              Let me replace the selection from the result card
-            </label>
-            <p class="hint">
-              Replacing only happens when you press the button, and only if the same window and
-              selection are still there. Otherwise the result is just copied.
-            </p>
-            <p id="commands-capabilities" class="hint"></p>
-          </div>
+          <label class="toggle">
+            <span class="toggle-text">
+              <span class="t" data-i18n="settings.commandsAllowApply">Let me replace the selection from the result card</span>
+              <span class="d" data-i18n="settings.commandsAllowApplyHint">Only when you press the button and the same window and selection are still there. Otherwise the result is copied.</span>
+            </span>
+            <input id="commands-allow-apply" type="checkbox" class="switch" role="switch" />
+          </label>
+          <p id="commands-capabilities" class="hint"></p>
         </div>
       </section>
 
@@ -409,9 +382,7 @@
             <span class="toggle-text">
               <span class="t" data-i18n="settings.showALiveTranscriptWhile">Show a live transcript while you speak</span>
               <span class="d" data-i18n="settings.fillsInTheOverlayAs">
-                Fills in the overlay as you talk, with a cleaned version settling in on
-                pauses. Adds some CPU load while recording. Turned off, built-in
-                speech-to-text still decodes as you talk, so the final transcript is ready sooner.
+                Shows your words in the overlay as you talk. Uses some extra CPU while recording.
               </span>
             </span>
             <input type="checkbox" id="stt-live-preview" class="switch" role="switch" />
@@ -426,9 +397,9 @@
           Speech-to-text
         </h2>
         <div class="card">
-          <div class="card-title" data-i18n="settings.transcriptionEngine">Transcription engine</div>
+          <div class="card-title" id="stt-engine-title" data-i18n="settings.transcriptionEngine">Transcription engine</div>
           <div class="field">
-            <div class="segmented">
+            <div class="segmented" role="radiogroup" aria-labelledby="stt-engine-title">
               <label>
                 <input type="radio" name="stt-engine" value="builtin" />
                 On this computer
@@ -439,8 +410,7 @@
               </label>
             </div>
             <p class="hint" data-i18n="settings.builtinRunsNvidiaParakeetPrivately">
-              Built-in runs NVIDIA Parakeet privately, with nothing to install.
-              OpenAI-compatible points at a local server, OpenAI, Groq, and the like.
+              Built-in runs NVIDIA Parakeet on this computer. OpenAI-compatible uses a local server, OpenAI, Groq and similar.
             </p>
             <!-- One live region per card, wrapping both states: the pill is swapped
                  by hiding one div and showing the other, so the announcement has to
@@ -480,14 +450,8 @@
                 <button id="stt-hf-add" type="button" data-i18n="settings.sttHfAdd">Add</button>
               </div>
               <p class="hint">
-                Paste a Hugging Face URL or owner/model of a sherpa-onnx transducer
-                bundle (encoder, decoder, joiner + tokens.txt) or Whisper export
-                (encoder, decoder + tokens.txt), such as
-                <code>csukuangfj/sherpa-onnx-whisper-turbo</code>. Other
-                encoder-decoder models, such as NeMo Canary, aren't supported. Files with a
-                published Hugging Face LFS SHA-256 are verified on download.
-                Browse Hugging Face opens your browser on
-                the Parakeet TDT exports, the family the built-in models come from.
+                A Hugging Face URL or owner/model of a sherpa-onnx transducer or Whisper export, such as
+                <code>csukuangfj/sherpa-onnx-whisper-turbo</code>. Downloads are verified when Hugging Face publishes a checksum.
               </p>
             </div>
           </div>
@@ -537,8 +501,7 @@
             <span class="toggle-text">
               <span class="t" data-i18n="settings.cleanUpTranscriptsAutomatically">Clean up transcripts automatically</span>
               <span class="d" data-i18n="settings.afterTranscriptionALanguageModel">
-                After transcription, a language model fixes punctuation and removes filler
-                words and false starts.
+                A language model fixes punctuation and removes filler words and false starts.
               </span>
             </span>
             <input type="checkbox" id="cleanup-enabled" class="switch" role="switch" />
@@ -552,19 +515,16 @@
             <textarea id="cleanup-aliases" rows="4" spellcheck="false" aria-describedby="cleanup-aliases-hint"
               placeholder="air heart, ear heart -> Earheart&#10;cooper netties -> Kubernetes"></textarea>
             <p id="cleanup-aliases-hint" class="hint" data-i18n="settings.cleanupAliasesHint">
-              Exact replacements for words the speech engine keeps mishearing,
-              applied to every dictation even with cleanup off. Whole words
-              only, any capitalization; code in backticks, paths and URLs are
-              left alone. History keeps the original transcript.
+              Exact word replacements, applied to every dictation even with cleanup off. Code, paths and URLs are left alone.
             </p>
           </div>
         </div>
 
         <div id="cleanup-fields">
           <div class="card">
-            <div class="card-title" data-i18n="settings.cleanupEngine">Cleanup engine</div>
+            <div class="card-title" id="cleanup-engine-title" data-i18n="settings.cleanupEngine">Cleanup engine</div>
             <div class="field">
-              <div class="segmented">
+              <div class="segmented" role="radiogroup" aria-labelledby="cleanup-engine-title">
                 <label>
                   <input type="radio" name="cleanup-engine" value="builtin" />
                   On this computer
@@ -575,8 +535,7 @@
                 </label>
               </div>
               <p class="hint" data-i18n="settings.builtinRunsAModelOn">
-                Built-in runs a model on this computer, with nothing to install.
-                OpenAI-compatible points at Ollama, LM Studio, OpenAI, and the like.
+                Built-in runs a model on this computer. OpenAI-compatible uses Ollama, LM Studio, OpenAI and similar.
               </p>
               <!-- One live region per card, wrapping both states: the pill is swapped
                    by hiding one div and showing the other, so the announcement has to
@@ -616,10 +575,7 @@
                   <button id="cleanup-hf-add" type="button" data-i18n="settings.cleanupHfAdd">Add</button>
                 </div>
                 <p class="hint" data-i18n="settings.pasteAHuggingFaceGguf">
-                  Paste a Hugging Face GGUF model URL or owner/model. Earheart lists its
-                  versions and downloads the one you pick. Files with a published
-                  Hugging Face LFS SHA-256 are verified on download. Browse Hugging Face opens your browser on chat
-                  GGUF models up to 12B parameters; smaller ones clean up faster.
+                  A Hugging Face GGUF URL or owner/model; pick a version to download. Smaller models clean up faster. Downloads are verified when Hugging Face publishes a checksum.
                 </p>
               </div>
             </div>
@@ -652,9 +608,9 @@
           </div>
 
           <div class="card">
-            <div class="card-title" data-i18n="settings.cleanupStyle">Cleanup style</div>
+            <div class="card-title" id="cleanup-style-title" data-i18n="settings.cleanupStyle">Cleanup style</div>
             <div class="field">
-              <div class="segmented">
+              <div class="segmented" role="radiogroup" aria-labelledby="cleanup-style-title">
                 <label>
                   <input type="radio" name="cleanup-style-mode" value="preset" />
                   Preset
@@ -665,9 +621,7 @@
                 </label>
               </div>
               <p class="hint" data-i18n="settings.presetsPairEditingInstructionsWith">
-                Presets pair editing instructions with matched sampling
-                values. Custom sends only your system prompt, using the raw
-                sampling values below — no preset instructions.
+                Presets pair instructions with matching sampling values. Custom sends only your system prompt, with the values below.
               </p>
 
               <div id="cleanup-style-preset">
@@ -682,46 +636,35 @@
 
               <div id="cleanup-style-custom">
                 <p class="hint">
-                  Temperature and <code>top-p</code> allow more varied wording
-                  as they rise; <code>top-k</code> and <code>min-p</code> are
-                  cutoffs that filter harder as they tighten. <code>top-k</code>
-                  and <code>min-p</code> apply to the built-in engine only —
-                  external services receive temperature and <code>top-p</code>.
+                  Higher temperature and <code>top-p</code> vary the wording more. <code>top-k</code> and <code>min-p</code> apply to the built-in engine only.
                 </p>
                 <div class="grid-2" id="cleanup-custom-fields">
                   <div class="field">
                     <label for="cleanup-temperature">Temperature <span class="muted">(0–2)</span></label>
                     <input id="cleanup-temperature" type="number" min="0" max="2" step="0.05" />
                     <p class="hint" data-i18n="settings.howMuchRandomnessEachWord">
-                      How much randomness each word choice gets. 0 always picks
-                      the most likely word; higher values vary the wording
-                      more. Cleanup works best low (0–0.4).
+                      0 always picks the most likely word; higher varies the wording. Cleanup works best at 0–0.4.
                     </p>
                   </div>
                   <div class="field">
                     <label for="cleanup-top-p">top-p <span class="muted">(0–1)</span></label>
                     <input id="cleanup-top-p" type="number" min="0" max="1" step="0.05" />
                     <p class="hint" data-i18n="settings.samplesOnlyFromTheMost">
-                      Samples only from the most likely words whose combined
-                      probability reaches this value. 1 = off; lower values cut
-                      the long tail of unlikely words.
+                      1 is off; lower values cut unlikely words.
                     </p>
                   </div>
                   <div class="field">
                     <label for="cleanup-top-k">top-k <span class="muted" data-i18n="settings.0Off">(0 = off)</span></label>
                     <input id="cleanup-top-k" type="number" min="0" max="200" step="1" />
                     <p class="hint" data-i18n="settings.keepsOnlyTheKMost">
-                      Keeps only the K most likely words at each step. Lower is
-                      stricter — 20–40 is typical; 0 turns it off.
+                      Lower is stricter; 20–40 is typical, 0 is off.
                     </p>
                   </div>
                   <div class="field">
                     <label for="cleanup-min-p">min-p <span class="muted" data-i18n="settings.0Off2">(0 = off)</span></label>
                     <input id="cleanup-min-p" type="number" min="0" max="1" step="0.01" />
                     <p class="hint" data-i18n="settings.dropsWordsLessLikelyThan">
-                      Drops words less likely than this fraction of the most
-                      likely word's probability. Higher is stricter — 0.05 is a
-                      light filter; 0 turns it off.
+                      Higher is stricter; 0.05 is a light filter, 0 is off.
                     </p>
                   </div>
                 </div>
@@ -739,10 +682,7 @@
               <textarea id="cleanup-dictionary" rows="6" spellcheck="false"
                 placeholder="Earheart&#10;sherpa-onnx&#10;Kubernetes" data-i18n-attr="placeholder:settings.cleanupDictionaryPlaceholder"></textarea>
               <p class="hint" data-i18n="settings.namesJargonAndProductTerms">
-                Names, jargon and product terms that often get misheard. When
-                the transcript comes close to one, cleanup corrects it to the
-                exact spelling listed here. Keep the list short and specific —
-                a handful of terms works better than hundreds.
+                Names and terms that often get misheard; cleanup corrects near matches to this spelling. A short list works best.
               </p>
               <p id="vocab-count" class="hint" aria-live="polite"></p>
             </div>
@@ -750,9 +690,7 @@
               <span class="field-label" id="vocab-packs-label">Starter packs</span>
               <div id="vocab-packs" role="group" aria-labelledby="vocab-packs-label"></div>
               <p class="hint">
-                Curated lists for common stacks, added to the cleanup prompt
-                after your own terms. Switching a pack off removes exactly its
-                words; your list above is never changed.
+                Curated term lists, added after your own. Turning a pack off removes only its words.
               </p>
             </div>
             <div class="field">
@@ -769,10 +707,7 @@
                 </div>
               </div>
               <p class="hint">
-                Pick a project folder and Earheart reads its manifest, top-level
-                names and exported symbols (a bounded scan, only when you click
-                this) and suggests the words you are likely to say. Nothing is
-                added until you review it here and press Save.
+                Scans a project folder you pick and suggests terms you're likely to say. Nothing is added until you review it and press Save.
               </p>
             </div>
           </div>
@@ -790,15 +725,12 @@
                 <button id="format-add" class="ghost" type="button">Add rule</button>
               </div>
               <p id="format-hint" class="hint">
-                Capitalization and punctuation, chosen by where the text goes —
-                separate from how much the cleanup edits. A website rule
-                matches that exact site (<code>github.com</code>, not its
-                subdomains or look-alikes) and beats an application rule
-                (macOS bundle id, e.g. <code>com.apple.Terminal</code>), which
-                beats the default. Website names are read from Safari and
-                Chromium-based browsers on macOS only; elsewhere, or if
-                detection fails, the default is used. It applies when cleanup
-                is on. Only the site name is read, never the page.
+                Capitalization and punctuation by destination.
+                <span data-os="darwin" hidden>A website rule (<code>github.com</code>) beats an app rule
+                (<code>com.apple.Terminal</code>), which beats the default. Websites are detected in Safari and
+                Chromium browsers; only the site name is read.</span>
+                <span data-os="not-darwin" hidden>Rules are detected on macOS only; on this computer the default
+                always applies.</span>
               </p>
             </div>
           </div>
@@ -820,9 +752,7 @@
             <div class="field">
               <textarea id="cleanup-prompt" rows="8" spellcheck="false" aria-label="System prompt" data-i18n-attr="aria-label:settings.cleanupPromptAriaLabel"></textarea>
               <p class="hint" data-i18n="settings.baseInstructionsSentWithEvery">
-                Base instructions sent with every transcript. Preset editing
-                instructions and dictionary terms are appended to this; Custom
-                mode sends it as written.
+                Sent with every transcript. Preset instructions and dictionary terms are added to it; Custom sends it as written.
               </p>
               <button id="cleanup-prompt-reset" class="ghost" data-i18n="settings.cleanupPromptReset">Reset to default</button>
             </div>
@@ -839,11 +769,7 @@
         <div class="card">
           <div class="card-title">Saved snippets</div>
           <p class="hint">
-            Say a trigger phrase and Earheart types the saved text instead,
-            exactly as written, with cleanup on or off. Matching ignores
-            capitalization and needs whole words; when two triggers overlap,
-            the longer one wins. A snippet never triggers another. History
-            keeps what you said.
+            Say a trigger phrase to insert its saved text exactly as written. Matching ignores case and needs whole words; the longer trigger wins.
           </p>
           <div class="snippet-search">
             <label for="snippet-search" class="sr-only">Search snippets</label>
@@ -856,7 +782,7 @@
             <button id="snippet-new" class="ghost" type="button">New snippet</button>
           </div>
           <p class="hint">
-            Changes to the list are saved with Save at the bottom of this window.
+            Changes are saved with Save below.
           </p>
         </div>
         <div class="card" id="snippet-editor" hidden>
@@ -875,10 +801,7 @@
               <button type="button" class="ghost" data-snippet-tag="timezone">{{timezone}}</button>
             </div>
             <p id="snippet-content-hint" class="hint">
-              Tags are filled in when you dictate: the clipboard as it was
-              when you stopped recording, today's date (2026-11-08), the time
-              (14:05) and your time zone. Text a tag inserts is never read for
-              tags again. Anything else in double braces is refused.
+              Tags insert the clipboard, date, time or time zone when you dictate. Anything else in double braces is refused.
             </p>
           </div>
           <div class="field">
@@ -915,7 +838,7 @@
           <label class="toggle">
             <span class="toggle-text">
               <span class="t" data-i18n="settings.keepRecordings">Keep recordings</span>
-              <span class="d" data-i18n="settings.savesEachDictationsAudioEncrypted">Saves each dictation's audio, encrypted on this computer, so you can play, export or retranscribe it from History. Needs History on.</span>
+              <span class="d" data-i18n="settings.savesEachDictationsAudioEncrypted">Saves each dictation's audio, encrypted on this computer, to play, export or retranscribe from History. Needs History.</span>
             </span>
             <input type="checkbox" id="recordings-keep" class="switch" role="switch" />
           </label>
@@ -940,11 +863,11 @@
           <label class="toggle">
             <span class="toggle-text">
               <span class="t">Send transcripts to coding agents</span>
-              <span class="d">Adds a “Send to agent…” button to each History entry, to review a brief and start a task in Codex or Claude Code in a project you pick. Nothing is sent without that review. Save to apply.</span>
+              <span class="d">Adds “Send to agent…” to History entries to start a Codex or Claude Code task. You review everything before it's sent. Save to apply.</span>
             </span>
             <input type="checkbox" id="agents-enabled" class="switch" role="switch" />
           </label>
-          <p class="hint">Your speech is still recognised on this computer, but the brief you send goes to the agent, and the agent’s provider processes it off-device under that agent’s own terms and sign-in. Ordinary dictation is unaffected.</p>
+          <p class="hint">The brief you send is processed off this device by the agent's provider. Ordinary dictation is unaffected.</p>
           <div id="agents-options">
             <div class="field">
               <label for="agents-permission">What an agent may do</label>
@@ -1055,7 +978,7 @@
         </h2>
         <div class="card" id="tools-card">
           <div class="card-title">Tools (local MCP servers, experimental)</div>
-          <p class="hint">Run programs you trust as tool servers. Earheart starts one only when you press Discover or a tool is called, never at launch, and asks you before each call unless you set a tool to Allow. Voice commands do not use tool servers yet, so nothing calls these tools from your voice today.</p>
+          <p class="hint">Programs you trust, run as tool servers. Each starts only when you press Discover or a tool is called, and asks before every call unless set to Allow. Voice commands don't use them yet.</p>
           <p id="tools-storage" class="hint"></p>
           <div id="tools-list"></div>
           <div class="field">
@@ -1065,7 +988,7 @@
           <div class="field">
             <label for="tools-command">Command</label>
             <input id="tools-command" type="text" autocomplete="off" spellcheck="false" placeholder="node" />
-            <p class="hint">An executable, not a shell line. On Windows use the real .exe (node, python), not npx.cmd.</p>
+            <p class="hint">An executable, not a shell line.<span data-os="win32" hidden> Use the real .exe (node, python), not npx.cmd.</span></p>
           </div>
           <div class="field">
             <label for="tools-args">Arguments (one per line)</label>
@@ -1098,20 +1021,12 @@
             </div>
           </div>
           <p class="hint">
-            <strong data-i18n="settings.maxDictationLength">Max dictation length</strong> — a dictation that reaches the cap stops
-            and transcribes on its own; nothing is lost. Raising it lets the cleanup model
-            hold more of what you say, at the cost of some memory; a dictation longer than
-            it can hold is still transcribed and delivered, just as spoken. 10–3600 seconds;
-            a value outside that is saved as the nearest limit, and a blank keeps the
-            current one.
+            <strong data-i18n="settings.maxDictationLength">Max dictation length</strong> — at the cap, the dictation stops and
+            transcribes; nothing is lost. 10–3600 seconds.
           </p>
           <p class="hint">
-            <strong data-i18n="settings.unloadModelsAfterIdle">Unload models after idle</strong> — built-in models stay in memory for
-            fast repeat dictations, then unload after this many idle minutes to free memory
-            (~1.5 GB or more); 0 keeps them loaded for the whole session. The next dictation
-            reloads them in a few seconds, usually hidden while you're still speaking. Only
-            affects in-app models, not external services. 0–240 minutes; a value outside
-            that is saved as the nearest limit, and a blank means 0.
+            <strong data-i18n="settings.unloadModelsAfterIdle">Unload models after idle</strong> — frees about 1.5 GB after this many
+            idle minutes; the next dictation reloads them in a few seconds. 0 keeps them loaded.
           </p>
         </div>
 
@@ -1121,8 +1036,7 @@
             <button id="open-wizard" class="ghost" data-i18n="settings.openWizard">Run the setup wizard again…</button>
           </div>
           <p class="hint" data-i18n="settings.walksThroughHotkeyMicrophoneSpeechtotext">
-            Walks through hotkey, microphone, speech-to-text and cleanup from scratch.
-            Nothing changes until you finish the wizard.
+            Runs setup again from the start. Nothing changes until you finish.
           </p>
         </div>
 
@@ -1131,14 +1045,14 @@
           <label class="toggle">
             <span class="toggle-text">
               <span class="t" data-i18n="settings.checkForUpdatesAutomatically">Check for updates automatically</span>
-              <span class="d" data-i18n="settings.looksAtGithubReleasesOn">Looks at GitHub releases on startup and twice a day. Nothing installs without you.</span>
+              <span class="d" data-i18n="settings.looksAtGithubReleasesOn">Checks GitHub on startup and twice a day. Nothing installs without you.</span>
             </span>
             <input type="checkbox" id="updates-autocheck" class="switch" role="switch" />
           </label>
           <label class="toggle">
             <span class="toggle-text">
               <span class="t" data-i18n="settings.tellMeWhenANew">Tell me when a new version is out</span>
-              <span class="d" data-i18n="settings.aPromptOnTheDictation">A prompt on the dictation bar (between dictations, never during one) plus a system notification. Off: updates only show up here and in the tray.</span>
+              <span class="d" data-i18n="settings.aPromptOnTheDictation">A prompt on the dictation bar between dictations, plus a system notification. Off: only here and in the Earheart icon's menu.</span>
             </span>
             <input type="checkbox" id="updates-remind" class="switch" role="switch" />
           </label>
@@ -1184,6 +1098,8 @@
     <script src="locales/en.js"></script>
     <script src="i18n-client.js"></script>
     <script src="confirm-dialog.js"></script>
+    <script src="platform-context.js"></script>
+    <script src="hotkey-names.js"></script>
     <script src="hotkey-capture.js"></script>
     <script src="vocabulary.js"></script>
     <script src="vocab-packs.js"></script>

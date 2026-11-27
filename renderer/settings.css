@@ -25,6 +25,14 @@
   display: none !important;
 }
 
+/* The window's height comes from the viewport at layout time (100%), not from
+   100vh: on Windows a real resize can leave vh at the previous size for a
+   frame, and the whole page then scrolls by the difference (settings-smoke,
+   560×480 after 755×740). */
+html {
+  height: 100%;
+}
+
 body {
   font-family: var(--font-sans);
   background: var(--ink);
@@ -33,7 +41,7 @@ body {
   line-height: 1.45;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -278,6 +286,15 @@ main {
   margin-bottom: 0;
 }
 
+/* A paragraph (Voice commands' intro, Usage's estimate note) or the Tools
+   list followed by a field inside a card keeps the same gap from that field
+   that fields keep from each other. */
+.card > .hint + .field,
+.card > .hint + .toggle,
+#tools-list + .field {
+  margin-top: 16px;
+}
+
 .field > label:first-child,
 .field > .field-label:first-child {
   display: block;
@@ -308,8 +325,8 @@ textarea {
   /* The boundary is the input's main cue against the card — --field-edge
      clears the 3:1 UI-component bar. */
   border: 1px solid var(--field-edge);
-  border-radius: var(--radius-button);
-  padding: 9px 11px;
+  border-radius: var(--radius-control);
+  padding: 9px 12px;
   font-size: 13px;
   font-family: inherit;
   transition:
@@ -327,7 +344,6 @@ textarea::placeholder {
 /* Prompt and dictionary are machine instructions — data, so monospace. */
 textarea {
   font-family: var(--mono);
-  border-radius: var(--radius-control);
   font-size: 13px;
   line-height: 1.55;
   resize: vertical;
@@ -428,7 +444,7 @@ select {
 }
 
 /* ---------- segmented control (Built-in / External engine choice) ----------
-   A pill track holding two pill segments; the chosen one takes the wash and
+   A track holding two segments; the chosen one takes the wash and
    brightens. The real radio is stretched invisibly over each label so the
    whole segment is the click target. */
 
@@ -436,7 +452,7 @@ select {
   display: flex;
   background: var(--field);
   border: 1px solid var(--edge);
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   padding: 3px;
   gap: 3px;
 }
@@ -448,7 +464,8 @@ select {
   align-items: center;
   justify-content: center;
   padding: 7px 12px;
-  border-radius: 999px;
+  /* Concentric with the track: its radius minus the 3px inset. */
+  border-radius: calc(var(--radius-control) - 3px);
   cursor: pointer;
   color: var(--text-dim);
   font-size: 13px;
@@ -540,7 +557,7 @@ select {
   align-items: center;
   gap: 11px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-row);
   border: 1px solid transparent;
   cursor: pointer;
   transition:
@@ -772,6 +789,17 @@ code {
   padding: 1px 5px;
   font-size: 12px;
   font-family: var(--mono);
+  /* A command is one token: as an inline-block, "earheart --pause" moves to
+     the next line whole instead of splitting at its hyphens, and only a chip
+     longer than the whole line (a repo id in a zoomed window) breaks. */
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  /* An inline-block's padding and border count toward its line box: a tight
+     line-height keeps a chip (14.4px text + 2px padding + 2px border =
+     18.4px) inside the hint's 18.6px line, so lines holding a chip are no
+     taller than the rest. */
+  line-height: 1.2;
 }
 
 /* The version readout is a machine numeral. */
@@ -781,13 +809,13 @@ code {
   color: var(--text);
 }
 
-/* ---------- buttons: quiet pills ---------- */
+/* ---------- buttons: quiet washes ---------- */
 
 button {
   background: var(--wash);
   border: none;
   color: var(--text);
-  border-radius: var(--radius-button);
+  border-radius: var(--radius-control);
   padding: 8px 14px;
   font-size: 13px;
   font-weight: 500;
@@ -841,7 +869,7 @@ button.primary:hover:not(:disabled) {
   background: var(--primary-hover);
 }
 
-/* Quiet pills: an edge and a label, brightening on hover. */
+/* Quiet buttons: an edge and a label, brightening on hover. */
 button.ghost {
   background: transparent;
   border: 1px solid rgb(var(--fg-rgb) / 0.14);
@@ -863,7 +891,7 @@ button.ghost:disabled {
   border-color: var(--seam);
 }
 
-/* Destructive pills: gray until you mean it — red names the consequence on
+/* Destructive buttons: gray until you mean it — red names the consequence on
    hover only (the overlay discard key's grammar). */
 button.danger:hover:not(:disabled) {
   background: rgb(var(--err-rgb) / 0.12);
@@ -954,7 +982,7 @@ ul.notes li::before {
   margin: 0 0 20px;
   background: rgb(var(--fg-rgb) / 0.05);
   border: 1px solid var(--edge);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   padding: 11px 14px;
   font-size: 13px;
   line-height: 1.5;
@@ -967,7 +995,7 @@ ul.notes li::before {
   margin: 0 0 14px;
   background: rgb(var(--fg-rgb) / 0.05);
   border: 1px solid var(--edge);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   padding: 11px 14px;
   font-size: 13px;
   line-height: 1.5;
@@ -985,7 +1013,7 @@ ul.notes li::before {
   overflow: auto;
   background: var(--field);
   border: 1px solid var(--edge);
-  border-radius: 8px;
+  border-radius: var(--radius-row);
   padding: 8px 0;
   font-family: var(--mono);
   font-size: 12px;
@@ -1105,7 +1133,7 @@ input[type="range"]:focus-visible {
   gap: 10px;
   background: var(--wash-faint);
   border: 1px solid var(--seam);
-  border-radius: 10px;
+  border-radius: var(--radius-row);
   padding: 9px 12px;
   margin-bottom: 8px;
 }
@@ -1142,7 +1170,7 @@ input[type="range"]:focus-visible {
   font: inherit;
   background: var(--wash-faint);
   border: 1px solid var(--seam);
-  border-radius: 8px;
+  border-radius: var(--radius-row);
   padding: 9px 11px;
   min-height: 2.4em;
   max-height: 14em;
@@ -1173,7 +1201,7 @@ input[type="range"]:focus-visible {
 #history-list li {
   background: var(--wash-faint);
   border: 1px solid var(--seam);
-  border-radius: 10px;
+  border-radius: var(--radius-row);
   padding: 11px 13px;
   margin-bottom: 8px;
 }
@@ -1308,7 +1336,7 @@ footer {
 .model-manage {
   background: var(--tray);
   border: 1px solid rgb(var(--fg-rgb) / 0.07);
-  border-radius: 8px;
+  border-radius: var(--radius-row);
   padding: 12px 14px;
   margin-top: 12px;
 }
@@ -1433,7 +1461,6 @@ button.runtime-unload {
 }
 
 .usage-baseline {
-  margin-top: 14px;
   max-width: 220px;
 }
 
@@ -1511,28 +1538,90 @@ button.runtime-unload {
   transition: width 0.15s linear;
 }
 
-/* ---------- compact window: the index docks above the page ---------- */
+/* ---------- compact window: the index narrows to an icon rail ---------- */
 
+/* The index stays where it always is, on the left, so the page keeps one
+   spatial model at every width. Below 600px only the labels go: the hued
+   glyphs are already the section landmarks, and a docked horizontal strip
+   clipped entries mid-word and spent the height a short window lacks. The
+   label stays in the accessibility tree (visually hidden, not display:none),
+   so each button keeps its name, and settings.js gives each icon its label
+   as a hover tooltip while this layout is active. */
 @media (max-width: 599px) {
-  .deck {
-    flex-direction: column;
+  /* The fixed header and footer share a short window with the scrolling
+     page: below 600px the header drops its tagline (an introduction, not a
+     control) and both bars tighten, so the page keeps most of the height.
+     Scoped to the settings window (the bars beside .deck): the wizard shares
+     this stylesheet, and its subtitle and height budget are different. */
+  header:has(+ .deck) {
+    gap: 10px;
+    padding: 10px 16px;
+  }
+
+  header:has(+ .deck) img {
+    width: 28px;
+    height: 28px;
+  }
+
+  header:has(+ .deck) div > p {
+    display: none;
+  }
+
+  /* Without the tagline's width the title no longer holds Commands… at the
+     far edge; the title block takes the slack instead. */
+  header:has(+ .deck) > div {
+    flex: 1;
+  }
+
+  .deck + footer {
+    padding: 9px 16px;
   }
 
   nav#tabs {
-    flex-direction: row;
-    width: auto;
-    gap: 2px;
-    padding: 8px 14px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    border-right: none;
-    border-bottom: 1px solid var(--seam);
+    width: 56px;
+    padding: 15px 8px 18px;
+    align-items: center;
+    /* A short window scrolls the rail; a scrollbar inside 56px would eat
+       the buttons' width, and the active entry is kept in view anyway. */
+    overflow-x: hidden;
+    scrollbar-width: none;
   }
 
   .tab {
-    width: auto;
+    position: relative;
     flex-shrink: 0;
-    padding: 6px 10px;
+    width: 40px;
+    height: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .tab-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .tab-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* With the rail beside it the column can drop to ~320px (a zoomed
+     window): long segment labels and button pairs wrap instead of
+     pushing the page sideways. */
+  .segmented label {
+    white-space: normal;
+    text-align: center;
+  }
+
+  /* Button pairs only: a field beside its Reset/Clear shrinks instead. */
+  .row:not(:has(input, select, textarea)) {
+    flex-wrap: wrap;
   }
 }
 
@@ -1570,7 +1659,7 @@ button.runtime-unload {
 #history-list .agent-review {
   background: var(--wash-faint);
   border: 1px solid var(--seam);
-  border-radius: 10px;
+  border-radius: var(--radius-row);
   padding: 11px 13px;
   margin-bottom: 8px;
 }

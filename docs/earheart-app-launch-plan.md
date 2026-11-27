@@ -15,7 +15,7 @@ Planning
 - [x] Pick the org name: **`earheart-hq`**
 
 Phase 1: Organization (you, in the web UI; no API exists for this)
-- [ ] Create the org on the Free plan: github.com → Settings → Organizations → New organization
+- [x] Create the org on the Free plan: github.com → Settings → Organizations → New organization
 - [ ] Turn on 2FA enforcement and set the base member permission to Read
 - [ ] Verify earheart.app for the org (add a TXT record in Cloudflare) to get the "Verified" badge
 - [ ] Set the org's profile: avatar (`assets/icon.png`), URL https://earheart.app, description

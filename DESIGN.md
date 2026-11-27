@@ -127,8 +127,8 @@ rounded:
   hairline: "2px"
   download-bar: "2px"
   chip: "4px"
-  input: "1.17rem"
-  control: "0.63rem"
+  input: "6px"
+  control: "6px"
   icon: "9px"
   row: "10px"
   capsule: "11px"
@@ -196,25 +196,25 @@ components:
     backgroundColor: "{colors.field}"
     textColor: "{colors.text-primary}"
     rounded: "{rounded.input}"
-    padding: "9px 11px"
+    padding: "9px 12px"
   button-standard:
     backgroundColor: "{colors.hover-wash}"
     textColor: "{colors.text-primary}"
-    rounded: "{rounded.pill}"
+    rounded: "{rounded.control}"
     padding: "8px 14px"
   button-standard-hover:
     backgroundColor: "rgba(255, 255, 255, 0.14)"
   button-primary:
     backgroundColor: "{colors.primary}"
     textColor: "{colors.primary-text}"
-    rounded: "{rounded.pill}"
+    rounded: "{rounded.control}"
     padding: "9px 20px"
   button-primary-hover:
     backgroundColor: "{colors.primary-hover}"
   button-ghost:
     backgroundColor: "transparent"
     textColor: "{colors.text-dim}"
-    rounded: "{rounded.pill}"
+    rounded: "{rounded.control}"
     padding: "8px 14px"
   tab:
     backgroundColor: "transparent"
@@ -511,9 +511,15 @@ in-window washes are safe because the solid ink is beneath them.
 
 ## Shapes
 
-The Maia scale starts at `0.45rem`. Cards use `0.81rem`, multiline fields
-and navigation rows use `0.63rem`, and buttons, single-line fields, and
-selects use `1.17rem`. Progress tracks and the overlay grip use 2px.
+The Maia scale starts at `0.45rem`. Cards use `0.81rem` and rows inside a
+card `10px`. **Every text-bearing control in the windows** (single- and
+multiline fields, selects, buttons, segmented controls, index entries) uses
+`6px` (`--radius-control`): a pill's curve either crowds text that runs to the
+control's edge or forces a padding wide enough to look adrift, while a few
+pixels let text sit at an ordinary 12–14px inset. Rounder shapes stay only
+where no text reaches a curved end: switch tracks, icon-led status chips, the
+overlay's capsule bar and its pills (`--radius-button`), and the wizard's
+mini bar that previews it. Progress tracks and the overlay grip use 2px.
 All overlay keys are 32px circles whose clickable area extends to
 ~42px via an invisible `::before` halo (inset -5px) — the hit area grows, the
 painted key does not. Borders are 1px hairlines only (the demo `kbd` keycaps'
@@ -558,8 +564,8 @@ transcription** and a quiet **Discard**.
 - **Quiet:** transparent with a Dim Text label (weight 500); hover wash +
   brighten, same as ghost keys.
 
-### Pill buttons — settings/wizard (three tiers + danger)
-- **Shape:** 1.17rem radius, 8px 14px padding, 13px/500 text; active
+### Buttons — settings/wizard (three tiers + danger)
+- **Shape:** 6px radius, 8px 14px padding, 13px/500 text; active
   presses to `scale(0.97)`; disabled holds opacity 0.6 — except ghost pills,
   which hold full opacity with a Seam edge instead, because their labels are
   almost always in-flight ("Checking…", "Restarting…") and 0.6 over Dim Text
@@ -575,7 +581,7 @@ transcription** and a quiet **Discard**.
   rgba(248, 113, 113, 0.4) border).
 
 ### Sticky index (settings navigation)
-- 180px rail outside the scroll area; entries are 0.63rem-radius buttons pairing a
+- 180px rail outside the scroll area; entries are 6px-radius buttons pairing a
   16px section glyph in its own Wayfinding hue with a 13px/500 Dim Text label,
   9px apart. The glyph's hue never changes; the label washes faintly on hover
   and the active entry takes Active Menu + Primary Text — no markers, no dots.
@@ -617,8 +623,8 @@ transcription** and a quiet **Discard**.
   The Capture Exception's coral border/wash/ring.
 
 ### Segmented control (engine choice)
-- A Field-filled pill track (999px, 3px padding, hairline edge) holding pill
-  segments; real radios stretched invisibly over each label so the whole
+- A Field-filled track (6px radius, 3px padding, hairline edge) holding
+  concentric 3px-radius segments; real radios stretched invisibly over each label so the whole
   segment is the target. Chosen segment takes a white 0.14 wash + Primary
   Text and a 1px inset Primary Text ring; keyboard focus surfaces as an outer
   ring on the label.

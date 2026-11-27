@@ -10,7 +10,7 @@ pre { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overf
 #description { overflow-wrap: anywhere; margin: 6px 0; }
 .hint { color: var(--text-dim); font-size: 13px; }
 footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; border-top: 1px solid var(--field-edge); padding-top: 14px; }
-button { border: 1px solid var(--field-edge); border-radius: var(--radius-button); background: var(--field); color: var(--text); padding: 9px 14px; font: inherit; cursor: pointer; }
+button { border: 1px solid var(--field-edge); border-radius: var(--radius-control); background: var(--field); color: var(--text); padding: 9px 14px; font: inherit; cursor: pointer; }
 button.primary { background: var(--primary); color: var(--primary-text); border-color: var(--primary); font-weight: 600; }
 button.primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
 button:disabled { opacity: .45; cursor: default; }

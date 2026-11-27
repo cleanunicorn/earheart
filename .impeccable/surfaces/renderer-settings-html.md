@@ -30,7 +30,8 @@ spent the short window's height), fixed footer commit row; wizard steps centered
 Material language replaced wholesale: solid near-black ink #18181b, white-wash
 cards (white 0.04–0.05) with hairline edges, sentence-case section headings
 running into a hairline, plain solid inputs (#101013, 3:1 boundary #6b6b74),
-fully-rounded pill buttons, one filled white Save (the overlay's Done-key
+6px-radius buttons and fields (pills dropped 2026-11-27: text at a pill's
+curved edge looked crowded or adrift), one filled white Save (the overlay's Done-key
 grammar). **Chosen things are white**: the active index entry's wash, selected
 option rows, radio cores, checkbox fills, engaged switch tracks, the selected
 segment. Downloads and update bars fill white (One Voice Rule — the app

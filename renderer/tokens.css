@@ -22,7 +22,12 @@
   --font-sans: "Space Grotesk", system-ui, sans-serif;
   --font-heading: "Outfit", var(--font-sans);
   --radius: 0.45rem;
-  --radius-control: calc(var(--radius) * 1.4);
+  /* Every text-bearing control in the windows (fields, selects, textareas,
+     buttons, segmented controls, index entries): a few pixels, so text sits
+     at an ordinary inset instead of fighting a pill's curve. Rounder shapes
+     are kept for things with no text at their ends (switch tracks, icon-led
+     status chips) and for the overlay's capsule bar (--radius-button). */
+  --radius-control: 6px;
   --radius-card: calc(var(--radius) * 1.8);
   --radius-button: calc(var(--radius) * 2.6);
   /* Rows and insets inside a card (history entries, model trays, previews):

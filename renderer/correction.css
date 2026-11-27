@@ -6,7 +6,7 @@ label { display: block; margin: 14px 0 6px; font-weight: 600; }
 .hint { color: var(--text-dim); font-size: 13px; }
 textarea, input { width: 100%; background: var(--field); color: var(--text); border: 1px solid var(--field-edge); border-radius: var(--radius-control); padding: 10px; font: inherit; }
 textarea { min-height: 160px; height: 21vh; resize: vertical; }
-button { border: 1px solid var(--field-edge); border-radius: var(--radius-button); background: var(--field); color: var(--text); padding: 9px 12px; font: inherit; cursor: pointer; }
+button { border: 1px solid var(--field-edge); border-radius: var(--radius-control); background: var(--field); color: var(--text); padding: 9px 12px; font: inherit; cursor: pointer; }
 button.primary { background: var(--primary); color: var(--primary-text); border-color: var(--primary); font-weight: 600; }
 button.primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
 button:disabled { opacity: .45; cursor: default; }

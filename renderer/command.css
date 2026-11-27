@@ -16,7 +16,7 @@ pre.short { flex: none; max-height: 72px; }
 #notice { margin: 0; color: var(--text-dim); font-size: 13px; }
 footer { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--field-edge); padding-top: 12px; }
 .spacer { flex: 1; }
-button { border: 1px solid var(--field-edge); border-radius: var(--radius-button); background: var(--field); color: var(--text); padding: 7px 12px; font: inherit; cursor: pointer; }
+button { border: 1px solid var(--field-edge); border-radius: var(--radius-control); background: var(--field); color: var(--text); padding: 7px 12px; font: inherit; cursor: pointer; }
 button.primary { background: var(--primary); color: var(--primary-text); border-color: var(--primary); font-weight: 600; }
 button.primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
 button:disabled { opacity: .45; cursor: default; }

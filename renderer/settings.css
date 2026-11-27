@@ -317,8 +317,8 @@ textarea {
   /* The boundary is the input's main cue against the card — --field-edge
      clears the 3:1 UI-component bar. */
   border: 1px solid var(--field-edge);
-  border-radius: var(--radius-button);
-  padding: 9px 11px;
+  border-radius: var(--radius-control);
+  padding: 9px 12px;
   font-size: 13px;
   font-family: inherit;
   transition:
@@ -336,7 +336,6 @@ textarea::placeholder {
 /* Prompt and dictionary are machine instructions — data, so monospace. */
 textarea {
   font-family: var(--mono);
-  border-radius: var(--radius-control);
   font-size: 13px;
   line-height: 1.55;
   resize: vertical;
@@ -437,7 +436,7 @@ select {
 }
 
 /* ---------- segmented control (Built-in / External engine choice) ----------
-   A pill track holding two pill segments; the chosen one takes the wash and
+   A track holding two segments; the chosen one takes the wash and
    brightens. The real radio is stretched invisibly over each label so the
    whole segment is the click target. */
 
@@ -445,7 +444,7 @@ select {
   display: flex;
   background: var(--field);
   border: 1px solid var(--edge);
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   padding: 3px;
   gap: 3px;
 }
@@ -457,7 +456,8 @@ select {
   align-items: center;
   justify-content: center;
   padding: 7px 12px;
-  border-radius: 999px;
+  /* Concentric with the track: its radius minus the 3px inset. */
+  border-radius: calc(var(--radius-control) - 3px);
   cursor: pointer;
   color: var(--text-dim);
   font-size: 13px;
@@ -801,13 +801,13 @@ code {
   color: var(--text);
 }
 
-/* ---------- buttons: quiet pills ---------- */
+/* ---------- buttons: quiet washes ---------- */
 
 button {
   background: var(--wash);
   border: none;
   color: var(--text);
-  border-radius: var(--radius-button);
+  border-radius: var(--radius-control);
   padding: 8px 14px;
   font-size: 13px;
   font-weight: 500;
@@ -861,7 +861,7 @@ button.primary:hover:not(:disabled) {
   background: var(--primary-hover);
 }
 
-/* Quiet pills: an edge and a label, brightening on hover. */
+/* Quiet buttons: an edge and a label, brightening on hover. */
 button.ghost {
   background: transparent;
   border: 1px solid rgb(var(--fg-rgb) / 0.14);
@@ -883,7 +883,7 @@ button.ghost:disabled {
   border-color: var(--seam);
 }
 
-/* Destructive pills: gray until you mean it — red names the consequence on
+/* Destructive buttons: gray until you mean it — red names the consequence on
    hover only (the overlay discard key's grammar). */
 button.danger:hover:not(:disabled) {
   background: rgb(var(--err-rgb) / 0.12);
